@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 10:26:15
-**Total Active Tasks**: 1
+**Last Updated**: 2026-10-30 10:34:41
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 7
+- Completed: 8
 
 ---
 
@@ -21,15 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-- [ ] **P1-NOTES-A007** Phase 8: Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `web/src/components/{NoteImage,Gallery,PhotoModal,DropOverlay}.tsx` (rewrites of P7 stubs), `PhotoModal.css`, `web/fullscreen.html` + `web/src/fullscreen/**`, drag/drop + paste upload to `POST /api/images`, "not on this machine" placeholder, film-tone filter. Exit: gallery, modal (Esc/arrows), full-screen tab (fit/1:1/pan, title = id), upload all work against a running daemon on a test port; gates green.
-  - **Status**: open
-  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 8 of 8)
-  - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
-  - **Depends on**: P1-NOTES-A004, P1-NOTES-A006
-  - **Plan**: `.workflows/plan/P1-NOTES-A007.md`
 
 ### [P2] Medium
 
@@ -40,6 +31,27 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A007** Phase 8: Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/{NoteImage,Gallery,PhotoModal,DropOverlay}.tsx` (rewrites of P7 stubs), `PhotoModal.css`, `web/fullscreen.html` + `web/src/fullscreen/**`, drag/drop + paste upload to `POST /api/images`, "not on this machine" placeholder, film-tone filter. Exit: gallery, modal (Esc/arrows), full-screen tab (fit/1:1/pan, title = id), upload all work against a running daemon on a test port; gates green.
+  - **Status**: completed
+  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 8 of 8)
+  - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
+  - **Depends on**: P1-NOTES-A004, P1-NOTES-A006
+  - **Plan**: `.workflows/plan/P1-NOTES-A007.md`
+  - **Completed**: 2026-10-30 10:34
+  - **Method**: /do
+  - **Files**: web/src/components/NoteImage.tsx, web/src/components/Gallery.tsx, web/src/components/PhotoModal.tsx, web/src/components/PhotoModal.css, web/src/components/DropOverlay.tsx, web/fullscreen.html, web/src/fullscreen/main.tsx, web/src/fullscreen/FullscreenApp.tsx, web/src/fullscreen/view.ts, web/vite.config.ts, web/src/components/NoteImage.test.tsx, web/src/components/Gallery.test.tsx, web/src/components/PhotoModal.test.tsx, web/src/components/DropOverlay.test.tsx, web/src/fullscreen/FullscreenApp.test.tsx
+  - **Drift**:
+    - web/vite.config.ts: phase 7's input map uses key `index` (plan expected `main`); added only `fullscreen` alongside it and kept the rest of phase 7's config (proxy targets, assetsDir), as the plan's Step 7 instructs.
+  - **Decided**:
+    - Phase 7's App.test.tsx locates the gallery by `.gallery` (its stub's class); plan's Gallery had only `data-gallery` → keep `className="gallery"` on the section in Gallery.tsx (rung 1: invariant 2, no phase leaves the tree broken; tie-break: stay inside Owns, never relax a peer's test)
+  - **Verification**:
+    - npm run typecheck green; npm test (27 files / 223 tests), npm run test:int (9 files / 86 tests) green; npm run build green, web/dist/index.html + web/dist/fullscreen.html (absolute /assets/fullscreen-*.js)
+    - Test-port daemon (7391, Docker test DB, temp data dir; Neon untouched): upload created:true, re-upload same id created:false; /full/<id> 200 text/html; /display 200 image/jpeg byte-identical; images/ moved away → 404 not_on_this_machine
+    - Headless Chromium: text mode hides image cards; Files drag shows overlay; drop uploads and switches text→all; gallery tiles; modal (display variant, film filter, counter), Esc closes; /full/<id> title = id, fit/1:1/drag; missing-file placeholder on wall, gallery, modal, full-screen; no page errors
 
 - [x] **P1-NOTES-A006** Phase 7: Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates
   - **Difficulty**: HARD

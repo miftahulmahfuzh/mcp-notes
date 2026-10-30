@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui`
 **Branch:** `feature/notes-spine-images-ui` (base: `origin/main` @ `4bff8fb`, fast-forwarded to `30a58fd`)
 **Phases:** 8
-**Status:** 7/8 phases complete (1, 2, 3, 4, 5, 6, 7)
+**Status:** 8/8 phases complete (1, 2, 3, 4, 5, 6, 7, 8)
 **Coordinator:** —
 
 ---
@@ -145,7 +145,7 @@ sync to the GPD, title field / typed note structure, search bar. `support.js` is
 | 5 ✓ | Image HTTP routes + upload, MCP image tools, image/date filters | R2 | `src/http/{images,imageAccess}.ts`, `src/mcp`, `src/notes/repo.ts` | ~11 | 4 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-5.md` | P1-NOTES-A004 | — |
 | 6 ✓ | UI JSON API, SSE events, chat stub, static SPA serving | R3 | `src/http/api.ts`, `src/http/static.ts`, `src/chat` | ~10 | 2 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-6.md` | P1-NOTES-A005 | — |
 | 7 ✓ | Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates | R3 | `web/` | ~38 | 6 | HARD | `.workflows/plan/notes-spine-images-ui/phase-7.md` | P1-NOTES-A006 | — |
-| 8 | Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder | R3 | `web/` | ~15 | 5, 7 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-8.md` | P1-NOTES-A007 | — |
+| 8 ✓ | Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder | R3 | `web/` | ~15 | 5, 7 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-8.md` | P1-NOTES-A007 | — |
 
 ### Phase 1 — Scaffold, config, schema, ids, tags, test harness
 **Satisfies:** R1 (plus, by invariants 7 and 8, the schema and dependencies R2/R3 use)

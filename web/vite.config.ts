@@ -15,9 +15,9 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: 'assets',
     rolldownOptions: {
-      // Phase 8 adds:  fullscreen: resolve(root, 'fullscreen.html'),
       input: {
         index: resolve(root, 'index.html'),
+        fullscreen: resolve(root, 'fullscreen.html'),
       },
     },
   },
