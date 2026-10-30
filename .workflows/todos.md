@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 13:37:28
+**Last Updated**: 2026-10-30 14:05:00
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 14
+- Completed: 18
 
 ---
 
@@ -82,6 +82,22 @@
     - Plan index names worktree .../connectors on feature/connectors; this session runs in .../connectors-p4 on phase-4-connectors → proceed (coordinator cut per-phase worktrees from af45c9e and said to commit here)
     - TaskID → P1-NOTES-A015 (assigned by coordinator orch-connectors)
     - Step 3 task creation → only phase 4's task created, inline (narrower blast radius; each phase session mints its own)
+
+- [x] **P1-NOTES-A016** Phase 5: Chat bar + /n for connectors
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns src/chat/status.ts, src/chat/prompt.ts, tests/unit/chat-status.test.ts, tests/unit/chat-prompt.test.ts, claude/skills/n/SKILL.md, README (TOC line + "Spending, runs and Seer" /n subsection + first two paragraphs of "The chat bar"), docs/plans/CHAT_BAR_BRAIN_PLAN.md invariant 4 note. Exit: allowedChatTools() = 13 notes + 15 connector + 2 web tools; captions "reading expenses"/"reading runs"/"reading seer" from SYSTEM_META for every connector tool, null for unknown; system prompt names the three systems, says curated first / _sql last / _schema before SQL, asks for what the data shows plus an opinion in the apps' units; /n routes spending/runs/Seer questions to the connector tools; typecheck and unit tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p5/docs/plans/CONNECTORS_PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R3 — Chat bar allows + captions the new tools; `/n` routes data questions and gives an opinion
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A016.md`
+  - **Completed**: 2026-10-30 14:05
+  - **Method**: /do
+  - **Files**: src/chat/status.ts, src/chat/prompt.ts, tests/unit/chat-status.test.ts, tests/unit/chat-prompt.test.ts, claude/skills/n/SKILL.md, README.md, docs/plans/CHAT_BAR_BRAIN_PLAN.md, docs/plans/CONNECTORS_PLAN.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A016.md
+  - **Decided**:
+    - Worktree mismatch (index names connectors/feature/connectors; session is in connectors-p5/phase-5-connectors) → proceed in the per-phase worktree (rung 6: swarm coordinator's per-phase worktree convention, cut from af45c9e which contains phase 1)
+    - TaskID → P1-NOTES-A016, assigned by coordinator orch-connectors; only phase 5's task minted in root .workflows/todos.md (same convention phases 1 and 6 used)
 
 - [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
   - **Difficulty**: EASY
