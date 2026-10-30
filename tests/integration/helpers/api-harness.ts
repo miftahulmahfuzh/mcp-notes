@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { ChatBackend } from '../../../src/chat/backend.js';
 import { createStubChatBackend } from '../../../src/chat/stub.js';
-import { DEFAULT_CHAT_CONFIG } from '../../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../../src/config.js';
 import type { AppDeps } from '../../../src/deps.js';
 import { apiRoutes } from '../../../src/http/api.js';
 import { NoteEvents } from '../../../src/notes/events.js';
@@ -42,10 +42,11 @@ export async function createApiHarness(options: ApiHarnessOptions = {}): Promise
   const events = new NoteEvents();
   const notes = new NotesService({ db, events, dataDir });
   const deps: AppDeps = {
-    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG },
+    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
     db,
     events,
     service: notes,
+    embedder: null,
   };
   const app = new Hono();
   app.route(

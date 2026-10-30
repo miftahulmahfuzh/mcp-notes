@@ -1,4 +1,5 @@
 import type { Db } from '../db/client.js';
+import type { Embedder } from '../embeddings/embedder.js';
 import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
@@ -23,6 +24,11 @@ export interface NotesServiceDeps {
   db: Db;
   dataDir: string;
   events: NoteEvents;
+  /**
+   * Query embedder for hybrid search and `related` (phases 4-5). Omitted or null: those fall back
+   * or report that semantic search is off. Writes never use it.
+   */
+  embedder?: Embedder | null;
 }
 
 export interface CreateNoteInput {
@@ -70,11 +76,13 @@ export class NotesService {
   private readonly db: Db;
   private readonly dataDir: string;
   private readonly events: NoteEvents;
+  private readonly embedder: Embedder | null;
 
   constructor(deps: NotesServiceDeps) {
     this.db = deps.db;
     this.dataDir = deps.dataDir;
     this.events = deps.events;
+    this.embedder = deps.embedder ?? null;
   }
 
   /** Canonical id or NoteError('invalid_id'). */

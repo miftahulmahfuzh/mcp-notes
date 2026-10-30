@@ -2,9 +2,10 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_CHAT_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../src/config.js';
 import { createStubChatBackend } from '../../src/chat/stub.js';
 import { startDaemon, type RunningDaemon } from '../../src/daemon.js';
+import { createFakeEmbedder } from '../helpers/fakeEmbedder.js';
 import { createScriptedChatBackend } from './helpers/scripted-chat.js';
 import { parseSse } from './helpers/sse.js';
 import { testDatabaseUrl } from './setup.js';
@@ -15,7 +16,7 @@ const dataDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
 let daemon: RunningDaemon;
 
 function config(dir: string): Config {
-  return { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG };
+  return { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
 }
 
 async function postChat(port: number, message: string) {
@@ -107,6 +108,27 @@ describe('startDaemon', () => {
     } finally {
       await other.stop();
       rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
+
+  it('has no embedder without OPENROUTER_API_KEY, and carries an injected one', async () => {
+    // The shared daemon's config has embeddings.apiKey null and no embedder option.
+    expect(daemon.deps.embedder).toBeNull();
+    // The "with a key" path is unit-tested through embedderFromConfig: a daemon started here with
+    // a key would hold a real OpenRouter client, and once phase 3's worker exists it would call it.
+    const fakeDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
+    const fake = createFakeEmbedder();
+    const withFake = await startDaemon(config(fakeDir), {
+      chat: createStubChatBackend({ delayMs: 0 }),
+      embedder: fake,
+    });
+    try {
+      expect(withFake.deps.embedder).toBe(fake);
+      const res = await fetch(`http://127.0.0.1:${withFake.port}/health`);
+      expect(res.status).toBe(200);
+    } finally {
+      await withFake.stop();
+      rmSync(fakeDir, { recursive: true, force: true });
     }
   });
 

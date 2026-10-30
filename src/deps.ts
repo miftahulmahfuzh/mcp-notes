@@ -1,5 +1,6 @@
 import type { Config } from './config.js';
 import type { Db } from './db/client.js';
+import type { Embedder } from './embeddings/embedder.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 
@@ -9,4 +10,6 @@ export interface AppDeps {
   db: Db;
   events: NoteEvents;
   service: NotesService;
+  /** Null without OPENROUTER_API_KEY (or when a test injects null): semantic features off. */
+  embedder: Embedder | null;
 }

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 19
+- Blocked: 2
+- Completed: 20
 
 ---
 
@@ -22,21 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A018** Phase 2: OpenRouter embedder, config, deps wiring, fake embedder
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `src/embeddings/{embedder,openrouter}.ts`, `src/config.ts` (`embeddings`), `src/deps.ts`, `src/daemon.ts` (build embedder, `StartDaemonOptions.embedder`), `src/notes/service.ts` (constructor deps only), every existing test `Config` / `AppDeps` literal (6 integration files) and `tests/live/chat.live.test.ts` (`embedder: null`), `tests/helpers/fakeEmbedder.ts`, unit tests (fake fetch, config, fake embedder). Exit: every error path of run-insights' module has a unit test against a fake `fetch`; batching preserves order; the daemon starts with no key (`deps.embedder === null`) and with an injected fake.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 2 of 6)
-  - **Satisfies**: R1, R6 — Embeddings via OpenRouter (`openai/text-embedding-3-small`, 1536), run-insights' cap and error handling; embedded after every body write without blocking/failing it; failures marked and retried; vector tied to its body hash; textless photos have none; deleted notes keep vectors, never appear; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A017
-  - **Plan**: `.workflows/plan/P1-NOTES-A018.md`
-
 - [ ] **P1-NOTES-A019** Phase 3: Embedding worker, background backfill, `embed:backfill`
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `src/embeddings/{worker,backfill}.ts`, `src/background.ts`, `src/cli/embedBackfill.ts`, `package.json` (`embed:backfill`), `tests/helpers/memoryEmbeddingStore.ts`, worker / backfill / CLI unit tests, integration tests (create/update/append/revert/image note embedded; failure keeps the write and retries; backfill resumable; deleted notes keep vectors; restore makes no call). Exit: with the fake embedder every write path ends with a current vector after `idle()`; a failing embedder leaves writes intact and the note retried after backoff; stop/restart mid-backfill finishes without re-embedding finished notes; idle worker logs nothing; `close()` returns within its 5 s grace even when a call hangs.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 3 of 6)
   - **Satisfies**: R3, R1, R6 — Background backfill inside notesd (batched, rate-limited, resumable, logged, quiet when idle) + `npm run embed:backfill` with progress; Embeddings via OpenRouter (`openai/text-embedding-3-small`, 1536), run-insights' cap and error handling; embedded after every body write without blocking/failing it; failures marked and retried; vector tied to its body hash; textless photos have none; deleted notes keep vectors, never appear; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
@@ -46,7 +36,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `src/search/{blend,queryVector}.ts`, `src/notes/repo.ts` (`searchCandidates`), `src/notes/service.ts` (`search`, `textSearch`, imports), `src/notes/types.ts` (`SearchMode`, `SearchPage`), `src/mcp/tools.ts` (`search` only), `src/mcp/instructions.ts` (`Reading.` paragraph), one `it` in `tests/unit/mcp.instructions.test.ts`, `tests/fixtures/semantic/labelled.ts`, unit + integration tests. Exit: hybrid beats text-only on the labelled set (stated metric); exact id and rare code token at rank 1; failing query embed → `mode: 'text'` + `fallback`; `mode: 'text'` matches today's ordering.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 4 of 6)
   - **Satisfies**: R4, R6 — Hybrid `search`: text + vector + tags + recency, filters before ranking, ids/code tokens still first, fallback to text that says so, weights in one commented place tuned on a labelled set, optional `mode`, description + instructions updated, caption unchanged; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
@@ -81,6 +71,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A018** Phase 2: OpenRouter embedder, config, deps wiring, fake embedder
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/embeddings/{embedder,openrouter}.ts`, `src/config.ts` (`embeddings`), `src/deps.ts`, `src/daemon.ts` (build embedder, `StartDaemonOptions.embedder`), `src/notes/service.ts` (constructor deps only), every existing test `Config` / `AppDeps` literal (6 integration files) and `tests/live/chat.live.test.ts` (`embedder: null`), `tests/helpers/fakeEmbedder.ts`, unit tests (fake fetch, config, fake embedder). Exit: every error path of run-insights' module has a unit test against a fake `fetch`; batching preserves order; the daemon starts with no key (`deps.embedder === null`) and with an injected fake.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1, R6 — Embeddings via OpenRouter (`openai/text-embedding-3-small`, 1536), run-insights' cap and error handling; embedded after every body write without blocking/failing it; failures marked and retried; vector tied to its body hash; textless photos have none; deleted notes keep vectors, never appear; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A017
+  - **Plan**: `.workflows/plan/P1-NOTES-A018.md`
+  - **Completed**: 2026-10-30 14:44
+  - **Method**: /do
+  - **Files**: src/embeddings/embedder.ts, src/embeddings/openrouter.ts, src/config.ts, src/deps.ts, src/daemon.ts, src/notes/service.ts, tests/helpers/fakeEmbedder.ts, tests/unit/embeddings/openrouter.test.ts, tests/unit/embeddings/fakeEmbedder.test.ts, tests/unit/config.test.ts, tests/integration/daemon.int.test.ts, tests/integration/images.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/live/chat.live.test.ts
+  - **Drift**:
+    - Test Config/AppDeps literals were single-line objects, not the multi-line form the plan quoted; added embeddings/embedder fields inline, keeping each file's existing style.
 
 - [x] **P1-NOTES-A017** Phase 1: pgvector schema, migration, embedding state + repo
   - **Difficulty**: NORMAL

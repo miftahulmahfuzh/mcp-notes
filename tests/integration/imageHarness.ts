@@ -4,7 +4,7 @@ import path from 'node:path';
 import { serve, type ServerType } from '@hono/node-server';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
-import { DEFAULT_CHAT_CONFIG } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import { createApp } from '../../src/http/app.js';
 import { dbImageRecords } from '../../src/images/records.js';
@@ -32,10 +32,11 @@ export async function startHarness(): Promise<Harness> {
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir, events });
   const deps: AppDeps = {
-    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG },
+    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
     db,
     events,
     service,
+    embedder: null,
   };
   const app = createApp(deps);
   let server: ServerType | undefined;

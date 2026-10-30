@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_PORT, loadConfig, REPO_ROOT } from '../../src/config.js'
+import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_PORT, loadConfig, REPO_ROOT } from '../../src/config.js'
 
 const URL_A = 'postgres://u:p@127.0.0.1:5432/a'
 
@@ -33,8 +33,10 @@ describe('loadConfig', () => {
       host: '127.0.0.1',
       dataDir: path.join(homedir(), 'mcp-notes-data'),
       chat: DEFAULT_CHAT_CONFIG,
+      embeddings: DEFAULT_EMBEDDINGS_CONFIG,
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
+    expect(cfg.embeddings).toEqual({ apiKey: null })
   })
 
   it('reads the env file and lets the real environment win', () => {
@@ -42,7 +44,9 @@ describe('loadConfig', () => {
       ['LLM_API_KEY=ignored', 'DATABASE_URL=postgres://file/db', 'NOTESD_PORT=7400', 'OPENROUTER_API_KEY=x'].join('\n'),
     )
     expect(loadConfig({ env: {}, envFile: file })).toMatchObject({ databaseUrl: 'postgres://file/db', port: 7400 })
+    expect(loadConfig({ env: {}, envFile: file }).embeddings).toEqual({ apiKey: 'x' })
     expect(loadConfig({ env: { NOTESD_PORT: '7401' }, envFile: file }).port).toBe(7401)
+    expect(loadConfig({ env: { OPENROUTER_API_KEY: 'y' }, envFile: file }).embeddings.apiKey).toBe('y')
   })
 
   it('prefers the pooled host of the two file URLs, whatever their key names', () => {
@@ -169,5 +173,25 @@ describe('loadConfig chat', () => {
     expect(chat({ NOTESD_CLAUDE_BIN: 'claude' }).claudeBin).toBe('claude')
     expect(chat({ NOTESD_CLAUDE_BIN: '/opt/node/bin/claude' }).claudeBin).toBe('/opt/node/bin/claude')
     expect(chat({ NOTESD_CLAUDE_BIN: '~/tools/bin/claude' }).claudeBin).toBe(path.join(homedir(), 'tools', 'bin', 'claude'))
+  })
+})
+
+describe('loadConfig embeddings', () => {
+  function embeddings(env: Record<string, string>) {
+    return loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).embeddings
+  }
+
+  it('is off without OPENROUTER_API_KEY, or with a blank one', () => {
+    expect(embeddings({})).toEqual({ apiKey: null })
+    expect(embeddings({ OPENROUTER_API_KEY: '' })).toEqual({ apiKey: null })
+    expect(embeddings({ OPENROUTER_API_KEY: '   ' })).toEqual({ apiKey: null })
+  })
+
+  it('trims the key', () => {
+    expect(embeddings({ OPENROUTER_API_KEY: '  sk-or-v1-abc \n' })).toEqual({ apiKey: 'sk-or-v1-abc' })
+  })
+
+  it('keeps DEFAULT_EMBEDDINGS_CONFIG off', () => {
+    expect(DEFAULT_EMBEDDINGS_CONFIG).toEqual({ apiKey: null })
   })
 })
