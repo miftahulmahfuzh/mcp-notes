@@ -154,4 +154,47 @@ describe('NoteEditor', () => {
     const { container } = renderEditor(note('first line'));
     expect(container.ownerDocument.querySelector('[aria-label="Delete note"]')).toBeNull();
   });
+
+  describe('tag autocomplete', () => {
+    const known = [
+      { tag: 'seer', count: 5, last_used: null },
+      { tag: 'sera', count: 2, last_used: null },
+      { tag: 'run', count: 9, last_used: null },
+    ];
+    const type = (ta: HTMLTextAreaElement, value: string) => {
+      ta.setSelectionRange(value.length, value.length);
+      fireEvent.change(ta, { target: { value, selectionStart: value.length } });
+    };
+
+    it('suggests existing tags by prefix, most used first, and Enter completes', () => {
+      const { ta, getAllByRole, queryByRole } = renderEditor(note(''), { tags: known });
+      type(ta, 'hi #se');
+      expect(getAllByRole('option').map((o) => o.textContent)).toEqual(['#seer5', '#sera2']);
+      fireEvent.keyDown(ta, { key: 'Enter' });
+      expect(ta.value).toBe('hi #seer ');
+      expect(queryByRole('listbox')).toBeNull();
+    });
+
+    it('arrow keys move, a click picks, Esc closes only the popup', () => {
+      const onClose = vi.fn();
+      const { ta, getAllByRole, queryByRole } = renderEditor(note(''), { tags: known, onClose });
+      type(ta, '#s');
+      fireEvent.keyDown(ta, { key: 'ArrowDown' });
+      expect(getAllByRole('option')[1].getAttribute('aria-selected')).toBe('true');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(queryByRole('listbox')).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      type(ta, 'x #r');
+      fireEvent.mouseDown(getAllByRole('option')[0]);
+      expect(ta.value).toBe('x #run ');
+    });
+
+    it('stays quiet without a # token', () => {
+      const { ta, queryByRole } = renderEditor(note(''), { tags: known });
+      type(ta, 'plain se');
+      expect(queryByRole('listbox')).toBeNull();
+      type(ta, 'a#se');
+      expect(queryByRole('listbox')).toBeNull();
+    });
+  });
 });

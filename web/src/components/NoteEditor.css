@@ -20,3 +20,10 @@
 
 /* Phase 9: "Show in Explorer" sits left of the remove icon (26px button + 4px gap). */
 .ed-reveal { right: 34px; }
+
+/* Tag autocomplete: floats over the foot of the text area. */
+.ed-field { position: relative; flex: 1; min-height: 0; display: flex; }
+.ed-suggest { position: absolute; left: 2px; bottom: 8px; z-index: 1; margin: 0; padding: 4px; list-style: none; min-width: 160px; background: var(--bg); border: 1px solid var(--line-14); font-family: var(--mono); font-size: 13px; color: var(--fg); }
+.ed-suggest li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 10px; cursor: pointer; }
+.ed-suggest li.on, .ed-suggest li:hover { background: var(--hover); }
+.ed-suggest-n { color: var(--dim); }
