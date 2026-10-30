@@ -145,23 +145,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "a5bbb14",
       "depends_on": [
         4,
         7
       ],
       "difficulty": "HARD",
       "n": 8,
-      "note": null,
+      "note": "delete/undo/bin web; files within declared write set; invariant 7 held; unit 752, int 294; no decisions",
       "package": "web/src",
       "plan": ".workflows/plan/wall-editing/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T17:04:40+07:00",
       "satisfies": [
         "R3",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A030",
       "title": "Web delete, undo, recycle bin view"
     },
     {
@@ -181,7 +181,7 @@
         "R4",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web reveal button + capabilities"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:58:10+07:00",
+  "updated": "2026-10-30T17:04:40+07:00",
   "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
