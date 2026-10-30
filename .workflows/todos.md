@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 34
+- Completed: 35
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `README.md` (photos, gallery, modal, editor, bin, reveal, answer panel, chat bar, API/storage/MCP tables), `claude/skills/n/SKILL.md`, `docs/INSTALL.md` (0002 migrate step), `npm run db:migrate` against Neon with before/after verification, `npm run build`; no source changes (defects fixed in the owning phase). Exit: full suite + build green; Neon `note_images` has one row per legacy image (matches `notes where image_path is not null`, minus listed late ingests) with identical metadata; installed daemon untouched.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 10 of 11)
-  - **Satisfies**: R5, R1 — Unit/component + integration tests for all of the above; README photo/gallery/modal text updated; Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image
-  - **Depends on**: P1-NOTES-A031 (satisfied), P1-NOTES-A033 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A032.md`
 
 ### [P2] Medium
 
@@ -41,6 +31,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `README.md` (photos, gallery, modal, editor, bin, reveal, answer panel, chat bar, API/storage/MCP tables), `claude/skills/n/SKILL.md`, `docs/INSTALL.md` (0002 migrate step), `npm run db:migrate` against Neon with before/after verification, `npm run build`; no source changes (defects fixed in the owning phase). Exit: full suite + build green; Neon `note_images` has one row per legacy image (matches `notes where image_path is not null`, minus listed late ingests) with identical metadata; installed daemon untouched.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 10 of 11)
+  - **Satisfies**: R5, R1 — Unit/component + integration tests for all of the above; README photo/gallery/modal text updated; Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image
+  - **Depends on**: P1-NOTES-A031 (satisfied), P1-NOTES-A033 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A032.md`
+  - **Completed**: 2026-10-30 17:14
+  - **Method**: /do
+  - **Files**: README.md, claude/skills/n/SKILL.md, docs/INSTALL.md
+  - **Drift**: README line numbers had shifted a few lines from the plan's; every edit was anchored on its exact quoted old text instead, and each anchor matched exactly once.
+    Step 1f: the 'Open file location' and undo paragraphs were re-wrapped to ~100 columns (the plan's text had two over-long lines); wording unchanged.
+    .env.local symlink already existed (created by phase 1), so Step 6 was a no-op; integration setup refuses Neon URLs, so the suites were unaffected.
 
 - [x] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
   - **Difficulty**: NORMAL

@@ -1,6 +1,6 @@
 ---
 name: n
-description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at pictures they saved ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
+description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
 argument-hint: <request for mcp-notes>
 ---
 
@@ -22,7 +22,11 @@ apps' tools are the source of truth.
 - Ids look like `A-B32`: one character, a dash, three characters, all `0-9A-Z`. Lookup is
   case-insensitive and tolerates a missing dash, so `ab32` finds `A-B32`.
 - Every edit keeps the previous body as a revision; deletes are soft and can be restored.
-- A note may carry an image (a local file on the machine that saved it). Results say so.
+- A note may hold several images (local files on the machine that saved them), in the order
+  they were added. Every note in a result has an `images` list (empty for a text note). Each
+  image has its own image id (the same `A-B32` form as note ids; a note's first image has the
+  note's own id), a `position`, metadata (`mime`, size, `taken_at`, `original_name`, `host`) and
+  `available`.
 
 ## Tools
 
@@ -31,11 +35,12 @@ The spine tools are `create`, `get` (one or several ids), `update` (full body re
 newest first, limit + cursor), `search` (ranked by meaning and by words, with tag and date
 filters; `mode: "text"` for exact words only), `related` (the notes nearest in meaning to one
 note id, with a similarity score), `tags` (every tag with count and last-used date),
-`revisions` and `revert`. If the server also offers image tools (for example `create_image`
-from a local file path, `view_images` to see a note's picture, and `has_image` / taken-date
-filters on `list` and `search`), use them as described under Images. Always follow each tool's
-own schema and description for parameter names and formats; they win over anything written
-here.
+`revisions` and `revert`. The image tools are `create_image` (a new note from a local file
+path), `attach_image` (add a local file to an existing note), `remove_image` and
+`restore_image` (take one image out of its note, softly, and put it back), `view_images` (see
+the images of notes, or single images), and the `has_image` / taken-date filters on `list` and
+`search`. Use them as described under Images. Always follow each tool's own schema and
+description for parameter names and formats; they win over anything written here.
 
 ## Saving
 
@@ -157,20 +162,40 @@ State the date range you used. Keep it to short paragraphs.
 
 ## Images
 
-Only when the server offers image tools.
+If one of these tools is missing, the installed `notesd` is older than this skill. Say so and
+suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working around it.
 
-- "Show me the pictures I saved on 30 oct" → `list` with the image filter and that saved-date
-  range (or the taken-date range when the user means when the photo was taken), then the image
-  viewing tool on those ids so you actually see them. Comment on what you see, per note id.
-- A screenshot or image path at hand ("save this screenshot") → the tool that creates an image
-  note from a local path, with a short body and hashtags.
-- A note whose image file is not on this machine still has its text; say the file lives on the
-  machine that saved it (its metadata names the host) instead of treating it as an error.
+- "Show me the pictures I saved on 30 oct" → `list` with `has_image: true` and that saved-date
+  range (or `taken_from` / `taken_to` when the user means when the photo was taken), then
+  `view_images` on those note ids so you actually see them. Comment on what you see, per note id.
+- "Show me the pictures in note A-B32" → `view_images` with that note id. A note id stands for
+  every image of the note, in order, and each image comes with "image k of n". At most 8 images
+  come back per call. When there are more, the last text line lists the image ids not shown:
+  call `view_images` again with those ids before you say anything about "all" of them.
+- A screenshot or image path at hand ("save this screenshot") → `create_image` with the absolute
+  path, a short body and hashtags. It makes a new note.
+- "Attach this screenshot to note A-B32", "add ~/Pictures/x.png to A-B32" → `attach_image` with
+  the note id and the absolute path (expand `~`), plus `origin`. `attached: false` means the
+  file is already in a note, and the returned note is the one that holds it. That may be a
+  different note, or one that was deleted and is now restored. Say which note, and do not
+  attach the file again.
+- "Remove the second picture from A-B32" → `get` the note, pick the image from its `images`
+  list by position, and call `remove_image` with that image's id (not the note id). Removal is
+  soft: the image goes to the recycle bin on the wall, and `restore_image` with the same image
+  id puts it back at its old place. Reply with the note id and the image id.
+- An image whose file is not on this machine (`available: false`) still has its note and
+  metadata. Say the file lives on the machine that saved it (`host`) instead of treating it as
+  an error.
 
 ## Deleting
 
-Delete only when the user asks, and only the notes they named. Deletes are soft: reply with the
-ids and say `restore` brings them back.
+Delete only when the user asks, and only the notes or images they named. `delete` (a note) and
+`remove_image` (one image) are soft. Both land in the recycle bin on the wall ("Deleted." at
+http://localhost:7317). Reply with the ids and say `restore` / `restore_image` brings them back.
+
+You cannot delete anything for good, and must not try another way (files, SQL, the HTTP API).
+If the user asks to delete permanently, empty the bin or free disk space, tell them that
+"delete forever" is in the wall's recycle bin, behind an inline confirm, and only there.
 
 ## Replies
 
