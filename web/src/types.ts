@@ -45,3 +45,21 @@ export interface TagCount {
 }
 
 export type Mode = 'text' | 'images' | 'all';
+
+/** Phase 4 wire: one tile of the bin's image grid. */
+export interface BinImage {
+  image: NoteImage;
+  note_id: string;
+  /** 'note': an image of a deleted note (actions act on the note). 'image': removed from a live note (actions act on the image). */
+  kind: 'note' | 'image';
+  deleted_at: string;
+}
+
+/** Phase 4 wire: `GET /api/bin`. Both lists newest `deleted_at` first. */
+export interface Bin {
+  notes: Note[];
+  images: BinImage[];
+}
+
+/** What the main area shows: the wall (text / images / all modes) or the recycle bin. */
+export type View = 'wall' | 'bin';

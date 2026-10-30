@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { PhotoItem } from '../types';
+import type { Note, PhotoItem } from '../types';
 import { NoteImage, aspectOf, type ImageInfo } from './NoteImage';
 import { PhotoModal } from './PhotoModal';
 
@@ -21,9 +21,11 @@ export interface GalleryProps {
   items: PhotoItem[];
   copiedId: string | null;
   onCopy: (id: string) => void;
+  /** Passed to the photo modal's trash icon. */
+  onDelete?: (note: Note) => void;
 }
 
-export function Gallery({ items, copiedId, onCopy }: GalleryProps) {
+export function Gallery({ items, copiedId, onCopy, onDelete }: GalleryProps) {
   /** The open image's id; the modal hides itself when that image leaves `items`. */
   const [openId, setOpenId] = useState<string | null>(null);
   const index = openId === null ? -1 : items.findIndex((it) => it.image.id === openId);
@@ -59,7 +61,7 @@ export function Gallery({ items, copiedId, onCopy }: GalleryProps) {
       </section>
       {index >= 0
         ? createPortal(
-            <PhotoModal items={items} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} />,
+            <PhotoModal items={items} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} onDelete={onDelete} />,
             document.body,
           )
         : null}

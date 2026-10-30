@@ -1,4 +1,4 @@
-import type { Mode, Note, PhotoItem } from '../types';
+import type { Bin, Mode, Note, PhotoItem } from '../types';
 import { tagsOf } from './text';
 
 export const MODE_TIP: Record<Mode, string> = {
@@ -83,4 +83,12 @@ export function lastEdited(notes: Note[]): Note | null {
 
 export function isHiddenByMode(note: Note | undefined, mode: Mode): boolean {
   return mode === 'images' || (mode === 'text' && !!note && hasImages(note));
+}
+
+export const BIN_HEADING = 'Deleted.';
+
+/** The bin's count line. The tag filter is already applied by the server (`GET /api/bin?tag=`). */
+export function binCountLine(bin: Bin, active: string[]): string {
+  const base = `${bin.notes.length} deleted notes, ${bin.images.length} images`;
+  return active.length ? `${base}, tagged ${active.map((t) => '#' + t).join(' ')}.` : `${base}.`;
 }

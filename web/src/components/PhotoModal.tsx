@@ -1,6 +1,6 @@
 import { useEffect, type CSSProperties, type MouseEvent } from 'react';
-import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, X } from '@phosphor-icons/react';
-import type { PhotoItem } from '../types';
+import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, Trash, X } from '@phosphor-icons/react';
+import type { Note, PhotoItem } from '../types';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
 import './PhotoModal.css';
@@ -52,9 +52,11 @@ export interface PhotoModalProps {
   onClose: () => void;
   copiedId: string | null;
   onCopy: (id: string) => void;
+  /** Soft-delete the shown photo's note (R3), then close. Absent = no trash icon. */
+  onDelete?: (note: Note) => void;
 }
 
-export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy }: PhotoModalProps) {
+export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, onDelete }: PhotoModalProps) {
   const len = items.length;
   const item = index >= 0 && index < len ? items[index] : undefined;
 
@@ -133,6 +135,21 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy }:
           <button type="button" className="pm-btn" data-tip="Show full screen" aria-label="Show full screen" onClick={full} style={toolBtn}>
             <ArrowsOut weight="duotone" />
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="pm-btn"
+              data-tip="Delete note"
+              aria-label="Delete note"
+              onClick={() => {
+                onDelete(note);
+                onClose();
+              }}
+              style={toolBtn}
+            >
+              <Trash weight="duotone" />
+            </button>
+          )}
           <button type="button" className="pm-btn" data-tip="Close" aria-label="Close" onClick={onClose} style={toolBtn}>
             <X weight="duotone" />
           </button>

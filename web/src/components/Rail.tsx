@@ -1,21 +1,26 @@
-import { Images, NotePencil, SidebarSimple, SquaresFour, TextAa, XCircle } from '@phosphor-icons/react';
+import { Images, NotePencil, SidebarSimple, SquaresFour, TextAa, Trash, XCircle } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
-import type { Mode } from '../types';
+import type { Mode, View } from '../types';
 import { MODE_TIP } from '../lib/filter';
 
 export const MODE_ICON: Record<Mode, Icon> = { text: TextAa, images: Images, all: SquaresFour };
 
+/** Tooltip / label of the Trash toggle, by the view it is pressed from. */
+export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall' };
+
 export interface RailProps {
   mode: Mode;
+  view: View;
   active: string[];
   onToggleSide: () => void;
   onAdd: () => void;
   onCycleMode: () => void;
+  onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
   onClear: () => void;
 }
 
-export function Rail({ mode, active, onToggleSide, onAdd, onCycleMode, onToggleTag, onClear }: RailProps) {
+export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleBin, onToggleTag, onClear }: RailProps) {
   const ModeIcon = MODE_ICON[mode];
   return (
     <nav className="rail">
@@ -34,6 +39,17 @@ export function Rail({ mode, active, onToggleSide, onAdd, onCycleMode, onToggleT
         onClick={onCycleMode}
       >
         <ModeIcon weight="duotone" />
+      </button>
+      <button
+        type="button"
+        className={view === 'bin' ? 'ibtn on' : 'ibtn hov'}
+        data-tip={BIN_TIP[view]}
+        data-tip-side="right"
+        aria-label={BIN_TIP[view]}
+        aria-pressed={view === 'bin'}
+        onClick={onToggleBin}
+      >
+        <Trash weight="duotone" />
       </button>
       <div className="rail-sep" />
       {active.map((t) => (

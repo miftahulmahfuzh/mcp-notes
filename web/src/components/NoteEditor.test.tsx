@@ -139,4 +139,19 @@ describe('NoteEditor', () => {
     expect(label().className).toBe('ed-notice on');
     expect(label().textContent).toBe('already in K-F07');
   });
+
+  it('the trash icon deletes the note with the current draft', () => {
+    const onDelete = vi.fn();
+    const { container, props, ta } = renderEditor(note('first line'), { onDelete });
+    fireEvent.change(ta, { target: { value: 'three paragraphs later' } });
+    const btn = container.ownerDocument.querySelector('[aria-label="Delete note"]') as HTMLButtonElement;
+    expect(btn.getAttribute('data-tip')).toBe('Delete note');
+    fireEvent.click(btn);
+    expect(onDelete).toHaveBeenCalledWith(props.note, 'three paragraphs later');
+  });
+
+  it('has no trash icon without onDelete', () => {
+    const { container } = renderEditor(note('first line'));
+    expect(container.ownerDocument.querySelector('[aria-label="Delete note"]')).toBeNull();
+  });
 });

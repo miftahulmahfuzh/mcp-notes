@@ -1,4 +1,4 @@
-import type { Note, TagCount } from './types';
+import type { Bin, Note, TagCount } from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -96,4 +96,61 @@ export async function attachImage(noteId: string, file: File): Promise<AttachRes
 export async function removeImage(imageId: string): Promise<Note> {
   const res = await check(await fetch(`/api/images/${enc(imageId)}`, { method: 'DELETE' }));
   return (await res.json()) as Note;
+}
+
+/** `GET /api/bin?tag=a&tag=b` → deleted notes + deleted images, tag AND filter on the owning note. */
+export async function fetchBin(tags: string[] = []): Promise<Bin> {
+  const qs = tags.length ? '?' + tags.map((t) => `tag=${enc(t)}`).join('&') : '';
+  const res = await check(await fetch(`/api/bin${qs}`));
+  return (await res.json()) as Bin;
+}
+
+/** `POST /api/notes/:id/restore` → the live note. A note that is already live (409 not_deleted) is returned as it is. */
+export async function restoreNote(id: string): Promise<Note> {
+  const res = await fetch(`/api/notes/${enc(id)}/restore`, { method: 'POST' });
+  if (res.status === 409) {
+    const live = await check(await fetch(`/api/notes/${enc(id)}`));
+    return (await live.json()) as Note;
+  }
+  await check(res);
+  return (await res.json()) as Note;
+}
+
+/** 409 from `POST /api/images/:id/restore`: the same bytes already live in note `noteId`. */
+export class DuplicateImageError extends ApiError {
+  readonly noteId: string;
+  constructor(noteId: string) {
+    super(409, 'duplicate_image');
+    this.name = 'DuplicateImageError';
+    this.noteId = noteId;
+  }
+}
+
+/** `POST /api/images/:imageId/restore` → the owning note (restored too when it was deleted). */
+export async function restoreImage(imageId: string): Promise<Note> {
+  const res = await fetch(`/api/images/${enc(imageId)}/restore`, { method: 'POST' });
+  if (res.status === 409) {
+    const j = (await res.json().catch(() => null)) as { error?: string; note_id?: string } | null;
+    if (j?.error === 'duplicate_image' && typeof j.note_id === 'string') throw new DuplicateImageError(j.note_id);
+    throw new ApiError(409, j?.error ?? 'conflict');
+  }
+  await check(res);
+  return (await res.json()) as Note;
+}
+
+export type PurgeResult = { purged: string; files: number };
+
+// Purge is guarded by sameOriginOnly on the server. These requests go out from the page itself, so
+// the browser adds the page's Origin header to the DELETE. Never call them from anywhere else.
+
+/** `DELETE /api/bin/notes/:id`: delete a deleted note forever (rows, originals, derived files). */
+export async function purgeNote(id: string): Promise<PurgeResult> {
+  const res = await check(await fetch(`/api/bin/notes/${enc(id)}`, { method: 'DELETE' }));
+  return (await res.json()) as PurgeResult;
+}
+
+/** `DELETE /api/bin/images/:imageId`: delete a removed image forever (row, original, derived files). */
+export async function purgeImage(imageId: string): Promise<PurgeResult> {
+  const res = await check(await fetch(`/api/bin/images/${enc(imageId)}`, { method: 'DELETE' }));
+  return (await res.json()) as PurgeResult;
 }

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 32
+- Blocked: 1
+- Completed: 33
 
 ---
 
@@ -22,24 +22,14 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `web/src/components/{Bin,UndoBar}.{tsx,css}` (new), `web/src/hooks/{useUndo,useBin}.ts` (new), `{NoteCard,NoteEditor,PhotoModal,Gallery,Rail,Sidebar,Header,Wall}.tsx`, `App.tsx` (`view`, `removeNote`, `removeImageWithUndo`, `onRestored`, `toggleBin`), `api.ts` bin/restore/purge calls, `types.ts` (`Bin`, `BinImage`, `View`), `filter.ts` (`BIN_HEADING`, `binCountLine`), tests. Exit: R3 acceptance steps pass in component tests; undo label sits above the chat bar right end without overlapping the answer panel.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 8 of 11)
-  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A026 (satisfied), P1-NOTES-A029 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A030.md`
-
 - [ ] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `web/src/hooks/useCapabilities.ts`, `web/src/components/RevealButton.tsx` (+ tests, new), `api.ts` (`Capabilities`, `fetchCapabilities`, `revealImage`), mount points in `NoteCard`, `PhotoModal`, `NoteEditor` (`.ed-reveal` rule in `NoteEditor.css`), `RevealMounts.test.tsx`; not server/`App.tsx`/`Gallery.tsx`/`styles.css`. Exit: visibility rules tested (caps false -> none; unavailable image -> none; both true -> icon, click POSTs); icon in card meta, modal toolbar and editor strip.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 9 of 11)
   - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030
+  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A031.md`
 
 - [ ] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
@@ -61,6 +51,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/{Bin,UndoBar}.{tsx,css}` (new), `web/src/hooks/{useUndo,useBin}.ts` (new), `{NoteCard,NoteEditor,PhotoModal,Gallery,Rail,Sidebar,Header,Wall}.tsx`, `App.tsx` (`view`, `removeNote`, `removeImageWithUndo`, `onRestored`, `toggleBin`), `api.ts` bin/restore/purge calls, `types.ts` (`Bin`, `BinImage`, `View`), `filter.ts` (`BIN_HEADING`, `binCountLine`), tests. Exit: R3 acceptance steps pass in component tests; undo label sits above the chat bar right end without overlapping the answer panel.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 8 of 11)
+  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A026 (satisfied), P1-NOTES-A029 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A030.md`
+  - **Completed**: 2026-10-30 18:10
+  - **Method**: /do
+  - **Files**: web/src/App.tsx, web/src/api.ts, web/src/types.ts, web/src/lib/filter.ts, web/src/components/Gallery.tsx, web/src/components/Header.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteEditor.test.tsx, web/src/components/PhotoModal.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/components/Wall.tsx, web/src/App.bin.test.tsx, web/src/components/Bin.tsx, web/src/components/Bin.css, web/src/components/Bin.test.tsx, web/src/components/PhotoModal.delete.test.tsx, web/src/components/UndoBar.tsx, web/src/components/UndoBar.css, web/src/components/UndoBar.test.tsx, web/src/hooks/useBin.ts, web/src/hooks/useUndo.ts, web/src/lib/binFilter.test.tsx
+  - **Drift**: None against the plan; tree matched the post-phase-7 state and code blocks were applied verbatim. NoteEditor's onRemoveImage doc comment now reads 'App offers a 6 s undo' (was 'phase 8 adds undo'). Phase 7's removeImg was deleted and replaced by removeImageWithUndo.
+  - **Delivered**: Trash icon ('Delete note') on wall cards, editor toolbar and photo modal; soft delete, no confirm, 6 s UndoBar above the chat bar's right end (also covers editor-strip image remove). Rail + sidebar Trash toggle the "Deleted." bin (Bin + useBin): image grid on top, deleted-note cards below, restore, inline-confirmed delete forever (Check/X). Tag filters apply in the bin; sidebar counts stay live-only. API: fetchBin, restoreNote, restoreImage, purgeNote, purgeImage, DuplicateImageError.
+  - **Verified**: typecheck, build:web, npm test (67 files, 752 tests), test:int (24 files, 294 tests)
 
 - [x] **P1-NOTES-A026** Phase 4: Bin listing, note restore endpoint, purge (rows + files)
   - **Difficulty**: NORMAL

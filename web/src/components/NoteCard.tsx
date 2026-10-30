@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { ArrowsOutSimple, Check, Copy } from '@phosphor-icons/react';
+import { ArrowsOutSimple, Check, Copy, Trash } from '@phosphor-icons/react';
 import type { Note } from '../types';
 import { fontSizeFor, letterSpacingFor, rowsFor, segmentBody } from '../lib/text';
 import { relativeDate } from '../lib/dates';
@@ -17,6 +17,8 @@ export interface NoteCardProps {
   onCopy: (id: string) => void;
   onEdit: (id: string) => void;
   onCommit: (note: Note, draft: string) => void;
+  /** Soft delete, no confirmation (R3). Absent = no trash icon. */
+  onDelete?: (note: Note) => void;
   onToggleTag: (tag: string) => void;
   /** Open the big editor. `draft` = the unsaved inline text when the card is being edited, else null. */
   onExpand: (note: Note, draft: string | null) => void;
@@ -58,7 +60,7 @@ function CardEditor({
   );
 }
 
-function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onToggleTag, onExpand }: NoteCardProps) {
+function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand }: NoteCardProps) {
   const count = note.images.length;
   const cover = count > 0 ? note.images[0] : undefined;
   const hasImg = cover !== undefined;
@@ -132,6 +134,22 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
           >
             <ArrowsOutSimple weight="duotone" />
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="copybtn"
+              data-tip="Delete note"
+              aria-label="Delete note"
+              // Keep focus where it is: an open inline editor must not blur-commit (or empty-delete) the note being deleted.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(note);
+              }}
+            >
+              <Trash weight="duotone" />
+            </button>
+          )}
         </div>
       </div>
     </article>

@@ -7,16 +7,18 @@ export interface HeaderProps {
   last: Note | null;
   lastWhen: string;
   showSticker: boolean;
+  /** The recycle bin is showing: no "Last edited" link, and the hint explains the bin. */
+  bin?: boolean;
   onJumpLast: () => void;
   onAdd: () => void;
 }
 
-export function Header({ heading, countLine, last, lastWhen, showSticker, onJumpLast, onAdd }: HeaderProps) {
+export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, onJumpLast, onAdd }: HeaderProps) {
   return (
     <header className="hdr">
       <p className="hdr-p">
         {countLine}
-        {last && (
+        {!bin && last && (
           <>
             {' '}Last edited{' '}
             <a
@@ -31,7 +33,7 @@ export function Header({ heading, countLine, last, lastWhen, showSticker, onJump
             {lastWhen}.
           </>
         )}{' '}
-        Drop or paste an image anywhere to make a photo note.
+        {bin ? 'Restore brings a note or an image back. Delete forever removes it and its files.' : 'Drop or paste an image anywhere to make a photo note.'}
       </p>
       <h1>{heading}</h1>
       {showSticker && (

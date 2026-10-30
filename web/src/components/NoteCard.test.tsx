@@ -126,4 +126,21 @@ describe('NoteCard', () => {
     expect(props.onExpand).toHaveBeenCalledWith(n, 'typed inline');
     expect(props.onCommit).not.toHaveBeenCalled();
   });
+
+  it('the trash icon deletes the note without entering edit', () => {
+    const onDelete = vi.fn();
+    const n = note('hello');
+    const { container, props } = renderCard(n, { onDelete });
+    const btn = container.querySelector('[aria-label="Delete note"]') as HTMLButtonElement;
+    expect(btn.getAttribute('data-tip')).toBe('Delete note');
+    expect(btn.textContent).toBe('');
+    fireEvent.click(btn);
+    expect(onDelete).toHaveBeenCalledWith(n);
+    expect(props.onEdit).not.toHaveBeenCalled();
+  });
+
+  it('has no trash icon without onDelete', () => {
+    const { container } = renderCard(note('hello'));
+    expect(container.querySelector('[aria-label="Delete note"]')).toBeNull();
+  });
 });
