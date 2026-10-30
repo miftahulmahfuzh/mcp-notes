@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 10:03:08
-**Total Active Tasks**: 7
+**Last Updated**: 2026-10-30 10:09:37
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 6
-- Completed: 1
+- Blocked: 3
+- Completed: 2
 
 ---
 
@@ -21,21 +21,11 @@
 ### [P0] Critical
 
 ### [P1] High
-- [ ] **P1-NOTES-A001** Phase 2: Notes service, MCP server and tools, notesd daemon
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `src/notes/{types,dates,repo,service,events}.ts`, `src/mcp/{server,tools,instructions,imageTools}.ts`, `src/http/{app,api,images,static}.ts` (last three empty factories), `src/{deps,background,daemon,main}.ts`; the eleven MCP tools, revisions in-transaction, list/search with tag/date filters and cursor, repo-level `hasImage` option, tags; integration + unit tests. Exit: `node dist/main.js` with `NOTESD_PORT=7399` serves `/health` and a working `/mcp`; all gates green.
-  - **Status**: open
-  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 2 of 8)
-  - **Satisfies**: R1, R3 (`hasImage` only) — Spine (notesd, MCP note tools, schema, tests); Web UI's repo-level `hasImage` option
-  - **Depends on**: P1-NOTES-A000
-  - **Plan**: `.workflows/plan/P1-NOTES-A001.md`
-
 - [ ] **P1-NOTES-A002** Phase 3: `/n` skill, systemd unit, install + Windows scripts, live verification
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `claude/skills/n/SKILL.md`, `deploy/notesd.service`, `scripts/{install,uninstall}.sh`, `scripts/windows/install-wsl-keepalive.ps1`, `docs/INSTALL.md`; runs install.sh and verifies unit active, `/health`, `claude mcp list` shows `notes` connected. Exit: the verification output is recorded in the phase's completion notes.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 3 of 8)
   - **Satisfies**: R1 — Spine: /n skill, systemd + install script + Windows Task Scheduler script, `claude mcp add --scope user`
   - **Depends on**: P1-NOTES-A001
@@ -45,7 +35,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `src/images/{probe,store,derive,records,ingest,inbox}.ts`, fills `src/background.ts`; sha256 dedupe (soft-deleted duplicate restored), byte-exact write, metadata, lazy thumb/preview/display derivatives (HEIC via heic-convert), inbox watcher; fixture images and test helpers. Exit: ingesting the same bytes twice returns one note; HEIC gets a display derivative; dropping a file in a temp inbox creates a note; gates green.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 4 of 8)
   - **Satisfies**: R2 — Images: byte-exact local store + sha256 dedupe + metadata, derivatives, ingestion (upload, inbox, MCP), viewing + filters, HTTP serving, "not on this machine" fallback
   - **Depends on**: P1-NOTES-A001
@@ -65,7 +55,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `src/http/api.ts`, `src/http/static.ts`, `src/chat/{backend,stub}.ts` (streamed "iteration 4" stub behind a `ChatBackend` interface); tests. Exit: every endpoint in the P6 contract has an integration test; gates green.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 6 of 8)
   - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
   - **Depends on**: P1-NOTES-A001
@@ -118,6 +108,23 @@
     - npm 12 printed install-scripts warnings for esbuild postinstall (expected per plan; harmless).
   - **Decided**:
     - Package for all 8 tasks → repo root `.` with code NOTES (one root package.json per index Seams) (rung 4: index Seams)
+
+- [x] **P1-NOTES-A001** Phase 2: Notes service, MCP server and tools, notesd daemon
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/notes/{types,dates,repo,service,events}.ts`, `src/mcp/{server,tools,instructions,imageTools}.ts`, `src/http/{app,api,images,static}.ts` (last three empty factories), `src/{deps,background,daemon,main}.ts`; the eleven MCP tools, revisions in-transaction, list/search with tag/date filters and cursor, repo-level `hasImage` option, tags; integration + unit tests. Exit: `node dist/main.js` with `NOTESD_PORT=7399` serves `/health` and a working `/mcp`; all gates green.
+  - **Status**: completed
+  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 2 of 8)
+  - **Satisfies**: R1, R3 (`hasImage` only) — Spine (notesd, MCP note tools, schema, tests); Web UI's repo-level `hasImage` option
+  - **Depends on**: P1-NOTES-A000
+  - **Plan**: `.workflows/plan/P1-NOTES-A001.md`
+  - **Completed**: 2026-10-30 10:09
+  - **Method**: /do
+  - **Files**: src/notes/types.ts, src/notes/dates.ts, src/notes/events.ts, src/notes/repo.ts, src/notes/service.ts, src/mcp/instructions.ts, src/mcp/tools.ts, src/mcp/imageTools.ts, src/mcp/server.ts, src/deps.ts, src/http/app.ts, src/http/api.ts, src/http/images.ts, src/http/static.ts, src/background.ts, src/daemon.ts, src/main.ts, tests/unit/notes.helpers.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/notes.service.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/daemon.int.test.ts
+  - **Drift**:
+    - Phase 1 types Config.host as the literal '127.0.0.1', so daemon.int.test.ts's non-loopback refusal test casts its input (as unknown as Config); the assertion is unchanged.
+  - **Decided**:
+    - daemon test's 0.0.0.0 host vs literal Config.host type → cast test input only, keep assertion (rung 1: invariant 2 typecheck green + invariant 3 refusal still tested)
 
 ---
 
