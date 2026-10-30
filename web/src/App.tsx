@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
-import { createNote, deleteNote, updateNote } from './api';
-import type { Mode, Note } from './types';
+import { createNote, deleteNote, removeImage, updateNote, type AttachResult } from './api';
+import type { Mode, Note, NoteImage as NoteImageData } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
 import { useNow } from './hooks/useNow';
 import { useCopied } from './hooks/useCopied';
+import { useNotice } from './hooks/useNotice';
 import { countLineFor, headingFor, imageCount, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
@@ -20,6 +22,7 @@ import { ChatBar } from './components/ChatBar';
 import { Tooltip } from './components/Tooltip';
 import { Gallery } from './components/Gallery';
 import { DropOverlay } from './components/DropOverlay';
+import { NoteEditor } from './components/NoteEditor';
 
 const ICONS = { weight: 'duotone' as const, size: '1em', color: 'currentColor', mirrored: false };
 
@@ -38,9 +41,17 @@ export function App() {
   const [mode, setMode] = useState<Mode>('text');
   const [active, setActive] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [q, setQ] = useState('');
+  const { notice, show: showNotice } = useNotice();
 
-  const visible = useMemo(() => visibleOnWall(notes, mode, active, editing), [notes, mode, active, editing]);
+  // Synchronous mirrors for event handlers that run before React re-renders.
+  const expandedRef = useRef<string | null>(null);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+
+  const visible = useMemo(() => visibleOnWall(notes, mode, active, [editing, expanded]), [notes, mode, active, editing, expanded]);
+  const expandedNote = useMemo(() => (expanded ? (notes.find((n) => n.id === expanded) ?? null) : null), [notes, expanded]);
   const photos = useMemo(() => photosOf(notes, active), [notes, active]);
   const photoCount = useMemo(() => imageCount(notes), [notes]);
   const last = useMemo(() => lastEdited(notes), [notes]);
@@ -82,9 +93,26 @@ export function App() {
     }
   }, [upsertLocal, refetch]);
 
+  const save = useCallback(
+    async (note: Note, draft: string) => {
+      if (draft === note.body) return;
+      upsertLocal({ ...note, body: draft, tags: tagsOf(draft), updated_at: new Date().toISOString() });
+      try {
+        upsertLocal(await updateNote(note.id, draft));
+      } catch (e) {
+        console.error('update note failed', e);
+      } finally {
+        refetch();
+      }
+    },
+    [upsertLocal, refetch],
+  );
+
   const commit = useCallback(
     async (note: Note, draft: string) => {
       setEditing((cur) => (cur === note.id ? null : cur));
+      // The big editor owns this note now (expand unmounts the inline editor); it applies the rules on close.
+      if (expandedRef.current === note.id) return;
       if (!draft.trim() && note.images.length === 0) {
         removeLocal(note.id);
         try {
@@ -96,17 +124,9 @@ export function App() {
         }
         return;
       }
-      if (draft === note.body) return;
-      upsertLocal({ ...note, body: draft, tags: tagsOf(draft), updated_at: new Date().toISOString() });
-      try {
-        upsertLocal(await updateNote(note.id, draft));
-      } catch (e) {
-        console.error('update note failed', e);
-      } finally {
-        refetch();
-      }
+      await save(note, draft);
     },
-    [removeLocal, upsertLocal, refetch],
+    [removeLocal, refetch, save],
   );
 
   const onImageAdded = useCallback(
@@ -116,6 +136,66 @@ export function App() {
       refetch();
     },
     [upsertLocal, refetch],
+  );
+
+  /** Expand icon on a card. `draft` = unsaved inline text (card was being edited), saved first, never deleted. */
+  const expand = useCallback(
+    (note: Note, draft: string | null) => {
+      expandedRef.current = note.id;
+      setExpanded(note.id);
+      setEditing((cur) => (cur === note.id ? null : cur));
+      if (draft !== null) void save(note, draft);
+    },
+    [save],
+  );
+
+  /** Big editor closed (X, backdrop, Esc). The empty rule applies only here; Notes. -> Everything. when it now has images. */
+  const closeEditor = useCallback(
+    async (note: Note, draft: string, dirty: boolean) => {
+      expandedRef.current = null;
+      setExpanded(null);
+      const latest = notesRef.current.find((n) => n.id === note.id) ?? note;
+      if (!draft.trim() && latest.images.length === 0) {
+        removeLocal(note.id);
+        try {
+          await deleteNote(note.id);
+        } catch (e) {
+          console.error('delete note failed', e);
+        } finally {
+          refetch();
+        }
+        return;
+      }
+      if (latest.images.length > 0) setMode((m) => (m === 'text' ? 'all' : m));
+      if (dirty) await save(latest, draft);
+    },
+    [removeLocal, refetch, save],
+  );
+
+  /** Strip remove icon: soft remove (phase 8 adds undo). Optimistic, then the server's owner note. */
+  const removeImg = useCallback(
+    async (image: NoteImageData) => {
+      const owner = notesRef.current.find((n) => n.id === image.note_id);
+      if (owner) upsertLocal({ ...owner, images: owner.images.filter((i) => i.id !== image.id) });
+      try {
+        upsertLocal(await removeImage(image.id));
+      } catch (e) {
+        console.error('remove image failed', e);
+      } finally {
+        refetch();
+      }
+    },
+    [upsertLocal, refetch],
+  );
+
+  /** A drop/paste while the editor is open. A dedupe hit says so quietly; the holder (maybe restored) joins the store. */
+  const onAttached = useCallback(
+    (result: AttachResult) => {
+      upsertLocal(result.note, true);
+      if (!result.attached) showNotice(`already in ${result.note.id}`);
+      refetch();
+    },
+    [upsertLocal, refetch, showNotice],
   );
 
   const send = (e: FormEvent<HTMLFormElement>) => {
@@ -175,6 +255,7 @@ export function App() {
               onEdit={setEditing}
               onCommit={commit}
               onToggleTag={toggleTag}
+              onExpand={expand}
             />
           )}
         </main>
@@ -196,7 +277,21 @@ export function App() {
           />
         )}
         <ChatBar left={chatLeft} value={q} onChange={setQ} onSubmit={send} />
-        <DropOverlay onImageAdded={onImageAdded} />
+        <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} />
+        {expandedNote &&
+          createPortal(
+            <NoteEditor
+              key={expandedNote.id}
+              note={expandedNote}
+              copied={copied === expandedNote.id}
+              notice={notice}
+              onCopy={copy}
+              onSave={save}
+              onClose={closeEditor}
+              onRemoveImage={removeImg}
+            />,
+            document.body,
+          )}
         <Tooltip />
       </div>
     </IconContext.Provider>

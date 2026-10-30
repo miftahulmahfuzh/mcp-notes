@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Note } from './types';
 import { App } from './App';
-import { makeNote } from './testing/fixtures';
+import { makeImage, makeNote } from './testing/fixtures';
 
 const iso = new Date().toISOString();
 const notes: Note[] = [
@@ -145,5 +145,239 @@ describe('App', () => {
     ctl.close();
     await waitFor(() => expect(document.querySelector('.answer-head .answer-status')?.textContent).toBe('glm'));
     expect(document.querySelector('.answer-body p')?.textContent).toBe('Look at A-B32.');
+  });
+});
+
+describe('App big editor (R2)', () => {
+  type Call = { method: string; url: string; body?: unknown };
+  let calls: Call[];
+  let server: Note[];
+  let attachReply: (noteId: string) => { status: number; body: { note: Note; attached: boolean } };
+
+  const reply = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+  const png = new File(['png'], 'shot.png', { type: 'image/png' });
+  const img = (id: string, noteId: string, position = 0) =>
+    makeImage(id, { note_id: noteId, position, mime: 'image/png', bytes: 10, original_name: 'shot.png' });
+  const pasteImage = () => {
+    const e = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'clipboardData', { value: { files: [png] } });
+    document.dispatchEvent(e);
+  };
+  const card = (id: string) => document.querySelector(`[data-note="${id}"]`) as HTMLElement;
+  const editor = () => document.querySelector('[data-modal="editor"]') as HTMLElement | null;
+  const edText = () => within(editor()!).getByLabelText('Note text') as HTMLTextAreaElement;
+  const expandCard = (id: string) => {
+    const btn = within(card(id)).getByLabelText('Expand note');
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+  };
+  const of = (method: string, url: string) => calls.filter((c) => c.method === method && c.url === url);
+
+  beforeEach(() => {
+    calls = [];
+    server = [
+      makeNote('A-B32', '#seer onboarding is long', { created: iso }),
+      makeNote('C-D45', 'buy fennel #kitchen', { created: iso }),
+    ];
+    attachReply = (noteId) => {
+      const n = server.find((x) => x.id === noteId)!;
+      return { status: 201, body: { note: { ...n, images: [...n.images, img('P-IC1', noteId, n.images.length)] }, attached: true } };
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        calls.push({ method, url, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
+        if (method === 'GET' && url.startsWith('/api/notes')) return reply({ notes: server, next_cursor: null });
+        if (method === 'GET' && url.startsWith('/api/tags')) return reply([]);
+        if (method === 'POST' && url === '/api/notes') {
+          const n: Note = { id: 'N-EW1', body: '', tags: [], created_at: iso, updated_at: iso, origin: null, images: [] };
+          server = [n, ...server];
+          return reply(n, 201);
+        }
+        const one = url.match(/^\/api\/notes\/([^/]+)$/);
+        if (one && method === 'PATCH') {
+          const body = (JSON.parse(String(init?.body)) as { body: string }).body;
+          server = server.map((n) => (n.id === one[1] ? { ...n, body } : n));
+          return reply(server.find((n) => n.id === one[1]));
+        }
+        if (one && method === 'DELETE') {
+          server = server.filter((n) => n.id !== one[1]);
+          return reply({ ok: true });
+        }
+        const att = url.match(/^\/api\/notes\/([^/]+)\/images$/);
+        if (att && method === 'POST') {
+          const r = attachReply(att[1]!);
+          if (r.body.attached) server = server.map((n) => (n.id === r.body.note.id ? r.body.note : n));
+          return reply(r.body, r.status);
+        }
+        const rm = url.match(/^\/api\/images\/([^/]+)$/);
+        if (rm && method === 'DELETE') {
+          const owner = server.find((n) => n.images.some((i) => i.id === rm[1]))!;
+          const next = { ...owner, images: owner.images.filter((i) => i.id !== rm[1]) };
+          server = server.map((n) => (n.id === owner.id ? next : n));
+          return reply(next);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  it('the expand icon opens the editor on that note; Esc closes and saves only if changed', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    expect(editor()).not.toBeNull();
+    expect(edText().value).toBe('#seer onboarding is long');
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    expect(editor()).toBeNull();
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+
+    expandCard('A-B32');
+    fireEvent.change(edText(), { target: { value: 'para one\n\npara two #seer' } });
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    expect(editor()).toBeNull();
+    await waitFor(() => expect(of('PATCH', '/api/notes/A-B32')).toHaveLength(1));
+    expect(of('PATCH', '/api/notes/A-B32')[0]!.body).toEqual({ body: 'para one\n\npara two #seer' });
+    expect(card('A-B32').querySelector('.card-text')?.textContent).toContain('para two');
+  });
+
+  it('saves on blur while open and the card reflects it at once', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    fireEvent.change(edText(), { target: { value: 'rewritten #seer' } });
+    fireEvent.blur(edText());
+    expect(card('A-B32').querySelector('.card-text')?.textContent).toContain('rewritten');
+    expect(editor()).not.toBeNull();
+    await waitFor(() => expect(of('PATCH', '/api/notes/A-B32')).toHaveLength(1));
+    fireEvent.click(within(editor()!).getByLabelText('Close'));
+    await waitFor(() => expect(editor()).toBeNull());
+    expect(of('PATCH', '/api/notes/A-B32')).toHaveLength(1);
+  });
+
+  it('"+" then expand: the empty new note survives while open and is soft-deleted on close', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    fireEvent.click(screen.getAllByLabelText('New note')[0]!);
+    await waitFor(() => expect(card('N-EW1')?.querySelector('textarea')).not.toBeNull());
+    expandCard('N-EW1');
+    expect(editor()).not.toBeNull();
+    expect(of('DELETE', '/api/notes/N-EW1')).toHaveLength(0);
+    fireEvent.blur(edText());
+    expect(of('DELETE', '/api/notes/N-EW1')).toHaveLength(0);
+    expect(card('N-EW1')).not.toBeNull();
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    await waitFor(() => expect(of('DELETE', '/api/notes/N-EW1')).toHaveLength(1));
+    expect(card('N-EW1')).toBeNull();
+  });
+
+  it('an emptied note is not deleted while open; on close the empty rule deletes it', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('C-D45');
+    fireEvent.change(edText(), { target: { value: '' } });
+    fireEvent.blur(edText());
+    await waitFor(() => expect(of('PATCH', '/api/notes/C-D45')).toHaveLength(1));
+    expect(of('DELETE', '/api/notes/C-D45')).toHaveLength(0);
+    expect(card('C-D45')).not.toBeNull();
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    await waitFor(() => expect(of('DELETE', '/api/notes/C-D45')).toHaveLength(1));
+    expect(card('C-D45')).toBeNull();
+  });
+
+  it('pasting an image while open attaches it to the edited note; Notes. switches to Everything. on close', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Notes.');
+    expandCard('A-B32');
+    pasteImage();
+    await waitFor(() => expect(editor()!.querySelector('.ed-thumb[data-image="P-IC1"]')).not.toBeNull());
+    expect(of('POST', '/api/notes/A-B32/images')).toHaveLength(1);
+    expect(calls.some((c) => c.url === '/api/images')).toBe(false);
+    // Still on the wall behind the editor, though it now has an image in text mode.
+    expect(card('A-B32')).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Notes.');
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Everything.');
+    expect(card('A-B32')).not.toBeNull();
+  });
+
+  it('an emptied note that gained an image is kept on close', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('C-D45');
+    fireEvent.change(edText(), { target: { value: '' } });
+    pasteImage();
+    await waitFor(() => expect(editor()!.querySelector('.ed-thumb')).not.toBeNull());
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    await waitFor(() => expect(of('PATCH', '/api/notes/C-D45')).toHaveLength(1));
+    expect(of('DELETE', '/api/notes/C-D45')).toHaveLength(0);
+  });
+
+  it('the drop overlay shows the attach state while the editor is open', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    const over = () => {
+      const e = new Event('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(e, 'dataTransfer', { value: { types: ['Files'], files: [] } });
+      document.dispatchEvent(e);
+    };
+    over();
+    await waitFor(() => expect(document.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('new'));
+    document.dispatchEvent(new Event('dragleave', { bubbles: true }));
+    expandCard('A-B32');
+    over();
+    await waitFor(() => expect(document.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('attach'));
+  });
+
+  it('a dedupe hit says so quietly in the editor and attaches nothing', async () => {
+    attachReply = () => ({
+      status: 200,
+      body: { note: { id: 'K-F07', body: 'River', tags: [], created_at: iso, updated_at: iso, origin: null, images: [img('K-F07', 'K-F07')] }, attached: false },
+    });
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    pasteImage();
+    await waitFor(() => expect(editor()!.querySelector('[data-notice]')?.textContent).toBe('already in K-F07'));
+    expect(editor()!.querySelector('[data-notice]')?.className).toContain('on');
+    expect(editor()!.querySelector('.ed-thumb')).toBeNull();
+  });
+
+  it('the strip remove icon soft-removes one image', async () => {
+    server = server.map((n) => (n.id === 'A-B32' ? { ...n, images: [img('A-B32', 'A-B32', 0), img('Q-RS1', 'A-B32', 1)] } : n));
+    render(<App />);
+    await screen.findByText('buy fennel');
+    fireEvent.click(screen.getByLabelText('Text notes only (click to switch)'));
+    fireEvent.click(screen.getByLabelText('Image notes only (click to switch)'));
+    expandCard('A-B32');
+    expect(editor()!.querySelectorAll('.ed-thumb')).toHaveLength(2);
+    fireEvent.click(within(editor()!.querySelector('[data-image="Q-RS1"]') as HTMLElement).getByLabelText('Remove image'));
+    expect(editor()!.querySelectorAll('.ed-thumb')).toHaveLength(1);
+    await waitFor(() => expect(of('DELETE', '/api/images/Q-RS1')).toHaveLength(1));
+    expect(editor()!.querySelector('[data-image="A-B32"]')).not.toBeNull();
+  });
+
+  it('Esc in the editor leaves an open chat answer alone', async () => {
+    const base = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).startsWith('/api/chat')
+          ? new Response('event: delta\ndata: {"text":"Look at A-B32."}\n\nevent: done\ndata: {"thread_id":"t1"}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+          : base(input, init),
+      ),
+    );
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    fireEvent.change(screen.getByLabelText('Ask about your notes'), { target: { value: 'seer?' } });
+    fireEvent.submit(document.querySelector('form.chatbar') as HTMLFormElement);
+    await waitFor(() => expect(document.querySelector('.answer')).not.toBeNull());
+    expandCard('C-D45');
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    expect(editor()).toBeNull();
+    expect(document.querySelector('.answer')).not.toBeNull();
   });
 });

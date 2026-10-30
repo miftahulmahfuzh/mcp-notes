@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ImageSquare } from '@phosphor-icons/react';
+import { ImageSquare, Paperclip } from '@phosphor-icons/react';
 import type { Note } from '../types';
+import { attachImage, type AttachResult } from '../api';
 
 /** Phase 5: `POST /api/images` → 201 `{ note, created: true }` or 200 `{ note, created: false }`. */
 export type UploadResult = { note: Note; created: boolean };
@@ -52,31 +53,44 @@ export function flashNote(id: string, delayMs = 450): void {
   }, delayMs);
 }
 
-/** Phase 7's stub props, unchanged. */
 export interface DropOverlayProps {
   /** Call once per note returned by POST /api/images. App inserts it and switches text -> all. */
   onImageAdded: (note: Note) => void;
+  /** The note open in the big editor, or null. When set, files attach to it instead of making new notes. */
+  target?: string | null;
+  /** Called once per attach (target set) with the server's result and the note id it was sent to. */
+  onAttached?: (result: AttachResult, target: string) => void;
 }
 
-export function DropOverlay({ onImageAdded }: DropOverlayProps) {
+export function DropOverlay({ onImageAdded, target = null, onAttached }: DropOverlayProps) {
   const [dragging, setDragging] = useState(false);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const addedRef = useRef(onImageAdded);
+  const attachedRef = useRef(onAttached);
+  const targetRef = useRef<string | null>(target);
 
   useEffect(() => {
     addedRef.current = onImageAdded;
-  }, [onImageAdded]);
+    attachedRef.current = onAttached;
+    targetRef.current = target;
+  }, [onImageAdded, onAttached, target]);
 
   useEffect(() => {
     const enqueue = (files: File[]) => {
+      const to = targetRef.current;
       for (const file of files) {
         queue.current = queue.current.then(async () => {
           try {
-            const result = await uploadImage(file);
-            addedRef.current(result.note);
-            if (!result.created) flashNote(result.note.id);
+            if (to) {
+              const result = await attachImage(to, file);
+              attachedRef.current?.(result, to);
+            } else {
+              const result = await uploadImage(file);
+              addedRef.current(result.note);
+              if (!result.created) flashNote(result.note.id);
+            }
           } catch (err) {
-            console.error('[upload]', file.name, err);
+            console.error(to ? '[attach]' : '[upload]', file.name, err);
           }
         });
       }
@@ -118,7 +132,7 @@ export function DropOverlay({ onImageAdded }: DropOverlayProps) {
   if (!dragging) return null;
   return (
     <div
-      data-drop-overlay=""
+      data-drop-overlay={target ? 'attach' : 'new'}
       style={{
         position: 'fixed',
         inset: 10,
@@ -132,7 +146,7 @@ export function DropOverlay({ onImageAdded }: DropOverlayProps) {
         background: 'rgba(18,18,17,.6)',
       }}
     >
-      <ImageSquare weight="duotone" />
+      {target ? <Paperclip weight="duotone" /> : <ImageSquare weight="duotone" />}
     </div>
   );
 }

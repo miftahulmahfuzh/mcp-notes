@@ -31,9 +31,17 @@ export function matchesTags(note: Note, active: string[]): boolean {
   return active.every((a) => t.includes(a));
 }
 
-/** Notes shown on the wall. `keepId` (the note being edited) is always kept. */
-export function visibleOnWall(notes: Note[], mode: Mode, active: string[], keepId: string | null = null): Note[] {
-  return notes.filter((n) => n.id === keepId || ((mode !== 'text' || !hasImages(n)) && matchesTags(n, active)));
+/** Notes shown on the wall. `keep` (the note being edited inline and/or the one open in the big editor) is always kept. */
+export function visibleOnWall(
+  notes: Note[],
+  mode: Mode,
+  active: string[],
+  keep: string | null | ReadonlyArray<string | null> = null,
+): Note[] {
+  const list: ReadonlyArray<string | null> = typeof keep === 'string' || keep === null ? [keep] : keep;
+  const kept = new Set<string>();
+  for (const k of list) if (k !== null) kept.add(k);
+  return notes.filter((n) => kept.has(n.id) || ((mode !== 'text' || !hasImages(n)) && matchesTags(n, active)));
 }
 
 /** One item per image of every tag-matching note: note by note in wall order, images in position order. */

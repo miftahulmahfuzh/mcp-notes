@@ -12,9 +12,11 @@ export interface WallProps {
   onEdit: (id: string) => void;
   onCommit: (note: Note, draft: string) => void;
   onToggleTag: (tag: string) => void;
+  /** Open the big editor on a note (phase 7). */
+  onExpand: (note: Note, draft: string | null) => void;
 }
 
-export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onToggleTag }: WallProps) {
+export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onToggleTag, onExpand }: WallProps) {
   return (
     <section className="wall">
       {notes.map((n) => (
@@ -30,6 +32,7 @@ export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit,
           onEdit={onEdit}
           onCommit={onCommit}
           onToggleTag={onToggleTag}
+          onExpand={onExpand}
         />
       ))}
     </section>

@@ -25,6 +25,7 @@ function renderCard(n: Note, over: Partial<NoteCardProps> = {}) {
     onEdit: vi.fn(),
     onCommit: vi.fn(),
     onToggleTag: vi.fn(),
+    onExpand: vi.fn(),
     ...over,
   };
   return { ...render(<NoteCard {...props} />), props };
@@ -101,5 +102,28 @@ describe('NoteCard', () => {
     expect(count.textContent).toBe('3');
     expect(count.tagName).toBe('SPAN');
     expect(container.querySelector('.card-cover button')).toBeNull();
+  });
+
+  it('has an Expand note icon in the meta row that opens the big editor', () => {
+    const n = note('x');
+    const { getByLabelText, props } = renderCard(n);
+    const btn = getByLabelText('Expand note');
+    expect(btn.getAttribute('data-tip')).toBe('Expand note');
+    expect(btn.closest('.card-meta')).not.toBeNull();
+    fireEvent.click(btn);
+    expect(props.onExpand).toHaveBeenCalledWith(n, null);
+    expect(props.onEdit).not.toHaveBeenCalled();
+  });
+
+  it('expanding while editing keeps the inline editor focused and hands over the unsaved draft', () => {
+    const n = note('');
+    const { container, getByLabelText, props } = renderCard(n, { editing: true });
+    const ta = container.querySelector('textarea') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'typed inline' } });
+    const btn = getByLabelText('Expand note');
+    expect(fireEvent.mouseDown(btn)).toBe(false);
+    fireEvent.click(btn);
+    expect(props.onExpand).toHaveBeenCalledWith(n, 'typed inline');
+    expect(props.onCommit).not.toHaveBeenCalled();
   });
 });

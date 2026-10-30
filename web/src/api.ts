@@ -77,3 +77,23 @@ export function imageUrl(imageId: string, variant: ImageFileVariant): string {
 export function imageInfoUrl(imageId: string): string {
   return `/api/images/${enc(imageId)}`;
 }
+
+/** Phase 3: `POST /api/notes/:id/images` → 201 `{ note, attached: true }` or 200 `{ note, attached: false }` (bytes already live in `note`). */
+export interface AttachResult {
+  note: Note;
+  attached: boolean;
+}
+
+/** Attach one image file to an existing live note (multipart `file`). */
+export async function attachImage(noteId: string, file: File): Promise<AttachResult> {
+  const form = new FormData();
+  form.append('file', file, file.name || 'pasted-image');
+  const res = await check(await fetch(`/api/notes/${enc(noteId)}/images`, { method: 'POST', body: form }));
+  return (await res.json()) as AttachResult;
+}
+
+/** Soft-remove one image from its note (to the bin). Returns the owner note without it. */
+export async function removeImage(imageId: string): Promise<Note> {
+  const res = await check(await fetch(`/api/images/${enc(imageId)}`, { method: 'DELETE' }));
+  return (await res.json()) as Note;
+}

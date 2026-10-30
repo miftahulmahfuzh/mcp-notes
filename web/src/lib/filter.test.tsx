@@ -22,6 +22,13 @@ describe('visibleOnWall', () => {
   it('always keeps the note being edited', () => {
     expect(visibleOnWall([...notes, makeNote('E-EEE', '')], 'text', ['seer'], 'E-EEE').map((n) => n.id)).toContain('E-EEE');
   });
+  it('keeps every id in a keep list (inline edit + big editor)', () => {
+    const extra = [...notes, makeNote('E-EEE', ''), makeNote('F-FFF', 'pic', { images: ['F-FFF'] })];
+    const ids = visibleOnWall(extra, 'text', ['seer'], ['E-EEE', 'F-FFF', null]).map((n) => n.id);
+    expect(ids).toContain('E-EEE');
+    expect(ids).toContain('F-FFF');
+    expect(ids).not.toContain('C-CCC');
+  });
 });
 
 describe('images', () => {
