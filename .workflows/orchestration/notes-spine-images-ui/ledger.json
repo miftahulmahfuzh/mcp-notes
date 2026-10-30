@@ -3,22 +3,23 @@
   "coordinator": "orch-notes-spine-images-ui",
   "coordinator_session_id": "a6e61305-1952-498a-b355-47aaa80ae8c5",
   "created": "2026-10-30T02:59:53+00:00",
+  "note": "Gate (plan_graph.py) run against the worktree index docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md: exit 0, 13 shared files all sequential. Against the tracked PLAN.md it exits 1 only because its Plan column paths (.workflows/plan/...) resolve against the main checkout; children are spawned with the worktree index. No collisions -> shared set worktree, no per-phase isolation. Open Questions: none.",
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "7523f8f648a5317ac18558dcda7306c8e694dcf1",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "scaffold+deps+schema+ids/tags+test harness; Neon migrated (2 tables, 9 idx, 1 migration); all 8 tasks filed under package '.' code NOTES; commit trailer says Haiku 5.5 (pusher), not amended",
       "package": "root, `src/db`, `src/notes",
       "plan": ".workflows/plan/notes-spine-images-ui/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T03:07:26+00:00",
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A000",
       "title": "Scaffold, config, schema, ids, tags, test harness"
     },
     {
@@ -160,7 +161,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T02:59:53+00:00",
-  "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui",
-  "note": "Gate (plan_graph.py) run against the worktree index docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md: exit 0, 13 shared files all sequential. Against the tracked PLAN.md it exits 1 only because its Plan column paths (.workflows/plan/...) resolve against the main checkout; children are spawned with the worktree index. No collisions -> shared set worktree, no per-phase isolation. Open Questions: none."
+  "updated": "2026-10-30T03:07:26+00:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
