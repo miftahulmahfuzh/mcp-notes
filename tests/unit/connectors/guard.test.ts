@@ -60,6 +60,15 @@ describe('guardSelect (postgres)', () => {
     expect(guardSelect('select 1 ; -- bye', 'postgres')).toBe('select 1');
     expect(guardSelect('  select 2;;  ', 'postgres')).toBe('select 2');
   });
+
+  it('keeps a literal or quoted identifier that ends the query', () => {
+    expect(guardSelect("select x from t where id = 'a-b' ;", 'postgres')).toBe("select x from t where id = 'a-b'");
+    expect(guardSelect("select 1 where 'x' like '24%'", 'postgres')).toBe("select 1 where 'x' like '24%'");
+    expect(guardSelect('select x from t order by "Name"', 'postgres')).toBe('select x from t order by "Name"');
+    expect(guardSelect('select $$ a $$', 'postgres')).toBe('select $$ a $$');
+    expect(guardSelect("select x from t where id = 'a' -- why", 'postgres')).toBe("select x from t where id = 'a'");
+    expect(guardSelect('select x from t order by [Name]', 'sqlite')).toBe('select x from t order by [Name]');
+  });
 });
 
 describe('guardSelect (sqlite)', () => {

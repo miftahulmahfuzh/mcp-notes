@@ -50,8 +50,11 @@ function scanQuoted(sql: string, start: number, quote: string, backslashEscapes:
 
 const IDENT_CHAR = /[A-Za-z0-9_$]/;
 
-/** Same-length copy of `sql` with comments, literals and quoted identifiers blanked out. */
-export function maskSql(sql: string, dialect: SqlDialect): string {
+/**
+ * Same-length copy of `sql` with comments, literals and quoted identifiers blanked out. Comments
+ * become spaces; literals and quoted identifiers become `literalFill` (spaces by default).
+ */
+export function maskSql(sql: string, dialect: SqlDialect, literalFill = ' '): string {
   let out = '';
   let i = 0;
   const n = sql.length;
@@ -92,21 +95,21 @@ export function maskSql(sql: string, dialect: SqlDialect): string {
       const escapeString = dialect === 'postgres' && /[eE]/.test(prev) && !IDENT_CHAR.test(beforePrev);
       const j = scanQuoted(sql, i, "'", escapeString);
       if (j === -1) throw new SqlRefused('unterminated string literal');
-      out += ' '.repeat(j - i);
+      out += literalFill.repeat(j - i);
       i = j;
       continue;
     }
     if (ch === '"' || (dialect === 'sqlite' && ch === '`')) {
       const j = scanQuoted(sql, i, ch, false);
       if (j === -1) throw new SqlRefused('unterminated quoted identifier');
-      out += ' '.repeat(j - i);
+      out += literalFill.repeat(j - i);
       i = j;
       continue;
     }
     if (dialect === 'sqlite' && ch === '[') {
       const close = sql.indexOf(']', i + 1);
       if (close === -1) throw new SqlRefused('unterminated [identifier]');
-      out += ' '.repeat(close + 1 - i);
+      out += literalFill.repeat(close + 1 - i);
       i = close + 1;
       continue;
     }
@@ -117,7 +120,7 @@ export function maskSql(sql: string, dialect: SqlDialect): string {
         const end = sql.indexOf(tag, i + tag.length);
         if (end === -1) throw new SqlRefused('unterminated dollar-quoted string');
         const stop = end + tag.length;
-        out += ' '.repeat(stop - i);
+        out += literalFill.repeat(stop - i);
         i = stop;
         continue;
       }
@@ -134,7 +137,9 @@ export function maskSql(sql: string, dialect: SqlDialect): string {
  * only keeps obvious writes and multi-statements from reaching it.
  */
 export function guardSelect(sql: string, dialect: SqlDialect): string {
-  const masked = maskSql(sql, dialect);
+  // Literals are filled with NUL rather than spaces so the trailing trim below stops at a query that
+  // ends in one (`where id = 'x'`); a trailing comment is still trimmed.
+  const masked = maskSql(sql, dialect, '\0');
   let end = masked.length;
   while (end > 0 && /[\s;]/.test(masked[end - 1]!)) end--;
   const body = masked.slice(0, end);
