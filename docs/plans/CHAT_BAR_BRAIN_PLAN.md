@@ -73,7 +73,7 @@ SSE on the wire: `delta` and `error` are unchanged. `status` is new, with data `
 1. `npm run typecheck`, `npm test` and `npm run test:int` are green at the end of every phase.
 2. The ROADMAP "Fixed decisions" table is not re-decided.
 3. No API key in the repo or in the unit file. A Claude run's child env never carries `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` or `ANTHROPIC_AUTH_TOKEN`. The GLM key is read from `.env.local` at runtime only.
-4. The agent's tool surface is exactly the 13 `notes` MCP tools (`mcp__notes__*`) + `WebSearch` + `WebFetch`. No user settings, CLAUDE.md, hooks, plugins or other MCP servers are loaded into the SDK run.
+4. The agent's tool surface is exactly the 13 `notes` MCP tools (`mcp__notes__*`) + `WebSearch` + `WebFetch`. No user settings, CLAUDE.md, hooks, plugins or other MCP servers are loaded into the SDK run. (Superseded by iteration 5, `CONNECTORS_PLAN.md` invariant 8: the surface also includes the 15 connector tools.)
 5. Answers are never written as notes by the daemon.
 6. The panel's look is unchanged except one Geist Mono caption span in `.answer-head` (status while working, brain label when done). No new buttons, no spinners.
 7. notesd still binds 127.0.0.1 only.

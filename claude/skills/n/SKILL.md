@@ -1,15 +1,16 @@
 ---
 name: n
-description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server. Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at pictures they saved ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct").
+description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at pictures they saved ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
 argument-hint: <request for mcp-notes>
 ---
 
 # /n — mcp-notes
 
-The text after `/n` is a request for mcp-notes, the user's own notes store. Do it with the
-`notes` MCP server's tools (they appear as `mcp__notes__<tool>`). Do not answer from memory,
-from files in the current repo, or from earlier conversation when the request is about notes:
-the notes are the source of truth.
+The text after `/n` is a request for mcp-notes, the user's own notes store, or for one of the
+user's apps that the same server reads. Do it with the `notes` MCP server's tools (they appear
+as `mcp__notes__<tool>`). Do not answer from memory, from files in the current repo, or from
+earlier conversation when the request is about notes, spending, runs or Seer: the notes and the
+apps' tools are the source of truth.
 
 ## What a note is
 
@@ -85,6 +86,68 @@ user's local time (Asia/Jakarta, WIB). A week runs Monday 00:00 to Sunday 23:59;
 Monday until now. Use the created date unless the user talks about edits. State the ranges you
 used, and cite the note ids each point comes from.
 
+## Spending, runs and Seer
+
+The same server reads three of the user's own apps, read-only. Nothing you do through these
+tools can change them, and you must not try. Questions about money spent, expenses, runs,
+training, the Seer leaderboard, positions, strategies or Sera methods go to these tools, not to
+the notes (unless the user asks about notes on those topics).
+
+Each system has curated tools that compute what the app itself shows. Use them first. Use a
+system's `_sql` tool only when no curated tool answers the question, and call its `_schema` tool
+before writing SQL so you use real table and column names. `_sql` takes one `SELECT` and caps
+the rows. Follow each tool's own schema for parameter names; it wins over anything here.
+
+expense-tracking (spending, money in whole rupiah):
+- `expenses_spending` — `from`/`to` (inclusive WIB days, up to 366): total, by category (slug
+  plus Indonesian label), by day, by ISO week (Monday to Sunday, keyed by its Monday; weeks the
+  range cuts are `partial`), and the largest items. Start here for "how much did I spend", "this
+  week", "on meals in October", "which week was worst". Narrow with `categories`, a list of slugs:
+  `["meals"]` is everyday meals only; all eating and drinking is
+  `["meals", "jajan", "dining", "snacks", "drinks"]`. When comparing weeks, mind the partial ones.
+- `expenses_months` — monthly totals for the last `months` (default 6) ending at `to_month`
+  (`YYYY-MM`, default this month), zero-filled; the current month is `in_progress`. Use it for
+  month-over-month trends. Takes the same `categories`.
+- `expenses_get` — one expense group by `id` (from `expenses_spending`'s
+  `largest_items[].group_id`): its items, note, original pasted text and photos. Use it to explain
+  a big line or a specific purchase.
+- `expenses_schema`, `expenses_sql` — anything the three above cannot answer.
+
+run-insights (Apple Watch runs; metres, seconds, sec/km, bpm, each with a readable companion):
+- `runs_list` — reviewed runs from `from` to `to` (default today) with their key metrics, the
+  app's own headline for each, and period totals. Use it for "my runs this month", and call it
+  once per period for "this month vs last month".
+- `runs_get` — exactly one of `id` (from `runs_list`) or `date` (`YYYY-MM-DD`, every run that
+  day): metrics, per-km splits, heart-rate zones, the runner's note and the app's own latest
+  analysis of the run. Use `date` for "how did yesterday's run go".
+- `runs_review` — `scope` `week` or `month`, `key` like `2026-W44`, `2026-10` or any day inside
+  the period (default: the current one): the app's latest review for that period with its totals
+  and runs. `review` is null when the app has not written one; the totals still hold.
+- `runs_schema`, `runs_sql` — anything else (records, badges, the coach Nina's chat).
+
+Seer (trading lab, money in USD; dates are New York trading sessions) and Sera (its method lab):
+- `seer_leaderboard` — the paper strategies ranked the way the app ranks them, over a common
+  window (name the window when you say who leads); the benchmark, retired and too-new strategies
+  are listed apart with a reason.
+- `seer_positions` — open bracket orders and book positions with marks and unrealised P&L.
+  Optional `strategy` (an id from the leaderboard) and `include_pending`.
+- `seer_sera_best` — the best dev variant of each Sera method by MAR, with the lab's metrics,
+  recomputed hurdles and test trials. Use it for "best Sera methods". `eligible_at_run` is the
+  verdict when the trial ran, so say "eligible when it ran", not "eligible". Optional `status`,
+  `only_eligible`, `limit`.
+- `seer_schema`, `seer_sql` — anything else; `seer_sql` reads either the Postgres database or
+  the lab (`source` `db` or `lab`).
+
+Dates: the user's days are WIB (Asia/Jakarta). A week runs Monday to Sunday; "this week" is
+Monday until today; "yesterday" and "this month" are WIB calendar days. Pass dates as
+`YYYY-MM-DD`. For a comparison, call the tool once per period and compare the results yourself.
+
+The answer is not a tally. Say what the data shows, then what you think about it: the pattern,
+how it compares with the previous period or with what is usual for the user, what stands out,
+and at least one concrete suggestion. Give figures in the app's units: rupiah as whole numbers
+written `Rp 38.500`, distance in km, pace as `m:ss /km`, heart rate in bpm, Seer money in USD.
+State the date range you used. Keep it to short paragraphs.
+
 ## Images
 
 Only when the server offers image tools.
@@ -108,6 +171,8 @@ ids and say `restore` brings them back.
 - Keep replies short. Show a note's body only when the user asks to see it or it is short.
 - If the request is ambiguous between two readings, pick the likelier one, do it, and say which
   reading you took.
+- Answers from spending, runs or Seer follow the rule in "Spending, runs and Seer": what the
+  data shows plus your own read and a suggestion.
 
 ## When the `notes` tools are missing or fail to connect
 
@@ -115,3 +180,8 @@ Say so plainly and suggest, in this order: `systemctl --user status notesd`,
 `curl -s http://127.0.0.1:7317/health`, `journalctl --user -u notesd -n 50`, and re-running
 `scripts/install.sh` from the mcp-notes checkout (`~/mcp-notes`). Do not fall back to writing
 notes into files.
+
+A connector tool that fails returns an error naming its system ("expense-tracking is not
+reachable: …", "run-insights query failed: …"). Tell the user which system failed and why, in
+one line. Do not guess or estimate its numbers, and do not reach into the app's repo or
+database any other way. The notes and the other systems still work; answer what they can.

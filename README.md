@@ -21,6 +21,7 @@ its own chat bar.
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
   - [Editing a note, live on the wall](#editing-a-note-live-on-the-wall)
+  - [Spending, runs and Seer](#spending-runs-and-seer)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
 - [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
@@ -178,6 +179,22 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ![/n edits note E-VZY while the wall updates live](docs/readme/cc-edit.gif)
 
+### Spending, runs and Seer
+
+The same server reads three of your own apps, read-only: expense-tracking (spending in rupiah),
+run-insights (Apple Watch runs, the app's analyses and reviews, coach Nina) and Seer (the trading lab's
+leaderboard and positions, and the best Sera methods). `/n` sends questions about them to their
+curated tools, falls back to a system's `_sql` tool only when those don't answer, and replies
+with what the data shows plus Claude's own read and a suggestion, not a tally. The tools are
+listed under [Connectors](#connectors-spending-runs-seer).
+
+```
+/n how are my spending this week? don't just tally the numbers and give me your inputs
+/n i did a run yesterday. show me how it went. what are your thoughts on this run?
+/n compare my running this month with last month
+/n what are the best sera method that we have found up until now?
+```
+
 ### More things to ask
 
 ```
@@ -192,13 +209,17 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 The pill at the bottom of the wall is a natural-language command line. Its answer streams into a
 panel that rises above it, which you can pin or dismiss. A terse status line ("searching
-notes", "looking at 2 photos", "searching the web") shows what the agent is doing. Notes the
-answer mentions are outlined on the wall and the rest dim. Chips under the answer jump to each
-note, switching the view if that note is hidden.
+notes", "looking at 2 photos", "reading expenses", "reading runs", "reading seer", "searching
+the web") shows what the agent is doing. Notes the answer mentions are outlined on the wall and
+the rest dim. Chips under the answer jump to each note, switching the view if that note is
+hidden.
 
 Behind it is the Claude Agent SDK: headless Claude Code on your existing login, one run per
-message, with the same `notes` tools `/n` uses plus web search. A follow-up continues the same
-thread. Dismissing the panel starts a new one. Answers are not saved as notes.
+message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
+expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
+in october, and which week was the worst?" and it answers with the numbers and an opinion. A
+follow-up continues the same thread. Dismissing the panel starts a new one. Answers are not
+saved as notes.
 
 The recordings below are real runs against the demo instance. The time spent waiting for the
 answer is sped up 1.8×.

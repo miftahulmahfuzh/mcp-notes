@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { ALL_CONNECTOR_TOOL_NAMES } from '../../src/connectors/names.js';
 import { NOTES_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src/chat/status.js';
 
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 13 notes tools plus WebSearch and WebFetch', () => {
+  it('is exactly the 13 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(13);
-    expect(tools).toHaveLength(15);
+    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
+    expect(tools).toHaveLength(13 + 15 + 2);
+    expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
+    for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
     expect(tools.filter((t) => !t.startsWith('mcp__notes__'))).toEqual(['WebSearch', 'WebFetch']);
@@ -41,9 +45,37 @@ describe('captionForToolUse', () => {
     expect(captionForToolUse(name, input)).toBe(caption);
   });
 
+  it.each([
+    [n('expenses_schema'), {}, 'reading expenses'],
+    [n('expenses_sql'), { sql: 'select 1' }, 'reading expenses'],
+    [n('expenses_spending'), { from: '2026-10-01', to: '2026-10-31' }, 'reading expenses'],
+    [n('expenses_get'), { id: 'g1' }, 'reading expenses'],
+    [n('expenses_months'), {}, 'reading expenses'],
+    [n('runs_schema'), {}, 'reading runs'],
+    [n('runs_sql'), { sql: 'select 1' }, 'reading runs'],
+    [n('runs_list'), { from: '2026-10-01', to: '2026-10-31' }, 'reading runs'],
+    [n('runs_get'), { date: '2026-10-29' }, 'reading runs'],
+    [n('runs_review'), {}, 'reading runs'],
+    [n('seer_schema'), {}, 'reading seer'],
+    [n('seer_sql'), { sql: 'select 1', source: 'lab' }, 'reading seer'],
+    [n('seer_leaderboard'), {}, 'reading seer'],
+    [n('seer_positions'), {}, 'reading seer'],
+    [n('seer_sera_best'), {}, 'reading seer'],
+  ])('%s %j -> %s', (name, input, caption) => {
+    expect(captionForToolUse(name, input)).toBe(caption);
+  });
+
+  it('captions every connector tool in the contract', () => {
+    for (const name of ALL_CONNECTOR_TOOL_NAMES) {
+      expect(captionForToolUse(n(name), {})).toMatch(/^reading (expenses|runs|seer)$/);
+    }
+  });
+
   it('names nothing outside the surface', () => {
     expect(captionForToolUse('Bash', { command: 'ls' })).toBeNull();
     expect(captionForToolUse('mcp__other__search', {})).toBeNull();
+    expect(captionForToolUse('mcp__other__expenses_sql', {})).toBeNull();
     expect(captionForToolUse(n('unknown'), {})).toBeNull();
+    expect(captionForToolUse(n('expenses_unknown'), {})).toBeNull();
   });
 });

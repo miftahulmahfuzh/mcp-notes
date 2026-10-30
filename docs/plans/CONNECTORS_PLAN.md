@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/connectors`
 **Branch:** `feature/connectors` (base: `HEAD` of `main` @ `29259ae`)
 **Phases:** 6
-**Status:** phases 1 and 6 of 6 complete
+**Status:** phases 1, 5 and 6 of 6 complete
 **Coordinator:** —
 
 ---
@@ -163,7 +163,7 @@ export class ConnectorError extends Error {}
 | 2 | expense-tracking curated tools | R2, R5 | `src/connectors/expenses` | 8 | 1 | NORMAL | `.workflows/plan/connectors/phase-2.md` | — | — |
 | 3 | run-insights curated tools | R2, R5 | `src/connectors/runs` | 8 | 1 | NORMAL | `.workflows/plan/connectors/phase-3.md` | — | — |
 | 4 | Seer curated tools (db + lab) | R2, R5 | `src/connectors/seer` | 10 | 1 | HARD | `.workflows/plan/connectors/phase-4.md` | — | — |
-| 5 | Chat bar + /n for connectors | R3 | `src/chat`, `claude/skills/n` | 7 | 1 | NORMAL | `.workflows/plan/connectors/phase-5.md` | — | — |
+| 5 ✓ | Chat bar + /n for connectors | R3 | `src/chat`, `claude/skills/n` | 7 | 1 | NORMAL | `.workflows/plan/connectors/phase-5.md` | P1-NOTES-A016 | — |
 | 6 ✓ | Readable links in the answer panel | R4 | `web/src` | 5 | — | EASY | `.workflows/plan/connectors/phase-6.md` | P2-NOTES-C506 | — |
 
 Phase 1 spans R1, R2 and R5 because the generic tools and their tests cannot be built apart from the core they exercise. Phases 2–5 depend on phase 1 only through the contract above (names, `Connector`, `toObjects`, `run`, harness), so they run concurrently in separate sessions; no file is edited by two of them (each of 2–4 writes only `src/connectors/<id>/**` and its own `<id>`-prefixed tests; phase 5 writes `src/chat/**`, `claude/**`, its README hunks and one line of an old plan). Phase 6 shares nothing with the others and may run alongside phase 1.
