@@ -374,6 +374,14 @@ export async function setDeleted(tx: Executor, id: string, deleted: boolean): Pr
   return row;
 }
 
+/** Bumps updated_at only: one of the note's images was attached, removed or restored. */
+export async function touchNote(tx: Executor, id: string): Promise<NoteRow> {
+  const rows = await tx.update(notes).set({ updatedAt: sql`now()` }).where(eq(notes.id, id)).returning();
+  const row = rows[0];
+  if (!row) throw new NoteError('not_found', `Note ${id} does not exist.`);
+  return row;
+}
+
 export async function insertRevision(tx: Executor, noteId: string, body: string): Promise<void> {
   await tx.insert(noteRevisions).values({ noteId, body });
 }

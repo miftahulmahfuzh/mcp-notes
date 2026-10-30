@@ -1,4 +1,5 @@
 import type { Db } from '../db/client.js';
+import type { NoteImageRow } from '../db/schema.js';
 import { EMBEDDING_MODEL } from '../embeddings/constants.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import * as embeddings from '../embeddings/repo.js';
@@ -18,6 +19,7 @@ import * as imageRepo from './imageRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
 import {
+  DuplicateImageError,
   NoteError,
   cleanOrigin,
   rowToNote,
@@ -59,6 +61,13 @@ export interface CreateNoteInput {
    * Get it from `newId()`. A taken id throws NoteError('conflict'); no retry.
    */
   id?: string;
+}
+
+/** One image to add to a live note. `id` comes from newId(); `path` is relative to dataDir (images/YYYY/MM/<id>.<ext>). */
+export interface AttachImageInput {
+  id: string;
+  path: string;
+  meta: ImageMeta;
 }
 
 export interface UpdateOptions {
@@ -157,20 +166,7 @@ export class NotesService {
         const inserted = (await imageRepo.imageIdTaken(tx, id)) ? null : await repo.insertNote(tx, { id, ...values });
         if (inserted === null) continue;
         if (image !== null) {
-          await imageRepo.insertImage(tx, {
-            id,
-            noteId: id,
-            path: image.path,
-            sha256: image.meta.sha256,
-            mime: image.meta.mime,
-            width: image.meta.width,
-            height: image.meta.height,
-            bytes: image.meta.bytes,
-            takenAt: image.meta.taken_at === null ? null : new Date(image.meta.taken_at),
-            originalName: image.meta.original_name,
-            host: image.meta.host,
-            position: 0,
-          });
+          await imageRepo.insertImage(tx, imageValues(id, id, image.path, image.meta, 0));
         }
         return inserted;
       }
@@ -422,6 +418,82 @@ export class NotesService {
     return this.finish(result);
   }
 
+  /**
+   * Adds one image to a live note, after every image it ever had: position = max position over
+   * all its images (removed ones included) + 1, so a removed image keeps its slot for restore.
+   * The same bytes live anywhere -> NoteError('duplicate_image'); a taken image id ->
+   * NoteError('conflict'); a deleted note -> NoteError('deleted'). Emits `updated`.
+   */
+  async attachImage(noteIdInput: string, input: AttachImageInput): Promise<Note> {
+    const noteId = this.requireId(noteIdInput);
+    const imageId = this.requireImageId(input.id);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      await this.lockLive(tx, noteId);
+      if (await imageRepo.imageIdTaken(tx, imageId)) {
+        throw new NoteError('conflict', `Image id ${imageId} is already taken.`);
+      }
+      const position = await imageRepo.nextPosition(tx, noteId);
+      await imageRepo.insertImage(tx, imageValues(noteId, imageId, input.path, input.meta, position));
+      return { row: await repo.touchNote(tx, noteId), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Soft-removes one image from its note (it goes to the bin; the file is untouched). Works
+   * whatever state the note is in. Removing a removed image is a no-op. Returns the owning note.
+   * Emits `updated` with the note id.
+   */
+  async removeImage(imageIdInput: string): Promise<Note> {
+    const imageId = this.requireImageId(imageIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, image } = await this.lockImage(tx, imageId);
+      if (image.deletedAt !== null) return { row: note, op: null };
+      await imageRepo.setImageDeleted(tx, imageId, true);
+      return { row: await repo.touchNote(tx, note.id), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Puts a removed image back at its old position, and restores its note when the note is
+   * deleted (an image is only visible in a live note). The same bytes already live in another
+   * image -> DuplicateImageError naming that image's note. A live image in a live note is a
+   * no-op. Emits `restored` when the note came back, else `updated`, with the note id.
+   */
+  async restoreImage(imageIdInput: string): Promise<Note> {
+    const imageId = this.requireImageId(imageIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, image } = await this.lockImage(tx, imageId);
+      const imageRemoved = image.deletedAt !== null;
+      const noteDeleted = note.deletedAt !== null;
+      if (!imageRemoved && !noteDeleted) return { row: note, op: null };
+      if (imageRemoved) {
+        const holder = await imageRepo.findLiveImageBySha256(tx, image.sha256);
+        if (holder !== null && holder.image.id !== image.id) {
+          throw new DuplicateImageError(
+            holder.image.noteId,
+            `Image ${imageId} cannot be restored: the same picture is already in note ${holder.image.noteId}. Open that note instead, or remove the picture there first.`,
+          );
+        }
+        try {
+          await imageRepo.setImageDeleted(tx, imageId, false);
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new NoteError(
+              'duplicate_image',
+              `Image ${imageId} cannot be restored: the same picture was just saved in another note. Try again to see which.`,
+            );
+          }
+          throw err;
+        }
+      }
+      if (noteDeleted) await repo.setDeleted(tx, note.id, false);
+      return { row: await repo.touchNote(tx, note.id), op: noteDeleted ? 'restored' : 'updated' };
+    });
+    return this.finish(result);
+  }
+
   /** Brings back a revision's body; the body it replaces becomes a new revision. */
   async revert(idInput: string, revision: number): Promise<Note> {
     const id = this.requireId(idInput);
@@ -447,6 +519,33 @@ export class NotesService {
     return cur;
   }
 
+  /** Canonical image id or NoteError('invalid_id'). Image ids share the note-id format. */
+  private requireImageId(input: string): string {
+    const id = normalizeId(input);
+    if (id === null) {
+      throw new NoteError(
+        'invalid_id',
+        `"${input}" is not an image id. Image ids look like A-B32 (case and the dash are optional); every note lists its images with their ids.`,
+      );
+    }
+    return id;
+  }
+
+  /**
+   * Locks the image's owning note, then re-reads the image, so concurrent changes to one note's
+   * images run one after another. Unknown image -> NoteError('not_found').
+   * Lock order for the whole set: the note row first, then the image row (the image row is
+   * locked implicitly by the UPDATE that follows). Phase 4's purgeImage uses the same order.
+   */
+  private async lockImage(tx: repo.Tx, imageId: string): Promise<{ note: NoteRow; image: NoteImageRow }> {
+    const first = await imageRepo.findImageById(tx, imageId);
+    if (first === null) throw imageNotFound(imageId);
+    const note = await repo.lockNote(tx, first.noteId);
+    const image = await imageRepo.findImageById(tx, imageId);
+    if (note === null || image === null) throw imageNotFound(imageId);
+    return { note, image };
+  }
+
   private async finish(result: Mutation): Promise<Note> {
     if (result.op !== null) this.events.emit(result.op, result.row.id);
     return this.toNote(result.row);
@@ -468,4 +567,37 @@ export class NotesService {
 /** 4 decimals: enough to order and compare, short enough to read in a tool result. */
 function roundSimilarity(value: number): number {
   return Math.round(value * 10_000) / 10_000;
+}
+
+/** note_images insert values for one image (drizzle field names). */
+function imageValues(noteId: string, id: string, path: string, meta: ImageMeta, position: number) {
+  return {
+    id,
+    noteId,
+    path,
+    sha256: meta.sha256,
+    mime: meta.mime,
+    width: meta.width,
+    height: meta.height,
+    bytes: meta.bytes,
+    takenAt: meta.taken_at === null ? null : new Date(meta.taken_at),
+    originalName: meta.original_name,
+    host: meta.host,
+    position,
+  };
+}
+
+function imageNotFound(imageId: string): NoteError {
+  return new NoteError('not_found', `Image ${imageId} does not exist. Image ids are listed in each note's images.`);
+}
+
+/** A unique-index clash: phase 1's NoteError('duplicate_image') or a raw Postgres 23505. */
+function isUniqueViolation(err: unknown): boolean {
+  if (err instanceof NoteError) return err.code === 'duplicate_image';
+  let cur: unknown = err;
+  for (let depth = 0; depth < 4 && cur !== null && typeof cur === 'object'; depth += 1) {
+    if ((cur as { code?: unknown }).code === '23505') return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
 }

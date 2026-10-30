@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 6
+**Total Active Tasks**: 5
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 5
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 5
-- Completed: 29
+- Blocked: 3
+- Completed: 30
 
 ---
 
@@ -22,34 +22,24 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A025** Phase 3: Attach / remove / restore one image: service, ingest, HTTP, MCP tools
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `DuplicateImageError`, `touchNote`, service `attachImage`/`removeImage`/`restoreImage`/`requireImageId`/`lockImage`, ingest `attachImage`, `src/http/imageAccess.ts` attach helpers, `src/http/images.ts` (`POST /api/notes/:id/images`, `DELETE /api/images/:id`, `POST /api/images/:id/restore`), MCP `attach_image`/`remove_image`/`restore_image`, instructions `Attaching.` paragraph, `src/chat/status.ts`, attach int test. Exit: three routes and three tools work as contracted; dedupe returns the holder (restoring a deleted one); restore keeps position; restore clash answers 409 `duplicate_image`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 3 of 11)
-  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A024
-  - **Plan**: `.workflows/plan/P1-NOTES-A025.md`
-
 - [ ] **P1-NOTES-A026** Phase 4: Bin listing, note restore endpoint, purge (rows + files)
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `src/notes/{types,events}.ts` (`Bin`, `BinImage`, `PurgeResult`, `purged` op), `src/notes/binRepo.ts` (new), service `listBin`/`purgeNote`/`purgeImage`, `src/images/store.ts` (`removeImageFiles`), `src/http/api.ts` (bin, restore, purge routes), bin int test, `removeImageFiles` and worker unit tests; no MCP purge tool. Exit: contract routes pass; purge leaves other files in `images/` and `cache/` untouched; live items 409 `not_deleted`; missing/foreign/`null` Origin 403.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 4 of 11)
   - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A025
+  - **Depends on**: P1-NOTES-A025 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
 
 - [ ] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `web/src/components/NoteEditor.{tsx,css,test.tsx}` (new), `web/src/hooks/useNotice.ts` (new), `web/src/components/{NoteCard,Wall,DropOverlay}.tsx` + tests, `web/src/App.tsx` (editor state, save/commit/expand/close, attach, portal), `web/src/api.ts` (`attachImage`, `removeImage`), `filter.ts` `visibleOnWall`, `App.test.tsx` describe block; not `styles.css`. Exit: each R2 bullet covered by a component test; card expand icon labelled `Expand note`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 7 of 11)
   - **Satisfies**: R2, R5 — Big editor modal from an expand icon on every card; save on blur/close; Esc; drop/paste attaches to the edited note; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A025, P1-NOTES-A028
+  - **Depends on**: P1-NOTES-A025 (satisfied), P1-NOTES-A028 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A029.md`
 
 - [ ] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
@@ -91,6 +81,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A025** Phase 3: Attach / remove / restore one image: service, ingest, HTTP, MCP tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `DuplicateImageError`, `touchNote`, service `attachImage`/`removeImage`/`restoreImage`/`requireImageId`/`lockImage`, ingest `attachImage`, `src/http/imageAccess.ts` attach helpers, `src/http/images.ts` (`POST /api/notes/:id/images`, `DELETE /api/images/:id`, `POST /api/images/:id/restore`), MCP `attach_image`/`remove_image`/`restore_image`, instructions `Attaching.` paragraph, `src/chat/status.ts`, attach int test. Exit: three routes and three tools work as contracted; dedupe returns the holder (restoring a deleted one); restore keeps position; restore clash answers 409 `duplicate_image`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 3 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A025.md`
+  - **Completed**: 2026-10-30 16:41
+  - **Method**: /do
+  - **Files**: src/notes/types.ts, src/notes/repo.ts, src/notes/service.ts, src/images/ingest.ts, src/http/imageAccess.ts, src/http/images.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/chat/status.ts, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/images.attach.int.test.ts
+  - **Drift**: none — every anchor the plan named was where it said; images.ts route doc comment gained two lines listing the new routes
 
 - [x] **P1-NOTES-A027** Phase 5: Reveal in Explorer: capabilities + reveal endpoint
   - **Difficulty**: NORMAL

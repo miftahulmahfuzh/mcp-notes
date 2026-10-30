@@ -2,11 +2,19 @@ import { readFile } from 'node:fs/promises';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ImageInputError, ingestFromPath, resolveImageFile, toolImageDeps, type ResolveResult } from '../http/imageAccess.js';
+import {
+  attachFromPath,
+  ImageInputError,
+  ingestFromPath,
+  resolveImageFile,
+  toolAttachDeps,
+  toolImageDeps,
+  type ResolveResult,
+} from '../http/imageAccess.js';
 import type { ImageDeps } from '../images/ingest.js';
 import { normalizeId } from '../notes/ids.js';
 import type { Note, NoteImage } from '../notes/types.js';
-import type { ToolDeps } from './tools.js';
+import { errorResult, run, type ToolDeps } from './tools.js';
 
 /** Most ids per call, and most images returned per call. */
 export const VIEW_IMAGES_MAX = 8;
@@ -203,5 +211,65 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
       }
       return { content };
     },
+  );
+
+  const attach = toolAttachDeps(deps);
+
+  server.registerTool(
+    'attach_image',
+    {
+      title: 'Attach image to note',
+      description:
+        'Add a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...) to an existing note; a note can hold several images, kept in attach order. ' +
+        'Give the note id and an absolute path (~/ is expanded). The file is COPIED byte for byte into the notes store; the source is left where it is. ' +
+        'If the exact same file already lives in a note (this one or another), nothing is copied and that note is returned with attached: false: tell the user which note holds it (a deleted holder note is restored). ' +
+        'The note must not be deleted (restore it first). Non-image files are refused. Returns { note, attached }; a new image is the last entry of note.images.',
+      inputSchema: {
+        id: z.string().min(1).describe('Note id like A-B32 to attach to. Case-insensitive; the dash may be omitted.'),
+        path: z.string().min(1).describe('Absolute path to the image file, or a path starting with ~/.'),
+        origin: originShape,
+      },
+    },
+    async ({ id, path }): Promise<CallToolResult> => {
+      try {
+        const result = await attachFromPath(attach, id, path);
+        return { content: [text(JSON.stringify(result, null, 2))] };
+      } catch (err) {
+        if (err instanceof ImageInputError) {
+          return { isError: true, content: [text(`attach_image refused (${err.code}): ${err.message}`)] };
+        }
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    'remove_image',
+    {
+      title: 'Remove image from note',
+      description:
+        "Take one image out of its note. This is soft and reversible: the image moves to the recycle bin, its file stays on disk, and restore_image(image_id) puts it back at the same position. " +
+        "Pass the image's id (each entry of a note's images has one; the first image of a note saved from a picture has the note's own id). " +
+        'Removing an image that is already removed changes nothing. Returns { note }: the owning note without that image.',
+      inputSchema: {
+        image_id: z.string().min(1).describe('Image id like A-B32 (from note.images[].id). Case-insensitive; the dash may be omitted.'),
+      },
+    },
+    async ({ image_id }): Promise<CallToolResult> => run(async () => ({ note: await deps.service.removeImage(image_id) })),
+  );
+
+  server.registerTool(
+    'restore_image',
+    {
+      title: 'Restore removed image',
+      description:
+        'Undo remove_image: put a removed image back into its note at its old position. If the note itself was deleted it is restored too. ' +
+        'Refused (duplicate_image) when the same picture has since been saved again and is live in another note; the error names that note. ' +
+        'Returns { note }.',
+      inputSchema: {
+        image_id: z.string().min(1).describe('Id of the removed image, like A-B32. Case-insensitive; the dash may be omitted.'),
+      },
+    },
+    async ({ image_id }): Promise<CallToolResult> => run(async () => ({ note: await deps.service.restoreImage(image_id) })),
   );
 }

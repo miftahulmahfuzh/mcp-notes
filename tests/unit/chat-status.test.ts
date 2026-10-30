@@ -5,19 +5,26 @@ import { NOTES_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 14 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 17 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
-    expect(NOTES_TOOL_NAMES).toHaveLength(14);
+    expect(NOTES_TOOL_NAMES).toHaveLength(17);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(14 + 15 + 2);
+    expect(tools).toHaveLength(17 + 15 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
     expect(tools).toContain('mcp__notes__related');
+    expect(tools).toContain('mcp__notes__attach_image');
+    expect(tools).toContain('mcp__notes__remove_image');
+    expect(tools).toContain('mcp__notes__restore_image');
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
     expect(tools.filter((t) => !t.startsWith('mcp__notes__'))).toEqual(['WebSearch', 'WebFetch']);
+  });
+
+  it('offers no tool that deletes permanently', () => {
+    expect(NOTES_TOOL_NAMES.filter((name) => /purge|forever|destroy/.test(name))).toEqual([]);
   });
 });
 
@@ -41,6 +48,9 @@ describe('captionForToolUse', () => {
     [n('revert'), {}, 'editing a note'],
     [n('delete'), {}, 'deleting a note'],
     [n('restore'), {}, 'restoring a note'],
+    [n('attach_image'), { id: 'A-B32', path: '/tmp/a.png' }, 'attaching a photo'],
+    [n('remove_image'), { image_id: 'C-D54' }, 'removing a photo'],
+    [n('restore_image'), { image_id: 'C-D54' }, 'restoring a photo'],
     ['WebSearch', { query: 'Verity' }, 'searching the web'],
     ['WebFetch', { url: 'https://example.com' }, 'reading a web page'],
   ])('%s %j -> %s', (name, input, caption) => {

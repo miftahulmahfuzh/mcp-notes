@@ -54,6 +54,19 @@ describe('buildInstructions', () => {
     expect(p).toContain('similarity');
     expect(p).toContain('never the note itself or a deleted note');
   });
+
+  it('has one Attaching paragraph: attach_image copies and dedupes, remove_image is soft, restore_image undoes it', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Attaching.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['attach_image(id, path)', 'remove_image(image_id)', 'restore_image(image_id)', 'attached: false', 'soft', 'old position']) {
+      expect(p).toContain(word);
+    }
+    expect(p).toContain('copied, not moved');
+    expect(p).toContain('Nothing you can call deletes a note or an image permanently');
+  });
 });
 
 describe('toFilter', () => {

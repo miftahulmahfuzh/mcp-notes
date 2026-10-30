@@ -115,6 +115,20 @@ export class NoteError extends Error {
   }
 }
 
+/**
+ * restoreImage refused: the same bytes already live in another image. `noteId` is the note
+ * holding them (HTTP answers 409 { error: 'duplicate_image', note_id }).
+ */
+export class DuplicateImageError extends NoteError {
+  readonly noteId: string;
+
+  constructor(noteId: string, message: string) {
+    super('duplicate_image', message);
+    this.name = 'DuplicateImageError';
+    this.noteId = noteId;
+  }
+}
+
 const ORIGIN_KEYS = ['cwd', 'repo', 'claude_session', 'source'] as const;
 
 /** Keeps only the known string fields of an origin; returns null when nothing is left. */

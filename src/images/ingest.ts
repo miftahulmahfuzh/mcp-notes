@@ -55,6 +55,19 @@ export type IngestInput =
 
 export type IngestResult = { note: Note; created: boolean };
 
+/** attachImage's result. attached: false = the bytes already live in `note` (this note or another). */
+export type AttachResult = { note: Note; attached: boolean };
+
+/** ImageNotes plus the one writer attaching needs. Kept separate so ImageNotes fakes stay valid. */
+export type AttachNotes = ImageNotes & Pick<NotesService, 'attachImage'>;
+
+export type AttachDeps = Omit<ImageDeps, 'notes'> & { notes: AttachNotes };
+
+/** AttachDeps for the running daemon's HTTP routes. */
+export function attachDeps(app: AppDeps): AttachDeps {
+  return { ...imageDeps(app), notes: app.service };
+}
+
 /** Where one image's original lives on this machine, and whether it is here. `id` is the image id (keys cache/<id>/). */
 export type LocatedImage = ImageSource & {
   noteId: string;
@@ -195,6 +208,80 @@ export async function ingestImage(deps: ImageDeps, input: IngestInput): Promise<
       }
     }
     throw new Error(`could not allocate a free note id in ${MAX_ID_ATTEMPTS} attempts`);
+  });
+}
+
+/**
+ * Add an image to an existing live note, or return the note that already holds these bytes.
+ *
+ * The target must be live (unknown -> NoteError('not_found'), deleted -> NoteError('deleted');
+ * nothing is read or written then). Under the sha lock: a live image with the same sha256
+ * anywhere -> that image's note is returned, restored if deleted (attached: false; nothing is
+ * stored). Otherwise: probe, fresh image id (free in notes and note_images), write the original
+ * byte for byte to images/YYYY/MM/<imageId>.<ext>, then attach through the notes service. If the
+ * attach fails the file is removed (or moved back): NoteError('duplicate_image') is a concurrent
+ * save of the same bytes (return the winner), NoteError('conflict') an id clash (retry).
+ * `input.body` and `input.origin` are ignored: attaching never changes the note's text.
+ *
+ * Throws UnsupportedImageError (probe.ts) for anything that is not a supported image.
+ */
+export async function attachImage(deps: AttachDeps, noteIdInput: string, input: IngestInput): Promise<AttachResult> {
+  const target = await deps.notes.getOne(noteIdInput, { includeDeleted: true });
+  if (target === null) throw new NoteError('not_found', `Note ${noteIdInput} does not exist.`);
+  if (target.deleted_at !== undefined) {
+    throw new NoteError('deleted', `Note ${target.id} is deleted. Call restore("${target.id}") first if you want to attach to it.`);
+  }
+
+  const sourcePath = input.path !== undefined ? path.resolve(input.path) : null;
+  const move = sourcePath !== null && input.move === true;
+  const bytes: Uint8Array = sourcePath !== null ? await readFile(sourcePath) : input.bytes!;
+  const sha256 = sha256Hex(bytes);
+
+  return withShaLock(sha256, async () => {
+    const existing = await deps.records.bySha256Live(sha256);
+    if (existing) {
+      const reused = await reuseExisting(deps, existing, bytes, sourcePath, move);
+      return { note: reused.note, attached: false };
+    }
+
+    const probe = await probeImage(bytes);
+    const nameSource = input.originalName ?? (sourcePath !== null ? path.basename(sourcePath) : null);
+    const originalName = nameSource ? path.basename(nameSource) : null;
+    const ext = chooseExt(originalName, probe.mimeExt);
+    const savedAt = (deps.now ?? (() => new Date()))();
+    const meta: ImageMeta = {
+      sha256,
+      mime: probe.mime,
+      width: probe.width,
+      height: probe.height,
+      bytes: bytes.byteLength,
+      taken_at: probe.taken_at,
+      original_name: originalName,
+      host: (deps.hostname ?? os.hostname)(),
+    };
+
+    for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt++) {
+      const imageId = await deps.notes.newId();
+      const relPath = originalRelPath(imageId, ext, savedAt);
+      const abs = resolveInDataDir(deps.dataDir, relPath);
+      if (await fileExists(abs)) continue;
+      await placeOriginal(abs, bytes, sourcePath, move);
+      try {
+        const note = await deps.notes.attachImage(target.id, { id: imageId, path: relPath, meta });
+        return { note, attached: true };
+      } catch (err) {
+        await unplaceOriginal(abs, sourcePath, move);
+        if (!(err instanceof NoteError) || (err.code !== 'duplicate_image' && err.code !== 'conflict')) throw err;
+        if (err.code === 'duplicate_image') {
+          const winner = await deps.records.bySha256Live(sha256);
+          if (winner) {
+            const reused = await reuseExisting(deps, winner, bytes, sourcePath, move);
+            return { note: reused.note, attached: false };
+          }
+        }
+      }
+    }
+    throw new Error(`could not allocate a free image id in ${MAX_ID_ATTEMPTS} attempts`);
   });
 }
 
