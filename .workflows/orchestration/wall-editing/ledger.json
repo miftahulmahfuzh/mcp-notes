@@ -3,6 +3,12 @@
   "coordinator": "orch-wall-editing",
   "coordinator_session_id": "cc6491fc-2dc1-4f2d-9d28-db3fbf6baa0a",
   "created": "2026-10-30T16:16:44+07:00",
+  "landed": {
+    "at": "2026-10-30T17:17:24+07:00",
+    "base": "main",
+    "commit": "dc9e4df57a8b03a344341246547923eb273fd549",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -229,7 +235,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T17:16:56+07:00",
+  "updated": "2026-10-30T17:17:24+07:00",
   "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
