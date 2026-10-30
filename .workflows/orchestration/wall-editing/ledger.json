@@ -187,23 +187,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "42a78d3",
       "depends_on": [
         9,
         11
       ],
       "difficulty": "NORMAL",
       "n": 10,
-      "note": null,
+      "note": "docs + Neon 0002 applied 2026-10-30T10:14:07Z; coordinator re-queried Neon: note_images 4 = legacy image_path 4, 5 indexes, 3 migrations; files_present 2/4 same before and after (pre-existing, not caused); daemon not restarted",
       "package": "docs, Neon",
       "plan": ".workflows/plan/wall-editing/phase-10.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T17:16:56+07:00",
       "satisfies": [
         "R5",
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A032",
       "title": "Docs, Neon migration 0002, full verification"
     },
     {
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T17:09:58+07:00",
+  "updated": "2026-10-30T17:16:56+07:00",
   "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
