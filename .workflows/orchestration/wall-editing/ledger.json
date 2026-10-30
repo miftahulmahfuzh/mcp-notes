@@ -64,22 +64,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "0ad1bc5",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "bin/restore/purge; purge routes behind sameOriginOnly, no MCP purge (coordinator grep); decision: bin.int non-id fixture 'nope'->'not-an-id' since 'nope' normalizes to valid N-OPE (rung 2: exit criterion intent); trailer says Haiku 5.5 - left, no rewrite of pushed commit; unit 720, int 294",
       "package": "src/notes`, `src/images`, `src/http",
       "plan": ".workflows/plan/wall-editing/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:58:10+07:00",
       "satisfies": [
         "R3",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A026",
       "title": "Bin listing, note restore endpoint, purge (rows + files)"
     },
     {
@@ -160,7 +160,7 @@
         "R3",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web delete, undo, recycle bin view"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:54:41+07:00",
+  "updated": "2026-10-30T16:58:10+07:00",
   "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
