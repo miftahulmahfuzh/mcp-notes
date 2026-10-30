@@ -44,22 +44,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e4c9a6c",
       "depends_on": [
         2
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "attach/remove/restore; MCP tools soft only (no unlink in src/mcp); coordinator ran integrated tree after wave 2: typecheck ok, unit 690, int 281",
       "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
       "plan": ".workflows/plan/wall-editing/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:47:22+07:00",
       "satisfies": [
         "R1",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A025",
       "title": "Attach / remove / restore one image: service, ingest, HTTP, MCP tools"
     },
     {
@@ -78,7 +78,7 @@
         "R3",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Bin listing, note restore endpoint, purge (rows + files)"
     },
@@ -139,7 +139,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web big editor modal + attach on drop/paste"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:42:30+07:00",
+  "updated": "2026-10-30T16:47:22+07:00",
   "verified_at": "2026-10-30T16:41:34+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
