@@ -29,6 +29,9 @@ export const NOTES_TOOL_NAMES = [
   'revert',
   'create_image',
   'view_images',
+  'attach_image',
+  'remove_image',
+  'restore_image',
 ] as const;
 
 export type NotesToolName = (typeof NOTES_TOOL_NAMES)[number];
@@ -43,9 +46,10 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 14 notes tools, the 15 connector tools and WebSearch + WebFetch
+ * Exactly the 17 notes tools, the 15 connector tools and WebSearch + WebFetch
  * (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
- * SEMANTIC_SEARCH_PLAN phase 5 adds `related`).
+ * SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN phase 3 adds
+ * `attach_image`, `remove_image` and `restore_image`).
  */
 export function allowedChatTools(): string[] {
   return [
@@ -109,6 +113,12 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'deleting a note';
     case 'restore':
       return 'restoring a note';
+    case 'attach_image':
+      return 'attaching a photo';
+    case 'remove_image':
+      return 'removing a photo';
+    case 'restore_image':
+      return 'restoring a photo';
     default:
       return connectorCaption(tool);
   }

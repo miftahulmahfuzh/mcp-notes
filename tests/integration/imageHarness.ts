@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { serve, type ServerType } from '@hono/node-server';
@@ -7,8 +7,10 @@ import sharp from 'sharp';
 import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import { createApp } from '../../src/http/app.js';
+import { sha256Hex } from '../../src/images/probe.js';
 import { dbImageRecords } from '../../src/images/records.js';
 import { NoteEvents } from '../../src/notes/events.js';
+import { insertImage } from '../../src/notes/imageRepo.js';
 import { NotesService } from '../../src/notes/service.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
 
@@ -91,22 +93,54 @@ export async function insertTextNote(h: Harness, id: string, body: string): Prom
   );
 }
 
-/** Set image_meta.taken_at directly (the EXIF path itself is P4's test subject). */
-export async function setTakenAt(h: Harness, id: string, takenAtIso: string | null): Promise<void> {
+/** Set taken_at on every image of a note directly (the EXIF path itself is the ingest tests' subject). */
+export async function setTakenAt(h: Harness, noteId: string, takenAtIso: string | null): Promise<void> {
   await h.deps.db.execute(
-    sql`update notes
-        set image_meta = jsonb_set(image_meta, '{taken_at}', ${takenAtIso === null ? sql`'null'::jsonb` : sql`to_jsonb(${takenAtIso}::text)`})
-        where id = ${id}`,
+    sql`update note_images
+        set taken_at = ${takenAtIso === null ? sql`null` : sql`${takenAtIso}::timestamptz`}
+        where note_id = ${noteId}`,
   );
 }
 
-/** Absolute path of a note's original on disk. */
-export async function originalPathOf(h: Harness, id: string): Promise<string> {
-  const rec = await dbImageRecords(h.deps.db).byId(id);
-  if (!rec) throw new Error(`note ${id} has no image_path`);
-  return path.join(h.dataDir, rec.image_path);
+/** Absolute path of an image's original on disk, by image id (a note's first image has the note's id). */
+export async function originalPathOf(h: Harness, imageId: string): Promise<string> {
+  const rec = await dbImageRecords(h.deps.db).byImageId(imageId);
+  if (!rec) throw new Error(`no image ${imageId}`);
+  return path.join(h.dataDir, rec.path);
 }
 
-export function cacheDirOf(h: Harness, id: string): string {
-  return path.join(h.dataDir, 'cache', id);
+export function cacheDirOf(h: Harness, imageId: string): string {
+  return path.join(h.dataDir, 'cache', imageId);
+}
+
+/**
+ * Add one more image to an existing note directly (attach is phase 3): a 12x12 PNG of colour
+ * `rgb` written to images/2026/10/<imageId>.png plus its note_images row. Returns the image id.
+ */
+export async function addImage(
+  h: Harness,
+  noteId: string,
+  imageId: string,
+  position: number,
+  rgb: { r: number; g: number; b: number },
+): Promise<string> {
+  const bytes = await makeImage('png', 12, 12, rgb);
+  const rel = `images/2026/10/${imageId}.png`;
+  await mkdir(path.join(h.dataDir, 'images/2026/10'), { recursive: true });
+  await writeFile(path.join(h.dataDir, rel), bytes);
+  await insertImage(h.deps.db, {
+    id: imageId,
+    noteId,
+    path: rel,
+    sha256: sha256Hex(bytes),
+    mime: 'image/png',
+    width: 12,
+    height: 12,
+    bytes: bytes.byteLength,
+    takenAt: null,
+    originalName: `${imageId}.png`,
+    host: os.hostname(),
+    position,
+  });
+  return imageId;
 }

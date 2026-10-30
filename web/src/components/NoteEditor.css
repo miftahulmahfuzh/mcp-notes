@@ -1,0 +1,22 @@
+/* Big note editor (iteration 7, R2). Idiom: PhotoModal backdrop + the wall's type. */
+.ed { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 9, .94); display: grid; place-items: center; padding: 24px 16px; box-sizing: border-box; }
+.ed-panel { width: min(1080px, 100%); height: min(880px, calc(100vh - 48px)); display: flex; flex-direction: column; gap: 14px; background: var(--bg); border: 1px solid var(--line-14); padding: 12px 18px 18px; box-sizing: border-box; color: var(--fg); font-family: var(--sans); }
+.ed-top { display: flex; align-items: center; gap: 4px; min-height: 40px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.ed-id { color: var(--id); letter-spacing: .03em; }
+.ed-notice { margin-left: 10px; color: var(--dim); opacity: 0; transition: opacity .25s; white-space: nowrap; }
+.ed-notice.on { opacity: 1; }
+.ed-spacer { flex: 1; }
+.ed-btn { width: 40px; height: 40px; border: 0; border-radius: 999px; background: transparent; color: var(--fg); font-size: 19px; cursor: pointer; display: grid; place-items: center; }
+.ed-btn:hover { background: var(--hover); }
+.ed-text { flex: 1; min-height: 0; width: 100%; box-sizing: border-box; margin: 0; padding: 18px 2px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); resize: none; overflow-y: auto; font-family: var(--sans); font-size: 22px; line-height: 1.45; letter-spacing: -.005em; }
+.ed-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-tag { font-size: 11px; padding: 3px 8px 4px; border-radius: 999px; background: var(--chip-bg); color: var(--chip); }
+.ed-strip { flex: none; display: flex; gap: 6px; overflow-x: auto; padding-top: 12px; border-top: 1px solid var(--line); }
+.ed-thumb { position: relative; flex: none; height: 96px; background: var(--img-bg); }
+.ed-thumb-img { display: block; }
+.ed-rm { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 999px; background: rgba(18, 18, 17, .72); color: var(--fg); font-size: 13px; cursor: pointer; display: grid; place-items: center; opacity: 0; transition: opacity .2s; }
+.ed-thumb:hover .ed-rm, .ed-rm:focus-visible { opacity: 1; }
+.ed-rm:hover { background: var(--fg); color: var(--bg); }
+
+/* Phase 9: "Show in Explorer" sits left of the remove icon (26px button + 4px gap). */
+.ed-reveal { right: 34px; }

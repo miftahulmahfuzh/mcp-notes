@@ -4,9 +4,11 @@ import { bigserial, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex
 /**
  * The notes schema. Migration 0000 (drizzle/0000_init.sql, iterations 1-3) created `notes` and
  * `note_revisions`; migration 0001 (iteration 6, semantic search) adds the pgvector extension and
- * `note_embeddings`. Change a table here, then `npm run db:generate`; never edit an applied
- * migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended
- * `CREATE EXTENSION IF NOT EXISTS vector`.
+ * `note_embeddings`; migration 0002 (iteration 7, wall editing) adds `note_images` and copies every
+ * legacy `notes.image_path` / `image_meta` image into it (hand-appended INSERT...SELECT, the same
+ * SQL as src/images/legacy.ts `LEGACY_COPY_SQL`). Change a table here, then `npm run db:generate`;
+ * never edit an applied migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a
+ * hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
 
 /** `notes.image_meta`. Written by the image ingest (iteration 2). */
@@ -43,8 +45,13 @@ export const notes = pgTable(
     body: text('body').notNull(),
     /** Parsed from `#hashtags` in `body` on every write (see src/notes/tags.ts). */
     tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
-    /** Relative to the data dir: `images/YYYY/MM/<id>.<ext>`. */
+    /**
+     * Legacy (iterations 2-6, one image per note), read only by the reconcile
+     * (src/images/legacy.ts); dropped in a later migration. Relative to the data dir:
+     * `images/YYYY/MM/<id>.<ext>`. Images live in `note_images` since iteration 7.
+     */
     imagePath: text('image_path'),
+    /** Legacy, read only by the reconcile; dropped in a later migration. See `imagePath`. */
     imageMeta: jsonb('image_meta').$type<ImageMeta>(),
     origin: jsonb('origin').$type<NoteOrigin>(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -57,10 +64,59 @@ export const notes = pgTable(
     index('notes_body_fts_gin').using('gin', sql`to_tsvector('simple', ${t.body})`),
     index('notes_created_at_idx').on(t.createdAt),
     index('notes_updated_at_idx').on(t.updatedAt),
+    // Legacy, read only by the reconcile; dropped in a later migration (with the two columns).
     uniqueIndex('notes_image_sha256_live_uniq')
       .on(sql`(${t.imageMeta} ->> 'sha256')`)
       .where(sql`${t.imageMeta} is not null and ${t.deletedAt} is null`),
+    // Legacy, read only by the reconcile; dropped in a later migration (with the two columns).
     index('notes_image_taken_at_idx').on(sql`(${t.imageMeta} ->> 'taken_at')`),
+  ],
+)
+
+/**
+ * One row per image (iteration 7, migration 0002). A note holds zero or more images, in attach
+ * order (`position`, never renumbered). The first image of a note created with an image shares the
+ * note's id (so `cache/<noteId>/`, `/full/<noteId>` and `/api/notes/<noteId>/<variant>` stay valid
+ * for legacy images); later images get an id free in both `notes.id` and `note_images.id`
+ * (src/notes/imageRepo.ts `imageIdTaken`).
+ *
+ * `deleted_at` is the image's own soft delete (removed from its note, shown in the bin). It is
+ * independent of `notes.deleted_at`: the image of a deleted note keeps `deleted_at = null`. The
+ * sha256 is unique among rows with `deleted_at is null` (dedupe per live image).
+ */
+export const noteImages = pgTable(
+  'note_images',
+  {
+    /** Note-id format (`A-B32`). See the comment above. */
+    id: text('id').primaryKey(),
+    noteId: text('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    /** Relative to the data dir: `images/YYYY/MM/<id>.<ext>`. */
+    path: text('path').notNull(),
+    /** Lower-case hex sha256 of the original bytes. */
+    sha256: text('sha256').notNull(),
+    mime: text('mime').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    /** Original size in bytes; the 200 MB upload cap fits int4. */
+    bytes: integer('bytes').notNull(),
+    /** EXIF DateTimeOriginal, or null. */
+    takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }),
+    originalName: text('original_name'),
+    /** `os.hostname()` of the machine that holds the file. */
+    host: text('host'),
+    /** Attach order within the note; never renumbered (remove + restore keeps it). */
+    position: integer('position').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Removed from its note (in the bin). Null means part of the note. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    uniqueIndex('note_images_path_uniq').on(t.path),
+    index('note_images_note_position_idx').on(t.noteId, t.position),
+    uniqueIndex('note_images_sha256_live_uniq').on(t.sha256).where(sql`${t.deletedAt} is null`),
+    index('note_images_taken_at_idx').on(t.takenAt),
   ],
 )
 
@@ -118,5 +174,7 @@ export const noteEmbeddings = pgTable(
 
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
+export type NoteImageRow = typeof noteImages.$inferSelect
+export type NewNoteImageRow = typeof noteImages.$inferInsert
 export type NoteRevisionRow = typeof noteRevisions.$inferSelect
 export type NewNoteRevisionRow = typeof noteRevisions.$inferInsert

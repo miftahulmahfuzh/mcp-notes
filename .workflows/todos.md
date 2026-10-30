@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 24
+- Completed: 35
 
 ---
 
@@ -31,6 +31,170 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `README.md` (photos, gallery, modal, editor, bin, reveal, answer panel, chat bar, API/storage/MCP tables), `claude/skills/n/SKILL.md`, `docs/INSTALL.md` (0002 migrate step), `npm run db:migrate` against Neon with before/after verification, `npm run build`; no source changes (defects fixed in the owning phase). Exit: full suite + build green; Neon `note_images` has one row per legacy image (matches `notes where image_path is not null`, minus listed late ingests) with identical metadata; installed daemon untouched.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 10 of 11)
+  - **Satisfies**: R5, R1 — Unit/component + integration tests for all of the above; README photo/gallery/modal text updated; Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image
+  - **Depends on**: P1-NOTES-A031 (satisfied), P1-NOTES-A033 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A032.md`
+  - **Completed**: 2026-10-30 17:14
+  - **Method**: /do
+  - **Files**: README.md, claude/skills/n/SKILL.md, docs/INSTALL.md
+  - **Drift**: README line numbers had shifted a few lines from the plan's; every edit was anchored on its exact quoted old text instead, and each anchor matched exactly once.
+    Step 1f: the 'Open file location' and undo paragraphs were re-wrapped to ~100 columns (the plan's text had two over-long lines); wording unchanged.
+    .env.local symlink already existed (created by phase 1), so Step 6 was a no-op; integration setup refuses Neon URLs, so the suites were unaffected.
+
+- [x] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/hooks/useCapabilities.ts`, `web/src/components/RevealButton.tsx` (+ tests, new), `api.ts` (`Capabilities`, `fetchCapabilities`, `revealImage`), mount points in `NoteCard`, `PhotoModal`, `NoteEditor` (`.ed-reveal` rule in `NoteEditor.css`), `RevealMounts.test.tsx`; not server/`App.tsx`/`Gallery.tsx`/`styles.css`. Exit: visibility rules tested (caps false -> none; unavailable image -> none; both true -> icon, click POSTs); icon in card meta, modal toolbar and editor strip.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 9 of 11)
+  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A031.md`
+  - **Completed**: 2026-10-30 17:07
+  - **Method**: /do
+  - **Files**: web/src/api.ts, web/src/components/NoteCard.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.tsx, web/src/components/PhotoModal.tsx, web/src/components/RevealButton.tsx, web/src/components/RevealButton.test.tsx, web/src/components/RevealMounts.test.tsx, web/src/hooks/useCapabilities.ts, web/src/hooks/useCapabilities.test.tsx
+  - **Drift**: RevealMounts.test.tsx: NoteCardProps now requires onExpand (phase 7); added onExpand: vi.fn() to the card props literal so the `as NoteCardProps` cast typechecks (plan Step 9 anticipated adding required props).
+    No existing test needed a resetCapabilitiesForTests prime; no fetch-count assertion broke.
+  - **Verified**: typecheck, npm test (766 tests), build:web, test:int (294 tests)
+
+- [x] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/{Bin,UndoBar}.{tsx,css}` (new), `web/src/hooks/{useUndo,useBin}.ts` (new), `{NoteCard,NoteEditor,PhotoModal,Gallery,Rail,Sidebar,Header,Wall}.tsx`, `App.tsx` (`view`, `removeNote`, `removeImageWithUndo`, `onRestored`, `toggleBin`), `api.ts` bin/restore/purge calls, `types.ts` (`Bin`, `BinImage`, `View`), `filter.ts` (`BIN_HEADING`, `binCountLine`), tests. Exit: R3 acceptance steps pass in component tests; undo label sits above the chat bar right end without overlapping the answer panel.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 8 of 11)
+  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A026 (satisfied), P1-NOTES-A029 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A030.md`
+  - **Completed**: 2026-10-30 18:10
+  - **Method**: /do
+  - **Files**: web/src/App.tsx, web/src/api.ts, web/src/types.ts, web/src/lib/filter.ts, web/src/components/Gallery.tsx, web/src/components/Header.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteEditor.test.tsx, web/src/components/PhotoModal.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/components/Wall.tsx, web/src/App.bin.test.tsx, web/src/components/Bin.tsx, web/src/components/Bin.css, web/src/components/Bin.test.tsx, web/src/components/PhotoModal.delete.test.tsx, web/src/components/UndoBar.tsx, web/src/components/UndoBar.css, web/src/components/UndoBar.test.tsx, web/src/hooks/useBin.ts, web/src/hooks/useUndo.ts, web/src/lib/binFilter.test.tsx
+  - **Drift**: None against the plan; tree matched the post-phase-7 state and code blocks were applied verbatim. NoteEditor's onRemoveImage doc comment now reads 'App offers a 6 s undo' (was 'phase 8 adds undo'). Phase 7's removeImg was deleted and replaced by removeImageWithUndo.
+  - **Delivered**: Trash icon ('Delete note') on wall cards, editor toolbar and photo modal; soft delete, no confirm, 6 s UndoBar above the chat bar's right end (also covers editor-strip image remove). Rail + sidebar Trash toggle the "Deleted." bin (Bin + useBin): image grid on top, deleted-note cards below, restore, inline-confirmed delete forever (Check/X). Tag filters apply in the bin; sidebar counts stay live-only. API: fetchBin, restoreNote, restoreImage, purgeNote, purgeImage, DuplicateImageError.
+  - **Verified**: typecheck, build:web, npm test (67 files, 752 tests), test:int (24 files, 294 tests)
+
+- [x] **P1-NOTES-A026** Phase 4: Bin listing, note restore endpoint, purge (rows + files)
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/notes/{types,events}.ts` (`Bin`, `BinImage`, `PurgeResult`, `purged` op), `src/notes/binRepo.ts` (new), service `listBin`/`purgeNote`/`purgeImage`, `src/images/store.ts` (`removeImageFiles`), `src/http/api.ts` (bin, restore, purge routes), bin int test, `removeImageFiles` and worker unit tests; no MCP purge tool. Exit: contract routes pass; purge leaves other files in `images/` and `cache/` untouched; live items 409 `not_deleted`; missing/foreign/`null` Origin 403.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 4 of 11)
+  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A025 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
+  - **Completed**: 2026-10-30 17:30
+  - **Method**: /do
+  - **Files**: src/notes/types.ts, src/notes/events.ts, src/notes/binRepo.ts, src/notes/service.ts, src/images/store.ts, src/http/api.ts, tests/integration/bin.int.test.ts, tests/unit/images/removeImageFiles.test.ts, tests/unit/embeddings/worker.test.ts
+  - **Drift**: toBinImage placed directly after roundSimilarity (service.ts now has more helpers after it); otherwise code applied verbatim.
+    bin.int.test.ts: purge() helper made async (plan's sync version failed typecheck: app.request returns Response | Promise<Response>).
+  - **Decided**: bin.int.test 'nope' used as a non-id → replaced with 'not-an-id' ('nope' normalizes to the valid id N-OPE, so 404 is correct; the 400 assertion is unchanged) (rung 6: ids.ts convention; restore test already uses 'not-an-id')
+
+
+- [x] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/NoteEditor.{tsx,css,test.tsx}` (new), `web/src/hooks/useNotice.ts` (new), `web/src/components/{NoteCard,Wall,DropOverlay}.tsx` + tests, `web/src/App.tsx` (editor state, save/commit/expand/close, attach, portal), `web/src/api.ts` (`attachImage`, `removeImage`), `filter.ts` `visibleOnWall`, `App.test.tsx` describe block; not `styles.css`. Exit: each R2 bullet covered by a component test; card expand icon labelled `Expand note`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 7 of 11)
+  - **Satisfies**: R2, R5 — Big editor modal from an expand icon on every card; save on blur/close; Esc; drop/paste attaches to the edited note; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A025 (satisfied), P1-NOTES-A028 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A029.md`
+  - **Completed**: 2026-10-30 16:52
+  - **Method**: /do
+  - **Commit**: 448e11f
+  - **Files**: web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteCard.tsx, web/src/components/Wall.tsx, web/src/lib/filter.test.tsx, web/src/lib/filter.ts, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/hooks/useNotice.ts
+  - **Drift**: filter.test.tsx has no note(id, body, {image}) helper; the keep-list test uses makeNote(..., { images: ['F-FFF'] })
+  - **Decided**: App.test '+ then expand' used getByLabelText('New note') but Rail and Header both carry that label → getAllByLabelText('New note')[0]! (both call the same addNote) (rung 2: exit criteria — every R2 bullet has a passing test; selector fix, no assertion relaxed)
+
+- [x] **P1-NOTES-A025** Phase 3: Attach / remove / restore one image: service, ingest, HTTP, MCP tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `DuplicateImageError`, `touchNote`, service `attachImage`/`removeImage`/`restoreImage`/`requireImageId`/`lockImage`, ingest `attachImage`, `src/http/imageAccess.ts` attach helpers, `src/http/images.ts` (`POST /api/notes/:id/images`, `DELETE /api/images/:id`, `POST /api/images/:id/restore`), MCP `attach_image`/`remove_image`/`restore_image`, instructions `Attaching.` paragraph, `src/chat/status.ts`, attach int test. Exit: three routes and three tools work as contracted; dedupe returns the holder (restoring a deleted one); restore keeps position; restore clash answers 409 `duplicate_image`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 3 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A025.md`
+  - **Completed**: 2026-10-30 16:41
+  - **Method**: /do
+  - **Files**: src/notes/types.ts, src/notes/repo.ts, src/notes/service.ts, src/images/ingest.ts, src/http/imageAccess.ts, src/http/images.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/chat/status.ts, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/images.attach.int.test.ts
+  - **Drift**: none — every anchor the plan named was where it said; images.ts route doc comment gained two lines listing the new routes
+
+- [x] **P1-NOTES-A027** Phase 5: Reveal in Explorer: capabilities + reveal endpoint
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/http/reveal.ts` (new), `src/http/app.ts` (mount + `CreateAppOptions.reveal`), `tests/unit/reveal.test.ts`, `tests/integration/reveal.int.test.ts`. Exit: capabilities reports `reveal: false` off WSL; reveal route answers 202 on spawn without awaiting Explorer; command line is exactly `[explorer, ['/select,' + wslpath -w original]]`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 5 of 11)
+  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A027.md`
+  - **Completed**: 2026-10-30 16:45
+  - **Method**: /implement
+  - **Files**: src/http/reveal.ts, src/http/app.ts, tests/unit/reveal.test.ts, tests/integration/reveal.int.test.ts
+  - **Drift**: none — app.ts hunks placed by anchor text as planned; locateImage/sameOriginOnly/normalizeId/imageHarness matched phase 2's tree
+
+- [x] **P1-NOTES-A028** Phase 6: Web on `images[]`: cards, gallery, modal stepping, full-screen by image
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/types.ts`, `web/src/api.ts` (URLs by image id), `web/src/components/{NoteImage,NoteCard,Gallery,PhotoModal}.tsx`, `web/src/fullscreen/FullscreenApp.tsx`, `web/src/lib/filter.ts` (`hasImages`, `imageCount`, `photosOf`), `web/src/App.tsx` (photo count, empty rule, `<Gallery items>`), `styles.css` (`.card-cover`, `.card-count`), `web/src/testing/fixtures.ts` (new) and tests. Exit: wall cover + count, gallery tile per image, modal steps image by image then across notes with `k/n`, full-screen by image id; grep gates empty.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 6 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A028.md`
+  - **Completed**: 2026-10-30 16:39
+  - **Method**: /do
+  - **Files**: web/src/types.ts, web/src/api.ts, web/src/App.tsx, web/src/App.test.tsx, web/src/styles.css, web/src/components/NoteImage.tsx, web/src/components/NoteImage.test.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/Gallery.tsx, web/src/components/Gallery.test.tsx, web/src/components/PhotoModal.tsx, web/src/components/PhotoModal.test.tsx, web/src/components/DropOverlay.test.tsx, web/src/fullscreen/FullscreenApp.tsx, web/src/fullscreen/FullscreenApp.test.tsx, web/src/lib/filter.ts, web/src/lib/filter.test.tsx, web/src/testing/fixtures.ts
+  - **Drift**: none — every quoted hunk matched the tree (phase 11 already landed; App.tsx hunks applied by content)
+  - **Decided**: Grep gate 1 (`\.image\b`) also matches PhotoItem.image (`it.image`) that the phase's own code blocks introduce → gate judged by its intent, narrowed to `(note|n)\.image\b`, which is empty (rung 3: phase code blocks)
+
+- [x] **P1-NOTES-A024** Phase 2: Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/notes/{types,repo,service}.ts` (wire `images`, batch image load on every read path, EXISTS filters), `src/images/{records,ingest}.ts`, `src/http/{imageAccess,images}.ts` (image-id routes + note alias), `src/http/sameOrigin.ts` (new), `src/mcp/{imageTools,tools,instructions}.ts`, `src/chat/prompt.ts`, `src/background.ts` (startup reconcile), `tests/helpers/fakeNotes.ts` and every server test reading `image`. Exit: no server code reads `image_path`/`image_meta` outside `legacy.ts`; every read path returns `images[]`; filters are any-live-image; `view_images` returns all images capped at 8; legacy and new image routes both serve incl. a reconciled row; `sameOriginOnly` 403s missing/foreign/`null` Origin.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A023
+  - **Plan**: `.workflows/plan/P1-NOTES-A024.md`
+  - **Completed**: 2026-10-30 16:31
+  - **Method**: /do
+  - **Files**: src/background.ts, src/chat/prompt.ts, src/http/app.ts, src/http/imageAccess.ts, src/http/images.ts, src/http/sameOrigin.ts, src/images/derive.ts, src/images/ingest.ts, src/images/records.ts, src/images/store.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/mcp/tools.ts, src/notes/repo.ts, src/notes/service.ts, src/notes/types.ts, tests/helpers/fakeNotes.ts, tests/integration/api.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.http.int.test.ts, tests/integration/images.int.test.ts, tests/integration/images.mcp.int.test.ts, tests/integration/notes.service.int.test.ts, tests/unit/images/inbox.test.ts, tests/unit/images/ingest.test.ts, tests/unit/notes.helpers.test.ts, tests/unit/sameOrigin.test.ts, tests/unit/takenFilter.test.ts
+
+- [x] **P1-NOTES-A023** Phase 1: `note_images` table, migration 0002, legacy copy/reconcile, image repo
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/db/schema.ts` (`noteImages`, legacy columns kept), `drizzle/0002_note_images.sql` + snapshot/journal, `src/notes/imageRepo.ts` (new), `src/images/legacy.ts` (new; `LEGACY_COPY_SQL`, `reconcileLegacyImages`), integration setup/schema tests, new `migration0002`/`imageRepo` int tests; no consumer reads the new table yet. Exit: migration applies on Docker DB; every legacy image (live, deleted, both sha-clash shapes) gets exactly one row with identical metadata, files untouched; reconcile idempotent, picks up late legacy ingests, bins a late clash; other tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 1 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A023.md`
+  - **Completed**: 2026-10-30 16:23
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, src/images/legacy.ts, src/notes/imageRepo.ts, drizzle/0002_note_images.sql, drizzle/meta/0002_snapshot.json, drizzle/meta/_journal.json, tests/integration/setup.ts, tests/integration/schema.int.test.ts, tests/integration/migration0002.int.test.ts, tests/integration/imageRepo.int.test.ts
+
+- [x] **P1-NOTES-A033** Phase 11: Collapsible answer panel + multi-line chat bar
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/{AnswerPanel,ChatBar}.tsx`, `ChatBar.css` (new), `web/src/hooks/useChat.ts`, `web/src/lib/oneLine.ts` (new), `.answer*`/`.chatbar*`/`.sendbtn` rules in `styles.css`, the `<AnswerPanel>` JSX in `App.tsx` (two new props), `App.test.tsx:125` (button count 2 -> 3), tests (`AnswerPanel`, `ChatBar`, `useChat`, `oneLine`). Exit: R6 and R7 bullets each covered by a component test; panel left-anchored and <= 680px wide; `--chatbar-h` published on `document.documentElement`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 11 of 11)
+  - **Satisfies**: R6, R7, R5 — Collapsible answer panel: caret beside pin/dismiss; collapsed = header line only; streaming continues collapsed; Multi-line chat bar: textarea, Enter sends, Shift+Enter newline, IME-safe; grows to ~6 lines; newlines reach /api/chat; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A033.md`
+  - **Completed**: 2026-10-30 16:23
+  - **Method**: /do
+  - **Files**: web/src/lib/oneLine.ts, web/src/lib/oneLine.test.tsx, web/src/hooks/useChat.ts, web/src/hooks/useChat.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/AnswerPanel.test.tsx, web/src/components/ChatBar.tsx, web/src/components/ChatBar.css, web/src/components/ChatBar.test.tsx, web/src/styles.css, web/src/App.tsx, web/src/App.test.tsx
+  - **Decided**: Step 3 task creation → skipped; phase 1's concurrent session had already minted P1-NOTES-A023..A033 and adopted every plan (command's re-run rule)
 
 - [x] **P1-NOTES-A022** Phase 6: Live test, docs, Neon migration + first backfill
   - **Difficulty**: NORMAL

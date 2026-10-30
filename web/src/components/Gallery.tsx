@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { NoteImage, aspectOf, type ImageInfo, type ImageNote } from './NoteImage';
+import type { Note, PhotoItem } from '../types';
+import { NoteImage, aspectOf, type ImageInfo } from './NoteImage';
 import { PhotoModal } from './PhotoModal';
 
 export const GALLERY_ROW_HEIGHT = 230;
@@ -15,41 +16,44 @@ export function galleryTile(image: Pick<ImageInfo, 'width' | 'height'> | null): 
   return { grow: ratio.toFixed(3), basis: Math.round(ratio * GALLERY_ROW_HEIGHT), ar: css };
 }
 
-/** Phase 7's stub props; `photos` widened to `ImageNote` (phase 7's `Note` is assignable). They arrive tag-filtered (phase 7's `photosOf`). */
+/** `items` arrive tag-filtered and flattened, one per image (`photosOf`). */
 export interface GalleryProps {
-  photos: ImageNote[];
+  items: PhotoItem[];
   copiedId: string | null;
   onCopy: (id: string) => void;
+  /** Passed to the photo modal's trash icon. */
+  onDelete?: (note: Note) => void;
 }
 
-export function Gallery({ photos, copiedId, onCopy }: GalleryProps) {
+export function Gallery({ items, copiedId, onCopy, onDelete }: GalleryProps) {
+  /** The open image's id; the modal hides itself when that image leaves `items`. */
   const [openId, setOpenId] = useState<string | null>(null);
-  const index = openId === null ? -1 : photos.findIndex((p) => p.id === openId);
+  const index = openId === null ? -1 : items.findIndex((it) => it.image.id === openId);
 
   const onIndex = useCallback(
     (i: number) => {
-      const p = photos[i];
-      setOpenId(p ? p.id : null);
+      const it = items[i];
+      setOpenId(it ? it.image.id : null);
     },
-    [photos],
+    [items],
   );
   const onClose = useCallback(() => setOpenId(null), []);
 
   return (
     <>
-      {/* className kept from phase 7's stub: App.test.tsx finds the gallery by `.gallery`. */}
+      {/* App.test.tsx finds the gallery by `.gallery`. */}
       <section className="gallery" data-gallery="" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingTop: 30 }}>
-        {photos.map((p) => {
-          const t = galleryTile(p.image);
+        {items.map((it) => {
+          const t = galleryTile(it.image);
           return (
             <div
-              key={p.id}
-              data-photo={p.id}
-              data-note={p.id}
-              onClick={() => setOpenId(p.id)}
+              key={it.image.id}
+              data-photo={it.image.id}
+              data-note={it.note.id}
+              onClick={() => setOpenId(it.image.id)}
               style={{ flex: `${t.grow} 1 ${t.basis}px`, cursor: 'zoom-in', background: '#1c1c1a' }}
             >
-              <NoteImage note={p} variant="thumb" />
+              <NoteImage image={it.image} variant="thumb" />
             </div>
           );
         })}
@@ -57,7 +61,7 @@ export function Gallery({ photos, copiedId, onCopy }: GalleryProps) {
       </section>
       {index >= 0
         ? createPortal(
-            <PhotoModal photos={photos} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} />,
+            <PhotoModal items={items} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} onDelete={onDelete} />,
             document.body,
           )
         : null}

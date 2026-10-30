@@ -1,0 +1,235 @@
+{
+  "branch": "feature/wall-editing",
+  "coordinator": "orch-wall-editing",
+  "coordinator_session_id": "cc6491fc-2dc1-4f2d-9d28-db3fbf6baa0a",
+  "created": "2026-10-30T16:16:44+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": "048870c",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": "note_images + 0002 (additive: only ALTER is FK on the new table, coordinator-checked); migration0002/imageRepo/schema int tests 35/35 re-run by coordinator; carried phase 11's package_readme lines + A023-A032 plan copies (bookkeeping, not rewritten)",
+      "package": "src/db`, `drizzle`, `src/notes`, `src/images",
+      "plan": ".workflows/plan/wall-editing/phase-1.md",
+      "reported_at": "2026-10-30T16:26:40+07:00",
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A023",
+      "title": "note_images` table, migration 0002, legacy copy/reconcile, image repo"
+    },
+    {
+      "card": null,
+      "commit": "42f05d5",
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": "server cut over to note_images; coordinator grep: no image_path/image_meta reads outside legacy.ts (comments only); unit 641, int 253",
+      "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
+      "plan": ".workflows/plan/wall-editing/phase-2.md",
+      "reported_at": "2026-10-30T16:35:45+07:00",
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A024",
+      "title": "Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile"
+    },
+    {
+      "card": null,
+      "commit": "e4c9a6c",
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": "attach/remove/restore; MCP tools soft only (no unlink in src/mcp); coordinator ran integrated tree after wave 2: typecheck ok, unit 690, int 281",
+      "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
+      "plan": ".workflows/plan/wall-editing/phase-3.md",
+      "reported_at": "2026-10-30T16:47:22+07:00",
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A025",
+      "title": "Attach / remove / restore one image: service, ingest, HTTP, MCP tools"
+    },
+    {
+      "card": null,
+      "commit": "0ad1bc5",
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": "bin/restore/purge; purge routes behind sameOriginOnly, no MCP purge (coordinator grep); decision: bin.int non-id fixture 'nope'->'not-an-id' since 'nope' normalizes to valid N-OPE (rung 2: exit criterion intent); trailer says Haiku 5.5 - left, no rewrite of pushed commit; unit 720, int 294",
+      "package": "src/notes`, `src/images`, `src/http",
+      "plan": ".workflows/plan/wall-editing/phase-4.md",
+      "reported_at": "2026-10-30T16:58:10+07:00",
+      "satisfies": [
+        "R3",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A026",
+      "title": "Bin listing, note restore endpoint, purge (rows + files)"
+    },
+    {
+      "card": null,
+      "commit": "508948b",
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": "reveal + capabilities; files all phase-5-owned; argv ['/select,'+winPath] confirmed; unit 685, int 281",
+      "package": "src/http",
+      "plan": ".workflows/plan/wall-editing/phase-5.md",
+      "reported_at": "2026-10-30T16:41:34+07:00",
+      "satisfies": [
+        "R4",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A027",
+      "title": "Reveal in Explorer: capabilities + reveal endpoint"
+    },
+    {
+      "card": null,
+      "commit": "c8d8258",
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": "web on images[]; invariant 7 respected (no chat hunks); decision: grep gate \\.image\\b narrowed to (note|n)\\.image since PhotoItem.image is plan-introduced (rung 3), coordinator re-ran: empty",
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-6.md",
+      "reported_at": "2026-10-30T16:42:30+07:00",
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A028",
+      "title": "Web on `images[]`: cards, gallery, modal stepping, full-screen by image"
+    },
+    {
+      "card": null,
+      "commit": "448e11f",
+      "depends_on": [
+        3,
+        6
+      ],
+      "difficulty": "HARD",
+      "n": 7,
+      "note": "editor modal + attach; docs f724b8c; invariant 7 held; decision rung 2: App.test uses getAllByLabelText('New note')[0] (Rail+Header share label); drift: keep-list test uses makeNote; int 293/294, the 1 red is phase 4's uncommitted bin.int.test.ts",
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-7.md",
+      "reported_at": "2026-10-30T16:54:41+07:00",
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A029",
+      "title": "Web big editor modal + attach on drop/paste"
+    },
+    {
+      "card": null,
+      "commit": "a5bbb14",
+      "depends_on": [
+        4,
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 8,
+      "note": "delete/undo/bin web; files within declared write set; invariant 7 held; unit 752, int 294; no decisions",
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-8.md",
+      "reported_at": "2026-10-30T17:04:40+07:00",
+      "satisfies": [
+        "R3",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A030",
+      "title": "Web delete, undo, recycle bin view"
+    },
+    {
+      "card": null,
+      "commit": "e6e774b",
+      "depends_on": [
+        5,
+        8
+      ],
+      "difficulty": "NORMAL",
+      "n": 9,
+      "note": "RevealButton + useCapabilities; no gallery mount (coordinator grep); drift: RevealMounts.test card props gain onExpand; trailer Haiku 5.5 left (pushed); unit 766, int 294",
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-9.md",
+      "reported_at": "2026-10-30T17:09:57+07:00",
+      "satisfies": [
+        "R4",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A031",
+      "title": "Web reveal button + capabilities"
+    },
+    {
+      "card": null,
+      "commit": "42a78d3",
+      "depends_on": [
+        9,
+        11
+      ],
+      "difficulty": "NORMAL",
+      "n": 10,
+      "note": "docs + Neon 0002 applied 2026-10-30T10:14:07Z; coordinator re-queried Neon: note_images 4 = legacy image_path 4, 5 indexes, 3 migrations; files_present 2/4 same before and after (pre-existing, not caused); daemon not restarted",
+      "package": "docs, Neon",
+      "plan": ".workflows/plan/wall-editing/phase-10.md",
+      "reported_at": "2026-10-30T17:16:56+07:00",
+      "satisfies": [
+        "R5",
+        "R1"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A032",
+      "title": "Docs, Neon migration 0002, full verification"
+    },
+    {
+      "card": null,
+      "commit": "d76f71c",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 11,
+      "note": "R6 caret + R7 textarea; --chatbar-h published for phase 8; also committed todos.md/PLAN.md bookkeeping incl. phase 1's task entries A023-A032; task creation skipped (phase 1 minted all)",
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-11.md",
+      "reported_at": "2026-10-30T16:24:59+07:00",
+      "satisfies": [
+        "R6",
+        "R7",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A033",
+      "title": "Collapsible answer panel + multi-line chat bar"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "wall-editing",
+  "updated": "2026-10-30T17:16:56+07:00",
+  "verified_at": "2026-10-30T16:54:41+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
+}

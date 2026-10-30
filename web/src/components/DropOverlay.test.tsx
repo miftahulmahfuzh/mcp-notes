@@ -61,7 +61,7 @@ describe('file helpers', () => {
 
 describe('DropOverlay', () => {
   it('paste uploads only the first image file and prevents default', async () => {
-    fetchMock.mockResolvedValue(okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', image: null }, created: true }));
+    fetchMock.mockResolvedValue(okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', images: [] }, created: true }));
     const onImageAdded = vi.fn();
     render(<DropOverlay onImageAdded={onImageAdded} />);
     const e = eventWith('paste', 'clipboardData', { files: [txt, png, jpg] });
@@ -90,7 +90,7 @@ describe('DropOverlay', () => {
   });
 
   it('a dedupe hit is handed to onImageAdded like any upload', async () => {
-    fetchMock.mockResolvedValue(okResponse({ note: { id: 'K-F07', body: '', tags: [], created_at: '', image: null }, created: false }));
+    fetchMock.mockResolvedValue(okResponse({ note: { id: 'K-F07', body: '', tags: [], created_at: '', images: [] }, created: false }));
     const onImageAdded = vi.fn();
     render(<DropOverlay onImageAdded={onImageAdded} />);
     act(() => {
@@ -125,7 +125,7 @@ describe('DropOverlay', () => {
     expect(el.querySelector('[data-drop-overlay]')).toBeNull();
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolvers[0](okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', image: null }, created: true }));
+    resolvers[0](okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', images: [] }, created: true }));
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as FormData).get('file') as File).name).toBe('c.jpg');
@@ -140,5 +140,50 @@ describe('DropOverlay', () => {
       document.dispatchEvent(new Event('dragleave', { bubbles: true }));
     });
     expect(el.querySelector('[data-drop-overlay]')).toBeNull();
+  });
+
+  it('with a target, a paste attaches to that note instead of making a new one', async () => {
+    const attached = { note: { id: 'A-B32', body: 'long', tags: [], created_at: '', updated_at: '', origin: null, images: [] }, attached: true };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(attached), { status: 201, headers: { 'content-type': 'application/json' } }));
+    const onImageAdded = vi.fn();
+    const onAttached = vi.fn();
+    render(<DropOverlay onImageAdded={onImageAdded} target="A-B32" onAttached={onAttached} />);
+    const e = eventWith('paste', 'clipboardData', { files: [png] });
+    act(() => {
+      document.dispatchEvent(e);
+    });
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/notes/A-B32/images');
+    expect(init.method).toBe('POST');
+    expect(((init.body as FormData).get('file') as File).name).toBe('b.png');
+    expect(onAttached).toHaveBeenCalledWith(attached, 'A-B32');
+    expect(onImageAdded).not.toHaveBeenCalled();
+  });
+
+  it('with a target, dropped images attach one at a time and a dedupe result is passed through', async () => {
+    const dup = { note: { id: 'K-F07', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [] }, attached: false };
+    fetchMock.mockImplementation(async () => okResponse(dup));
+    const onAttached = vi.fn();
+    render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={onAttached} />);
+    act(() => {
+      document.dispatchEvent(eventWith('drop', 'dataTransfer', { types: ['Files'], files: [png, txt, jpg] }));
+    });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/notes/A-B32/images', '/api/notes/A-B32/images']);
+    expect(onAttached).toHaveBeenCalledTimes(2);
+    expect(onAttached.mock.calls[0]![0]).toMatchObject({ attached: false, note: { id: 'K-F07' } });
+  });
+
+  it('the overlay shows the attach icon while a target is set, the new-note icon otherwise', () => {
+    const el = render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={() => {}} />);
+    act(() => {
+      document.dispatchEvent(eventWith('dragover', 'dataTransfer', { types: ['Files'], files: [] }));
+    });
+    expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('attach');
+    act(() => root!.render(<DropOverlay onImageAdded={() => {}} target={null} />));
+    expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('new');
   });
 });

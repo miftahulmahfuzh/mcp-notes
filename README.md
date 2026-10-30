@@ -15,8 +15,11 @@ its own chat bar.
   - [Three views: notes, photos, everything](#three-views-notes-photos-everything)
   - [Tags](#tags)
   - [Writing a note](#writing-a-note)
+  - [The big editor](#the-big-editor)
   - [Adding photos](#adding-photos)
   - [The photo modal and the full-screen tab](#the-photo-modal-and-the-full-screen-tab)
+  - [Deleting and the recycle bin](#deleting-and-the-recycle-bin)
+  - [Open file location](#open-file-location)
 - [Using it from Claude Code](#using-it-from-claude-code)
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
@@ -70,11 +73,15 @@ The wall is for browsing, writing quickly, and dropping in photos.
 - **Photos stay byte for byte.** Originals are never re-encoded or resized. The wall shows a
   thumbnail and the modal a display copy, but the full-screen tab shows the original pixels at
   1:1, and the file on disk is exactly the file you dropped. HEIC photos from a phone are kept as
-  HEIC, with a full-resolution JPEG made only for viewing.
+  HEIC, with a full-resolution JPEG made only for viewing. A note can hold several photos, kept
+  in the order you added them.
 - **Claude can see your photos.** A tool returns a preview sized for Claude's image input, so
-  "what's in the pictures I saved on Sunday?" gets a real answer about the pictures.
+  "what's in the pictures I saved on Sunday?" gets a real answer about the pictures, and "show me
+  the pictures in note A-B32" shows Claude every picture in that note.
 - **Nothing is lost by editing.** Every update, append, revert and delete keeps the previous body
-  in `note_revisions`. Deletes are soft. Claude can list revisions and revert.
+  in `note_revisions`. Claude can list revisions and revert. Deleted notes and removed photos go
+  to a recycle bin on the wall. Only "delete forever" in that bin removes anything for good, and
+  no tool Claude has can do that.
 - **The wall follows Claude.** When Claude edits a note over MCP, the wall updates within a
   second over server-sent events. No reload.
 - **Notes remember where they came from.** A note saved from a repo records the working directory,
@@ -92,14 +99,20 @@ The wall is for browsing, writing quickly, and dropping in photos.
 ### Three views: notes, photos, everything
 
 The wall opens on text notes only, with photo notes hidden. The rail button cycles through the
-three views: text only ("Notes."), photos only ("Photos.", a contact-sheet gallery), and
-everything mixed ("Everything."). The giant heading always tells you which one you're in.
+three views: text only ("Notes."), photos only ("Photos.", a contact-sheet gallery with one tile
+per photo, so a note with three photos gives three tiles), and everything mixed ("Everything.").
+The giant heading always tells you which one you're in. On the wall a photo note shows its first
+photo as the cover, with a small count in the corner when it holds more than one.
 
 ![Cycling the three views](docs/readme/views.gif)
 
 | Photos only | Everything |
 |---|---|
 | ![The gallery](docs/readme/gallery.jpg) | ![Text and photo notes mixed](docs/readme/wall-all.jpg) |
+
+The recording and both stills were made before iteration 7. Every photo note in them holds one
+photo, so no card shows a count, and the cards lack the expand, delete and folder icons
+described below.
 
 ### Tags
 
@@ -113,42 +126,132 @@ Clicking a tag chip inside a note filters by it too. Filters apply in all three 
 ### Writing a note
 
 The round "+" sticker (or the pencil on the rail) creates a note with a server-made id and opens
-it for typing. Text is saved when the field loses focus. Clear a text note's text and it is
-deleted (softly, with its last body kept as a revision). Text size follows length, so a
-three-word note reads like a sticky and a paragraph reads like a paragraph.
+it for typing. Text is saved when the field loses focus. Clear the text of a note that has no
+photos and it is deleted when you leave it (softly: it goes to the recycle bin, with its last
+body kept as a revision). Text size follows length, so a three-word note reads like a sticky and
+a paragraph reads like a paragraph.
 
 ![Writing a note, copying its id, filtering by its tag](docs/readme/write.gif)
 
+The recording shows the inline flow, which is unchanged. It was made before cards had the expand
+and delete icons.
+
+### The big editor
+
+Every card has an expand icon at the right end of its id line, beside the trash icon. It opens
+the same note in a large editor:
+
+- a wide, tall text area in the wall's type
+- the note id with its copy button
+- the tag chips
+- the note's photos as a strip, each with a remove icon and the folder icon (see
+  [Open file location](#open-file-location))
+
+For a long note, press "+", type the first line, then expand it and keep writing.
+
+- Text saves the way cards do: when the text area loses focus and when the editor closes, and
+  only if it changed. The card on the wall shows the change at once.
+- Esc closes it.
+- While the editor is open, a dropped or pasted image is attached to this note instead of
+  becoming a new one. The drop overlay shows a paperclip instead of the usual image icon to say
+  so. A file that already lives in a note is not attached twice. The editor quietly says which
+  note holds it.
+- If you attach a photo to a text note while the wall is on "Notes.", the wall switches to
+  "Everything." when you close the editor, so the note stays in sight.
+- Emptying the text does not delete the note while the editor is open. On close, a note with no
+  text and no photos goes to the recycle bin, the same rule as on the wall.
+- Removing a photo from the strip is soft. The photo goes to the recycle bin's photo grid, and
+  restoring it puts it back at the same place in the note.
+
+The editor has no recording yet.
+
 ### Adding photos
 
-Drop image files anywhere on the page, or paste a screenshot. Each one becomes a photo note. If
-you are in the text-only view, the wall switches to everything so you can see the new note.
-Dropping the same file twice returns the existing note instead of a duplicate (dedupe by
-sha256).
+Drop image files anywhere on the page, or paste a screenshot. Each file becomes a new photo
+note. If you are in the text-only view, the wall switches to everything so you can see the new
+note. To add a photo to a note that already exists, open it in [the big editor](#the-big-editor)
+and drop it there. Each photo is stored once (dedupe by sha256, per photo). Dropping a file that
+is already in a note returns that note instead of a copy, and brings the note back from the
+recycle bin if it was deleted.
 
 ![Dropping a photo onto the wall](docs/readme/drop.gif)
 
-Two other ways in, both handy from Claude Code:
+Three other ways in, all handy from Claude Code:
 
 - **The inbox folder.** Anything dropped into `~/mcp-notes-data/inbox` becomes a photo note, and
   the file is moved into the store.
 - **The `create_image` tool.** Claude Code often has a screenshot path at hand: "save this
   screenshot as a note about the login bug".
+- **The `attach_image` tool.** It adds a local file to a note that already exists: "attach
+  ~/Pictures/Screenshots/login-bug-2.png to note A-B32".
 
 ### The photo modal and the full-screen tab
 
-Click a photo for the modal: the display copy, the note's text, its tags and id. Previous/next
-buttons and the arrow keys step through the photos in the current filter. Esc closes it.
+Click a photo for the modal: the display copy, the note's text, its tags and id. The
+previous/next buttons and the arrow keys step one photo at a time, through every photo of a note
+and then on to the next note, within the current filter. The meta line shows where you are
+overall (`4 / 12`) and, for a note with several photos, which of that note's photos this is
+(`2/3`). Esc closes it. The modal also has the delete icon, which sends the note to the recycle
+bin, and the folder icon.
 
 ![The photo modal](docs/readme/modal.jpg)
 
 ![Stepping through photos in the modal](docs/readme/photos.gif)
 
-"Show full screen" opens the photo alone in a new tab, titled with the note id. It fits the
-window by default. Click to toggle 1:1 device pixels and drag to pan. This tab shows the
-original with no film-tone filter. It's the place to check focus and grain.
+Both were captured before iteration 7, when a note held one photo. They show neither the `2/3`
+position nor the delete and folder icons.
+
+"Show full screen" opens the photo alone in a new tab, titled with its id. A note's first photo
+shares the note's id, so old `/full/<note id>` links still open it. The tab fits the window by
+default. Click to toggle 1:1 device pixels and drag to pan. This tab shows the original with no
+film-tone filter. It's the place to check focus and grain.
 
 ![Fit, 1:1 and panning in the full-screen tab](docs/readme/fullscreen.gif)
+
+### Deleting and the recycle bin
+
+Every card, the big editor and the photo modal have a trash icon. Deleting needs no confirmation
+and is soft. For six seconds a quiet line above the right end of the chat bar says
+`deleted A-B32`, with an undo icon beside it. Click the icon and the note is back. Removing one
+photo in the editor works the same way (`removed image`).
+
+The trash icon on the rail (and in the open sidebar) switches to the recycle bin, headed
+"Deleted.". It holds every deleted note, text and photo alike:
+
+- at the top, a grid of deleted photos: the photos of deleted notes, and single photos removed
+  from a note that is still on the wall;
+- below, the deleted notes in the wall's style, most recently deleted first.
+
+Tag filters work in the bin too. The sidebar's tags and counts keep counting live notes only.
+
+Each entry has two icons, restore and delete forever:
+
+- Restore puts a note back on the wall, or puts a removed photo back into its note at its old
+  position. Restoring a photo of a deleted note brings the note back with it.
+- If the same file has since been added to another note, restoring the photo is refused, and
+  the message says which note holds it.
+- In the grid, the tile of a deleted note acts on the whole note.
+
+Delete forever is the only destructive action in mcp-notes. It asks first, inline: the two icons
+turn into a check (delete forever) and a cross (cancel). Once confirmed, it removes the database
+rows: either the note with its photos, revisions and embedding, or the one photo. It also removes
+the original files and their derived copies in `cache/`, and nothing else. Delete forever exists
+only on the wall. No MCP tool can delete anything for good, so Claude can never destroy data.
+
+The bin has no recording yet.
+
+### Open file location
+
+Photo cards on the wall, the photo modal and the editor's photo strip have a folder icon ("Show
+in Explorer"). Gallery tiles don't; open the photo and use the modal's. Clicking it opens Windows
+Explorer on the folder that holds the original, with the file selected. `notesd` turns the stored
+path into a Windows path with `wslpath -w` and starts `explorer.exe /select,<path>`. It does not
+wait for Explorer, whose exit code means nothing.
+
+The icon appears only when this can work: the original must be on this machine, and `notesd`
+must run under WSL with Windows interop available (`GET /api/capabilities` answers
+`{"reveal":true}`). The endpoint takes a photo id, never a path. It refuses any request whose
+`Origin` is not the wall's own page, so another site open in the browser cannot trigger it.
 
 ## Using it from Claude Code
 
@@ -176,6 +279,12 @@ previews. In this demo the sample captions came from a design mock-up and don't 
 photos. Claude noticed.
 
 ![/n show me some pictures that i saved on 26 oct, give your comments on them](docs/readme/cc-photos.gif)
+
+`view_images` takes note ids or photo ids. A note id stands for every photo of that note, in
+order, so "/n show me the pictures in note A-B32" lets Claude see all of them. A call returns at
+most eight. Past eight, it names the photo ids still to view, and Claude can ask for those next.
+The recording was made before notes could hold several photos, but the calls it shows work the
+same way today.
 
 ### Editing a note, live on the wall
 
@@ -208,6 +317,9 @@ listed under [Connectors](#connectors-spending-runs-seer).
 /n summarize our notes on #seer this week. compare it to #v250
 /n what did A-B32 say before i edited it yesterday? put it back
 /n save ~/Pictures/Screenshots/login-bug.png as a note, tag it #seer #bug
+/n attach ~/Pictures/Screenshots/login-bug-2.png to note A-B32
+/n show me the pictures in note A-B32
+/n remove the second picture from note A-B32
 ```
 
 ## The chat bar
@@ -219,6 +331,18 @@ the web") shows what the agent is doing. Notes the answer mentions are outlined 
 the rest dim. Chips under the answer jump to each note, switching the view if that note is
 hidden.
 
+The bar takes several lines. Shift+Enter starts a new line and Enter sends, but not while an
+input method is still composing. The bar grows upward one line at a time up to about six lines,
+then scrolls inside, and drops back to one line after sending. Newlines reach the agent as you
+typed them. The panel always sits above the bar, whatever its height.
+
+The caret icon next to pin and dismiss collapses the panel to its header line. That line shows
+the question on one line (newlines become spaces, a long question is cut with an ellipsis, and
+the full text is in the tooltip). After the question comes the status while it is still
+answering, or the brain that answered. A collapsed answer keeps streaming. Click the line to open
+it again. Every new answer opens expanded, and the notes it used stay outlined on the wall while
+it is collapsed. Dismiss still closes the panel for good and starts a new thread next time.
+
 Behind it is the Claude Agent SDK: headless Claude Code on your existing login, one run per
 message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
 expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
@@ -227,7 +351,8 @@ follow-up continues the same thread. Dismissing the panel starts a new one. Answ
 saved as notes.
 
 The recordings below are real runs against the demo instance. The time spent waiting for the
-answer is sped up 1.8×.
+answer is sped up 1.8×. They were made before the bar took several lines and before the panel
+could collapse.
 
 **Reading and comparing.** It pulls both weeks, writes the comparison, and the eight notes it
 used stay lit on the wall.
@@ -318,7 +443,7 @@ git clone git@github.com:miftahulmahfuzh/mcp-notes.git ~/mcp-notes
 cd ~/mcp-notes
 cp /path/to/your/.env.local .env.local    # DATABASE_URL, DATABASE_URL_UNPOOLED, OPENROUTER_API_KEY
 npm ci
-npm run db:migrate                         # once, against the direct (unpooled) host
+npm run db:migrate                         # against the direct (unpooled) host; again after a pull that adds drizzle/*.sql
 npm run embed:backfill                     # optional: embed existing notes now (notesd also does it in the background)
 scripts/install.sh
 ```
@@ -354,10 +479,11 @@ an alternative (`instanceIdleTimeout=-1` in `.wslconfig`) are in [docs/INSTALL.m
 
 The text database is shared, so a second laptop can run its own `notesd` against it. Clone the
 repo there, copy the same `.env.local`, and run `scripts/install.sh` (no `db:migrate` and no
-`embed:backfill`: the schema and the embeddings are already there). Notes, tags, revisions,
-search by meaning and the chat bar work the same. Photos do not move: a photo note made on one
-machine shows "not on this machine" on the other, by design. The connectors need the three
-sibling repos (or `*_DIR` pointing at them) on that machine too.
+`embed:backfill`: the schema and the embeddings are already there). Notes, tags, revisions, the
+recycle bin, search by meaning and the chat bar work the same. Photos do not move: a photo made
+on one machine shows "not on this machine" on the other, by design, and its folder icon is
+hidden there. The connectors need the three sibling repos (or `*_DIR` pointing at them) on that
+machine too.
 
 ### Run it by hand
 
@@ -402,6 +528,7 @@ part of `npm test` or `test:int`.
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | — | Postgres URLs. The daemon uses the pooled Neon host, migrations the direct one, chosen by host name. |
 | `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. |
 | `NOTES_DATA_DIR` | `~/mcp-notes-data` | Photos, derived images, inbox. |
+| `NOTESD_EXPLORER_BIN` | `explorer.exe` on `PATH`, else `/mnt/c/Windows/explorer.exe` | The Windows Explorer binary "open file location" starts. The systemd unit's `PATH` has no `/mnt/c`, so the fallback is what normally runs. |
 | `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | — | The GLM fallback endpoint (z.ai). |
 | `OPENROUTER_API_KEY` | — | OpenRouter key for note embeddings (`openai/text-embedding-3-small`). Unset: notes save as usual, `search` is full text only and says so, `related` answers only for notes that already have a vector. |
@@ -417,9 +544,10 @@ part of `npm test` or `test:int`.
                                    │     ┌─────────────────────────────┐     ┌────────────────┐
  Browser http://localhost:7317 ────┼────▶│ notesd  (Hono, 127.0.0.1)   │────▶│ Postgres       │
    wall · gallery · modal · chat   │     │  /mcp  streamable HTTP      │     │ notes          │
-                                   │     │  /api  JSON, SSE, upload    │     │ note_revisions │
- ~/mcp-notes-data/inbox ──watch────┘     │  /     the web app          │     └────────────────┘
-                                         │  one notes service + events │────▶ ~/mcp-notes-data
+   editor · recycle bin            │     │  /api  JSON, SSE, upload    │     │ note_images    │
+                                   │     │  /     the web app          │     │ note_revisions │
+ ~/mcp-notes-data/inbox ──watch────┘     │  one notes service + events │     └────────────────┘
+                                         │  explorer.exe /select (WSL) │────▶ ~/mcp-notes-data
                                          └─────────────────────────────┘      images · cache
 ```
 
@@ -435,14 +563,21 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `get` | One or several notes by id |
 | `update` | Replace a note's body |
 | `append` | Add text to the end of a note |
-| `delete`, `restore` | Soft delete and undo it |
-| `list` | Filter by tags (any or all), created/updated date range, `has_image`, EXIF taken-date range. Newest first, paged |
+| `delete`, `restore` | Soft delete (to the recycle bin) and undo it |
+| `list` | Filter by tags (any or all), created/updated date range, `has_image` (at least one photo), EXIF taken-date range (matches when any photo of the note matches). Newest first, paged |
 | `search` | By meaning and by words: full text (Postgres `simple` config, so ids and code tokens still rank first) blended with vector similarity, tag match and recency, after the same filters. `mode: "text"` for exact words only |
 | `related` | The notes nearest in meaning to a note `id`, each with a similarity score, never the note itself |
 | `tags` | Every tag with its count and last use |
 | `revisions`, `revert` | A note's earlier bodies, and putting one back |
-| `create_image` | Photo note from a local file path, with optional text |
-| `view_images` | Previews of up to 8 photo notes as image content, with their metadata |
+| `create_image` | New photo note from a local file path, with optional text. The same file again returns the note that already holds it |
+| `attach_image` | Add a local file to an existing note `id` as its next photo. Returns `{note, attached}`; `attached: false` when the file is already in a note, which is returned instead |
+| `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
+| `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
+
+Every note in a result carries `images`: its photos in order, each with its own id, metadata,
+URLs and `available` (false when the file lives on another machine). No tool deletes anything
+for good: `delete` and `remove_image` are soft, and `restore` / `restore_image` undo them.
+Delete forever exists only in the wall's recycle bin.
 
 The 15 connector tools are listed under [Connectors](#connectors-spending-runs-seer).
 
@@ -469,30 +604,53 @@ progress (first run, or after a model change).
 | Route | |
 |---|---|
 | `GET /health` | `{"ok":true}` |
-| `GET /api/notes?has_image=&tag=&limit=&cursor=` | Notes, newest first |
-| `GET/PATCH/DELETE /api/notes/:id`, `POST /api/notes` | One note |
-| `GET /api/tags` | Tags with counts |
+| `GET /api/notes?has_image=&tag=&limit=&cursor=` | Live notes, newest first, each with its `images` |
+| `GET/PATCH/DELETE /api/notes/:id`, `POST /api/notes` | One note. `DELETE` is soft (to the recycle bin) |
+| `POST /api/notes/:id/restore` | Bring a deleted note back |
+| `GET /api/tags` | Tags with counts, live notes only |
 | `GET /api/events` | Server-sent events, `event: note` on every change |
 | `POST /api/images` | Multipart upload (`file`, optional `body`), returns `{note, created}` |
-| `GET /api/notes/:id/original` · `/display` · `/thumb` · `/preview` | The photo in each form; 404 `not_on_this_machine` when the file lives elsewhere |
+| `POST /api/notes/:id/images` | Multipart `file`, attached to that live note: 201 `{note, attached: true}`, or 200 with the note that already holds the file |
+| `GET /api/images/:imageId` | One photo's metadata and URLs, whatever its state |
+| `GET /api/images/:imageId/original` · `/display` · `/thumb` · `/preview` | The photo in each form, photos in the bin included; 404 `not_on_this_machine` when the file lives elsewhere |
+| `GET /api/notes/:id/original` · `/display` · `/thumb` · `/preview` | The same for a live note's first photo, kept for older links |
+| `DELETE /api/images/:imageId` | Remove one photo from its note (soft), returns the note |
+| `POST /api/images/:imageId/restore` | Put a removed photo back; 409 `duplicate_image` with the holder's `note_id` when the file is in another note now |
+| `GET /api/bin?tag=` | The recycle bin, `{notes, images}`, newest deleted first |
+| `DELETE /api/bin/notes/:id` · `DELETE /api/bin/images/:imageId` | Delete forever: rows and files. 409 `not_deleted` for anything not in the bin; 403 `forbidden_origin` unless the request comes from the wall's own page |
+| `GET /api/capabilities` | `{"reveal": true}` when "open file location" can work on this machine |
+| `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
 | `POST /api/chat` | Streams `status` and `delta` events, then `done` with the `thread_id` and the brain that answered |
-| `/full/:id` | The full-screen photo page |
+| `/full/:imageId` | The full-screen photo page |
 
 ### Where things are stored
 
 ```
-Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, updated_at, deleted_at)
+Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
+                 image_path, image_meta)        legacy: read only at start-up, dropped later
+           note_images(id, note_id, path, sha256, mime, width, height, bytes, taken_at,
+                       original_name, host, position, created_at, deleted_at)
            note_revisions(note_id, body, saved_at)
            note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
 ~/mcp-notes-data/
-  images/YYYY/MM/<id>.<ext>        originals, byte for byte
-  cache/<id>/thumb.webp            480 px wide, for the wall and gallery
-  cache/<id>/preview.jpg           long edge 1568 px, what Claude sees
-  cache/<id>/display.jpg           full resolution, only for HEIC/HEIF/TIFF
+  images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
+  cache/<imageId>/thumb.webp       480 px wide, for the wall and gallery
+  cache/<imageId>/preview.jpg      long edge 1568 px, what Claude sees
+  cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
   inbox/                           drop files here; failures go to inbox/failed/
 ```
 
-`cache/` can be deleted at any time. Everything in it is rebuilt on demand.
+Each photo is one `note_images` row with its own id, in the same `A-B32` form as note ids. A
+note's first photo takes the note's own id. That is how photos saved before iteration 7 kept
+their file names, their `cache/` folders and their links when migration 0002 copied them in.
+Photos added later get a fresh id. `position` is the order photos were added in. Removing a
+photo sets its `deleted_at` and keeps its position. Dedupe is by `sha256` among photos that have
+not been removed. The two `notes` image columns are the iteration 6 layout. New code never
+writes them. At start-up `notesd` copies any photo an older daemon stored there into
+`note_images` (it does nothing when there is nothing new), and a later migration drops them.
+
+`cache/` can be deleted at any time. Everything in it is rebuilt on demand. Delete forever
+removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
 
 ## Limitations
 
@@ -507,6 +665,13 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
   falls back to full text and says so, and `related` answers only for notes embedded earlier.
   Pictures are found by their text and dates, not by what is in them.
 - **Connectors are read-only.** Nothing in expense-tracking, run-insights or Seer can be changed from here, by design.
+- **Delete forever is final.** It removes the rows and the files, with no undo. Everything else
+  (deleting a note, removing a photo) waits in the recycle bin until you restore it or delete it
+  forever. Nothing is purged on a timer.
+- **Open file location is for Windows.** It needs `notesd` under WSL with interop, and the
+  original on this machine. Anywhere else the folder icon is not shown.
+- **Photo order is the order you added them.** There is no drag to reorder, no cropping and no
+  image editing, and notes stay plain text with no markdown rendering.
 - **Single user, no auth.** It binds to `127.0.0.1` only. Anyone with a shell on the machine can
   read it.
 - **Built for WSL.** The installer assumes a systemd user session. The Windows keepalive task
@@ -527,7 +692,8 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 | 4 | Chat bar brain: Claude Agent SDK, streaming, threads, GLM fallback | done |
 | 5 | Read-only connectors: expense-tracking, run-insights, Seer | done |
 | 6 | Semantic search: pgvector embeddings, hybrid ranking, `related` | done |
-| 7 | A second machine (the GPD), weekly digest, … | later |
+| 7 | Wall editing: big editor, several photos per note, recycle bin, open file location, collapsible answer, multi-line chat bar | done |
+| 8 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -550,3 +716,9 @@ The screenshots and recordings come from a throwaway instance (its own Postgres 
 data folder) seeded with the sample notes from the Claude Design mock-up in `docs/design/`. The
 photos are from [Lorem Picsum](https://picsum.photos) (Unsplash), so they don't always match
 the captions. Everything shown is the real app, and the Claude Code sessions are real.
+
+All of them were captured before iteration 7. The wall, gallery and modal in them show one photo
+per note, with no photo count and no expand, delete or folder icons. The chat bar is one line and
+the answer panel has no collapse icon. The text above describes the current behaviour, and the
+captions say where a picture shows the older look. The big editor, the recycle bin and open file
+location have no screenshots yet.

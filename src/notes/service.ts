@@ -1,4 +1,6 @@
 import type { Db } from '../db/client.js';
+import type { NoteImageRow } from '../db/schema.js';
+import { removeImageFiles } from '../images/store.js';
 import { EMBEDDING_MODEL } from '../embeddings/constants.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import * as embeddings from '../embeddings/repo.js';
@@ -14,17 +16,25 @@ import {
 import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
+import * as imageRepo from './imageRepo.js';
+import * as bin from './binRepo.js';
+import type { BinImageRow } from './binRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
 import {
+  DuplicateImageError,
   NoteError,
   cleanOrigin,
   rowToNote,
+  toNoteImage,
+  type Bin,
+  type BinImage,
   type ImageMeta,
   type Note,
   type NotePage,
   type NoteRow,
   type Origin,
+  type PurgeResult,
   type RelatedResult,
   type Revision,
   type SearchMode,
@@ -49,7 +59,7 @@ export interface CreateNoteInput {
   /** May be empty only when `allowEmpty` is true. */
   body: string;
   origin?: Origin | null;
-  /** Image notes (phase 4): `path` is relative to dataDir, e.g. images/2026/10/A-B32.jpg. */
+  /** First image of the note: written to note_images with the note's id and position 0. `path` is relative to dataDir. */
   image?: { path: string; meta: ImageMeta } | null;
   /** HTTP "+" (phase 6) and image notes create with an empty body; MCP never sets this. */
   allowEmpty?: boolean;
@@ -58,6 +68,13 @@ export interface CreateNoteInput {
    * Get it from `newId()`. A taken id throws NoteError('conflict'); no retry.
    */
   id?: string;
+}
+
+/** One image to add to a live note. `id` comes from newId(); `path` is relative to dataDir (images/YYYY/MM/<id>.<ext>). */
+export interface AttachImageInput {
+  id: string;
+  path: string;
+  meta: ImageMeta;
 }
 
 export interface UpdateOptions {
@@ -85,6 +102,11 @@ export const RELATED_MAX_LIMIT = 50;
 export interface RelatedOptions {
   /** 1..RELATED_MAX_LIMIT, default RELATED_DEFAULT_LIMIT. Out-of-range values are clamped. */
   limit?: number;
+}
+
+export interface BinOptions {
+  /** Entries whose note carries every one of these tags. `#` prefix and case are ignored. */
+  tagsAll?: string[];
 }
 
 export interface GetResult {
@@ -126,39 +148,42 @@ export class NotesService {
     return id;
   }
 
-  /** An id no note (live or deleted) currently has. */
+  /** An id no note and no image (live or deleted) currently has. A note's first image takes the note's id. */
   async newId(): Promise<string> {
     for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt += 1) {
       const id = generateId();
-      if (!(await repo.idExists(this.db, id))) return id;
+      if (!(await imageRepo.imageIdTaken(this.db, id))) return id;
     }
     throw new NoteError('conflict', 'Could not find a free note id.');
   }
 
+  /**
+   * Inserts a note and, when `image` is given, its first image (id = note id, position 0) in one
+   * transaction. A clash on the live-image sha256 index throws NoteError('duplicate_image') and
+   * leaves nothing behind. An id held by any note or image is never reused.
+   */
   async create(input: CreateNoteInput): Promise<Note> {
     const body = input.body;
     if (!input.allowEmpty && body.trim() === '') {
       throw new NoteError('empty_body', 'A note needs some text.');
     }
-    const values = {
-      body,
-      tags: parseTags(body),
-      origin: cleanOrigin(input.origin ?? null),
-      imagePath: input.image?.path ?? null,
-      imageMeta: input.image?.meta ?? null,
-    };
+    const values = { body, tags: parseTags(body), origin: cleanOrigin(input.origin ?? null) };
+    const image = input.image ?? null;
+    const fixedId = input.id !== undefined ? this.requireId(input.id) : null;
 
-    let row: NoteRow | null = null;
-    if (input.id !== undefined) {
-      const id = this.requireId(input.id);
-      row = await repo.insertNote(this.db, { id, ...values });
-      if (row === null) throw new NoteError('conflict', `Note id ${id} is already taken.`);
-    } else {
-      for (let attempt = 0; attempt < MAX_ID_ATTEMPTS && row === null; attempt += 1) {
-        row = await repo.insertNote(this.db, { id: generateId(), ...values });
+    const row = await this.db.transaction(async (tx): Promise<NoteRow> => {
+      const attempts = fixedId !== null ? 1 : MAX_ID_ATTEMPTS;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const id = fixedId ?? generateId();
+        const inserted = (await imageRepo.imageIdTaken(tx, id)) ? null : await repo.insertNote(tx, { id, ...values });
+        if (inserted === null) continue;
+        if (image !== null) {
+          await imageRepo.insertImage(tx, imageValues(id, id, image.path, image.meta, 0));
+        }
+        return inserted;
       }
-      if (row === null) throw new NoteError('conflict', 'Could not find a free note id.');
-    }
+      throw new NoteError('conflict', fixedId !== null ? `Note id ${fixedId} is already taken.` : 'Could not find a free note id.');
+    });
     return this.finish({ row, op: 'created' });
   }
 
@@ -181,25 +206,27 @@ export class NotesService {
     }
     const rows = await repo.findNotesByIds(this.db, wanted);
     const byId = new Map(rows.map((r) => [r.id, r]));
-    const notes: Note[] = [];
+    const shown: NoteRow[] = [];
     const deleted: string[] = [];
     for (const id of wanted) {
       const row = byId.get(id);
       if (row === undefined) missing.push(id);
       else if (row.deletedAt !== null && !opts.includeDeleted) deleted.push(id);
-      else notes.push(this.toNote(row));
+      else shown.push(row);
     }
-    return { notes, missing, deleted };
+    return { notes: await this.toNotes(shown), missing, deleted };
   }
 
+  /** The note holding a live image with these bytes. A deleted holder only when includeDeleted is set. */
   async findBySha256(sha256: string, opts: GetOptions = {}): Promise<Note | null> {
-    const row = await repo.findNoteBySha256(this.db, sha256, opts.includeDeleted ?? false);
-    return row === null ? null : this.toNote(row);
+    const hit = await imageRepo.findLiveImageBySha256(this.db, sha256);
+    if (hit === null) return null;
+    return this.getOne(hit.image.noteId, opts);
   }
 
   async list(filter: NoteFilter = {}): Promise<NotePage> {
     const page = await repo.listNotes(this.db, filter);
-    return { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor };
+    return { notes: await this.toNotes(page.rows), next_cursor: page.nextCursor };
   }
 
   /**
@@ -253,7 +280,7 @@ export class NotesService {
     );
     const end = offset + limit;
     return {
-      notes: ranked.slice(offset, end).map((c) => this.toNote(c.row)),
+      notes: await this.toNotes(ranked.slice(offset, end).map((c) => c.row)),
       next_cursor: ranked.length > end ? repo.encodeCursor(end) : null,
       mode: 'hybrid',
     };
@@ -262,7 +289,7 @@ export class NotesService {
   /** Today's full-text ranking (repo.searchNotes, unchanged), optionally marked as a fallback. */
   private async textSearch(query: string, filter: NoteFilter, fallback?: string): Promise<SearchPage> {
     const page = await repo.searchNotes(this.db, query, filter);
-    const result: SearchPage = { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor, mode: 'text' };
+    const result: SearchPage = { notes: await this.toNotes(page.rows), next_cursor: page.nextCursor, mode: 'text' };
     if (fallback !== undefined) result.fallback = fallback;
     return result;
   }
@@ -288,7 +315,8 @@ export class NotesService {
     }
     const input = embedInput(row.body);
     if (input === null) {
-      const what = row.imagePath !== null ? 'is a photo with no text' : 'has no text';
+      const hasImages = (await imageRepo.imagesForNotes(this.db, [id])).get(id)?.length ?? 0;
+      const what = hasImages > 0 ? 'is a photo with no text' : 'has no text';
       throw new NoteError(
         'invalid_input',
         `Note ${id} ${what}, so there is nothing to compare by meaning. Add a description with append("${id}", ...) first, or use list with dates to find notes from the same time.`,
@@ -303,9 +331,10 @@ export class NotesService {
         throw new NoteError('not_embedded', `Note ${id} changed while it was being embedded. Try again.`);
       }
     }
+    const neighbours = await this.toNotes(nearest.map((n) => n.row));
     return {
       note_id: id,
-      related: nearest.map((n) => ({ note: this.toNote(n.row), similarity: roundSimilarity(1 - n.distance) })),
+      related: nearest.map((n, i) => ({ note: neighbours[i]!, similarity: roundSimilarity(1 - n.distance) })),
     };
   }
 
@@ -401,6 +430,173 @@ export class NotesService {
     return this.finish(result);
   }
 
+  /**
+   * Adds one image to a live note, after every image it ever had: position = max position over
+   * all its images (removed ones included) + 1, so a removed image keeps its slot for restore.
+   * The same bytes live anywhere -> NoteError('duplicate_image'); a taken image id ->
+   * NoteError('conflict'); a deleted note -> NoteError('deleted'). Emits `updated`.
+   */
+  async attachImage(noteIdInput: string, input: AttachImageInput): Promise<Note> {
+    const noteId = this.requireId(noteIdInput);
+    const imageId = this.requireImageId(input.id);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      await this.lockLive(tx, noteId);
+      if (await imageRepo.imageIdTaken(tx, imageId)) {
+        throw new NoteError('conflict', `Image id ${imageId} is already taken.`);
+      }
+      const position = await imageRepo.nextPosition(tx, noteId);
+      await imageRepo.insertImage(tx, imageValues(noteId, imageId, input.path, input.meta, position));
+      return { row: await repo.touchNote(tx, noteId), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Soft-removes one image from its note (it goes to the bin; the file is untouched). Works
+   * whatever state the note is in. Removing a removed image is a no-op. Returns the owning note.
+   * Emits `updated` with the note id.
+   */
+  async removeImage(imageIdInput: string): Promise<Note> {
+    const imageId = this.requireImageId(imageIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, image } = await this.lockImage(tx, imageId);
+      if (image.deletedAt !== null) return { row: note, op: null };
+      await imageRepo.setImageDeleted(tx, imageId, true);
+      return { row: await repo.touchNote(tx, note.id), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Puts a removed image back at its old position, and restores its note when the note is
+   * deleted (an image is only visible in a live note). The same bytes already live in another
+   * image -> DuplicateImageError naming that image's note. A live image in a live note is a
+   * no-op. Emits `restored` when the note came back, else `updated`, with the note id.
+   */
+  async restoreImage(imageIdInput: string): Promise<Note> {
+    const imageId = this.requireImageId(imageIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, image } = await this.lockImage(tx, imageId);
+      const imageRemoved = image.deletedAt !== null;
+      const noteDeleted = note.deletedAt !== null;
+      if (!imageRemoved && !noteDeleted) return { row: note, op: null };
+      if (imageRemoved) {
+        const holder = await imageRepo.findLiveImageBySha256(tx, image.sha256);
+        if (holder !== null && holder.image.id !== image.id) {
+          throw new DuplicateImageError(
+            holder.image.noteId,
+            `Image ${imageId} cannot be restored: the same picture is already in note ${holder.image.noteId}. Open that note instead, or remove the picture there first.`,
+          );
+        }
+        try {
+          await imageRepo.setImageDeleted(tx, imageId, false);
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new NoteError(
+              'duplicate_image',
+              `Image ${imageId} cannot be restored: the same picture was just saved in another note. Try again to see which.`,
+            );
+          }
+          throw err;
+        }
+      }
+      if (noteDeleted) await repo.setDeleted(tx, note.id, false);
+      return { row: await repo.touchNote(tx, note.id), op: noteDeleted ? 'restored' : 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * The recycle bin: deleted notes (each with its non-removed images) and every binned image,
+   * both newest-deleted first, optionally narrowed to notes carrying every tag in `tagsAll`.
+   * Read-only; live notes' sidebar counts (tags()) are unaffected.
+   */
+  async listBin(opts: BinOptions = {}): Promise<Bin> {
+    const ids = await bin.listDeletedNoteIds(this.db, opts.tagsAll);
+    // get() keeps the asked order and attaches each note's live images. A note purged between
+    // the two queries lands in `missing` and is simply not listed.
+    const { notes } = await this.get(ids, { includeDeleted: true });
+    const rows = await bin.listBinImages(this.db, opts.tagsAll);
+    return { notes, images: rows.map((r) => toBinImage(r, this.dataDir)) };
+  }
+
+  /**
+   * Delete forever: only a deleted note. Removes the notes row (images, revisions and embeddings
+   * cascade) in one transaction, then the original and derived files of every image the note
+   * held, removed ones included. UI-only: no MCP tool calls this.
+   */
+  async purgeNote(idInput: string): Promise<PurgeResult> {
+    const id = this.requireId(idInput);
+    const targets = await this.db.transaction(async (tx): Promise<Array<{ id: string; path: string }>> => {
+      const cur = await repo.lockNote(tx, id);
+      if (cur === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
+      if (cur.deletedAt === null) {
+        throw new NoteError('not_deleted', `Note ${id} is not deleted. Only notes in the bin can be deleted forever.`);
+      }
+      const rows = (await imageRepo.imagesForNotes(tx, [id], { includeRemoved: true })).get(id) ?? [];
+      const files = rows.map((img) => ({ id: img.id, path: img.path }));
+      // The legacy column names a file too; after the reconcile it is the same path as the
+      // note's first image row, so this only adds something if that row is somehow missing.
+      if (cur.imagePath !== null && !files.some((f) => f.path === cur.imagePath)) {
+        files.push({ id, path: cur.imagePath });
+      }
+      await bin.deleteNoteRow(tx, id);
+      return files;
+    });
+    const files = await this.removeFiles(targets);
+    this.events.emit('purged', id);
+    return { purged: id, files };
+  }
+
+  /**
+   * Delete forever: only an image removed from its note (its own deleted_at set). An image of a
+   * deleted note that was never removed is purged with its note (purgeNote), not here. When the
+   * row is the note's legacy image (same id as the note and the path in notes.image_path), the
+   * legacy columns are cleared in the same transaction so reconcileLegacyImages cannot bring it
+   * back. Then its original and derived files are removed.
+   */
+  async purgeImage(idInput: string): Promise<PurgeResult> {
+    const imageId = this.requireImageId(idInput);
+    const first = await imageRepo.findImageById(this.db, imageId);
+    if (first === null) throw new NoteError('not_found', `Image ${imageId} does not exist.`);
+    const target = await this.db.transaction(async (tx) => {
+      // Note first, then image: the same order as the image writes (lockImage).
+      const note = await repo.lockNote(tx, first.noteId);
+      const img = await bin.lockImageRow(tx, imageId);
+      if (note === null || img === null) throw new NoteError('not_found', `Image ${imageId} does not exist.`);
+      if (img.deletedAt === null) {
+        throw new NoteError(
+          'not_deleted',
+          `Image ${imageId} is not removed from note ${img.noteId}. Only images in the bin can be deleted forever.`,
+        );
+      }
+      await bin.deleteImageRow(tx, imageId);
+      if (img.id === img.noteId && note.imagePath === img.path) await bin.clearLegacyImage(tx, note.id);
+      return img;
+    });
+    const files = await this.removeFiles([{ id: target.id, path: target.path }]);
+    this.events.emit('purged', target.noteId);
+    return { purged: imageId, files };
+  }
+
+  /**
+   * Removes each image's original and cache dir after the rows are gone. A file that cannot be
+   * removed is logged and skipped: the purge already committed, and a leftover file is
+   * harmless (no row points at it).
+   */
+  private async removeFiles(targets: ReadonlyArray<{ id: string; path: string }>): Promise<number> {
+    let removed = 0;
+    for (const target of targets) {
+      try {
+        removed += await removeImageFiles(this.dataDir, target);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`notesd: purge could not remove the files of image ${target.id} (${target.path}): ${reason}`);
+      }
+    }
+    return removed;
+  }
+
   /** Brings back a revision's body; the body it replaces becomes a new revision. */
   async revert(idInput: string, revision: number): Promise<Note> {
     const id = this.requireId(idInput);
@@ -426,17 +622,100 @@ export class NotesService {
     return cur;
   }
 
-  private finish(result: Mutation): Note {
+  /** Canonical image id or NoteError('invalid_id'). Image ids share the note-id format. */
+  private requireImageId(input: string): string {
+    const id = normalizeId(input);
+    if (id === null) {
+      throw new NoteError(
+        'invalid_id',
+        `"${input}" is not an image id. Image ids look like A-B32 (case and the dash are optional); every note lists its images with their ids.`,
+      );
+    }
+    return id;
+  }
+
+  /**
+   * Locks the image's owning note, then re-reads the image, so concurrent changes to one note's
+   * images run one after another. Unknown image -> NoteError('not_found').
+   * Lock order for the whole set: the note row first, then the image row (the image row is
+   * locked implicitly by the UPDATE that follows). Phase 4's purgeImage uses the same order.
+   */
+  private async lockImage(tx: repo.Tx, imageId: string): Promise<{ note: NoteRow; image: NoteImageRow }> {
+    const first = await imageRepo.findImageById(tx, imageId);
+    if (first === null) throw imageNotFound(imageId);
+    const note = await repo.lockNote(tx, first.noteId);
+    const image = await imageRepo.findImageById(tx, imageId);
+    if (note === null || image === null) throw imageNotFound(imageId);
+    return { note, image };
+  }
+
+  private async finish(result: Mutation): Promise<Note> {
     if (result.op !== null) this.events.emit(result.op, result.row.id);
     return this.toNote(result.row);
   }
 
-  private toNote(row: NoteRow): Note {
-    return rowToNote(row, this.dataDir);
+  private async toNote(row: NoteRow): Promise<Note> {
+    const [note] = await this.toNotes([row]);
+    return note!;
+  }
+
+  /** Wire notes in input order, with every note's live images loaded in one query. */
+  private async toNotes(rows: readonly NoteRow[]): Promise<Note[]> {
+    if (rows.length === 0) return [];
+    const images = await imageRepo.imagesForNotes(this.db, rows.map((r) => r.id));
+    return rows.map((r) => rowToNote(r, this.dataDir, images.get(r.id) ?? []));
   }
 }
 
 /** 4 decimals: enough to order and compare, short enough to read in a tool result. */
 function roundSimilarity(value: number): number {
   return Math.round(value * 10_000) / 10_000;
+}
+
+/** One bin listing row -> wire BinImage. The bin query guarantees one of the two times is set. */
+function toBinImage(row: BinImageRow, dataDir: string): BinImage {
+  const removedAt = row.image.deletedAt;
+  const binnedAt = removedAt ?? row.noteDeletedAt;
+  if (binnedAt === null) throw new Error(`image ${row.image.id} is not in the bin`);
+  const image = toNoteImage(row.image, dataDir);
+  return {
+    // deleted_at on the image itself marks a removed image (contract: present only on those).
+    image: removedAt !== null ? { ...image, deleted_at: removedAt.toISOString() } : image,
+    note_id: row.image.noteId,
+    kind: removedAt !== null ? 'image' : 'note',
+    deleted_at: binnedAt.toISOString(),
+  };
+}
+
+/** note_images insert values for one image (drizzle field names). */
+function imageValues(noteId: string, id: string, path: string, meta: ImageMeta, position: number) {
+  return {
+    id,
+    noteId,
+    path,
+    sha256: meta.sha256,
+    mime: meta.mime,
+    width: meta.width,
+    height: meta.height,
+    bytes: meta.bytes,
+    takenAt: meta.taken_at === null ? null : new Date(meta.taken_at),
+    originalName: meta.original_name,
+    host: meta.host,
+    position,
+  };
+}
+
+function imageNotFound(imageId: string): NoteError {
+  return new NoteError('not_found', `Image ${imageId} does not exist. Image ids are listed in each note's images.`);
+}
+
+/** A unique-index clash: phase 1's NoteError('duplicate_image') or a raw Postgres 23505. */
+function isUniqueViolation(err: unknown): boolean {
+  if (err instanceof NoteError) return err.code === 'duplicate_image';
+  let cur: unknown = err;
+  for (let depth = 0; depth < 4 && cur !== null && typeof cur === 'object'; depth += 1) {
+    if ((cur as { code?: unknown }).code === '23505') return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
 }

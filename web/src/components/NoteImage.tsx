@@ -1,31 +1,15 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react';
 import { ImageBroken } from '@phosphor-icons/react';
+import { imageUrl } from '../api';
+import type { NoteImage as NoteImageData } from '../types';
 
 /** Film tone from the design (Notes Wall.dc.html:282). Wall, gallery and modal only. */
 export const FILM_FILTER = 'sepia(.14) saturate(1.12) contrast(1.05) brightness(.97)';
 
-/** The subset of the wire `Note.image` this file reads. */
-export type ImageInfo = {
-  width: number;
-  height: number;
-  available: boolean;
-  host?: string | null;
-};
-
-/** The subset of the wire `Note` this file reads. Phase 7's `Note` is assignable to it. */
-export type ImageNote = {
-  id: string;
-  body: string;
-  tags: string[];
-  created_at: string;
-  image: ImageInfo | null;
-};
+/** The subset of the wire `NoteImage` this file reads. Any wire `NoteImage` is assignable. */
+export type ImageInfo = Pick<NoteImageData, 'id' | 'width' | 'height' | 'available' | 'host'>;
 
 export type ImageVariant = 'thumb' | 'display';
-
-export function imageUrl(id: string, variant: ImageVariant | 'original'): string {
-  return `/api/notes/${encodeURIComponent(id)}/${variant}`;
-}
 
 /** Aspect ratio of an image, falling back to 3:2 when dimensions are missing or zero. */
 export function aspectOf(image: Pick<ImageInfo, 'width' | 'height'> | null | undefined): {
@@ -84,9 +68,9 @@ export function ImagePlaceholder({ aspect, caption, host, width, onClick }: Plac
   );
 }
 
-/** Phase 7's stub props, widened: `variant` defaults to 'thumb' (the wall/gallery), the modal passes 'display'. */
+/** `variant` defaults to 'thumb' (wall cover, gallery tile); the modal passes 'display'. */
 export type NoteImageProps = {
-  note: ImageNote;
+  image: ImageInfo;
   variant?: ImageVariant;
   className?: string;
   style?: CSSProperties;
@@ -94,16 +78,14 @@ export type NoteImageProps = {
 };
 
 /**
- * The image of an image note, with the film tone.
- * - `thumb`: wall card and gallery tile (Notes Wall.dc.html:72, 97): full width, height from the aspect ratio.
+ * One image, with the film tone, fetched by its image id.
+ * - `thumb`: wall cover and gallery tile (Notes Wall.dc.html:72, 97): full width, height from the aspect ratio.
  * - `display`: the modal (Notes Wall.dc.html:135): the display derivative, never a downscaled guess.
  */
-export function NoteImage({ note, variant = 'thumb', className = variant === 'thumb' ? 'card-img' : undefined, style, onClick }: NoteImageProps) {
+export function NoteImage({ image, variant = 'thumb', className = variant === 'thumb' ? 'card-img' : undefined, style, onClick }: NoteImageProps) {
   const [failedKey, setFailedKey] = useState<string | null>(null);
-  const image = note.image;
-  if (!image) return null;
 
-  const key = `${note.id}/${variant}`;
+  const key = `${image.id}/${variant}`;
   const { ratio, css } = aspectOf(image);
   const placeholderWidth = variant === 'display' ? `min(100%, calc((100vh - 48px) * ${ratio.toFixed(4)}))` : undefined;
 
@@ -124,7 +106,7 @@ export function NoteImage({ note, variant = 'thumb', className = variant === 'th
   return (
     <img
       className={className}
-      src={imageUrl(note.id, variant)}
+      src={imageUrl(image.id, variant)}
       alt=""
       draggable={false}
       loading={variant === 'thumb' ? 'lazy' : undefined}

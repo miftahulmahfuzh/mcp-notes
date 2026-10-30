@@ -11,10 +11,14 @@ export interface WallProps {
   onCopy: (id: string) => void;
   onEdit: (id: string) => void;
   onCommit: (note: Note, draft: string) => void;
+  /** Soft delete from a card's trash icon (phase 8). */
+  onDelete: (note: Note) => void;
   onToggleTag: (tag: string) => void;
+  /** Open the big editor on a note (phase 7). */
+  onExpand: (note: Note, draft: string | null) => void;
 }
 
-export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onToggleTag }: WallProps) {
+export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand }: WallProps) {
   return (
     <section className="wall">
       {notes.map((n) => (
@@ -29,7 +33,9 @@ export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit,
           onCopy={onCopy}
           onEdit={onEdit}
           onCommit={onCommit}
+          onDelete={onDelete}
           onToggleTag={onToggleTag}
+          onExpand={onExpand}
         />
       ))}
     </section>

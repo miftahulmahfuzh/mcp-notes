@@ -185,4 +185,63 @@ describe('useChat', () => {
     });
     expect(result.current.brain).toBe('claude');
   });
+
+  it('every new answer opens expanded, and dismissing resets the collapse', async () => {
+    stubChat(
+      sse([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]),
+      sse([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]),
+    );
+    const { result } = renderHook(() => useChat());
+    expect(result.current.collapsed).toBe(false);
+    await act(async () => {
+      await result.current.ask('first');
+    });
+    act(() => result.current.toggleCollapsed());
+    expect(result.current.collapsed).toBe(true);
+    await act(async () => {
+      await result.current.ask('second');
+    });
+    expect(result.current.collapsed).toBe(false);
+
+    act(() => result.current.toggleCollapsed());
+    expect(result.current.collapsed).toBe(true);
+    act(() => result.current.close());
+    expect(result.current.open).toBe(false);
+    expect(result.current.collapsed).toBe(false);
+  });
+
+  it('collapsing does not stop a streaming answer', async () => {
+    const s = handStream();
+    stubChat(s.body);
+    const { result } = renderHook(() => useChat());
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.ask('line one\nline two');
+    });
+    expect(result.current.query).toBe('line one\nline two');
+    act(() => result.current.toggleCollapsed());
+    expect(result.current.collapsed).toBe(true);
+
+    s.send([{ event: 'status', data: { text: 'searching notes' } }]);
+    await waitFor(() => expect(result.current.status).toBe('searching notes'));
+    s.send([{ event: 'delta', data: { text: 'Found it.' } }]);
+    await waitFor(() => expect(result.current.text).toBe('Found it.'));
+    s.send([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]);
+    s.end();
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.collapsed).toBe(true);
+    expect(result.current.done).toBe(true);
+    expect(result.current.brain).toBe('claude');
+  });
+
+  it('sends a multi-line message with its inner newlines, trimming only the ends', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('  first line\nsecond line\n\n');
+    });
+    expect(posted[0].message).toBe('first line\nsecond line');
+  });
 });

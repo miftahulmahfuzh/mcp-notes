@@ -2,7 +2,16 @@ import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getDisplay, getPreview, getThumb, OriginalMissingError } from '../images/derive.js';
-import { ingestImage, locateImage, type ImageDeps, type LocatedImage } from '../images/ingest.js';
+import {
+  attachImage,
+  ingestImage,
+  locateImage,
+  locateNoteImage,
+  type AttachDeps,
+  type AttachResult,
+  type ImageDeps,
+  type LocatedImage,
+} from '../images/ingest.js';
 import { UnsupportedImageError } from '../images/probe.js';
 import { dbImageRecords } from '../images/records.js';
 import type { ToolDeps } from '../mcp/tools.js';
@@ -26,6 +35,7 @@ export interface ServedFile {
 export type ResolveResult =
   | { status: 'ok'; loc: LocatedImage; file: ServedFile; servedOriginal: boolean }
   | { status: 'not_found' }
+  /** Note alias only: a live note with no live image. */
   | { status: 'no_image'; id: string }
   | { status: 'not_on_this_machine'; id: string; host: string | null };
 
@@ -41,7 +51,7 @@ export class ImageInputError extends Error {
   }
 }
 
-/** ImageDeps for the MCP tools (P2 hands them ToolDeps, not AppDeps). */
+/** ImageDeps for the MCP tools (they get ToolDeps, not AppDeps). */
 export function toolImageDeps(deps: ToolDeps): ImageDeps {
   return { dataDir: deps.dataDir, notes: deps.service, records: dbImageRecords(deps.db) };
 }
@@ -63,18 +73,9 @@ export function etagMatches(header: string | undefined, etag: string): boolean {
 
 const DERIVED_MIME = { thumb: 'image/webp', preview: 'image/jpeg' } as const;
 
-/** Look up a note by any id spelling and resolve one image variant to a file. */
-export async function resolveImageFile(img: ImageDeps, rawId: string, variant: ImageVariant): Promise<ResolveResult> {
-  const id = normalizeId(rawId);
-  if (id === null) return { status: 'not_found' };
-  const loc = await locateImage(img, id);
-  if (loc === null) {
-    // Unknown id, or a text note: tell them apart for a clearer 404 body.
-    return (await img.notes.getOne(id)) ? { status: 'no_image', id } : { status: 'not_found' };
-  }
-  if (loc.deleted) return { status: 'not_found' };
+/** One variant of a located image as a file, or not_on_this_machine. Derivatives go to cache/<imageId>/. */
+async function resolveLocated(img: ImageDeps, loc: LocatedImage, variant: ImageVariant): Promise<ResolveResult> {
   if (!loc.available) return { status: 'not_on_this_machine', id: loc.id, host: loc.host };
-
   const sha = loc.meta.sha256;
   try {
     let absPath: string;
@@ -113,6 +114,33 @@ export async function resolveImageFile(img: ImageDeps, rawId: string, variant: I
     if (err instanceof OriginalMissingError) return { status: 'not_on_this_machine', id: loc.id, host: loc.host };
     throw err;
   }
+}
+
+/**
+ * One variant of an image, by image id (any spelling). Serves any existing row: live, removed
+ * from its note, or in a deleted note (the bin shows their thumbnails). Unknown id: not_found.
+ */
+export async function resolveImageFile(img: ImageDeps, rawImageId: string, variant: ImageVariant): Promise<ResolveResult> {
+  const id = normalizeId(rawImageId);
+  if (id === null) return { status: 'not_found' };
+  const loc = await locateImage(img, id);
+  if (loc === null) return { status: 'not_found' };
+  return resolveLocated(img, loc, variant);
+}
+
+/**
+ * The legacy `/api/notes/:id/:variant` alias: the first live image of a live note. Unknown or
+ * deleted note: not_found. Live note without a live image: no_image.
+ */
+export async function resolveNoteImageFile(img: ImageDeps, rawNoteId: string, variant: ImageVariant): Promise<ResolveResult> {
+  const id = normalizeId(rawNoteId);
+  if (id === null) return { status: 'not_found' };
+  const loc = await locateNoteImage(img, id);
+  if (loc === null) {
+    return (await img.notes.getOne(id)) ? { status: 'no_image', id } : { status: 'not_found' };
+  }
+  if (loc.noteDeleted) return { status: 'not_found' };
+  return resolveLocated(img, loc, variant);
 }
 
 function blankToUndefined(s: string | undefined | null): string | undefined {
@@ -174,4 +202,61 @@ export async function ingestFromPath(
   }
   const b = blankToUndefined(body);
   return runIngest(img, { path: p, originalName: path.basename(p), origin, move: false, ...(b !== undefined ? { body: b } : {}) });
+}
+
+/** AttachDeps for the MCP tools. */
+export function toolAttachDeps(deps: ToolDeps): AttachDeps {
+  return { ...toolImageDeps(deps), notes: deps.service };
+}
+
+async function runAttach(img: AttachDeps, noteId: string, input: Parameters<typeof attachImage>[2]): Promise<AttachResult> {
+  try {
+    return await attachImage(img, noteId, input);
+  } catch (err) {
+    if (err instanceof UnsupportedImageError) {
+      throw new ImageInputError('not_an_image', `not an image: ${err.message}`);
+    }
+    throw err;
+  }
+}
+
+/** A local file path a tool may read: absolute (or ~/), an existing non-empty regular file under the cap. */
+async function checkLocalImagePath(rawPath: string): Promise<string> {
+  const p = expandHome(rawPath.trim());
+  if (!path.isAbsolute(p)) {
+    throw new ImageInputError('not_absolute', `path must be absolute (or start with ~/): ${rawPath}`);
+  }
+  let st;
+  try {
+    st = await stat(p);
+  } catch {
+    throw new ImageInputError('not_found', `no such file: ${p}`);
+  }
+  if (!st.isFile()) throw new ImageInputError('not_a_file', `not a regular file: ${p}`);
+  if (st.size === 0) throw new ImageInputError('not_an_image', `empty file: ${p}`);
+  if (st.size > MAX_IMAGE_BYTES) {
+    throw new ImageInputError('too_large', `file is ${st.size} bytes; the limit is ${MAX_IMAGE_BYTES}`);
+  }
+  return p;
+}
+
+/** HTTP POST /api/notes/:id/images: bytes come from the multipart File. */
+export async function attachFromUpload(
+  img: AttachDeps,
+  noteId: string,
+  file: File,
+  maxBytes: number = MAX_IMAGE_BYTES,
+): Promise<AttachResult> {
+  if (file.size === 0) throw new ImageInputError('not_an_image', 'the uploaded file is empty');
+  if (file.size > maxBytes) {
+    throw new ImageInputError('too_large', `file is ${file.size} bytes; the limit is ${maxBytes}`);
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  return runAttach(img, noteId, { bytes, originalName: file.name || 'upload' });
+}
+
+/** MCP attach_image: a local file, copied (never moved). */
+export async function attachFromPath(img: AttachDeps, noteId: string, rawPath: string): Promise<AttachResult> {
+  const p = await checkLocalImagePath(rawPath);
+  return runAttach(img, noteId, { path: p, originalName: path.basename(p), move: false });
 }

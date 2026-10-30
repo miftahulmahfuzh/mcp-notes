@@ -24,7 +24,7 @@ export function buildChatSystemPrompt(now: Date = new Date(), timeZone: string =
 
     `You may change notes when the owner asks: edit, append, tag, untag, delete or restore. To tag a note, write the #hashtag into its body. Read a note with get before you update it, and send the whole new body. Do not create a note unless the owner asks for one, and never save your own answer as a note.`,
 
-    `To look at pictures, find the image notes first (list with has_image, or search), then call view_images with their ids and comment on what you actually see.`,
+    `To look at pictures, find the notes with images first (list with has_image, or search), then call view_images with their note ids (each note id shows every image of that note, up to 8 images per call; image ids work too) and comment on what you actually see.`,
 
     `When you answer from the owner's spending, runs or Seer, say what the data shows and what you think about it, not just a tally: name the patterns, compare with the previous period or with what is usual for them, point out what stands out, and end with one concrete suggestion. Say which dates you looked at. Give figures in the apps' own units: rupiah as whole numbers written like Rp 38.500 (dots between thousands, no decimals), distance in km, pace as m:ss /km, heart rate in bpm, and Seer money in USD.`,
 

@@ -1,7 +1,9 @@
 import { useEffect, type CSSProperties, type MouseEvent } from 'react';
-import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, X } from '@phosphor-icons/react';
+import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, Trash, X } from '@phosphor-icons/react';
+import type { Note, PhotoItem } from '../types';
 import { relativeDate } from '../lib/dates';
-import { NoteImage, type ImageNote } from './NoteImage';
+import { NoteImage } from './NoteImage';
+import { RevealButton } from './RevealButton';
 import './PhotoModal.css';
 
 /** (i + d) modulo len, wrapping both ways. -1 when there is nothing to show. */
@@ -16,6 +18,14 @@ export function stripTags(body: string): string {
     .replace(/(?<![\w])#[A-Za-z0-9_-]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** `3 / 7  2/3  Today`: position in the whole list, then (only for multi-image notes) which image of the note. */
+export function metaLine(index: number, len: number, item: Pick<PhotoItem, 'k' | 'n'>, when: string): string {
+  const parts = [`${index + 1} / ${len}`];
+  if (item.n > 1) parts.push(`${item.k}/${item.n}`);
+  parts.push(when);
+  return parts.join('  ');
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
@@ -35,24 +45,26 @@ const navBtn: CSSProperties = {
 
 const toolBtn: CSSProperties = { ...navBtn, width: 40, height: 40, fontSize: 19 };
 
-/** Phase 7's stub props; `photos` widened to the structural `ImageNote` (phase 7's `Note` is assignable). Copy state is App's (`useCopied`). */
+/** `items` is the gallery's flattened list (one per image). Copy state is App's (`useCopied`); `onCopy` gets the note id. */
 export interface PhotoModalProps {
-  photos: ImageNote[];
+  items: PhotoItem[];
   index: number;
   onIndex: (i: number) => void;
   onClose: () => void;
   copiedId: string | null;
   onCopy: (id: string) => void;
+  /** Soft-delete the shown photo's note (R3), then close. Absent = no trash icon. */
+  onDelete?: (note: Note) => void;
 }
 
-export function PhotoModal({ photos, index, onIndex, onClose, copiedId, onCopy }: PhotoModalProps) {
-  const len = photos.length;
-  const photo = index >= 0 && index < len ? photos[index] : undefined;
+export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, onDelete }: PhotoModalProps) {
+  const len = items.length;
+  const item = index >= 0 && index < len ? items[index] : undefined;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Capture phase + preventDefault (phase 7's keyboard seam) + stopPropagation: Esc closes
-      // only the modal, never the chat panel behind it.
+      // Capture phase + preventDefault + stopPropagation: Esc closes only the modal, never the
+      // chat panel behind it.
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -71,14 +83,15 @@ export function PhotoModal({ photos, index, onIndex, onClose, copiedId, onCopy }
     return () => window.removeEventListener('keydown', onKey, true);
   }, [index, len, onIndex, onClose]);
 
-  if (!photo) return null;
+  if (!item) return null;
+  const { note, image } = item;
 
-  const copy = () => onCopy(photo.id);
+  const copy = () => onCopy(note.id);
   const full = () => {
-    window.open(`/full/${encodeURIComponent(photo.id)}`, '_blank', 'noopener');
+    window.open(`/full/${encodeURIComponent(image.id)}`, '_blank', 'noopener');
   };
-  const copied = copiedId === photo.id;
-  const meta = `${index + 1} / ${len}  ${relativeDate(photo.created_at, new Date())}`;
+  const copied = copiedId === note.id;
+  const meta = metaLine(index, len, item, relativeDate(note.created_at, new Date()));
 
   return (
     <div
@@ -112,7 +125,7 @@ export function PhotoModal({ photos, index, onIndex, onClose, copiedId, onCopy }
       </button>
 
       <div style={{ height: '100%', display: 'grid', placeItems: 'center', minWidth: 0 }}>
-        <NoteImage key={photo.id} note={photo} variant="display" onClick={stop} />
+        <NoteImage key={image.id} image={image} variant="display" onClick={stop} />
       </div>
 
       <div onClick={stop} style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 4 }}>
@@ -120,18 +133,34 @@ export function PhotoModal({ photos, index, onIndex, onClose, copiedId, onCopy }
           <button type="button" className="pm-btn" data-tip="Copy ID" aria-label="Copy ID" onClick={copy} style={toolBtn}>
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
+          <RevealButton image={image} className="pm-btn" style={toolBtn} />
           <button type="button" className="pm-btn" data-tip="Show full screen" aria-label="Show full screen" onClick={full} style={toolBtn}>
             <ArrowsOut weight="duotone" />
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="pm-btn"
+              data-tip="Delete note"
+              aria-label="Delete note"
+              onClick={() => {
+                onDelete(note);
+                onClose();
+              }}
+              style={toolBtn}
+            >
+              <Trash weight="duotone" />
+            </button>
+          )}
           <button type="button" className="pm-btn" data-tip="Close" aria-label="Close" onClick={onClose} style={toolBtn}>
             <X weight="duotone" />
           </button>
         </div>
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, color: '#e4e3dc', textWrap: 'pretty' } as CSSProperties}>
-          {stripTags(photo.body)}
+          {stripTags(note.body)}
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {photo.tags.map((t) => (
+          {note.tags.map((t) => (
             <span key={t} style={{ fontSize: 11, padding: '3px 8px 4px', borderRadius: 999, background: '#2a2a27', color: '#d6d5cd' }}>
               #{t}
             </span>
@@ -139,7 +168,7 @@ export function PhotoModal({ photos, index, onIndex, onClose, copiedId, onCopy }
         </div>
         <div style={{ height: 1, background: 'rgba(236,235,228,.1)' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Geist Mono',monospace", fontSize: 11, color: '#bdbcb4' }}>
-          <span>{photo.id}</span>
+          <span>{note.id}</span>
           <span style={{ opacity: copied ? 1 : 0, color: '#8a897f', transition: 'opacity .25s' }}>copied</span>
           <span data-meta="" style={{ marginLeft: 'auto', color: '#8a897f' }}>
             {meta}

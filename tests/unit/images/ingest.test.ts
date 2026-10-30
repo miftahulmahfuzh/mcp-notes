@@ -33,10 +33,10 @@ describe('ingestImage', () => {
     const bytes = await fixtureBytes(JPEG_EXIF);
     const { note, created } = await ingestImage(deps, { bytes, originalName: 'IMG_0001.JPG', body: 'hello #cat' });
     expect(created).toBe(true);
-    const rec = (await notes.byId(note.id))!;
-    expect(rec.image_path).toBe(`images/2026/10/${note.id}.jpg`);
-    expect(Buffer.compare(await readFile(path.join(dir, rec.image_path)), bytes)).toBe(0);
-    expect(rec.image_meta).toMatchObject({
+    const rec = (await notes.byImageId(note.id))!;
+    expect(rec.path).toBe(`images/2026/10/${note.id}.jpg`);
+    expect(Buffer.compare(await readFile(path.join(dir, rec.path)), bytes)).toBe(0);
+    expect(rec.meta).toMatchObject({
       mime: 'image/jpeg',
       width: 64,
       height: 48,
@@ -44,9 +44,11 @@ describe('ingestImage', () => {
       original_name: 'IMG_0001.JPG',
       host: 'lenovo',
     });
-    expect(rec.image_meta.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(rec.image_meta.taken_at).toBe(new Date(2024, 9, 30, 14, 5, 9).toISOString());
+    expect(rec.meta.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(rec.meta.taken_at).toBe(new Date(2024, 9, 30, 14, 5, 9).toISOString());
     expect(note.body).toBe('hello #cat');
+    expect(note.images.map((i) => i.id)).toEqual([note.id]);
+    expect(rec).toMatchObject({ id: note.id, note_id: note.id, position: 0, deleted_at: null, note_deleted_at: null });
   });
 
   it('the same bytes twice return the same note', async () => {
@@ -78,11 +80,11 @@ describe('ingestImage', () => {
   it('a duplicate whose original is missing here gets the bytes put back', async () => {
     const bytes = await fixtureBytes(PNG_PLAIN);
     const first = await ingestImage(deps, { bytes });
-    const rec = (await notes.byId(first.note.id))!;
-    await rm(path.join(dir, rec.image_path));
+    const rec = (await notes.byImageId(first.note.id))!;
+    await rm(path.join(dir, rec.path));
     const again = await ingestImage(deps, { bytes });
     expect(again.created).toBe(false);
-    expect(Buffer.compare(await readFile(path.join(dir, rec.image_path)), bytes)).toBe(0);
+    expect(Buffer.compare(await readFile(path.join(dir, rec.path)), bytes)).toBe(0);
   });
 
   it('path + move: renames the source into the store', async () => {
@@ -91,12 +93,12 @@ describe('ingestImage', () => {
     await copyFile(HEIC_PHOTO, src);
     const { note } = await ingestImage(deps, { path: src, move: true, origin: { source: 'inbox' } });
     expect(await fileExists(src)).toBe(false);
-    const rec = (await notes.byId(note.id))!;
-    expect(rec.image_path).toBe(`images/2026/10/${note.id}.heic`);
-    expect(rec.image_meta.mime).toBe('image/heic');
-    expect(rec.image_meta.original_name).toBe('IMG_9.HEIC');
+    const rec = (await notes.byImageId(note.id))!;
+    expect(rec.path).toBe(`images/2026/10/${note.id}.heic`);
+    expect(rec.meta.mime).toBe('image/heic');
+    expect(rec.meta.original_name).toBe('IMG_9.HEIC');
     expect(note.origin).toEqual({ source: 'inbox' });
-    expect(Buffer.compare(await readFile(path.join(dir, rec.image_path)), await fixtureBytes(HEIC_PHOTO))).toBe(0);
+    expect(Buffer.compare(await readFile(path.join(dir, rec.path)), await fixtureBytes(HEIC_PHOTO))).toBe(0);
   });
 
   it('path without move: copies, source untouched', async () => {
@@ -144,23 +146,21 @@ describe('ingestImage', () => {
     notes.beforeInsert = async () => {
       notes.beforeInsert = null;
       const relPath = 'images/2026/10/G-PD1.png';
-      notes.rows.set('G-PD1', {
+      notes.seed({
         id: 'G-PD1',
-        body: '',
-        origin: null,
-        image_path: relPath,
-        image_meta: {
-          sha256: sha256Hex(bytes),
-          mime: 'image/png',
-          width: 40,
-          height: 30,
-          bytes: bytes.byteLength,
-          taken_at: null,
-          original_name: null,
-          host: 'gpd',
+        image: {
+          path: relPath,
+          meta: {
+            sha256: sha256Hex(bytes),
+            mime: 'image/png',
+            width: 40,
+            height: 30,
+            bytes: bytes.byteLength,
+            taken_at: null,
+            original_name: null,
+            host: 'gpd',
+          },
         },
-        created_at: new Date().toISOString(),
-        deleted_at: null,
       });
     };
     const r = await ingestImage(deps, { bytes });
@@ -174,21 +174,33 @@ describe('ingestImage', () => {
     notes.beforeInsert = (id) => {
       calls++;
       if (calls === 1) {
-        notes.rows.set(id, {
-          id,
-          body: 'squatter',
-          origin: null,
-          image_path: null,
-          image_meta: null,
-          created_at: new Date().toISOString(),
-          deleted_at: null,
-        });
+        notes.seed({ id, body: 'squatter' });
       }
     };
     const r = await ingestImage(deps, { bytes: await fixtureBytes(JPEG_EXIF) });
     expect(r.created).toBe(true);
     expect(calls).toBe(2);
     expect(await listFiles(path.join(dir, 'images'))).toHaveLength(1);
+  });
+
+  it('a removed image does not dedupe: the same bytes become a new note', async () => {
+    const bytes = await fixtureBytes(PNG_PLAIN);
+    const first = await ingestImage(deps, { bytes });
+    notes.removeImage(first.note.id);
+    const again = await ingestImage(deps, { bytes });
+    expect(again.created).toBe(true);
+    expect(again.note.id).not.toBe(first.note.id);
+    expect(await listFiles(path.join(dir, 'images'))).toHaveLength(2);
+  });
+
+  it('a live image in a deleted note restores that note', async () => {
+    const bytes = await fixtureBytes(PNG_PLAIN);
+    const first = await ingestImage(deps, { bytes });
+    notes.softDelete(first.note.id);
+    expect((await notes.bySha256Live(sha256Hex(bytes)))!.note_deleted_at).not.toBeNull();
+    const again = await ingestImage(deps, { bytes });
+    expect(again).toMatchObject({ created: false, note: { id: first.note.id } });
+    expect(again.note.deleted_at).toBeUndefined();
   });
 });
 
@@ -197,6 +209,9 @@ describe('locateImage', () => {
     const { note } = await ingestImage(deps, { bytes: await fixtureBytes(PNG_PLAIN) });
     const loc = (await locateImage(deps, note.id))!;
     expect(loc).toMatchObject({ id: note.id, mime: 'image/png', available: true, host: 'lenovo', deleted: false });
+    expect(loc).toMatchObject({ noteId: note.id, position: 0, imageDeleted: false, noteDeleted: false });
+    notes.removeImage(note.id);
+    expect((await locateImage(deps, note.id))!).toMatchObject({ imageDeleted: true, deleted: true });
     await rm(loc.originalPath);
     expect((await locateImage(deps, note.id))!.available).toBe(false);
     expect(await locateImage(deps, 'X-XXX')).toBeNull();

@@ -1,0 +1,25 @@
+/* chat bar textarea (R7): one 20px line + 10px padding top and bottom = the 40px send button. */
+.chatbar textarea {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  box-sizing: border-box;
+  height: 40px;
+  margin: 0;
+  padding: 10px 12px 10px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--bg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.chatbar textarea::placeholder { color: var(--placeholder); }
+
+/* collapsed answer panel (R6): the header line alone, just above the chat bar. */
+.answer.collapsed { padding: 4px 8px 4px 20px; overflow: hidden; }
+.answer.collapsed .answer-head { margin-bottom: 0; cursor: pointer; }

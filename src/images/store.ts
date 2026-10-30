@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export type DataDirs = {
@@ -56,6 +56,7 @@ export function resolveInDataDir(dataDir: string, rel: string): string {
   return abs;
 }
 
+/** `cache/<imageId>/`: derivatives of one image. */
 export function cacheDirFor(dataDir: string, id: string): string {
   return path.join(dataDirs(dataDir).cache, id);
 }
@@ -135,4 +136,46 @@ export async function moveIntoNewFile(src: string, dest: string, fs: MoveFs = re
   }
   await copyIntoNewFile(src, dest);
   await fs.unlink(src);
+}
+
+async function isFileOrLink(p: string): Promise<boolean> {
+  try {
+    const s = await lstat(p);
+    return s.isFile() || s.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delete forever, on disk: unlinks one image's original and removes its derived files
+ * (`cache/<id>/`). The original is touched only when `path` resolves strictly inside
+ * `<dataDir>/images/`; anything else (a path escaping the data dir, the inbox, the cache) is left
+ * alone. The cache dir is touched only when `id` is a single path segment. Returns how many files
+ * were removed: 1 for the original plus one per entry of the cache dir. Missing files count 0.
+ * Never touches any other file, and leaves the (possibly empty) images/YYYY/MM dirs in place.
+ */
+export async function removeImageFiles(dataDir: string, image: { id: string; path: string }): Promise<number> {
+  const dirs = dataDirs(dataDir);
+  let removed = 0;
+
+  const original = path.resolve(dirs.root, image.path);
+  if (original.startsWith(dirs.images + path.sep) && (await isFileOrLink(original))) {
+    await rm(original, { force: true });
+    removed += 1;
+  }
+
+  const id = image.id;
+  if (id === '' || id === '.' || id === '..' || path.basename(id) !== id) return removed;
+  const cacheDir = path.join(dirs.cache, id);
+  let entries: string[];
+  try {
+    entries = await readdir(cacheDir);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return removed;
+    throw err;
+  }
+  await rm(cacheDir, { recursive: true, force: true });
+  return removed + entries.length;
 }

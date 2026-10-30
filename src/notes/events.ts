@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 
-export type NoteOp = 'created' | 'updated' | 'deleted' | 'restored';
+export type NoteOp = 'created' | 'updated' | 'deleted' | 'restored' | 'purged';
 
 export interface NoteEvent {
   type: 'note';

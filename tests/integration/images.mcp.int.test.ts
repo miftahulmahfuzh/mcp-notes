@@ -5,7 +5,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { setImageDeleted } from '../../src/notes/imageRepo.js';
 import {
+  addImage,
   cacheDirOf,
   insertTextNote,
   makeImage,
@@ -171,5 +173,49 @@ describe('MCP image tools and filters', () => {
 
     const bad = await call('list', { taken_from: 'yesterday' }).catch(() => ({ isError: true, content: [] }) as ToolResult);
     expect(bad.isError).toBe(true);
+  });
+
+  it('view_images on a note id shows every image in order, each labelled k of n', async () => {
+    const { id } = await createFromFile('first.png', await makeImage('png', 30, 20, { r: 10, g: 20, b: 30 }), 'three shots');
+    await addImage(h, id, 'S-EC2', 1, { r: 40, g: 50, b: 60 });
+    await addImage(h, id, 'T-HR3', 2, { r: 70, g: 80, b: 90 });
+    const r = await call('view_images', { ids: [id] });
+    expect(r.content.filter((c) => c.type === 'image')).toHaveLength(3);
+    const t = texts(r).join('\n');
+    expect(t).toContain(`image: ${id} (image 1 of 3)`);
+    expect(t).toContain('image: S-EC2 (image 2 of 3)');
+    expect(t).toContain('image: T-HR3 (image 3 of 3)');
+    expect(t.indexOf('S-EC2')).toBeLessThan(t.indexOf('T-HR3'));
+  });
+
+  it('view_images takes an image id', async () => {
+    const { id } = await createFromFile('host.png', await makeImage('png', 30, 20, { r: 11, g: 21, b: 31 }), 'two shots');
+    await addImage(h, id, 'S-EC2', 1, { r: 41, g: 51, b: 61 });
+    const r = await call('view_images', { ids: ['s-ec2'] });
+    expect(r.content.filter((c) => c.type === 'image')).toHaveLength(1);
+    const t = texts(r).join('\n');
+    expect(t).toContain(`id: ${id}`);
+    expect(t).toContain('image: S-EC2 (image 2 of 2)');
+  });
+
+  it('view_images returns at most 8 images and lists the image ids it left out', async () => {
+    const { id } = await createFromFile('many.png', await makeImage('png', 30, 20, { r: 12, g: 22, b: 32 }), 'ten shots');
+    for (let i = 1; i <= 9; i += 1) await addImage(h, id, `M-00${i}`, i, { r: 20 * i, g: 7, b: 200 - 10 * i });
+    const r = await call('view_images', { ids: [id] });
+    expect(r.content.filter((c) => c.type === 'image')).toHaveLength(8);
+    const t = texts(r).join('\n');
+    expect(t).toContain('image: M-007 (image 8 of 10)');
+    expect(t).not.toContain('image: M-008 (');
+    expect(t).toContain('M-008, M-009');
+    expect(t).toMatch(/call view_images again/i);
+  });
+
+  it('view_images says when an image was removed', async () => {
+    const { id } = await createFromFile('keep.png', await makeImage('png', 30, 20, { r: 13, g: 23, b: 33 }), 'kept');
+    await addImage(h, id, 'R-EM2', 1, { r: 43, g: 53, b: 63 });
+    await setImageDeleted(h.deps.db, 'R-EM2', true);
+    const r = await call('view_images', { ids: ['R-EM2'] });
+    expect(r.content.some((c) => c.type === 'image')).toBe(false);
+    expect(texts(r).join('\n')).toContain(`R-EM2: this image was removed from note ${id}`);
   });
 });

@@ -68,7 +68,7 @@ describe('startInboxWatcher', () => {
     expect(await fileExists(path.join(dirs.inbox, 'early.jpg'))).toBe(false);
     const [row] = [...notes.rows.values()];
     expect(row!.origin).toEqual({ source: 'inbox' });
-    expect(row!.image_meta!.original_name).toBe('early.jpg');
+    expect((await notes.byImageId(row!.id))!.meta.original_name).toBe('early.jpg');
   });
 
   it('ingests a dropped image and moves it into the store', async () => {
@@ -78,7 +78,7 @@ describe('startInboxWatcher', () => {
     await watcher.idle();
     expect(await readdir(dirs.inbox)).toEqual(['failed']);
     const [row] = [...notes.rows.values()];
-    expect(await fileExists(path.join(dir, row!.image_path!))).toBe(true);
+    expect(await fileExists(path.join(dir, (await notes.byImageId(row!.id))!.path))).toBe(true);
   });
 
   it('waits for a growing file to settle', async () => {

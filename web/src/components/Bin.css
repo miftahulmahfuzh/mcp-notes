@@ -1,0 +1,12 @@
+/* Recycle bin. Gallery tiles (Gallery.tsx) and wall cards (styles.css .card*) reused; hairlines, no shadows, square corners. */
+.bin-grid { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 30px; }
+.bin-tile { min-width: 0; background: var(--img-bg); }
+.bin-meta { flex-wrap: wrap; padding: 6px 2px 6px 8px; background: var(--bg); }
+.bin-meta .bin-actions { margin-left: auto; }
+.bin-spacer { flex: 999 1 0px; }
+.bin-actions { display: inline-flex; align-items: center; gap: 2px; }
+.bin-text { cursor: default; }
+.bin-tag, .bin-tag:hover { cursor: default; background: var(--chip-bg); color: var(--chip); }
+.bin-notice { color: var(--fg); }
+.bin-empty { margin: 30px 0 0; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.copybtn:disabled { opacity: .4; cursor: default; }

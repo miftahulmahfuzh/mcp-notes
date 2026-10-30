@@ -3,14 +3,20 @@ import { Readable } from 'node:stream';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { AppDeps } from '../deps.js';
-import { imageDeps, type ImageDeps } from '../images/ingest.js';
+import { attachDeps, imageDeps } from '../images/ingest.js';
+import { normalizeId } from '../notes/ids.js';
+import { findImageById } from '../notes/imageRepo.js';
+import { DuplicateImageError, NoteError, toNoteImage } from '../notes/types.js';
 import {
+  attachFromUpload,
   etagMatches,
   ImageInputError,
   ingestFromUpload,
   MAX_IMAGE_BYTES,
   resolveImageFile,
+  resolveNoteImageFile,
   type ImageVariant,
+  type ResolveResult,
 } from './imageAccess.js';
 
 export interface ImageRouteOptions {
@@ -28,8 +34,32 @@ function contentDisposition(name: string): string {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
-async function sendImage(c: Context, img: ImageDeps, variant: ImageVariant): Promise<Response> {
-  const r = await resolveImageFile(img, c.req.param('id') ?? '', variant);
+/** ImageInputError / NoteError from the attach, remove and restore routes -> HTTP. Anything else is rethrown (500). */
+function writeErrorResponse(c: Context, err: unknown): Response {
+  if (err instanceof ImageInputError) {
+    const status = err.code === 'too_large' ? 413 : 415;
+    return c.json({ error: err.code, message: err.message }, status);
+  }
+  if (!(err instanceof NoteError)) throw err;
+  switch (err.code) {
+    case 'not_found':
+    case 'deleted':
+      return c.json({ error: 'not_found' }, 404);
+    case 'invalid_id':
+      return c.json({ error: 'invalid_id' }, 400);
+    case 'duplicate_image':
+      return c.json(
+        { error: 'duplicate_image', note_id: err instanceof DuplicateImageError ? err.noteId : null, message: err.message },
+        409,
+      );
+    case 'conflict':
+      return c.json({ error: 'conflict' }, 409);
+    default:
+      return c.json({ error: `${err.code}: ${err.message}` }, 400);
+  }
+}
+
+function sendResolved(c: Context, r: ResolveResult): Response {
   switch (r.status) {
     case 'not_found':
       return c.json({ error: 'not_found' }, 404);
@@ -58,9 +88,19 @@ async function sendImage(c: Context, img: ImageDeps, variant: ImageVariant): Pro
   return c.body(stream, 200, headers);
 }
 
+/**
+ * Image routes:
+ * - POST /api/images: upload one file as a new note (or the note already holding it).
+ * - POST /api/notes/:id/images: attach one more file to a live note (or return the holder).
+ * - DELETE /api/images/:imageId, POST /api/images/:imageId/restore: soft-remove / put back one image.
+ * - GET /api/images/:imageId: the image's NoteImage JSON, in any state.
+ * - GET /api/images/:imageId/{original|display|thumb|preview}: any existing image row's file.
+ * - GET /api/notes/:id/{variant}: alias, the first live image of a live note.
+ */
 export function imageRoutes(deps: AppDeps, opts: ImageRouteOptions = {}): Hono {
   const maxUpload = opts.maxUploadBytes ?? MAX_IMAGE_BYTES;
   const img = imageDeps(deps);
+  const attach = attachDeps(deps);
   const r = new Hono();
 
   r.post(
@@ -93,8 +133,66 @@ export function imageRoutes(deps: AppDeps, opts: ImageRouteOptions = {}): Hono {
     },
   );
 
+  r.post(
+    '/api/notes/:id/images',
+    bodyLimit({
+      maxSize: maxUpload + MULTIPART_OVERHEAD,
+      onError: (c) => c.json({ error: 'too_large', max_bytes: maxUpload }, 413),
+    }),
+    async (c) => {
+      const noteId = normalizeId(c.req.param('id') ?? '');
+      if (noteId === null) return c.json({ error: 'invalid_id' }, 400);
+      let form: Record<string, string | File | (string | File)[]>;
+      try {
+        form = await c.req.parseBody({ all: true });
+      } catch {
+        return c.json({ error: 'bad_multipart' }, 400);
+      }
+      const fileField = Array.isArray(form['file']) ? form['file'][0] : form['file'];
+      if (!(fileField instanceof File)) return c.json({ error: 'file_required' }, 400);
+      try {
+        const result = await attachFromUpload(attach, noteId, fileField, maxUpload);
+        return c.json(result, result.attached ? 201 : 200);
+      } catch (err) {
+        return writeErrorResponse(c, err);
+      }
+    },
+  );
+
+  r.delete('/api/images/:imageId', async (c) => {
+    const imageId = normalizeId(c.req.param('imageId') ?? '');
+    if (imageId === null) return c.json({ error: 'invalid_id' }, 400);
+    try {
+      return c.json(await deps.service.removeImage(imageId));
+    } catch (err) {
+      return writeErrorResponse(c, err);
+    }
+  });
+
+  r.post('/api/images/:imageId/restore', async (c) => {
+    const imageId = normalizeId(c.req.param('imageId') ?? '');
+    if (imageId === null) return c.json({ error: 'invalid_id' }, 400);
+    try {
+      return c.json(await deps.service.restoreImage(imageId));
+    } catch (err) {
+      return writeErrorResponse(c, err);
+    }
+  });
+
+  r.get('/api/images/:imageId', async (c) => {
+    const id = normalizeId(c.req.param('imageId') ?? '');
+    const row = id === null ? null : await findImageById(deps.db, id);
+    if (row === null) return c.json({ error: 'not_found' }, 404);
+    return c.json(toNoteImage(row, deps.config.dataDir));
+  });
+
   for (const variant of VARIANTS) {
-    r.get(`/api/notes/:id/${variant}`, (c) => sendImage(c, img, variant));
+    r.get(`/api/images/:imageId/${variant}`, async (c) =>
+      sendResolved(c, await resolveImageFile(img, c.req.param('imageId') ?? '', variant)),
+    );
+    r.get(`/api/notes/:id/${variant}`, async (c) =>
+      sendResolved(c, await resolveNoteImageFile(img, c.req.param('id') ?? '', variant)),
+    );
   }
 
   return r;

@@ -5,6 +5,8 @@ import { readSSE } from '../lib/sse';
 export interface ChatState {
   open: boolean;
   pinned: boolean;
+  /** Panel folded to its header line (R6). Every new answer and every dismiss reset it to false. */
+  collapsed: boolean;
   query: string;
   text: string;
   done: boolean;
@@ -18,6 +20,7 @@ export interface Chat extends ChatState {
   ask: (message: string) => Promise<void>;
   close: () => void;
   togglePin: () => void;
+  toggleCollapsed: () => void;
 }
 
 function parse(data: string): Record<string, unknown> {
@@ -33,6 +36,7 @@ export function useChat(): Chat {
   const [st, setSt] = useState<ChatState>({
     open: false,
     pinned: false,
+    collapsed: false,
     query: '',
     text: '',
     done: false,
@@ -43,12 +47,13 @@ export function useChat(): Chat {
   const ctrl = useRef<AbortController | null>(null);
 
   const ask = useCallback(async (message: string) => {
+    // Only the ends are trimmed: newlines inside a multi-line message (R7) reach /api/chat intact.
     const q = message.trim();
     if (!q) return;
     ctrl.current?.abort();
     const c = new AbortController();
     ctrl.current = c;
-    setSt((s) => ({ ...s, open: true, query: q, text: '', done: false, status: '', brain: null }));
+    setSt((s) => ({ ...s, open: true, collapsed: false, query: q, text: '', done: false, status: '', brain: null }));
 
     const finish = (extra?: string, brain: string | null = null) => {
       if (ctrl.current !== c) return;
@@ -100,12 +105,14 @@ export function useChat(): Chat {
     ctrl.current = null;
     // Dismissing ends the conversation: the next message starts a new thread.
     threadId.current = undefined;
-    setSt((s) => ({ ...s, open: false, pinned: false, text: '', done: false, status: '', brain: null }));
+    setSt((s) => ({ ...s, open: false, pinned: false, collapsed: false, text: '', done: false, status: '', brain: null }));
   }, []);
 
   const togglePin = useCallback(() => setSt((s) => ({ ...s, pinned: !s.pinned })), []);
 
+  const toggleCollapsed = useCallback(() => setSt((s) => ({ ...s, collapsed: !s.collapsed })), []);
+
   useEffect(() => () => ctrl.current?.abort(), []);
 
-  return { ...st, ask, close, togglePin };
+  return { ...st, ask, close, togglePin, toggleCollapsed };
 }

@@ -7,6 +7,7 @@ import { noteRevisions } from '../../src/db/schema.js';
 import { NoteEvents, type NoteEvent } from '../../src/notes/events.js';
 import { NotesService } from '../../src/notes/service.js';
 import { NoteError, type ImageMeta } from '../../src/notes/types.js';
+import { insertImage, setImageDeleted } from '../../src/notes/imageRepo.js';
 import { closeTestDb, openTestDb, truncateAll } from './setup.js';
 
 const db = openTestDb();
@@ -46,6 +47,25 @@ const meta = (sha256: string): ImageMeta => ({
   host: 'lenovo',
 });
 
+async function addImageRow(noteId: string, imageId: string, position: number, takenAt: Date | null = null): Promise<void> {
+  await insertImage(db, {
+    id: imageId,
+    noteId,
+    path: `images/2026/10/${imageId}.png`,
+    sha256: `sha-${imageId}`,
+    mime: 'image/png',
+    width: 2,
+    height: 1,
+    bytes: 70,
+    takenAt,
+    originalName: `${imageId}.png`,
+    host: 'lenovo',
+    position,
+  });
+}
+
+const idsOf = (notes: { id: string }[]) => notes.map((n) => n.id);
+
 beforeEach(async () => {
   await truncateAll(db);
   seen.length = 0;
@@ -65,7 +85,7 @@ describe('NotesService create/get', () => {
     expect(note.id).toMatch(/^[0-9A-Z]-[0-9A-Z]{3}$/);
     expect(note.tags).toEqual(['seer', 'v250']);
     expect(note.origin).toEqual({ cwd: '/home/m/seer', repo: 'seer', claude_session: 'abc' });
-    expect(note.image).toBeNull();
+    expect(note.images).toEqual([]);
     expect(note.deleted_at).toBeUndefined();
     expect(new Date(note.created_at).toISOString()).toBe(note.created_at);
     expect(seen).toEqual([{ type: 'note', op: 'created', id: note.id }]);
@@ -269,8 +289,9 @@ describe('NotesService image notes', () => {
     writeFileSync(join(dataDir, rel), 'png');
     const here = await service.create({ body: 'shot #ai_image', image: { path: rel, meta: meta('s1') } });
     const away = await service.create({ body: '', allowEmpty: true, image: { path: 'images/2026/10/absent.png', meta: meta('s2') } });
-    expect(here.image).toMatchObject({ mime: 'image/png', width: 2, height: 1, host: 'lenovo', available: true });
-    expect(away.image?.available).toBe(false);
+    expect(here.images).toHaveLength(1);
+    expect(here.images[0]).toMatchObject({ id: here.id, note_id: here.id, position: 0, mime: 'image/png', width: 2, height: 1, host: 'lenovo', available: true });
+    expect(away.images[0]?.available).toBe(false);
   });
 
   it('findBySha256 sees live notes, and deleted ones only when asked', async () => {
@@ -285,5 +306,61 @@ describe('NotesService image notes', () => {
     const deleted = await service.findBySha256('dup', { includeDeleted: true });
     expect(deleted?.id).toBe(n.id);
     expect(deleted?.deleted_at).toBeDefined();
+  });
+});
+
+describe('NotesService images[] (iteration 7)', () => {
+  it('create writes the first image with the note id at position 0', async () => {
+    const n = await service.create({ body: '', allowEmpty: true, image: { path: 'images/2026/10/f.png', meta: meta('first') } });
+    expect(n.images).toHaveLength(1);
+    expect(n.images[0]).toMatchObject({
+      id: n.id,
+      note_id: n.id,
+      position: 0,
+      urls: { original: `/api/images/${n.id}/original`, thumb: `/api/images/${n.id}/thumb` },
+    });
+  });
+
+  it('a duplicate first image rolls the whole create back', async () => {
+    await service.create({ body: 'one', image: { path: 'images/2026/10/a2.png', meta: meta('dup2') } });
+    const before = idsOf((await service.list({ limit: 100, deleted: 'include' })).notes);
+    await expectNoteError(service.create({ body: 'two', image: { path: 'images/2026/10/b2.png', meta: meta('dup2') } }), 'duplicate_image');
+    expect(idsOf((await service.list({ limit: 100, deleted: 'include' })).notes)).toEqual(before);
+  });
+
+  it('an id held by an image is not free for a new note', async () => {
+    const n = await service.create({ body: 'host', image: { path: 'images/2026/10/h.png', meta: meta('host') } });
+    await addImageRow(n.id, 'Q-IM2', 1);
+    await expectNoteError(service.create({ id: 'Q-IM2', body: 'clash' }), 'conflict');
+  });
+
+  it('every read path returns live images only, in position order', async () => {
+    const n = await service.create({ body: 'pool party', image: { path: 'images/2026/10/p0.png', meta: meta('p0') } });
+    await addImageRow(n.id, 'P-OS2', 2);
+    await addImageRow(n.id, 'P-OS1', 1);
+    await setImageDeleted(db, 'P-OS1', true);
+    const want = [n.id, 'P-OS2'];
+    expect((await service.getOne(n.id))!.images.map((i) => i.id)).toEqual(want);
+    expect((await service.get([n.id])).notes[0]!.images.map((i) => i.id)).toEqual(want);
+    expect((await service.list({})).notes.find((x) => x.id === n.id)!.images.map((i) => i.id)).toEqual(want);
+    expect((await service.search('pool', {}, { mode: 'text' })).notes[0]!.images.map((i) => i.id)).toEqual(want);
+    expect((await service.append(n.id, 'more')).images.map((i) => i.id)).toEqual(want);
+  });
+
+  it('hasImage means at least one live image', async () => {
+    const n = await service.create({ body: 'one shot', image: { path: 'images/2026/10/o.png', meta: meta('only') } });
+    expect(idsOf((await service.list({ hasImage: true })).notes)).toContain(n.id);
+    await setImageDeleted(db, n.id, true);
+    expect(idsOf((await service.list({ hasImage: true })).notes)).not.toContain(n.id);
+    expect(idsOf((await service.list({ hasImage: false })).notes)).toContain(n.id);
+  });
+
+  it('the taken range matches when any live image was taken in it', async () => {
+    const n = await service.create({ body: 'trip', image: { path: 'images/2026/10/t0.png', meta: meta('t0') } });
+    await addImageRow(n.id, 'T-AK1', 1, new Date(2026, 9, 30, 10, 0));
+    expect(idsOf((await service.list({ takenFrom: '2026-10-30', takenTo: '2026-10-30' })).notes)).toEqual([n.id]);
+    expect(idsOf((await service.list({ takenTo: '2026-10-29' })).notes)).toEqual([]);
+    await setImageDeleted(db, 'T-AK1', true);
+    expect(idsOf((await service.list({ takenFrom: '2026-10-30' })).notes)).toEqual([]);
   });
 });

@@ -263,6 +263,71 @@ Check it:
   even though it never says "credentials".
 - Live check of the model itself (one billed call, no database): `npm run test:live:embeddings`.
 
+## 7. Several images per note (iteration 7)
+
+Iteration 7 moves photos from two columns on `notes` (`image_path`, `image_meta`) into their own
+table, `note_images`, with one row per photo, so a note can hold several. Migration
+`drizzle/0002_note_images.sql` creates the table and copies every existing photo into it, from
+live and deleted notes alike. Each copied row takes its note's id, so files, `cache/` folders and
+links stay as they are. The migration only adds. The old columns and their indexes stay (a later
+migration drops them), and nothing on disk moves.
+
+Once per database (the second machine skips the migrate, because the schema is shared):
+
+```sh
+cd ~/mcp-notes
+git pull
+npm run db:migrate          # applies drizzle/0002_note_images.sql: note_images, its indexes, the copy
+scripts/install.sh          # rebuild and restart notesd on the new code
+```
+
+The migration is safe to run while the old `notesd` is still up. That daemon never reads the new
+table and keeps working. A photo it takes in between the migrate and the restart lands only in
+the old columns. To cover that, the new `notesd` copies any such photo into `note_images` every
+time it starts. It runs the same statement as the migration, which is idempotent and does
+nothing when there is nothing to copy. The same happens on the second machine when its `notesd`
+first starts on the new code. Until then, photos that machine takes in reach `note_images` at the
+next start of a new-code `notesd` on either machine, so run `scripts/install.sh` on both soon
+after the pull.
+
+### Open file location
+
+The folder icon on photos asks `notesd` to run `explorer.exe /select,<windows path>`, with the
+path converted by `wslpath -w`. The icon is offered only when all of these hold:
+
+- `notesd` runs under WSL with interop, meaning `/proc/sys/fs/binfmt_misc/WSLInterop` (or
+  `WSLInterop-late`) exists;
+- `wslpath` is found;
+- Explorer is found: `NOTESD_EXPLORER_BIN` if set, else `explorer.exe` on `PATH`, else
+  `/mnt/c/Windows/explorer.exe`.
+
+The unit's `PATH` has no `/mnt/c`, so the last one is what normally runs, and the unit file
+needs no change. To point it elsewhere, add a drop-in, which survives `install.sh`:
+
+```sh
+systemctl --user edit notesd        # add:  [Service]
+                                    #       Environment=NOTESD_EXPLORER_BIN=/mnt/c/Windows/explorer.exe
+systemctl --user restart notesd
+```
+
+Check it:
+
+```sh
+curl -s http://127.0.0.1:7317/api/capabilities    # {"reveal":true}
+```
+
+`{"reveal":false}` hides the icon. The daemon works the answer out once per start, so restart
+`notesd` after fixing interop. `notesd` judges success by the spawn alone (Explorer exits with 1
+even when it worked) and never waits for Explorer.
+
+### Recycle bin
+
+Deleting a note or removing a photo is soft, from the wall and from Claude alike. "Delete
+forever" exists only in the wall's recycle bin. It deletes the rows, then removes the original
+and its `cache/<imageId>/` folder from `~/mcp-notes-data`. Its endpoints accept only requests
+from the wall's own page (the same `Origin` on a loopback host), so a plain `curl` gets 403
+`forbidden_origin`. No MCP tool can delete for good, and nothing is purged automatically.
+
 ## Uninstall
 
 ```sh
@@ -288,3 +353,9 @@ Windows: run the keepalive script with `-Uninstall`.
   (a Claude Code reinstall into a different directory needs `scripts/install.sh` again).
 - The panel says `glm` when you expected `claude`: Claude hit a usage limit or the login failed,
   and the fallback answered. The journal has the Claude error.
+- No folder icon on photos: `curl -s http://127.0.0.1:7317/api/capabilities`. `{"reveal":false}`
+  means interop, `wslpath` or Explorer was not found when the daemon started (see "Open file
+  location" in section 7). On a machine that does not hold the original, the icon is hidden by
+  design.
+- A photo saved just before the restart onto the new code shows as a text note: restart
+  `notesd` once more (`systemctl --user restart notesd`). The start-up copy picks the photo up.

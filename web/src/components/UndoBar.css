@@ -1,0 +1,28 @@
+/* Phase 11 publishes the chat bar's live height as --chatbar-h; the bar sits 16px above the bottom,
+   so this sits 8px above the bar's top edge, right-aligned with the bar (right: 16px). The answer
+   panel (bottom: calc(var(--chatbar-h, 54px) + 32px)) is anchored at the bar's LEFT edge and is at
+   most 680px wide, so the two never overlap on any window wider than about 1220px (sidebar open) /
+   980px (rail only). Narrower than that, the undo label (z 65) stays on top of the panel (z 40) for
+   its 6 s. z-index above the photo modal / editor (60) so an image removed in the editor can be
+   undone there; below the drop overlay (70) and the tooltip (200). */
+.undo {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--chatbar-h, 54px) + 24px);
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 3px 0 10px;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line-14);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .03em;
+  color: var(--dim);
+  animation: undo-in .25s ease-out;
+}
+.undo-label { color: var(--id); white-space: nowrap; }
+@keyframes undo-in { from { opacity: 0; } to { opacity: 1; } }

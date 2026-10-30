@@ -1,17 +1,20 @@
-import type { Mode, TagCount } from '../types';
+import { Trash } from '@phosphor-icons/react';
+import type { Mode, TagCount, View } from '../types';
 import { MODE_ORDER, MODE_TIP } from '../lib/filter';
-import { MODE_ICON } from './Rail';
+import { BIN_TIP, MODE_ICON } from './Rail';
 
 export interface SidebarProps {
   mode: Mode;
+  view: View;
   photoCount: number;
   tags: TagCount[];
   active: string[];
   onMode: (m: Mode) => void;
+  onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
 }
 
-export function Sidebar({ mode, photoCount, tags, active, onMode, onToggleTag }: SidebarProps) {
+export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggleBin, onToggleTag }: SidebarProps) {
   const sorted = tags.slice().sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   return (
     <aside className="side">
@@ -19,11 +22,28 @@ export function Sidebar({ mode, photoCount, tags, active, onMode, onToggleTag }:
         {MODE_ORDER.map((m) => {
           const I = MODE_ICON[m];
           return (
-            <button key={m} type="button" className={m === mode ? 'ibtn on' : 'ibtn'} data-tip={MODE_TIP[m]} aria-label={MODE_TIP[m]} onClick={() => onMode(m)}>
+            <button
+              key={m}
+              type="button"
+              className={view === 'wall' && m === mode ? 'ibtn on' : 'ibtn'}
+              data-tip={MODE_TIP[m]}
+              aria-label={MODE_TIP[m]}
+              onClick={() => onMode(m)}
+            >
               <I weight="duotone" />
             </button>
           );
         })}
+        <button
+          type="button"
+          className={view === 'bin' ? 'ibtn on' : 'ibtn'}
+          data-tip={BIN_TIP[view]}
+          aria-label={BIN_TIP[view]}
+          aria-pressed={view === 'bin'}
+          onClick={onToggleBin}
+        >
+          <Trash weight="duotone" />
+        </button>
         <span className="side-count">{photoCount} photos</span>
       </div>
       <div className="side-sep" />
