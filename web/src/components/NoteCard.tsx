@@ -62,8 +62,10 @@ function CardEditor({
 }
 
 function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand }: NoteCardProps) {
-  const count = note.images.length;
-  const cover = count > 0 ? note.images[0] : undefined;
+  // Images whose file is not on this machine are hidden: a placeholder cover only eats space.
+  const shown = note.images.filter((img) => img.available);
+  const count = shown.length;
+  const cover = count > 0 ? shown[0] : undefined;
   const hasImg = cover !== undefined;
   const fs = fontSizeFor(note.body, hasImg);
   const cls = ['card', hasImg ? 'img' : '', dim ? 'dim' : '', used ? 'used' : ''].filter(Boolean).join(' ');
