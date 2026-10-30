@@ -269,11 +269,18 @@ selects the note again; changing the hash or moving back and forward selects the
 
 ## Using it from Claude Code
 
-`install.sh` registers the daemon as the user-scope MCP server `notes` and links the `/n` skill
-into `~/.claude/skills/n`, so in any repo:
+`install.sh` registers the daemon as the user-scope MCP server `notes` and links the `/n` and
+`/migrate` skills into `~/.claude/skills`, so in any repo:
 
 ```
 /n <what you want, in plain words>
+```
+
+To move a folder of pictures into the notes and free the disk, `/migrate` puts every image in the
+folder into one new image note, tags it, checks the note holds them all, then deletes the folder:
+
+```
+/migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
 
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
@@ -505,7 +512,7 @@ scripts/install.sh
 4. runs `loginctl enable-linger` so the unit starts when the distro boots,
 5. waits for `GET /health`,
 6. registers `notes` with `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`,
-7. symlinks the `/n` skill into `~/.claude/skills/n`,
+7. symlinks the `/n` and `/migrate` skills into `~/.claude/skills`,
 8. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
    `notes` connected.
 
@@ -753,6 +760,7 @@ src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP ro
 web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
+claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive

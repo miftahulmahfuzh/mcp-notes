@@ -18,9 +18,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 UNIT_NAME="notesd.service"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT_TEMPLATE="$REPO_DIR/deploy/notesd.service"
-SKILL_SRC="$REPO_DIR/claude/skills/n"
+SKILLS_SRC_DIR="$REPO_DIR/claude/skills"
 SKILLS_DIR="$HOME/.claude/skills"
-SKILL_DST="$SKILLS_DIR/n"
+SKILL_NAMES=(n migrate)
 DATA_DIR="${NOTES_DATA_DIR:-$HOME/mcp-notes-data}"
 PORT=7317
 HEALTH_URL="http://127.0.0.1:$PORT/health"
@@ -74,16 +74,21 @@ check_preconditions() {
   systemctl --user show-environment >/dev/null 2>&1 \
     || die "cannot reach the systemd user manager (systemctl --user). Is systemd enabled in this distro?"
   [[ -f "$UNIT_TEMPLATE" ]] || die "missing $UNIT_TEMPLATE."
-  [[ -f "$SKILL_SRC/SKILL.md" ]] || die "missing $SKILL_SRC/SKILL.md."
+  local sk
+  for sk in "${SKILL_NAMES[@]}"; do
+    [[ -f "$SKILLS_SRC_DIR/$sk/SKILL.md" ]] || die "missing $SKILLS_SRC_DIR/$sk/SKILL.md."
+  done
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
   local p
   for p in "$REPO_DIR" "$NODE_BIN" "$NODE_DIR" "$DATA_DIR" "$CLAUDE_REAL" "$HOME"; do
     [[ "$p" != *'|'* && "$p" != *'&'* && "$p" != *'\'* ]] \
       || die "path contains a character the unit renderer cannot handle (| & \\): $p"
   done
-  if [[ -e "$SKILL_DST" && ! -L "$SKILL_DST" ]]; then
-    die "$SKILL_DST exists and is not a symlink. Move it away, then re-run (refusing to clobber a real directory)."
-  fi
+  for sk in "${SKILL_NAMES[@]}"; do
+    if [[ -e "$SKILLS_DIR/$sk" && ! -L "$SKILLS_DIR/$sk" ]]; then
+      die "$SKILLS_DIR/$sk exists and is not a symlink. Move it away, then re-run (refusing to clobber a real directory)."
+    fi
+  done
 }
 
 # Warn only: the login may live somewhere this check does not know about. The chat smoke check
@@ -193,12 +198,17 @@ register_mcp() {
 
 link_skill() {
   mkdir -p "$SKILLS_DIR"
-  if [[ -L "$SKILL_DST" ]]; then
-    log "replacing skill symlink $SKILL_DST -> $SKILL_SRC"
-  else
-    log "linking skill $SKILL_DST -> $SKILL_SRC"
-  fi
-  ln -sfn "$SKILL_SRC" "$SKILL_DST"
+  local sk src dst
+  for sk in "${SKILL_NAMES[@]}"; do
+    src="$SKILLS_SRC_DIR/$sk"
+    dst="$SKILLS_DIR/$sk"
+    if [[ -L "$dst" ]]; then
+      log "replacing skill symlink $dst -> $src"
+    else
+      log "linking skill $dst -> $src"
+    fi
+    ln -sfn "$src" "$dst"
+  done
 }
 
 # One real chat message through the installed daemon. Success = the SSE stream's last event is
@@ -247,7 +257,9 @@ verify() {
   [[ "$mcp_line" == *Connected* ]] || ok=0
   printf 'chat bar claude: %s (%s)\n' "$CLAUDE_REAL" "$("$CLAUDE_REAL" --version 2>/dev/null || echo 'version unknown')"
   chat_smoke || ok=0
-  printf 'skill: %s -> %s\n' "$SKILL_DST" "$(readlink "$SKILL_DST")"
+  for sk in "${SKILL_NAMES[@]}"; do
+    printf 'skill: %s -> %s\n' "$SKILLS_DIR/$sk" "$(readlink "$SKILLS_DIR/$sk")"
+  done
   printf 'linger: %s\n' "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || echo unknown)"
   printf 'unit runs: %s/dist/main.js\n' "$REPO_DIR"
   if [[ "$REPO_DIR" == "$HOME/.worktrees/"* ]]; then
