@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { notes } from '../db/schema.js';
+import type { NoteImageRow, notes } from '../db/schema.js';
 
 /** Where a note was saved from. Every field is optional; unknown keys are dropped. */
 export interface Origin {
@@ -11,21 +11,30 @@ export interface Origin {
   source?: string | undefined;
 }
 
-/** Stored in notes.image_meta. Written by the image ingest (phase 4). Owned by phase 1's schema. */
+/** Image metadata as ingest probes it (also the legacy `notes.image_meta` shape). */
 export type { ImageMeta } from '../db/schema.js';
-import type { ImageMeta } from '../db/schema.js';
 
-/** The `image` field of the wire Note. */
+/** One image of a note, as MCP, HTTP and the UI see it (iteration 7: a note holds several). */
 export interface NoteImage {
+  /** Image id, note-id format. A note's first image shares the note's id. */
+  id: string;
+  note_id: string;
+  /** Attach order within the note; never renumbered. */
+  position: number;
   mime: string;
   width: number;
   height: number;
   bytes: number;
+  /** EXIF taken time, ISO 8601 UTC, or null. */
   taken_at: string | null;
   original_name: string | null;
   host: string | null;
   /** The original file exists under this machine's data dir. */
   available: boolean;
+  /** Served by image id: `/api/images/<id>/<variant>`. */
+  urls: { thumb: string; display: string; original: string; preview: string };
+  /** Present only on removed images (bin listings). */
+  deleted_at?: string;
 }
 
 /** Wire shape shared by MCP, HTTP and the UI. */
@@ -37,7 +46,8 @@ export interface Note {
   updated_at: string;
   deleted_at?: string;
   origin: Origin | null;
-  image: NoteImage | null;
+  /** The note's live images (image deleted_at is null), ascending position. Empty for text notes. */
+  images: NoteImage[];
 }
 
 export type NoteRow = typeof notes.$inferSelect;
@@ -132,23 +142,43 @@ function toIso(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
-function toImage(row: NoteRow, dataDir: string): NoteImage | null {
-  if (row.imagePath === null || row.imageMeta === null || typeof row.imageMeta !== 'object') return null;
-  const meta = row.imageMeta as Partial<ImageMeta>;
+/** The four served variants of one image, by image id. */
+export function imageUrls(imageId: string): NoteImage['urls'] {
+  const base = `/api/images/${imageId}`;
   return {
-    mime: typeof meta.mime === 'string' ? meta.mime : 'application/octet-stream',
-    width: typeof meta.width === 'number' ? meta.width : 0,
-    height: typeof meta.height === 'number' ? meta.height : 0,
-    bytes: typeof meta.bytes === 'number' ? meta.bytes : 0,
-    taken_at: typeof meta.taken_at === 'string' ? meta.taken_at : null,
-    original_name: typeof meta.original_name === 'string' ? meta.original_name : null,
-    host: typeof meta.host === 'string' ? meta.host : null,
-    available: imageAvailable(dataDir, row.imagePath),
+    thumb: `${base}/thumb`,
+    display: `${base}/display`,
+    original: `${base}/original`,
+    preview: `${base}/preview`,
   };
 }
 
-/** DB row -> wire Note. `deleted_at` is present only on deleted notes. */
-export function rowToNote(row: NoteRow, dataDir: string): Note {
+/** `note_images` row -> wire NoteImage. `deleted_at` is present only on removed images. */
+export function toNoteImage(row: NoteImageRow, dataDir: string): NoteImage {
+  const image: NoteImage = {
+    id: row.id,
+    note_id: row.noteId,
+    position: row.position,
+    mime: row.mime,
+    width: row.width,
+    height: row.height,
+    bytes: row.bytes,
+    taken_at: row.takenAt === null ? null : toIso(row.takenAt),
+    original_name: row.originalName,
+    host: row.host,
+    available: imageAvailable(dataDir, row.path),
+    urls: imageUrls(row.id),
+  };
+  if (row.deletedAt !== null) image.deleted_at = toIso(row.deletedAt);
+  return image;
+}
+
+/**
+ * DB row + its image rows -> wire Note. Only live images (deleted_at null) are kept, in
+ * position order. `deleted_at` is present only on deleted notes.
+ */
+export function rowToNote(row: NoteRow, dataDir: string, images: readonly NoteImageRow[]): Note {
+  const live = images.filter((i) => i.deletedAt === null).sort((a, b) => a.position - b.position);
   const note: Note = {
     id: row.id,
     body: row.body,
@@ -156,7 +186,7 @@ export function rowToNote(row: NoteRow, dataDir: string): Note {
     created_at: toIso(row.createdAt),
     updated_at: toIso(row.updatedAt),
     origin: cleanOrigin(row.origin),
-    image: toImage(row, dataDir),
+    images: live.map((i) => toNoteImage(i, dataDir)),
   };
   if (row.deletedAt !== null) note.deleted_at = toIso(row.deletedAt);
   return note;

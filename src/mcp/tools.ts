@@ -18,7 +18,7 @@ export interface ToolDeps {
 
 /** Appended to the `list` and `search` descriptions. */
 export const IMAGE_FILTER_HINT =
-  ' Filter image notes with has_image, and by when the photo was taken with taken_from/taken_to (EXIF). To look at the pictures, pass the ids to view_images.';
+  ' Filter notes with images by has_image (true = at least one image), and by when a photo was taken with taken_from/taken_to (EXIF; a note matches when any of its images does). To look at the pictures, pass the note ids to view_images.';
 
 export const MCP_MAX_LIMIT = 200;
 export const MCP_DEFAULT_LIMIT = 50;
@@ -62,17 +62,17 @@ export const noteFilterShape = {
   has_image: z
     .boolean()
     .optional()
-    .describe('true: only image notes (photos, screenshots). false: only text notes. Omit for both.'),
+    .describe('true: only notes with at least one image (photos, screenshots). false: only notes with no image. Omit for both.'),
   taken_from: z
     .string()
     .optional()
     .describe(
-      'Earliest EXIF "taken" date of the photo: YYYY-MM-DD (start of that local day) or an ISO 8601 datetime. Only image notes whose camera recorded a date can match. For the day a picture was SAVED use from/to instead.',
+      'Earliest EXIF "taken" date: YYYY-MM-DD (start of that local day) or an ISO 8601 datetime. A note matches when any of its images was taken in range; images without a camera date never match. For the day a picture was SAVED use from/to instead.',
     ),
   taken_to: z
     .string()
     .optional()
-    .describe('Latest EXIF "taken" date, inclusive: YYYY-MM-DD (the whole local day) or an ISO 8601 datetime.'),
+    .describe('Latest EXIF "taken" date, inclusive: YYYY-MM-DD (the whole local day) or an ISO 8601 datetime. Same any-image rule as taken_from.'),
   deleted: z
     .enum(['exclude', 'include', 'only'])
     .optional()

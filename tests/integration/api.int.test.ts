@@ -165,7 +165,7 @@ describe('GET /api/notes', () => {
 
     const res = await h.request(`/api/notes?tag=${tag}&has_image=true`);
     const [imageNote] = ((await res.json()) as ListResponse).notes;
-    expect(imageNote?.image).toMatchObject({ mime: 'image/jpeg', available: false });
+    expect(imageNote?.images[0]).toMatchObject({ id: imageId, mime: 'image/jpeg', available: false });
   });
 
   it('rejects bad query params with {error}', async () => {

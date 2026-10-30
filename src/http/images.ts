@@ -3,14 +3,19 @@ import { Readable } from 'node:stream';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { AppDeps } from '../deps.js';
-import { imageDeps, type ImageDeps } from '../images/ingest.js';
+import { imageDeps } from '../images/ingest.js';
+import { normalizeId } from '../notes/ids.js';
+import { findImageById } from '../notes/imageRepo.js';
+import { toNoteImage } from '../notes/types.js';
 import {
   etagMatches,
   ImageInputError,
   ingestFromUpload,
   MAX_IMAGE_BYTES,
   resolveImageFile,
+  resolveNoteImageFile,
   type ImageVariant,
+  type ResolveResult,
 } from './imageAccess.js';
 
 export interface ImageRouteOptions {
@@ -28,8 +33,7 @@ function contentDisposition(name: string): string {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
-async function sendImage(c: Context, img: ImageDeps, variant: ImageVariant): Promise<Response> {
-  const r = await resolveImageFile(img, c.req.param('id') ?? '', variant);
+function sendResolved(c: Context, r: ResolveResult): Response {
   switch (r.status) {
     case 'not_found':
       return c.json({ error: 'not_found' }, 404);
@@ -58,6 +62,13 @@ async function sendImage(c: Context, img: ImageDeps, variant: ImageVariant): Pro
   return c.body(stream, 200, headers);
 }
 
+/**
+ * Image routes:
+ * - POST /api/images: upload one file as a new note (or the note already holding it).
+ * - GET /api/images/:imageId: the image's NoteImage JSON, in any state.
+ * - GET /api/images/:imageId/{original|display|thumb|preview}: any existing image row's file.
+ * - GET /api/notes/:id/{variant}: alias, the first live image of a live note.
+ */
 export function imageRoutes(deps: AppDeps, opts: ImageRouteOptions = {}): Hono {
   const maxUpload = opts.maxUploadBytes ?? MAX_IMAGE_BYTES;
   const img = imageDeps(deps);
@@ -93,8 +104,20 @@ export function imageRoutes(deps: AppDeps, opts: ImageRouteOptions = {}): Hono {
     },
   );
 
+  r.get('/api/images/:imageId', async (c) => {
+    const id = normalizeId(c.req.param('imageId') ?? '');
+    const row = id === null ? null : await findImageById(deps.db, id);
+    if (row === null) return c.json({ error: 'not_found' }, 404);
+    return c.json(toNoteImage(row, deps.config.dataDir));
+  });
+
   for (const variant of VARIANTS) {
-    r.get(`/api/notes/:id/${variant}`, (c) => sendImage(c, img, variant));
+    r.get(`/api/images/:imageId/${variant}`, async (c) =>
+      sendResolved(c, await resolveImageFile(img, c.req.param('imageId') ?? '', variant)),
+    );
+    r.get(`/api/notes/:id/${variant}`, async (c) =>
+      sendResolved(c, await resolveNoteImageFile(img, c.req.param('id') ?? '', variant)),
+    );
   }
 
   return r;

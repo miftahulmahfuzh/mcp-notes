@@ -14,6 +14,7 @@ import {
 import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
+import * as imageRepo from './imageRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
 import {
@@ -49,7 +50,7 @@ export interface CreateNoteInput {
   /** May be empty only when `allowEmpty` is true. */
   body: string;
   origin?: Origin | null;
-  /** Image notes (phase 4): `path` is relative to dataDir, e.g. images/2026/10/A-B32.jpg. */
+  /** First image of the note: written to note_images with the note's id and position 0. `path` is relative to dataDir. */
   image?: { path: string; meta: ImageMeta } | null;
   /** HTTP "+" (phase 6) and image notes create with an empty body; MCP never sets this. */
   allowEmpty?: boolean;
@@ -126,39 +127,55 @@ export class NotesService {
     return id;
   }
 
-  /** An id no note (live or deleted) currently has. */
+  /** An id no note and no image (live or deleted) currently has. A note's first image takes the note's id. */
   async newId(): Promise<string> {
     for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt += 1) {
       const id = generateId();
-      if (!(await repo.idExists(this.db, id))) return id;
+      if (!(await imageRepo.imageIdTaken(this.db, id))) return id;
     }
     throw new NoteError('conflict', 'Could not find a free note id.');
   }
 
+  /**
+   * Inserts a note and, when `image` is given, its first image (id = note id, position 0) in one
+   * transaction. A clash on the live-image sha256 index throws NoteError('duplicate_image') and
+   * leaves nothing behind. An id held by any note or image is never reused.
+   */
   async create(input: CreateNoteInput): Promise<Note> {
     const body = input.body;
     if (!input.allowEmpty && body.trim() === '') {
       throw new NoteError('empty_body', 'A note needs some text.');
     }
-    const values = {
-      body,
-      tags: parseTags(body),
-      origin: cleanOrigin(input.origin ?? null),
-      imagePath: input.image?.path ?? null,
-      imageMeta: input.image?.meta ?? null,
-    };
+    const values = { body, tags: parseTags(body), origin: cleanOrigin(input.origin ?? null) };
+    const image = input.image ?? null;
+    const fixedId = input.id !== undefined ? this.requireId(input.id) : null;
 
-    let row: NoteRow | null = null;
-    if (input.id !== undefined) {
-      const id = this.requireId(input.id);
-      row = await repo.insertNote(this.db, { id, ...values });
-      if (row === null) throw new NoteError('conflict', `Note id ${id} is already taken.`);
-    } else {
-      for (let attempt = 0; attempt < MAX_ID_ATTEMPTS && row === null; attempt += 1) {
-        row = await repo.insertNote(this.db, { id: generateId(), ...values });
+    const row = await this.db.transaction(async (tx): Promise<NoteRow> => {
+      const attempts = fixedId !== null ? 1 : MAX_ID_ATTEMPTS;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const id = fixedId ?? generateId();
+        const inserted = (await imageRepo.imageIdTaken(tx, id)) ? null : await repo.insertNote(tx, { id, ...values });
+        if (inserted === null) continue;
+        if (image !== null) {
+          await imageRepo.insertImage(tx, {
+            id,
+            noteId: id,
+            path: image.path,
+            sha256: image.meta.sha256,
+            mime: image.meta.mime,
+            width: image.meta.width,
+            height: image.meta.height,
+            bytes: image.meta.bytes,
+            takenAt: image.meta.taken_at === null ? null : new Date(image.meta.taken_at),
+            originalName: image.meta.original_name,
+            host: image.meta.host,
+            position: 0,
+          });
+        }
+        return inserted;
       }
-      if (row === null) throw new NoteError('conflict', 'Could not find a free note id.');
-    }
+      throw new NoteError('conflict', fixedId !== null ? `Note id ${fixedId} is already taken.` : 'Could not find a free note id.');
+    });
     return this.finish({ row, op: 'created' });
   }
 
@@ -181,25 +198,27 @@ export class NotesService {
     }
     const rows = await repo.findNotesByIds(this.db, wanted);
     const byId = new Map(rows.map((r) => [r.id, r]));
-    const notes: Note[] = [];
+    const shown: NoteRow[] = [];
     const deleted: string[] = [];
     for (const id of wanted) {
       const row = byId.get(id);
       if (row === undefined) missing.push(id);
       else if (row.deletedAt !== null && !opts.includeDeleted) deleted.push(id);
-      else notes.push(this.toNote(row));
+      else shown.push(row);
     }
-    return { notes, missing, deleted };
+    return { notes: await this.toNotes(shown), missing, deleted };
   }
 
+  /** The note holding a live image with these bytes. A deleted holder only when includeDeleted is set. */
   async findBySha256(sha256: string, opts: GetOptions = {}): Promise<Note | null> {
-    const row = await repo.findNoteBySha256(this.db, sha256, opts.includeDeleted ?? false);
-    return row === null ? null : this.toNote(row);
+    const hit = await imageRepo.findLiveImageBySha256(this.db, sha256);
+    if (hit === null) return null;
+    return this.getOne(hit.image.noteId, opts);
   }
 
   async list(filter: NoteFilter = {}): Promise<NotePage> {
     const page = await repo.listNotes(this.db, filter);
-    return { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor };
+    return { notes: await this.toNotes(page.rows), next_cursor: page.nextCursor };
   }
 
   /**
@@ -253,7 +272,7 @@ export class NotesService {
     );
     const end = offset + limit;
     return {
-      notes: ranked.slice(offset, end).map((c) => this.toNote(c.row)),
+      notes: await this.toNotes(ranked.slice(offset, end).map((c) => c.row)),
       next_cursor: ranked.length > end ? repo.encodeCursor(end) : null,
       mode: 'hybrid',
     };
@@ -262,7 +281,7 @@ export class NotesService {
   /** Today's full-text ranking (repo.searchNotes, unchanged), optionally marked as a fallback. */
   private async textSearch(query: string, filter: NoteFilter, fallback?: string): Promise<SearchPage> {
     const page = await repo.searchNotes(this.db, query, filter);
-    const result: SearchPage = { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor, mode: 'text' };
+    const result: SearchPage = { notes: await this.toNotes(page.rows), next_cursor: page.nextCursor, mode: 'text' };
     if (fallback !== undefined) result.fallback = fallback;
     return result;
   }
@@ -288,7 +307,8 @@ export class NotesService {
     }
     const input = embedInput(row.body);
     if (input === null) {
-      const what = row.imagePath !== null ? 'is a photo with no text' : 'has no text';
+      const hasImages = (await imageRepo.imagesForNotes(this.db, [id])).get(id)?.length ?? 0;
+      const what = hasImages > 0 ? 'is a photo with no text' : 'has no text';
       throw new NoteError(
         'invalid_input',
         `Note ${id} ${what}, so there is nothing to compare by meaning. Add a description with append("${id}", ...) first, or use list with dates to find notes from the same time.`,
@@ -303,9 +323,10 @@ export class NotesService {
         throw new NoteError('not_embedded', `Note ${id} changed while it was being embedded. Try again.`);
       }
     }
+    const neighbours = await this.toNotes(nearest.map((n) => n.row));
     return {
       note_id: id,
-      related: nearest.map((n) => ({ note: this.toNote(n.row), similarity: roundSimilarity(1 - n.distance) })),
+      related: nearest.map((n, i) => ({ note: neighbours[i]!, similarity: roundSimilarity(1 - n.distance) })),
     };
   }
 
@@ -426,13 +447,21 @@ export class NotesService {
     return cur;
   }
 
-  private finish(result: Mutation): Note {
+  private async finish(result: Mutation): Promise<Note> {
     if (result.op !== null) this.events.emit(result.op, result.row.id);
     return this.toNote(result.row);
   }
 
-  private toNote(row: NoteRow): Note {
-    return rowToNote(row, this.dataDir);
+  private async toNote(row: NoteRow): Promise<Note> {
+    const [note] = await this.toNotes([row]);
+    return note!;
+  }
+
+  /** Wire notes in input order, with every note's live images loaded in one query. */
+  private async toNotes(rows: readonly NoteRow[]): Promise<Note[]> {
+    if (rows.length === 0) return [];
+    const images = await imageRepo.imagesForNotes(this.db, rows.map((r) => r.id));
+    return rows.map((r) => rowToNote(r, this.dataDir, images.get(r.id) ?? []));
   }
 }
 

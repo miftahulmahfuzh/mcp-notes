@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 9
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 9
+- P1 High: 8
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 8
-- Completed: 26
+- Blocked: 5
+- Completed: 27
 
 ---
 
@@ -22,21 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A024** Phase 2: Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `src/notes/{types,repo,service}.ts` (wire `images`, batch image load on every read path, EXISTS filters), `src/images/{records,ingest}.ts`, `src/http/{imageAccess,images}.ts` (image-id routes + note alias), `src/http/sameOrigin.ts` (new), `src/mcp/{imageTools,tools,instructions}.ts`, `src/chat/prompt.ts`, `src/background.ts` (startup reconcile), `tests/helpers/fakeNotes.ts` and every server test reading `image`. Exit: no server code reads `image_path`/`image_meta` outside `legacy.ts`; every read path returns `images[]`; filters are any-live-image; `view_images` returns all images capped at 8; legacy and new image routes both serve incl. a reconciled row; `sameOriginOnly` 403s missing/foreign/`null` Origin.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 2 of 11)
-  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A023
-  - **Plan**: `.workflows/plan/P1-NOTES-A024.md`
-
 - [ ] **P1-NOTES-A025** Phase 3: Attach / remove / restore one image: service, ingest, HTTP, MCP tools
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `DuplicateImageError`, `touchNote`, service `attachImage`/`removeImage`/`restoreImage`/`requireImageId`/`lockImage`, ingest `attachImage`, `src/http/imageAccess.ts` attach helpers, `src/http/images.ts` (`POST /api/notes/:id/images`, `DELETE /api/images/:id`, `POST /api/images/:id/restore`), MCP `attach_image`/`remove_image`/`restore_image`, instructions `Attaching.` paragraph, `src/chat/status.ts`, attach int test. Exit: three routes and three tools work as contracted; dedupe returns the holder (restoring a deleted one); restore keeps position; restore clash answers 409 `duplicate_image`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 3 of 11)
   - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A024
@@ -56,7 +46,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `src/http/reveal.ts` (new), `src/http/app.ts` (mount + `CreateAppOptions.reveal`), `tests/unit/reveal.test.ts`, `tests/integration/reveal.int.test.ts`. Exit: capabilities reports `reveal: false` off WSL; reveal route answers 202 on spawn without awaiting Explorer; command line is exactly `[explorer, ['/select,' + wslpath -w original]]`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 5 of 11)
   - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A024
@@ -66,7 +56,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `web/src/types.ts`, `web/src/api.ts` (URLs by image id), `web/src/components/{NoteImage,NoteCard,Gallery,PhotoModal}.tsx`, `web/src/fullscreen/FullscreenApp.tsx`, `web/src/lib/filter.ts` (`hasImages`, `imageCount`, `photosOf`), `web/src/App.tsx` (photo count, empty rule, `<Gallery items>`), `styles.css` (`.card-cover`, `.card-count`), `web/src/testing/fixtures.ts` (new) and tests. Exit: wall cover + count, gallery tile per image, modal steps image by image then across notes with `k/n`, full-screen by image id; grep gates empty.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 6 of 11)
   - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A024
@@ -121,6 +111,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A024** Phase 2: Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/notes/{types,repo,service}.ts` (wire `images`, batch image load on every read path, EXISTS filters), `src/images/{records,ingest}.ts`, `src/http/{imageAccess,images}.ts` (image-id routes + note alias), `src/http/sameOrigin.ts` (new), `src/mcp/{imageTools,tools,instructions}.ts`, `src/chat/prompt.ts`, `src/background.ts` (startup reconcile), `tests/helpers/fakeNotes.ts` and every server test reading `image`. Exit: no server code reads `image_path`/`image_meta` outside `legacy.ts`; every read path returns `images[]`; filters are any-live-image; `view_images` returns all images capped at 8; legacy and new image routes both serve incl. a reconciled row; `sameOriginOnly` 403s missing/foreign/`null` Origin.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A023
+  - **Plan**: `.workflows/plan/P1-NOTES-A024.md`
+  - **Completed**: 2026-10-30 16:31
+  - **Method**: /do
+  - **Files**: src/background.ts, src/chat/prompt.ts, src/http/app.ts, src/http/imageAccess.ts, src/http/images.ts, src/http/sameOrigin.ts, src/images/derive.ts, src/images/ingest.ts, src/images/records.ts, src/images/store.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/mcp/tools.ts, src/notes/repo.ts, src/notes/service.ts, src/notes/types.ts, tests/helpers/fakeNotes.ts, tests/integration/api.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.http.int.test.ts, tests/integration/images.int.test.ts, tests/integration/images.mcp.int.test.ts, tests/integration/notes.service.int.test.ts, tests/unit/images/inbox.test.ts, tests/unit/images/ingest.test.ts, tests/unit/notes.helpers.test.ts, tests/unit/sameOrigin.test.ts, tests/unit/takenFilter.test.ts
 
 - [x] **P1-NOTES-A023** Phase 1: `note_images` table, migration 0002, legacy copy/reconcile, image repo
   - **Difficulty**: HARD

@@ -83,9 +83,13 @@ export async function createApiHarness(options: ApiHarnessOptions = {}): Promise
         host: 'test-host',
       };
       await db.execute(sql`
-        INSERT INTO notes (id, body, tags, image_path, image_meta, origin, created_at, updated_at)
-        VALUES (${id}, ${`photo #${tag}`}, ARRAY[${tag}]::text[], ${`images/2026/10/${id}.jpg`},
-                ${JSON.stringify(meta)}::jsonb, ${JSON.stringify({ source: 'test' })}::jsonb, now(), now())
+        INSERT INTO notes (id, body, tags, origin, created_at, updated_at)
+        VALUES (${id}, ${`photo #${tag}`}, ARRAY[${tag}]::text[], ${JSON.stringify({ source: 'test' })}::jsonb, now(), now())
+      `);
+      await db.execute(sql`
+        INSERT INTO note_images (id, note_id, path, sha256, mime, width, height, bytes, taken_at, original_name, host, position, created_at)
+        VALUES (${id}, ${id}, ${`images/2026/10/${id}.jpg`}, ${meta.sha256}, ${meta.mime}, ${meta.width}, ${meta.height},
+                ${meta.bytes}, null, ${meta.original_name}, ${meta.host}, 0, now())
       `);
       return id;
     },

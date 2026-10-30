@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getDisplay, getPreview, getThumb, OriginalMissingError } from '../images/derive.js';
-import { ingestImage, locateImage, type ImageDeps, type LocatedImage } from '../images/ingest.js';
+import { ingestImage, locateImage, locateNoteImage, type ImageDeps, type LocatedImage } from '../images/ingest.js';
 import { UnsupportedImageError } from '../images/probe.js';
 import { dbImageRecords } from '../images/records.js';
 import type { ToolDeps } from '../mcp/tools.js';
@@ -26,6 +26,7 @@ export interface ServedFile {
 export type ResolveResult =
   | { status: 'ok'; loc: LocatedImage; file: ServedFile; servedOriginal: boolean }
   | { status: 'not_found' }
+  /** Note alias only: a live note with no live image. */
   | { status: 'no_image'; id: string }
   | { status: 'not_on_this_machine'; id: string; host: string | null };
 
@@ -41,7 +42,7 @@ export class ImageInputError extends Error {
   }
 }
 
-/** ImageDeps for the MCP tools (P2 hands them ToolDeps, not AppDeps). */
+/** ImageDeps for the MCP tools (they get ToolDeps, not AppDeps). */
 export function toolImageDeps(deps: ToolDeps): ImageDeps {
   return { dataDir: deps.dataDir, notes: deps.service, records: dbImageRecords(deps.db) };
 }
@@ -63,18 +64,9 @@ export function etagMatches(header: string | undefined, etag: string): boolean {
 
 const DERIVED_MIME = { thumb: 'image/webp', preview: 'image/jpeg' } as const;
 
-/** Look up a note by any id spelling and resolve one image variant to a file. */
-export async function resolveImageFile(img: ImageDeps, rawId: string, variant: ImageVariant): Promise<ResolveResult> {
-  const id = normalizeId(rawId);
-  if (id === null) return { status: 'not_found' };
-  const loc = await locateImage(img, id);
-  if (loc === null) {
-    // Unknown id, or a text note: tell them apart for a clearer 404 body.
-    return (await img.notes.getOne(id)) ? { status: 'no_image', id } : { status: 'not_found' };
-  }
-  if (loc.deleted) return { status: 'not_found' };
+/** One variant of a located image as a file, or not_on_this_machine. Derivatives go to cache/<imageId>/. */
+async function resolveLocated(img: ImageDeps, loc: LocatedImage, variant: ImageVariant): Promise<ResolveResult> {
   if (!loc.available) return { status: 'not_on_this_machine', id: loc.id, host: loc.host };
-
   const sha = loc.meta.sha256;
   try {
     let absPath: string;
@@ -113,6 +105,33 @@ export async function resolveImageFile(img: ImageDeps, rawId: string, variant: I
     if (err instanceof OriginalMissingError) return { status: 'not_on_this_machine', id: loc.id, host: loc.host };
     throw err;
   }
+}
+
+/**
+ * One variant of an image, by image id (any spelling). Serves any existing row: live, removed
+ * from its note, or in a deleted note (the bin shows their thumbnails). Unknown id: not_found.
+ */
+export async function resolveImageFile(img: ImageDeps, rawImageId: string, variant: ImageVariant): Promise<ResolveResult> {
+  const id = normalizeId(rawImageId);
+  if (id === null) return { status: 'not_found' };
+  const loc = await locateImage(img, id);
+  if (loc === null) return { status: 'not_found' };
+  return resolveLocated(img, loc, variant);
+}
+
+/**
+ * The legacy `/api/notes/:id/:variant` alias: the first live image of a live note. Unknown or
+ * deleted note: not_found. Live note without a live image: no_image.
+ */
+export async function resolveNoteImageFile(img: ImageDeps, rawNoteId: string, variant: ImageVariant): Promise<ResolveResult> {
+  const id = normalizeId(rawNoteId);
+  if (id === null) return { status: 'not_found' };
+  const loc = await locateNoteImage(img, id);
+  if (loc === null) {
+    return (await img.notes.getOne(id)) ? { status: 'no_image', id } : { status: 'not_found' };
+  }
+  if (loc.noteDeleted) return { status: 'not_found' };
+  return resolveLocated(img, loc, variant);
 }
 
 function blankToUndefined(s: string | undefined | null): string | undefined {

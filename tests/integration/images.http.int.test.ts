@@ -1,10 +1,16 @@
-import { readFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { imageRoutes } from '../../src/http/images.js';
+import { reconcileLegacyImages } from '../../src/images/legacy.js';
+import { setImageDeleted } from '../../src/notes/imageRepo.js';
 import {
+  addImage,
   cacheDirOf,
   insertTextNote,
   makeImage,
@@ -14,7 +20,12 @@ import {
 } from './imageHarness.js';
 
 interface UploadResult {
-  note: { id: string; body: string; tags: string[]; image: { mime: string; width: number; height: number; available: boolean; host: string | null } | null };
+  note: {
+    id: string;
+    body: string;
+    tags: string[];
+    images: Array<{ id: string; note_id: string; position: number; mime: string; width: number; height: number; available: boolean; host: string | null }>;
+  };
   created: boolean;
 }
 
@@ -46,7 +57,7 @@ describe('image HTTP routes', () => {
     expect(j1.created).toBe(true);
     expect(j1.note.body).toBe('a red box #from_phone');
     expect(j1.note.tags).toEqual(['from_phone']);
-    expect(j1.note.image).toMatchObject({ mime: 'image/png', width: 64, height: 32, available: true });
+    expect(j1.note.images[0]).toMatchObject({ id: j1.note.id, position: 0, mime: 'image/png', width: 64, height: 32, available: true });
 
     const r2 = await upload(png, 'again.png', 'image/png');
     expect(r2.status).toBe(200);
@@ -170,5 +181,86 @@ describe('image HTTP routes', () => {
     const thumb = await h.app.request(`/api/notes/${note.id}/thumb`);
     expect(thumb.status).toBe(404);
     expect(((await thumb.json()) as { error: string }).error).toBe('not_on_this_machine');
+  });
+
+  it('GET /api/images/:id returns the image JSON; unknown ids 404', async () => {
+    const png = await makeImage('png', 16, 8, { r: 4, g: 4, b: 250 });
+    const { note } = (await (await upload(png, 'j.png', 'image/png')).json()) as UploadResult;
+    const res = await h.app.request(`/api/images/${note.id.toLowerCase()}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      id: note.id,
+      note_id: note.id,
+      position: 0,
+      mime: 'image/png',
+      width: 16,
+      height: 8,
+      available: true,
+      urls: {
+        thumb: `/api/images/${note.id}/thumb`,
+        display: `/api/images/${note.id}/display`,
+        original: `/api/images/${note.id}/original`,
+        preview: `/api/images/${note.id}/preview`,
+      },
+    });
+    const unknown = await h.app.request('/api/images/Z-ZZZ');
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ error: 'not_found' });
+    expect((await h.app.request('/api/images/Z-ZZZ/thumb')).status).toBe(404);
+  });
+
+  it('serves by image id in any state; the note alias is the first live image of a live note', async () => {
+    const png = await makeImage('png', 20, 20, { r: 250, g: 250, b: 4 });
+    const { note } = (await (await upload(png, 'first.png', 'image/png')).json()) as UploadResult;
+    const second = await addImage(h, note.id, 'S-EC2', 1, { r: 9, g: 99, b: 199 });
+    const secondBytes = await readFile(await originalPathOf(h, second));
+
+    const byImage = await h.app.request(`/api/images/${second}/original`);
+    expect(byImage.status).toBe(200);
+    expect(Buffer.compare(Buffer.from(await byImage.arrayBuffer()), secondBytes)).toBe(0);
+
+    // Remove the first image: the alias falls to the second; the removed one is still served by its id.
+    await setImageDeleted(h.deps.db, note.id, true);
+    const alias = await h.app.request(`/api/notes/${note.id}/original`);
+    expect(alias.status).toBe(200);
+    expect(Buffer.compare(Buffer.from(await alias.arrayBuffer()), secondBytes)).toBe(0);
+    expect((await h.app.request(`/api/images/${note.id}/thumb`)).status).toBe(200);
+
+    // Delete the note: the alias 404s, the image routes keep serving (the bin needs thumbnails).
+    await h.deps.service.delete(note.id);
+    const gone = await h.app.request(`/api/notes/${note.id}/original`);
+    expect(gone.status).toBe(404);
+    expect(await gone.json()).toEqual({ error: 'not_found' });
+    expect((await h.app.request(`/api/images/${second}/thumb`)).status).toBe(200);
+    expect((await h.app.request(`/api/images/${second}`)).status).toBe(200);
+  });
+
+  it('a note whose only image was removed answers no_image on the alias', async () => {
+    const png = await makeImage('png', 14, 14, { r: 1, g: 250, b: 1 });
+    const { note } = (await (await upload(png, 'lone.png', 'image/png')).json()) as UploadResult;
+    await setImageDeleted(h.deps.db, note.id, true);
+    const res = await h.app.request(`/api/notes/${note.id}/thumb`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'no_image', id: note.id });
+  });
+
+  it('a reconciled legacy image (old columns only) is served by image id and by the note alias', async () => {
+    // R5 "every image is still served" half of the migration test (phase 1 handoff): an
+    // iteration-6 row whose file sits at the legacy path, copied by the reconcile, then served.
+    const png = await makeImage('png', 12, 10, { r: 77, g: 7, b: 177 });
+    const rel = 'images/2026/09/L-EG2.png';
+    await mkdir(path.join(h.dataDir, 'images/2026/09'), { recursive: true });
+    await writeFile(path.join(h.dataDir, rel), png);
+    const meta = { sha256: createHash('sha256').update(png).digest('hex'), mime: 'image/png', width: 12, height: 10, bytes: png.byteLength, taken_at: null, original_name: 'old.png', host: 'lenovo' };
+    await h.deps.db.execute(sql`
+      insert into notes (id, body, tags, image_path, image_meta, created_at, updated_at)
+      values ('L-EG2', 'old photo', '{}'::text[], ${rel}, ${JSON.stringify(meta)}::jsonb, now(), now())
+    `);
+    expect(await reconcileLegacyImages(h.deps.db)).toBe(1);
+    for (const url of ['/api/images/L-EG2/thumb', '/api/notes/L-EG2/thumb', '/api/images/L-EG2/original']) {
+      expect((await h.app.request(url)).status).toBe(200);
+    }
+    const original = await h.app.request('/api/images/L-EG2/original');
+    expect(Buffer.compare(Buffer.from(await original.arrayBuffer()), png)).toBe(0);
   });
 });

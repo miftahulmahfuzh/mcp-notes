@@ -5,7 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { parseDateBound } from '../../src/notes/dates.js';
 import { NoteEvents, type NoteEvent } from '../../src/notes/events.js';
 import { clampLimit, decodeCursor, encodeCursor, MAX_LIMIT, normalizeTagInput } from '../../src/notes/repo.js';
-import { cleanOrigin, imageAvailable, NoteError, rowToNote, type NoteRow } from '../../src/notes/types.js';
+import { cleanOrigin, imageAvailable, NoteError, rowToNote, toNoteImage, type NoteRow } from '../../src/notes/types.js';
+import type { NoteImageRow } from '../../src/db/schema.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'notes-unit-'));
 afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -20,6 +21,26 @@ function row(overrides: Partial<NoteRow> = {}): NoteRow {
     origin: null,
     createdAt: new Date('2026-10-30T01:02:03.004Z'),
     updatedAt: new Date('2026-10-30T02:00:00.000Z'),
+    deletedAt: null,
+    ...overrides,
+  };
+}
+
+function imageRow(overrides: Partial<NoteImageRow> = {}): NoteImageRow {
+  return {
+    id: 'A-B32',
+    noteId: 'A-B32',
+    path: 'images/2026/10/A-B32.jpg',
+    sha256: 'h',
+    mime: 'image/jpeg',
+    width: 4,
+    height: 3,
+    bytes: 1,
+    takenAt: new Date('2026-10-29T08:00:00.000Z'),
+    originalName: 'IMG_1.jpg',
+    host: 'lenovo',
+    position: 0,
+    createdAt: new Date('2026-10-30T01:02:03.004Z'),
     deletedAt: null,
     ...overrides,
   };
@@ -76,30 +97,55 @@ describe('wire mapping', () => {
   });
 
   it('maps a text note', () => {
-    expect(rowToNote(row({ origin: { repo: 'seer' } }), dataDir)).toEqual({
+    expect(rowToNote(row({ origin: { repo: 'seer' } }), dataDir, [])).toEqual({
       id: 'A-B32',
       body: 'hello #seer',
       tags: ['seer'],
       created_at: '2026-10-30T01:02:03.004Z',
       updated_at: '2026-10-30T02:00:00.000Z',
       origin: { repo: 'seer' },
-      image: null,
+      images: [],
     });
   });
 
   it('adds deleted_at only for deleted notes', () => {
-    const n = rowToNote(row({ deletedAt: new Date('2026-10-31T00:00:00Z') }), dataDir);
+    const n = rowToNote(row({ deletedAt: new Date('2026-10-31T00:00:00Z') }), dataDir, []);
     expect(n.deleted_at).toBe('2026-10-31T00:00:00.000Z');
   });
 
-  it('maps image meta and checks the file under dataDir', () => {
+  it('maps live images in position order and checks each file under dataDir', () => {
     mkdirSync(join(dataDir, 'images/2026/10'), { recursive: true });
     writeFileSync(join(dataDir, 'images/2026/10/A-B32.jpg'), 'x');
-    const meta = { sha256: 'h', mime: 'image/jpeg', width: 4, height: 3, bytes: 1, taken_at: '2026-10-29T08:00:00.000Z', original_name: 'IMG_1.jpg', host: 'lenovo' };
-    const here = rowToNote(row({ imagePath: 'images/2026/10/A-B32.jpg', imageMeta: meta }), dataDir);
-    expect(here.image).toEqual({ mime: 'image/jpeg', width: 4, height: 3, bytes: 1, taken_at: '2026-10-29T08:00:00.000Z', original_name: 'IMG_1.jpg', host: 'lenovo', available: true });
-    const away = rowToNote(row({ imagePath: 'images/2026/10/missing.jpg', imageMeta: meta }), dataDir);
-    expect(away.image?.available).toBe(false);
+    const first = imageRow();
+    const away = imageRow({ id: 'C-D45', path: 'images/2026/10/missing.jpg', position: 2, takenAt: null });
+    const removed = imageRow({ id: 'E-F67', path: 'images/2026/10/E-F67.jpg', position: 1, deletedAt: new Date('2026-10-31T00:00:00Z') });
+    const n = rowToNote(row(), dataDir, [away, removed, first]);
+    expect(n.images.map((i) => i.id)).toEqual(['A-B32', 'C-D45']);
+    expect(n.images[0]).toEqual({
+      id: 'A-B32',
+      note_id: 'A-B32',
+      position: 0,
+      mime: 'image/jpeg',
+      width: 4,
+      height: 3,
+      bytes: 1,
+      taken_at: '2026-10-29T08:00:00.000Z',
+      original_name: 'IMG_1.jpg',
+      host: 'lenovo',
+      available: true,
+      urls: {
+        thumb: '/api/images/A-B32/thumb',
+        display: '/api/images/A-B32/display',
+        original: '/api/images/A-B32/original',
+        preview: '/api/images/A-B32/preview',
+      },
+    });
+    expect(n.images[1]).toMatchObject({ available: false, taken_at: null });
+  });
+
+  it('toNoteImage carries deleted_at only for removed images', () => {
+    expect(toNoteImage(imageRow(), dataDir).deleted_at).toBeUndefined();
+    expect(toNoteImage(imageRow({ deletedAt: new Date('2026-10-31T00:00:00Z') }), dataDir).deleted_at).toBe('2026-10-31T00:00:00.000Z');
   });
 
   it('never reports a path outside dataDir as available', () => {

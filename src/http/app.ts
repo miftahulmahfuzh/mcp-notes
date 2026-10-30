@@ -4,17 +4,8 @@ import type { AppDeps } from '../deps.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import { apiRoutes } from './api.js';
 import { imageRoutes } from './images.js';
+import { isLoopbackUrl } from './sameOrigin.js';
 import { staticRoutes } from './static.js';
-
-const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
-
-function isLoopbackUrl(value: string): boolean {
-  try {
-    return LOOPBACK_HOSTNAMES.has(new URL(value).hostname.toLowerCase());
-  } catch {
-    return false;
-  }
-}
 
 /**
  * DNS-rebinding guard for /mcp. The request URL (built from the Host header by the node adapter)

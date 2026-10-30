@@ -1,9 +1,9 @@
 import { and, arrayContains, arrayOverlaps, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { noteEmbeddings, noteRevisions, notes } from '../db/schema.js';
+import { noteEmbeddings, noteImages, noteRevisions, notes } from '../db/schema.js';
 import { isCurrentEmbeddingSql, toVectorLiteral } from '../embeddings/repo.js';
 import { parseDateBound } from './dates.js';
-import { NoteError, type ImageMeta, type NoteRow, type Origin } from './types.js';
+import { NoteError, type NoteRow, type Origin } from './types.js';
 
 /** A transaction handle, as passed to the callback of `db.transaction`. */
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -28,9 +28,9 @@ export interface NoteFilter {
   from?: string;
   /** Inclusive upper bound: YYYY-MM-DD (local day) or ISO datetime. */
   to?: string;
-  /** true = image notes only, false = text notes only, undefined = both. */
+  /** true = notes with at least one live image, false = notes with none, undefined = both. */
   hasImage?: boolean;
-  /** EXIF taken date, lower bound: YYYY-MM-DD (local day) or ISO datetime. Image notes only. */
+  /** EXIF taken date, lower bound: YYYY-MM-DD (local day) or ISO datetime. Matches when any live image was taken in range. */
   takenFrom?: string;
   /** EXIF taken date, upper bound, inclusive: YYYY-MM-DD (whole local day) or ISO datetime. */
   takenTo?: string;
@@ -65,8 +65,6 @@ export interface InsertNote {
   body: string;
   tags: string[];
   origin: Origin | null;
-  imagePath: string | null;
-  imageMeta: ImageMeta | null;
 }
 
 /** `#Seer`, ` seer ` and `SEER` all become `seer`; empty entries are dropped. */
@@ -108,6 +106,15 @@ function dateColumn(filter: NoteFilter) {
   return filter.dateField === 'updated' ? notes.updatedAt : notes.createdAt;
 }
 
+/**
+ * `exists (select 1 from note_images where note_id = notes.id and deleted_at is null [and extra...])`.
+ * The subquery names "note_images" unaliased; an outer query that also joins note_images must alias its own copy.
+ */
+function liveImageExists(extra: readonly SQL[] = []): SQL {
+  const conds: SQL[] = [sql`${noteImages.noteId} = ${notes.id}`, sql`${noteImages.deletedAt} is null`, ...extra];
+  return sql`exists (select 1 from ${noteImages} where ${sql.join(conds, sql` and `)})`;
+}
+
 /** WHERE conditions for a filter (paging excluded). */
 export function filterConditions(filter: NoteFilter): SQL[] {
   const conds: SQL[] = [];
@@ -124,17 +131,19 @@ export function filterConditions(filter: NoteFilter): SQL[] {
   if (filter.from !== undefined && filter.from !== '') conds.push(gte(col, parseDateBound(filter.from, 'from')));
   if (filter.to !== undefined && filter.to !== '') conds.push(lt(col, parseDateBound(filter.to, 'to')));
 
-  if (filter.hasImage === true) conds.push(isNotNull(notes.imagePath));
-  if (filter.hasImage === false) conds.push(isNull(notes.imagePath));
+  // "Has an image" means at least one live image (iteration 7).
+  if (filter.hasImage === true) conds.push(liveImageExists());
+  if (filter.hasImage === false) conds.push(sql`not ${liveImageExists()}`);
 
-  // taken_at is a UTC ISO 'Z' string, so a text compare orders correctly and uses notes_image_taken_at_idx.
-  const takenAt = sql`(${notes.imageMeta} ->> 'taken_at')`;
+  // Taken range: one image must meet both bounds (any image may match), served by note_images_taken_at_idx.
+  const taken: SQL[] = [];
   if (filter.takenFrom !== undefined && filter.takenFrom !== '') {
-    conds.push(sql`${takenAt} >= ${parseDateBound(filter.takenFrom, 'from').toISOString()}`);
+    taken.push(sql`${noteImages.takenAt} >= ${parseDateBound(filter.takenFrom, 'from').toISOString()}::timestamptz`);
   }
   if (filter.takenTo !== undefined && filter.takenTo !== '') {
-    conds.push(sql`${takenAt} < ${parseDateBound(filter.takenTo, 'to').toISOString()}`);
+    taken.push(sql`${noteImages.takenAt} < ${parseDateBound(filter.takenTo, 'to').toISOString()}::timestamptz`);
   }
+  if (taken.length > 0) conds.push(liveImageExists(taken));
   return conds;
 }
 
@@ -285,19 +294,6 @@ export async function lockNote(tx: Tx, id: string): Promise<NoteRow | null> {
   return rows[0] ?? null;
 }
 
-/** Live notes first, then the most recently changed deleted one. */
-export async function findNoteBySha256(db: Executor, sha256: string, includeDeleted: boolean): Promise<NoteRow | null> {
-  const conds: SQL[] = [sql`${notes.imageMeta}->>'sha256' = ${sha256}`];
-  if (!includeDeleted) conds.push(isNull(notes.deletedAt));
-  const rows = await db
-    .select()
-    .from(notes)
-    .where(and(...conds))
-    .orderBy(sql`${notes.deletedAt} is not null`, desc(notes.updatedAt))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
 function pgErrorCode(err: unknown): string | undefined {
   let cur: unknown = err;
   for (let depth = 0; depth < 4 && cur !== null && typeof cur === 'object'; depth += 1) {
@@ -309,8 +305,8 @@ function pgErrorCode(err: unknown): string | undefined {
 }
 
 /**
- * Inserts a note. Returns null when the id is already taken (the caller retries with a new id).
- * A clash on the live-image sha256 unique index throws NoteError('duplicate_image').
+ * Inserts a note (never the legacy image columns). Returns null when the id is already taken (the
+ * caller retries with a new id). Images go to note_images through imageRepo.insertImage.
  */
 export async function insertNote(db: Executor, values: InsertNote): Promise<NoteRow | null> {
   try {
@@ -321,8 +317,6 @@ export async function insertNote(db: Executor, values: InsertNote): Promise<Note
         body: values.body,
         tags: values.tags,
         origin: values.origin,
-        imagePath: values.imagePath,
-        imageMeta: values.imageMeta,
         createdAt: sql`now()`,
         updatedAt: sql`now()`,
       })

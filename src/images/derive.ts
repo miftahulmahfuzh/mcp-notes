@@ -15,8 +15,9 @@ export const PREVIEW_MAX_BYTES = 3_750_000;
 const PREVIEW_QUALITIES = [85, 75, 65, 50, 35] as const;
 const DISPLAY_QUALITY = 92;
 
-/** What the derivative getters need to know about an image note. */
+/** What the derivative getters need to know about one image. */
 export type ImageSource = {
+  /** Image id; names the cache dir `cache/<id>/` (a note's first image shares the note's id). */
   id: string;
   mime: string;
   /** Absolute path of the original. */

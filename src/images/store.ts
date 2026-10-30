@@ -56,6 +56,7 @@ export function resolveInDataDir(dataDir: string, rel: string): string {
   return abs;
 }
 
+/** `cache/<imageId>/`: derivatives of one image. */
 export function cacheDirFor(dataDir: string, id: string): string {
   return path.join(dataDirs(dataDir).cache, id);
 }
