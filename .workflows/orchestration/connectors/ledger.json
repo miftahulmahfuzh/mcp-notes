@@ -3,6 +3,12 @@
   "coordinator": "orch-connectors",
   "coordinator_session_id": "ea655e59-3224-41f4-acc9-58a0e57a852c",
   "created": "2026-10-30T13:23:21+07:00",
+  "landed": {
+    "at": "2026-10-30T13:44:31+07:00",
+    "base": "main",
+    "commit": "8e2534bbc16f8075925eb2bc3d4f47bc84265b9c",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -25,81 +31,81 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "3879446",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "on phase-2-connectors; test 417, test:int 123 under flock; trailer Haiku (cosmetic)",
       "package": "src/connectors/expenses",
       "plan": ".workflows/plan/connectors/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:39:59+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A013",
       "title": "expense-tracking curated tools"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "dc75121",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "on phase-3-connectors; test 418, test:int 124 under flock",
       "package": "src/connectors/runs",
       "plan": ".workflows/plan/connectors/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:39:03+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A014",
       "title": "run-insights curated tools"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "afc72ff",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": null,
+      "note": "on phase-4-connectors; test 419, test:int 122 under flock",
       "package": "src/connectors/seer",
       "plan": ".workflows/plan/connectors/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:38:40+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A015",
       "title": "Seer curated tools (db + lab)"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "8132048",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "on phase-5-connectors; test 413, test:int 115 under flock",
       "package": "src/chat`, `claude/skills/n",
       "plan": ".workflows/plan/connectors/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:39:19+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A016",
       "title": "Chat bar + /n for connectors"
     },
     {
@@ -123,7 +129,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/connectors/.workflows/orchestration/connectors/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "connectors",
-  "updated": "2026-10-30T13:33:59+07:00",
+  "updated": "2026-10-30T13:44:31+07:00",
   "verified_at": "2026-10-30T13:26:49+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/connectors"
 }
