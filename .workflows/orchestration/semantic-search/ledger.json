@@ -67,23 +67,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "44503ab",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": "verify downgraded spawned->pending (no commit yet) while window @164 was live; coordinator restored running",
+      "note": "hybrid search + labelled set; int test rebuilds NotesService per test (query-vector cache leaked across tests), no assertion changed",
       "package": "src/search`, `src/notes`, `src/mcp",
       "plan": ".workflows/plan/semantic-search/phase-4.md",
-      "reported_at": "2026-10-30T14:55:45+07:00",
+      "reported_at": "2026-10-30T15:16:26+07:00",
       "satisfies": [
         "R4",
         "R6"
       ],
-      "status": "running",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A020",
       "title": "Hybrid search + labelled set"
     },
     {
@@ -104,7 +104,7 @@
         "R5",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "related` tool"
     },
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T14:55:45+07:00",
+  "updated": "2026-10-30T15:16:48+07:00",
   "verified_at": "2026-10-30T14:55:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
