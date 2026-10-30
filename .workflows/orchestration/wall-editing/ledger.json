@@ -24,22 +24,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "42f05d5",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "server cut over to note_images; coordinator grep: no image_path/image_meta reads outside legacy.ts (comments only); unit 641, int 253",
       "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
       "plan": ".workflows/plan/wall-editing/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:35:45+07:00",
       "satisfies": [
         "R1",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A024",
       "title": "Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile"
     },
     {
@@ -58,7 +58,7 @@
         "R1",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Attach / remove / restore one image: service, ingest, HTTP, MCP tools"
     },
@@ -98,7 +98,7 @@
         "R4",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Reveal in Explorer: capabilities + reveal endpoint"
     },
@@ -118,7 +118,7 @@
         "R1",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web on `images[]`: cards, gallery, modal stepping, full-screen by image"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:26:41+07:00",
+  "updated": "2026-10-30T16:35:45+07:00",
   "verified_at": "2026-10-30T16:25:00+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
