@@ -88,7 +88,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2087553",
       "depends_on": [
         1,
         2,
@@ -96,16 +96,16 @@
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "related tool + nearestNotes; ticked docs/plans index rows 3+5 (both -f copy and tracked index, only tracked committed)",
       "package": "src/embeddings`, `src/notes`, `src/mcp`, `src/chat",
       "plan": ".workflows/plan/semantic-search/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T15:21:05+07:00",
       "satisfies": [
         "R5",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A021",
       "title": "related` tool"
     },
     {
@@ -125,7 +125,7 @@
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Live test, docs, Neon migration + first backfill"
     }
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T15:16:48+07:00",
+  "updated": "2026-10-30T15:21:21+07:00",
   "verified_at": "2026-10-30T14:55:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
