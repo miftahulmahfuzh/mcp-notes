@@ -26,7 +26,7 @@ textarea:focus,input:focus,button:focus{outline:none}
   <nav style="position:fixed;left:0;top:0;bottom:0;width:56px;border-right:1px solid rgba(236,235,228,.1);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0;z-index:30;background:#121211;box-sizing:border-box">
     <button data-tip="Toggle sidebar" data-tip-side="right" onClick="{{ toggleSide }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:21px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-sidebar-simple"></i></button>
     <button data-tip="New note" data-tip-side="right" onClick="{{ addNote }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:21px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-note-pencil"></i></button>
-    <button data-tip="Show image notes" data-tip-side="right" onClick="{{ toggleImages }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ imgBtnBg }};color:{{ imgBtnFg }};font-size:21px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-images"></i></button>
+    <button data-tip="{{ modeTip }}" data-tip-side="right" onClick="{{ cycleMode }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ modeBtnBg }};color:{{ modeBtnFg }};font-size:21px;cursor:pointer;display:grid;place-items:center"><i class="{{ modeIcon }}"></i></button>
     <div style="width:24px;height:1px;background:rgba(236,235,228,.12);margin:8px 0"></div>
     <sc-for list="{{ activeChips }}" as="c" hint-placeholder-count="0">
       <button data-tip="Remove filter" data-tip-side="right" onClick="{{ c.remove }}" style="writing-mode:vertical-rl;transform:rotate(180deg);border:0;border-radius:999px;background:#ecebe4;color:#121211;font-family:'Geist Mono',monospace;font-size:11px;padding:10px 4px;cursor:pointer;letter-spacing:.02em">{{ c.label }}</button>
@@ -38,9 +38,11 @@ textarea:focus,input:focus,button:focus{outline:none}
 
   <sc-if value="{{ side }}" hint-placeholder-val="{{ false }}">
     <aside style="position:fixed;left:56px;top:0;bottom:0;width:240px;border-right:1px solid rgba(236,235,228,.1);background:#121211;z-index:29;padding:14px 12px 100px;box-sizing:border-box;overflow:auto;display:flex;flex-direction:column;gap:18px">
-      <div style="display:flex;align-items:center;gap:10px;height:40px">
-        <button data-tip="Show image notes" onClick="{{ toggleImages }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ imgBtnBg }};color:{{ imgBtnFg }};font-size:20px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-images"></i></button>
-        <span style="font-family:'Geist Mono',monospace;font-size:11px;color:#8a897f">{{ photoCount }} photos</span>
+      <div style="display:flex;align-items:center;gap:4px;height:40px">
+        <sc-for list="{{ modeOpts }}" as="o" hint-placeholder-count="3">
+          <button data-tip="{{ o.tip }}" onClick="{{ o.pick }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ o.bg }};color:{{ o.fg }};font-size:20px;cursor:pointer;display:grid;place-items:center"><i class="{{ o.icon }}"></i></button>
+        </sc-for>
+        <span style="margin-left:auto;font-family:'Geist Mono',monospace;font-size:11px;color:#8a897f">{{ photoCount }} photos</span>
       </div>
       <div style="height:1px;background:rgba(236,235,228,.1)"></div>
       <div style="display:flex;flex-direction:column;gap:2px">
@@ -163,7 +165,7 @@ textarea:focus,input:focus,button:focus{outline:none}
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wall&quot;,&quot;filtered&quot;,&quot;chat&quot;,&quot;gallery&quot;,&quot;modal&quot;],&quot;default&quot;:&quot;wall&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dense&quot;,&quot;regular&quot;,&quot;loose&quot;],&quot;default&quot;:&quot;regular&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Wall&quot;},&quot;filmTone&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Wall&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wall&quot;,&quot;filtered&quot;,&quot;chat&quot;,&quot;gallery&quot;,&quot;everything&quot;,&quot;modal&quot;],&quot;default&quot;:&quot;wall&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dense&quot;,&quot;regular&quot;,&quot;loose&quot;],&quot;default&quot;:&quot;regular&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Wall&quot;},&quot;filmTone&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Wall&quot;}}">
 class Component extends DCLogic {
   seed = [
     ['A-B32','#seer onboarding is two screens too long. Cut the permissions step, ask later in context.',0,0,0,'Today'],
@@ -198,9 +200,14 @@ class Component extends DCLogic {
   ].map(([id, text, pic, w, h, date]) => ({ id, text, pic, w, h, date }));
 
   answerText = 'You wrote 5 #seer notes this week, against 3 last week.\n\nThis week is about the product\'s shape. Onboarding should lose the permissions step (A-B32), the pricing page should become the table (R-M14), and interviews say people use it one-handed at night (H-Q55). One open question: whether to ship a weekly digest (P-D19).\n\nLast week was maintenance. The crash on resume and the sync duplicates are both settled (T-W60, G-N28), and the empty state was flagged as confusing (V-C41).\n\nFewer bugs, more decisions. The one thing getting worse is summary latency, up from 1.6s to 2.4s p50 (L-S03).';
+  modes = {
+    text: { icon: 'ph-duotone ph-text-aa', tip: 'Text notes only' },
+    images: { icon: 'ph-duotone ph-images', tip: 'Image notes only' },
+    all: { icon: 'ph-duotone ph-squares-four', tip: 'All notes' }
+  };
   usedIds = ['A-B32','R-M14','H-Q55','P-D19','L-S03','T-W60','G-N28','V-C41'];
 
-  state = { notes: this.seed, tags: [], side: false, imageMode: false, modal: -1, chatOpen: false, pinned: false, q: '', query: '', streamed: 0, copied: null, editing: null, tip: null, dragging: false };
+  state = { notes: this.seed, tags: [], side: false, mode: 'text', modal: -1, chatOpen: false, pinned: false, q: '', query: '', streamed: 0, copied: null, editing: null, tip: null, dragging: false };
 
   componentDidMount() {
     this.applyScreen(this.props.screen ?? 'wall');
@@ -236,34 +243,35 @@ class Component extends DCLogic {
 
   applyScreen(s) {
     clearInterval(this.timer);
-    const base = { tags: [], side: false, imageMode: false, modal: -1, chatOpen: false, pinned: false, q: '', streamed: 0 };
+    const base = { tags: [], side: false, mode: 'text', modal: -1, chatOpen: false, pinned: false, q: '', streamed: 0 };
     if (s === 'filtered') this.setState({ ...base, side: true, tags: ['seer'] });
     else if (s === 'chat') { this.setState(base); setTimeout(() => this.ask('summarize my #seer notes this week, compare to last week'), 300); }
-    else if (s === 'gallery') this.setState({ ...base, imageMode: true });
-    else if (s === 'modal') this.setState({ ...base, imageMode: true, modal: 3 });
+    else if (s === 'gallery') this.setState({ ...base, mode: 'images' });
+    else if (s === 'everything') this.setState({ ...base, mode: 'all' });
+    else if (s === 'modal') this.setState({ ...base, mode: 'images', modal: 3 });
     else this.setState(base);
   }
 
   newId() { const L = 'ABCDEFGHJKLMNPRSTUVWXYZ'; const r = () => L[Math.floor(Math.random() * L.length)]; return r() + '-' + r() + String(Math.floor(Math.random() * 90) + 10); }
   tagsOf(t) { return (t.match(/#[a-z0-9-]+/gi) || []).map(x => x.slice(1).toLowerCase()); }
-  toggleTag(t) { this.setState(s => ({ tags: s.tags.includes(t) ? s.tags.filter(x => x !== t) : [...s.tags, t], imageMode: false })); }
+  toggleTag(t) { this.setState(s => ({ tags: s.tags.includes(t) ? s.tags.filter(x => x !== t) : [...s.tags, t] })); }
   copy(id) {
     try { navigator.clipboard.writeText(id); } catch (e) {
       const ta = document.createElement('textarea'); ta.value = id; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
     }
     this.setState({ copied: id }); clearTimeout(this.ct); this.ct = setTimeout(() => this.setState({ copied: null }), 1400);
   }
-  addNote() { const id = this.newId(); this.setState(s => ({ notes: [{ id, text: '', pic: 0, date: 'Now' }, ...s.notes], editing: id, imageMode: false })); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  addNote() { const id = this.newId(); this.setState(s => ({ notes: [{ id, text: '', pic: 0, date: 'Now' }, ...s.notes], editing: id, mode: s.mode === 'images' ? 'text' : s.mode })); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   addImage(file) {
     const url = URL.createObjectURL(file); const img = new Image();
-    img.onload = () => this.setState(s => ({ notes: [{ id: this.newId(), text: '', pic: -1, url, w: img.naturalWidth, h: img.naturalHeight, date: 'Now' }, ...s.notes] }));
+    img.onload = () => this.setState(s => ({ notes: [{ id: this.newId(), text: '', pic: -1, url, w: img.naturalWidth, h: img.naturalHeight, date: 'Now' }, ...s.notes], mode: s.mode === 'text' ? 'all' : s.mode }));
     img.src = url;
   }
   picUrl(n, k = 1) { return n.pic === -1 ? n.url : `https://picsum.photos/id/${n.pic}/${Math.round(n.w * k)}/${Math.round(n.h * k)}`; }
   ask(text) {
     const q = (text || '').trim() || 'summarize my #seer notes this week, compare to last week';
     clearInterval(this.timer);
-    this.setState({ chatOpen: true, query: q, q: '', streamed: 0, imageMode: false, modal: -1 });
+    this.setState({ chatOpen: true, query: q, q: '', streamed: 0, mode: this.state.mode === 'images' ? 'all' : this.state.mode, modal: -1 });
     this.timer = setInterval(() => {
       this.setState(s => { const n = Math.min(s.streamed + 4, this.answerText.length); if (n >= this.answerText.length) clearInterval(this.timer); return { streamed: n }; });
     }, 22);
@@ -271,7 +279,9 @@ class Component extends DCLogic {
   closeChat() { clearInterval(this.timer); this.setState({ chatOpen: false, pinned: false, streamed: 0 }); }
   jump(id) {
     const go = () => { const el = document.querySelector(`[data-note="${id}"]`); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 140, behavior: 'smooth' }); };
-    if (this.state.imageMode) this.setState({ imageMode: false }, () => setTimeout(go, 50)); else go();
+    const n = this.state.notes.find(x => x.id === id);
+    const hidden = this.state.mode === 'images' || (this.state.mode === 'text' && n && n.pic);
+    if (hidden) this.setState({ mode: 'all' }, () => setTimeout(go, 50)); else go();
   }
   step(d) { const len = this.photos().length; this.setState(s => ({ modal: (s.modal + d + len) % len })); }
   photos() { const { notes, tags } = this.state; return notes.filter(n => n.pic && tags.every(t => this.tagsOf(n.text).includes(t))); }
@@ -281,7 +291,7 @@ class Component extends DCLogic {
     const film = this.props.filmTone ?? true;
     const photoFilter = film ? 'sepia(.14) saturate(1.12) contrast(1.05) brightness(.97)' : 'none';
     const colWidth = { dense: 200, regular: 240, loose: 300 }[this.props.density ?? 'regular'];
-    const visible = st.notes.filter(n => st.tags.every(t => this.tagsOf(n.text).includes(t)));
+    const visible = st.notes.filter(n => (st.mode !== 'text' || !n.pic) && st.tags.every(t => this.tagsOf(n.text).includes(t)));
     const highlight = st.chatOpen && st.streamed > 0;
     const counts = {};
     st.notes.forEach(n => this.tagsOf(n.text).forEach(t => counts[t] = (counts[t] || 0) + 1));
@@ -326,16 +336,18 @@ class Component extends DCLogic {
     const tip = st.tip;
     const last = st.notes[0];
     return {
-      side: st.side, imageMode: st.imageMode, notImageMode: !st.imageMode, mainLeft, chatLeft: mainLeft + 16, colWidth, photoFilter,
+      side: st.side, imageMode: st.mode === 'images', notImageMode: st.mode !== 'images', mainLeft, chatLeft: mainLeft + 16, colWidth, photoFilter,
       toggleSide: () => this.setState(s => ({ side: !s.side })),
-      toggleImages: () => this.setState(s => ({ imageMode: !s.imageMode, modal: -1 })),
-      imgBtnBg: st.imageMode ? '#ecebe4' : 'transparent', imgBtnFg: st.imageMode ? '#121211' : '#ecebe4',
+      modeIcon: this.modes[st.mode].icon, modeTip: this.modes[st.mode].tip + ' (click to switch)',
+      modeBtnBg: st.mode === 'text' ? 'transparent' : '#ecebe4', modeBtnFg: st.mode === 'text' ? '#ecebe4' : '#121211',
+      cycleMode: () => this.setState(s => ({ mode: { text: 'images', images: 'all', all: 'text' }[s.mode], modal: -1 })),
+      modeOpts: Object.keys(this.modes).map(k => ({ tip: this.modes[k].tip, icon: this.modes[k].icon, bg: st.mode === k ? '#ecebe4' : 'transparent', fg: st.mode === k ? '#121211' : '#ecebe4', pick: () => this.setState({ mode: k, modal: -1 }) })),
       addNote: () => this.addNote(),
       activeChips: st.tags.map(t => ({ label: '#' + t, remove: () => this.toggleTag(t) })),
       hasFilters: st.tags.length > 0, clearTags: () => this.setState({ tags: [] }),
       tagList, photoCount: st.notes.filter(n => n.pic).length,
-      heading: st.imageMode ? 'Photos.' : st.tags.length ? st.tags.map(t => '#' + t).join(' ') : 'Everything.',
-      countLine: st.imageMode ? `${photos.length} photos.` : st.tags.length ? `${visible.length} of ${st.notes.length} notes.` : `${st.notes.length} notes, ${st.notes.filter(n => n.pic).length} with photos.`,
+      heading: st.mode === 'images' ? 'Photos.' : st.tags.length ? st.tags.map(t => '#' + t).join(' ') : st.mode === 'text' ? 'Notes.' : 'Everything.',
+      countLine: st.mode === 'images' ? `${photos.length} photos.` : st.tags.length ? `${visible.length} of ${st.notes.length} notes.` : st.mode === 'text' ? `${visible.length} notes, ${st.notes.length - visible.length} photo notes hidden.` : `${st.notes.length} notes, ${st.notes.filter(n => n.pic).length} with photos.`,
       lastId: last ? last.id : '', lastWhen: last && last.date === 'Now' ? 'just now' : '14 min ago',
       jumpLast: e => { e.preventDefault(); last && this.jump(last.id); },
       wall, gallery,

@@ -42,12 +42,21 @@ syntax (`{{ }}`, sc-for, sc-if, style-hover, data-props screens), do not ship it
     Open from the Windows browser at http://localhost:7317.
   - Match the design exactly: #121211 canvas, #ecebe4 text, Host Grotesk + Geist Mono, Phosphor
     duotone icons (npm package, not the CDN), the grain overlay, the giant right-aligned heading
-    ("Everything." / "#seer" / "Photos."), the rotated round "+" sticker, the masonry wall with
+    ("Notes." / "Everything." / "#seer" / "Photos."), the rotated round "+" sticker, the masonry wall with
     font size by text length, tag chips inside text, ID + copy-id + date on every card, the icon
     rail + collapsible tag sidebar with active-filter chips, the pill chat bar, the answer panel
     with pin/dismiss and "used notes" chips that dim the rest of the wall, the clean gallery
     grid in image mode, the photo modal (prev/next, copy ID, show full screen, close; Esc and
     arrow keys), the drag-over overlay, the custom tooltips. Icon-only controls everywhere.
+  - Note visibility is a 3-way mode, not an on/off "show image notes" toggle:
+    (a) text notes only, image notes hidden: THE DEFAULT on every page load;
+    (b) image notes only: the clean photo gallery grid;
+    (c) all notes, text and image mixed on the wall.
+    The rail has one button that cycles a -> b -> c -> a and shows the current mode's icon
+    (inverted when not the default); the expanded sidebar shows all three as icons, active one
+    inverted. Tag filters apply in every mode. Adding an image while in (a) switches to (c) so
+    the new note is visible; "+" in (b) switches to (a); jumping to a note the current mode
+    hides (from the chat panel) switches to (c). The design file already implements this.
   - Replace the design's fake data with the real API: notes, tags with counts, filters by tag
     (AND, as in the design) and image mode, inline edit saved on blur (an emptied text note is
     soft-deleted, as the design does), the "+" creates a note, drag/drop and paste upload
