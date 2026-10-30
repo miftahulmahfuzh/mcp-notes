@@ -43,6 +43,17 @@ describe('buildInstructions', () => {
     expect(p).toContain('ArangoDB credentials');
     expect(p).toMatch(/no stemming/);
   });
+
+  it('has one Related paragraph that names related(id), the score and what it leaves out', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Related.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(p).toContain('related(id)');
+    expect(p).toContain('similarity');
+    expect(p).toContain('never the note itself or a deleted note');
+  });
 });
 
 describe('toFilter', () => {

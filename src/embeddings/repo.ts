@@ -1,7 +1,9 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { and, eq, getTableColumns, isNull, ne, sql, type SQL } from 'drizzle-orm';
 
+import type { Db } from '../db/client.js';
 import { noteEmbeddings, notes } from '../db/schema.js';
 import type { Executor } from '../notes/repo.js';
+import type { NoteRow } from '../notes/types.js';
 import { EMBEDDING_DIMENSIONS } from './constants.js';
 import { clampError, retryDelayMs } from './state.js';
 
@@ -198,4 +200,54 @@ export async function embeddingStats(db: Executor, model: string): Promise<Embed
   const withText = r?.with_text ?? 0;
   const current = r?.current ?? 0;
   return { withText, current, pending: withText - current, failing: r?.failing ?? 0 };
+}
+
+export interface NearestOptions {
+  /** Canonical id of the note to find neighbours for. */
+  noteId: string;
+  /** Only vectors from this model count as current (see isCurrentEmbeddingSql). */
+  model: string;
+  /** Maximum number of neighbours, already clamped by the caller. */
+  limit: number;
+}
+
+export interface NearestNote {
+  row: NoteRow;
+  /** Cosine distance (pgvector `<=>`), 0 = same direction, 2 = opposite. similarity = 1 - distance. */
+  distance: number;
+}
+
+/**
+ * Live notes nearest in meaning to `noteId`, closest first. Both sides use only current vectors
+ * (vector present, body hash and model match). Never returns the note itself or a deleted note.
+ *
+ * Returns null when `noteId` has no current vector for `model` (no row, stale body, failed attempt,
+ * or another model), so the caller can embed it and ask again.
+ *
+ * `ORDER BY embedding <=> (source vector) LIMIT n` is the shape the HNSW cosine index serves.
+ * Iterative scan (pgvector >= 0.8) keeps walking the index past rows the WHERE clause drops
+ * (deleted, stale, self), so `limit` rows come back whenever that many exist.
+ */
+export async function nearestNotes(db: Db, opts: NearestOptions): Promise<NearestNote[] | null> {
+  return db.transaction(async (tx) => {
+    const source = await tx
+      .select({ noteId: noteEmbeddings.noteId })
+      .from(noteEmbeddings)
+      .innerJoin(notes, eq(notes.id, noteEmbeddings.noteId))
+      .where(and(eq(noteEmbeddings.noteId, opts.noteId), isCurrentEmbeddingSql(opts.model)))
+      .limit(1);
+    if (source.length === 0) return null;
+
+    await tx.execute(sql`set local hnsw.iterative_scan = strict_order`);
+
+    const distance = sql<number>`(${noteEmbeddings.embedding} <=> (select src.embedding from note_embeddings as src where src.note_id = ${opts.noteId}))`;
+    const rows = await tx
+      .select({ note: getTableColumns(notes), distance })
+      .from(notes)
+      .innerJoin(noteEmbeddings, eq(noteEmbeddings.noteId, notes.id))
+      .where(and(isNull(notes.deletedAt), ne(notes.id, opts.noteId), isCurrentEmbeddingSql(opts.model)))
+      .orderBy(distance)
+      .limit(opts.limit);
+    return rows.map((r) => ({ row: r.note, distance: Number(r.distance) }));
+  });
 }

@@ -289,6 +289,27 @@ export function registerNoteTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.registerTool(
+    'related',
+    {
+      title: 'Related notes',
+      description:
+        'Notes closest in meaning to one note, most similar first, each with a similarity score (1 = same meaning, near 0 = unrelated). Finds notes that share no words with it. Never includes the note itself or deleted notes. Use it for "what else do I have on this?" or "notes related to A-B32" after finding a note with get, list or search. Returns { note_id, related: [{ note, similarity }] }. Fails on a deleted note and on a photo that has no text.',
+      inputSchema: {
+        id: idField,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe('How many related notes to return, 1-50. Default 10.'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id, limit }) => run(() => service.related(id, limit === undefined ? {} : { limit })),
+  );
+
+  server.registerTool(
     'revisions',
     {
       title: 'List revisions',

@@ -1,5 +1,8 @@
 import type { Db } from '../db/client.js';
+import { EMBEDDING_MODEL } from '../embeddings/constants.js';
 import type { Embedder } from '../embeddings/embedder.js';
+import * as embeddings from '../embeddings/repo.js';
+import { bodySha256, embedInput } from '../embeddings/state.js';
 import { BLEND, queryTerms, rankCandidates, tagMatch } from '../search/blend.js';
 import {
   QUERY_EMBED_TIMEOUT_MS,
@@ -22,6 +25,7 @@ import {
   type NotePage,
   type NoteRow,
   type Origin,
+  type RelatedResult,
   type Revision,
   type SearchMode,
   type SearchPage,
@@ -72,6 +76,15 @@ export interface SearchOptions {
   mode?: SearchMode | undefined;
   /** Ceiling for the query embedding call. Default QUERY_EMBED_TIMEOUT_MS; tests shorten it. */
   queryTimeoutMs?: number | undefined;
+}
+
+/** related(): neighbours returned when no limit is given, and the most it returns. */
+export const RELATED_DEFAULT_LIMIT = 10;
+export const RELATED_MAX_LIMIT = 50;
+
+export interface RelatedOptions {
+  /** 1..RELATED_MAX_LIMIT, default RELATED_DEFAULT_LIMIT. Out-of-range values are clamped. */
+  limit?: number;
 }
 
 export interface GetResult {
@@ -259,6 +272,69 @@ export class NotesService {
     return rows.map((r) => ({ tag: r.tag, count: r.count, last_used: r.lastUsed.toISOString() }));
   }
 
+  /**
+   * Live notes nearest in meaning to one note, most similar first. The note itself, deleted
+   * notes and notes whose vector no longer matches their body are never returned. A source note
+   * with no current vector is embedded here when an embedder is configured (the same guarded
+   * upsert the background worker does); without one this fails with NoteError('not_embedded').
+   */
+  async related(idInput: string, opts: RelatedOptions = {}): Promise<RelatedResult> {
+    const id = this.requireId(idInput);
+    const limit = Math.min(Math.max(Math.trunc(opts.limit ?? RELATED_DEFAULT_LIMIT), 1), RELATED_MAX_LIMIT);
+    const row = await repo.findNoteById(this.db, id);
+    if (row === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
+    if (row.deletedAt !== null) {
+      throw new NoteError('deleted', `Note ${id} is deleted. Call restore("${id}") first if you want notes related to it.`);
+    }
+    const input = embedInput(row.body);
+    if (input === null) {
+      const what = row.imagePath !== null ? 'is a photo with no text' : 'has no text';
+      throw new NoteError(
+        'invalid_input',
+        `Note ${id} ${what}, so there is nothing to compare by meaning. Add a description with append("${id}", ...) first, or use list with dates to find notes from the same time.`,
+      );
+    }
+    const model = this.embedder?.model ?? EMBEDDING_MODEL;
+    let nearest = await embeddings.nearestNotes(this.db, { noteId: id, model, limit });
+    if (nearest === null) {
+      await this.embedNow(id, row.body, input);
+      nearest = await embeddings.nearestNotes(this.db, { noteId: id, model, limit });
+      if (nearest === null) {
+        throw new NoteError('not_embedded', `Note ${id} changed while it was being embedded. Try again.`);
+      }
+    }
+    return {
+      note_id: id,
+      related: nearest.map((n) => ({ note: this.toNote(n.row), similarity: roundSimilarity(1 - n.distance) })),
+    };
+  }
+
+  /** Embeds one note's body now and stores the vector (skipped by saveEmbedding if the body changed meanwhile). */
+  private async embedNow(id: string, body: string, input: string): Promise<void> {
+    const embedder = this.embedder;
+    if (!embedder) {
+      throw new NoteError(
+        'not_embedded',
+        `Note ${id} has no embedding yet and semantic search is off on this daemon (OPENROUTER_API_KEY is not set), so related notes cannot be found for it. Use search with words from the note instead.`,
+      );
+    }
+    let vectors: number[][];
+    try {
+      vectors = await embedder.embed([input]);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new NoteError(
+        'not_embedded',
+        `Note ${id} has no embedding yet and embedding it now failed (${reason}). The background job retries it; try again later, or use search with words from the note.`,
+      );
+    }
+    const vector = vectors[0];
+    if (vector === undefined) {
+      throw new NoteError('not_embedded', `Note ${id} has no embedding yet and the embedder returned none. Try again later.`);
+    }
+    await embeddings.saveEmbedding(this.db, { noteId: id, bodySha256: bodySha256(body), model: embedder.model, embedding: vector });
+  }
+
   async revisions(idInput: string): Promise<Revision[]> {
     const id = this.requireId(idInput);
     if (!(await repo.idExists(this.db, id))) throw new NoteError('not_found', `Note ${id} does not exist.`);
@@ -358,4 +434,9 @@ export class NotesService {
   private toNote(row: NoteRow): Note {
     return rowToNote(row, this.dataDir);
   }
+}
+
+/** 4 decimals: enough to order and compare, short enough to read in a tool result. */
+function roundSimilarity(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
 }

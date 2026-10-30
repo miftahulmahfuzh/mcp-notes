@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 22
+- Blocked: 0
+- Completed: 23
 
 ---
 
@@ -22,21 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A021** Phase 5: `related` tool
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `nearestNotes` in `src/embeddings/repo.ts`, `NotesService.related` / `embedNow`, `src/notes/types.ts` (`RelatedNote`, `RelatedResult`, `not_embedded`), the `related` tool in `src/mcp/tools.ts`, the `Related.` element in `src/mcp/instructions.ts`, one `it` in `tests/unit/mcp.instructions.test.ts`, `src/chat/status.ts` + `tests/unit/chat-status.test.ts`, `tests/integration/related.int.test.ts`. Exit: related never returns the note itself or a deleted note; ignores stale and other-model vectors; embeds an unembedded source once on demand; `not_embedded` without an embedder or on embed failure; textless photo → `invalid_input`; chat allow list is 14 + 15 + 2.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 5 of 6)
-  - **Satisfies**: R5, R6 — `related` MCP tool: nearest notes by meaning with similarity, excluding the note itself; no UI change; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018, P1-NOTES-A020
-  - **Plan**: `.workflows/plan/P1-NOTES-A021.md`
-
 - [ ] **P1-NOTES-A022** Phase 6: Live test, docs, Neon migration + first backfill
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `tests/live/embeddings.live.test.ts`, `vitest.config.ts`, `package.json` (`test:live:embeddings`), README (all but phase 1's sentence), `docs/INSTALL.md`, `claude/skills/n/SKILL.md`; `docs/ROADMAP.md` checked, no change; may retune `src/search/blend.ts` constants if the live run demands it; runs `npm run db:migrate` against Neon and `npm run embed:backfill`. Exit: live test passes once against OpenRouter (one request) with both usage examples ranked first by raw similarity and through the blend; Neon has `vector` 0.8.6, `note_embeddings` and its HNSW index; backfill ends with `done: … 0 pending` and the independent query agrees.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 6 of 6)
   - **Satisfies**: R6 — Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A019, P1-NOTES-A020, P1-NOTES-A021
@@ -51,6 +41,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A021** Phase 5: `related` tool
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `nearestNotes` in `src/embeddings/repo.ts`, `NotesService.related` / `embedNow`, `src/notes/types.ts` (`RelatedNote`, `RelatedResult`, `not_embedded`), the `related` tool in `src/mcp/tools.ts`, the `Related.` element in `src/mcp/instructions.ts`, one `it` in `tests/unit/mcp.instructions.test.ts`, `src/chat/status.ts` + `tests/unit/chat-status.test.ts`, `tests/integration/related.int.test.ts`. Exit: related never returns the note itself or a deleted note; ignores stale and other-model vectors; embeds an unembedded source once on demand; `not_embedded` without an embedder or on embed failure; textless photo → `invalid_input`; chat allow list is 14 + 15 + 2.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R5, R6 — `related` MCP tool: nearest notes by meaning with similarity, excluding the note itself; no UI change; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018, P1-NOTES-A020
+  - **Plan**: `.workflows/plan/P1-NOTES-A021.md`
+  - **Completed**: 2026-10-30
+  - **Method**: /implement
+  - **Files**: src/embeddings/repo.ts, src/notes/types.ts, src/notes/service.ts, src/mcp/tools.ts, src/mcp/instructions.ts, src/chat/status.ts, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/related.int.test.ts
+  - **Drift**:
+    - Only line-number drift (service.ts tags() at :257, tools.ts tags registration at :280-290); all quoted anchors matched as text.
+  - **Decided**:
+    - Which plan index to tick: -f pointed at the untracked copy .workflows/orchestration/semantic-search/PLAN.md, while the tracked canonical index is docs/plans/SEMANTIC_SEARCH_PLAN.md → tick both; commit only the tracked one (rung 6: repo convention, earlier phases ticked docs/plans)
+    - Coordinator asked to also tick phase 3's row in docs/plans/SEMANTIC_SEARCH_PLAN.md (phase 3's handler missed it; todos.md already shows P1-NOTES-A019 completed) → done as bookkeeping
+
 
 - [x] **P1-NOTES-A020** Phase 4: Hybrid search + labelled set
   - **Difficulty**: HARD
