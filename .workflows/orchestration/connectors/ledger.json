@@ -104,25 +104,26 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "448dc33",
       "depends_on": [],
       "difficulty": "EASY",
       "n": 6,
-      "note": null,
+      "note": "on phase-6-connectors, awaiting wave-0 integration; test:int deferred to integrator; trailer says Haiku 5.5 (cosmetic, left)",
       "package": "web/src",
       "plan": ".workflows/plan/connectors/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:26:53+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P2-NOTES-C506",
       "title": "Readable links in the answer panel"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/connectors/.workflows/orchestration/connectors/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "connectors",
-  "updated": "2026-10-30T13:23:21+07:00",
+  "updated": "2026-10-30T13:26:53+07:00",
+  "verified_at": "2026-10-30T13:26:49+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/connectors"
 }
