@@ -120,21 +120,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "788e86c",
       "depends_on": [
         6
       ],
       "difficulty": "HARD",
       "n": 7,
-      "note": null,
+      "note": "web UI core landed verbatim from plan; no drift, no ladder decisions; browser visual check not done (no browser)",
       "package": "web/",
       "plan": ".workflows/plan/notes-spine-images-ui/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T03:29:41+00:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A006",
       "title": "Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates"
     },
     {
@@ -161,7 +161,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T03:28:36+00:00",
+  "updated": "2026-10-30T03:29:41+00:00",
   "verified_at": "2026-10-30T03:28:36+00:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
