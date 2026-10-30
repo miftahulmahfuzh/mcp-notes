@@ -1,5 +1,6 @@
 import type { Db } from '../db/client.js';
 import type { NoteImageRow } from '../db/schema.js';
+import { removeImageFiles } from '../images/store.js';
 import { EMBEDDING_MODEL } from '../embeddings/constants.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import * as embeddings from '../embeddings/repo.js';
@@ -16,6 +17,8 @@ import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
 import * as imageRepo from './imageRepo.js';
+import * as bin from './binRepo.js';
+import type { BinImageRow } from './binRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
 import {
@@ -23,11 +26,15 @@ import {
   NoteError,
   cleanOrigin,
   rowToNote,
+  toNoteImage,
+  type Bin,
+  type BinImage,
   type ImageMeta,
   type Note,
   type NotePage,
   type NoteRow,
   type Origin,
+  type PurgeResult,
   type RelatedResult,
   type Revision,
   type SearchMode,
@@ -95,6 +102,11 @@ export const RELATED_MAX_LIMIT = 50;
 export interface RelatedOptions {
   /** 1..RELATED_MAX_LIMIT, default RELATED_DEFAULT_LIMIT. Out-of-range values are clamped. */
   limit?: number;
+}
+
+export interface BinOptions {
+  /** Entries whose note carries every one of these tags. `#` prefix and case are ignored. */
+  tagsAll?: string[];
 }
 
 export interface GetResult {
@@ -494,6 +506,97 @@ export class NotesService {
     return this.finish(result);
   }
 
+  /**
+   * The recycle bin: deleted notes (each with its non-removed images) and every binned image,
+   * both newest-deleted first, optionally narrowed to notes carrying every tag in `tagsAll`.
+   * Read-only; live notes' sidebar counts (tags()) are unaffected.
+   */
+  async listBin(opts: BinOptions = {}): Promise<Bin> {
+    const ids = await bin.listDeletedNoteIds(this.db, opts.tagsAll);
+    // get() keeps the asked order and attaches each note's live images. A note purged between
+    // the two queries lands in `missing` and is simply not listed.
+    const { notes } = await this.get(ids, { includeDeleted: true });
+    const rows = await bin.listBinImages(this.db, opts.tagsAll);
+    return { notes, images: rows.map((r) => toBinImage(r, this.dataDir)) };
+  }
+
+  /**
+   * Delete forever: only a deleted note. Removes the notes row (images, revisions and embeddings
+   * cascade) in one transaction, then the original and derived files of every image the note
+   * held, removed ones included. UI-only: no MCP tool calls this.
+   */
+  async purgeNote(idInput: string): Promise<PurgeResult> {
+    const id = this.requireId(idInput);
+    const targets = await this.db.transaction(async (tx): Promise<Array<{ id: string; path: string }>> => {
+      const cur = await repo.lockNote(tx, id);
+      if (cur === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
+      if (cur.deletedAt === null) {
+        throw new NoteError('not_deleted', `Note ${id} is not deleted. Only notes in the bin can be deleted forever.`);
+      }
+      const rows = (await imageRepo.imagesForNotes(tx, [id], { includeRemoved: true })).get(id) ?? [];
+      const files = rows.map((img) => ({ id: img.id, path: img.path }));
+      // The legacy column names a file too; after the reconcile it is the same path as the
+      // note's first image row, so this only adds something if that row is somehow missing.
+      if (cur.imagePath !== null && !files.some((f) => f.path === cur.imagePath)) {
+        files.push({ id, path: cur.imagePath });
+      }
+      await bin.deleteNoteRow(tx, id);
+      return files;
+    });
+    const files = await this.removeFiles(targets);
+    this.events.emit('purged', id);
+    return { purged: id, files };
+  }
+
+  /**
+   * Delete forever: only an image removed from its note (its own deleted_at set). An image of a
+   * deleted note that was never removed is purged with its note (purgeNote), not here. When the
+   * row is the note's legacy image (same id as the note and the path in notes.image_path), the
+   * legacy columns are cleared in the same transaction so reconcileLegacyImages cannot bring it
+   * back. Then its original and derived files are removed.
+   */
+  async purgeImage(idInput: string): Promise<PurgeResult> {
+    const imageId = this.requireImageId(idInput);
+    const first = await imageRepo.findImageById(this.db, imageId);
+    if (first === null) throw new NoteError('not_found', `Image ${imageId} does not exist.`);
+    const target = await this.db.transaction(async (tx) => {
+      // Note first, then image: the same order as the image writes (lockImage).
+      const note = await repo.lockNote(tx, first.noteId);
+      const img = await bin.lockImageRow(tx, imageId);
+      if (note === null || img === null) throw new NoteError('not_found', `Image ${imageId} does not exist.`);
+      if (img.deletedAt === null) {
+        throw new NoteError(
+          'not_deleted',
+          `Image ${imageId} is not removed from note ${img.noteId}. Only images in the bin can be deleted forever.`,
+        );
+      }
+      await bin.deleteImageRow(tx, imageId);
+      if (img.id === img.noteId && note.imagePath === img.path) await bin.clearLegacyImage(tx, note.id);
+      return img;
+    });
+    const files = await this.removeFiles([{ id: target.id, path: target.path }]);
+    this.events.emit('purged', target.noteId);
+    return { purged: imageId, files };
+  }
+
+  /**
+   * Removes each image's original and cache dir after the rows are gone. A file that cannot be
+   * removed is logged and skipped: the purge already committed, and a leftover file is
+   * harmless (no row points at it).
+   */
+  private async removeFiles(targets: ReadonlyArray<{ id: string; path: string }>): Promise<number> {
+    let removed = 0;
+    for (const target of targets) {
+      try {
+        removed += await removeImageFiles(this.dataDir, target);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`notesd: purge could not remove the files of image ${target.id} (${target.path}): ${reason}`);
+      }
+    }
+    return removed;
+  }
+
   /** Brings back a revision's body; the body it replaces becomes a new revision. */
   async revert(idInput: string, revision: number): Promise<Note> {
     const id = this.requireId(idInput);
@@ -567,6 +670,21 @@ export class NotesService {
 /** 4 decimals: enough to order and compare, short enough to read in a tool result. */
 function roundSimilarity(value: number): number {
   return Math.round(value * 10_000) / 10_000;
+}
+
+/** One bin listing row -> wire BinImage. The bin query guarantees one of the two times is set. */
+function toBinImage(row: BinImageRow, dataDir: string): BinImage {
+  const removedAt = row.image.deletedAt;
+  const binnedAt = removedAt ?? row.noteDeletedAt;
+  if (binnedAt === null) throw new Error(`image ${row.image.id} is not in the bin`);
+  const image = toNoteImage(row.image, dataDir);
+  return {
+    // deleted_at on the image itself marks a removed image (contract: present only on those).
+    image: removedAt !== null ? { ...image, deleted_at: removedAt.toISOString() } : image,
+    note_id: row.image.noteId,
+    kind: removedAt !== null ? 'image' : 'note',
+    deleted_at: binnedAt.toISOString(),
+  };
 }
 
 /** note_images insert values for one image (drizzle field names). */

@@ -93,11 +93,41 @@ export interface SearchPage extends NotePage {
   fallback?: string;
 }
 
+/**
+ * One tile of the bin's image grid.
+ * 'note': an image (not itself removed) of a deleted note; restore / delete forever act on the note.
+ * 'image': an image removed from its note; restore / delete forever act on the image. A removed
+ * image of a deleted note is listed once, as 'image'.
+ */
+export interface BinImage {
+  image: NoteImage;
+  note_id: string;
+  kind: 'note' | 'image';
+  /** When it went to the bin (ISO 8601 UTC): the note's deleted_at for 'note', the image's for 'image'. */
+  deleted_at: string;
+}
+
+/** GET /api/bin. Both lists newest deleted_at first. */
+export interface Bin {
+  /** Deleted notes, each with its non-removed images (Note.images). */
+  notes: Note[];
+  images: BinImage[];
+}
+
+/** Result of purgeNote / purgeImage. */
+export interface PurgeResult {
+  /** The purged note id or image id. */
+  purged: string;
+  /** Files removed from disk: originals plus derived files under cache/<imageId>/. */
+  files: number;
+}
+
 export type NoteErrorCode =
   | 'invalid_id'
   | 'invalid_input'
   | 'not_found'
   | 'deleted'
+  | 'not_deleted'
   | 'empty_body'
   | 'conflict'
   | 'duplicate_image'

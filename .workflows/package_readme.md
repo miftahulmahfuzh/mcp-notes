@@ -43,12 +43,13 @@ src/search/queryVector.ts    QueryVectorCache (LRU), embedQuery (5 s ceiling), S
 src/db/client.ts       createDb / closeDb / isNeonUrl; Db type; re-exports schema
 src/notes/ids.ts       generateId, normalizeId, parseId, isValidId, InvalidIdError
 src/notes/tags.ts      parseTags, tagSpans, normalizeTag
-src/notes/types.ts     wire Note/NoteImage/Revision/TagCount/NotePage/SearchPage, SearchMode, RelatedNote/RelatedResult, NoteError, DuplicateImageError, rowToNote, toNoteImage, imageUrls, cleanOrigin
+src/notes/types.ts     wire Note/NoteImage/Revision/TagCount/NotePage/SearchPage, SearchMode, RelatedNote/RelatedResult, Bin/BinImage/PurgeResult, NoteError, DuplicateImageError, rowToNote, toNoteImage, imageUrls, cleanOrigin
 src/notes/dates.ts     parseDateBound (YYYY-MM-DD local day or ISO datetime)
-src/notes/events.ts    NoteEvents in-process bus (created/updated/deleted/restored)
+src/notes/events.ts    NoteEvents in-process bus (created/updated/deleted/restored/purged)
 src/notes/repo.ts      Drizzle queries: NoteFilter, list/search/searchCandidates/insert/lock/touchNote/revisions/tags, cursors
-src/notes/service.ts   NotesService, the only writer of notes (+ attachImage/removeImage/restoreImage, iteration 7 phase 3)
+src/notes/service.ts   NotesService, the only writer of notes (+ attachImage/removeImage/restoreImage, iteration 7 phase 3; listBin/purgeNote/purgeImage, phase 4)
 src/notes/imageRepo.ts note_images queries: imagesForNotes, findImageById, findLiveImageBySha256, insertImage, nextPosition, imageIdTaken, setImageDeleted, isLiveShaClash
+src/notes/binRepo.ts   recycle-bin queries (iteration 7 phase 4): listDeletedNoteIds, listBinImages, lockImageRow, deleteNoteRow, deleteImageRow, clearLegacyImage
 src/mcp/instructions.ts buildInstructions(timeZone): MCP server instructions text (+ Attaching and Connectors paragraphs)
 src/mcp/tools.ts       registerNoteTools (12 tools, `related` since iteration 6 phase 5), noteFilterShape (+ has_image, taken_from/to), toFilter, ToolDeps (+ connectors?), run/jsonResult (compact), IMAGE_FILTER_HINT
 src/mcp/imageTools.ts  registerImageTools: create_image, view_images, attach_image, remove_image, restore_image; describeImage, describeNote, VIEW_IMAGES_MAX
@@ -90,7 +91,7 @@ src/deps.ts            AppDeps { config, db, events, service }
 src/daemon.ts          startDaemon (+ StartDaemonOptions.chat), ensureDataDirs, DATA_SUBDIRS, CHAT_SUBDIR
 src/background.ts      startBackground: ensures data dirs, runs reconcileLegacyImages once, starts the inbox watcher and (with an embedder) the embedding worker
 src/images/probe.ts    magic-byte sniff, probeImage (mime, oriented size, EXIF taken_at), sha256Hex, HEIC decode
-src/images/store.ts    data-dir paths, images/YYYY/MM/<id>.<ext>, atomic write/copy/move (EXDEV-safe)
+src/images/store.ts    data-dir paths, images/YYYY/MM/<id>.<ext>, atomic write/copy/move (EXDEV-safe), removeImageFiles (purge)
 src/images/derive.ts   lazy cache/<imageId>/{thumb.webp,preview.jpg,display.jpg}
 src/images/records.ts  ImageRecords: raw read-only note_images lookups (bySha256Live, byImageId, firstLiveImageOfNote), imageMetaOf
 src/images/ingest.ts   ingestImage (dedupe by live sha256, store, create note + first image), attachImage (add one image to a live note), locateImage (image id), locateNoteImage, imageDeps, attachDeps
@@ -306,7 +307,10 @@ type SearchMode = 'hybrid' | 'text'                                 // iteration
 interface SearchPage extends NotePage { mode: SearchMode; fallback?: string }   // mode = ranking actually used; fallback only when hybrid was asked but could not run
 interface RelatedNote { note: Note; similarity: number }            // iteration 6 phase 5; similarity = 1 - cosine distance, 4 decimals
 interface RelatedResult { note_id: string; related: RelatedNote[] } // most similar first
-type NoteErrorCode = 'invalid_id'|'invalid_input'|'not_found'|'deleted'|'empty_body'|'conflict'|'duplicate_image'|'invalid_revision'|'not_embedded'
+interface BinImage { image: NoteImage; note_id; kind: 'note' | 'image'; deleted_at }   // iteration 7 phase 4; deleted_at = bin time (note's for 'note', image's own for 'image')
+interface Bin { notes: Note[]; images: BinImage[] }                 // GET /api/bin; both newest deleted_at first
+interface PurgeResult { purged: string; files: number }             // purged note or image id; files removed from disk (originals + cache entries)
+type NoteErrorCode = 'invalid_id'|'invalid_input'|'not_found'|'deleted'|'not_deleted'|'empty_body'|'conflict'|'duplicate_image'|'invalid_revision'|'not_embedded'   // not_deleted: iteration 7 phase 4, purge of a live item
 class NoteError extends Error { readonly code: NoteErrorCode }
 class DuplicateImageError extends NoteError { readonly noteId: string }   // iteration 7 phase 3: code 'duplicate_image'; noteId = note holding the live bytes (restoreImage)
 function cleanOrigin(value: unknown): Origin | null       // keeps known non-blank string keys; null if none left
@@ -316,6 +320,8 @@ function toNoteImage(row: NoteImageRow, dataDir: string): NoteImage   // deleted
 function rowToNote(row: NoteRow, dataDir: string, images: readonly NoteImageRow[]): Note   // keeps live rows only, sorted by position
 ```
 `Note` is the wire shape shared by MCP, HTTP and the UI. All timestamps are UTC ISO strings. `deleted_at` is present only on deleted notes. `images` is built from `note_images` rows (empty for text notes; removed images are dropped), never from the legacy `notes.image_*` columns, and each `available` is checked against the local data dir on every conversion. `ImageMeta` is still re-exported for ingest. `NoteError` is the only error the service throws on purpose (`DuplicateImageError` is a `NoteError` subclass that also names the holder note). HTTP (phase 6) maps `code` to a status.
+
+`BinImage.kind` (iteration 7 phase 4) tells the bin UI what restore / delete forever act on: `'note'` is a non-removed image of a deleted note (act on the note), `'image'` is an image removed from its note (act on the image; its `image.deleted_at` is set). A removed image of a deleted note is listed once, as `'image'`.
 
 ### src/notes/dates.ts
 
@@ -327,7 +333,7 @@ function parseDateBound(value: string, bound: 'from' | 'to'): Date
 ### src/notes/events.ts
 
 ```ts
-type NoteOp = 'created' | 'updated' | 'deleted' | 'restored'
+type NoteOp = 'created' | 'updated' | 'deleted' | 'restored' | 'purged'   // purged: iteration 7 phase 4
 interface NoteEvent { type: 'note'; op: NoteOp; id: string }
 class NoteEvents {
   emit(op: NoteOp, id: string): void
@@ -335,7 +341,7 @@ class NoteEvents {
   listenerCount(): number
 }
 ```
-In-process `EventEmitter` wrapper with no listener cap. `NotesService` is the only emitter. SSE (phase 6) subscribes.
+In-process `EventEmitter` wrapper with no listener cap. `NotesService` is the only emitter. SSE (phase 6) subscribes. `purged` carries the purged note's id (`purgeNote`) or the owning note's id (`purgeImage`).
 
 ### src/notes/repo.ts
 
@@ -390,6 +396,19 @@ function setImageDeleted(db, id, deleted): Promise<NoteImageRow>
 ```
 A failed insert inside a transaction aborts that transaction, so callers that catch `duplicate_image` mid-transaction must roll back.
 
+### src/notes/binRepo.ts (iteration 7 phase 4)
+Recycle-bin reads and the hard deletes behind delete forever. Only `NotesService` calls it.
+```ts
+interface BinImageRow { image: NoteImageRow; noteDeletedAt: Date | null }
+function listDeletedNoteIds(db, tagsAll?): Promise<string[]>        // deleted notes with every tag; deleted_at desc, id desc
+function listBinImages(db, tagsAll?): Promise<BinImageRow[]>        // removed images + non-removed images of deleted notes; order coalesce(image.deleted_at, note.deleted_at) desc, id desc
+function lockImageRow(tx, id): Promise<NoteImageRow | null>         // SELECT ... FOR UPDATE
+function deleteNoteRow(tx, id): Promise<boolean>                    // note_images, note_revisions, note_embeddings cascade (FK)
+function deleteImageRow(tx, id): Promise<boolean>
+function clearLegacyImage(tx, noteId): Promise<void>                // notes.image_path / image_meta -> null; updated_at untouched
+```
+Tag filters go through `normalizeTagInput` and `arrayContains(notes.tags, ...)` on the owning note, so they are AND.
+
 ### src/notes/service.ts
 
 ```ts
@@ -397,6 +416,7 @@ const MAX_ID_ATTEMPTS = 20
 const RELATED_DEFAULT_LIMIT = 10, RELATED_MAX_LIMIT = 50
 interface RelatedOptions { limit?: number }          // clamped to 1..50, default 10
 interface AttachImageInput { id: string; path: string; meta: ImageMeta }   // id from newId(); path relative to dataDir (images/YYYY/MM/<id>.<ext>)
+interface BinOptions { tagsAll?: string[] }          // iteration 7 phase 4; `#` and case ignored
 class NotesService {
   constructor(deps: { db: Db; dataDir: string; events: NoteEvents; embedder?: Embedder | null })   // embedder: query side of hybrid search (phase 4) and related (phase 5); writes never use it
   requireId(input: string): string                    // normalizeId or NoteError('invalid_id')
@@ -419,14 +439,21 @@ class NotesService {
   attachImage(noteId, input: AttachImageInput): Promise<Note>   // iteration 7 phase 3: append one image to a live note
   removeImage(imageId): Promise<Note>                 // soft; returns the owning note; no-op if already removed
   restoreImage(imageId): Promise<Note>                // back at its old position; restores a deleted note too
+  listBin(opts?: BinOptions): Promise<Bin>            // iteration 7 phase 4: read-only recycle bin
+  purgeNote(id): Promise<PurgeResult>                 // delete forever, deleted notes only; UI-only (no MCP tool)
+  purgeImage(imageId): Promise<PurgeResult>           // delete forever, removed images only; UI-only (no MCP tool)
+  private removeFiles(targets): Promise<number>       // removeImageFiles per image after commit; failures logged, not thrown
   private requireImageId(input): string               // normalizeId or NoteError('invalid_id') with an image-id message
   private lockImage(tx, imageId): Promise<{ note: NoteRow; image: NoteImageRow }>   // lock the owning note, then re-read the image
 }
 function imageValues(noteId, id, path, meta, position)   // module-private: note_images insert values; used by create and attachImage
+function toBinImage(row: BinImageRow, dataDir): BinImage  // module-private: bin row -> wire BinImage
 ```
 Every mutation runs in one transaction that locks the row (`FOR UPDATE`), writes the previous body to `note_revisions`, then writes the new state. Delete also stores the body as a revision. Exactly one `NoteEvents` event is emitted after commit, and none for a no-op: an unchanged body on update, a revert to an identical body, a repeat delete or restore. `update`, `append` and `revert` on a deleted note throw `deleted`. `create` runs in one transaction: it skips any id already used by a note or an image (`imageIdTaken`), inserts the note and, when `image` is given, its first image row. Generated ids are retried up to 20 times. With an explicit `id`, a taken id throws `conflict` without retry. A live-sha256 clash on the image throws `duplicate_image` and leaves nothing behind. `allowEmpty` exists for HTTP and image notes. MCP never sets it. Every read (`getOne`, `get`, `list`, `search`, `related`, mutations) converts rows through the private `toNotes`, which loads all their live images with one `imageRepo.imagesForNotes` call.
 
 Image mutations (iteration 7 phase 3, P1-NOTES-A025) write no revision; each bumps the note's `updated_at` through `repo.touchNote` and emits one event with the **note** id after commit (none for a no-op). `attachImage` locks the note live (`deleted` on a deleted note), throws `conflict` if the image id is taken (`imageIdTaken`), and inserts at `imageRepo.nextPosition` (max over every row, removed ones included, + 1, so a removed image keeps its slot); a live-sha clash surfaces as `duplicate_image` from `insertImage`. Emits `updated`. `removeImage` and `restoreImage` take an image id and go through the private `lockImage`, which finds the image, locks its owning note row (`FOR UPDATE`), then re-reads the image, so concurrent changes to one note's images serialise; the lock order is note row first, image row second (phase 4's purge must keep it). Unknown image -> `not_found`. `removeImage` works whatever state the note is in and emits `updated`. `restoreImage` is a no-op for a live image in a live note; for a removed image it first checks `findLiveImageBySha256` and throws `DuplicateImageError(holderNoteId)` when another image holds the bytes, and a unique violation racing in during `setImageDeleted` becomes a plain `duplicate_image` ("try again"); a deleted owning note is restored in the same transaction. Emits `restored` when the note came back, else `updated`.
+
+Recycle bin (iteration 7 phase 4, P1-NOTES-A026). `listBin` reads `binRepo.listDeletedNoteIds` then `get(ids, { includeDeleted: true })` (keeps the order, attaches each note's live images; a note purged in between is just not listed), plus `binRepo.listBinImages` mapped through `toBinImage`. It emits nothing and leaves `tags()` (live notes only) unaffected. `purgeNote` locks the note in one transaction: unknown -> `not_found`, live -> `not_deleted`; it collects every image row of the note, removed ones included (plus the legacy `notes.image_path` if no row has that path), then `deleteNoteRow` cascades images, revisions and embeddings. `purgeImage` looks the image up, then locks note row first and image row second (`lockNote`, `lockImageRow`, the same order as `lockImage`); a non-removed image -> `not_deleted` (an image of a deleted note that was never removed is purged with its note, not here). It deletes the row and, when the row is the note's legacy image (image id = note id and the path equals `notes.image_path`), calls `clearLegacyImage` in the same transaction so `reconcileLegacyImages` cannot bring it back. Both remove files only after commit through `removeFiles` (a failure is logged as `notesd: purge could not remove the files of image ...` and skipped; the rows are already gone), then emit one `purged` event and return `{ purged, files }`.
 
 `search` (iteration 6 phase 4): `mode: 'text'` is exactly the pre-iteration-6 `repo.searchNotes` ranking and never calls the embedder. Hybrid (the default) checks the cursor first, then embeds the query through `embedQuery` (per-service `QueryVectorCache`, so paging embeds once). With no embedder it returns the text ranking with `fallback: SEMANTIC_OFF_FALLBACK`; if the embedding throws or times out, it returns the text ranking with `fallback: embedFailedFallback(err)`. Either way `mode` is `'text'`. Otherwise it calls `repo.searchCandidates` with `queryTerms(query)` ids and exclusions and `BLEND.textCandidates` / `BLEND.vectorCandidates`, ranks with `rankCandidates` (tag match from the note's `tags`, `now = new Date()`) and slices `[offset, offset + limit)`. The cursor is an offset into whichever ranking produced the page.
 
@@ -674,7 +701,7 @@ function isLoopbackUrl(value: string): boolean                    // URL host is
 function isSameOrigin(originHeader: string | undefined, requestUrl: string): boolean   // Origin's origin === request URL's origin (scheme, host, port)
 const sameOriginOnly: MiddlewareHandler                           // 403 { error: 'forbidden_origin' } unless loopback host AND same-origin Origin
 ```
-Guard for endpoints only notesd's own page may call (purge in phase 4, reveal in phase 5); nothing mounts it yet. A missing, empty, foreign or unparseable Origin, including the literal `null`, is refused. `app.ts` imports `isLoopbackUrl` from here for `loopbackOnly` instead of keeping its own copy.
+Guard for endpoints only notesd's own page may call (purge in phase 4, reveal in phase 5). Since iteration 7 phase 4 it guards the two `DELETE /api/bin/...` purge routes in `api.ts`. A missing, empty, foreign or unparseable Origin, including the literal `null`, is refused. `app.ts` imports `isLoopbackUrl` from here for `loopbackOnly` instead of keeping its own copy.
 
 ### src/http/api.ts
 
@@ -692,11 +719,15 @@ function apiRoutes(deps: AppDeps, options?: ApiOptions): Hono
 | `POST /api/notes` | `{ body: string }` | 201 `Note`; `origin.source = 'web'`, empty body allowed |
 | `PATCH /api/notes/:id` | `{ body: string }` | `Note`; empty body allowed |
 | `DELETE /api/notes/:id` | | `Note` (soft delete); 404 if the note is not live, so a repeat delete is 404 |
+| `GET /api/bin` | repeated `tag` (AND on the owning note) | `Bin` `{ notes, images }`, newest deleted first (iteration 7 phase 4) |
+| `POST /api/notes/:id/restore` | | `Note`; no-op returning the note when it is live; 404 unknown, 400 non-id |
+| `DELETE /api/bin/notes/:id` | `sameOriginOnly` | `PurgeResult`; 409 `not_deleted` for a live note, 403 `forbidden_origin` without the page's Origin |
+| `DELETE /api/bin/images/:imageId` | `sameOriginOnly` | `PurgeResult`; 409 `not_deleted` for an image not removed from its note, 403 as above |
 | `GET /api/tags` | | `TagCount[]` (bare array) |
 | `GET /api/events` | | SSE, see below |
 | `POST /api/chat` | `{ message: string (trimmed, non-empty), thread_id?: string (1..200) }` | SSE, see below |
 
-`/api/events` opens with a `: connected` comment, then sends `event: note` with data `{ op, id }` for every `NoteEvents` emit (`created`/`updated`/`deleted`/`restored`), plus a `: heartbeat` comment every `sseHeartbeatMs`. On client abort it clears the timer and unsubscribes from `NoteEvents`.
+`/api/events` opens with a `: connected` comment, then sends `event: note` with data `{ op, id }` for every `NoteEvents` emit (`created`/`updated`/`deleted`/`restored`/`purged`), plus a `: heartbeat` comment every `sseHeartbeatMs`. On client abort it clears the timer and unsubscribes from `NoteEvents`.
 
 `/api/chat` validates the body before streaming (bad input is a plain 400 JSON, not SSE). It then calls `chat.reply({ message, threadId, signal })` and writes each `ChatEvent` from `turn.events` as an SSE event of the same name: `event: delta` with `{ text }` (reply text; the deltas concatenate to the full reply) or `event: status` with `{ text }` (a progress caption such as `searching notes`; `""` clears it). When the events end it calls `turn.end()` and sends `event: done` with `{ thread_id, brain? }`; `brain` (`claude` | `glm`) is omitted when the backend reports none, as the stub does. A throw from `reply()` or from `events` becomes `event: error` with `{ error }`. A client disconnect aborts the `AbortController` passed as `signal`, and nothing more is written.
 
@@ -819,7 +850,9 @@ class DestinationExistsError extends Error
 function writeNewFile(dest, bytes): Promise<void>           // temp sibling + rename; never overwrites
 function copyIntoNewFile(src, dest): Promise<void>
 function moveIntoNewFile(src, dest, fs?: MoveFs): Promise<void>   // rename; on EXDEV copy, rename, unlink the source
+function removeImageFiles(dataDir, image: { id; path }): Promise<number>   // iteration 7 phase 4: delete forever on disk; returns files removed
 ```
+`removeImageFiles` unlinks the original only when `path` resolves strictly inside `<dataDir>/images/` and is a file or symlink, and removes `cache/<id>/` only when `id` is a single path segment. It returns 1 for the original plus one per cache entry; missing files count 0. It never touches anything else and leaves the `images/YYYY/MM` dirs in place.
 This `ensureDataDirs` returns `DataDirs` and is separate from the one in `src/daemon.ts`.
 
 #### src/images/derive.ts
@@ -982,7 +1015,7 @@ interface EmbeddingWorker { kick(): void; idle(): Promise<void>; close(): Promis
 function startEmbeddingWorker(opts): EmbeddingWorker     // drains once at start
 function formatBatch(r: BatchReport): string             // `[notesd] embeddings: 15/16 embedded, 1 failed (A-B32: ...), per-note fallback, 17 calls, 2310ms`
 ```
-One `RateLimiter` and `AbortController` per worker. `created` and `updated` events call `kick()` (debounced); `deleted` and `restored` do not, since a deleted note keeps its vector. The sweep is an unref'd `setInterval`. At most one drain runs; a kick during a drain sets a flag and runs one more pass afterwards. A drain that throws (e.g. a store error) is logged as `[notesd] embeddings: drain failed: ...` and the worker keeps going. Only batches that did work are logged; an idle sweep logs nothing. `idle()` flushes a pending debounce and waits until no drain runs (tests). `close()` is idempotent: it unsubscribes, clears the sweep and debounce, aborts, and waits for the in-flight drain up to `closeGraceMs`; past that the call is abandoned, its save fails once the pool closes, and the note stays pending for the next start.
+One `RateLimiter` and `AbortController` per worker. `created` and `updated` events call `kick()` (debounced); `deleted`, `restored` and `purged` do not, since a deleted note keeps its vector and a purged note's vector goes with it by FK cascade. The sweep is an unref'd `setInterval`. At most one drain runs; a kick during a drain sets a flag and runs one more pass afterwards. A drain that throws (e.g. a store error) is logged as `[notesd] embeddings: drain failed: ...` and the worker keeps going. Only batches that did work are logged; an idle sweep logs nothing. `idle()` flushes a pending debounce and waits until no drain runs (tests). `close()` is idempotent: it unsubscribes, clears the sweep and debounce, aborts, and waits for the in-flight drain up to `closeGraceMs`; past that the call is abandoned, its save fails once the pool closes, and the note stays pending for the next start.
 
 #### src/cli/embedBackfill.ts (phase 3): `npm run embed:backfill`
 ```ts
@@ -1200,6 +1233,8 @@ Images over HTTP and MCP (phase 5): `POST /api/images` and `create_image` both e
 
 Attach / remove / restore one image (iteration 7 phase 3): `POST /api/notes/:id/images` and `attach_image` go `attachFromUpload` / `attachFromPath` -> `ingest.attachImage` (dedupe under the sha lock, place the file) -> `NotesService.attachImage` (note locked, row at `nextPosition`, `touchNote`) -> `updated`. `DELETE /api/images/:imageId` / `remove_image` and `POST /api/images/:imageId/restore` / `restore_image` call `NotesService.removeImage` / `restoreImage` directly (`lockImage`, `setImageDeleted`, `touchNote`), which emit `updated` (or `restored` when a deleted note came back) with the note id; files on disk are never touched.
 
+Recycle bin (iteration 7 phase 4): `GET /api/bin` -> `NotesService.listBin` -> `binRepo` reads -> `Bin`. `POST /api/notes/:id/restore` -> `NotesService.restore` -> `restored`. Delete forever is HTTP only: `DELETE /api/bin/notes/:id` and `DELETE /api/bin/images/:imageId` pass `sameOriginOnly`, then `purgeNote` / `purgeImage` lock and check the row (`not_deleted` for live items), hard-delete it in one transaction, remove originals under `images/` and derived files under `cache/<imageId>/` with `removeImageFiles` after commit, and emit `purged`. No MCP tool and no chat-allowed tool can purge.
+
 Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose `delta`/`status` events stream back as SSE, ending with `done { thread_id, brain? }`. With the default backend (iteration 4 phase 2), `reply` spawns a Claude Code child through the Agent SDK in `<dataDir>/chat`; the child calls the notes tools over this daemon's own `POST /mcp` (so its reads and writes go through `NotesService` and emit `NoteEvents` like any MCP client), streams text and tool use back, and its SDK `session_id` returns as `thread_id`, which the next message passes as `resume`.
 
 Web UI client (phase 7): `useNotes` fetches `/api/notes?limit=2000` and `/api/tags`, keeps `EventSource('/api/events')` open and refetches (debounced 250 ms) on each `note` event, on reconnect and every 60 s. `App` derives the wall from `notes`, `mode` and active tags with the pure `lib/filter` helpers. An edit is applied locally first (`upsertLocal`/`removeLocal`), then sent with `PATCH`/`DELETE`/`POST`, then followed by a refetch; the server's resulting `NoteEvents` emit triggers another refetch through SSE. Chat reads the `POST /api/chat` response body with `readSSE`, since `EventSource` cannot POST.
@@ -1266,12 +1301,12 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 ## Error Handling
 
 - `ConfigError` (config), `InvalidIdError` (ids, carries `input`), `RangeError` (generateId with a bad injected RNG).
-- `NoteError` with `code` is the service's only deliberate error. Its codes: `invalid_id`, `invalid_input` (bad date, cursor or empty search), `not_found`, `deleted`, `empty_body`, `conflict`, `duplicate_image` (Postgres 23505 on the live-sha256 index), `invalid_revision` and `not_embedded` (`related` on a source with no current vector that cannot be embedded now, iteration 6 phase 5).
+- `NoteError` with `code` is the service's only deliberate error. Its codes: `invalid_id`, `invalid_input` (bad date, cursor or empty search), `not_found`, `deleted`, `not_deleted` (purge of a live note or a non-removed image, iteration 7 phase 4), `empty_body`, `conflict`, `duplicate_image` (Postgres 23505 on the live-sha256 index), `invalid_revision` and `not_embedded` (`related` on a source with no current vector that cannot be embedded now, iteration 6 phase 5).
 - MCP handlers never throw. `run()` turns errors into `isError` results with text `"<code>: <message>"`, the bare message for a `ConnectorError`, or `"error: <message>"` for anything else.
 - `ConnectorError` (connectors) has exactly two message shapes: `"<label> is not reachable: <reason>"` (no repo dir, no `.env.local`, no `DATABASE_URL`/`DATABASE_URL_UNPOOLED`, connect/auth/network failure, missing lab file) and `"<label> query failed: <reason>"` (SQL error, statement timeout, read-only violation, guard refusal, lab timeout). The URL, user, password and host are scrubbed to `***`. A failure in one system never affects another system or the notes tools. `SqlRefused` (guard) is always rewrapped as `query failed`.
 - `EmbeddingError` (embeddings, carries optional `detail`) is every embedder failure; callers record and retry (worker) or fall back to text (search). `embeddingErrorText` renders it with its detail. A blank `OPENROUTER_API_KEY` passed to `createOpenRouterEmbedder` throws it at daemon start.
 - `/mcp` returns JSON-RPC-shaped errors: 403 for a non-loopback host or Origin, 405 for GET/DELETE.
-- `/api` errors are `{ error: string }`. One mapping turns `NoteError` into a status: `not_found` and `deleted` are 404 `not_found`, `conflict` and `duplicate_image` are 409 with the code, `invalid_id` is 400 `invalid_id`, and any other code is 400 `"<code>: <message>"`. Bad JSON is 400 `invalid_json`, and zod failures are 400 with `"<path>: <message>"` joined by `; `. Non-`NoteError` exceptions are rethrown (Hono 500).
+- `/api` errors are `{ error: string }`. One mapping turns `NoteError` into a status: `not_found` and `deleted` are 404 `not_found`, `conflict`, `duplicate_image` and `not_deleted` are 409 with the code, `invalid_id` is 400 `invalid_id`, and any other code is 400 `"<code>: <message>"`. Bad JSON is 400 `invalid_json`, and zod failures are 400 with `"<path>: <message>"` joined by `; `. Non-`NoteError` exceptions are rethrown (Hono 500).
 - `/api/chat` errors after streaming starts arrive as `event: error`, not as an HTTP status.
 - Agent chat backend errors (thrown from `events`, so they reach the UI as `event: error`): `Chat stopped: the request was closed.` / `a newer message replaced this one.` / `no answer within N s.` / `notesd is shutting down.`, the turn-cap message, the agent's own result or error text, `The agent ended without an answer.`, and the `CHAT_BRAIN=glm needs ...` message. `end()` throws if called before `events` finished cleanly.
 - Image routes answer `{ error }` JSON: 404 `not_found` (bad, unknown or deleted id), 404 `no_image` with `id` (text note), 404 `not_on_this_machine` with `host`, 400 `bad_multipart` / `file_required`, 413 `too_large` (from `bodyLimit`, with `max_bytes`, or from the size check), and 415 for any other `ImageInputError` (`not_an_image`). Other exceptions go to Hono (500).
@@ -1307,6 +1342,7 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 - Iteration 7 phase 1 (P1-NOTES-A023) suites: integration `schema.int` (now migrations 0000 + 0001 + 0002: live-sha256 uniqueness on `note_images`, unique paths, cascade on note removal), `migration0002.int` (builds an iteration-6 database, then applies only 0002: one identical row per legacy image, none for text notes, at most one live row per sha256 with live notes first, `notes` rows, legacy columns, indexes and image files untouched, the migration ends with exactly `LEGACY_COPY_SQL`; `reconcileLegacyImages` inserts nothing after the migration, picks up a late legacy image once, and bins a late image whose bytes already live) and `imageRepo.int` (insert and lookup, `duplicate_image` across notes, a removed image releasing its sha256, taken path or id rethrown as is, live lookup with the note's deleted time, `nextPosition` counting removed rows, `imageIdTaken`, idempotent remove and restore, restore refused when bytes live elsewhere, per-note ordering with a key per id, cascade).
 - Iteration 7 phase 2 (P1-NOTES-A024) suites: new unit `tests/unit/sameOrigin.test.ts` (loopback detection, same-origin match, 403 on a missing, foreign or `null` Origin); `takenFilter.test.ts` rewritten to assert the `exists` subqueries for `hasImage` and the one-image taken range; `notes.helpers.test.ts` covers 3-arg `rowToNote` and `toNoteImage`; `images/ingest.test.ts` and `images/inbox.test.ts` read through `byImageId` and add a removed-image dedupe case. Integration: `notes.service.int` gains an `images[]` block, `images.int` covers create rollback on a sha clash, removed-image dedupe and the startup reconcile, `images.http.int` covers the image-id routes, any-state serving, the note-id alias fallback and a reconciled legacy image being served, and `images.mcp.int` covers `view_images` over every image of a note, image ids, the 8-image cap with its overflow line and removed images. Helpers: `tests/helpers/fakeNotes.ts` keeps a separate image map and implements the new `ImageRecords` (`seed`, `removeImage`, `images`); `imageHarness.ts` gained `addImage` and sets `taken_at` on `note_images`; `api-harness.ts` `insertImageNote` writes a `note_images` row.
 - Iteration 7 phase 3 (P1-NOTES-A025) suites: new integration `tests/integration/images.attach.int.test.ts` (HTTP: attach in order as new files, attach to a text note with any id spelling, dedupe across and within notes, a deleted holder restored, removed images not counting for dedupe, 400/404/413/415 refusals, remove keeping file and slot then restore at the old position, 409 `duplicate_image` naming the holder, restore of a deleted note's image restoring the note, one `updated` event per change and none for a no-op, two concurrent attaches of the same bytes leaving one live image; MCP: the three tools listed and none that deletes permanently, `attach_image` copies and dedupes and leaves the source, remove/restore round-trip, tool errors). Unit `chat-status.test.ts` asserts 17 notes tools, the three new captions and no purge-like tool name; `mcp.instructions.test.ts` asserts exactly one `Attaching.` paragraph and its key phrases.
+- Iteration 7 phase 4 (P1-NOTES-A026) suites: new integration `tests/integration/bin.int.test.ts` (bin listing newest-deleted first with each image once, tag AND filter, sidebar tags still live-only, empty bin; restore with images, 404/400; purge of a deleted note removing rows, originals and derived files and nothing else; purge of a removed image keeping its note; legacy image purge clearing `notes.image_path`/`image_meta` so the reconcile cannot bring it back; 409 `not_deleted` touching nothing; 404/400; 403 without or with a foreign Origin and 200 from the page; no MCP or chat-allowed tool can purge). New unit `tests/unit/images/removeImageFiles.test.ts` (removes original and every derived file only, missing files count 0, never unlinks outside `images/`, never removes the cache root or outside it for a malformed id). `tests/unit/embeddings/worker.test.ts` asserts `purged` triggers no drain.
 - Iteration 7 phase 6 (P1-NOTES-A028) suites (jsdom): every web suite now builds wire notes from the shared `web/src/testing/fixtures.ts` (`makeImage(id, over?)`: a 600x400 available JPEG on host `lenovo` with `/api/images/<id>/*` urls and `note_id` defaulting to `id`; `makeNote(id, body, { images?, tags?, created?, updated? })`: string image ids become images of that note at positions 0..n-1, tags default to the body's hashtags). New cases: `filter` (`hasImages`, `imageCount`, `photosOf` flattening order and `k/n`, count line over items), `NoteCard` (cover is `images[0]`, count badge only for 2+), `NoteImage` (src by image id; a failed image does not hide the next one rendered in its place), `Gallery` (one tile per image, open/close by image id), `PhotoModal` (stepping within then across notes, `metaLine`, copy gives the note id, `/full/<imageId>`), `FullscreenApp` (`describeMissing` reads `/api/images/:id` dims) and `App` (photo count counts images, one gallery tile per image, modal steps within a note, count on the cover).
 - Iteration 7 phase 7 (P1-NOTES-A029) suites (jsdom): new `components/NoteEditor.test.tsx` (opens focused with id and copy-id, live tag chips, blur saves only on change and once per change, an emptied note is saved empty and never closed while open, capture-phase Escape not reaching a chat handler, close fires once with `dirty`, backdrop vs panel click, image strip with remove icons, no strip for a text note, the dedupe notice). New cases: `NoteCard` (Expand note icon; expanding mid-edit keeps focus and hands over the draft), `DropOverlay` (with a target, paste and drop attach one at a time and pass dedupe results through; attach vs new-note icon), `filter` (`visibleOnWall` keep list) and an `App big editor` block (expand + Esc saves only if changed, blur save reflected on the card, "+" then expand survives while open and is deleted on close, the empty rule on close only, paste attaches and Notes. -> Everything. on close, an emptied note with a new image is kept, attach overlay state, quiet dedupe notice, strip soft remove, Esc leaves the chat answer open).
 - `tests/helpers/fakeEmbedder.ts`: `FakeEmbedder` / `createFakeEmbedder(opts?)`, a deterministic offline `Embedder` with the real model id and width by default. Tokens matching a synonym group of the `Lexicon` (`DEFAULT_LEXICON`, prefix entries end in `*`) add to that group's concept axis; other tokens hash (FNV-1a) into tail axes at `DEFAULT_TAIL_WEIGHT`; stopwords are dropped; vectors are unit length and never zero. It validates like the real client, records each batch in `calls`, and offers `failNext(n, err?)`, `failWhen(pred, err?)`, `delayMs`, `reset()` and synchronous `vectorFor(text)`. Also exports `tokenize` and `cosine`.
@@ -1335,6 +1371,7 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 - Image mime comes from magic bytes only. The stored extension comes from the original filename when it is safe, so a `.jpeg` keeps `.jpeg`. Do not infer mime from the stored path.
 - `images/YYYY/MM` is the ingest time in local time, not the EXIF `taken_at`.
 - An image ingested on another host has `available = false` here until the same bytes are ingested locally, which puts them back at the stored `note_images.path`.
+- Delete forever (iteration 7 phase 4) is UI-only and guarded by `sameOriginOnly`: a request without notesd's own page Origin gets 403. It refuses live items with 409 `not_deleted`. Files are removed after the transaction commits, so a file that cannot be removed is left behind (logged), never a row pointing at a missing file.
 - Image ids share the note-id space: a note's first image has the note's id, and `newId` / `create` refuse an id used in either table. `/api/images/:imageId/*` serves removed images and images of deleted notes (for the bin); only the `/api/notes/:id/*` alias hides deleted notes. The web UI still builds `/api/notes/:id/*` URLs until a later phase moves it to `images[].urls`.
 - Inbox files that are not images stay in `inbox/` and are logged, not moved to `failed/`. Subdirectories, dotfiles and partial downloads are ignored.
 - `/mcp` is stateless POST-only. There is no SSE stream and no `Mcp-Session-Id`.

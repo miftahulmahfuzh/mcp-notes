@@ -53,7 +53,7 @@ describe('startEmbeddingWorker', () => {
     expect(logs).toEqual([]);
   });
 
-  it('created and updated events trigger a drain; deleted and restored do not', async () => {
+  it('created and updated events trigger a drain; deleted, restored and purged do not', async () => {
     const store = new MemoryEmbeddingStore();
     const embedder = new ScriptedEmbedder();
     const { events, worker: w } = start(store, embedder);
@@ -72,6 +72,7 @@ describe('startEmbeddingWorker', () => {
     const lists = store.listCalls;
     events.emit('deleted', 'A-001');
     events.emit('restored', 'A-001');
+    events.emit('purged', 'A-001');
     await w.idle();
     expect(store.listCalls).toBe(lists);
     expect(embedder.calls).toHaveLength(2);

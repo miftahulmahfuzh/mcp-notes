@@ -8,6 +8,7 @@ import type { NoteEvent } from '../notes/events.js';
 import { normalizeId } from '../notes/ids.js';
 import { MAX_LIMIT } from '../notes/repo.js';
 import { NoteError } from '../notes/types.js';
+import { sameOriginOnly } from './sameOrigin.js';
 
 export const DEFAULT_LIST_LIMIT = 2000;
 export const MAX_LIST_LIMIT = MAX_LIMIT; // 5000, P2's repo cap
@@ -58,6 +59,7 @@ function noteErrorResponse(c: Context, err: unknown): Response {
       return notFound(c);
     case 'conflict':
     case 'duplicate_image':
+    case 'not_deleted':
       return c.json({ error: err.code }, 409);
     case 'invalid_id':
       return badRequest(c, 'invalid_id');
@@ -164,6 +166,49 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     if ((await service.getOne(id)) === null) return notFound(c);
     try {
       return c.json(await service.delete(id));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  /** The recycle bin: deleted notes and binned images, newest-deleted first. `?tag=` is AND. */
+  api.get('/api/bin', async (c) => {
+    const tags = parseTagParams(c.req.queries('tag'));
+    try {
+      return c.json(await service.listBin(tags.length > 0 ? { tagsAll: tags } : {}));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  /** Undo a soft delete. Restoring a live note is a no-op that returns it. */
+  api.post('/api/notes/:id/restore', async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    if (id === null) return badRequest(c, 'invalid_id');
+    try {
+      return c.json(await service.restore(id));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  /** Delete forever (UI only): a deleted note, its rows and every file of its images. */
+  api.delete('/api/bin/notes/:id', sameOriginOnly, async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    if (id === null) return badRequest(c, 'invalid_id');
+    try {
+      return c.json(await service.purgeNote(id));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  /** Delete forever (UI only): one image removed from its note, its row and its files. */
+  api.delete('/api/bin/images/:imageId', sameOriginOnly, async (c) => {
+    const imageId = normalizeId(c.req.param('imageId'));
+    if (imageId === null) return badRequest(c, 'invalid_id');
+    try {
+      return c.json(await service.purgeImage(imageId));
     } catch (err) {
       return noteErrorResponse(c, err);
     }

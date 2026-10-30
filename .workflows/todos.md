@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 3
-- Completed: 31
+- Blocked: 2
+- Completed: 32
 
 ---
 
@@ -22,24 +22,14 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A026** Phase 4: Bin listing, note restore endpoint, purge (rows + files)
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `src/notes/{types,events}.ts` (`Bin`, `BinImage`, `PurgeResult`, `purged` op), `src/notes/binRepo.ts` (new), service `listBin`/`purgeNote`/`purgeImage`, `src/images/store.ts` (`removeImageFiles`), `src/http/api.ts` (bin, restore, purge routes), bin int test, `removeImageFiles` and worker unit tests; no MCP purge tool. Exit: contract routes pass; purge leaves other files in `images/` and `cache/` untouched; live items 409 `not_deleted`; missing/foreign/`null` Origin 403.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 4 of 11)
-  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A025 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
-
 - [ ] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `web/src/components/{Bin,UndoBar}.{tsx,css}` (new), `web/src/hooks/{useUndo,useBin}.ts` (new), `{NoteCard,NoteEditor,PhotoModal,Gallery,Rail,Sidebar,Header,Wall}.tsx`, `App.tsx` (`view`, `removeNote`, `removeImageWithUndo`, `onRestored`, `toggleBin`), `api.ts` bin/restore/purge calls, `types.ts` (`Bin`, `BinImage`, `View`), `filter.ts` (`BIN_HEADING`, `binCountLine`), tests. Exit: R3 acceptance steps pass in component tests; undo label sits above the chat bar right end without overlapping the answer panel.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 8 of 11)
   - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A026, P1-NOTES-A029
+  - **Depends on**: P1-NOTES-A026 (satisfied), P1-NOTES-A029 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A030.md`
 
 - [ ] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
@@ -71,6 +61,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A026** Phase 4: Bin listing, note restore endpoint, purge (rows + files)
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/notes/{types,events}.ts` (`Bin`, `BinImage`, `PurgeResult`, `purged` op), `src/notes/binRepo.ts` (new), service `listBin`/`purgeNote`/`purgeImage`, `src/images/store.ts` (`removeImageFiles`), `src/http/api.ts` (bin, restore, purge routes), bin int test, `removeImageFiles` and worker unit tests; no MCP purge tool. Exit: contract routes pass; purge leaves other files in `images/` and `cache/` untouched; live items 409 `not_deleted`; missing/foreign/`null` Origin 403.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 4 of 11)
+  - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A025 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
+  - **Completed**: 2026-10-30 17:30
+  - **Method**: /do
+  - **Files**: src/notes/types.ts, src/notes/events.ts, src/notes/binRepo.ts, src/notes/service.ts, src/images/store.ts, src/http/api.ts, tests/integration/bin.int.test.ts, tests/unit/images/removeImageFiles.test.ts, tests/unit/embeddings/worker.test.ts
+  - **Drift**: toBinImage placed directly after roundSimilarity (service.ts now has more helpers after it); otherwise code applied verbatim.
+    bin.int.test.ts: purge() helper made async (plan's sync version failed typecheck: app.request returns Response | Promise<Response>).
+  - **Decided**: bin.int.test 'nope' used as a non-id → replaced with 'not-an-id' ('nope' normalizes to the valid id N-OPE, so 404 is correct; the 400 assertion is unchanged) (rung 6: ids.ts convention; restore test already uses 'not-an-id')
+
 
 - [x] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
   - **Difficulty**: HARD
