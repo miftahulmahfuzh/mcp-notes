@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
 import { Check, Copy, Trash, X } from '@phosphor-icons/react';
-import type { Note, NoteImage as NoteImageData } from '../types';
-import { tagsOf } from '../lib/text';
+import type { Note, NoteImage as NoteImageData, TagCount } from '../types';
+import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
 import { RevealButton } from './RevealButton';
 import './NoteEditor.css';
@@ -22,11 +22,13 @@ export interface NoteEditorProps {
   onRemoveImage: (image: NoteImageData) => void;
   /** Soft-delete this note with the current draft, then close without the close-time save or empty rule (R3). Absent = no trash icon. */
   onDelete?: (note: Note, draft: string) => void;
+  /** Existing tags (App's store) offered while typing `#…`. Absent = no autocomplete. */
+  tags?: TagCount[];
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, tags: knownTags = [] }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -36,6 +38,11 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(note.body.length);
+  const [active, setActive] = useState(0);
+  // Start index of the `#…` token whose popup Esc dismissed; a new token reopens it.
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const pendingCaret = useRef<number | null>(null);
 
   useEffect(() => {
     const el = taRef.current;
@@ -54,6 +61,13 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (popupRef.current !== null) {
+        // Esc with the tag popup open closes the popup only.
+        e.preventDefault();
+        e.stopPropagation();
+        setDismissed(popupRef.current);
+        return;
+      }
       // Capture phase + preventDefault + stopPropagation (PhotoModal's seam): Esc closes only the
       // editor, never the chat panel behind it.
       e.preventDefault();
@@ -72,6 +86,42 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   };
 
   const tags = tagsOf(draft);
+
+  const query = tagQueryAt(draft, caret);
+  const suggestions = query && query.start !== dismissed ? suggestTags(knownTags, query.text) : [];
+  const open = suggestions.length > 0;
+  const activeIdx = Math.min(active, Math.max(suggestions.length - 1, 0));
+  const popupRef = useRef<number | null>(null);
+  popupRef.current = open && query ? query.start : null;
+
+  useEffect(() => {
+    if (pendingCaret.current === null) return;
+    taRef.current?.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  });
+
+  const accept = (tag: string) => {
+    if (!query) return;
+    const next = `${draft.slice(0, query.start)}#${tag} ${draft.slice(caret)}`;
+    const pos = query.start + tag.length + 2;
+    draftRef.current = next;
+    setDraft(next);
+    setCaret(pos);
+    pendingCaret.current = pos;
+    setActive(0);
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (!open || e.nativeEvent.isComposing) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = suggestions.length;
+      setActive((activeIdx + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      accept(suggestions[activeIdx].tag);
+    }
+  };
 
   return (
     <div className="ed" data-modal="editor" onClick={close}>
@@ -108,6 +158,7 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             <X weight="duotone" />
           </button>
         </div>
+        <div className="ed-field">
         <textarea
           ref={taRef}
           className="ed-text"
@@ -116,9 +167,35 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
           onChange={(e) => {
             draftRef.current = e.target.value;
             setDraft(e.target.value);
+            setCaret(e.target.selectionStart);
+            setActive(0);
           }}
+          // A programmatic value swap reports the stale caret first; accept() already knows the real one.
+          onSelect={(e) => pendingCaret.current === null && setCaret(e.currentTarget.selectionStart)}
+          onKeyDown={onKeyDown}
           onBlur={onBlur}
         />
+        {open && (
+          <ul className="ed-suggest" role="listbox" aria-label="Tag suggestions">
+            {suggestions.map((t, i) => (
+              <li
+                key={t.tag}
+                role="option"
+                aria-selected={i === activeIdx}
+                className={i === activeIdx ? 'on' : undefined}
+                // mousedown, not click: keep textarea focus so no blur-save fires mid-pick.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  accept(t.tag);
+                }}
+              >
+                #{t.tag}
+                <span className="ed-suggest-n">{t.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        </div>
         {tags.length > 0 && (
           <div className="ed-tags">
             {tags.map((t) => (

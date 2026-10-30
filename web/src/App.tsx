@@ -382,6 +382,7 @@ export function App() {
               onClose={closeEditor}
               onRemoveImage={removeImageWithUndo}
               onDelete={removeNote}
+              tags={tags}
             />,
             document.body,
           )}

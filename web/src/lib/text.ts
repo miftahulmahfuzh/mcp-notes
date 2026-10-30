@@ -10,6 +10,19 @@ export function tagsOf(body: string): string[] {
   return out;
 }
 
+/** The `#…` token ending at `caret` (text excludes the '#'), or null when the caret is not in one. */
+export function tagQueryAt(body: string, caret: number): { start: number; text: string } | null {
+  const m = /(?<!\w)#([A-Za-z0-9_-]*)$/.exec(body.slice(0, caret));
+  return m ? { start: m.index, text: m[1] } : null;
+}
+
+/** Existing tags starting with `prefix`, most-used first; an exact match alone is not a suggestion. */
+export function suggestTags<T extends { tag: string; count: number }>(all: T[], prefix: string, limit = 6): T[] {
+  const p = prefix.toLowerCase();
+  const hits = all.filter((t) => t.tag.startsWith(p)).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  return hits.length === 1 && hits[0].tag === p ? [] : hits.slice(0, limit);
+}
+
 export type Segment =
   | { kind: 'text'; text: string }
   | { kind: 'tag'; text: string; tag: string };
