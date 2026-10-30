@@ -6,21 +6,21 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "270ef118956aa4f1aaf40acb0277599f4d4a4392",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "note_embeddings + migration 0001 (pgvector 0.8.7 in test container), state.ts/repo.ts per contract; no decisions, no drift",
       "package": "src/db`, `src/embeddings`, `drizzle`, `scripts",
       "plan": ".workflows/plan/semantic-search/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T14:41:46+07:00",
       "satisfies": [
         "R2",
         "R1",
         "R6"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A017",
       "title": "pgvector schema, migration, embedding state + repo"
     },
     {
@@ -39,7 +39,7 @@
         "R1",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "OpenRouter embedder, config, deps wiring, fake embedder"
     },
@@ -133,6 +133,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T14:34:07+07:00",
+  "updated": "2026-10-30T14:42:05+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
