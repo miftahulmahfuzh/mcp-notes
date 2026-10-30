@@ -328,6 +328,58 @@ and its `cache/<imageId>/` folder from `~/mcp-notes-data`. Its endpoints accept 
 from the wall's own page (the same `Origin` on a loopback host), so a plain `curl` gets 403
 `forbidden_origin`. No MCP tool can delete for good, and nothing is purged automatically.
 
+## 8. Clickable ids under WSL2 + tmux
+
+Claude writes note ids as markdown links to the wall (`[F-ZH5](http://localhost:7317/?note=F-ZH5)`,
+the port is `NOTESD_PORT`), and Claude Code prints each link as an OSC 8 hyperlink. Windows
+Terminal supports OSC 8: Ctrl+click opens the URL in the Windows default browser, which reaches
+`notesd` through WSL2 localhost forwarding. tmux sits in between and drops the hyperlink unless
+it knows the outer terminal can show it.
+
+Measured on this machine (2026-10-30): Windows Terminal, WSL2, tmux 3.4 with Oh my tmux,
+`TERM=tmux-256color` inside tmux. `tmux list-clients -F '#{client_termname} #{client_termfeatures}'`
+printed `xterm-256color bpaste,ccolour,clipboard,cstyle,focus,title`: no `hyperlinks`, so links
+arrived as plain text. The server's `terminal-features` was
+`xterm*:clipboard:ccolour:cstyle:focus:title`, and neither `~/.tmux.conf` nor
+`~/.tmux.conf.local` mentioned `hyperlinks`.
+
+The fix is one line (tmux 3.4 or later). Add it to `~/.tmux.conf.local` (with Oh my tmux, your
+settings go there, not in `~/.tmux.conf`):
+
+```tmux
+set -as terminal-features ',xterm*:hyperlinks'
+```
+
+Then:
+
+1. Reload: `tmux source ~/.tmux.conf` (Oh my tmux sources the `.local` file). `-a` appends, so
+   reloading again adds a duplicate entry; that is harmless.
+2. Detach and reattach (`prefix d`, then `tmux attach`). Terminal features are worked out per
+   client when it attaches, so an already attached client keeps its old list.
+3. Verify: `tmux list-clients -F '#{client_termfeatures}'` now includes `hyperlinks`.
+4. Test the whole path in a pane:
+
+   ```sh
+   printf '\e]8;;http://localhost:7317/\e\\notes wall\e]8;;\e\\\n'
+   ```
+
+   `notes wall` should be underlined on hover, and Ctrl+click opens the wall in the browser.
+
+`allow-passthrough` is not needed: it is for raw escape sequences wrapped in tmux's DCS
+passthrough, and tmux forwards OSC 8 itself once the client has `hyperlinks`. Outside tmux
+nothing is needed.
+
+After this feature lands on `main`, restart the daemon from the main checkout so it serves the
+new instructions (they are part of the compiled server):
+
+```sh
+cd ~/mcp-notes && scripts/install.sh
+```
+
+Never from a worktree (see section 3). Claude Code reads the MCP instructions when a session
+connects, so sessions started before the restart keep the old text; start a new one. The `/n`
+skill needs no re-install: `~/.claude/skills/n` is a symlink into this checkout.
+
 ## Uninstall
 
 ```sh

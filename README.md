@@ -20,10 +20,12 @@ its own chat bar.
   - [The photo modal and the full-screen tab](#the-photo-modal-and-the-full-screen-tab)
   - [Deleting and the recycle bin](#deleting-and-the-recycle-bin)
   - [Open file location](#open-file-location)
+  - [Links to a note](#links-to-a-note)
 - [Using it from Claude Code](#using-it-from-claude-code)
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
   - [Editing a note, live on the wall](#editing-a-note-live-on-the-wall)
+  - [Clickable note ids](#clickable-note-ids)
   - [Spending, runs and Seer](#spending-runs-and-seer)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
@@ -253,6 +255,18 @@ must run under WSL with Windows interop available (`GET /api/capabilities` answe
 `{"reveal":true}`). The endpoint takes a photo id, never a path. It refuses any request whose
 `Origin` is not the wall's own page, so another site open in the browser cannot trigger it.
 
+### Links to a note
+
+`http://localhost:7317/?note=F-ZH5` (the port is `NOTESD_PORT`) opens the wall with that note
+scrolled into view and briefly outlined; `#F-ZH5` works too, and the id may be lower-case or lack
+its dash (`?note=fzh5`). The wall first makes the note visible: it leaves the bin, switches
+"Notes." or "Photos." to "Everything." when the view hides it, and drops only the active tags the
+note does not carry. A big editor open on another note closes the usual way, saving its text; one
+open on the linked note stays open. A note older than the 2000 the wall loads is fetched on its
+own. A deleted note opens the bin on its card, with a line saying it can be restored there, and an
+unknown id says `no note F-ZH5` in the top right corner. The address is left as it is, so a reload
+selects the note again; changing the hash or moving back and forward selects the new target.
+
 ## Using it from Claude Code
 
 `install.sh` registers the daemon as the user-scope MCP server `notes` and links the `/n` skill
@@ -292,6 +306,19 @@ Claude rewrites the note through `update` and the old text becomes a revision. T
 picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ![/n edits note E-VZY while the wall updates live](docs/readme/cc-edit.gif)
+
+### Clickable note ids
+
+`/n`, and any session that loads the `notes` server, writes every note id as a markdown link to
+the wall, for example `[F-ZH5](http://localhost:7317/?note=F-ZH5)`. Claude Code draws a markdown
+link as a terminal hyperlink (OSC 8), so Ctrl+click on the id (Cmd+click on macOS) opens the
+wall in your browser on that note. The wall URL is not written into the skill: the daemon puts
+`http://localhost:<NOTESD_PORT>` into the MCP server's instructions, so a different port needs no
+edit. Ids inside note bodies and tool calls stay plain.
+
+Inside tmux the link reaches the terminal only when tmux knows the terminal supports hyperlinks.
+One line in your tmux config does it; see
+[Clickable ids under WSL2 + tmux](docs/INSTALL.md#8-clickable-ids-under-wsl2--tmux).
 
 ### Spending, runs and Seer
 
@@ -526,7 +553,7 @@ part of `npm test` or `test:int`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | — | Postgres URLs. The daemon uses the pooled Neon host, migrations the direct one, chosen by host name. |
-| `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. |
+| `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. The MCP instructions give Claude `http://localhost:<port>` as the wall URL for clickable note ids. `scripts/install.sh` registers the MCP server and checks health on 7317. |
 | `NOTES_DATA_DIR` | `~/mcp-notes-data` | Photos, derived images, inbox. |
 | `NOTESD_EXPLORER_BIN` | `explorer.exe` on `PATH`, else `/mnt/c/Windows/explorer.exe` | The Windows Explorer binary "open file location" starts. The systemd unit's `PATH` has no `/mnt/c`, so the fallback is what normally runs. |
 | `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
@@ -704,6 +731,7 @@ src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP ro
 web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
+claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive
 tests/          unit and integration tests

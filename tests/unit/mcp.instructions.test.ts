@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import { loopbackOnly } from '../../src/http/app.js';
-import { buildInstructions } from '../../src/mcp/instructions.js';
-import { toFilter } from '../../src/mcp/tools.js';
+import type { Db } from '../../src/db/client.js';
+import type { AppDeps } from '../../src/deps.js';
+import { loopbackOnly, mcpToolDeps } from '../../src/http/app.js';
+import { DEFAULT_WALL_URL, buildInstructions, wallUrlForPort } from '../../src/mcp/instructions.js';
+import { handleMcpRequest } from '../../src/mcp/server.js';
+import { toFilter, type ToolDeps } from '../../src/mcp/tools.js';
+import type { NotesService } from '../../src/notes/service.js';
 
 describe('buildInstructions', () => {
   it('explains ids, lookup, tags, dates and who does comparisons', () => {
@@ -66,6 +70,102 @@ describe('buildInstructions', () => {
     }
     expect(p).toContain('copied, not moved');
     expect(p).toContain('Nothing you can call deletes a note or an image permanently');
+  });
+});
+
+function linksParagraphs(text: string): string[] {
+  return text.split('\n\n').filter((p) => p.startsWith('Links.'));
+}
+
+describe('Links paragraph', () => {
+  it('has exactly one, after Ids, naming the default wall and the exact link form', () => {
+    const text = buildInstructions('Asia/Jakarta');
+    const paragraphs = linksParagraphs(text);
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(DEFAULT_WALL_URL).toBe('http://localhost:7317');
+    expect(p).toContain('http://localhost:7317');
+    expect(p).toContain('[A-B32](http://localhost:7317/?note=A-B32)');
+    expect(p).toContain('Every time you mention a note id to the user');
+    expect(p).toContain('canonical id');
+    expect(p).toContain('never put them in note bodies');
+    expect(p).toContain('never in tool arguments');
+    expect(p).toContain('code span');
+    const order = text.split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.indexOf('Links')).toBe(order.indexOf('Ids') + 1);
+  });
+
+  it('uses a non-default port everywhere and never mentions 7317', () => {
+    const text = buildInstructions('Asia/Jakarta', 'http://localhost:4321');
+    const p = linksParagraphs(text)[0]!;
+    expect(p).toContain('[A-B32](http://localhost:4321/?note=A-B32)');
+    expect(p).toContain('is at http://localhost:4321,');
+    expect(text).not.toContain('7317');
+  });
+
+  it('drops a trailing slash from the wall URL', () => {
+    const p = linksParagraphs(buildInstructions('Asia/Jakarta', 'http://localhost:4321/'))[0]!;
+    expect(p).toContain('[A-B32](http://localhost:4321/?note=A-B32)');
+    expect(p).not.toContain('4321//');
+  });
+});
+
+describe('wall URL from the configured port', () => {
+  it('wallUrlForPort builds localhost URLs and refuses port 0 and non-ports', () => {
+    expect(wallUrlForPort(7317)).toBe('http://localhost:7317');
+    expect(wallUrlForPort(4321)).toBe('http://localhost:4321');
+    expect(wallUrlForPort(0)).toBeUndefined();
+    expect(wallUrlForPort(-1)).toBeUndefined();
+    expect(wallUrlForPort(70000)).toBeUndefined();
+    expect(wallUrlForPort(1.5)).toBeUndefined();
+  });
+
+  function appDeps(port: number): AppDeps {
+    // Only config.port, config.dataDir, service and db are read by mcpToolDeps.
+    return { config: { port, dataDir: '/nonexistent' }, service: {}, db: {} } as unknown as AppDeps;
+  }
+
+  it('mcpToolDeps carries Config.port into ToolDeps.wallUrl, and leaves it out for port 0', () => {
+    expect(mcpToolDeps(appDeps(4321)).wallUrl).toBe('http://localhost:4321');
+    expect(mcpToolDeps(appDeps(7317)).wallUrl).toBe('http://localhost:7317');
+    expect('wallUrl' in mcpToolDeps(appDeps(0))).toBe(false);
+    expect(mcpToolDeps(appDeps(4321)).dataDir).toBe('/nonexistent');
+  });
+
+  async function initializeInstructions(deps: ToolDeps): Promise<string> {
+    // In-process: handleMcpRequest takes a web Request, so nothing listens on any port.
+    const res = await handleMcpRequest(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'unit', version: '0' } },
+        }),
+      }),
+      deps,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result?: { instructions?: string } };
+    return body.result?.instructions ?? '';
+  }
+
+  // Tool registration is lazy (no service, db or connector call happens on initialize), so fakes suffice.
+  const fakeDeps = (wallUrl?: string): ToolDeps => ({
+    service: {} as NotesService,
+    dataDir: '/nonexistent',
+    db: {} as Db,
+    ...(wallUrl !== undefined ? { wallUrl } : {}),
+  });
+
+  it('the MCP initialize answer names the configured wall URL', async () => {
+    const custom = await initializeInstructions(fakeDeps('http://localhost:4321'));
+    expect(custom).toContain('[A-B32](http://localhost:4321/?note=A-B32)');
+    expect(custom).not.toContain('7317');
+    const fallback = await initializeInstructions(fakeDeps());
+    expect(fallback).toContain('[A-B32](http://localhost:7317/?note=A-B32)');
   });
 });
 

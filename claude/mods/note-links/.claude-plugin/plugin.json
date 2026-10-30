@@ -1,0 +1,29 @@
+{
+  "name": "note-links",
+  "version": "0.1.0",
+  "description": "Note ids (A-B32) in Claude's replies become links to the mcp-notes wall, and /open <id> opens a note in the browser from WSL.",
+  "author": {
+    "name": "miftahulmahfuzh"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "wallUrl": {
+      "type": "string",
+      "title": "Wall URL",
+      "description": "Base URL of the mcp-notes wall, without a trailing slash. Left at the default, the URL is taken from `claude mcp get notes` when discovery is on.",
+      "default": "http://localhost:7317"
+    },
+    "discoverWallUrl": {
+      "type": "boolean",
+      "title": "Find the wall from the notes MCP server",
+      "description": "At session start, read the notes server's URL from `claude mcp get notes` and use it (less /mcp) while Wall URL is left at its default.",
+      "default": true
+    },
+    "linkifyReplies": {
+      "type": "boolean",
+      "title": "Link note ids in replies",
+      "description": "Redraw Claude's replies so every free-standing note id is a link to the wall. Off leaves only /open.",
+      "default": true
+    }
+  }
+}

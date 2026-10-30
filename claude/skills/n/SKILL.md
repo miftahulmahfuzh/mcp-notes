@@ -49,8 +49,9 @@ description for parameter names and formats; they win over anything written here
   the cwd is not in a git repo), and `claude_session` only if you actually know this session's
   id. Never invent one.
 - Bodies are plain text. No markdown: no `#` headings (a `#word` heading becomes a tag), no
-  `**bold**`, no backtick fences, no tables. Line breaks and a plain `- ` at the start of a line
-  are fine. Code tokens, paths, commands and ids are fine inline.
+  `**bold**`, no backtick fences, no tables, no links. Line breaks and a plain `- ` at the start
+  of a line are fine. Code tokens, paths, commands and ids are fine inline; write ids bare
+  (`A-B32`), never as the wall links used in replies.
 - End a note with its hashtags on the last line, chosen by you: the repo name when the note is
   about a repo, the system or topic (`#seer`, `#v250`), and the kind of thing it is
   (`#bug`, `#decision`, `#howto`) when that helps finding it later. Reuse existing tags: call
@@ -190,8 +191,9 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
 ## Deleting
 
 Delete only when the user asks, and only the notes or images they named. `delete` (a note) and
-`remove_image` (one image) are soft. Both land in the recycle bin on the wall ("Deleted." at
-http://localhost:7317). Reply with the ids and say `restore` / `restore_image` brings them back.
+`remove_image` (one image) are soft. Both land in the recycle bin on the wall ("Deleted." on the
+wall, at the wall URL described under Replies). Reply with the ids and say `restore` /
+`restore_image` brings them back.
 
 You cannot delete anything for good, and must not try another way (files, SQL, the HTTP API).
 If the user asks to delete permanently, empty the bin or free disk space, tell them that
@@ -199,7 +201,17 @@ If the user asks to delete permanently, empty the bin or free disk space, tell t
 
 ## Replies
 
-- Quote note ids exactly (`A-B32`) every time you mention a note, so the user can copy them.
+- Write every note id you mention as a markdown link to the wall, in exactly this form:
+  `[A-B32](<wall>/?note=A-B32)`. The id is canonical (upper case, with the dash) and is both
+  the link text and the `note` value; `<wall>` has no trailing slash. A terminal that supports
+  hyperlinks lets the user Ctrl+click it to open the wall on that note, and the link text is
+  still the id they can copy.
+- `<wall>` is the wall URL in the `notes` server's instructions (their "Links." paragraph,
+  built from the daemon's port). If you cannot see it there, run `claude mcp get notes` and take
+  its URL without the trailing `/mcp` (normally `http://localhost:7317`). Never guess another
+  port.
+- Links are for your replies only. Ids stay bare (`A-B32`) in note bodies, in tool arguments,
+  and inside code spans or code blocks, where a link does not render.
 - Keep replies short. Show a note's body only when the user asks to see it or it is short.
 - If the request is ambiguous between two readings, pick the likelier one, do it, and say which
   reading you took.
@@ -209,9 +221,9 @@ If the user asks to delete permanently, empty the bin or free disk space, tell t
 ## When the `notes` tools are missing or fail to connect
 
 Say so plainly and suggest, in this order: `systemctl --user status notesd`,
-`curl -s http://127.0.0.1:7317/health`, `journalctl --user -u notesd -n 50`, and re-running
-`scripts/install.sh` from the mcp-notes checkout (`~/mcp-notes`). Do not fall back to writing
-notes into files.
+`curl -s <wall>/health` (the wall URL from Replies; `http://localhost:7317` unless `NOTESD_PORT`
+changed it), `journalctl --user -u notesd -n 50`, and re-running `scripts/install.sh` from the
+mcp-notes checkout (`~/mcp-notes`). Do not fall back to writing notes into files.
 
 A connector tool that fails returns an error naming its system ("expense-tracking is not
 reachable: …", "run-insights query failed: …"). Tell the user which system failed and why, in

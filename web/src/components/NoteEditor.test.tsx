@@ -198,3 +198,17 @@ describe('NoteEditor', () => {
     });
   });
 });
+
+describe('NoteEditor closeSignal', () => {
+  it('closes through onClose with the draft when the signal changes, never on mount, once', () => {
+    const n = note('kept text');
+    const { ta, props, rerender } = renderEditor(n, { closeSignal: 3 });
+    expect(props.onClose).not.toHaveBeenCalled();
+    fireEvent.change(ta, { target: { value: 'kept text, edited' } });
+    rerender(<NoteEditor {...props} closeSignal={4} />);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onClose).toHaveBeenCalledWith(n, 'kept text, edited', true);
+    rerender(<NoteEditor {...props} closeSignal={5} />);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+});
