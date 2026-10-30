@@ -18,7 +18,7 @@
         "R1",
         "R5"
       ],
-      "status": "spawned",
+      "status": "pending",
       "task_id": null,
       "title": "note_images` table, migration 0002, legacy copy/reconcile, image repo"
     },
@@ -208,27 +208,28 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "d76f71c",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 11,
-      "note": null,
+      "note": "R6 caret + R7 textarea; --chatbar-h published for phase 8; also committed todos.md/PLAN.md bookkeeping incl. phase 1's task entries A023-A032; task creation skipped (phase 1 minted all)",
       "package": "web/src",
       "plan": ".workflows/plan/wall-editing/phase-11.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:24:59+07:00",
       "satisfies": [
         "R6",
         "R7",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A033",
       "title": "Collapsible answer panel + multi-line chat bar"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:19:49+07:00",
+  "updated": "2026-10-30T16:25:00+07:00",
+  "verified_at": "2026-10-30T16:25:00+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
