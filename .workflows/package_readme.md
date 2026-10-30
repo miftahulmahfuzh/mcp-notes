@@ -1,12 +1,12 @@
 # Package: mcp-notes
 
 **Location**: `.` (repo root)
-**Last Updated**: 2026-10-30 (after task P1-NOTES-A005)
+**Last Updated**: 2026-10-30 (after task P1-NOTES-A006)
 **Documentation Created**: 2026-10-30T03:03Z (after task P1-NOTES-A000)
 
 ## Overview
 
-`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes, and later images, in Postgres on Neon. It exposes them to Claude Code over MCP and to a web UI on loopback. Phases 1-3 are in place. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Image tools and the web UI itself come in other phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md`. The image router and `registerImageTools` still exist as empty factories.
+`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. Phases 1, 2, 3, 4, 6 and 7 of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Two phases are pending. Phase 5 (P1-NOTES-A004) adds the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Its work is uncommitted in this worktree, and the sections below that describe `src/http/images.ts`, `src/http/imageAccess.ts`, `src/mcp/imageTools.ts`, the taken-date filter and the phase-5 tests document that pending surface, not landed code. Phase 8 (P1-NOTES-A007) adds images to the web UI (gallery, photo modal, drag/drop/paste upload, `/full/:id`) by rewriting four stub components phase 7 left in place.
 
 **Key Responsibilities:**
 - Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir) from `.env.local` plus the environment
@@ -17,7 +17,9 @@
 - Create, read, update, append, soft-delete, restore and revert notes atomically, keeping every prior body as a revision in the same transaction
 - List and full-text search notes with tag, date, image and deleted filters plus offset cursors
 - Serve the notes to Claude Code as MCP tools over loopback HTTP, and emit in-process change events
+- Serve image notes over HTTP (upload, original, display, thumb, preview) and to Claude through `create_image` / `view_images` (phase 5, pending)
 - Serve the web UI a JSON API, an SSE change feed, a streamed chat endpoint (stub until iteration 4) and the built SPA
+- Ship the web UI itself (`web/`, built to `web/dist` by Vite): a live note wall with inline editing, tag filters, visibility modes and a chat panel
 - Run `notesd` as an always-on systemd user service in WSL, registered with Claude Code as the `notes` MCP server and driven by the `/n` skill
 
 ## Layout
@@ -34,13 +36,14 @@ src/notes/events.ts    NoteEvents in-process bus (created/updated/deleted/restor
 src/notes/repo.ts      Drizzle queries: NoteFilter, list/search/insert/lock/revisions/tags, cursors
 src/notes/service.ts   NotesService, the only writer of notes
 src/mcp/instructions.ts buildInstructions(timeZone): MCP server instructions text
-src/mcp/tools.ts       registerNoteTools (11 tools), noteFilterShape, toFilter, ToolDeps
-src/mcp/imageTools.ts  registerImageTools (empty; phase 5)
+src/mcp/tools.ts       registerNoteTools (11 tools), noteFilterShape (+ has_image, taken_from/to), toFilter, ToolDeps, IMAGE_FILTER_HINT
+src/mcp/imageTools.ts  registerImageTools: create_image, view_images; describeImageNote, VIEW_IMAGES_MAX
 src/mcp/server.ts      createMcpServer, handleMcpRequest (stateless, JSON responses)
 src/http/app.ts        createApp: /health, /mcp (+ loopbackOnly guard), mounts the routers below
 src/http/api.ts        apiRoutes: /api/notes CRUD, /api/tags, /api/events (SSE), /api/chat (SSE)
 src/http/static.ts     staticRoutes: web/dist SPA, /assets, /full/:id, 503 when not built
-src/http/images.ts     empty Hono router filled by phase 5
+src/http/images.ts     imageRoutes: POST /api/images, GET /api/notes/:id/{original,display,thumb,preview}
+src/http/imageAccess.ts shared HTTP/MCP image glue: resolveImageFile, ingestFromUpload/Path, ImageInputError, etagMatches
 src/chat/backend.ts    ChatBackend, ChatRequest, ChatTurn (the chat brain seam)
 src/chat/stub.ts       createStubChatBackend, STUB_REPLY, splitIntoDeltas
 src/deps.ts            AppDeps { config, db, events, service }
@@ -66,6 +69,12 @@ tests/unit/            vitest unit tests (node)
 tests/integration/     *.int.test.ts, setup.ts helpers, globalSetup.ts (migrates once)
 vitest.config.ts       the only vitest config; switches mode on VITEST_INTEGRATION=1
 tsconfig.json          typecheck (noEmit); tsconfig.server.json builds src/ to dist/
+tsconfig.web.json      web typecheck (noEmit, DOM libs, react-jsx, Bundler resolution), include web/src
+web/index.html         SPA entry (#root, dark color-scheme), loads web/src/main.tsx
+web/vite.config.ts     Vite config: root web/, outDir web/dist, dev proxy of /api /mcp /health to notesd
+web/tsconfig.json      extends ../tsconfig.web.json (for editors inside web/)
+web/src/               React app; see "Web UI: web/ (phase 7)" below
+web/dist/              build output, gitignored, served by staticRoutes
 ```
 
 ## Exported API
@@ -231,6 +240,7 @@ interface NoteFilter {
   dateField?: 'created' | 'updated'      // default 'created'; also the list sort column
   from?: string; to?: string             // via parseDateBound
   hasImage?: boolean                     // true = image notes, false = text notes, undefined = both
+  takenFrom?: string; takenTo?: string   // EXIF taken_at range, via parseDateBound; image notes with a date only
   deleted?: 'exclude' | 'include' | 'only'   // default 'exclude'
   limit?: number; cursor?: string
 }
@@ -246,7 +256,7 @@ insertNote(db, values): Promise<NoteRow | null>   // null on id clash; sha256 un
 idExists, setBody, setOrigin, setDeleted, insertRevision, listRevisions (newest first), getRevision
 listTags(db): Promise<TagRow[]>                   // live notes only; count desc, tag asc
 ```
-Paging fetches `limit + 1` rows with an offset cursor. `next_cursor` is non-null only when another page exists. `hasImage` is repo-level only: MCP does not expose it yet (phase 5 adds `has_image` plus `taken_from`/`taken_to` to `noteFilterShape` and `toFilter`). The search vector expression must stay `to_tsvector('simple', body)` to hit the GIN index.
+Paging fetches `limit + 1` rows with an offset cursor. `next_cursor` is non-null only when another page exists. `takenFrom`/`takenTo` compare `image_meta->>'taken_at'` as text against `parseDateBound(...).toISOString()` (`>= from`, `< to`). That works because `taken_at` is always a UTC ISO `Z` string, and it uses the `taken_at` btree index. Notes with no EXIF date never match a taken bound. MCP exposes `hasImage`/`takenFrom`/`takenTo` as `has_image`/`taken_from`/`taken_to`; `/api/notes` exposes only `has_image`. The search vector expression must stay `to_tsvector('simple', body)` to hit the GIN index.
 
 ### src/notes/service.ts
 
@@ -279,14 +289,15 @@ Every mutation runs in one transaction that locks the row (`FOR UPDATE`), writes
 function localTimeZone(): string                    // Intl resolved IANA zone
 function buildInstructions(timeZone?: string): string
 ```
-The server-instructions text Claude reads once per session. It covers the note model, id format, writing and revision semantics, reading and search syntax, and date semantics (it names the daemon's timezone). It also says comparisons are Claude's job. Phase 5 appends an image paragraph to `sections`.
+The server-instructions text Claude reads once per session. It covers the note model, id format, writing and revision semantics, reading and search syntax, and date semantics (it names the daemon's timezone). It also says comparisons are Claude's job. Phase 5 added an `Images.` section: the `image` field shape, `available: false` meaning the file is on another host, `view_images` with up to 8 ids, saved-date queries (`has_image` + `from`/`to`) versus taken-date queries (`taken_from`/`taken_to`), and `create_image` copying a local file with dedupe.
 
 ### src/mcp/tools.ts
 
 ```ts
 interface ToolDeps { service: NotesService; dataDir: string; db: Db }   // db is read-only, for phase 5
 const MCP_MAX_LIMIT = 200, MCP_DEFAULT_LIMIT = 50
-const noteFilterShape   // zod: tags_any, tags_all, date_field, from, to, deleted, limit, cursor
+const IMAGE_FILTER_HINT // sentence appended to the list and search descriptions
+const noteFilterShape   // zod: tags_any, tags_all, date_field, from, to, has_image, taken_from, taken_to, deleted, limit, cursor
 function toFilter(args: FilterArgs): NoteFilter     // snake_case -> NoteFilter, limit defaults to 50
 function jsonResult(value): CallToolResult           // pretty JSON text content
 function errorResult(err): CallToolResult            // isError, "<code>: <message>" for NoteError
@@ -307,6 +318,56 @@ function registerNoteTools(server: McpServer, deps: ToolDeps): void
 | `revert` | `id`, `revision` | `{ note }` |
 
 Errors never throw out of a handler. They come back as `isError` results.
+
+### src/mcp/imageTools.ts
+
+```ts
+const VIEW_IMAGES_MAX = 8
+function describeImageNote(note: Note): string     // id, saved, taken (or 'unknown (no EXIF date)'), WxH mime size, original name, tags, body
+function registerImageTools(server: McpServer, deps: ToolDeps): void
+```
+| tool | input | returns |
+|---|---|---|
+| `create_image` | `path` (absolute or `~/`), `body?`, `origin?` | `{ note, created }`; origin gets `source: 'mcp'` |
+| `view_images` | `ids[1..8]` | per id: a metadata text block, then an MCP `image` block (the preview JPEG, base64) |
+
+`create_image` goes through `ingestFromPath`, which copies the file (never moves it) and dedupes by sha256 (`created: false`). An `ImageInputError` comes back as `isError` text `create_image refused (<code>): <message>`. `view_images` loads the notes with `includeDeleted`, keeps input order, and answers with a text line instead of an image for an unknown id, a deleted note, a text note, a file on another host (`image not on this machine: the file lives on <host>`) or a preview that failed to generate. It always serves the `preview` variant (long edge <= 1568, <= 3.75 MB), so the payload stays under Claude's image limit.
+
+### src/http/imageAccess.ts
+
+```ts
+const MAX_IMAGE_BYTES = 200 * 1024 * 1024
+type ImageVariant = 'original' | 'display' | 'thumb' | 'preview'
+interface ServedFile { absPath; mime; etag; size; immutable }
+type ResolveResult =
+  | { status: 'ok'; loc: LocatedImage; file: ServedFile; servedOriginal: boolean }
+  | { status: 'not_found' } | { status: 'no_image'; id } | { status: 'not_on_this_machine'; id; host: string | null }
+type ImageInputErrorCode = 'not_absolute' | 'not_found' | 'not_a_file' | 'not_an_image' | 'too_large'
+class ImageInputError extends Error { readonly code: ImageInputErrorCode }
+function toolImageDeps(deps: ToolDeps): ImageDeps      // ImageDeps from ToolDeps (MCP gets ToolDeps, not AppDeps)
+function expandHome(p, home?): string                   // '~' and '~/...' only
+function etagMatches(header, etag): boolean             // If-None-Match lists, W/ weak tags, '*'
+function resolveImageFile(img, rawId, variant): Promise<ResolveResult>
+function ingestFromUpload(img, file: File, body?, maxBytes?): Promise<{ note; created }>   // origin.source = 'web'
+function ingestFromPath(img, rawPath, body?, origin): Promise<{ note; created }>           // move: false
+```
+The one place HTTP and MCP share image logic. `resolveImageFile` normalises the id and calls `locateImage`. A deleted note or a bad id is `not_found`, a live text note is `no_image`, and an original that is missing locally (checked up front via `available`, and again when a derive getter throws `OriginalMissingError`) is `not_on_this_machine` with `image_meta.host`. Cached derivatives are never served once the original is gone. ETags are `"<sha256>"` for the original (and for `display` when it is the original) and `"<sha256>-<variant>"` for derivatives. Only originals are `immutable`. Both ingest helpers reject empty and oversized input, blank bodies become no body, and they map `UnsupportedImageError` to `ImageInputError('not_an_image')`.
+
+### src/http/images.ts
+
+```ts
+interface ImageRouteOptions { maxUploadBytes?: number }   // default MAX_IMAGE_BYTES; tests lower it
+function imageRoutes(deps: AppDeps, opts?: ImageRouteOptions): Hono
+```
+| route | input | success |
+|---|---|---|
+| `POST /api/images` | multipart: `file` (required), `body?` | 201 `{ note, created: true }`, or 200 with `created: false` on a dedupe hit |
+| `GET /api/notes/:id/original` | any id spelling | the stored bytes, `Content-Disposition: inline` with the original name |
+| `GET /api/notes/:id/display` | | the original if browser-displayable, else `display.jpg` |
+| `GET /api/notes/:id/thumb` | | `thumb.webp` (480 px wide) |
+| `GET /api/notes/:id/preview` | | `preview.jpg` (long edge <= 1568) |
+
+The upload is capped by `bodyLimit` at `maxUploadBytes + 1 MB` (multipart overhead), then again on the file size. Image GETs stream the file and set `ETag`, `X-Content-Type-Options: nosniff`, a sandboxing `Content-Security-Policy`, and `Cache-Control: private, max-age=31536000, immutable` for originals or `private, max-age=86400` for derivatives. A matching `If-None-Match` returns 304. `createApp` calls `imageRoutes(deps)` with no options.
 
 ### src/mcp/server.ts
 
@@ -383,7 +444,7 @@ Files are read only when they resolve to a regular file inside the dist root. Ba
 
 ### Images: src/images/ (phase 4)
 
-Image notes are ordinary notes whose `image_path` and `image_meta` are set. All note writes still go through `NotesService`. The image modules only place files and read raw image fields. No HTTP route or MCP tool uses them yet. Phase 5 will, through `imageDeps`, `ingestImage`, `locateImage` and the derive getters.
+Image notes are ordinary notes whose `image_path` and `image_meta` are set. All note writes still go through `NotesService`. The image modules only place files and read raw image fields. Phase 5 reaches them through `src/http/imageAccess.ts` (`imageDeps`/`toolImageDeps`, `ingestImage`, `locateImage` and the derive getters).
 
 `startBackground` (in `src/background.ts`) builds `imageDeps(deps)` and runs `images/store.ensureDataDirs`, which is idempotent (tests call it without `startDaemon`). It then starts the inbox watcher with `ingest = ingestImage(img, { path, move: true, origin: { source: 'inbox' } })`. The stop function it returns closes the watcher and waits for the queue to drain.
 
@@ -517,6 +578,8 @@ Write path: `requireId` and `parseTags(body)`, then one transaction: lock the ro
 
 Inbox ingest (phase 4): a file lands in `<dataDir>/inbox`. chokidar reports it, and the watcher waits for its size to settle and sniffs the magic bytes. `ingestImage` then hashes it and looks up `ImageRecords.bySha256`. A match is returned, or restored if deleted. Otherwise the file is probed, moved to `images/YYYY/MM/<id>.<ext>`, and `NotesService.create` inserts the note with `origin.source = 'inbox'`, which emits `created`. Any failure moves the file to `inbox/failed/`. Derivatives (`cache/<id>/...`) are not made at ingest. They are generated on first read.
 
+Images over HTTP and MCP (phase 5): `POST /api/images` and `create_image` both end in `ingestImage` (bytes from the multipart file, or a copy of the local path), so they share dedupe and `NotesService.create`, which emits `created`. Image reads go `resolveImageFile`, then `locateImage`, then the derive getter for the variant (generated and cached on first read), then a streamed file for HTTP or a base64 `image` block for `view_images`. If the original is not on this machine the answer is 404 `not_on_this_machine` (HTTP) or a text line (MCP).
+
 Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose deltas stream back as SSE.
 
 Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*.sql`. `npm run db:migrate` applies them to Neon over the DIRECT host chosen by `drizzle.config.ts`. That config throws if only pooler URLs exist.
@@ -545,7 +608,7 @@ Declared for later phases (not yet imported): React/Vite/testing-library, Phosph
 - `src/db/client.ts` imports `src/db/schema.ts`.
 - `notes/service` uses `notes/{repo,ids,tags,types,events}`. `notes/repo` uses `db/schema`, `notes/dates` and `notes/types`.
 - `mcp/tools` uses `NotesService`, `NoteFilter` and `NoteError`. `mcp/server` uses `tools`, `imageTools` and `instructions`.
-- `http/api` uses `chat/{backend,stub}`, `notes/{events,ids,repo,types}` and `AppDeps`. `http/static` uses only the filesystem.
+- `http/api` uses `chat/{backend,stub}`, `notes/{events,ids,repo,types}` and `AppDeps`. `http/static` uses only the filesystem. `http/imageAccess` uses `images/{derive,ingest,probe,records}`, `notes/ids` and `ToolDeps`; `http/images` uses `imageAccess` and `images/ingest`; `mcp/imageTools` uses `imageAccess`, `notes/ids` and `ToolDeps`.
 - `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `notes/{events,service}`, `http/app` and `background`.
 - `tests/integration/setup.ts` imports `createDb`, `closeDb`, `isNeonUrl`.
 - `images/ingest` uses `images/{probe,store,records}`, `NotesService` (as `ImageNotes`), `NoteError` and `AppDeps`. `images/derive` uses `probe` and `store`. `images/inbox` uses `probe` and `store`. `images/records` uses `db/schema` and `notes/ids`. `background` wires `images/{ingest,inbox,store}`.
@@ -555,7 +618,7 @@ Declared for later phases (not yet imported): React/Vite/testing-library, Phosph
 
 ## Reverse Dependencies
 
-`src/main.ts` is the production entry (`npm run dev` / `npm start`), and Claude Code connects to `http://127.0.0.1:7317/mcp`. Phases 4-6 plug in through `startBackground`, `registerImageTools` and `imageRoutes`, plus `NoteFilter`/`noteFilterShape`/`buildInstructions` sections. The web UI consumes `/api/*`, `/api/events` and `/api/chat`, and iteration 4 swaps in a real `ChatBackend`. Tests: `tests/unit/{ids,tags,config,db-client,notes.helpers,mcp.instructions}.test.ts` and `tests/integration/{schema,notes.service,mcp.tools,daemon}.int.test.ts`, plus phase 6's `tests/unit/{chat-stub,static}.test.ts` and `tests/integration/{api,events}.int.test.ts`.
+`src/main.ts` is the production entry (`npm run dev` / `npm start`), and Claude Code connects to `http://127.0.0.1:7317/mcp`. Phases 4-6 plug in through `startBackground`, `registerImageTools` and `imageRoutes`, plus `NoteFilter`/`noteFilterShape`/`buildInstructions` sections. The web UI reads images from `/api/notes/:id/{thumb,display,original}` and uploads to `/api/images`; the `/n` skill drives `create_image` / `view_images`. The web UI consumes `/api/*`, `/api/events` and `/api/chat`, and iteration 4 swaps in a real `ChatBackend`. Tests: `tests/unit/{ids,tags,config,db-client,notes.helpers,mcp.instructions}.test.ts` and `tests/integration/{schema,notes.service,mcp.tools,daemon}.int.test.ts`, plus phase 6's `tests/unit/{chat-stub,static}.test.ts` and `tests/integration/{api,events}.int.test.ts`, and phase 5's `tests/unit/{takenFilter,imageAccess}.test.ts` and `tests/integration/images.{http,mcp}.int.test.ts`.
 
 ## Concurrency
 
@@ -571,6 +634,8 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - `/mcp` returns JSON-RPC-shaped errors: 403 for a non-loopback host or Origin, 405 for GET/DELETE.
 - `/api` errors are `{ error: string }`. One mapping turns `NoteError` into a status: `not_found` and `deleted` are 404 `not_found`, `conflict` and `duplicate_image` are 409 with the code, `invalid_id` is 400 `invalid_id`, and any other code is 400 `"<code>: <message>"`. Bad JSON is 400 `invalid_json`, and zod failures are 400 with `"<path>: <message>"` joined by `; `. Non-`NoteError` exceptions are rethrown (Hono 500).
 - `/api/chat` errors after streaming starts arrive as `event: error`, not as an HTTP status.
+- Image routes answer `{ error }` JSON: 404 `not_found` (bad, unknown or deleted id), 404 `no_image` with `id` (text note), 404 `not_on_this_machine` with `host`, 400 `bad_multipart` / `file_required`, 413 `too_large` (from `bodyLimit`, with `max_bytes`, or from the size check), and 415 for any other `ImageInputError` (`not_an_image`). Other exceptions go to Hono (500).
+- `ImageInputError` (`src/http/imageAccess.ts`) carries `not_absolute`, `not_found`, `not_a_file`, `not_an_image` or `too_large`. MCP `create_image` returns it as an `isError` result. `view_images` never errors per id; it reports problems as text lines.
 - Static: 503 `web UI not built: run npm run build` when `web/dist/index.html` is missing.
 - Driver errors are not wrapped, except the unique violation in `insertNote`.
 - Images: `UnsupportedImageError` (probe; carries `detectedMime`), `OriginalMissingError` (derive; carries `id`), `DestinationExistsError` (store; never overwrites), and a plain `Error` when a path escapes the data dir, when no free id is found in 5 attempts, or when a preview cannot fit 3.75 MB. The inbox watcher never throws. It logs the failure and moves the file to `inbox/failed/`.
@@ -584,6 +649,7 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - There is one `vitest.config.ts`. Do not add a second.
 - Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` with a zero-delay stub over the Docker DB; `uniqueTag()`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
 - Phase 2 suites: `notes.helpers` (dates, cursor, limit, tag input, origin, rowToNote, NoteEvents), `mcp.instructions` (unit), `notes.service.int` (service against Docker Postgres), `mcp.tools.int` (all 11 tools through an MCP client on the real `/mcp` route, plus the 403/405 guards and `/health`) and `daemon.int` (data dirs, loopback listen, `/health`, MCP initialize over real HTTP, non-loopback host refused).
+- Phase 5 suites: `tests/unit/takenFilter.test.ts` (taken bounds as UTC ISO text compares, `invalid_input` on garbage), `tests/unit/imageAccess.test.ts` (`expandHome`, `etagMatches`), `images.http.int` (upload and dedupe, byte-exact original with immutable cache and sha256 ETag, id spellings, thumb/preview sizes, display for PNG vs TIFF, 400/413/415 refusals, `not_found`/`no_image`, `not_on_this_machine`, no cached derivative once the original is gone) and `images.mcp.int` (tool and filter listing, `create_image` copies and dedupes, refusals, `view_images` content, text/unknown/missing explanations, the 8-id cap, `has_image` and taken-range filters on list and search). Harness: `tests/integration/imageHarness.ts` (`startHarness` builds real `createApp` over the Docker DB and a temp data dir, with `listen()`, `reset()`, `close()`; `makeImage` makes solid-colour PNG/JPEG/TIFF bytes; `insertTextNote`).
 - Phase 4 suites: `tests/unit/images/{probe,store,derive,ingest,inbox}.test.ts` and `tests/integration/images.int.test.ts` (byte-exact storage, dedupe, restore of a deleted duplicate, the sha256 unique index, HEIC display/thumb/preview, missing original, and an inbox drop through `startBackground`).
 - Image fixtures in `tests/fixtures/images/`: `exif.jpg` (64x48, EXIF 2024:10:30 14:05:09), `plain.png` (40x30, no EXIF), `photo.heic` (64x48 HEVC with EXIF). They are committed because Node cannot encode HEVC. `make-fixtures.py` (Pillow + pillow-heif) regenerates them, possibly with different bytes. Helpers: `tests/helpers/fixtures.ts` (`FIXTURES_DIR`, `JPEG_EXIF`, `PNG_PLAIN`, `HEIC_PHOTO`, `fixtureBytes`, `tempDir`) and `tests/helpers/fakeNotes.ts` (`FakeNotes`, an in-memory `ImageNotes` + `ImageRecords` with the schema's id and live-sha256 uniqueness rules, plus `beforeInsert` / `failNextCreate` hooks for race and failure tests).
 
@@ -596,7 +662,9 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - `YYYY-MM-DD` date filters use the daemon process's local timezone, which the MCP instructions name. Tests that depend on day boundaries must account for TZ.
 - The cursor is an offset, so inserts between pages can shift results. It is opaque to clients, who must pass `next_cursor` back unchanged.
 - MCP caps `limit` at 200. The repo allows up to 5000 (for the HTTP/UI).
-- `hasImage` exists in `NoteFilter` but not in the MCP schema until phase 5.
+- `from`/`to` filter on the saved date (`created_at`); `taken_from`/`taken_to` filter on the EXIF date and silently drop image notes without one.
+- An image note whose original is on another host gives 404 `not_on_this_machine` on every variant, even when a derivative is cached locally.
+- `create_image` copies; only the inbox moves files. `view_images` always sends the preview, never the original.
 - Image mime comes from magic bytes only. The stored extension comes from the original filename when it is safe, so a `.jpeg` keeps `.jpeg`. Do not infer mime from `image_path`.
 - `images/YYYY/MM` is the ingest time in local time, not the EXIF `taken_at`.
 - An image note on another host has `image.available = false` here until the same bytes are ingested locally, which puts them back at the stored `image_path`.
@@ -619,4 +687,4 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 
 ## Notes
 
-Plan set: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (8 phases, iterations 1-3: spine, images, web UI). Phase 1 (P1-NOTES-A000) landed the scaffold. Phase 2 (P1-NOTES-A001, plan `.workflows/plan/P1-NOTES-A001.md`) landed the notes service, the MCP server and tools, and the `notesd` daemon. Phase 3 (P1-NOTES-A002) landed deployment: `deploy/notesd.service`, `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/windows/install-wsl-keepalive.ps1`, the `/n` skill in `claude/skills/n/` and `docs/INSTALL.md`. Phase 6 (P1-NOTES-A005) landed the `/api` JSON routes, `/api/events` SSE, the `/api/chat` stub behind `ChatBackend`, and static SPA serving.
+Plan set: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (8 phases, iterations 1-3: spine, images, web UI). Phase 1 (P1-NOTES-A000) landed the scaffold. Phase 2 (P1-NOTES-A001, plan `.workflows/plan/P1-NOTES-A001.md`) landed the notes service, the MCP server and tools, and the `notesd` daemon. Phase 3 (P1-NOTES-A002) landed deployment: `deploy/notesd.service`, `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/windows/install-wsl-keepalive.ps1`, the `/n` skill in `claude/skills/n/` and `docs/INSTALL.md`. Phase 5 (P1-NOTES-A004) landed the image HTTP routes and upload, the `create_image`/`view_images` MCP tools, the `has_image` and taken-date filters, and the images section of the MCP instructions. Phase 6 (P1-NOTES-A005) landed the `/api` JSON routes, `/api/events` SSE, the `/api/chat` stub behind `ChatBackend`, and static SPA serving.

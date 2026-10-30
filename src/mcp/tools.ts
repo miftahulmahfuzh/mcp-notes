@@ -13,6 +13,10 @@ export interface ToolDeps {
   db: Db;
 }
 
+/** Appended to the `list` and `search` descriptions. */
+export const IMAGE_FILTER_HINT =
+  ' Filter image notes with has_image, and by when the photo was taken with taken_from/taken_to (EXIF). To look at the pictures, pass the ids to view_images.';
+
 export const MCP_MAX_LIMIT = 200;
 export const MCP_DEFAULT_LIMIT = 50;
 
@@ -52,6 +56,20 @@ export const noteFilterShape = {
     .string()
     .optional()
     .describe('Inclusive end: YYYY-MM-DD (the whole local day is included) or an ISO 8601 datetime.'),
+  has_image: z
+    .boolean()
+    .optional()
+    .describe('true: only image notes (photos, screenshots). false: only text notes. Omit for both.'),
+  taken_from: z
+    .string()
+    .optional()
+    .describe(
+      'Earliest EXIF "taken" date of the photo: YYYY-MM-DD (start of that local day) or an ISO 8601 datetime. Only image notes whose camera recorded a date can match. For the day a picture was SAVED use from/to instead.',
+    ),
+  taken_to: z
+    .string()
+    .optional()
+    .describe('Latest EXIF "taken" date, inclusive: YYYY-MM-DD (the whole local day) or an ISO 8601 datetime.'),
   deleted: z
     .enum(['exclude', 'include', 'only'])
     .optional()
@@ -75,6 +93,9 @@ export interface FilterArgs {
   date_field?: 'created' | 'updated' | undefined;
   from?: string | undefined;
   to?: string | undefined;
+  has_image?: boolean | undefined;
+  taken_from?: string | undefined;
+  taken_to?: string | undefined;
   deleted?: 'exclude' | 'include' | 'only' | undefined;
   limit?: number | undefined;
   cursor?: string | undefined;
@@ -90,6 +111,9 @@ export function toFilter(args: FilterArgs): NoteFilter {
   if (args.to !== undefined) filter.to = args.to;
   if (args.deleted !== undefined) filter.deleted = args.deleted;
   if (args.cursor !== undefined) filter.cursor = args.cursor;
+  if (args.has_image !== undefined) filter.hasImage = args.has_image;
+  if (args.taken_from !== undefined) filter.takenFrom = args.taken_from;
+  if (args.taken_to !== undefined) filter.takenTo = args.taken_to;
   return filter;
 }
 
@@ -206,7 +230,8 @@ export function registerNoteTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'List notes',
       description:
-        'List notes newest first, optionally filtered by tags and a date range. Use it for "my notes on #seer this week", "my last note about #v250" (tags_any=["v250"], limit=1) or one side of a comparison (call it once per side, then compare yourself). Returns { notes, next_cursor }; when next_cursor is not null there are more notes - pass it back as cursor to get the next page.',
+        'List notes newest first, optionally filtered by tags and a date range. Use it for "my notes on #seer this week", "my last note about #v250" (tags_any=["v250"], limit=1) or one side of a comparison (call it once per side, then compare yourself). Returns { notes, next_cursor }; when next_cursor is not null there are more notes - pass it back as cursor to get the next page.' +
+        IMAGE_FILTER_HINT,
       inputSchema: noteFilterShape,
       annotations: { readOnlyHint: true },
     },
@@ -218,7 +243,8 @@ export function registerNoteTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Search notes',
       description:
-        'Full-text search over note bodies, with the same tag and date filters as list. Words match exactly (no stemming), so code identifiers and version strings work; supports "quoted phrases", OR, and -word to exclude. Results are ranked by relevance, then recency. Returns { notes, next_cursor }.',
+        'Full-text search over note bodies, with the same tag and date filters as list. Words match exactly (no stemming), so code identifiers and version strings work; supports "quoted phrases", OR, and -word to exclude. Results are ranked by relevance, then recency. Returns { notes, next_cursor }.' +
+        IMAGE_FILTER_HINT,
       inputSchema: {
         query: z.string().min(1).describe('Words to look for, e.g. "retry backoff" or "\\"connection pool\\" -redis".'),
         ...noteFilterShape,

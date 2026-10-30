@@ -22,6 +22,8 @@ export function buildInstructions(timeZone: string = localTimeZone()): string {
     `Dates. from and to accept YYYY-MM-DD or a full ISO 8601 datetime. A YYYY-MM-DD value means the whole day in the daemon's local timezone, ${timeZone}: from starts at that day's midnight and to includes the whole day. Datetimes are exact.`,
 
     `Comparisons and summaries ("this week vs last week", "#seer vs #v250", "what was my last note about X") are your job, not the server's: call list or search once per side with the right filters, page with next_cursor if needed, then compare or summarise the results yourself.`,
+
+    `Images. Some notes are image notes: a photo or screenshot saved on the laptop that stored it. Every note returned by get/list/search has an image field: null for text notes, otherwise {mime, width, height, bytes, taken_at, original_name, host, available}. To look at pictures, find the ids first, then call view_images with up to 8 ids; it returns each picture plus its metadata. "Show me pictures I saved on 30 oct" means list with has_image: true and from/to for that day, then view_images on the ids. "Photos taken last week" uses taken_from/taken_to (the camera's EXIF date) instead. To save a local image file (for example a screenshot path you have), call create_image with its absolute path and optional body text; the file is copied, not moved, and saving the same file again returns the existing note. available: false means the file lives on another machine (host): the note's text is still there, but its picture cannot be viewed here.`,
   ];
   return sections.join('\n\n');
 }

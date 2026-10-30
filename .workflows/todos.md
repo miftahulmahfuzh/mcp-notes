@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 10:09:37
-**Total Active Tasks**: 4
+**Last Updated**: 2026-10-30 10:25:00
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 1
-- Completed: 4
+- Completed: 6
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-- [ ] **P1-NOTES-A004** Phase 5: Image HTTP routes + upload, MCP image tools, image/date filters
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `src/http/{images,imageAccess}.ts`, `src/mcp/imageTools.ts` (`create_image`, `view_images`), takenFrom/takenTo filters in P2's NoteFilter, `has_image` + taken range in MCP schemas, images section of server instructions; tests. Exit: upload → note → original bytes identical; `view_images` returns MCP image content; missing file → 404 `not_on_this_machine`; gates green.
-  - **Status**: open
-  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 5 of 8)
-  - **Satisfies**: R2 — Images: byte-exact local store + sha256 dedupe + metadata, derivatives, ingestion (upload, inbox, MCP), viewing + filters, HTTP serving, "not on this machine" fallback
-  - **Depends on**: P1-NOTES-A003
-  - **Plan**: `.workflows/plan/P1-NOTES-A004.md`
-
 - [ ] **P1-NOTES-A006** Phase 7: Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -60,6 +50,26 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A004** Phase 5: Image HTTP routes + upload, MCP image tools, image/date filters
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/http/{images,imageAccess}.ts`, `src/mcp/imageTools.ts` (`create_image`, `view_images`), takenFrom/takenTo filters in P2's NoteFilter, `has_image` + taken range in MCP schemas, images section of server instructions; tests. Exit: upload → note → original bytes identical; `view_images` returns MCP image content; missing file → 404 `not_on_this_machine`; gates green.
+  - **Status**: completed
+  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 5 of 8)
+  - **Satisfies**: R2 — Images: byte-exact local store + sha256 dedupe + metadata, derivatives, ingestion (upload, inbox, MCP), viewing + filters, HTTP serving, "not on this machine" fallback
+  - **Depends on**: P1-NOTES-A003
+  - **Plan**: `.workflows/plan/P1-NOTES-A004.md`
+  - **Completed**: 2026-10-30 10:25
+  - **Method**: /do
+  - **Files**: src/notes/repo.ts, src/mcp/tools.ts, src/mcp/instructions.ts, src/mcp/imageTools.ts, src/http/images.ts, src/http/imageAccess.ts, tests/unit/takenFilter.test.ts, tests/unit/imageAccess.test.ts, tests/integration/imageHarness.ts, tests/integration/images.http.int.test.ts, tests/integration/images.mcp.int.test.ts
+  - **Drift**:
+    - none in src: P2/P4 exports matched the plan exactly
+  - **Decided**:
+    - images.mcp.int.test fixture said 'a text note about sunsets' but search uses to_tsvector('simple') with no stemming, so 'sunset' never matched it -> fixture text changed to 'a text note about a sunset' (assertion unchanged) (rung 3: P1/P2 code blocks fix the 'simple' FTS config; the test data was the stale half)
+  - **Verification**:
+    - npm run typecheck, npm test (152 passed), npm run test:int (86 passed), npm run build: all green; touched tests re-run green after rebasing onto ed3d299
+    - Manual check on port 7399: upload -> 201, /original bytes identical (cmp), Cache-Control immutable + CSP + nosniff; after deleting the file -> 404 {error:not_on_this_machine, host:pc}
 
 - [x] **P1-NOTES-A003** Phase 4: Image store, derivatives, ingest service, inbox watcher
   - **Difficulty**: HARD

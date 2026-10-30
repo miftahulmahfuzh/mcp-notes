@@ -29,6 +29,10 @@ export interface NoteFilter {
   to?: string;
   /** true = image notes only, false = text notes only, undefined = both. */
   hasImage?: boolean;
+  /** EXIF taken date, lower bound: YYYY-MM-DD (local day) or ISO datetime. Image notes only. */
+  takenFrom?: string;
+  /** EXIF taken date, upper bound, inclusive: YYYY-MM-DD (whole local day) or ISO datetime. */
+  takenTo?: string;
   /** Default 'exclude'. */
   deleted?: 'exclude' | 'include' | 'only';
   /** 1..MAX_LIMIT, default DEFAULT_LIMIT. */
@@ -121,6 +125,15 @@ export function filterConditions(filter: NoteFilter): SQL[] {
 
   if (filter.hasImage === true) conds.push(isNotNull(notes.imagePath));
   if (filter.hasImage === false) conds.push(isNull(notes.imagePath));
+
+  // taken_at is a UTC ISO 'Z' string, so a text compare orders correctly and uses notes_image_taken_at_idx.
+  const takenAt = sql`(${notes.imageMeta} ->> 'taken_at')`;
+  if (filter.takenFrom !== undefined && filter.takenFrom !== '') {
+    conds.push(sql`${takenAt} >= ${parseDateBound(filter.takenFrom, 'from').toISOString()}`);
+  }
+  if (filter.takenTo !== undefined && filter.takenTo !== '') {
+    conds.push(sql`${takenAt} < ${parseDateBound(filter.takenTo, 'to').toISOString()}`);
+  }
   return conds;
 }
 
