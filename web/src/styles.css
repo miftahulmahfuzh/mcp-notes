@@ -83,7 +83,7 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .card-img { display: block; width: 100%; height: auto; filter: var(--film); background: var(--img-bg); }
 .card-body { padding: 13px 14px 10px; }
 .card.img .card-body { padding: 9px 2px 4px; }
-.card-text { margin: 0 0 10px; line-height: 1.32; white-space: pre-wrap; text-wrap: pretty; cursor: text; color: var(--text); }
+.card-text { margin: 0 0 10px; line-height: 1.32; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; cursor: text; color: var(--text); }
 .card-edit { display: block; width: 100%; box-sizing: border-box; background: transparent; color: var(--fg); border: 0; resize: none; font: inherit; line-height: 1.32; padding: 0; margin: 0 0 10px; }
 .tagchip { display: inline-block; font-size: 11px; line-height: 1; padding: 3px 7px 4px; border-radius: 999px; background: var(--chip-bg); color: var(--chip); cursor: pointer; vertical-align: .15em; letter-spacing: 0; }
 .tagchip:hover { background: var(--fg); color: var(--bg); }
