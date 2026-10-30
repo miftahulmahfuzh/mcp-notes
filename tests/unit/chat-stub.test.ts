@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import type { ChatEvent } from '../../src/chat/backend.js';
 import { STUB_REPLY, createStubChatBackend, splitIntoDeltas } from '../../src/chat/stub.js';
 
-async function collect(iterable: AsyncIterable<string>): Promise<string[]> {
-  const out: string[] = [];
-  for await (const part of iterable) out.push(part);
+async function collect(iterable: AsyncIterable<ChatEvent>): Promise<ChatEvent[]> {
+  const out: ChatEvent[] = [];
+  for await (const event of iterable) out.push(event);
   return out;
+}
+
+function texts(events: ChatEvent[]): string {
+  return events.map((e) => e.text).join('');
 }
 
 describe('chat stub', () => {
@@ -18,15 +23,26 @@ describe('chat stub', () => {
     expect(STUB_REPLY).toMatch(/iteration 4/);
   });
 
-  it('streams the fixed reply and starts a new thread when none is given', async () => {
+  it('streams the fixed reply as delta events only and starts a new thread when none is given', async () => {
     const backend = createStubChatBackend({ delayMs: 0 });
     const turn = await backend.reply({
       message: 'hello',
       threadId: null,
       signal: new AbortController().signal,
     });
-    expect(turn.threadId).toMatch(/^stub-/);
-    expect((await collect(turn.deltas)).join('')).toBe(STUB_REPLY);
+    const events = await collect(turn.events);
+    expect(events.every((e) => e.type === 'delta')).toBe(true);
+    expect(texts(events)).toBe(STUB_REPLY);
+    expect(turn.end().threadId).toMatch(/^stub-/);
+  });
+
+  it('reports no brain', async () => {
+    const backend = createStubChatBackend({ delayMs: 0 });
+    const turn = await backend.reply({ message: 'hi', threadId: null, signal: new AbortController().signal });
+    await collect(turn.events);
+    const end = turn.end();
+    expect(end.brain).toBeUndefined();
+    expect('brain' in end).toBe(false);
   });
 
   it('keeps a given thread id', async () => {
@@ -36,16 +52,17 @@ describe('chat stub', () => {
       threadId: 'thread-1',
       signal: new AbortController().signal,
     });
-    expect(turn.threadId).toBe('thread-1');
+    await collect(turn.events);
+    expect(turn.end()).toEqual({ threadId: 'thread-1' });
   });
 
   it('stops yielding after abort', async () => {
     const backend = createStubChatBackend({ delayMs: 5 });
     const controller = new AbortController();
     const turn = await backend.reply({ message: 'x', threadId: null, signal: controller.signal });
-    const out: string[] = [];
-    for await (const part of turn.deltas) {
-      out.push(part);
+    const out: ChatEvent[] = [];
+    for await (const event of turn.events) {
+      out.push(event);
       if (out.length === 2) controller.abort();
     }
     expect(out).toHaveLength(2);

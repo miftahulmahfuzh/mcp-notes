@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import type { ChatBackend } from '../../../src/chat/backend.js';
 import { createStubChatBackend } from '../../../src/chat/stub.js';
+import { DEFAULT_CHAT_CONFIG } from '../../../src/config.js';
 import type { AppDeps } from '../../../src/deps.js';
 import { apiRoutes } from '../../../src/http/api.js';
 import { NoteEvents } from '../../../src/notes/events.js';
@@ -24,6 +26,8 @@ export interface ApiHarness {
 
 export interface ApiHarnessOptions {
   sseHeartbeatMs?: number;
+  /** The chat backend behind /api/chat. Default: the stub with no delay. */
+  chat?: ChatBackend;
 }
 
 /** A tag no other test uses, e.g. `t3f9a1c2e`. */
@@ -37,12 +41,17 @@ export async function createApiHarness(options: ApiHarnessOptions = {}): Promise
   const db = openTestDb();
   const events = new NoteEvents();
   const notes = new NotesService({ db, events, dataDir });
-  const deps: AppDeps = { config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir }, db, events, service: notes };
+  const deps: AppDeps = {
+    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG },
+    db,
+    events,
+    service: notes,
+  };
   const app = new Hono();
   app.route(
     '/',
     apiRoutes(deps, {
-      chat: createStubChatBackend({ delayMs: 0 }),
+      chat: options.chat ?? createStubChatBackend({ delayMs: 0 }),
       ...(options.sseHeartbeatMs !== undefined ? { sseHeartbeatMs: options.sseHeartbeatMs } : {}),
     }),
   );

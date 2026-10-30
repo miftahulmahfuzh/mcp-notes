@@ -184,6 +184,8 @@ export function App() {
             query={chat.query}
             text={chat.text}
             done={chat.done}
+            status={chat.status}
+            brain={chat.brain}
             pinned={chat.pinned}
             usedIds={used}
             onTogglePin={chat.togglePin}

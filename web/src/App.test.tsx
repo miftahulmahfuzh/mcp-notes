@@ -95,4 +95,42 @@ describe('App', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(document.querySelector('.answer')).toBeNull();
   });
+
+  it('shows the tool status in the header while streaming, then the brain label', async () => {
+    const enc = new TextEncoder();
+    let ctl!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctl = c;
+      },
+    });
+    const send = (s: string) => ctl.enqueue(enc.encode(s));
+    const base = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).startsWith('/api/chat') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } }) : base(input, init),
+      ),
+    );
+
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    fireEvent.change(screen.getByLabelText('Ask about your notes'), { target: { value: 'what about seer?' } });
+    fireEvent.submit(document.querySelector('form.chatbar') as HTMLFormElement);
+
+    send('event: status\ndata: {"text":"searching notes"}\n\n');
+    await waitFor(() => expect(document.querySelector('.answer-head .answer-status')?.textContent).toBe('searching notes'));
+    expect(document.querySelector('.answer-head .answer-q')?.textContent).toBe('what about seer?');
+    expect(document.querySelector('.answer-head button')).not.toBeNull();
+    expect(document.querySelectorAll('.answer-head button')).toHaveLength(2);
+
+    send('event: status\ndata: {"text":""}\n\nevent: delta\ndata: {"text":"Look at A-B32."}\n\n');
+    await waitFor(() => expect(document.querySelector('.answer-body p')?.textContent).toBe('Look at A-B32. ▍'));
+    expect(document.querySelector('.answer-status')).toBeNull();
+
+    send('event: done\ndata: {"thread_id":"s-1","brain":"glm"}\n\n');
+    ctl.close();
+    await waitFor(() => expect(document.querySelector('.answer-head .answer-status')?.textContent).toBe('glm'));
+    expect(document.querySelector('.answer-body p')?.textContent).toBe('Look at A-B32.');
+  });
 });

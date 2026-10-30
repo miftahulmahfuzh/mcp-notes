@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from 'hono';
+import type { ChatBackend } from '../chat/backend.js';
 import type { AppDeps } from '../deps.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import { apiRoutes } from './api.js';
@@ -31,11 +32,16 @@ export const loopbackOnly: MiddlewareHandler = async (c, next) => {
   await next();
 };
 
+export interface CreateAppOptions {
+  /** The brain behind POST /api/chat. Omitted: apiRoutes' default (the stub). */
+  chat?: ChatBackend;
+}
+
 /**
  * The whole HTTP surface, mounted in this order (later phases fill the routers, never this file):
  * /health, /mcp, apiRoutes (P6), imageRoutes (P5), staticRoutes (P6, last: it owns the SPA fallback).
  */
-export function createApp(deps: AppDeps): Hono {
+export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
   const toolDeps = { service: deps.service, dataDir: deps.config.dataDir, db: deps.db };
 
@@ -48,7 +54,7 @@ export function createApp(deps: AppDeps): Hono {
     c.json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null }, 405, { Allow: 'POST' }),
   );
 
-  app.route('/', apiRoutes(deps));
+  app.route('/', apiRoutes(deps, { chat: options.chat }));
   app.route('/', imageRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
