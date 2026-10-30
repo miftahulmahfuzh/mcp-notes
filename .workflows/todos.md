@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 11:29:05
+**Last Updated**: 2026-10-30 13:28:02
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 12
+- Completed: 13
 
 ---
 
@@ -31,6 +31,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A012** Phase 1: Connector core, generic tools, test harness
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/{names,types,errors,env,rows,pg,lab,guard,connector,schema,sql,register}.ts`, `src/connectors/<id>/index.ts` + stub `curated.ts` for all three systems, `src/mcp/{server,tools,instructions}.ts`, `scripts/test-int.sh`, `vitest.config.ts`, `package.json` (scripts), connector unit/integration/live tests, README connectors sections, `docs/INSTALL.md` ("5. Connectors") (39 files). Exit: `tools/list` on `/mcp` shows the 6 generic tools; `_schema` returns tables/columns/types/comments from the live DB (and lab for seer); `_sql` rejects writes and multi-statements before the DB, caps rows, and `nextval`/INSERT through the unguarded executor fail with a read-only error; missing repo / `.env.local` / unreachable DB give the short error and other tools keep working; `npm run test:live:connectors` exists and is excluded by default.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p1/docs/plans/CONNECTORS_PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R1, R2, R5 — Connector core (read-only connectors per system); MCP tools per system; unit + Docker integration tests
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A012.md`
+  - **Completed**: 2026-10-30 13:28
+  - **Method**: /do
+  - **Files**: src/connectors/names.ts, src/connectors/types.ts, src/connectors/errors.ts, src/connectors/env.ts, src/connectors/rows.ts, src/connectors/pg.ts, src/connectors/lab.ts, src/connectors/guard.ts, src/connectors/connector.ts, src/connectors/schema.ts, src/connectors/sql.ts, src/connectors/register.ts, src/connectors/expenses/index.ts, src/connectors/expenses/curated.ts, src/connectors/runs/index.ts, src/connectors/runs/curated.ts, src/connectors/seer/index.ts, src/connectors/seer/curated.ts, src/mcp/instructions.ts, src/mcp/server.ts, src/mcp/tools.ts, tests/unit/mcp.instructions.test.ts, tests/unit/connectors/names.test.ts, tests/unit/connectors/guard.test.ts, tests/unit/connectors/rows.test.ts, tests/unit/connectors/env.test.ts, tests/unit/connectors/failsoft.test.ts, tests/integration/connectors/siblings.ts, tests/integration/connectors/globalSetup.ts, tests/integration/connectors/harness.ts, tests/integration/connectors/core.int.test.ts, tests/integration/connectors/generic.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/live/connectors.live.test.ts, scripts/test-int.sh, vitest.config.ts, package.json, README.md, docs/INSTALL.md
+  - **Decided**:
+    - Step 3 task creation in a per-phase-worktree swarm: create all 6 phases' tasks vs only phase 1's → only phase 1's (tie-break: narrower blast radius; each phase's own session/branch mints its own). TaskID P1-NOTES-A012 was minted as next-after-A011; sibling phase branches may mint the same number, so the coordinator should renumber on integration.
 
 - [x] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
   - **Difficulty**: HARD

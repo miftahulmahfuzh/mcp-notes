@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/connectors`
 **Branch:** `feature/connectors` (base: `HEAD` of `main` @ `29259ae`)
 **Phases:** 6
-**Status:** planned
+**Status:** phase 1/6 complete
 **Coordinator:** —
 
 ---
@@ -159,7 +159,7 @@ export class ConnectorError extends Error {}
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Connector core, generic tools, test harness | R1, R2, R5 | `src/connectors`, `src/mcp`, `tests`, `scripts` | 39 | — | HARD | `.workflows/plan/connectors/phase-1.md` | — | — |
+| 1 ✓ | Connector core, generic tools, test harness | R1, R2, R5 | `src/connectors`, `src/mcp`, `tests`, `scripts` | 39 | — | HARD | `.workflows/plan/connectors/phase-1.md` | P1-NOTES-A012 | — |
 | 2 | expense-tracking curated tools | R2, R5 | `src/connectors/expenses` | 8 | 1 | NORMAL | `.workflows/plan/connectors/phase-2.md` | — | — |
 | 3 | run-insights curated tools | R2, R5 | `src/connectors/runs` | 8 | 1 | NORMAL | `.workflows/plan/connectors/phase-3.md` | — | — |
 | 4 | Seer curated tools (db + lab) | R2, R5 | `src/connectors/seer` | 10 | 1 | HARD | `.workflows/plan/connectors/phase-4.md` | — | — |
