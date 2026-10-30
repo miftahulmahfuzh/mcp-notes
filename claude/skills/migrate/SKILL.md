@@ -2,6 +2,7 @@
 name: migrate
 description: Move every image in a directory into one new mcp-notes image note, tag it, then delete the original directory to free disk. Use whenever the user types "/migrate <dir_path> <tags>", e.g. "/migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image", or asks to move/migrate/import a folder of pictures into their notes and remove the folder.
 argument-hint: <dir_path> <#tag> [#tag ...]
+model: claude-sonnet-4-6
 ---
 
 # /migrate — a folder of images into one note, then delete the folder
