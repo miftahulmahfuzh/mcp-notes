@@ -107,6 +107,8 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .pbtn.hov:hover { background: var(--chip-bg); }
 .answer-body { display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.5; color: var(--text); text-wrap: pretty; }
 .answer-body p { margin: 0; }
+.answer-link { font-family: var(--mono); font-size: 12px; color: var(--text); text-decoration: underline; text-decoration-color: var(--dim); text-decoration-thickness: 1px; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.answer-link:hover { color: var(--fg); text-decoration-color: var(--fg); }
 .used-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .usedchip { border: 1px solid var(--line-25); background: transparent; color: var(--fg); font-family: var(--mono); font-size: 10.5px; padding: 4px 8px; border-radius: 999px; cursor: pointer; }
 .usedchip:hover { background: var(--fg); color: var(--bg); }
