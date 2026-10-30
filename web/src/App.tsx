@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
-import { createNote, deleteNote, DuplicateImageError, removeImage, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
+import { createNote, deleteNote, DuplicateImageError, fetchBin, fetchNote, removeImage, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
 import type { Mode, Note, NoteImage as NoteImageData, View } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
@@ -11,10 +11,13 @@ import { useCopied } from './hooks/useCopied';
 import { useNotice } from './hooks/useNotice';
 import { useUndo } from './hooks/useUndo';
 import { useBin } from './hooks/useBin';
-import { BIN_HEADING, binCountLine, countLineFor, headingFor, imageCount, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
+import { useDeepLink } from './hooks/useDeepLink';
+import { BIN_HEADING, binCountLine, countLineFor, headingFor, imageCount, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
 import { tagsOf } from './lib/text';
+import { binNoteSelector, flashSelector, noteSelector, type FlashOptions } from './lib/flash';
+import { planReveal, tagsKeeping } from './lib/reveal';
 import { Rail } from './components/Rail';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -27,8 +30,12 @@ import { DropOverlay } from './components/DropOverlay';
 import { NoteEditor } from './components/NoteEditor';
 import { Bin } from './components/Bin';
 import { UndoBar } from './components/UndoBar';
+import { LinkNotice } from './components/LinkNotice';
 
 const ICONS = { weight: 'duotone' as const, size: '1em', color: 'currentColor', mirrored: false };
+
+/** Deep-link flash: after the view/mode switch renders; wait for a card that needs a fetch or the bin to load. */
+const LINK_FLASH: FlashOptions = { delayMs: 60, waitMs: 3000 };
 
 function scrollToNote(id: string): void {
   const el = document.querySelector(`[data-note="${id}"]`);
@@ -36,7 +43,7 @@ function scrollToNote(id: string): void {
 }
 
 export function App() {
-  const { notes, tags, refetch, upsertLocal, removeLocal } = useNotes();
+  const { notes, tags, loaded, refetch, upsertLocal, removeLocal } = useNotes();
   const now = useNow();
   const chat = useChat();
   const { copied, copy } = useCopied();
@@ -51,11 +58,19 @@ export function App() {
   const [view, setView] = useState<View>('wall');
   const { entry: undoEntry, push: pushUndo, undo: runUndo } = useUndo();
   const binStore = useBin(active, view === 'bin');
+  // Deep link (?note=<id> / #<id>): its own quiet notice (App's other notice is shown in the big
+  // editor), a way to close the big editor through its normal path, and the newest-link guard.
+  const { notice: linkNotice, show: showLinkNotice } = useNotice(6000);
+  const [closeSignal, setCloseSignal] = useState(0);
+  const linkSeq = useRef(0);
+  const cancelFlash = useRef<() => void>(() => {});
 
   // Synchronous mirrors for event handlers that run before React re-renders.
   const expandedRef = useRef<string | null>(null);
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const wallRef = useRef({ view, mode, active, editing, expanded });
+  wallRef.current = { view, mode, active, editing, expanded };
 
   const visible = useMemo(() => visibleOnWall(notes, mode, active, [editing, expanded]), [notes, mode, active, editing, expanded]);
   const expandedNote = useMemo(() => (expanded ? (notes.find((n) => n.id === expanded) ?? null) : null), [notes, expanded]);
@@ -76,18 +91,13 @@ export function App() {
   const jump = useCallback(
     (id: string) => {
       const note = notes.find((n) => n.id === id);
-      const leaving = view === 'bin';
-      if (leaving) setView('wall');
-      if (isHiddenByMode(note, mode)) {
-        setMode('all');
-        window.setTimeout(() => scrollToNote(id), 50);
-      } else if (leaving) {
-        window.setTimeout(() => scrollToNote(id), 50);
-      } else {
-        scrollToNote(id);
-      }
+      const plan = planReveal(note, { view, mode, active, keep: [] });
+      if (plan.view !== view) setView(plan.view);
+      if (plan.mode !== mode) setMode(plan.mode);
+      if (plan.changed) window.setTimeout(() => scrollToNote(id), 50);
+      else scrollToNote(id);
     },
-    [notes, mode, view],
+    [notes, mode, view, active],
   );
 
   const addNote = useCallback(async () => {
@@ -272,6 +282,76 @@ export function App() {
     [upsertLocal, refetch],
   );
 
+  /** Put a live note on screen for a deep link, then scroll to and outline its card. */
+  const revealLinked = useCallback((note: Note) => {
+    const s = wallRef.current;
+    if (s.expanded !== null && s.expanded !== note.id) setCloseSignal((n) => n + 1);
+    const keep = [s.editing, s.expanded === note.id ? note.id : null];
+    const plan = planReveal(note, { view: s.view, mode: s.mode, active: s.active, keep }, { tags: true });
+    if (plan.view !== s.view) setView(plan.view);
+    if (plan.mode !== s.mode) setMode(plan.mode);
+    if (plan.active !== s.active) setActive(plan.active);
+    cancelFlash.current();
+    cancelFlash.current = flashSelector(noteSelector(note.id), LINK_FLASH);
+  }, []);
+
+  /**
+   * ?note=<id> / #<id>: a loaded note is revealed; else GET /api/notes/:id (past the 2000-note page);
+   * a 404 that the bin holds opens the bin on its card; else a quiet "no note <id>". Only the newest
+   * link acts (a second link while one is still fetching wins).
+   */
+  const openLinked = useCallback(
+    async (id: string) => {
+      const seq = ++linkSeq.current;
+      const stale = () => seq !== linkSeq.current;
+      const known = notesRef.current.find((n) => n.id === id);
+      if (known) {
+        revealLinked(known);
+        return;
+      }
+      let note: Note | null;
+      try {
+        note = await fetchNote(id);
+      } catch (e) {
+        if (stale()) return;
+        console.error('deep link: fetch note failed', e);
+        showLinkNotice(`could not open ${id}`);
+        return;
+      }
+      if (stale()) return;
+      if (note) {
+        upsertLocal(note);
+        revealLinked(note);
+        return;
+      }
+      let deleted: Note | undefined;
+      try {
+        deleted = (await fetchBin()).notes.find((n) => n.id === id);
+      } catch (e) {
+        console.error('deep link: bin lookup failed', e);
+      }
+      if (stale()) return;
+      if (deleted) {
+        const binNote = deleted;
+        if (wallRef.current.expanded !== null) setCloseSignal((n) => n + 1);
+        setActive((a) => tagsKeeping(binNote, a));
+        setView('bin');
+        cancelFlash.current();
+        cancelFlash.current = flashSelector(binNoteSelector(id), LINK_FLASH);
+        showLinkNotice(`${id} is deleted. Restore it from the bin.`);
+        return;
+      }
+      showLinkNotice(`no note ${id}`);
+    },
+    [revealLinked, upsertLocal, showLinkNotice],
+  );
+
+  useDeepLink(loaded, (id) => {
+    void openLinked(id);
+  });
+
+  useEffect(() => () => cancelFlash.current(), []);
+
   const send = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!q.trim()) return;
@@ -383,10 +463,12 @@ export function App() {
               onRemoveImage={removeImageWithUndo}
               onDelete={removeNote}
               tags={tags}
+              closeSignal={closeSignal}
             />,
             document.body,
           )}
         <UndoBar entry={undoEntry} onUndo={runUndo} />
+        <LinkNotice text={linkNotice} />
         <Tooltip />
       </div>
     </IconContext.Provider>

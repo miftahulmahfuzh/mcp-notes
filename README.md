@@ -20,6 +20,7 @@ its own chat bar.
   - [The photo modal and the full-screen tab](#the-photo-modal-and-the-full-screen-tab)
   - [Deleting and the recycle bin](#deleting-and-the-recycle-bin)
   - [Open file location](#open-file-location)
+  - [Links to a note](#links-to-a-note)
 - [Using it from Claude Code](#using-it-from-claude-code)
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
@@ -252,6 +253,18 @@ The icon appears only when this can work: the original must be on this machine, 
 must run under WSL with Windows interop available (`GET /api/capabilities` answers
 `{"reveal":true}`). The endpoint takes a photo id, never a path. It refuses any request whose
 `Origin` is not the wall's own page, so another site open in the browser cannot trigger it.
+
+### Links to a note
+
+`http://localhost:7317/?note=F-ZH5` (the port is `NOTESD_PORT`) opens the wall with that note
+scrolled into view and briefly outlined; `#F-ZH5` works too, and the id may be lower-case or lack
+its dash (`?note=fzh5`). The wall first makes the note visible: it leaves the bin, switches
+"Notes." or "Photos." to "Everything." when the view hides it, and drops only the active tags the
+note does not carry. A big editor open on another note closes the usual way, saving its text; one
+open on the linked note stays open. A note older than the 2000 the wall loads is fetched on its
+own. A deleted note opens the bin on its card, with a line saying it can be restored there, and an
+unknown id says `no note F-ZH5` in the top right corner. The address is left as it is, so a reload
+selects the note again; changing the hash or moving back and forward selects the new target.
 
 ## Using it from Claude Code
 
