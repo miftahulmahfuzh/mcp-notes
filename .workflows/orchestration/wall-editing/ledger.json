@@ -104,22 +104,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "c8d8258",
       "depends_on": [
         2
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "web on images[]; invariant 7 respected (no chat hunks); decision: grep gate \\.image\\b narrowed to (note|n)\\.image since PhotoItem.image is plan-introduced (rung 3), coordinator re-ran: empty",
       "package": "web/src",
       "plan": ".workflows/plan/wall-editing/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:42:30+07:00",
       "satisfies": [
         "R1",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A028",
       "title": "Web on `images[]`: cards, gallery, modal stepping, full-screen by image"
     },
     {
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:41:34+07:00",
+  "updated": "2026-10-30T16:42:30+07:00",
   "verified_at": "2026-10-30T16:41:34+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
