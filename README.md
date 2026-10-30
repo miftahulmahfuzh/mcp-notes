@@ -381,9 +381,9 @@ from their data:
 
 | System | Repo | What it holds |
 |---|---|---|
-| `expenses` | `~/expense-tracking` | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
-| `runs` | `~/run-insights` | Apple Watch runs (pace, distance, heart rate, splits), weekly and monthly reviews, the coach Nina |
-| `seer` | `~/seer` | The trading lab: strategies, positions, trades, the leaderboard, and Sera's experiments in `lab/lab.sqlite` |
+| `expenses` | [miftahulmahfuzh/expense-tracking](https://github.com/miftahulmahfuzh/expense-tracking) | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
+| `runs` | [miftahulmahfuzh/run-insights](https://github.com/miftahulmahfuzh/run-insights) | Apple Watch runs (pace, distance, heart rate, splits), weekly and monthly reviews, the coach Nina |
+| `seer` | [miftahulmahfuzh/seer](https://github.com/miftahulmahfuzh/seer) | The trading lab: strategies, positions, trades, the leaderboard, and Sera's experiments in `lab/lab.sqlite` |
 
 | Tool | What it does |
 |---|---|
