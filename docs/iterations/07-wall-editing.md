@@ -1,4 +1,4 @@
-# Iteration 7 — Wall editing: big editor, several images per note, recycle bin, open file location
+# Iteration 7 — Wall editing: big editor, several images per note, recycle bin, open file location, collapsible answer panel
 
 One `/analyze` run. Everything below the line is the owner's request, verbatim input for
 /analyze Step 0.
@@ -95,6 +95,28 @@ checked). Rules:
   - explorer.exe's exit code is meaningless (it returns 1 on success); judge success by the spawn
     only, and never block the request on Explorer.
 
+R6 — Collapsible answer panel. Added by the owner after this brief was first written:
+
+> make it so the overlay claude answer can be collapsed and expanded. by default it would be in
+> its expanded state, if user click the collapse button, it will collapse to only show the
+> query. e.g:
+> ```
+> cari notes yang membahas fitur . claude
+> ```
+> right now , we only have `x` button that closes the overlay permanently
+
+  - The answer panel's header gets a collapse/expand icon (Phosphor caret-down / caret-up, or
+    similar), next to pin and dismiss, with a tooltip. Icon only.
+  - Collapsed, the panel shrinks to its header line alone: the query, then " · " and the brain
+    (or the live status caption while it is still answering), plus its icons, sitting just above
+    the chat bar. Expanded shows the full answer, as today.
+  - Every new answer opens expanded. Collapsing does not stop a streaming answer; it keeps
+    streaming and the status caption keeps updating in the collapsed line.
+  - Clicking the collapsed line (not only the icon) expands it. Pin, dismiss and Esc keep their
+    current meaning; dismiss still closes it for good and starts a new thread next time.
+  - Used-note outlines and dimming on the wall stay while collapsed, since the answer is still
+    the current one.
+
 R5 — Tests. Unit and component tests for the editor (save on blur/close, attach on drop and
 paste, empty-on-close rule, mode switch), the bin (restore, undo, delete-forever confirm), and
 the reveal button's visibility rules. Integration tests for the migration (an iteration-6
@@ -116,6 +138,8 @@ Acceptance (in the browser at http://localhost:7317, and through `/n`):
   - The folder icon on a photo opens Explorer with that file selected.
   - /n show me the pictures in note <id>  → Claude sees every image of that note.
   - /n attach ~/Pictures/Screenshots/<file>.png to note <id>
+  - Ask in the chat bar → collapse while it streams → the line shows "<query> · <status>" and
+    then "<query> · claude" → click it → the full answer is there.
 
 Out of scope: rich text or markdown rendering in notes, reordering images by drag (order is
 attach order; removing and restoring keeps position), image editing or cropping, a bin auto-purge
