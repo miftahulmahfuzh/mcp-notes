@@ -1,0 +1,128 @@
+{
+  "branch": "feature/connectors",
+  "coordinator": "orch-connectors",
+  "coordinator_session_id": "ea655e59-3224-41f4-acc9-58a0e57a852c",
+  "created": "2026-10-30T13:23:21+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/connectors`, `src/mcp`, `tests`, `scripts",
+      "plan": ".workflows/plan/connectors/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Connector core, generic tools, test harness"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/connectors/expenses",
+      "plan": ".workflows/plan/connectors/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "expense-tracking curated tools"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "src/connectors/runs",
+      "plan": ".workflows/plan/connectors/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "run-insights curated tools"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "src/connectors/seer",
+      "plan": ".workflows/plan/connectors/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Seer curated tools (db + lab)"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/chat`, `claude/skills/n",
+      "plan": ".workflows/plan/connectors/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Chat bar + /n for connectors"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "EASY",
+      "n": 6,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/connectors/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Readable links in the answer panel"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/connectors/.workflows/orchestration/connectors/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "connectors",
+  "updated": "2026-10-30T13:23:21+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/connectors"
+}
