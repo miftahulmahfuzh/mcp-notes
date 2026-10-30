@@ -3,7 +3,13 @@
   "coordinator": "orch-notes-spine-images-ui",
   "coordinator_session_id": "a6e61305-1952-498a-b355-47aaa80ae8c5",
   "created": "2026-10-30T02:59:53+00:00",
-  "note": "Gate (plan_graph.py) run against the worktree index docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md: exit 0, 13 shared files all sequential. Against the tracked PLAN.md it exits 1 only because its Plan column paths (.workflows/plan/...) resolve against the main checkout; children are spawned with the worktree index. No collisions -> shared set worktree, no per-phase isolation. Open Questions: none. | p3 28dff76 also carries p6's todos/readme/index bookkeeping (A005 marked complete before p6's code commit); cosmetic, left as is. | LANDING MUST: after merge, before worktree cleanup, run `cd ~/mcp-notes && git pull && scripts/install.sh` \u2014 notesd unit and ~/.claude/skills/n currently point at the set worktree. | p4 79e901c: its manual inbox check created note 9-C0C on the owner's Neon DB; p4 soft-deleted it (restorable). p3's 28dff76 also carries p4's todos/index bookkeeping hunks; cosmetic. | after p6 ed3d299: shared .git/index was stale (staged deletions of committed p4/p6 files); coordinator ran index-only `git reset` (tree untouched). | p5 3d07b08: manual check created note 3-3XZ on owner's Neon (empty DATABASE_URL fell back to .env.local); soft-deleted. p5 changed images.mcp.int fixture 'sunsets'->'a sunset' (FTS 'simple' has no stemming), rung 3.",
+  "landed": {
+    "at": "2026-10-30T03:37:58+00:00",
+    "base": "main",
+    "commit": "6643c2cf64e6b439c2786efb73ee5db0bf8fa411",
+    "machine": "pc"
+  },
+  "note": "Gate (plan_graph.py) run against the worktree index docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md: exit 0, 13 shared files all sequential. Against the tracked PLAN.md it exits 1 only because its Plan column paths (.workflows/plan/...) resolve against the main checkout; children are spawned with the worktree index. No collisions -> shared set worktree, no per-phase isolation. Open Questions: none. | p3 28dff76 also carries p6's todos/readme/index bookkeeping (A005 marked complete before p6's code commit); cosmetic, left as is. | LANDING MUST: after merge, before worktree cleanup, run `cd ~/mcp-notes && git pull && scripts/install.sh` \u2014 notesd unit and ~/.claude/skills/n currently point at the set worktree. | p4 79e901c: its manual inbox check created note 9-C0C on the owner's Neon DB; p4 soft-deleted it (restorable). p3's 28dff76 also carries p4's todos/index bookkeeping hunks; cosmetic. | after p6 ed3d299: shared .git/index was stale (staged deletions of committed p4/p6 files); coordinator ran index-only `git reset` (tree untouched). | p5 3d07b08: manual check created note 3-3XZ on owner's Neon (empty DATABASE_URL fell back to .env.local); soft-deleted. p5 changed images.mcp.int fixture 'sunsets'->'a sunset' (FTS 'simple' has no stemming), rung 3. | LANDED 6643c2c on main. Neon verified: notes, note_revisions, 9 indexes, 1 migration row (0000_init). Reinstalled from ~/mcp-notes before cleanup (unit runs ~/mcp-notes/dist/main.js). Worktree + branch deleted. Phase bodies pruned.",
   "phases": [
     {
       "card": null,
@@ -161,7 +167,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T03:36:49+00:00",
+  "updated": "2026-10-30T03:37:58+00:00",
   "verified_at": "2026-10-30T03:28:36+00:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
