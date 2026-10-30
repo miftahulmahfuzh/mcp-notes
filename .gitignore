@@ -1,1 +1,6 @@
 .env.local
+node_modules/
+dist/
+web/dist/
+coverage/
+*.tsbuildinfo

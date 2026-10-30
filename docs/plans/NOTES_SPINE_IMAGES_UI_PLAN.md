@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui`
 **Branch:** `feature/notes-spine-images-ui` (base: `origin/main` @ `4bff8fb`, fast-forwarded to `30a58fd`)
 **Phases:** 8
-**Status:** planned
+**Status:** phase 1/8 complete
 **Coordinator:** —
 
 ---
@@ -138,14 +138,14 @@ sync to the GPD, title field / typed note structure, search bar. `support.js` is
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Scaffold, config, schema, ids, tags, test harness | R1 | root, `src/db`, `src/notes` | ~21 | — | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-1.md` | — | — |
-| 2 | Notes service, MCP server and tools, notesd daemon | R1, R3 (`hasImage` only) | `src/notes`, `src/mcp`, `src/http`, `src/` | ~22 | 1 | HARD | `.workflows/plan/notes-spine-images-ui/phase-2.md` | — | — |
-| 3 | `/n` skill, systemd unit, install + Windows scripts, live verification | R1 | `claude/`, `deploy/`, `scripts/`, `docs/` | ~6 | 2 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-3.md` | — | — |
-| 4 | Image store, derivatives, ingest service, inbox watcher | R2 | `src/images`, `src/background.ts` | ~19 | 2 | HARD | `.workflows/plan/notes-spine-images-ui/phase-4.md` | — | — |
-| 5 | Image HTTP routes + upload, MCP image tools, image/date filters | R2 | `src/http/{images,imageAccess}.ts`, `src/mcp`, `src/notes/repo.ts` | ~11 | 4 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-5.md` | — | — |
-| 6 | UI JSON API, SSE events, chat stub, static SPA serving | R3 | `src/http/api.ts`, `src/http/static.ts`, `src/chat` | ~10 | 2 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-6.md` | — | — |
-| 7 | Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates | R3 | `web/` | ~38 | 6 | HARD | `.workflows/plan/notes-spine-images-ui/phase-7.md` | — | — |
-| 8 | Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder | R3 | `web/` | ~15 | 5, 7 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-8.md` | — | — |
+| 1 ✓ | Scaffold, config, schema, ids, tags, test harness | R1 | root, `src/db`, `src/notes` | ~21 | — | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-1.md` | P1-NOTES-A000 | — |
+| 2 | Notes service, MCP server and tools, notesd daemon | R1, R3 (`hasImage` only) | `src/notes`, `src/mcp`, `src/http`, `src/` | ~22 | 1 | HARD | `.workflows/plan/notes-spine-images-ui/phase-2.md` | P1-NOTES-A001 | — |
+| 3 | `/n` skill, systemd unit, install + Windows scripts, live verification | R1 | `claude/`, `deploy/`, `scripts/`, `docs/` | ~6 | 2 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-3.md` | P1-NOTES-A002 | — |
+| 4 | Image store, derivatives, ingest service, inbox watcher | R2 | `src/images`, `src/background.ts` | ~19 | 2 | HARD | `.workflows/plan/notes-spine-images-ui/phase-4.md` | P1-NOTES-A003 | — |
+| 5 | Image HTTP routes + upload, MCP image tools, image/date filters | R2 | `src/http/{images,imageAccess}.ts`, `src/mcp`, `src/notes/repo.ts` | ~11 | 4 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-5.md` | P1-NOTES-A004 | — |
+| 6 | UI JSON API, SSE events, chat stub, static SPA serving | R3 | `src/http/api.ts`, `src/http/static.ts`, `src/chat` | ~10 | 2 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-6.md` | P1-NOTES-A005 | — |
+| 7 | Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates | R3 | `web/` | ~38 | 6 | HARD | `.workflows/plan/notes-spine-images-ui/phase-7.md` | P1-NOTES-A006 | — |
+| 8 | Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder | R3 | `web/` | ~15 | 5, 7 | NORMAL | `.workflows/plan/notes-spine-images-ui/phase-8.md` | P1-NOTES-A007 | — |
 
 ### Phase 1 — Scaffold, config, schema, ids, tags, test harness
 **Satisfies:** R1 (plus, by invariants 7 and 8, the schema and dependencies R2/R3 use)
