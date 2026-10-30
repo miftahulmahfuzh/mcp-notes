@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/wall-editing`
 **Branch:** `feature/wall-editing` (base: `origin/main` @ `f899905`)
 **Phases:** 11
-**Status:** planned
+**Status:** phase 1/11 complete — in progress; phases 1 and 11 done (2 of 11)
 **Coordinator:** —
 
 ---
@@ -178,17 +178,17 @@ Ingest — `attachImage(deps, noteId, input: IngestInput)` in `src/images/ingest
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | `note_images` table, migration 0002, legacy copy/reconcile, image repo | R1, R5 | `src/db`, `drizzle`, `src/notes`, `src/images` | 10 | — | HARD | `.workflows/plan/wall-editing/phase-1.md` | — | — |
-| 2 | Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile | R1, R5 | `src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat` | 29 | 1 | HARD | `.workflows/plan/wall-editing/phase-2.md` | — | — |
-| 3 | Attach / remove / restore one image: service, ingest, HTTP, MCP tools | R1, R5 | `src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat` | 12 | 2 | NORMAL | `.workflows/plan/wall-editing/phase-3.md` | — | — |
-| 4 | Bin listing, note restore endpoint, purge (rows + files) | R3, R5 | `src/notes`, `src/images`, `src/http` | 9 | 3 | NORMAL | `.workflows/plan/wall-editing/phase-4.md` | — | — |
-| 5 | Reveal in Explorer: capabilities + reveal endpoint | R4, R5 | `src/http` | 4 | 2 | NORMAL | `.workflows/plan/wall-editing/phase-5.md` | — | — |
-| 6 | Web on `images[]`: cards, gallery, modal stepping, full-screen by image | R1, R5 | `web/src` | 19 | 2 | HARD | `.workflows/plan/wall-editing/phase-6.md` | — | — |
-| 7 | Web big editor modal + attach on drop/paste | R2, R5 | `web/src` | 14 | 3, 6 | HARD | `.workflows/plan/wall-editing/phase-7.md` | — | — |
-| 8 | Web delete, undo, recycle bin view | R3, R5 | `web/src` | 25 | 4, 7 | HARD | `.workflows/plan/wall-editing/phase-8.md` | — | — |
-| 9 | Web reveal button + capabilities | R4, R5 | `web/src` | 10 | 5, 8 | NORMAL | `.workflows/plan/wall-editing/phase-9.md` | — | — |
-| 10 | Docs, Neon migration 0002, full verification | R5, R1 (Neon) | docs, Neon | 3 + Neon | 9, 11 | NORMAL | `.workflows/plan/wall-editing/phase-10.md` | — | — |
-| 11 | Collapsible answer panel + multi-line chat bar | R6, R7, R5 | `web/src` | 12 | — | NORMAL | `.workflows/plan/wall-editing/phase-11.md` | — | — |
+| 1 | `note_images` table, migration 0002, legacy copy/reconcile, image repo | R1, R5 | `src/db`, `drizzle`, `src/notes`, `src/images` | 10 | — | HARD | `.workflows/plan/wall-editing/phase-1.md` | P1-NOTES-A023 | — |
+| 2 | Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile | R1, R5 | `src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat` | 29 | 1 | HARD | `.workflows/plan/wall-editing/phase-2.md` | P1-NOTES-A024 | — |
+| 3 | Attach / remove / restore one image: service, ingest, HTTP, MCP tools | R1, R5 | `src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat` | 12 | 2 | NORMAL | `.workflows/plan/wall-editing/phase-3.md` | P1-NOTES-A025 | — |
+| 4 | Bin listing, note restore endpoint, purge (rows + files) | R3, R5 | `src/notes`, `src/images`, `src/http` | 9 | 3 | NORMAL | `.workflows/plan/wall-editing/phase-4.md` | P1-NOTES-A026 | — |
+| 5 | Reveal in Explorer: capabilities + reveal endpoint | R4, R5 | `src/http` | 4 | 2 | NORMAL | `.workflows/plan/wall-editing/phase-5.md` | P1-NOTES-A027 | — |
+| 6 | Web on `images[]`: cards, gallery, modal stepping, full-screen by image | R1, R5 | `web/src` | 19 | 2 | HARD | `.workflows/plan/wall-editing/phase-6.md` | P1-NOTES-A028 | — |
+| 7 | Web big editor modal + attach on drop/paste | R2, R5 | `web/src` | 14 | 3, 6 | HARD | `.workflows/plan/wall-editing/phase-7.md` | P1-NOTES-A029 | — |
+| 8 | Web delete, undo, recycle bin view | R3, R5 | `web/src` | 25 | 4, 7 | HARD | `.workflows/plan/wall-editing/phase-8.md` | P1-NOTES-A030 | — |
+| 9 | Web reveal button + capabilities | R4, R5 | `web/src` | 10 | 5, 8 | NORMAL | `.workflows/plan/wall-editing/phase-9.md` | P1-NOTES-A031 | — |
+| 10 | Docs, Neon migration 0002, full verification | R5, R1 (Neon) | docs, Neon | 3 + Neon | 9, 11 | NORMAL | `.workflows/plan/wall-editing/phase-10.md` | P1-NOTES-A032 | — |
+| 11 | Collapsible answer panel + multi-line chat bar | R6, R7, R5 | `web/src` | 12 | — | NORMAL | `.workflows/plan/wall-editing/phase-11.md` | P1-NOTES-A033 | — |
 
 Waves (dependencies point backward only): **1** = {1, 11} · **2** = {2} · **3** = {3, 5, 6} · **4** = {4, 7} · **5** = {8} · **6** = {9} · **7** = {10}. Phase 11 shares `App.tsx`, `App.test.tsx` and `styles.css` with phases 6–8 in non-overlapping hunks (invariant 7; see Reconciliation Log for the merge notes).
 

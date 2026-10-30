@@ -96,10 +96,10 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .card-date { margin-left: auto; }
 
 /* answer panel */
-.answer { position: fixed; bottom: 86px; max-height: 52vh; overflow: auto; background: var(--panel); border: 1px solid var(--line-14); z-index: 40; padding: 16px 20px 20px; box-sizing: border-box; }
+.answer { position: fixed; bottom: calc(var(--chatbar-h, 54px) + 32px); max-height: min(52vh, calc(100vh - var(--chatbar-h, 54px) - 48px)); overflow: auto; background: var(--panel); border: 1px solid var(--line-14); z-index: 40; padding: 16px 20px 20px; box-sizing: border-box; }
 .answer-head { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
-.answer-q { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
-.answer-status { font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+.answer-q { font-family: var(--mono); font-size: 10.5px; color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.answer-status { font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; flex-shrink: 0; }
 .answer-status::before { content: "·"; margin-right: 6px; }
 .spacer { flex: 1; }
 .pbtn { width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--fg); font-size: 16px; cursor: pointer; display: grid; place-items: center; }
@@ -114,9 +114,8 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .usedchip:hover { background: var(--fg); color: var(--bg); }
 
 /* chat bar */
-.chatbar { position: fixed; right: 16px; bottom: 16px; height: 54px; border-radius: 999px; background: var(--fg); display: flex; align-items: center; padding: 0 7px 0 24px; z-index: 41; box-sizing: border-box; }
-.chatbar input { flex: 1; border: 0; background: transparent; color: var(--bg); font: inherit; font-size: 14px; height: 100%; }
-.sendbtn { width: 40px; height: 40px; border-radius: 999px; border: 0; background: var(--bg); color: var(--fg); font-size: 18px; cursor: pointer; display: grid; place-items: center; }
+.chatbar { position: fixed; right: 16px; bottom: 16px; min-height: 54px; border-radius: 27px; background: var(--fg); display: flex; align-items: flex-end; padding: 7px 7px 7px 24px; z-index: 41; box-sizing: border-box; }
+.sendbtn { width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; border: 0; background: var(--bg); color: var(--fg); font-size: 18px; cursor: pointer; display: grid; place-items: center; }
 
 /* tooltip */
 .tip { position: fixed; background: var(--fg); color: var(--bg); font-size: 11px; padding: 4px 8px 5px; border-radius: 3px; pointer-events: none; z-index: 200; white-space: nowrap; }

@@ -187,8 +187,10 @@ export function App() {
             status={chat.status}
             brain={chat.brain}
             pinned={chat.pinned}
+            collapsed={chat.collapsed}
             usedIds={used}
             onTogglePin={chat.togglePin}
+            onToggleCollapse={chat.toggleCollapsed}
             onClose={chat.close}
             onJump={jump}
           />

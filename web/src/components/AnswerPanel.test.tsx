@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AnswerPanel } from './AnswerPanel';
 import type { AnswerPanelProps } from './AnswerPanel';
 
@@ -15,8 +15,10 @@ function props(over: Partial<AnswerPanelProps> = {}): AnswerPanelProps {
     status: '',
     brain: null,
     pinned: false,
+    collapsed: false,
     usedIds: [],
     onTogglePin: vi.fn(),
+    onToggleCollapse: vi.fn(),
     onClose: vi.fn(),
     onJump: vi.fn(),
     ...over,
@@ -77,5 +79,90 @@ describe('AnswerPanel links', () => {
     const { container } = renderPanel({ text: 'one https://a.com\n\ntwo', done: false });
     const ps = [...body(container).querySelectorAll('p')].map((p) => p.textContent);
     expect(ps).toEqual(['one https://a.com', 'two ▍']);
+  });
+});
+
+function head(container: HTMLElement): HTMLElement {
+  const el = container.querySelector('.answer-head');
+  if (!(el instanceof HTMLElement)) throw new Error('no .answer-head');
+  return el;
+}
+
+describe('AnswerPanel collapse', () => {
+  it('shows a Collapse caret beside pin and dismiss while expanded', () => {
+    const onToggleCollapse = vi.fn();
+    const { container } = renderPanel({ text: 'An answer.', onToggleCollapse });
+    const labels = [...head(container).querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(['Collapse', 'Pin', 'Dismiss']);
+    const btn = screen.getByRole('button', { name: 'Collapse' });
+    expect(btn.getAttribute('data-tip')).toBe('Collapse');
+    expect(btn.querySelector('svg')).not.toBeNull();
+    expect(btn.textContent).toBe('');
+    fireEvent.click(btn);
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('.answer')?.className).toBe('answer');
+    expect(container.querySelector('.answer-body')).not.toBeNull();
+  });
+
+  it('collapsed renders the header line only, with an Expand caret', () => {
+    const { container } = renderPanel({ text: 'Look at A-B32.', usedIds: ['A-B32'], collapsed: true, brain: 'claude' });
+    expect(container.querySelector('.answer')?.className).toBe('answer collapsed');
+    expect(container.querySelector('.answer-body')).toBeNull();
+    expect(container.querySelector('.used-row')).toBeNull();
+    expect(head(container).querySelector('.answer-q')?.textContent).toBe('what did I read');
+    expect(head(container).querySelector('.answer-status')?.textContent).toBe('claude');
+    const btn = screen.getByRole('button', { name: 'Expand' });
+    expect(btn.getAttribute('data-tip')).toBe('Expand');
+    expect(screen.queryByRole('button', { name: 'Collapse' })).toBeNull();
+  });
+
+  it('clicking the collapsed line outside the buttons expands it', () => {
+    const onToggleCollapse = vi.fn();
+    const onTogglePin = vi.fn();
+    const onClose = vi.fn();
+    const { container } = renderPanel({ collapsed: true, onToggleCollapse, onTogglePin, onClose });
+    fireEvent.click(head(container).querySelector('.answer-q') as HTMLElement);
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+    fireEvent.click(head(container));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapse).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(3);
+  });
+
+  it('clicking the header of an expanded panel does nothing', () => {
+    const onToggleCollapse = vi.fn();
+    const { container } = renderPanel({ onToggleCollapse });
+    fireEvent.click(head(container).querySelector('.answer-q') as HTMLElement);
+    expect(onToggleCollapse).not.toHaveBeenCalled();
+  });
+
+  it('keeps the live status in the collapsed line while streaming, then the brain', () => {
+    const { container, rerender } = renderPanel({ collapsed: true, done: false, status: 'searching notes', text: 'Partial' });
+    expect(head(container).querySelector('.answer-status')?.textContent).toBe('searching notes');
+    expect(container.querySelector('.answer-body')).toBeNull();
+
+    rerender(<AnswerPanel {...props({ collapsed: true, done: false, status: 'reading 3 notes', text: 'Partial answer' })} />);
+    expect(head(container).querySelector('.answer-status')?.textContent).toBe('reading 3 notes');
+
+    rerender(<AnswerPanel {...props({ collapsed: true, done: true, brain: 'claude', text: 'Full answer.' })} />);
+    expect(head(container).querySelector('.answer-status')?.textContent).toBe('claude');
+
+    rerender(<AnswerPanel {...props({ collapsed: false, done: true, brain: 'claude', text: 'Full answer.' })} />);
+    expect(body(container).textContent).toBe('Full answer.');
+  });
+
+  it('shows a multi-line query on one line, with the full query in the tooltip', () => {
+    const query = 'cari notes\nyang membahas\n\nfitur';
+    const { container } = renderPanel({ query });
+    const q = head(container).querySelector('.answer-q');
+    expect(q?.textContent).toBe('cari notes yang membahas fitur');
+    expect(q?.getAttribute('data-tip')).toBe(query);
   });
 });
