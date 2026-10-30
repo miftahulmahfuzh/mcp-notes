@@ -15,7 +15,7 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | Note ID | `[0-9A-Z]-[0-9A-Z]{3}`, e.g. `A-B32`. Random, unique, case-insensitive on lookup. Every card in the UI has a copy-id icon. |
 | Text storage | Neon Postgres (this repo's `.env.local`). Lenovo and GPD both run `notesd` against the same DB. |
 | Edit safety | Every edit keeps the previous body in `note_revisions`; deletes are soft. |
-| Images | An image note = a note with a local file. Originals stored byte for byte in `~/mcp-notes-data/images`, never re-encoded. Derived thumbnail (grid) and capped preview (what Claude sees). **No image sync to the GPD, ever** — on the GPD the text shows, the image shows as "on Lenovo". Accepted limitation. |
+| Images | An image note = a note with one or more local files (several images per note since iteration 7). Originals stored byte for byte in `~/mcp-notes-data/images`, never re-encoded. Derived thumbnail (grid) and capped preview (what Claude sees). **No image sync to the GPD, ever** — on the GPD the text shows, the image shows as "on Lenovo". Accepted limitation. |
 | Chat bar brain | Claude Agent SDK (headless Claude Code, existing login), one run per message, resumable thread, streamed. Same code runs on GLM by swapping `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` — fallback only. |
 | Chat answers | Overlay panel rising above the chat bar; notes the answer used are highlighted on the wall. Answers are not saved as notes. |
 | Other systems | Read-only. Credentials read at runtime from `~/expense-tracking/.env.local`, `~/run-insights/.env.local`, `~/seer/.env.local`; every connection `default_transaction_read_only = on`. Per system: `schema` tool, row-limited `sql` tool, a few curated tools. Seer also reads `~/seer/lab/lab.sqlite` read-only. |
@@ -34,7 +34,8 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | 4 | Chat bar brain | Agent SDK per message, streaming overlay, thread resume, GLM fallback switch | all of them, from the UI |
 | 5 | Connectors | expense-tracking, run-insights, seer (Neon + lab.sqlite), read-only | 1.d, 1.d2, 1.f, 1.g |
 | 6 | Semantic | Embeddings, backfill, hybrid search | 1.b, 1.c |
-| 7+ | Later | GPD install, weekly digest, … | – |
+| 7 | Wall editing | Big editor modal, several images per note, delete + recycle bin, open file location in Explorer | – |
+| 8+ | Later | GPD install, weekly digest, … | – |
 
 5 and 6 depend only on 1, so they can run in parallel with 3 and 4.
 
