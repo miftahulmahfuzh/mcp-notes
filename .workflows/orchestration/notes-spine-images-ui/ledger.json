@@ -44,21 +44,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "28dff76",
       "depends_on": [
         2
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "install.sh live from worktree, all checks green, WSL keepalive task Running; test:int skipped (shared DB, no TS changed); commit also carries P6 bookkeeping",
       "package": "claude/`, `deploy/`, `scripts/`, `docs/",
       "plan": ".workflows/plan/notes-spine-images-ui/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T03:19:57+00:00",
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A002",
       "title": "/n` skill, systemd unit, install + Windows scripts, live verification"
     },
     {
@@ -161,6 +161,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T03:14:39+00:00",
+  "updated": "2026-10-30T03:20:12+00:00",
+  "verified_at": "2026-10-30T03:20:12+00:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
