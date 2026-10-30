@@ -1,4 +1,6 @@
+import { Fragment } from 'react';
 import { PushPin, X } from '@phosphor-icons/react';
+import { segmentLinks } from '../lib/links';
 
 export interface AnswerPanelProps {
   left: number;
@@ -33,9 +35,23 @@ export function AnswerPanel({ left, query, text, done, status, brain, pinned, us
         </button>
       </div>
       <div className="answer-body">
-        {parts.map((t, i) => (
-          <p key={i}>{t + (!done && i === parts.length - 1 ? ' ▍' : '')}</p>
-        ))}
+        {parts.map((t, i) => {
+          const streaming = !done && i === parts.length - 1;
+          return (
+            <p key={i}>
+              {segmentLinks(t, { streaming }).map((s, j) =>
+                s.kind === 'link' ? (
+                  <a key={j} className="answer-link" href={s.href} target="_blank" rel="noreferrer noopener">
+                    {s.text}
+                  </a>
+                ) : (
+                  <Fragment key={j}>{s.text}</Fragment>
+                ),
+              )}
+              {streaming ? ' ▍' : ''}
+            </p>
+          );
+        })}
       </div>
       {done && usedIds.length > 0 && (
         <div className="used-row">

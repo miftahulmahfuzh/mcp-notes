@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 11:29:05
+**Last Updated**: 2026-10-30 13:40:00
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 12
+- Completed: 13
 
 ---
 
@@ -32,6 +32,21 @@
 
 ## Completed Tasks
 
+- [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
+  - **Difficulty**: EASY
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/AnswerPanel.tsx`, `web/src/lib/links.ts` + `web/src/lib/links.test.tsx`, `web/src/styles.css` (link style), `web/src/components/AnswerPanel.test.tsx` (new). Exit: markdown links `[text](https://…)` render as an underlined `<a>` showing the text, bare `http(s)://` URLs render as underlined links, both open in a new tab with `rel="noreferrer noopener"`, styled in the caption family; raw `[..](..)` never appears; streaming partial links degrade to plain text until complete.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p6/docs/plans/CONNECTORS_PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R4 — Answer panel never shows raw markdown link syntax
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P2-NOTES-C506.md`
+  - **Completed**: 2026-10-30 13:40
+  - **Method**: /do
+  - **Files**: web/src/lib/links.ts, web/src/lib/links.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/AnswerPanel.test.tsx, web/src/styles.css, .workflows/todos.md, .workflows/plan/P2-NOTES-C506.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm → mint only phase 6's task, as P2-NOTES-C506 (non-sequential ID to avoid colliding with phase 1's counter), in root .workflows/todos.md (tie-break: narrower blast radius; rung 6 convention: earlier plan sets tracked in root todos)
+    - test:int not run for a web-only phase → skipped to avoid disturbing phase 1's concurrent Docker containers (tie-break: narrower blast radius; no src/ or tests/integration change)
 - [x] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
   - **Difficulty**: HARD
   - **Type**: Feature
