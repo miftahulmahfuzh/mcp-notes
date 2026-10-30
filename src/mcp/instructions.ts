@@ -1,3 +1,5 @@
+import { CONNECTOR_SYSTEMS, CONNECTOR_TOOL_NAMES } from '../connectors/names.js';
+
 /** Local IANA timezone of the daemon, e.g. Asia/Jakarta. */
 export function localTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -5,7 +7,7 @@ export function localTimeZone(): string {
 
 /**
  * MCP server instructions: Claude reads these once per session. Phase 5 appends one paragraph
- * about image notes to `sections`.
+ * about image notes to `sections`. Iteration 5 phase 1 appends the connectors paragraph.
  */
 export function buildInstructions(timeZone: string = localTimeZone()): string {
   const sections = [
@@ -24,6 +26,8 @@ export function buildInstructions(timeZone: string = localTimeZone()): string {
     `Comparisons and summaries ("this week vs last week", "#seer vs #v250", "what was my last note about X") are your job, not the server's: call list or search once per side with the right filters, page with next_cursor if needed, then compare or summarise the results yourself.`,
 
     `Images. Some notes are image notes: a photo or screenshot saved on the laptop that stored it. Every note returned by get/list/search has an image field: null for text notes, otherwise {mime, width, height, bytes, taken_at, original_name, host, available}. To look at pictures, find the ids first, then call view_images with up to 8 ids; it returns each picture plus its metadata. "Show me pictures I saved on 30 oct" means list with has_image: true and from/to for that day, then view_images on the ids. "Photos taken last week" uses taken_from/taken_to (the camera's EXIF date) instead. To save a local image file (for example a screenshot path you have), call create_image with its absolute path and optional body text; the file is copied, not moved, and saving the same file again returns the existing note. available: false means the file lives on another machine (host): the note's text is still there, but its picture cannot be viewed here.`,
+
+    `Connectors. The same server also reads three of the user's own apps, strictly read-only (nothing there can be changed from here): expenses_* is expense-tracking (spending parsed from pasted text, in rupiah, with categories and receipt photos), runs_* is run-insights (Apple Watch runs with pace, distance, heart rate and splits, weekly and monthly reviews, and the coach Nina), seer_* is Seer (a quantitative trading lab: strategies, positions, trades, a leaderboard, and Sera, the method lab, in lab.sqlite). Prefer the curated tools (${CONNECTOR_SYSTEMS.flatMap((id) => CONNECTOR_TOOL_NAMES[id].slice(2)).join(', ')}); use <system>_sql (one read-only SELECT, row-capped; seer_sql takes source "db" or "lab") only when they don't answer, and call <system>_schema before writing SQL so the table and column names are real. Dates are calendar days in Asia/Jakarta (WIB), money is whole rupiah (Seer: US dollars), and run units are the app's own (metres, seconds, sec/km, bpm). If a system is not reachable the tool returns a short error; say so and answer from the rest.`,
   ];
   return sections.join('\n\n');
 }

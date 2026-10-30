@@ -5,12 +5,15 @@ import type { Db } from '../db/client.js';
 import type { NoteFilter } from '../notes/repo.js';
 import type { NotesService } from '../notes/service.js';
 import { NoteError } from '../notes/types.js';
+import { ConnectorError, type Connectors } from '../connectors/types.js';
 
 export interface ToolDeps {
   service: NotesService;
   dataDir: string;
   /** Read-only use by phase 5's image tools (raw image records); writes still go through `service`. */
   db: Db;
+  /** Connectors for the connector tools. Omitted: defaultConnectors() (sibling repos, read per call). Tests inject their own. */
+  connectors?: Connectors;
 }
 
 /** Appended to the `list` and `search` descriptions. */
@@ -117,19 +120,30 @@ export function toFilter(args: FilterArgs): NoteFilter {
   return filter;
 }
 
-export function jsonResult(value: unknown): CallToolResult {
-  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+/** compact: no indentation (connector rows are arrays; indenting them multiplies the size). */
+export function jsonResult(value: unknown, compact = false): CallToolResult {
+  return { content: [{ type: 'text', text: compact ? JSON.stringify(value) : JSON.stringify(value, null, 2) }] };
 }
 
 export function errorResult(err: unknown): CallToolResult {
-  const text = err instanceof NoteError ? `${err.code}: ${err.message}` : `error: ${err instanceof Error ? err.message : String(err)}`;
+  const text =
+    err instanceof NoteError
+      ? `${err.code}: ${err.message}`
+      : err instanceof ConnectorError
+        ? err.message
+        : `error: ${err instanceof Error ? err.message : String(err)}`;
   return { isError: true, content: [{ type: 'text', text }] };
 }
 
+export interface RunOptions {
+  /** Compact JSON (connector tools). Default false. */
+  compact?: boolean;
+}
+
 /** Runs a handler and turns any thrown error into an MCP error result Claude can read. */
-export async function run(fn: () => Promise<unknown>): Promise<CallToolResult> {
+export async function run(fn: () => Promise<unknown>, options: RunOptions = {}): Promise<CallToolResult> {
   try {
-    return jsonResult(await fn());
+    return jsonResult(await fn(), options.compact ?? false);
   } catch (err) {
     return errorResult(err);
   }
