@@ -24,22 +24,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6530604",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "service+11 MCP tools+notesd; daemon test casts 0.0.0.0 host past literal Config.host type per invariant 2/3",
       "package": "src/notes`, `src/mcp`, `src/http`, `src/",
       "plan": ".workflows/plan/notes-spine-images-ui/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T03:14:39+00:00",
       "satisfies": [
         "R1",
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A001",
       "title": "Notes service, MCP server and tools, notesd daemon"
     },
     {
@@ -161,6 +161,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T03:07:26+00:00",
+  "updated": "2026-10-30T03:14:39+00:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
