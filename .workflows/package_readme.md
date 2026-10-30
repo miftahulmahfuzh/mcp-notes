@@ -320,6 +320,91 @@ function createApp(deps: AppDeps): Hono
 ```
 Mount order is fixed: `GET /health` returns `{ ok: true, service: 'notesd' }`. `POST /mcp` sits behind `loopbackOnly` (a DNS-rebinding guard), and `GET`/`DELETE /mcp` return 405 with `Allow: POST`. After those come `apiRoutes` (P6), `imageRoutes` (P5) and `staticRoutes` (P6, last, because it owns the SPA fallback). Later phases fill the routers in `api.ts`, `images.ts` and `static.ts` and must not edit this file.
 
+### Images: src/images/ (phase 4)
+
+Image notes are ordinary notes whose `image_path` and `image_meta` are set. All note writes still go through `NotesService`. The image modules only place files and read raw image fields. No HTTP route or MCP tool uses them yet. Phase 5 will, through `imageDeps`, `ingestImage`, `locateImage` and the derive getters.
+
+`startBackground` (in `src/background.ts`) builds `imageDeps(deps)` and runs `images/store.ensureDataDirs`, which is idempotent (tests call it without `startDaemon`). It then starts the inbox watcher with `ingest = ingestImage(img, { path, move: true, origin: { source: 'inbox' } })`. The stop function it returns closes the watcher and waits for the queue to drain.
+
+#### src/images/probe.ts
+```ts
+const SUPPORTED_IMAGE_MIMES      // jpeg png gif webp avif heic heif heic-sequence heif-sequence tiff
+const BROWSER_DISPLAYABLE_MIMES  // jpeg png gif webp avif
+function isBrowserDisplayable(mime): boolean; function isHeifMime(mime): boolean
+class UnsupportedImageError extends Error { readonly detectedMime: string | null }
+type SniffResult = { mime; ext }
+type ImageProbe = { mime; mimeExt; width; height; taken_at: string | null }
+function sha256Hex(bytes): string
+function sniffImageBytes(bytes): Promise<SniffResult | null>   // magic bytes via file-type, never the extension
+function sniffImageFile(path): Promise<SniffResult | null>     // reads the header only
+function decodeHeicToJpeg(bytes, quality = 0.92): Promise<Buffer>   // heic-convert (WASM libheif), lazy-required
+function exifDateToIso(value, offset?): string | null           // 'YYYY:MM:DD HH:MM:SS' (+offset) -> UTC ISO; no offset = local time
+function probeImage(bytes): Promise<ImageProbe>                 // throws UnsupportedImageError
+```
+Width and height are display-oriented (sharp `autoOrient`). exifr reads `DateTimeOriginal` and `OffsetTimeOriginal` from the EXIF block that sharp extracts, not from the whole file, because exifr 7.1.3 rejects HEIC written by libheif. When sharp cannot size a HEIF (HEVC pixels), the probe decodes it with heic-convert.
+
+#### src/images/store.ts
+```ts
+type DataDirs = { root; images; cache; inbox; failed }
+function dataDirs(dataDir): DataDirs
+function ensureDataDirs(dataDir): Promise<DataDirs>        // images/, cache/, inbox/failed/ (mkdir -p)
+function chooseExt(originalName, mimeExt): string           // original's lower-cased ext if /^[a-z0-9]{1,8}$/, else the mime's
+function originalRelPath(id, ext, savedAt: Date): string    // 'images/YYYY/MM/<id>.<ext>', local time of savedAt
+function resolveInDataDir(dataDir, rel): string             // throws if the path escapes the data dir
+function cacheDirFor(dataDir, id): string                   // <dataDir>/cache/<id>
+function fileExists(p): Promise<boolean>; function removeQuietly(p): Promise<void>
+class DestinationExistsError extends Error
+function writeNewFile(dest, bytes): Promise<void>           // temp sibling + rename; never overwrites
+function copyIntoNewFile(src, dest): Promise<void>
+function moveIntoNewFile(src, dest, fs?: MoveFs): Promise<void>   // rename; on EXDEV copy, rename, unlink the source
+```
+This `ensureDataDirs` returns `DataDirs` and is separate from the one in `src/daemon.ts`.
+
+#### src/images/derive.ts
+```ts
+const THUMB_WIDTH = 480, PREVIEW_LONG_EDGE = 1568, PREVIEW_MAX_BYTES = 3_750_000
+type ImageSource = { id; mime; originalPath }               // originalPath is absolute
+function derivativePaths(dataDir, id): { dir; thumb; preview; display }
+class OriginalMissingError extends Error { readonly id }
+function getDisplay(dataDir, src): Promise<{ path; mime }>  // the original if browser-displayable, else display.jpg (q92)
+function getThumb(dataDir, src): Promise<string>            // thumb.webp, 480 px wide, never enlarged
+function getPreview(dataDir, src): Promise<string>          // preview.jpg, long edge <= 1568, <= 3.75 MB
+```
+Derivatives are made on first request and cached under `cache/<id>/`. Each is written to a temp file and renamed into place, and concurrent callers for one output path share one in-flight promise. HEVC HEIC is decoded by `decodeHeicToJpeg`. Other types a browser cannot show (TIFF, non-HEVC HEIF) go through sharp. The preview steps JPEG quality down (85, 75, 65, 50, 35) until it fits `PREVIEW_MAX_BYTES`, so the base64 MCP payload stays under Claude's 5 MB image limit. It throws if no quality fits. Every getter throws `OriginalMissingError` when the original is not on this machine.
+
+#### src/images/records.ts
+```ts
+type ImageRecord = { id; image_path; image_meta: ImageMeta; deleted_at: string | null }
+interface ImageRecords {
+  bySha256(sha256): Promise<ImageRecord | null>   // live note first, else the most recently deleted
+  byId(id): Promise<ImageRecord | null>           // normalizeId; deleted included; null if not an image note
+}
+function dbImageRecords(db: Db): ImageRecords
+```
+Read-only raw lookups that `NotesService` does not offer, since it hides deleted rows and returns the wire shape.
+
+#### src/images/ingest.ts
+```ts
+type ImageNotes = Pick<NotesService, 'create' | 'getOne' | 'restore' | 'newId'>
+type ImageDeps = { dataDir; notes: ImageNotes; records: ImageRecords; hostname?: () => string; now?: () => Date }
+function imageDeps(app: AppDeps): ImageDeps
+type IngestInput = { originalName?; body?; origin? } & ({ bytes } | { path; move? })
+type IngestResult = { note: Note; created: boolean }
+type LocatedImage = ImageSource & { relPath; available; host; deleted; meta: ImageMeta }
+function ingestImage(deps, input): Promise<IngestResult>
+function locateImage(deps, id): Promise<LocatedImage | null>
+```
+`ingestImage` hashes the bytes and serialises on that sha256 within the process. A live match is returned unchanged and a soft-deleted match is restored, both with `created: false`. If the match's original is missing on this machine (it was ingested on another host), the same bytes are placed at its `image_path`. Otherwise it probes the bytes, picks the extension, writes the original byte for byte to `images/YYYY/MM/<id>.<ext>` and calls `notes.create({ id, image, allowEmpty: true })`. When the insert fails, the file is removed, or moved back to its source when `move` was set. `duplicate_image` (a concurrent ingest) returns the winner, and `conflict` retries with a new id, up to 5 attempts. With `move: true` the source is consumed on success, dedupe hits included. `image_meta.host` is `os.hostname()`, and `original_name` is the basename of `originalName` or of the source path.
+
+#### src/images/inbox.ts
+```ts
+type InboxWatcherOptions = { inboxDir; failedDir; ingest: (absPath) => Promise<IngestResult>; log?; stabilityThresholdMs? /*2000*/; pollIntervalMs? /*200*/ }
+type InboxWatcher = { idle(): Promise<void>; close(): Promise<void> }
+function isIgnoredInboxName(name): boolean    // dotfiles, '~$', .crdownload .part .partial .tmp .download .opdownload .!ut
+function startInboxWatcher(opts): Promise<InboxWatcher>   // resolves after chokidar 'ready'
+```
+It watches the top level of the inbox only (depth 0, subdirectories ignored), including files already there at startup. A file is taken once its size and mtime hold still for the stability threshold. Files are handled one at a time in arrival order. Non-images are logged and left in place. A failed ingest moves the file to `inbox/failed/<name>`, or `<stem>-<epoch ms>[-n]<ext>` if that name is taken, and logs one `[inbox]` line. `idle()` resolves once every file seen so far is handled, and `close()` stops the watcher and drains the queue.
+
 ### src/deps.ts, src/daemon.ts, src/background.ts, src/main.ts
 
 ```ts
@@ -369,6 +454,8 @@ MCP call: Claude Code POSTs to `/mcp`, `loopbackOnly` checks the host, and `hand
 
 Write path: `requireId` and `parseTags(body)`, then one transaction: lock the row, insert the previous body into `note_revisions`, update `notes`. After commit, `NoteEvents.emit(op, id)`. Shutdown (signal) runs `stop()`: background jobs, then server close, then `closeDb()`.
 
+Inbox ingest (phase 4): a file lands in `<dataDir>/inbox`. chokidar reports it, and the watcher waits for its size to settle and sniffs the magic bytes. `ingestImage` then hashes it and looks up `ImageRecords.bySha256`. A match is returned, or restored if deleted. Otherwise the file is probed, moved to `images/YYYY/MM/<id>.<ext>`, and `NotesService.create` inserts the note with `origin.source = 'inbox'`, which emits `created`. Any failure moves the file to `inbox/failed/`. Derivatives (`cache/<id>/...`) are not made at ingest. They are generated on first read.
+
 Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*.sql`. `npm run db:migrate` applies them to Neon over the DIRECT host chosen by `drizzle.config.ts`. That config throws if only pooler URLs exist.
 
 ## Dependencies
@@ -382,8 +469,13 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 - `@modelcontextprotocol/sdk`: `McpServer`, `WebStandardStreamableHTTPServerTransport`
 - `hono`, `@hono/node-server`: HTTP app and Node listener
 - `zod`: MCP tool input schemas
+- `sharp`: image metadata, orientation, resize, JPEG/WebP encode (prebuilt libvips reads HEIC headers but cannot decode HEVC)
+- `heic-convert`: HEVC HEIC to JPEG (WASM libheif), loaded with `createRequire` on first use
+- `exifr`: `DateTimeOriginal` / `OffsetTimeOriginal` from the EXIF block
+- `file-type`: magic-byte mime detection
+- `chokidar`: inbox watcher
 
-Declared for later phases (not yet imported): `sharp`, `heic-convert`, `exifr`, `file-type`, `chokidar`, React/Vite/testing-library, Phosphor icons, fonts.
+Declared for later phases (not yet imported): React/Vite/testing-library, Phosphor icons, fonts.
 
 ### Internal
 - `src/db/client.ts` imports `src/db/schema.ts`.
@@ -391,6 +483,7 @@ Declared for later phases (not yet imported): `sharp`, `heic-convert`, `exifr`, 
 - `mcp/tools` uses `NotesService`, `NoteFilter` and `NoteError`. `mcp/server` uses `tools`, `imageTools` and `instructions`.
 - `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `notes/{events,service}`, `http/app` and `background`.
 - `tests/integration/setup.ts` imports `createDb`, `closeDb`, `isNeonUrl`.
+- `images/ingest` uses `images/{probe,store,records}`, `NotesService` (as `ImageNotes`), `NoteError` and `AppDeps`. `images/derive` uses `probe` and `store`. `images/inbox` uses `probe` and `store`. `images/records` uses `db/schema` and `notes/ids`. `background` wires `images/{ingest,inbox,store}`.
 
 ### Standard library
 `node:crypto` (`randomInt`), `node:fs`, `node:fs/promises`, `node:os`, `node:path`, `node:url`, `node:events`, `node:net` (type only).
@@ -403,6 +496,8 @@ Declared for later phases (not yet imported): `sharp`, `heic-convert`, `exifr`, 
 
 The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A `Db` wraps a connection pool and is safe for concurrent queries. Concurrent writes to one note serialise on the `SELECT ... FOR UPDATE` row lock inside each service transaction. Inserts do not lock: an id clash returns null and is retried. `NoteEvents` listeners run synchronously on emit, after commit. MCP requests share nothing: each gets its own server and transport. Integration test files run one at a time (`fileParallelism: false`) because they share and truncate one database.
 
+Image ingest keeps a per-process promise chain per sha256, so two ingests of the same bytes in one daemon run in sequence. Across hosts, the unique live-sha256 index decides, and the loser gets `duplicate_image` and returns the winner. Derivative generation shares one in-flight promise per output path and writes through a temp file and rename. The inbox watcher handles one file at a time on a single promise queue.
+
 ## Error Handling
 
 - `ConfigError` (config), `InvalidIdError` (ids, carries `input`), `RangeError` (generateId with a bad injected RNG).
@@ -410,6 +505,7 @@ The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A
 - MCP handlers never throw. `run()` turns errors into `isError` results with text `"<code>: <message>"`, or `"error: <message>"` for anything else.
 - `/mcp` returns JSON-RPC-shaped errors: 403 for a non-loopback host or Origin, 405 for GET/DELETE.
 - Driver errors are not wrapped, except the unique violation in `insertNote`.
+- Images: `UnsupportedImageError` (probe; carries `detectedMime`), `OriginalMissingError` (derive; carries `id`), `DestinationExistsError` (store; never overwrites), and a plain `Error` when a path escapes the data dir, when no free id is found in 5 attempts, or when a preview cannot fit 3.75 MB. The inbox watcher never throws. It logs the failure and moves the file to `inbox/failed/`.
 - Only `src/main.ts` calls `process.exit`: on startup failure, and on shutdown (forced after 10 s).
 
 ## Testing
@@ -419,6 +515,8 @@ The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A
 - Integration helpers in `tests/integration/setup.ts`: `testDatabaseUrl()` (refuses a Neon URL), `openTestDb()`, `closeTestDb()`, `migrateTestDb()`, `truncateAll(db)` (call in `beforeEach` of any file that writes).
 - There is one `vitest.config.ts`. Do not add a second.
 - Phase 2 suites: `notes.helpers` (dates, cursor, limit, tag input, origin, rowToNote, NoteEvents), `mcp.instructions` (unit), `notes.service.int` (service against Docker Postgres), `mcp.tools.int` (all 11 tools through an MCP client on the real `/mcp` route, plus the 403/405 guards and `/health`) and `daemon.int` (data dirs, loopback listen, `/health`, MCP initialize over real HTTP, non-loopback host refused).
+- Phase 4 suites: `tests/unit/images/{probe,store,derive,ingest,inbox}.test.ts` and `tests/integration/images.int.test.ts` (byte-exact storage, dedupe, restore of a deleted duplicate, the sha256 unique index, HEIC display/thumb/preview, missing original, and an inbox drop through `startBackground`).
+- Image fixtures in `tests/fixtures/images/`: `exif.jpg` (64x48, EXIF 2024:10:30 14:05:09), `plain.png` (40x30, no EXIF), `photo.heic` (64x48 HEVC with EXIF). They are committed because Node cannot encode HEVC. `make-fixtures.py` (Pillow + pillow-heif) regenerates them, possibly with different bytes. Helpers: `tests/helpers/fixtures.ts` (`FIXTURES_DIR`, `JPEG_EXIF`, `PNG_PLAIN`, `HEIC_PHOTO`, `fixtureBytes`, `tempDir`) and `tests/helpers/fakeNotes.ts` (`FakeNotes`, an in-memory `ImageNotes` + `ImageRecords` with the schema's id and live-sha256 uniqueness rules, plus `beforeInsert` / `failNextCreate` hooks for race and failure tests).
 
 ## Gotchas
 
@@ -430,6 +528,10 @@ The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A
 - The cursor is an offset, so inserts between pages can shift results. It is opaque to clients, who must pass `next_cursor` back unchanged.
 - MCP caps `limit` at 200. The repo allows up to 5000 (for the HTTP/UI).
 - `hasImage` exists in `NoteFilter` but not in the MCP schema until phase 5.
+- Image mime comes from magic bytes only. The stored extension comes from the original filename when it is safe, so a `.jpeg` keeps `.jpeg`. Do not infer mime from `image_path`.
+- `images/YYYY/MM` is the ingest time in local time, not the EXIF `taken_at`.
+- An image note on another host has `image.available = false` here until the same bytes are ingested locally, which puts them back at the stored `image_path`.
+- Inbox files that are not images stay in `inbox/` and are logged, not moved to `failed/`. Subdirectories, dotfiles and partial downloads are ignored.
 - `/mcp` is stateless POST-only. There is no SSE stream and no `Mcp-Session-Id`.
 - Do not edit `src/http/app.ts` mount order in later phases. Fill the routers instead, and keep `staticRoutes` last.
 - `isNeonUrl` throws on an unparseable URL, while `isPooledUrl` returns false.
