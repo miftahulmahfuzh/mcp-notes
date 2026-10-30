@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { serve, type ServerType } from '@hono/node-server';
 import { startBackground } from './background.js';
+import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
-import { createStubChatBackend } from './chat/stub.js';
 import type { Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
@@ -25,7 +25,7 @@ export interface RunningDaemon {
 }
 
 export interface StartDaemonOptions {
-  /** The brain behind POST /api/chat. Omitted: the stub (tests inject a scripted fake here). */
+  /** The brain behind POST /api/chat. Omitted: the Agent SDK backend built from config.chat (tests inject the stub or a scripted fake). */
   chat?: ChatBackend;
 }
 
@@ -63,7 +63,24 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events });
   const deps: AppDeps = { config, db, events, service };
-  const chat = options.chat ?? createStubChatBackend();
+  // The agent reaches notes through this daemon's own /mcp. The port is known only after
+  // listen() (config.port may be 0), and the first chat run can only start after that.
+  let boundPort: number | null = null;
+  let agent: AgentChatBackend | null = null;
+  let chat: ChatBackend;
+  if (options.chat !== undefined) {
+    chat = options.chat;
+  } else {
+    agent = createAgentChatBackend({
+      chat: config.chat,
+      cwd: join(config.dataDir, CHAT_SUBDIR),
+      mcpUrl: () => {
+        if (boundPort === null) throw new Error('notesd is not listening yet.');
+        return `http://${config.host}:${boundPort}/mcp`;
+      },
+    });
+    chat = agent;
+  }
   const app = createApp(deps, { chat });
 
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port });
@@ -74,11 +91,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     await closeDb(db);
     throw err;
   }
+  boundPort = port;
   const stopBackground = await startBackground(deps);
 
   let stopping: Promise<void> | null = null;
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
+      agent?.close();
       await stopBackground();
       await closeServer(server);
       await closeDb(db);

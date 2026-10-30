@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_CHAT_CONFIG, type Config } from '../../src/config.js';
+import { createStubChatBackend } from '../../src/chat/stub.js';
 import { startDaemon, type RunningDaemon } from '../../src/daemon.js';
 import { createScriptedChatBackend } from './helpers/scripted-chat.js';
 import { parseSse } from './helpers/sse.js';
@@ -28,8 +29,9 @@ async function postChat(port: number, message: string) {
 }
 
 beforeAll(async () => {
-  // Port 0: never the installed daemon's 7317.
-  daemon = await startDaemon(config(dataDir));
+  // Port 0: never the installed daemon's 7317. The stub is injected: the default backend is the
+  // real Agent SDK, and these tests must never spawn claude.
+  daemon = await startDaemon(config(dataDir), { chat: createStubChatBackend({ delayMs: 0 }) });
 });
 
 afterAll(async () => {
@@ -66,11 +68,25 @@ describe('startDaemon', () => {
     expect(body.result?.instructions).toContain('A-B32');
   });
 
-  it('serves the stub chat backend when none is injected', async () => {
+  it('serves an injected stub over real HTTP', async () => {
     const messages = await postChat(daemon.port, 'hello');
     expect(messages.every((m) => m.event === 'delta' || m.event === 'done')).toBe(true);
     expect(messages.at(-1)?.event).toBe('done');
     expect((messages.at(-1)?.data as { thread_id: string }).thread_id).toMatch(/^stub-/);
+  });
+
+  it('starts and stops with the default (Agent SDK) backend without spawning anything', async () => {
+    // No chat option: startDaemon builds createAgentChatBackend. Nothing is posted, so no claude runs.
+    const plainDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
+    const plain = await startDaemon(config(plainDir));
+    try {
+      expect(plain.port).toBeGreaterThan(0);
+      const res = await fetch(`http://127.0.0.1:${plain.port}/health`);
+      expect(res.status).toBe(200);
+    } finally {
+      await plain.stop();
+      rmSync(plainDir, { recursive: true, force: true });
+    }
   });
 
   it('serves an injected chat backend', async () => {

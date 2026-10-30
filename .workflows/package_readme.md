@@ -6,7 +6,7 @@
 
 ## Overview
 
-`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place. Iteration 4 (`docs/plans/CHAT_BAR_BRAIN_PLAN.md`) gives the chat bar a real brain. Its phase 1 (P1-NOTES-A008) widened the chat seam: backends yield `delta` and `status` events and report which brain answered, `Config` gained a `chat` block, and `startDaemon` takes the backend as an injectable option (the stub until a later phase wires the Agent SDK backend). Its phase 3 (P1-NOTES-A010) taught the web answer panel to show the `status` caption while streaming and the brain label from `done.brain`, and made dismissing the panel start a new thread.
+`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place. Iteration 4 (`docs/plans/CHAT_BAR_BRAIN_PLAN.md`) gives the chat bar a real brain. Its phase 1 (P1-NOTES-A008) widened the chat seam: backends yield `delta` and `status` events and report which brain answered, `Config` gained a `chat` block, and `startDaemon` takes the backend as an injectable option. Its phase 2 (P1-NOTES-A009) added the real brain under `src/chat/` (`agent.ts`, `env.ts`, `prompt.ts`, `status.ts`): each chat message is one Claude Agent SDK run on the owner's Claude Code login, restricted to the daemon's own `notes` MCP tools plus WebSearch/WebFetch, with threads mapped to SDK sessions, a turn cap, a wall-clock timeout, one run in flight, and a single retry on GLM when Claude fails on auth or a usage limit before any text. `startDaemon` now builds that backend by default. Its phase 3 (P1-NOTES-A010) taught the web answer panel to show the `status` caption while streaming and the brain label from `done.brain`, and made dismissing the panel start a new thread.
 
 **Key Responsibilities:**
 - Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir, chat brain settings) from `.env.local` plus the environment
@@ -18,7 +18,7 @@
 - List and full-text search notes with tag, date, image and deleted filters plus offset cursors
 - Serve the notes to Claude Code as MCP tools over loopback HTTP, and emit in-process change events
 - Serve image notes over HTTP (upload, original, display, thumb, preview) and to Claude through `create_image` / `view_images` (phase 5)
-- Serve the web UI a JSON API, an SSE change feed, a streamed chat endpoint (stub until iteration 4) and the built SPA
+- Serve the web UI a JSON API, an SSE change feed, a streamed chat endpoint (a Claude Agent SDK run over the notes MCP tools, GLM fallback) and the built SPA
 - Ship the web UI itself (`web/`, built to `web/dist` by Vite): a live note wall with inline editing, tag filters, visibility modes, a chat panel, a photo gallery and modal, a full-screen image tab and image upload
 - Run `notesd` as an always-on systemd user service in WSL, registered with Claude Code as the `notes` MCP server and driven by the `/n` skill
 
@@ -46,6 +46,10 @@ src/http/images.ts     imageRoutes: POST /api/images, GET /api/notes/:id/{origin
 src/http/imageAccess.ts shared HTTP/MCP image glue: resolveImageFile, ingestFromUpload/Path, ImageInputError, etagMatches
 src/chat/backend.ts    ChatBackend, ChatRequest, ChatTurn, ChatEvent, ChatTurnEnd, ChatBrain (the chat brain seam)
 src/chat/stub.ts       createStubChatBackend, STUB_REPLY, splitIntoDeltas
+src/chat/agent.ts      createAgentChatBackend (the real brain: Agent SDK run per message, GLM fallback, guardrails)
+src/chat/env.ts        claudeEnv, glmEnv, resolveExecutable, STRIPPED_ENV_KEYS/PREFIX, CLIENT_APP
+src/chat/prompt.ts     buildChatSystemPrompt (date/time/tz, id quoting, plain prose)
+src/chat/status.ts     allowedChatTools, captionForToolUse, NOTES_TOOL_NAMES, WEB_TOOL_NAMES
 src/deps.ts            AppDeps { config, db, events, service }
 src/daemon.ts          startDaemon (+ StartDaemonOptions.chat), ensureDataDirs, DATA_SUBDIRS, CHAT_SUBDIR
 src/background.ts      startBackground: ensures data dirs, starts the inbox watcher
@@ -438,7 +442,53 @@ interface StubChatOptions { delayMs?: number }          // per-delta delay, defa
 function splitIntoDeltas(text: string): string[]        // word pieces keeping trailing whitespace
 function createStubChatBackend(options?: StubChatOptions): ChatBackend
 ```
-`ChatBackend` is the seam iteration 4 fills: `api.ts` is its only consumer, and the implementation arrives via `startDaemon(config, { chat })` -> `createApp` -> `ApiOptions.chat`. Implementations are the stub and, in a later iteration-4 phase, the Agent SDK backend (`src/chat/agent.ts`). The stub ignores the message, keeps the client's `threadId` or mints `stub-<uuid>`, and streams `STUB_REPLY` word by word as `delta` events. It emits no `status` events and `end()` returns only `{ threadId }` (no brain). It stops yielding as soon as `signal` aborts, including mid-delay.
+`ChatBackend` is the seam iteration 4 fills: `api.ts` is its only consumer, and the implementation arrives via `startDaemon(config, { chat })` -> `createApp` -> `ApiOptions.chat`. Implementations are the stub (tests) and the Agent SDK backend (`src/chat/agent.ts`, the default since iteration 4 phase 2). The stub ignores the message, keeps the client's `threadId` or mints `stub-<uuid>`, and streams `STUB_REPLY` word by word as `delta` events. It emits no `status` events and `end()` returns only `{ threadId }` (no brain). It stops yielding as soon as `signal` aborts, including mid-delay.
+
+### src/chat/agent.ts, src/chat/env.ts, src/chat/prompt.ts, src/chat/status.ts (iteration 4 phase 2)
+
+```ts
+// agent.ts
+type AgentChatConfig = Config['chat']
+type QueryFn = (params: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>   // slice of the SDK's query
+interface AgentChatOptions {
+  chat: AgentChatConfig; cwd: string; mcpUrl: () => string;
+  query?: QueryFn; now?: () => Date; baseEnv?: NodeJS.ProcessEnv; log?: (line: string) => void
+}
+interface AgentChatBackend extends ChatBackend { close(): void }
+const FALLBACK_ERRORS: ReadonlySet<SDKAssistantMessageError>   // authentication_failed, oauth_org_not_allowed, billing_error, rate_limit
+const FALLBACK_TEXT: RegExp                                     // usage limit, rate limit, billing, not logged in, oauth, 401/403/429, ...
+function createAgentChatBackend(options: AgentChatOptions): AgentChatBackend
+
+// env.ts
+type ChildEnv = Record<string, string | undefined>
+interface GlmTarget { baseUrl: string; apiKey: string; model: string }
+const STRIPPED_ENV_KEYS: readonly string[]   // ANTHROPIC_{API_KEY,BASE_URL,AUTH_TOKEN,MODEL,DEFAULT_*_MODEL}, LLM_API_KEY, CLAUDECODE, CLAUDE_PID, CLAUDE_EFFORT
+const STRIPPED_ENV_PREFIX = 'CLAUDE_CODE_'
+const CLIENT_APP = 'mcp-notes-chat/0.1.0'   // set as CLAUDE_AGENT_SDK_CLIENT_APP
+function claudeEnv(base: NodeJS.ProcessEnv): ChildEnv
+function glmEnv(base: NodeJS.ProcessEnv, glm: GlmTarget): ChildEnv
+function resolveExecutable(bin: string, pathEnv: string | undefined): string
+
+// prompt.ts
+function buildChatSystemPrompt(now?: Date, timeZone?: string): string   // timeZone defaults to localTimeZone()
+
+// status.ts
+const NOTES_MCP_SERVER = 'notes'
+const NOTES_TOOL_NAMES: readonly [13 names from mcp/tools + mcp/imageTools]
+type NotesToolName
+const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch']
+function allowedChatTools(): string[]                                  // mcp__notes__<name> x13 + WebSearch, WebFetch
+function captionForToolUse(name: string, input: unknown): string | null
+```
+`createAgentChatBackend` runs one SDK `query` per `reply()`. Every run gets: `cwd` (`<dataDir>/chat`), `settingSources: []`, `strictMcpConfig: true`, one MCP server `notes` of type `http` at `mcpUrl()` (read at run start, with `alwaysLoad`), built-in `tools` limited to WebSearch/WebFetch, `allowedTools` from `allowedChatTools()`, `permissionMode: 'dontAsk'`, `includePartialMessages`, `maxTurns: chat.maxTurns`, a fresh `buildChatSystemPrompt(now())` as the whole system prompt, `resume: threadId` when the client sent one, and `pathToClaudeCodeExecutable` from `resolveExecutable(chat.claudeBin, PATH)` (resolved once at construction). A Claude run uses `claudeEnv` (the daemon env minus every key, base URL, model override and parent-Claude-Code marker, so it runs on the owner's OAuth login; `CLAUDE_CONFIG_DIR` is kept). A GLM run uses `glmEnv` (same base plus `ANTHROPIC_BASE_URL`/`AUTH_TOKEN`/`MODEL`/`DEFAULT_*_MODEL` from `chat.glm`) and `model: glm.model`.
+
+Streaming: only top-level messages count (`parent_tool_use_id === null`). `stream_event` `text_delta`s become `delta` events. A top-level assistant `tool_use` block becomes a `status` caption from `captionForToolUse` (`searching notes`, `reading 3 notes`, `looking at a photo`, `searching the web`, `saving a note`, ...; repeats are not re-sent), and the next text clears it with `status ""`. Text that follows a tool use after earlier text is prefixed with a blank line (leading whitespace trimmed). A `result` of subtype `success` without `is_error` sets `end()` to `{ threadId: session_id, brain }`; the SDK session id is the thread id.
+
+Guardrails: one run in flight per backend (a new `reply()` stops the previous one, `superseded`); the request `signal` (`client`), a `chat.timeoutMs` wall-clock timer (`timeout`, unref'd) and `close()` (`closed`, called by daemon `stop()`) all abort the SDK child. A stopped run throws `Chat stopped: ...` from `events`. `error_max_turns` throws `Chat stopped: the agent hit its N-turn cap ...` and never falls back.
+
+Fallback: with `chat.brain = 'claude'` and `chat.glm` set, a Claude attempt that fails before any `delta` went out, was not stopped, and whose failure is fallbackable (an assistant `error` in `FALLBACK_ERRORS`, or result/exception text matching `FALLBACK_TEXT`) is retried once on GLM with the same `resume` id; a shown caption is cleared first and one line is logged (`notesd chat: claude failed before answering (...); retrying once on glm`). Once text has streamed a failure is final. `chat.brain = 'glm'` runs GLM only and never falls back; with `glm` null it fails with `CHAT_BRAIN=glm needs LLM_BASE_URL, LLM_API_KEY and LLM_MODEL.` A CLI that exits non-zero after a successful result is treated as success.
+
+The system prompt states today's weekday, ISO and long date, time and timezone; says the owner is the only user; requires every used note id quoted as `A-B32` (the panel highlights by id); allows edits only when asked (get before update, never save the answer as a note); explains `view_images`; and asks for plain prose (no headings, tables, bold or code blocks unless asked).
 
 ### src/http/static.ts
 
@@ -551,11 +601,11 @@ const CHAT_SUBDIR = 'chat'   // <dataDir>/chat: fixed cwd of every chat brain ru
 const DATA_SUBDIRS = ['images', 'cache', 'inbox', 'inbox/failed', CHAT_SUBDIR]
 function ensureDataDirs(dataDir: string): Promise<void>
 interface RunningDaemon { deps: AppDeps; port: number; stop: () => Promise<void> }
-interface StartDaemonOptions { chat?: ChatBackend }   // omitted: createStubChatBackend(); tests inject a scripted fake
+interface StartDaemonOptions { chat?: ChatBackend }   // omitted: createAgentChatBackend from config.chat; tests inject the stub or a scripted fake
 function startDaemon(config: Config, options?: StartDaemonOptions): Promise<RunningDaemon>
 function startBackground(deps: AppDeps): Promise<StopBackground>   // StopBackground = () => Promise<void>
 ```
-`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, the chat backend (`options.chat` or the stub), `createApp(deps, { chat })`, `serve` on `config.host:config.port`, then `startBackground`. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
+`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, the chat backend (`options.chat`, or `createAgentChatBackend({ chat: config.chat, cwd: <dataDir>/chat, mcpUrl })`), `createApp(deps, { chat })`, `serve` on `config.host:config.port`, then `startBackground`. `mcpUrl` returns `http://<host>:<bound port>/mcp` and throws until `serve` has bound, so the agent always reaches this daemon's own `/mcp` even when `config.port` is 0. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and first calls `close()` on the default agent backend (stopping any in-flight run), then stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
 
 ## Web UI: web/ (phases 7-8)
 
@@ -684,7 +734,7 @@ Claude Code skill `n` (`/n <request>`, also triggered by note save/find/edit/com
 
 ## Data Flow
 
-Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, picks the chat backend (injected or the stub), then `createApp()`, and serves Hono on 127.0.0.1.
+Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, picks the chat backend (injected, or the Agent SDK backend), then `createApp()`, and serves Hono on 127.0.0.1.
 
 MCP call: Claude Code POSTs to `/mcp`, `loopbackOnly` checks the host, and `handleMcpRequest` builds a fresh server. The tool handler calls `NotesService`, which calls `repo` (Drizzle), which queries Postgres. The result goes back through `rowToNote` as a `Note` JSON text result.
 
@@ -694,7 +744,7 @@ Inbox ingest (phase 4): a file lands in `<dataDir>/inbox`. chokidar reports it, 
 
 Images over HTTP and MCP (phase 5): `POST /api/images` and `create_image` both end in `ingestImage` (bytes from the multipart file, or a copy of the local path), so they share dedupe and `NotesService.create`, which emits `created`. Image reads go `resolveImageFile`, then `locateImage`, then the derive getter for the variant (generated and cached on first read), then a streamed file for HTTP or a base64 `image` block for `view_images`. If the original is not on this machine the answer is 404 `not_on_this_machine` (HTTP) or a text line (MCP).
 
-Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose `delta`/`status` events stream back as SSE, ending with `done { thread_id, brain? }`.
+Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose `delta`/`status` events stream back as SSE, ending with `done { thread_id, brain? }`. With the default backend (iteration 4 phase 2), `reply` spawns a Claude Code child through the Agent SDK in `<dataDir>/chat`; the child calls the notes tools over this daemon's own `POST /mcp` (so its reads and writes go through `NotesService` and emit `NoteEvents` like any MCP client), streams text and tool use back, and its SDK `session_id` returns as `thread_id`, which the next message passes as `resume`.
 
 Web UI client (phase 7): `useNotes` fetches `/api/notes?limit=2000` and `/api/tags`, keeps `EventSource('/api/events')` open and refetches (debounced 250 ms) on each `note` event, on reconnect and every 60 s. `App` derives the wall from `notes`, `mode` and active tags with the pure `lib/filter` helpers. An edit is applied locally first (`upsertLocal`/`removeLocal`), then sent with `PATCH`/`DELETE`/`POST`, then followed by a refetch; the server's resulting `NoteEvents` emit triggers another refetch through SSE. Chat reads the `POST /api/chat` response body with `readSSE`, since `EventSource` cannot POST.
 
@@ -714,6 +764,8 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 - `hono`, `@hono/node-server`: HTTP app and Node listener
 - `zod`: MCP tool input schemas and `/api` request validation
 - `hono/streaming` (`streamSSE`): `/api/events` and `/api/chat`
+- `@anthropic-ai/claude-agent-sdk` (0.3.311): `query`, `Options`, `SDKMessage` types for the chat brain; it spawns the `claude` CLI (`NOTESD_CLAUDE_BIN`, default `claude` on PATH)
+- `@anthropic-ai/sdk` (0.135.0): the Agent SDK's peer for message/stream event types
 - `sharp`: image metadata, orientation, resize, JPEG/WebP encode (prebuilt libvips reads HEIC headers but cannot decode HEVC)
 - `heic-convert`: HEVC HEIC to JPEG (WASM libheif), loaded with `createRequire` on first use
 - `exifr`: `DateTimeOriginal` / `OffsetTimeOriginal` from the EXIF block
@@ -727,7 +779,8 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 - `notes/service` uses `notes/{repo,ids,tags,types,events}`. `notes/repo` uses `db/schema`, `notes/dates` and `notes/types`.
 - `mcp/tools` uses `NotesService`, `NoteFilter` and `NoteError`. `mcp/server` uses `tools`, `imageTools` and `instructions`.
 - `http/api` uses `chat/{backend,stub}`, `notes/{events,ids,repo,types}` and `AppDeps`. `http/static` uses only the filesystem. `http/imageAccess` uses `images/{derive,ingest,probe,records}`, `notes/ids` and `ToolDeps`; `http/images` uses `imageAccess` and `images/ingest`; `mcp/imageTools` uses `imageAccess`, `notes/ids` and `ToolDeps`.
-- `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `notes/{events,service}`, `http/app` and `background`.
+- `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `notes/{events,service}`, `chat/agent`, `http/app` and `background`.
+- `chat/agent` uses `chat/{backend,env,prompt,status}` and the `Config` type. `chat/prompt` uses `localTimeZone` from `mcp/instructions`. `chat/status` and `chat/env` depend on nothing internal (status mirrors the tool names in `mcp/tools` and `mcp/imageTools`).
 - `tests/integration/setup.ts` imports `createDb`, `closeDb`, `isNeonUrl`.
 - `images/ingest` uses `images/{probe,store,records}`, `NotesService` (as `ImageNotes`), `NoteError` and `AppDeps`. `images/derive` uses `probe` and `store`. `images/inbox` uses `probe` and `store`. `images/records` uses `db/schema` and `notes/ids`. `background` wires `images/{ingest,inbox,store}`.
 
@@ -736,13 +789,15 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 
 ## Reverse Dependencies
 
-`src/main.ts` is the production entry (`npm run dev` / `npm start`), and Claude Code connects to `http://127.0.0.1:7317/mcp`. Phases 4-6 plug in through `startBackground`, `registerImageTools` and `imageRoutes`, plus `NoteFilter`/`noteFilterShape`/`buildInstructions` sections. The web UI reads images from `/api/notes/:id/{thumb,display,original}` and uploads to `/api/images`; the `/n` skill drives `create_image` / `view_images`. The web UI consumes `/api/*`, `/api/events` and `/api/chat`, and iteration 4 swaps in a real `ChatBackend`. Tests: `tests/unit/{ids,tags,config,db-client,notes.helpers,mcp.instructions}.test.ts` and `tests/integration/{schema,notes.service,mcp.tools,daemon}.int.test.ts`, plus phase 6's `tests/unit/{chat-stub,static}.test.ts` and `tests/integration/{api,events}.int.test.ts`, and phase 5's `tests/unit/{takenFilter,imageAccess}.test.ts` and `tests/integration/images.{http,mcp}.int.test.ts`.
+`src/main.ts` is the production entry (`npm run dev` / `npm start`), and Claude Code connects to `http://127.0.0.1:7317/mcp`. Phases 4-6 plug in through `startBackground`, `registerImageTools` and `imageRoutes`, plus `NoteFilter`/`noteFilterShape`/`buildInstructions` sections. The web UI reads images from `/api/notes/:id/{thumb,display,original}` and uploads to `/api/images`; the `/n` skill drives `create_image` / `view_images`. The web UI consumes `/api/*`, `/api/events` and `/api/chat`; since iteration 4 phase 2 the chat brain is itself an MCP client of `/mcp`, so any change to the notes tool names must also update `NOTES_TOOL_NAMES` in `src/chat/status.ts`. Tests: `tests/unit/{ids,tags,config,db-client,notes.helpers,mcp.instructions}.test.ts` and `tests/integration/{schema,notes.service,mcp.tools,daemon}.int.test.ts`, plus phase 6's `tests/unit/{chat-stub,static}.test.ts` and `tests/integration/{api,events}.int.test.ts`, and phase 5's `tests/unit/{takenFilter,imageAccess}.test.ts` and `tests/integration/images.{http,mcp}.int.test.ts`.
 
 ## Concurrency
 
 The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A `Db` wraps a connection pool and is safe for concurrent queries. Concurrent writes to one note serialise on the `SELECT ... FOR UPDATE` row lock inside each service transaction. Inserts do not lock: an id clash returns null and is retried. `NoteEvents` listeners run synchronously on emit, after commit. MCP requests share nothing: each gets its own server and transport. Each `/api/events` connection adds one `NoteEvents` listener and one heartbeat interval, both removed on abort. SSE writes from listeners are fire-and-forget and swallow write errors after the client goes away. Integration test files run one at a time (`fileParallelism: false`) because they share and truncate one database.
 
 Image ingest keeps a per-process promise chain per sha256, so two ingests of the same bytes in one daemon run in sequence. Across hosts, the unique live-sha256 index decides, and the loser gets `duplicate_image` and returns the winner. Derivative generation shares one in-flight promise per output path and writes through a temp file and rename. The inbox watcher handles one file at a time on a single promise queue.
+
+The agent chat backend allows one run in flight per daemon: a new `reply()` aborts the previous run (`superseded`) before starting. Each run owns an `AbortController` that the client signal, the timeout timer and `close()` all trigger; each SDK attempt gets its own child controller relayed from it and aborted when the attempt is not drained.
 
 ## Error Handling
 
@@ -752,6 +807,7 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - `/mcp` returns JSON-RPC-shaped errors: 403 for a non-loopback host or Origin, 405 for GET/DELETE.
 - `/api` errors are `{ error: string }`. One mapping turns `NoteError` into a status: `not_found` and `deleted` are 404 `not_found`, `conflict` and `duplicate_image` are 409 with the code, `invalid_id` is 400 `invalid_id`, and any other code is 400 `"<code>: <message>"`. Bad JSON is 400 `invalid_json`, and zod failures are 400 with `"<path>: <message>"` joined by `; `. Non-`NoteError` exceptions are rethrown (Hono 500).
 - `/api/chat` errors after streaming starts arrive as `event: error`, not as an HTTP status.
+- Agent chat backend errors (thrown from `events`, so they reach the UI as `event: error`): `Chat stopped: the request was closed.` / `a newer message replaced this one.` / `no answer within N s.` / `notesd is shutting down.`, the turn-cap message, the agent's own result or error text, `The agent ended without an answer.`, and the `CHAT_BRAIN=glm needs ...` message. `end()` throws if called before `events` finished cleanly.
 - Image routes answer `{ error }` JSON: 404 `not_found` (bad, unknown or deleted id), 404 `no_image` with `id` (text note), 404 `not_on_this_machine` with `host`, 400 `bad_multipart` / `file_required`, 413 `too_large` (from `bodyLimit`, with `max_bytes`, or from the size check), and 415 for any other `ImageInputError` (`not_an_image`). Other exceptions go to Hono (500).
 - `ImageInputError` (`src/http/imageAccess.ts`) carries `not_absolute`, `not_found`, `not_a_file`, `not_an_image` or `too_large`. MCP `create_image` returns it as an `isError` result. `view_images` never errors per id; it reports problems as text lines.
 - Static: 503 `web UI not built: run npm run build` when `web/dist/index.html` is missing.
@@ -766,6 +822,7 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - Integration helpers in `tests/integration/setup.ts`: `testDatabaseUrl()` (refuses a Neon URL), `openTestDb()`, `closeTestDb()`, `migrateTestDb()`, `truncateAll(db)` (call in `beforeEach` of any file that writes).
 - There is one `vitest.config.ts`. Do not add a second.
 - Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` over the Docker DB with a zero-delay stub, or `options.chat`; `uniqueTag()`), `tests/integration/helpers/scripted-chat.ts` (iteration 4: `createScriptedChatBackend()`, a fake `ChatBackend` that replays queued `ChatScript`s of `delta`/`status`/`throw`/`hang` steps, an optional `end` and `rejectWith`, and records every `ChatRequest`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
+- Iteration 4 phase 2 (P1-NOTES-A009) suites: `chat-agent` (a fake `QueryFn` replaying `SDKMessage`s: delta streaming and session-as-thread, captions and paragraph breaks, run options isolation, resume, run-time MCP url, client abort, supersede, timeout, `close()`, the turn cap, GLM fallback on limit/auth errors before text and none after text, on other errors, without GLM or after a stop, and `CHAT_BRAIN=glm`), `chat-env` (key/marker stripping, `CLAUDE_CONFIG_DIR` kept, GLM env, `resolveExecutable`), `chat-prompt` (date/time/tz, id rule, plain prose, no self-saving) and `chat-status` (exact tool surface, captions). `daemon.int` now injects the zero-delay stub (tests must never spawn `claude`) and adds a start/stop check with the default Agent SDK backend that posts nothing.
 - Phase 2 suites: `notes.helpers` (dates, cursor, limit, tag input, origin, rowToNote, NoteEvents), `mcp.instructions` (unit), `notes.service.int` (service against Docker Postgres), `mcp.tools.int` (all 11 tools through an MCP client on the real `/mcp` route, plus the 403/405 guards and `/health`) and `daemon.int` (data dirs, loopback listen, `/health`, MCP initialize over real HTTP, non-loopback host refused).
 - Phase 5 suites: `tests/unit/takenFilter.test.ts` (taken bounds as UTC ISO text compares, `invalid_input` on garbage), `tests/unit/imageAccess.test.ts` (`expandHome`, `etagMatches`), `images.http.int` (upload and dedupe, byte-exact original with immutable cache and sha256 ETag, id spellings, thumb/preview sizes, display for PNG vs TIFF, 400/413/415 refusals, `not_found`/`no_image`, `not_on_this_machine`, no cached derivative once the original is gone) and `images.mcp.int` (tool and filter listing, `create_image` copies and dedupes, refusals, `view_images` content, text/unknown/missing explanations, the 8-id cap, `has_image` and taken-range filters on list and search). Harness: `tests/integration/imageHarness.ts` (`startHarness` builds real `createApp` over the Docker DB and a temp data dir, with `listen()`, `reset()`, `close()`; `makeImage` makes solid-colour PNG/JPEG/TIFF bytes; `insertTextNote`).
 - Phase 7 suites (jsdom, colocated in `web/src`): `lib/{text,filter,usedIds,dates,sse}.test.tsx` (font sizing, tag parsing and segmenting, AND filter, mode cycle, heading and count line, used-id extraction, relative dates, SSE parsing across chunks and CRLF), `components/NoteCard.test.tsx` (font size, tag chip vs edit click, copy, blur commit, thumb aspect ratio) and `App.test.tsx` (text mode hides image notes, mode cycle, tag filter rail chip, streamed chat with used-note chips and dimming, status caption while streaming then the brain label). Iteration 4 phase 3 (P1-NOTES-A010) added `hooks/useChat.test.tsx` (status captions and `""` clearing, brain from `done` or null, error clears status, follow-up continues the thread, pinned keeps it, dismiss starts a new thread, a late `done` after dismiss does not restore it, a new ask resets brain and status). `npm run typecheck` checks both the server and web tsconfigs.
@@ -795,7 +852,10 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - `/api/notes` defaults to 2000 rows (the UI loads everything), MCP to 50.
 - `DELETE /api/notes/:id` checks liveness first and returns 404 for an already-deleted note, unlike the idempotent service and MCP `delete`.
 - `/api/tags` returns a bare array, while MCP `tags` returns `{ tags }`.
-- `createApp` passes no `ApiOptions`, so the stub chat backend is hard-wired until iteration 4 changes that call.
+- `startDaemon` without `options.chat` builds the real Agent SDK backend: any test that posts to `/api/chat` through `startDaemon` must inject a stub or scripted backend, or it spawns `claude` on the owner's login.
+- The chat brain needs the `claude` CLI logged in for the user running `notesd` (the systemd unit's PATH lacks `~/tools/...`, so set `NOTESD_CLAUDE_BIN` to an absolute path there). The child env never carries `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, model overrides or any `CLAUDE_CODE_*` / `CLAUDECODE` marker, so a daemon started from inside a Claude Code terminal does not leak its session into the child.
+- Chat threads are SDK sessions stored by Claude Code under its projects dir for the cwd `<dataDir>/chat`; changing `NOTESD_DATA_DIR` orphans existing thread ids, and a resume of an unknown id fails the turn.
+- The agent's allowed tools are hard-coded in `src/chat/status.ts`; a new notes MCP tool is invisible to the chat brain until it is added to `NOTES_TOOL_NAMES` (and given a caption).
 - `staticRoutes` must stay last and must 404 reserved prefixes itself, or unknown `/api/*` paths would get `index.html`.
 - Ids are canonical upper-case with the dash. Store `normalizeId`/`parseId` output, never raw user input.
 - Integration tests truncate tables. Never point `TEST_DATABASE_URL` at Neon (the setup helper also refuses it). The container port 55433 avoids `seer-pg` on 55432.
@@ -814,3 +874,5 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 ## Notes
 
 Plan set: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (8 phases, iterations 1-3: spine, images, web UI). Phase 1 (P1-NOTES-A000) landed the scaffold. Phase 2 (P1-NOTES-A001, plan `.workflows/plan/P1-NOTES-A001.md`) landed the notes service, the MCP server and tools, and the `notesd` daemon. Phase 3 (P1-NOTES-A002) landed deployment: `deploy/notesd.service`, `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/windows/install-wsl-keepalive.ps1`, the `/n` skill in `claude/skills/n/` and `docs/INSTALL.md`. Phase 4 (P1-NOTES-A003) landed the image store, derivatives, ingest service and inbox watcher. Phase 6 (P1-NOTES-A005) landed the `/api` JSON routes, `/api/events` SSE, the `/api/chat` stub behind `ChatBackend`, and static SPA serving. Phase 7 (P1-NOTES-A006) landed the web UI core in `web/` and the `build:web`/`dev:web` scripts. Phase 5 (P1-NOTES-A004) landed the image HTTP routes and upload, `create_image`/`view_images`, the `has_image` and taken-date filters, and the images section of the MCP instructions. Phase 8 (P1-NOTES-A007) landed the web UI images: `NoteImage`, `Gallery`, `PhotoModal`, `DropOverlay` and the `/full/<id>` tab (`web/fullscreen.html`, `web/src/fullscreen/`).
+
+Iteration 4 plan: `docs/plans/CHAT_BAR_BRAIN_PLAN.md` (4 phases, the chat bar brain). Phase 1 (P1-NOTES-A008) landed the chat seam v2 (status events, brain label, `Config.chat`, daemon injection). Phase 2 (P1-NOTES-A009) landed the Agent SDK backend in `src/chat/{agent,env,prompt,status}.ts`, the two `@anthropic-ai/*` dependencies, and made it the daemon default. Phase 3 (P1-NOTES-A010) landed the web panel status caption, brain label and thread reset on dismiss.

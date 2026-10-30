@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 11:13:48
-**Total Active Tasks**: 2
+**Last Updated**: 2026-10-30 11:21:12
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 10
+- Blocked: 0
+- Completed: 11
 
 ---
 
@@ -22,21 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `@anthropic-ai/claude-agent-sdk@0.3.311` + `@anthropic-ai/sdk@0.135.0` in `dependencies`, new `src/chat/agent.ts` (`createAgentChatBackend`), `src/chat/prompt.ts`, `src/chat/status.ts`, `src/chat/env.ts` (child env, strips parent-session markers), four unit test files against a fake `query`, `src/daemon.ts` (real backend by default, lazy MCP url, `close()` on stop), `tests/integration/daemon.int.test.ts` (stub injected; agent-by-default start/stop test) (12 files). Exit: unit tests cover delta streaming, status mapping, ids passed through, resume, abort (client + supersede + timeout + close), max turns, fallback (pre-text auth/limit error → one GLM retry; post-text error → no retry; `CHAT_BRAIN=glm` → GLM only, no fallback), and session-marker stripping. No integration test spawns `claude`. `npm run build` succeeds.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 2 of 4)
-  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A008
-  - **Plan**: `.workflows/plan/P1-NOTES-A009.md`
-
 - [ ] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `deploy/notesd.service` (`NOTESD_CLAUDE_BIN`, `HOME`), `scripts/install.sh` (resolved claude path, credential/LLM_* warnings, chat smoke in `verify`), `vitest.config.ts` + `package.json` `test:live`, `tests/live/chat.live.test.ts` (real Claude + GLM message), `docs/INSTALL.md` (6 files); links `.env.local` into the worktree, runs install.sh from the worktree and the acceptance prompts against the installed daemon; re-running install.sh from `~/mcp-notes` happens after landing. Exit: the installed daemon answers each acceptance prompt for real, and the live suite passes.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 4 of 4)
   - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R5 — Daemon fit: unit + install.sh give the SDK `claude` and the login, verified through the installed daemon; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A009, P1-NOTES-A010
@@ -51,6 +41,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `@anthropic-ai/claude-agent-sdk@0.3.311` + `@anthropic-ai/sdk@0.135.0` in `dependencies`, new `src/chat/agent.ts` (`createAgentChatBackend`), `src/chat/prompt.ts`, `src/chat/status.ts`, `src/chat/env.ts` (child env, strips parent-session markers), four unit test files against a fake `query`, `src/daemon.ts` (real backend by default, lazy MCP url, `close()` on stop), `tests/integration/daemon.int.test.ts` (stub injected; agent-by-default start/stop test) (12 files). Exit: unit tests cover delta streaming, status mapping, ids passed through, resume, abort (client + supersede + timeout + close), max turns, fallback (pre-text auth/limit error → one GLM retry; post-text error → no retry; `CHAT_BRAIN=glm` → GLM only, no fallback), and session-marker stripping. No integration test spawns `claude`. `npm run build` succeeds.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 2 of 4)
+  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A008
+  - **Plan**: `.workflows/plan/P1-NOTES-A009.md`
+  - **Completed**: 2026-10-30 11:21
+  - **Method**: /do
+  - **Files**: package.json, package-lock.json, src/chat/agent.ts, src/chat/env.ts, src/chat/prompt.ts, src/chat/status.ts, src/daemon.ts, tests/integration/daemon.int.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-env.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-status.test.ts
+  - **Drift**:
+    - none: src/daemon.ts and daemon.int.test.ts matched Phase 1's quoted text exactly
+    - npm install warned that esbuild postinstall scripts were not approved (install-scripts policy); tsx/vitest/vite already worked, build and tests green
 
 - [x] **P1-NOTES-A010** Phase 3: Panel: status caption, brain label, thread reset on dismiss
   - **Difficulty**: NORMAL
