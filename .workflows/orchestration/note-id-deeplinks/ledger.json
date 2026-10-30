@@ -1,0 +1,73 @@
+{
+  "branch": "feature/note-id-deeplinks",
+  "coordinator": "orch-note-id-deeplinks",
+  "coordinator_session_id": "a1c11e3c-272a-47b3-96ae-1b617b304a69",
+  "created": "2026-10-30T18:23:57+07:00",
+  "landed": {
+    "at": "2026-10-30T18:29:20+07:00",
+    "base": "main",
+    "commit": "f06dbedd87fdab10659186a18097a2441925a61f",
+    "machine": "GPD"
+  },
+  "phases": [
+    {
+      "card": null,
+      "commit": "d9251a3",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": "wall deep link done; fixture '#nope' is a valid id shape so null-case test uses '#welcome' (rung 3); skipped todos/readme-updater/pusher bookkeeping, committed explicit paths on branch only",
+      "package": "web/src",
+      "plan": ".workflows/plan/note-id-deeplinks/phase-1.md",
+      "reported_at": "2026-10-30T18:26:33+07:00",
+      "satisfies": [
+        "R1",
+        "R4"
+      ],
+      "status": "done",
+      "task_id": null,
+      "title": "Wall deep link"
+    },
+    {
+      "card": null,
+      "commit": "a5e686c",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": "SKILL.md/README prose lines differed slightly from plan quotes (small drift, followed intent); verified with node 22.23.4 (default node 20 breaks vitest)",
+      "package": "src/mcp`, `claude/skills/n`, docs",
+      "plan": ".workflows/plan/note-id-deeplinks/phase-2.md",
+      "reported_at": "2026-10-30T18:27:31+07:00",
+      "satisfies": [
+        "R2",
+        "R4"
+      ],
+      "status": "done",
+      "task_id": "phase-2",
+      "title": "Wall URL into MCP instructions, skill link rule, tmux + docs"
+    },
+    {
+      "card": null,
+      "commit": "f75c02f",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": "note-links mod built; validate passed, plugin test 107 pass/0 fail; npm test not runnable here (node 20 vs .nvmrc 22), typecheck passes; todos.md bookkeeping skipped (shared across phases)",
+      "package": "claude/mods/note-links",
+      "plan": ".workflows/plan/note-id-deeplinks/phase-3.md",
+      "reported_at": "2026-10-30T18:26:14+07:00",
+      "satisfies": [
+        "R3"
+      ],
+      "status": "done",
+      "task_id": null,
+      "title": "note-links` Claude Code mod"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/note-id-deeplinks/.workflows/orchestration/note-id-deeplinks/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "note-id-deeplinks",
+  "updated": "2026-10-30T18:29:20+07:00",
+  "verified_at": "2026-10-30T18:29:07+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/note-id-deeplinks"
+}
