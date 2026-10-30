@@ -25,22 +25,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "f011f8a",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "Embedder seam + OpenRouter client, Config.embeddings, AppDeps/NotesService/startDaemon embedder, FakeEmbedder helper; no ladder decisions",
       "package": "src/embeddings`, `src/config.ts`, `src/daemon.ts",
       "plan": ".workflows/plan/semantic-search/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T14:46:42+07:00",
       "satisfies": [
         "R1",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A018",
       "title": "OpenRouter embedder, config, deps wiring, fake embedder"
     },
     {
@@ -61,7 +61,7 @@
         "R1",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Embedding worker, background backfill, `embed:backfill"
     },
@@ -82,7 +82,7 @@
         "R4",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Hybrid search + labelled set"
     },
@@ -133,6 +133,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T14:42:05+07:00",
+  "updated": "2026-10-30T14:47:06+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
