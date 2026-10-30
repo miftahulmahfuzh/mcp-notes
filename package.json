@@ -62,6 +62,7 @@
     "test:live:connectors": "CONNECTORS_LIVE_TEST=1 vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "embed:backfill": "tsx src/cli/embedBackfill.ts"
   }
 }

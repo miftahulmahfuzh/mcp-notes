@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 2
-- Completed: 20
+- Completed: 21
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A019** Phase 3: Embedding worker, background backfill, `embed:backfill`
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `src/embeddings/{worker,backfill}.ts`, `src/background.ts`, `src/cli/embedBackfill.ts`, `package.json` (`embed:backfill`), `tests/helpers/memoryEmbeddingStore.ts`, worker / backfill / CLI unit tests, integration tests (create/update/append/revert/image note embedded; failure keeps the write and retries; backfill resumable; deleted notes keep vectors; restore makes no call). Exit: with the fake embedder every write path ends with a current vector after `idle()`; a failing embedder leaves writes intact and the note retried after backoff; stop/restart mid-backfill finishes without re-embedding finished notes; idle worker logs nothing; `close()` returns within its 5 s grace even when a call hangs.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 3 of 6)
-  - **Satisfies**: R3, R1, R6 — Background backfill inside notesd (batched, rate-limited, resumable, logged, quiet when idle) + `npm run embed:backfill` with progress; Embeddings via OpenRouter (`openai/text-embedding-3-small`, 1536), run-insights' cap and error handling; embedded after every body write without blocking/failing it; failures marked and retried; vector tied to its body hash; textless photos have none; deleted notes keep vectors, never appear; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
-  - **Plan**: `.workflows/plan/P1-NOTES-A019.md`
 
 - [ ] **P1-NOTES-A020** Phase 4: Hybrid search + labelled set
   - **Difficulty**: HARD
@@ -71,6 +61,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A019** Phase 3: Embedding worker, background backfill, `embed:backfill`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/embeddings/{worker,backfill}.ts`, `src/background.ts`, `src/cli/embedBackfill.ts`, `package.json` (`embed:backfill`), `tests/helpers/memoryEmbeddingStore.ts`, worker / backfill / CLI unit tests, integration tests (create/update/append/revert/image note embedded; failure keeps the write and retries; backfill resumable; deleted notes keep vectors; restore makes no call). Exit: with the fake embedder every write path ends with a current vector after `idle()`; a failing embedder leaves writes intact and the note retried after backoff; stop/restart mid-backfill finishes without re-embedding finished notes; idle worker logs nothing; `close()` returns within its 5 s grace even when a call hangs.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R3, R1, R6 — Background backfill inside notesd (batched, rate-limited, resumable, logged, quiet when idle) + `npm run embed:backfill` with progress; Embeddings via OpenRouter (`openai/text-embedding-3-small`, 1536), run-insights' cap and error handling; embedded after every body write without blocking/failing it; failures marked and retried; vector tied to its body hash; textless photos have none; deleted notes keep vectors, never appear; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
+  - **Plan**: `.workflows/plan/P1-NOTES-A019.md`
+  - **Completed**: 2026-10-30 14:50
+  - **Method**: /do
+  - **Files**: package.json, src/background.ts, src/cli/embedBackfill.ts, src/embeddings/backfill.ts, src/embeddings/worker.ts, tests/helpers/memoryEmbeddingStore.ts, tests/unit/embeddings/backfill.test.ts, tests/unit/embeddings/worker.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts, tests/integration/embeddings.worker.int.test.ts
+  - **Drift**:
+    - RateLimiter.acquire: the plan's second `signal?.aborted === true` check failed tsc (TS2367: narrowed to false across the await). Same logic, now read through a local `aborted()` function, with one comment line explaining why.
+    - Manual check: without .env.local the CLI exits 1 on DATABASE_URL (loadConfig runs first) before it reaches the key check. With DATABASE_URL set and no key, it prints 'OPENROUTER_API_KEY is not set' and exits 1, as planned.
 
 - [x] **P1-NOTES-A018** Phase 2: OpenRouter embedder, config, deps wiring, fake embedder
   - **Difficulty**: NORMAL
