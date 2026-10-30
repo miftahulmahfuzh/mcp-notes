@@ -1,0 +1,234 @@
+{
+  "branch": "feature/wall-editing",
+  "coordinator": "orch-wall-editing",
+  "coordinator_session_id": "cc6491fc-2dc1-4f2d-9d28-db3fbf6baa0a",
+  "created": "2026-10-30T16:16:44+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `drizzle`, `src/notes`, `src/images",
+      "plan": ".workflows/plan/wall-editing/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "spawned",
+      "task_id": null,
+      "title": "note_images` table, migration 0002, legacy copy/reconcile, image repo"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
+      "plan": ".workflows/plan/wall-editing/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "src/notes`, `src/images`, `src/http`, `src/mcp`, `src/chat",
+      "plan": ".workflows/plan/wall-editing/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Attach / remove / restore one image: service, ingest, HTTP, MCP tools"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/notes`, `src/images`, `src/http",
+      "plan": ".workflows/plan/wall-editing/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Bin listing, note restore endpoint, purge (rows + files)"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/http",
+      "plan": ".workflows/plan/wall-editing/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Reveal in Explorer: capabilities + reveal endpoint"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web on `images[]`: cards, gallery, modal stepping, full-screen by image"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3,
+        6
+      ],
+      "difficulty": "HARD",
+      "n": 7,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web big editor modal + attach on drop/paste"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 8,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web delete, undo, recycle bin view"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        5,
+        8
+      ],
+      "difficulty": "NORMAL",
+      "n": 9,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web reveal button + capabilities"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        9,
+        11
+      ],
+      "difficulty": "NORMAL",
+      "n": 10,
+      "note": null,
+      "package": "docs, Neon",
+      "plan": ".workflows/plan/wall-editing/phase-10.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5",
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Docs, Neon migration 0002, full verification"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 11,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/wall-editing/phase-11.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6",
+        "R7",
+        "R5"
+      ],
+      "status": "spawned",
+      "task_id": null,
+      "title": "Collapsible answer panel + multi-line chat bar"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "wall-editing",
+  "updated": "2026-10-30T16:19:49+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
+}
