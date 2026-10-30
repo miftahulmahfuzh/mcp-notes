@@ -15,6 +15,13 @@
       "when": 1793345807038,
       "tag": "0001_note_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793352064576,
+      "tag": "0002_note_images",
+      "breakpoints": true
     }
   ]
 }

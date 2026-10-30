@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
-import { noteEmbeddings, noteRevisions, notes, type ImageMeta } from '../../src/db/schema.js'
+import { noteEmbeddings, noteImages, noteRevisions, notes, type ImageMeta } from '../../src/db/schema.js'
 import { closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js'
 
 function imageMeta(sha256: string, takenAt: string | null = null): ImageMeta {
@@ -28,7 +28,7 @@ function pgErrorCode(err: unknown): string | undefined {
   return undefined
 }
 
-describe('schema (migrations 0000 + 0001)', () => {
+describe('schema (migrations 0000 + 0001 + 0002)', () => {
   let db: Db
 
   beforeAll(() => {
@@ -60,6 +60,11 @@ describe('schema (migrations 0000 + 0001)', () => {
         'note_embeddings_pkey',
         'note_embeddings_embedding_hnsw_idx',
         'note_embeddings_next_attempt_idx',
+        'note_images_pkey',
+        'note_images_path_uniq',
+        'note_images_note_position_idx',
+        'note_images_sha256_live_uniq',
+        'note_images_taken_at_idx',
       ]),
     )
   })
@@ -181,9 +186,9 @@ describe('schema (migrations 0000 + 0001)', () => {
   it('re-applying the migrations is a no-op', async () => {
     const count = async () =>
       (await db.execute<{ n: number }>(sql`select count(*)::int as n from drizzle.__drizzle_migrations`)).rows[0]?.n
-    expect(await count()).toBe(2)
+    expect(await count()).toBe(3)
     await migrateTestDb()
-    expect(await count()).toBe(2)
+    expect(await count()).toBe(3)
   })
 
   it('applies note_embeddings defaults and enforces the vector width', async () => {
@@ -211,5 +216,37 @@ describe('schema (migrations 0000 + 0001)', () => {
     await db.delete(notes).where(eq(notes.id, 'Y-Z45'))
     const left = await db.select().from(noteEmbeddings)
     expect(left).toHaveLength(0)
+  })
+
+  it('keeps note_images sha256 unique among live images, paths unique, and cascades on note removal', async () => {
+    const def = await db.execute<{ indexdef: string }>(
+      sql`select indexdef from pg_indexes where indexname = 'note_images_sha256_live_uniq'`,
+    )
+    expect(def.rows[0]?.indexdef).toMatch(/UNIQUE INDEX .* USING btree \(sha256\) WHERE \(deleted_at IS NULL\)/)
+
+    await db.insert(notes).values({ id: 'A-A01', body: '' })
+    const base = { noteId: 'A-A01', sha256: 'same', mime: 'image/png', width: 1, height: 1, bytes: 1 }
+    await db.insert(noteImages).values({ ...base, id: 'A-A01', path: 'images/2026/10/A-A01.png', position: 0 })
+    const dupSha = await db
+      .insert(noteImages)
+      .values({ ...base, id: 'B-B01', path: 'images/2026/10/B-B01.png', position: 1 })
+      .then(() => null, (e: unknown) => e)
+    expect(pgErrorCode(dupSha)).toBe('23505')
+
+    await db.insert(noteImages).values({
+      ...base,
+      id: 'B-B01',
+      path: 'images/2026/10/B-B01.png',
+      position: 1,
+      deletedAt: new Date(),
+    })
+    const dupPath = await db
+      .insert(noteImages)
+      .values({ ...base, sha256: 'other', id: 'C-C01', path: 'images/2026/10/A-A01.png', position: 2 })
+      .then(() => null, (e: unknown) => e)
+    expect(pgErrorCode(dupPath)).toBe('23505')
+
+    await db.delete(notes).where(eq(notes.id, 'A-A01'))
+    expect(await db.select().from(noteImages)).toHaveLength(0)
   })
 })
