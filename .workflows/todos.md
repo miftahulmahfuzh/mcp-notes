@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 10:25:00
-**Total Active Tasks**: 2
+**Last Updated**: 2026-10-30 10:26:15
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 6
+- Blocked: 0
+- Completed: 7
 
 ---
 
@@ -21,21 +21,11 @@
 ### [P0] Critical
 
 ### [P1] High
-- [ ] **P1-NOTES-A006** Phase 7: Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `web/**` (Vite config, components, styles, fonts, API client, SSE + 60 s refetch, 3-way visibility mode), `package.json` scripts only (`build`, `dev:web`), `tsconfig.web.json`; every non-image element of `Notes Wall.dc.html`. Exit: `npm run build` produces `web/dist`; served by the daemon on a test port the wall renders real notes; component tests green.
-  - **Status**: open
-  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 7 of 8)
-  - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
-  - **Depends on**: P1-NOTES-A005
-  - **Plan**: `.workflows/plan/P1-NOTES-A006.md`
-
 - [ ] **P1-NOTES-A007** Phase 8: Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `web/src/components/{NoteImage,Gallery,PhotoModal,DropOverlay}.tsx` (rewrites of P7 stubs), `PhotoModal.css`, `web/fullscreen.html` + `web/src/fullscreen/**`, drag/drop + paste upload to `POST /api/images`, "not on this machine" placeholder, film-tone filter. Exit: gallery, modal (Esc/arrows), full-screen tab (fit/1:1/pan, title = id), upload all work against a running daemon on a test port; gates green.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 8 of 8)
   - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
   - **Depends on**: P1-NOTES-A004, P1-NOTES-A006
@@ -50,6 +40,26 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A006** Phase 7: Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/**` (Vite config, components, styles, fonts, API client, SSE + 60 s refetch, 3-way visibility mode), `package.json` scripts only (`build`, `dev:web`), `tsconfig.web.json`; every non-image element of `Notes Wall.dc.html`. Exit: `npm run build` produces `web/dist`; served by the daemon on a test port the wall renders real notes; component tests green.
+  - **Status**: completed
+  - **Plan Set**: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (phase 7 of 8)
+  - **Satisfies**: R3 — Web UI: Claude Design as a Vite + React + TS SPA served by notesd, real API, 3-way visibility, gallery, modal, full-screen tab, upload, inline edit, streaming /api/chat stub, live updates
+  - **Depends on**: P1-NOTES-A005
+  - **Plan**: `.workflows/plan/P1-NOTES-A006.md`
+  - **Completed**: 2026-10-30 10:26
+  - **Method**: /do
+  - **Files**: package.json, tsconfig.web.json, web/index.html, web/tsconfig.json, web/vite.config.ts, web/src/main.tsx, web/src/App.tsx, web/src/App.test.tsx, web/src/styles.css, web/src/types.ts, web/src/api.ts, web/src/lib/text.ts, web/src/lib/text.test.tsx, web/src/lib/filter.ts, web/src/lib/filter.test.tsx, web/src/lib/usedIds.ts, web/src/lib/usedIds.test.tsx, web/src/lib/dates.ts, web/src/lib/dates.test.tsx, web/src/lib/sse.ts, web/src/lib/sse.test.tsx, web/src/hooks/useNow.ts, web/src/hooks/useCopied.ts, web/src/hooks/useNotes.ts, web/src/hooks/useChat.ts, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/components/Header.tsx, web/src/components/Wall.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/ChatBar.tsx, web/src/components/Tooltip.tsx, web/src/components/Gallery.tsx, web/src/components/PhotoModal.tsx, web/src/components/DropOverlay.tsx, web/src/components/NoteImage.tsx
+  - **Drift**:
+    - none: every code block applied verbatim; root tsconfig.json already excludes web/ (Assumption 1 held)
+  - **Verification**:
+    - npm run typecheck (server + tsconfig.web.json), npm test (22 files / 192 tests, 7 new web files / 40 tests), npm run test:int (9 files / 86 tests), npm run build (web/dist index.html + js/css/woff2): all green
+    - Daemon on NOTESD_PORT=7399 against mcp-notes-pg-test: / serves the #root shell, /assets js+css 200, POST/GET /api/notes and /api/tags return real data
+    - Not done: in-browser visual checklist (no browser in the session)
+
 
 - [x] **P1-NOTES-A004** Phase 5: Image HTTP routes + upload, MCP image tools, image/date filters
   - **Difficulty**: NORMAL
@@ -70,6 +80,7 @@
   - **Verification**:
     - npm run typecheck, npm test (152 passed), npm run test:int (86 passed), npm run build: all green; touched tests re-run green after rebasing onto ed3d299
     - Manual check on port 7399: upload -> 201, /original bytes identical (cmp), Cache-Control immutable + CSP + nosniff; after deleting the file -> 404 {error:not_on_this_machine, host:pc}
+
 
 - [x] **P1-NOTES-A003** Phase 4: Image store, derivatives, ingest service, inbox watcher
   - **Difficulty**: HARD

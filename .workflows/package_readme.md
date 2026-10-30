@@ -6,7 +6,7 @@
 
 ## Overview
 
-`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. Phases 1, 2, 3, 4, 6 and 7 of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Two phases are pending. Phase 5 (P1-NOTES-A004) adds the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Its work is uncommitted in this worktree, and the sections below that describe `src/http/images.ts`, `src/http/imageAccess.ts`, `src/mcp/imageTools.ts`, the taken-date filter and the phase-5 tests document that pending surface, not landed code. Phase 8 (P1-NOTES-A007) adds images to the web UI (gallery, photo modal, drag/drop/paste upload, `/full/:id`) by rewriting four stub components phase 7 left in place.
+`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. Phases 1 to 7 of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed; phase 8 is pending. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007, pending) adds images to the web UI (gallery, photo modal, drag/drop/paste upload, `/full/:id`) by rewriting four stub components phase 7 left in place.
 
 **Key Responsibilities:**
 - Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir) from `.env.local` plus the environment
@@ -17,7 +17,7 @@
 - Create, read, update, append, soft-delete, restore and revert notes atomically, keeping every prior body as a revision in the same transaction
 - List and full-text search notes with tag, date, image and deleted filters plus offset cursors
 - Serve the notes to Claude Code as MCP tools over loopback HTTP, and emit in-process change events
-- Serve image notes over HTTP (upload, original, display, thumb, preview) and to Claude through `create_image` / `view_images` (phase 5, pending)
+- Serve image notes over HTTP (upload, original, display, thumb, preview) and to Claude through `create_image` / `view_images` (phase 5)
 - Serve the web UI a JSON API, an SSE change feed, a streamed chat endpoint (stub until iteration 4) and the built SPA
 - Ship the web UI itself (`web/`, built to `web/dist` by Vite): a live note wall with inline editing, tag filters, visibility modes and a chat panel
 - Run `notesd` as an always-on systemd user service in WSL, registered with Claude Code as the `notes` MCP server and driven by the `/n` skill
@@ -539,6 +539,73 @@ function startBackground(deps: AppDeps): Promise<StopBackground>   // StopBackgr
 ```
 `startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, `createApp`, `serve` on `config.host:config.port`, then `startBackground`. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
 
+## Web UI: web/ (phase 7)
+
+A Vite + React 19 + TypeScript single-page app, dark only, Phosphor duotone icons (set once through `IconContext`), Host Grotesk and Geist Mono via fontsource. `npm run build:web` writes `web/dist/` (gitignored) and `notesd` serves it through `staticRoutes`. `npm run dev:web` runs the Vite dev server on 127.0.0.1 and proxies `/api`, `/mcp` and `/health` to `http://127.0.0.1:${NOTESD_PORT || 7317}`, so a running daemon is needed. The build has one Rolldown input, `index.html`; phase 8 adds `fullscreen.html` there.
+
+### npm scripts and tsconfigs
+| script | does |
+|---|---|
+| `build` | `build:server && build:web` (install.sh runs this, so installs ship the UI) |
+| `build:server` | `tsc -p tsconfig.server.json` |
+| `build:web` | `vite build --config web/vite.config.ts` |
+| `dev:web` | `vite --config web/vite.config.ts` |
+| `typecheck` | `tsc -p tsconfig.json && tsc -p tsconfig.web.json` |
+
+`tsconfig.web.json` (root) covers `web/src` with DOM libs, `jsx: react-jsx`, `moduleResolution: Bundler`, `verbatimModuleSyntax`, `noUnusedLocals` and `types: ["vite/client"]`. `web/tsconfig.json` only extends it. Web tests run under the root `vitest.config.ts` (no separate web config).
+
+### Modules
+```
+web/src/main.tsx      fonts + styles.css, createRoot(<StrictMode><App/>)
+web/src/App.tsx       all UI state: side, mode, active tags, editing id, chat input; wires every component
+web/src/types.ts      Note, NoteImageMeta, TagCount (mirror of src/notes/types.ts), Mode = 'text'|'images'|'all'
+web/src/api.ts        fetch wrappers, ApiError, image URL builders
+web/src/styles.css    design tokens on :root, grain overlay, masonry wall (CSS columns, 240px)
+web/src/lib/text.ts   tagsOf, segmentBody, fontSizeFor, letterSpacingFor, rowsFor
+web/src/lib/filter.ts MODE_TIP, MODE_ORDER, nextMode, matchesTags, visibleOnWall, photosOf, headingFor, countLineFor, lastEdited, isHiddenByMode
+web/src/lib/usedIds.ts extractUsedIds(text, knownIds)
+web/src/lib/dates.ts  relativeDate(iso, now, lower?)
+web/src/lib/sse.ts    createSSEParser, readSSE (fetch-body SSE for POST /api/chat)
+web/src/hooks/useNotes.ts  notes + tags store: initial load, SSE, 60 s poll, debounced refetch, optimistic upsert/remove
+web/src/hooks/useChat.ts   chat state machine over POST /api/chat
+web/src/hooks/useNow.ts    Date re-rendered every 60 s
+web/src/hooks/useCopied.ts copyText (clipboard + execCommand fallback), useCopied(ms = 1400)
+web/src/components/   Rail, Sidebar, Header, Wall, NoteCard, AnswerPanel, ChatBar, Tooltip + phase-8 stubs
+```
+
+### api.ts
+```ts
+class ApiError extends Error { readonly status: number }   // message = server's { error } when JSON
+fetchNotes(): Promise<Note[]>              // GET /api/notes?limit=2000, returns .notes (one page)
+fetchTags(): Promise<TagCount[]>           // GET /api/tags
+createNote(body): Promise<Note>            // POST /api/notes
+updateNote(id, body): Promise<Note>        // PATCH /api/notes/:id
+deleteNote(id): Promise<void>              // DELETE; a 404 counts as success
+postChat(message, threadId?, signal): Promise<Response>   // POST /api/chat, raw SSE response
+thumbUrl(id), displayUrl(id), originalUrl(id)              // /api/notes/:id/{thumb,display,original}
+```
+The image URL builders point at the phase 5 image routes.
+
+### Behaviour
+- **Data**: `useNotes` loads notes and tags together on mount, then refetches on every `event: note` from an `EventSource('/api/events')`, on SSE `open` (catches up after a daemon restart), and every 60 s. Refetches are debounced 250 ms and never overlap. A generation counter bumped by every local mutation discards a fetch that started before the mutation and schedules another, so optimistic edits are not overwritten by stale data.
+- **Modes**: `text` (default; hides image notes), `images` (renders `Gallery`), `all`. The rail button cycles text, images, all; the sidebar shows all three plus a photo count. Jumping to a note the current mode hides switches to `all` first.
+- **Tag filter**: AND semantics over `tagsOf(body)`. Clicking a tag chip on a card or a sidebar row toggles it; active tags show as rail chips with a clear button. The heading becomes the active tags (`#a #b`), otherwise `Notes.` / `Everything.` / `Photos.`.
+- **Header**: count line per mode, "Last edited <id> <when>" linking to the note (scrolls with a 140 px offset), the drop/paste hint, and a new-note sticker (hidden in images mode).
+- **Cards**: font size by body length (26 / 17 / 13.5 px; 13 for image cards), tag chips, id with a copy button and a 1.4 s "copied" mark, relative created date (`just now`, `N min ago`, `Today`, `Yesterday`, `Oct 28`, `Oct 28, 2025`). Image cards show `NoteImage` (the thumb, sized by the image's aspect ratio). `NoteCard` is memoised.
+- **Inline edit**: clicking the text opens a textarea (caret at end); blur commits. An empty draft on a text note deletes it (optimistic remove, then `DELETE`); an unchanged draft does nothing; otherwise an optimistic update (re-parsed tags, new `updated_at`) then `PATCH`. "New note" creates an empty note via `POST`, puts it on top in edit mode, and leaves images mode. The note being edited stays visible whatever the filters.
+- **Chat**: `ChatBar` is fixed at the bottom; submit calls `useChat.ask`, which aborts any previous request, opens `AnswerPanel` and appends `delta` text as it streams. `done` stores `thread_id` for the next question; `error` (or a non-OK response) appends `Chat failed: ...`. The panel shows a cursor while streaming, pin and dismiss buttons, and, once done, chips for every loaded note id the answer mentions (`extractUsedIds`: case-insensitive, first-mention order, not inside longer tokens). While an answer with used ids is open, the wall dims other cards to .22 and rings the used ones. Escape closes an unpinned panel.
+- **Tooltips**: one document-level `mouseover` listener renders `[data-tip]` text above the element, or to its right with `data-tip-side="right"`. Buttons are icon-only with `data-tip` and `aria-label`.
+- **Layout**: a 56 px rail, an optional 240 px sidebar (main margin 296 px when open), the chat bar and answer panel offset to match.
+
+### Phase-8 seam stubs
+Phase 8 (P1-NOTES-A007, pending) rewrites these and must keep their props, because `App.tsx` and `NoteCard.tsx` already call them.
+| component | props | phase 7 behaviour |
+|---|---|---|
+| `Gallery` | `photos: Note[]`, `copiedId`, `onCopy(id)` | empty `<section class="gallery" data-count>` |
+| `PhotoModal` | `photos`, `index`, `onIndex(i)`, `onClose()`, `copiedId`, `onCopy(id)` | renders nothing (its keydown listener must use capture + `preventDefault`, so App's Escape handler skips it) |
+| `DropOverlay` | `onImageAdded(note)` | renders nothing; App's callback inserts the note on top and switches text to all |
+| `NoteImage` | `note`, `className?` (default `card-img`), `style?` | always the thumb; phase 8 adds the "not on this machine" placeholder for `!image.available` |
+
 ## Deployment (phase 3)
 
 Full guide: `docs/INSTALL.md`. Nothing in `src/` changed for this phase.
@@ -582,6 +649,8 @@ Images over HTTP and MCP (phase 5): `POST /api/images` and `create_image` both e
 
 Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose deltas stream back as SSE.
 
+Web UI client (phase 7): `useNotes` fetches `/api/notes?limit=2000` and `/api/tags`, keeps `EventSource('/api/events')` open and refetches (debounced 250 ms) on each `note` event, on reconnect and every 60 s. `App` derives the wall from `notes`, `mode` and active tags with the pure `lib/filter` helpers. An edit is applied locally first (`upsertLocal`/`removeLocal`), then sent with `PATCH`/`DELETE`/`POST`, then followed by a refetch; the server's resulting `NoteEvents` emit triggers another refetch through SSE. Chat reads the `POST /api/chat` response body with `readSSE`, since `EventSource` cannot POST.
+
 Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*.sql`. `npm run db:migrate` applies them to Neon over the DIRECT host chosen by `drizzle.config.ts`. That config throws if only pooler URLs exist.
 
 ## Dependencies
@@ -602,7 +671,7 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 - `file-type`: magic-byte mime detection
 - `chokidar`: inbox watcher
 
-Declared for later phases (not yet imported): React/Vite/testing-library, Phosphor icons, fonts.
+- Web UI (phase 7): `react`, `react-dom`, `vite`, `@vitejs/plugin-react`, `@phosphor-icons/react`, `@fontsource-variable/host-grotesk`, `@fontsource/geist-mono`; tests use `@testing-library/react` and `jsdom`.
 
 ### Internal
 - `src/db/client.ts` imports `src/db/schema.ts`.
@@ -650,6 +719,7 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` with a zero-delay stub over the Docker DB; `uniqueTag()`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
 - Phase 2 suites: `notes.helpers` (dates, cursor, limit, tag input, origin, rowToNote, NoteEvents), `mcp.instructions` (unit), `notes.service.int` (service against Docker Postgres), `mcp.tools.int` (all 11 tools through an MCP client on the real `/mcp` route, plus the 403/405 guards and `/health`) and `daemon.int` (data dirs, loopback listen, `/health`, MCP initialize over real HTTP, non-loopback host refused).
 - Phase 5 suites: `tests/unit/takenFilter.test.ts` (taken bounds as UTC ISO text compares, `invalid_input` on garbage), `tests/unit/imageAccess.test.ts` (`expandHome`, `etagMatches`), `images.http.int` (upload and dedupe, byte-exact original with immutable cache and sha256 ETag, id spellings, thumb/preview sizes, display for PNG vs TIFF, 400/413/415 refusals, `not_found`/`no_image`, `not_on_this_machine`, no cached derivative once the original is gone) and `images.mcp.int` (tool and filter listing, `create_image` copies and dedupes, refusals, `view_images` content, text/unknown/missing explanations, the 8-id cap, `has_image` and taken-range filters on list and search). Harness: `tests/integration/imageHarness.ts` (`startHarness` builds real `createApp` over the Docker DB and a temp data dir, with `listen()`, `reset()`, `close()`; `makeImage` makes solid-colour PNG/JPEG/TIFF bytes; `insertTextNote`).
+- Phase 7 suites (jsdom, colocated in `web/src`): `lib/{text,filter,usedIds,dates,sse}.test.tsx` (font sizing, tag parsing and segmenting, AND filter, mode cycle, heading and count line, used-id extraction, relative dates, SSE parsing across chunks and CRLF), `components/NoteCard.test.tsx` (font size, tag chip vs edit click, copy, blur commit, thumb aspect ratio) and `App.test.tsx` (text mode hides image notes, mode cycle, tag filter rail chip, streamed chat with used-note chips and dimming). `npm run typecheck` checks both the server and web tsconfigs.
 - Phase 4 suites: `tests/unit/images/{probe,store,derive,ingest,inbox}.test.ts` and `tests/integration/images.int.test.ts` (byte-exact storage, dedupe, restore of a deleted duplicate, the sha256 unique index, HEIC display/thumb/preview, missing original, and an inbox drop through `startBackground`).
 - Image fixtures in `tests/fixtures/images/`: `exif.jpg` (64x48, EXIF 2024:10:30 14:05:09), `plain.png` (40x30, no EXIF), `photo.heic` (64x48 HEVC with EXIF). They are committed because Node cannot encode HEVC. `make-fixtures.py` (Pillow + pillow-heif) regenerates them, possibly with different bytes. Helpers: `tests/helpers/fixtures.ts` (`FIXTURES_DIR`, `JPEG_EXIF`, `PNG_PLAIN`, `HEIC_PHOTO`, `fixtureBytes`, `tempDir`) and `tests/helpers/fakeNotes.ts` (`FakeNotes`, an in-memory `ImageNotes` + `ImageRecords` with the schema's id and live-sha256 uniqueness rules, plus `beforeInsert` / `failNextCreate` hooks for race and failure tests).
 
@@ -684,7 +754,10 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - Claude Code is registered against `http://localhost:7317/mcp` while the daemon binds `127.0.0.1`; this relies on `localhost` resolving to IPv4.
 - A dev `notesd` already on port 7317 makes the installer's health check pass against the wrong process. Stop it first (`ss -ltnp 'sport = :7317'`).
 - Linger only starts `notesd` when the distro boots; it does not keep WSL alive. The Windows keepalive task does that.
+- The UI must be rebuilt (`npm run build`, or `npm run build:web`) for `notesd` to serve changes in `web/src`; until `web/dist` exists every non-API path is 503. `dev:web` needs a daemon on `NOTESD_PORT` (default 7317) to proxy to.
+- `web/src/lib/text.ts` duplicates the server's tag regex instead of importing `src/notes/tags.ts`, so the two must change together.
+- The UI loads at most 2000 notes in one page and filters client-side; it ignores `next_cursor`.
 
 ## Notes
 
-Plan set: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (8 phases, iterations 1-3: spine, images, web UI). Phase 1 (P1-NOTES-A000) landed the scaffold. Phase 2 (P1-NOTES-A001, plan `.workflows/plan/P1-NOTES-A001.md`) landed the notes service, the MCP server and tools, and the `notesd` daemon. Phase 3 (P1-NOTES-A002) landed deployment: `deploy/notesd.service`, `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/windows/install-wsl-keepalive.ps1`, the `/n` skill in `claude/skills/n/` and `docs/INSTALL.md`. Phase 5 (P1-NOTES-A004) landed the image HTTP routes and upload, the `create_image`/`view_images` MCP tools, the `has_image` and taken-date filters, and the images section of the MCP instructions. Phase 6 (P1-NOTES-A005) landed the `/api` JSON routes, `/api/events` SSE, the `/api/chat` stub behind `ChatBackend`, and static SPA serving.
+Plan set: `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` (8 phases, iterations 1-3: spine, images, web UI). Phase 1 (P1-NOTES-A000) landed the scaffold. Phase 2 (P1-NOTES-A001, plan `.workflows/plan/P1-NOTES-A001.md`) landed the notes service, the MCP server and tools, and the `notesd` daemon. Phase 3 (P1-NOTES-A002) landed deployment: `deploy/notesd.service`, `scripts/install.sh`, `scripts/uninstall.sh`, `scripts/windows/install-wsl-keepalive.ps1`, the `/n` skill in `claude/skills/n/` and `docs/INSTALL.md`. Phase 4 (P1-NOTES-A003) landed the image store, derivatives, ingest service and inbox watcher. Phase 6 (P1-NOTES-A005) landed the `/api` JSON routes, `/api/events` SSE, the `/api/chat` stub behind `ChatBackend`, and static SPA serving. Phase 7 (P1-NOTES-A006) landed the web UI core in `web/` and the `build:web`/`dev:web` scripts. Phase 5 (P1-NOTES-A004) landed the image HTTP routes and upload, `create_image`/`view_images`, the `has_image` and taken-date filters, and the images section of the MCP instructions. Pending: phase 8 (P1-NOTES-A007: web UI images, replacing the `Gallery`, `PhotoModal`, `DropOverlay` and `NoteImage` stubs).
