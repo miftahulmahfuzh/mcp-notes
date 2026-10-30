@@ -2,7 +2,8 @@
 
 A personal notes system for people who live in Claude Code. One local daemon, `notesd`, holds
 your notes and photos and serves them three ways: to every Claude Code session as an MCP server,
-to `/n <anything>` typed from any repo, and to a dark web wall at `http://localhost:7317`.
+to `/n <anything>` typed from any repo, and to a dark web wall at `http://localhost:7317` with
+its own chat bar.
 
 ![The wall in its default view: text notes only](docs/readme/wall-text.png)
 
@@ -188,15 +189,37 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ## The chat bar
 
-The pill at the bottom of the wall is a natural-language command line, and its answer streams
-into a panel that rises above it. You can pin or dismiss the panel. Notes the answer mentions
-are outlined on the wall and the rest dim. Chips under the answer jump to each note.
+The pill at the bottom of the wall is a natural-language command line. Its answer streams into a
+panel that rises above it, which you can pin or dismiss. A terse status line ("searching
+notes", "looking at 2 photos", "searching the web") shows what the agent is doing. Notes the
+answer mentions are outlined on the wall and the rest dim. Chips under the answer jump to each
+note, switching the view if that note is hidden.
 
-**Status:** the bar, the panel, the streaming and the highlighting are built. The brain behind
-them is not. Today `POST /api/chat` streams a fixed "the chat brain arrives in iteration 4"
-reply. Iteration 4 (in progress) puts the Claude Agent SDK behind it, using the same `notes`
-tools as `/n`. Demos of the chat bar will be added here when that lands. Until then, ask through
-`/n`.
+Behind it is the Claude Agent SDK: headless Claude Code on your existing login, one run per
+message, with the same `notes` tools `/n` uses plus web search. A follow-up continues the same
+thread. Dismissing the panel starts a new one. Answers are not saved as notes.
+
+The recordings below are real runs against the demo instance. The time spent waiting for the
+answer is sped up 1.8×.
+
+**Reading and comparing.** It pulls both weeks, writes the comparison, and the eight notes it
+used stay lit on the wall.
+
+![Chat bar: summarize my #seer notes this week, compare to last week](docs/readme/chat-seer.gif)
+
+**Looking at photos.** In the everything view it finds the photos saved on 26 Oct, looks at them,
+and highlights the photo note it used. It also catches the caption that doesn't match its photo.
+
+![Chat bar: what's in the photos i saved on 26 oct?](docs/readme/chat-photos.gif)
+
+**The web plus your notes.** It searches the web, then ties the result back to the Calvino quote
+in your `#reading` note.
+
+![Chat bar: what is Invisible Cities about? search the web](docs/readme/chat-web.gif)
+
+If Claude fails on a usage limit or a login problem, the same message is retried once on GLM
+(z.ai, configured through `.env.local`'s `LLM_*` keys), and the panel's header says which brain
+answered. `CHAT_BRAIN=glm` makes GLM the only brain.
 
 ## Install and run
 
@@ -282,6 +305,8 @@ The integration suite starts or reuses its own container and never touches the N
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | — | Postgres URLs. The daemon uses the pooled Neon host, migrations the direct one, chosen by host name. |
 | `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. |
 | `NOTES_DATA_DIR` | `~/mcp-notes-data` | Photos, derived images, inbox. |
+| `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | — | The GLM fallback endpoint (z.ai). |
 | `TEST_DATABASE_URL` | set by `test:int` | Integration test database. |
 
 ## How it works
@@ -331,7 +356,7 @@ comparisons are Claude's job.
 | `GET /api/events` | Server-sent events, `event: note` on every change |
 | `POST /api/images` | Multipart upload (`file`, optional `body`), returns `{note, created}` |
 | `GET /api/notes/:id/original` · `/display` · `/thumb` · `/preview` | The photo in each form; 404 `not_on_this_machine` when the file lives elsewhere |
-| `POST /api/chat` | Streams `delta` events, then `done` with a `thread_id` |
+| `POST /api/chat` | Streams `status` and `delta` events, then `done` with the `thread_id` and the brain that answered |
 | `/full/:id` | The full-screen photo page |
 
 ### Where things are stored
@@ -357,7 +382,6 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 - **Full size costs disk.** Originals are kept exactly as they arrive, so a phone's 4 MB HEIC
   stays 4 MB, plus a full-resolution JPEG for viewing.
 - **Text needs the network.** Notes live in Neon. With no connection, nothing loads.
-- **No chat brain yet.** The chat bar streams a placeholder until iteration 4. Use `/n`.
 - **No semantic search yet.** Search is full text plus tags and dates. "Notes about ArangoDB
   credentials" works only when those words appear. Embeddings come in iteration 6.
 - **No connectors yet.** Spending, runs and Seer experiments (iteration 5) are not reachable.
@@ -378,7 +402,7 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 | 1 | Spine: `notesd`, schema, MCP tools, revisions, `/n`, autostart | done |
 | 2 | Images: local store, derivatives, inbox, image tools, EXIF dates | done |
 | 3 | Web UI: wall, three views, gallery, modal, full-screen tab, upload | done |
-| 4 | Chat bar brain: Claude Agent SDK, streaming, threads, GLM fallback | in progress |
+| 4 | Chat bar brain: Claude Agent SDK, streaming, threads, GLM fallback | done |
 | 5 | Read-only connectors: expense-tracking, run-insights, Seer | planned |
 | 6 | Semantic search: pgvector embeddings, hybrid ranking | planned |
 
@@ -387,7 +411,7 @@ Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMA
 ## Repository layout
 
 ```
-src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat
+src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat agent
 web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
