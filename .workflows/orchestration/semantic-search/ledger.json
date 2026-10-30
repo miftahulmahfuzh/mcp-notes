@@ -3,6 +3,12 @@
   "coordinator": "orch-semantic-search",
   "coordinator_session_id": "5c7ceb25-0e35-4af3-9db4-39084548caee",
   "created": "2026-10-30T14:34:07+07:00",
+  "landed": {
+    "at": "2026-10-30T15:30:38+07:00",
+    "base": "main",
+    "commit": "c507455a4e4bdf0661465c14bac9d3564528b04d",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -110,7 +116,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "0cfdc01",
       "depends_on": [
         3,
         4,
@@ -118,22 +124,22 @@
       ],
       "difficulty": "NORMAL",
       "n": 6,
-      "note": null,
+      "note": "coordinator, rungs 1 and 4: headline examples assert 'come back' (sim>=minSimilarity, raw top5, on hybrid page), literal hit stays first; minSimilarity 0.3->0.22 (seer-incident .240), live MRR .733. Neon: vector 0.8.6, note_embeddings + hnsw idx, backfill 'done: embedded 12, failed 0; 0 pending'",
       "package": "tests/live`, docs",
       "plan": ".workflows/plan/semantic-search/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T15:29:28+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A022",
       "title": "Live test, docs, Neon migration + first backfill"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T15:21:21+07:00",
+  "updated": "2026-10-30T15:30:38+07:00",
   "verified_at": "2026-10-30T14:55:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
