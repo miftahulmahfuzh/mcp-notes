@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 8
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 5
-- Completed: 27
+- Completed: 28
 
 ---
 
@@ -41,16 +41,6 @@
   - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A025
   - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
-
-- [ ] **P1-NOTES-A027** Phase 5: Reveal in Explorer: capabilities + reveal endpoint
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `src/http/reveal.ts` (new), `src/http/app.ts` (mount + `CreateAppOptions.reveal`), `tests/unit/reveal.test.ts`, `tests/integration/reveal.int.test.ts`. Exit: capabilities reports `reveal: false` off WSL; reveal route answers 202 on spawn without awaiting Explorer; command line is exactly `[explorer, ['/select,' + wslpath -w original]]`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 5 of 11)
-  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A024
-  - **Plan**: `.workflows/plan/P1-NOTES-A027.md`
 
 - [ ] **P1-NOTES-A028** Phase 6: Web on `images[]`: cards, gallery, modal stepping, full-screen by image
   - **Difficulty**: HARD
@@ -89,7 +79,7 @@
   - **Status**: blocked
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 9 of 11)
   - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A027, P1-NOTES-A030
+  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030
   - **Plan**: `.workflows/plan/P1-NOTES-A031.md`
 
 - [ ] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
@@ -111,6 +101,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A027** Phase 5: Reveal in Explorer: capabilities + reveal endpoint
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/http/reveal.ts` (new), `src/http/app.ts` (mount + `CreateAppOptions.reveal`), `tests/unit/reveal.test.ts`, `tests/integration/reveal.int.test.ts`. Exit: capabilities reports `reveal: false` off WSL; reveal route answers 202 on spawn without awaiting Explorer; command line is exactly `[explorer, ['/select,' + wslpath -w original]]`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 5 of 11)
+  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A027.md`
+  - **Completed**: 2026-10-30 16:45
+  - **Method**: /implement
+  - **Files**: src/http/reveal.ts, src/http/app.ts, tests/unit/reveal.test.ts, tests/integration/reveal.int.test.ts
+  - **Drift**: none — app.ts hunks placed by anchor text as planned; locateImage/sameOriginOnly/normalizeId/imageHarness matched phase 2's tree
 
 - [x] **P1-NOTES-A024** Phase 2: Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile
   - **Difficulty**: HARD

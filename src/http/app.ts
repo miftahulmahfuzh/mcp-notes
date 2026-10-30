@@ -4,6 +4,7 @@ import type { AppDeps } from '../deps.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import { apiRoutes } from './api.js';
 import { imageRoutes } from './images.js';
+import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
 import { staticRoutes } from './static.js';
 
@@ -26,11 +27,14 @@ export const loopbackOnly: MiddlewareHandler = async (c, next) => {
 export interface CreateAppOptions {
   /** The brain behind POST /api/chat. Omitted: apiRoutes' default (the stub). */
   chat?: ChatBackend;
+  /** OS hooks behind /api/capabilities and the reveal route. Omitted: the real WSL detection and spawn. */
+  reveal?: RevealDeps;
 }
 
 /**
  * The whole HTTP surface, mounted in this order (later phases fill the routers, never this file):
- * /health, /mcp, apiRoutes (P6), imageRoutes (P5), staticRoutes (P6, last: it owns the SPA fallback).
+ * /health, /mcp, apiRoutes (P6), imageRoutes (P5), revealRoutes (iteration 7: capabilities + reveal),
+ * staticRoutes (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -47,6 +51,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
 
   app.route('/', apiRoutes(deps, { chat: options.chat }));
   app.route('/', imageRoutes(deps));
+  app.route('/', revealRoutes(deps, { reveal: options.reveal }));
   app.route('/', staticRoutes(deps));
   return app;
 }
