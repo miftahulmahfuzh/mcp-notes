@@ -1,0 +1,138 @@
+{
+  "branch": "feature/semantic-search",
+  "coordinator": "orch-semantic-search",
+  "coordinator_session_id": "5c7ceb25-0e35-4af3-9db4-39084548caee",
+  "created": "2026-10-30T14:34:07+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `src/embeddings`, `drizzle`, `scripts",
+      "plan": ".workflows/plan/semantic-search/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R1",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "pgvector schema, migration, embedding state + repo"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/embeddings`, `src/config.ts`, `src/daemon.ts",
+      "plan": ".workflows/plan/semantic-search/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "OpenRouter embedder, config, deps wiring, fake embedder"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/embeddings`, `src/background.ts`, `src/cli",
+      "plan": ".workflows/plan/semantic-search/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R1",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Embedding worker, background backfill, `embed:backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "src/search`, `src/notes`, `src/mcp",
+      "plan": ".workflows/plan/semantic-search/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Hybrid search + labelled set"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/embeddings`, `src/notes`, `src/mcp`, `src/chat",
+      "plan": ".workflows/plan/semantic-search/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "related` tool"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3,
+        4,
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 6,
+      "note": null,
+      "package": "tests/live`, docs",
+      "plan": ".workflows/plan/semantic-search/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Live test, docs, Neon migration + first backfill"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "semantic-search",
+  "updated": "2026-10-30T14:34:07+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
+}
