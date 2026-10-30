@@ -58,7 +58,7 @@
         "R1",
         "R5"
       ],
-      "status": "spawned",
+      "status": "pending",
       "task_id": null,
       "title": "Attach / remove / restore one image: service, ingest, HTTP, MCP tools"
     },
@@ -84,22 +84,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "508948b",
       "depends_on": [
         2
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "reveal + capabilities; files all phase-5-owned; argv ['/select,'+winPath] confirmed; unit 685, int 281",
       "package": "src/http",
       "plan": ".workflows/plan/wall-editing/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:41:34+07:00",
       "satisfies": [
         "R4",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A027",
       "title": "Reveal in Explorer: capabilities + reveal endpoint"
     },
     {
@@ -118,7 +118,7 @@
         "R1",
         "R5"
       ],
-      "status": "spawned",
+      "status": "pending",
       "task_id": null,
       "title": "Web on `images[]`: cards, gallery, modal stepping, full-screen by image"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:35:45+07:00",
-  "verified_at": "2026-10-30T16:25:00+07:00",
+  "updated": "2026-10-30T16:41:34+07:00",
+  "verified_at": "2026-10-30T16:41:34+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
