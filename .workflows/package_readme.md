@@ -53,7 +53,11 @@ src/connectors/schema.ts    registerSchemaTool (<id>_schema), describePgSchema, 
 src/connectors/sql.ts       registerSqlTool (<id>_sql)
 src/connectors/register.ts  defaultConnectors, registerConnectorTools
 src/connectors/{expenses,runs,seer}/index.ts    <ID>_ABOUT texts, create<Id>Connector
-src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (phase 1: no-op stubs; phases 2-4 fill them)
+src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (phase 1: no-op stubs; phases 2-4 fill them; runs filled in phase 3)
+src/connectors/runs/curated.ts   registerRunsCurated: runs_list, runs_get, runs_review (+ runsList/runsGet/runsReview)
+src/connectors/runs/queries.ts   curated SQL (/* runs:* */), row shapers (runMetrics, periodTotals, splitOut, zonesOut, insightOut), read helpers
+src/connectors/runs/periods.ts   WIB days, ISO week / month keys: resolvePeriod, resolveRange, isRealDate, todayInWib
+src/connectors/runs/format.ts    unit helpers: metresToKm, formatDuration ("h:mm:ss"), formatPace ("m:ss /km"), hrDrop1Min, percentOf
 src/http/app.ts        createApp: /health, /mcp (+ loopbackOnly guard), mounts the routers below
 src/http/api.ts        apiRoutes: /api/notes CRUD, /api/tags, /api/events (SSE), /api/chat (SSE)
 src/http/static.ts     staticRoutes: web/dist SPA, /assets, /full/:id, 503 when not built
@@ -86,7 +90,7 @@ claude/skills/n/SKILL.md  the /n Claude Code skill, symlinked to ~/.claude/skill
 docs/INSTALL.md        install, WSL keepalive rationale, post-merge re-install, uninstall, troubleshooting
 tests/unit/            vitest unit tests (node)
 tests/integration/     *.int.test.ts, setup.ts helpers, globalSetup.ts (migrates once)
-tests/integration/connectors/  connector harness (harness.ts, siblings.ts), globalSetup.ts (builds connectors_<id> DBs), core/generic/mcp int tests
+tests/integration/connectors/  connector harness (harness.ts, siblings.ts), globalSetup.ts (builds connectors_<id> DBs), core/generic/mcp int tests, runs.curated.int.test.ts
 tests/live/            chat.live.test.ts (npm run test:live), connectors.live.test.ts (npm run test:live:connectors)
 vitest.config.ts       the only vitest config; switches mode on VITEST_INTEGRATION=1, CHAT_LIVE_TEST=1 or CONNECTORS_LIVE_TEST=1
 tsconfig.json          typecheck (noEmit); tsconfig.server.json builds src/ to dist/
@@ -489,6 +493,14 @@ function registerConnectorTools(server, connectors): void   // _schema + _sql fo
 | `seer_sql` | as above, plus `source?` `db` (default, Postgres) or `lab` (SQLite) | same |
 
 All connector tools carry `readOnlyHint` and `openWorldHint` and answer compact JSON through `run(..., { compact: true })`. Every query goes: `connectorSettings` (per call), `resolveRepoDir`, `loadDatabaseTarget` (direct URL chosen by host, `options` param dropped, `sslmode=require|prefer` rewritten to `verify-full`), a fresh `pg.Client` with the read-only startup options, `BEGIN READ ONLY`, the SQL wrapped as `SELECT * FROM (<sql>) AS q LIMIT cap+1` in array row mode, `ROLLBACK`, `end()`. The extra row sets `truncated`. The lab path is `<repo>/lab/lab.sqlite`, read in a child with an empty env that is SIGKILLed at the timeout; bigints come back as numbers when safe, blobs as `<blob N bytes>`. `<id>_sql` runs `guardSelect` first: it refuses an empty query, more than one statement, anything not starting with SELECT or WITH, write/DDL/transaction words (INSERT, UPDATE, DELETE, INTO, CREATE, PRAGMA, ATTACH, BEGIN, ...), calls to effectful functions (`pg_terminate_backend`, `set_config`, `pg_read_file`, `dblink*`, `pg_advisory_*`, `load_extension`, ...) and row locks (`FOR UPDATE` / `FOR SHARE`). Refusals read `<label> query failed: refused before reaching the database: <why>`. The guard is a convenience; the read-only session and transaction are the real barrier. Curated stubs in `src/connectors/{expenses,runs,seer}/curated.ts` register nothing in phase 1; phases 2-4 replace them and must use `run(..., { compact: true })` and `toObjects`.
+
+Run-insights curated tools (phase 3, P1-NOTES-A014), all compact and `readOnlyHint`, dates as WIB calendar days, raw app units each with a readable companion (km, `h:mm:ss`, `m:ss /km`):
+
+| tool | input | returns |
+|---|---|---|
+| `runs_list` | `from` YYYY-MM-DD, `to?` (default today) | `{ from, to, totals, runs, truncated }`: reviewed runs only, newest first, with headline/verdict of the app's analysis; totals use distance-weighted pace and time-weighted HR |
+| `runs_get` | exactly one of `id` or `date` | `{ id \| date, ... }` full metrics, per-km splits (last flagged partial), HR zones 1-5, note, `reviewed`, latest analysis, `profile`; unreviewed runs included; unknown id or unreal date throws |
+| `runs_review` | `scope` `week` (ISO) / `month`, `key?` (`2026-W34`, `2026-08` or a day inside; default current) | `{ scope, key, from, to, review, review_missing, totals, runs }` (brief runs); `review` null when the app stored none |
 
 ### src/http/app.ts
 

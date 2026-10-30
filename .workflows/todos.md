@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 13:40:00
+**Last Updated**: 2026-10-30 13:37:28
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 13
+- Completed: 14
 
 ---
 
@@ -31,6 +31,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A014** Phase 3: run-insights curated tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/runs/{curated,format,periods,queries}.ts`, `tests/unit/connectors/runs.{format,periods,curated}.test.ts`, `tests/integration/connectors/runs.curated.int.test.ts`. Exit: `runs_list` (`from`, `to` default today → reviewed runs with key metrics and period totals), `runs_get` (exactly one of `id` or `date`: metrics, splits, zones, the app's latest session insight), `runs_review` (`scope` week|month, `key` week/month/day → latest review + totals) correct on seeded data; app units with readable companions; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p3/docs/plans/CONNECTORS_PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (curated runs tools); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A014.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /implement
+  - **Files**: src/connectors/runs/curated.ts, src/connectors/runs/format.ts, src/connectors/runs/periods.ts, src/connectors/runs/queries.ts, tests/unit/connectors/runs.format.test.ts, tests/unit/connectors/runs.periods.test.ts, tests/unit/connectors/runs.curated.test.ts, tests/integration/connectors/runs.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A014.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - TaskID → P1-NOTES-A014 as assigned by coordinator orch-connectors (rung 5: task text / coordinator brief)
+    - Step 3 task creation in per-phase worktree → only phase 3's task, in root .workflows/todos.md (tie-break: narrower blast radius; matches phases 1 and 6 precedent)
+    - Integration tests run serialized under flock /tmp/mcp-notes-test-int.lock (shared Docker containers with peers)
 
 - [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
   - **Difficulty**: EASY
