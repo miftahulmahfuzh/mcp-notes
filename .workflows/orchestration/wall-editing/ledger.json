@@ -78,7 +78,7 @@
         "R3",
         "R5"
       ],
-      "status": "spawned",
+      "status": "pending",
       "task_id": null,
       "title": "Bin listing, note restore endpoint, purge (rows + files)"
     },
@@ -124,23 +124,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "448e11f",
       "depends_on": [
         3,
         6
       ],
       "difficulty": "HARD",
       "n": 7,
-      "note": null,
+      "note": "editor modal + attach; docs f724b8c; invariant 7 held; decision rung 2: App.test uses getAllByLabelText('New note')[0] (Rail+Header share label); drift: keep-list test uses makeNote; int 293/294, the 1 red is phase 4's uncommitted bin.int.test.ts",
       "package": "web/src",
       "plan": ".workflows/plan/wall-editing/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:54:41+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A029",
       "title": "Web big editor modal + attach on drop/paste"
     },
     {
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:47:22+07:00",
-  "verified_at": "2026-10-30T16:41:34+07:00",
+  "updated": "2026-10-30T16:54:41+07:00",
+  "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
