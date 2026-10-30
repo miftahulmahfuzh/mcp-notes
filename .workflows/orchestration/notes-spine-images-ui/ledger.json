@@ -139,29 +139,29 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "db55a3e",
       "depends_on": [
         5,
         7
       ],
       "difficulty": "NORMAL",
       "n": 8,
-      "note": null,
+      "note": "gallery/modal/fullscreen/upload/placeholder; kept className=gallery on Gallery section for P7 App.test per invariant 2",
       "package": "web/",
       "plan": ".workflows/plan/notes-spine-images-ui/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T03:36:49+00:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A007",
       "title": "Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "notes-spine-images-ui",
-  "updated": "2026-10-30T03:29:41+00:00",
+  "updated": "2026-10-30T03:36:49+00:00",
   "verified_at": "2026-10-30T03:28:36+00:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui"
 }
