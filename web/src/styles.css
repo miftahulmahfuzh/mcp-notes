@@ -23,7 +23,8 @@
   --col-w: 240px;
 }
 
-html, body { margin: 0; background: var(--bg); color: var(--fg); }
+/* font-family on body too: the photo modal is portaled to <body>, outside .app. */
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
 body::after {
   content: "";
   position: fixed;
