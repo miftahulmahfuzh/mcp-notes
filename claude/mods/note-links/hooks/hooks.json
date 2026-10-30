@@ -1,0 +1,4 @@
+{
+  "description": "Links note ids in replies to the mcp-notes wall; /open <id> opens one in the browser",
+  "modules": ["./register.ts"]
+}
