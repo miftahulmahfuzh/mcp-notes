@@ -1,8 +1,26 @@
 /**
- * The chat brain seam. Iteration 3 ships a stub (src/chat/stub.ts); iteration 4 replaces
- * only the implementation passed to apiRoutes(). The HTTP layer streams whatever
- * `deltas` yields as `event: delta` and then sends `event: done` with `threadId`.
+ * The chat brain seam. The HTTP layer (src/http/api.ts POST /api/chat) is the only consumer:
+ * it writes each `ChatEvent` as an SSE event of the same name, then `event: done` with
+ * `end()`, or `event: error` when `events` throws. Implementations: the stub
+ * (src/chat/stub.ts) and the Agent SDK backend (src/chat/agent.ts, iteration 4).
  */
+
+/** Which model family answered. The stub reports none. */
+export type ChatBrain = 'claude' | 'glm';
+
+export type ChatEvent =
+  /** -> `event: delta {"text": "..."}`. Concatenated, the deltas are the full reply. */
+  | { type: 'delta'; text: string }
+  /** -> `event: status {"text": "searching notes"}`. `""` clears the caption. */
+  | { type: 'status'; text: string };
+
+export interface ChatTurnEnd {
+  /** The thread this reply belongs to (new or continued). -> `done.thread_id`. */
+  threadId: string;
+  /** The brain that answered. -> `done.brain`; omitted from `done` when undefined. */
+  brain?: ChatBrain;
+}
+
 export interface ChatRequest {
   /** The user's message, already trimmed and non-empty. */
   message: string;
@@ -13,10 +31,10 @@ export interface ChatRequest {
 }
 
 export interface ChatTurn {
-  /** The thread this reply belongs to (new or continued). Sent in `event: done`. */
-  threadId: string;
-  /** Text fragments in order. Their concatenation is the full reply. */
-  deltas: AsyncIterable<string>;
+  /** Events in order. Ends normally, or throws (-> `event: error`). */
+  events: AsyncIterable<ChatEvent>;
+  /** Valid only after `events` finished without throwing. */
+  end(): ChatTurnEnd;
 }
 
 export interface ChatBackend {

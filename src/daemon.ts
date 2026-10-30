@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { serve, type ServerType } from '@hono/node-server';
 import { startBackground } from './background.js';
+import type { ChatBackend } from './chat/backend.js';
+import { createStubChatBackend } from './chat/stub.js';
 import type { Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
@@ -10,13 +12,21 @@ import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
 
-export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed')] as const;
+/** `<dataDir>/chat`: the fixed cwd of every chat brain run, so SDK sessions resume across restarts. */
+export const CHAT_SUBDIR = 'chat';
+
+export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR] as const;
 
 export interface RunningDaemon {
   deps: AppDeps;
   /** The bound port (useful when config.port is 0). */
   port: number;
   stop: () => Promise<void>;
+}
+
+export interface StartDaemonOptions {
+  /** The brain behind POST /api/chat. Omitted: the stub (tests inject a scripted fake here). */
+  chat?: ChatBackend;
 }
 
 export async function ensureDataDirs(dataDir: string): Promise<void> {
@@ -43,8 +53,8 @@ function closeServer(server: ServerType): Promise<void> {
   });
 }
 
-/** config -> data dirs -> db -> service -> app -> listen on loopback -> background jobs. */
-export async function startDaemon(config: Config): Promise<RunningDaemon> {
+/** config -> data dirs -> db -> service -> chat -> app -> listen on loopback -> background jobs. */
+export async function startDaemon(config: Config, options: StartDaemonOptions = {}): Promise<RunningDaemon> {
   if (config.host !== '127.0.0.1') {
     throw new Error(`notesd binds 127.0.0.1 only (got host ${config.host}).`);
   }
@@ -53,7 +63,8 @@ export async function startDaemon(config: Config): Promise<RunningDaemon> {
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events });
   const deps: AppDeps = { config, db, events, service };
-  const app = createApp(deps);
+  const chat = options.chat ?? createStubChatBackend();
+  const app = createApp(deps, { chat });
 
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port });
   let port: number;

@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
-import type { ChatBackend } from '../chat/backend.js';
+import type { ChatBackend, ChatBrain, ChatEvent } from '../chat/backend.js';
 import { createStubChatBackend } from '../chat/stub.js';
 import type { AppDeps } from '../deps.js';
 import type { NoteEvent } from '../notes/events.js';
@@ -14,7 +14,7 @@ export const MAX_LIST_LIMIT = MAX_LIMIT; // 5000, P2's repo cap
 export const SSE_HEARTBEAT_MS = 25_000;
 
 export interface ApiOptions {
-  /** Defaults to the iteration-3 stub. Iteration 4 passes the real backend here. */
+  /** The chat brain. Defaults to the stub; the daemon passes its configured backend. */
   chat?: ChatBackend;
   /** Defaults to SSE_HEARTBEAT_MS. Tests pass a small value. */
   sseHeartbeatMs?: number;
@@ -82,6 +82,16 @@ function parseTagParams(raw: string[] | undefined): string[] {
     if (tag.length > 0) seen.add(tag);
   }
   return [...seen];
+}
+
+/** The SSE event name for a chat event. One per `ChatEvent` variant; both carry `{text}`. */
+function chatEventName(event: ChatEvent): 'delta' | 'status' {
+  switch (event.type) {
+    case 'delta':
+      return 'delta';
+    case 'status':
+      return 'status';
+  }
 }
 
 export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
@@ -204,12 +214,15 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
           threadId: thread_id ?? null,
           signal: controller.signal,
         });
-        for await (const text of turn.deltas) {
+        for await (const event of turn.events) {
           if (controller.signal.aborted) return;
-          await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text }) });
+          await stream.writeSSE({ event: chatEventName(event), data: JSON.stringify({ text: event.text }) });
         }
         if (controller.signal.aborted) return;
-        await stream.writeSSE({ event: 'done', data: JSON.stringify({ thread_id: turn.threadId }) });
+        const end = turn.end();
+        const done: { thread_id: string; brain?: ChatBrain } = { thread_id: end.threadId };
+        if (end.brain !== undefined) done.brain = end.brain;
+        await stream.writeSSE({ event: 'done', data: JSON.stringify(done) });
       } catch (err) {
         if (controller.signal.aborted) return;
         const error = err instanceof Error ? err.message : String(err);

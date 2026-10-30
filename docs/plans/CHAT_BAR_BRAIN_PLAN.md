@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-bar-brain`
 **Branch:** `feature/chat-bar-brain` (base: `HEAD` of `main` @ `d60a707`)
 **Phases:** 4
-**Status:** planned
+**Status:** 1/4 phases complete (1)
 **Coordinator:** —
 
 ---
@@ -82,10 +82,10 @@ SSE on the wire: `delta` and `error` are unchanged. `status` is new, with data `
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Chat seam v2: status events, brain, config, daemon injection | R3, R4, R6 | `src/chat`, `src/http`, `src`, `tests` | 15 | — | NORMAL | `.workflows/plan/chat-bar-brain/phase-1.md` | — | — |
-| 2 | Agent SDK backend: Claude, GLM, fallback, threads, guardrails | R1, R2, R3, R4, R6 | `src/chat`, `src`, `tests` | 12 | 1 | HARD | `.workflows/plan/chat-bar-brain/phase-2.md` | — | — |
-| 3 | Panel: status caption, brain label, thread reset on dismiss | R2, R3, R4 | `web/src` | 6 | 1 | NORMAL | `.workflows/plan/chat-bar-brain/phase-3.md` | — | — |
-| 4 | Daemon fit: unit, install.sh, live suite, installed acceptance | R1, R5, R6 | `deploy`, `scripts`, `tests/live`, root config | 6 | 2, 3 | HARD | `.workflows/plan/chat-bar-brain/phase-4.md` | — | — |
+| 1 ✓ | Chat seam v2: status events, brain, config, daemon injection | R3, R4, R6 | `src/chat`, `src/http`, `src`, `tests` | 15 | — | NORMAL | `.workflows/plan/chat-bar-brain/phase-1.md` | P1-NOTES-A008 | — |
+| 2 | Agent SDK backend: Claude, GLM, fallback, threads, guardrails | R1, R2, R3, R4, R6 | `src/chat`, `src`, `tests` | 12 | 1 | HARD | `.workflows/plan/chat-bar-brain/phase-2.md` | P1-NOTES-A009 | — |
+| 3 | Panel: status caption, brain label, thread reset on dismiss | R2, R3, R4 | `web/src` | 6 | 1 | NORMAL | `.workflows/plan/chat-bar-brain/phase-3.md` | P1-NOTES-A010 | — |
+| 4 | Daemon fit: unit, install.sh, live suite, installed acceptance | R1, R5, R6 | `deploy`, `scripts`, `tests/live`, root config | 6 | 2, 3 | HARD | `.workflows/plan/chat-bar-brain/phase-4.md` | P1-NOTES-A011 | — |
 
 ### Phase 1 — Chat seam v2
 **Satisfies:** R3, R4, R6

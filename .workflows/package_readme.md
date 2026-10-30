@@ -6,10 +6,10 @@
 
 ## Overview
 
-`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place.
+`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place. Iteration 4 (`docs/plans/CHAT_BAR_BRAIN_PLAN.md`) gives the chat bar a real brain. Its phase 1 (P1-NOTES-A008) widened the chat seam: backends yield `delta` and `status` events and report which brain answered, `Config` gained a `chat` block, and `startDaemon` takes the backend as an injectable option (the stub until a later phase wires the Agent SDK backend).
 
 **Key Responsibilities:**
-- Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir) from `.env.local` plus the environment
+- Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir, chat brain settings) from `.env.local` plus the environment
 - Own the whole schema for iterations 1-3 (`notes`, `note_revisions`) and its single migration `drizzle/0000_init.sql`
 - Build one Drizzle type over two drivers: Neon websocket pool in production, `pg` for the Docker test database
 - Generate and normalise short note ids (`A-B32`)
@@ -44,10 +44,10 @@ src/http/api.ts        apiRoutes: /api/notes CRUD, /api/tags, /api/events (SSE),
 src/http/static.ts     staticRoutes: web/dist SPA, /assets, /full/:id, 503 when not built
 src/http/images.ts     imageRoutes: POST /api/images, GET /api/notes/:id/{original,display,thumb,preview}
 src/http/imageAccess.ts shared HTTP/MCP image glue: resolveImageFile, ingestFromUpload/Path, ImageInputError, etagMatches
-src/chat/backend.ts    ChatBackend, ChatRequest, ChatTurn (the chat brain seam)
+src/chat/backend.ts    ChatBackend, ChatRequest, ChatTurn, ChatEvent, ChatTurnEnd, ChatBrain (the chat brain seam)
 src/chat/stub.ts       createStubChatBackend, STUB_REPLY, splitIntoDeltas
 src/deps.ts            AppDeps { config, db, events, service }
-src/daemon.ts          startDaemon, ensureDataDirs, DATA_SUBDIRS
+src/daemon.ts          startDaemon (+ StartDaemonOptions.chat), ensureDataDirs, DATA_SUBDIRS, CHAT_SUBDIR
 src/background.ts      startBackground: ensures data dirs, starts the inbox watcher
 src/images/probe.ts    magic-byte sniff, probeImage (mime, oriented size, EXIF taken_at), sha256Hex, HEIC decode
 src/images/store.ts    data-dir paths, images/YYYY/MM/<id>.<ext>, atomic write/copy/move (EXDEV-safe)
@@ -87,6 +87,8 @@ web/dist/              build output, gitignored, served by staticRoutes
 - `DEFAULT_PORT = 7317`
 - `LOOPBACK_HOST = '127.0.0.1'`
 - `DEFAULT_DATA_DIR = '~/mcp-notes-data'`
+- `DEFAULT_CHAT_MAX_TURNS = 24`, `DEFAULT_CHAT_TIMEOUT_MS = 180_000`, `DEFAULT_CLAUDE_BIN = 'claude'`
+- `DEFAULT_CHAT_CONFIG: ChatConfig`: `{ brain: 'claude', maxTurns: 24, timeoutMs: 180000, claudeBin: 'claude', glm: null }`, what `loadConfig` returns when no chat key is set. Tests that build `Config` literals use it.
 
 #### Config
 ```ts
@@ -95,7 +97,16 @@ interface Config {
   port: number                 // NOTESD_PORT, default 7317; 0 = any free port (tests)
   host: '127.0.0.1'            // always loopback, the daemon has no auth
   dataDir: string              // absolute; NOTES_DATA_DIR, default ~/mcp-notes-data; not created here
+  chat: ChatConfig             // the chat bar brain (POST /api/chat)
 }
+interface ChatConfig {
+  brain: ChatBrain             // CHAT_BRAIN: 'claude' (default) | 'glm' (GLM only, no fallback); case-insensitive
+  maxTurns: number             // CHAT_MAX_TURNS, default 24, integer >= 1
+  timeoutMs: number            // CHAT_TIMEOUT_MS, default 180000, wall clock per message, integer >= 1
+  claudeBin: string            // NOTESD_CLAUDE_BIN, default 'claude' (PATH lookup); anything with '/' is ~-expanded and made absolute
+  glm: GlmConfig | null        // set only when LLM_BASE_URL, LLM_API_KEY and LLM_MODEL are all set
+}
+interface GlmConfig { baseUrl: string; apiKey: string; model: string }   // LLM_* -> child's ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / model; apiKey never logged
 interface LoadConfigOptions {
   env?: NodeJS.ProcessEnv      // default process.env; never mutated
   envFile?: string | false     // default <REPO_ROOT>/.env.local; false skips; missing file is fine
@@ -110,7 +121,7 @@ Merges the dotenv file under the real environment (real env wins). Database URL 
 1. `DATABASE_URL` in the real env wins outright (how tests point the daemon at Docker Postgres).
 2. Otherwise, of `DATABASE_URL` / `DATABASE_URL_UNPOOLED`, the pooled one (`-pooler` in host) if any, else whichever exists. Selection goes by host, not key name, because the owner's `.env.local` has the two names swapped.
 
-Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, or when `NOTESD_HOST` is anything but empty or `127.0.0.1`. Unknown keys (`LLM_*`, `OPENROUTER_API_KEY`) are ignored. Synchronous file read; no other side effects.
+Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, when `NOTESD_HOST` is anything but empty or `127.0.0.1`, when `CHAT_BRAIN` is not `claude`/`glm`, when `CHAT_MAX_TURNS`/`CHAT_TIMEOUT_MS` is not a positive integer, or when `CHAT_BRAIN=glm` and any `LLM_*` key is missing (the message names the missing keys). With `CHAT_BRAIN=claude` and incomplete `LLM_*`, `glm` is null and Claude runs have no fallback. Unknown keys (`OPENROUTER_API_KEY`) are ignored. Synchronous file read; no other side effects.
 
 #### isPooledUrl
 ```ts
@@ -383,9 +394,10 @@ The server is stateless. Each POST gets a fresh `McpServer` and a `WebStandardSt
 
 ```ts
 const loopbackOnly: MiddlewareHandler     // 403 JSON-RPC error unless URL host and any Origin are loopback
-function createApp(deps: AppDeps): Hono
+interface CreateAppOptions { chat?: ChatBackend }   // omitted: apiRoutes' default (the stub)
+function createApp(deps: AppDeps, options?: CreateAppOptions): Hono
 ```
-Mount order is fixed: `GET /health` returns `{ ok: true, service: 'notesd' }`. `POST /mcp` sits behind `loopbackOnly` (a DNS-rebinding guard), and `GET`/`DELETE /mcp` return 405 with `Allow: POST`. After those come `apiRoutes` (P6), `imageRoutes` (P5) and `staticRoutes` (P6, last, because it owns the SPA fallback). Later phases fill the routers in `api.ts`, `images.ts` and `static.ts` and must not edit this file. `createApp` calls `apiRoutes(deps)` with no options, so the app always gets the stub chat backend and the 25 s heartbeat.
+Mount order is fixed: `GET /health` returns `{ ok: true, service: 'notesd' }`. `POST /mcp` sits behind `loopbackOnly` (a DNS-rebinding guard), and `GET`/`DELETE /mcp` return 405 with `Allow: POST`. After those come `apiRoutes` (P6), `imageRoutes` (P5) and `staticRoutes` (P6, last, because it owns the SPA fallback). Later phases fill the routers in `api.ts`, `images.ts` and `static.ts` and must not edit this file. `createApp` passes `options.chat` through to `apiRoutes` (stub when omitted) and always uses the 25 s heartbeat.
 
 ### src/http/api.ts
 
@@ -409,13 +421,16 @@ function apiRoutes(deps: AppDeps, options?: ApiOptions): Hono
 
 `/api/events` opens with a `: connected` comment, then sends `event: note` with data `{ op, id }` for every `NoteEvents` emit (`created`/`updated`/`deleted`/`restored`), plus a `: heartbeat` comment every `sseHeartbeatMs`. On client abort it clears the timer and unsubscribes from `NoteEvents`.
 
-`/api/chat` validates the body before streaming (bad input is a plain 400 JSON, not SSE). It then calls `chat.reply({ message, threadId, signal })` and sends one `event: delta` with `{ text }` per yielded fragment, then `event: done` with `{ thread_id }`. A backend throw becomes `event: error` with `{ error }`. A client disconnect aborts the `AbortController` passed as `signal`, and nothing more is written.
+`/api/chat` validates the body before streaming (bad input is a plain 400 JSON, not SSE). It then calls `chat.reply({ message, threadId, signal })` and writes each `ChatEvent` from `turn.events` as an SSE event of the same name: `event: delta` with `{ text }` (reply text; the deltas concatenate to the full reply) or `event: status` with `{ text }` (a progress caption such as `searching notes`; `""` clears it). When the events end it calls `turn.end()` and sends `event: done` with `{ thread_id, brain? }`; `brain` (`claude` | `glm`) is omitted when the backend reports none, as the stub does. A throw from `reply()` or from `events` becomes `event: error` with `{ error }`. A client disconnect aborts the `AbortController` passed as `signal`, and nothing more is written.
 
 ### src/chat/backend.ts, src/chat/stub.ts
 
 ```ts
+type ChatBrain = 'claude' | 'glm'
+type ChatEvent = { type: 'delta'; text: string } | { type: 'status'; text: string }
+interface ChatTurnEnd { threadId: string; brain?: ChatBrain }   // -> done.thread_id, done.brain
 interface ChatRequest { message: string; threadId: string | null; signal: AbortSignal }
-interface ChatTurn { threadId: string; deltas: AsyncIterable<string> }
+interface ChatTurn { events: AsyncIterable<ChatEvent>; end(): ChatTurnEnd }   // end() valid only after events finished without throwing
 interface ChatBackend { reply(request: ChatRequest): Promise<ChatTurn> }
 
 const STUB_REPLY = 'The chat brain arrives in iteration 4. Until then this panel only echoes that fact.'
@@ -423,7 +438,7 @@ interface StubChatOptions { delayMs?: number }          // per-delta delay, defa
 function splitIntoDeltas(text: string): string[]        // word pieces keeping trailing whitespace
 function createStubChatBackend(options?: StubChatOptions): ChatBackend
 ```
-`ChatBackend` is the seam iteration 4 replaces: only the implementation passed as `ApiOptions.chat` changes, the HTTP layer stays. The stub ignores the message, keeps the client's `threadId` or mints `stub-<uuid>`, and streams `STUB_REPLY` word by word. It stops yielding as soon as `signal` aborts, including mid-delay.
+`ChatBackend` is the seam iteration 4 fills: `api.ts` is its only consumer, and the implementation arrives via `startDaemon(config, { chat })` -> `createApp` -> `ApiOptions.chat`. Implementations are the stub and, in a later iteration-4 phase, the Agent SDK backend (`src/chat/agent.ts`). The stub ignores the message, keeps the client's `threadId` or mints `stub-<uuid>`, and streams `STUB_REPLY` word by word as `delta` events. It emits no `status` events and `end()` returns only `{ threadId }` (no brain). It stops yielding as soon as `signal` aborts, including mid-delay.
 
 ### src/http/static.ts
 
@@ -532,13 +547,15 @@ It watches the top level of the inbox only (depth 0, subdirectories ignored), in
 
 ```ts
 interface AppDeps { config: Config; db: Db; events: NoteEvents; service: NotesService }
-const DATA_SUBDIRS = ['images', 'cache', 'inbox', 'inbox/failed']
+const CHAT_SUBDIR = 'chat'   // <dataDir>/chat: fixed cwd of every chat brain run, so SDK sessions resume across restarts
+const DATA_SUBDIRS = ['images', 'cache', 'inbox', 'inbox/failed', CHAT_SUBDIR]
 function ensureDataDirs(dataDir: string): Promise<void>
 interface RunningDaemon { deps: AppDeps; port: number; stop: () => Promise<void> }
-function startDaemon(config: Config): Promise<RunningDaemon>
+interface StartDaemonOptions { chat?: ChatBackend }   // omitted: createStubChatBackend(); tests inject a scripted fake
+function startDaemon(config: Config, options?: StartDaemonOptions): Promise<RunningDaemon>
 function startBackground(deps: AppDeps): Promise<StopBackground>   // StopBackground = () => Promise<void>
 ```
-`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, `createApp`, `serve` on `config.host:config.port`, then `startBackground`. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
+`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, the chat backend (`options.chat` or the stub), `createApp(deps, { chat })`, `serve` on `config.host:config.port`, then `startBackground`. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
 
 ## Web UI: web/ (phases 7-8)
 
@@ -667,7 +684,7 @@ Claude Code skill `n` (`/n <request>`, also triggered by note save/find/edit/com
 
 ## Data Flow
 
-Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, then `createApp()`, and serves Hono on 127.0.0.1.
+Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, picks the chat backend (injected or the stub), then `createApp()`, and serves Hono on 127.0.0.1.
 
 MCP call: Claude Code POSTs to `/mcp`, `loopbackOnly` checks the host, and `handleMcpRequest` builds a fresh server. The tool handler calls `NotesService`, which calls `repo` (Drizzle), which queries Postgres. The result goes back through `rowToNote` as a `Note` JSON text result.
 
@@ -677,7 +694,7 @@ Inbox ingest (phase 4): a file lands in `<dataDir>/inbox`. chokidar reports it, 
 
 Images over HTTP and MCP (phase 5): `POST /api/images` and `create_image` both end in `ingestImage` (bytes from the multipart file, or a copy of the local path), so they share dedupe and `NotesService.create`, which emits `created`. Image reads go `resolveImageFile`, then `locateImage`, then the derive getter for the variant (generated and cached on first read), then a streamed file for HTTP or a base64 `image` block for `view_images`. If the original is not on this machine the answer is 404 `not_on_this_machine` (HTTP) or a text line (MCP).
 
-Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose deltas stream back as SSE.
+Web UI (phase 6): the browser loads the SPA through `staticRoutes`, then calls `/api/notes` and friends. Those handlers call `NotesService` like MCP does and map `NoteError` to a status. The UI holds `/api/events` open: a write from any source (MCP, web, inbox) goes `NotesService`, then `NoteEvents.emit`, then the SSE listener, then `event: note`, and the UI refetches. Chat: `POST /api/chat` goes to `ChatBackend.reply`, whose `delta`/`status` events stream back as SSE, ending with `done { thread_id, brain? }`.
 
 Web UI client (phase 7): `useNotes` fetches `/api/notes?limit=2000` and `/api/tags`, keeps `EventSource('/api/events')` open and refetches (debounced 250 ms) on each `note` event, on reconnect and every 60 s. `App` derives the wall from `notes`, `mode` and active tags with the pure `lib/filter` helpers. An edit is applied locally first (`upsertLocal`/`removeLocal`), then sent with `PATCH`/`DELETE`/`POST`, then followed by a refetch; the server's resulting `NoteEvents` emit triggers another refetch through SSE. Chat reads the `POST /api/chat` response body with `readSSE`, since `EventSource` cannot POST.
 
@@ -748,7 +765,7 @@ Image ingest keeps a per-process promise chain per sha256, so two ingests of the
 - `npm run test:int`: `scripts/test-int.sh` creates, starts or reuses the Docker container `mcp-notes-pg-test` (postgres:16, `127.0.0.1:55433`, db `mcp_notes_test`) and waits on `pg_isready`. It then exports `TEST_DATABASE_URL` and `VITEST_INTEGRATION=1` and runs `tests/integration/**/*.int.test.ts`. `globalSetup` applies `drizzle/*.sql` once.
 - Integration helpers in `tests/integration/setup.ts`: `testDatabaseUrl()` (refuses a Neon URL), `openTestDb()`, `closeTestDb()`, `migrateTestDb()`, `truncateAll(db)` (call in `beforeEach` of any file that writes).
 - There is one `vitest.config.ts`. Do not add a second.
-- Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` with a zero-delay stub over the Docker DB; `uniqueTag()`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
+- Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` over the Docker DB with a zero-delay stub, or `options.chat`; `uniqueTag()`), `tests/integration/helpers/scripted-chat.ts` (iteration 4: `createScriptedChatBackend()`, a fake `ChatBackend` that replays queued `ChatScript`s of `delta`/`status`/`throw`/`hang` steps, an optional `end` and `rejectWith`, and records every `ChatRequest`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
 - Phase 2 suites: `notes.helpers` (dates, cursor, limit, tag input, origin, rowToNote, NoteEvents), `mcp.instructions` (unit), `notes.service.int` (service against Docker Postgres), `mcp.tools.int` (all 11 tools through an MCP client on the real `/mcp` route, plus the 403/405 guards and `/health`) and `daemon.int` (data dirs, loopback listen, `/health`, MCP initialize over real HTTP, non-loopback host refused).
 - Phase 5 suites: `tests/unit/takenFilter.test.ts` (taken bounds as UTC ISO text compares, `invalid_input` on garbage), `tests/unit/imageAccess.test.ts` (`expandHome`, `etagMatches`), `images.http.int` (upload and dedupe, byte-exact original with immutable cache and sha256 ETag, id spellings, thumb/preview sizes, display for PNG vs TIFF, 400/413/415 refusals, `not_found`/`no_image`, `not_on_this_machine`, no cached derivative once the original is gone) and `images.mcp.int` (tool and filter listing, `create_image` copies and dedupes, refusals, `view_images` content, text/unknown/missing explanations, the 8-id cap, `has_image` and taken-range filters on list and search). Harness: `tests/integration/imageHarness.ts` (`startHarness` builds real `createApp` over the Docker DB and a temp data dir, with `listen()`, `reset()`, `close()`; `makeImage` makes solid-colour PNG/JPEG/TIFF bytes; `insertTextNote`).
 - Phase 7 suites (jsdom, colocated in `web/src`): `lib/{text,filter,usedIds,dates,sse}.test.tsx` (font sizing, tag parsing and segmenting, AND filter, mode cycle, heading and count line, used-id extraction, relative dates, SSE parsing across chunks and CRLF), `components/NoteCard.test.tsx` (font size, tag chip vs edit click, copy, blur commit, thumb aspect ratio) and `App.test.tsx` (text mode hides image notes, mode cycle, tag filter rail chip, streamed chat with used-note chips and dimming). `npm run typecheck` checks both the server and web tsconfigs.
