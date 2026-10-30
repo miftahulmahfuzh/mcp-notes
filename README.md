@@ -309,6 +309,28 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ### Clickable note ids
 
+![/n show me the notes tagged #agentic, then Ctrl+click an id to open it on the wall](docs/readme/note-links.gif)
+
+Claude Code's terminal output is plain text: an id like `F-ZH5` normally cannot be clicked. Here
+it can, and nothing in Claude Code had to be patched. Four small pieces make it work:
+
+1. **The wall has an address for every note.** `?note=<id>` scrolls to the note and outlines it
+   (see [Links to a note](#links-to-a-note)).
+2. **Claude is told the address.** The daemon puts the wall URL, built from `NOTESD_PORT`, into
+   the MCP server's instructions, and the `/n` skill says to write every id as
+   `[F-ZH5](http://localhost:<port>/?note=F-ZH5)`.
+3. **Claude Code turns a markdown link into a terminal hyperlink** (OSC 8), which Windows
+   Terminal, iTerm2, kitty and most modern terminals open on Ctrl/Cmd+click. tmux needs one config
+   line to pass it through (see below).
+4. **Optional: the `note-links` mod** ([claude/mods/note-links](claude/mods/note-links/README.md))
+   redraws replies so ids Claude wrote *without* a link also become links, and adds `/open <id>`,
+   which opens the wall from WSL even when your terminal cannot click.
+
+The GIF is a demo instance with made-up notes (the wall on port 7400). The terminal frames are
+captured from a real Claude Code session and the browser frames are real screenshots of the wall
+loading the link; the click itself is drawn in, since a screen recorder cannot press a key in
+Windows Terminal from here.
+
 `/n`, and any session that loads the `notes` server, writes every note id as a markdown link to
 the wall, for example `[F-ZH5](http://localhost:7317/?note=F-ZH5)`. Claude Code draws a markdown
 link as a terminal hyperlink (OSC 8), so Ctrl+click on the id (Cmd+click on macOS) opens the
