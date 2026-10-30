@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 3
-- Completed: 30
+- Completed: 31
 
 ---
 
@@ -31,16 +31,6 @@
   - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A025 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
-
-- [ ] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `web/src/components/NoteEditor.{tsx,css,test.tsx}` (new), `web/src/hooks/useNotice.ts` (new), `web/src/components/{NoteCard,Wall,DropOverlay}.tsx` + tests, `web/src/App.tsx` (editor state, save/commit/expand/close, attach, portal), `web/src/api.ts` (`attachImage`, `removeImage`), `filter.ts` `visibleOnWall`, `App.test.tsx` describe block; not `styles.css`. Exit: each R2 bullet covered by a component test; card expand icon labelled `Expand note`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 7 of 11)
-  - **Satisfies**: R2, R5 — Big editor modal from an expand icon on every card; save on blur/close; Esc; drop/paste attaches to the edited note; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A025 (satisfied), P1-NOTES-A028 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A029.md`
 
 - [ ] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
   - **Difficulty**: HARD
@@ -81,6 +71,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/NoteEditor.{tsx,css,test.tsx}` (new), `web/src/hooks/useNotice.ts` (new), `web/src/components/{NoteCard,Wall,DropOverlay}.tsx` + tests, `web/src/App.tsx` (editor state, save/commit/expand/close, attach, portal), `web/src/api.ts` (`attachImage`, `removeImage`), `filter.ts` `visibleOnWall`, `App.test.tsx` describe block; not `styles.css`. Exit: each R2 bullet covered by a component test; card expand icon labelled `Expand note`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 7 of 11)
+  - **Satisfies**: R2, R5 — Big editor modal from an expand icon on every card; save on blur/close; Esc; drop/paste attaches to the edited note; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A025 (satisfied), P1-NOTES-A028 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A029.md`
+  - **Completed**: 2026-10-30 16:52
+  - **Method**: /do
+  - **Commit**: 448e11f
+  - **Files**: web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteCard.tsx, web/src/components/Wall.tsx, web/src/lib/filter.test.tsx, web/src/lib/filter.ts, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/hooks/useNotice.ts
+  - **Drift**: filter.test.tsx has no note(id, body, {image}) helper; the keep-list test uses makeNote(..., { images: ['F-FFF'] })
+  - **Decided**: App.test '+ then expand' used getByLabelText('New note') but Rail and Header both carry that label → getAllByLabelText('New note')[0]! (both call the same addNote) (rung 2: exit criteria — every R2 bullet has a passing test; selector fix, no assertion relaxed)
 
 - [x] **P1-NOTES-A025** Phase 3: Attach / remove / restore one image: service, ingest, HTTP, MCP tools
   - **Difficulty**: NORMAL
