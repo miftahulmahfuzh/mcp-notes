@@ -30,7 +30,7 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | 0 | Design | Claude Design run with `design/claude-design-prompt.md` + owner's reference shots | – |
 | 1 | Spine | `notesd`, schema, note tools, revisions, `/n` skill, autostart, MCP registration | 1.a, 1.a2, 1.a3, 1.a4 |
 | 2 | Images | Local image store, thumbnails/previews, inbox folder, image notes, MCP returns images, EXIF dates | 1.e |
-| 3 | Web UI | Implement the design: wall, sidebar, copy-id, inline edit, drag/paste upload, full-size viewer | – |
+| 3 | Web UI | Implement the design: wall, sidebar, copy-id, inline edit, drag/paste upload, image-notes gallery grid, photo modal, full-screen image tab | – |
 | 4 | Chat bar brain | Agent SDK per message, streaming overlay, thread resume, GLM fallback switch | all of them, from the UI |
 | 5 | Connectors | expense-tracking, run-insights, seer (Neon + lab.sqlite), read-only | 1.d, 1.d2, 1.f, 1.g |
 | 6 | Semantic | Embeddings, backfill, hybrid search | 1.b, 1.c |
