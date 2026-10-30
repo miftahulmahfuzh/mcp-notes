@@ -29,6 +29,7 @@ its own chat bar.
   - [Requirements](#requirements)
   - [Install on WSL](#install-on-wsl)
   - [Keep WSL running from Windows](#keep-wsl-running-from-windows)
+  - [A second machine](#a-second-machine)
   - [Run it by hand](#run-it-by-hand)
   - [Tests](#tests)
   - [Configuration](#configuration)
@@ -80,6 +81,9 @@ The wall is for browsing, writing quickly, and dropping in photos.
 - **Local first, two machines.** Text lives in a Postgres database (Neon) that more than one machine can
   share. Photos live on the disk of the machine that took them in. Another machine sees the note
   and a "not on this machine" placeholder.
+- **Your other apps answer too.** The same tools read expense-tracking, run-insights and Seer,
+  read-only, so "how is my spending this week?" or "how did yesterday's run go?" gets an answer
+  from the real data, with Claude's opinion on it.
 - **It is yours alone.** One user, bound to `127.0.0.1`, no accounts, no telemetry.
 
 ## A tour of the wall
@@ -234,8 +238,8 @@ and highlights the photo note it used. It also catches the caption that doesn't 
 
 ![Chat bar: what's in the photos i saved on 26 oct?](docs/readme/chat-photos.gif)
 
-**The web plus your notes.** It searches the web, then ties the result back to the Calvino quote
-in your `#reading` note.
+**The web plus your notes.** It searches the web, ties the result back to the Calvino quote in
+your `#reading` note, and lists its sources as links.
 
 ![Chat bar: what is Invisible Cities about? search the web](docs/readme/chat-web.gif)
 
@@ -245,7 +249,7 @@ answered. `CHAT_BRAIN=glm` makes GLM the only brain.
 
 ## Connectors: spending, runs, Seer
 
-The same `notes` MCP server also reads three of my own apps, read-only, so `/n` and the chat bar
+The same `notes` MCP server also reads three of your own apps, read-only, so `/n` and the chat bar
 can answer "how much did I spend on meals in October?" or "how did yesterday's run go?" straight
 from their data:
 
@@ -290,6 +294,9 @@ How it stays safe:
 - Dates are calendar days in Asia/Jakarta (WIB), money is whole rupiah (Seer: US dollars), and
   run units are the app's own (metres, seconds, sec/km, bpm). Nothing is cached in the notes
   database.
+
+There are no recordings of the connectors on purpose: the only data they can show is real
+spending, real runs and real positions.
 
 ## Install and run
 
@@ -340,6 +347,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\
 
 If it says "Access is denied", run it from an elevated PowerShell. The details, the evidence and
 an alternative (`instanceIdleTimeout=-1` in `.wslconfig`) are in [docs/INSTALL.md](docs/INSTALL.md).
+
+### A second machine
+
+The text database is shared, so a second laptop can run its own `notesd` against it. Clone the
+repo there, copy the same `.env.local`, and run `scripts/install.sh` (no
+`db:migrate`: the schema is already there). Notes, tags, revisions and the chat bar work the
+same. Photos do not move: a photo note made on one machine shows "not on this machine" on the
+other, by design. The connectors need the three sibling repos (or `*_DIR` pointing at them) on
+that machine too.
 
 ### Run it by hand
 
@@ -483,8 +499,9 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 | 2 | Images: local store, derivatives, inbox, image tools, EXIF dates | done |
 | 3 | Web UI: wall, three views, gallery, modal, full-screen tab, upload | done |
 | 4 | Chat bar brain: Claude Agent SDK, streaming, threads, GLM fallback | done |
-| 5 | Read-only connectors: expense-tracking, run-insights, Seer | planned |
-| 6 | Semantic search: pgvector embeddings, hybrid ranking | planned |
+| 5 | Read-only connectors: expense-tracking, run-insights, Seer | done |
+| 6 | Semantic search: pgvector embeddings, hybrid ranking | in progress |
+| 7 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
