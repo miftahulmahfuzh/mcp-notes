@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Hono } from 'hono';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { Config } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, type Config } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import { createApp } from '../../src/http/app.js';
 import { NoteEvents, type NoteEvent } from '../../src/notes/events.js';
@@ -17,7 +17,7 @@ import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.j
 const url = testDatabaseUrl();
 const db = openTestDb();
 const dataDir = mkdtempSync(join(tmpdir(), 'notes-mcp-'));
-const config: Config = { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir };
+const config: Config = { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG };
 const events = new NoteEvents();
 const service = new NotesService({ db, dataDir, events });
 const deps: AppDeps = { config, db, events, service };

@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { ConfigError, DEFAULT_PORT, loadConfig, REPO_ROOT } from '../../src/config.js'
+import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_PORT, loadConfig, REPO_ROOT } from '../../src/config.js'
 
 const URL_A = 'postgres://u:p@127.0.0.1:5432/a'
 
@@ -32,7 +32,9 @@ describe('loadConfig', () => {
       port: DEFAULT_PORT,
       host: '127.0.0.1',
       dataDir: path.join(homedir(), 'mcp-notes-data'),
+      chat: DEFAULT_CHAT_CONFIG,
     })
+    expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
   })
 
   it('reads the env file and lets the real environment win', () => {
@@ -107,5 +109,65 @@ describe('loadConfig', () => {
     const file = envFile('NOTESD_PORT=7500\n')
     loadConfig({ env, envFile: file })
     expect(env).toEqual({ DATABASE_URL: URL_A })
+  })
+})
+
+describe('loadConfig chat', () => {
+  const GLM = { LLM_BASE_URL: 'https://api.z.ai/api/anthropic', LLM_API_KEY: 'k-123', LLM_MODEL: 'glm-5.3' }
+
+  function chat(env: Record<string, string>) {
+    return loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).chat
+  }
+
+  it('reads CHAT_BRAIN case-insensitively, default claude', () => {
+    expect(chat({}).brain).toBe('claude')
+    expect(chat({ CHAT_BRAIN: '' }).brain).toBe('claude')
+    expect(chat({ CHAT_BRAIN: ' Claude ' }).brain).toBe('claude')
+    expect(chat({ CHAT_BRAIN: 'GLM', ...GLM }).brain).toBe('glm')
+  })
+
+  it.each(['gpt', 'claude,glm', 'opus'])('rejects CHAT_BRAIN=%j', (brain) => {
+    expect(() => chat({ CHAT_BRAIN: brain })).toThrow(/CHAT_BRAIN must be "claude" or "glm"/)
+  })
+
+  it('builds glm only when all three LLM_* keys are set', () => {
+    expect(chat(GLM).glm).toEqual({ baseUrl: GLM.LLM_BASE_URL, apiKey: 'k-123', model: 'glm-5.3' })
+    expect(chat({ LLM_API_KEY: 'k', LLM_MODEL: 'm' }).glm).toBeNull()
+    expect(chat({ ...GLM, LLM_MODEL: '  ' }).glm).toBeNull()
+  })
+
+  it('reads LLM_* from the env file', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'mcp-notes-config-'))
+    try {
+      const file = path.join(dir, '.env.local')
+      writeFileSync(file, `DATABASE_URL=${URL_A}\nLLM_BASE_URL=https://x\nLLM_API_KEY=k\nLLM_MODEL=glm-5.3\n`)
+      expect(loadConfig({ env: {}, envFile: file }).chat.glm).toEqual({ baseUrl: 'https://x', apiKey: 'k', model: 'glm-5.3' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses CHAT_BRAIN=glm without the LLM_* keys and names the missing ones, not the key value', () => {
+    expect(() => chat({ CHAT_BRAIN: 'glm' })).toThrow(ConfigError)
+    expect(() => chat({ CHAT_BRAIN: 'glm', LLM_API_KEY: 'secret-key' })).toThrow(/LLM_BASE_URL, LLM_MODEL/)
+    try {
+      chat({ CHAT_BRAIN: 'glm', LLM_API_KEY: 'secret-key' })
+    } catch (err) {
+      expect((err as Error).message).not.toContain('secret-key')
+    }
+  })
+
+  it('parses CHAT_MAX_TURNS and CHAT_TIMEOUT_MS as positive integers', () => {
+    expect(chat({ CHAT_MAX_TURNS: ' 8 ', CHAT_TIMEOUT_MS: '60000' })).toMatchObject({ maxTurns: 8, timeoutMs: 60_000 })
+    for (const bad of ['0', '-3', 'abc', '1.5']) {
+      expect(() => chat({ CHAT_MAX_TURNS: bad })).toThrow(/CHAT_MAX_TURNS must be a positive integer/)
+      expect(() => chat({ CHAT_TIMEOUT_MS: bad })).toThrow(/CHAT_TIMEOUT_MS must be a positive integer/)
+    }
+  })
+
+  it('keeps a bare NOTESD_CLAUDE_BIN as a PATH name and resolves a path', () => {
+    expect(chat({ NOTESD_CLAUDE_BIN: 'claude' }).claudeBin).toBe('claude')
+    expect(chat({ NOTESD_CLAUDE_BIN: '/opt/node/bin/claude' }).claudeBin).toBe('/opt/node/bin/claude')
+    expect(chat({ NOTESD_CLAUDE_BIN: '~/tools/bin/claude' }).claudeBin).toBe(path.join(homedir(), 'tools', 'bin', 'claude'))
   })
 })

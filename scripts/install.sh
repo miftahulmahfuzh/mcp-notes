@@ -8,8 +8,10 @@
 # Env overrides:
 #   NODE_BIN        absolute path to a Node >= 22 binary (default: `node` on PATH, then
 #                   ~/tools/node-v22.23.1-linux-x64/bin/node)
-#   CLAUDE_BIN      path to the claude CLI (default: `claude` on PATH, then next to node)
+#   CLAUDE_BIN      path to the claude CLI (default: `claude` on PATH, then next to node). The
+#                   unit gets its real path (readlink -f) as NOTESD_CLAUDE_BIN for the chat bar.
 #   NOTES_DATA_DIR  data dir (default: ~/mcp-notes-data)
+#   SKIP_CHAT_CHECK set to 1 to skip the chat smoke check in the verification (offline runs)
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -22,9 +24,15 @@ SKILL_DST="$SKILLS_DIR/n"
 DATA_DIR="${NOTES_DATA_DIR:-$HOME/mcp-notes-data}"
 PORT=7317
 HEALTH_URL="http://127.0.0.1:$PORT/health"
+CHAT_URL="http://127.0.0.1:$PORT/api/chat"
 MCP_URL="http://localhost:$PORT/mcp"
 DEFAULT_NODE="$HOME/tools/node-v22.23.1-linux-x64/bin/node"
+CLAUDE_CREDENTIALS="$HOME/.claude/.credentials.json"
 HEALTH_WAIT_SECONDS=30
+# A little above the daemon's default CHAT_TIMEOUT_MS (180 s), so the daemon's own timeout fires first.
+CHAT_SMOKE_SECONDS=200
+# Notes-only and read-only: it exercises the SDK child, the login and the notes MCP tools, no web.
+CHAT_SMOKE_MESSAGE='Install check. Call the notes tags tool once, then reply with only the number of tags it returned. Use no other tool.'
 
 log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -53,6 +61,11 @@ resolve_claude() {
   if [[ -z "$c" && -x "$NODE_DIR/claude" ]]; then c="$NODE_DIR/claude"; fi
   [[ -n "$c" && -x "$c" ]] || die "claude CLI not found. Set CLAUDE_BIN=/path/to/claude."
   CLAUDE_BIN="$c"
+  # The daemon's Agent SDK spawns this file directly. The unit gets the real path so it depends
+  # on neither the unit's minimal PATH nor the bin/claude symlink.
+  CLAUDE_REAL="$(readlink -f "$c")"
+  [[ -f "$CLAUDE_REAL" && -x "$CLAUDE_REAL" ]] \
+    || die "claude resolves to $CLAUDE_REAL, which is not an executable file. Set CLAUDE_BIN=/path/to/claude."
 }
 
 check_preconditions() {
@@ -64,12 +77,35 @@ check_preconditions() {
   [[ -f "$SKILL_SRC/SKILL.md" ]] || die "missing $SKILL_SRC/SKILL.md."
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
   local p
-  for p in "$REPO_DIR" "$NODE_BIN" "$NODE_DIR" "$DATA_DIR"; do
+  for p in "$REPO_DIR" "$NODE_BIN" "$NODE_DIR" "$DATA_DIR" "$CLAUDE_REAL" "$HOME"; do
     [[ "$p" != *'|'* && "$p" != *'&'* && "$p" != *'\'* ]] \
       || die "path contains a character the unit renderer cannot handle (| & \\): $p"
   done
   if [[ -e "$SKILL_DST" && ! -L "$SKILL_DST" ]]; then
     die "$SKILL_DST exists and is not a symlink. Move it away, then re-run (refusing to clobber a real directory)."
+  fi
+}
+
+# Warn only: the login may live somewhere this check does not know about. The chat smoke check
+# in verify() is the real test.
+check_claude_login() {
+  if [[ -f "$CLAUDE_CREDENTIALS" ]]; then
+    log "claude login found: $CLAUDE_CREDENTIALS"
+  else
+    warn "no $CLAUDE_CREDENTIALS. The chat bar's Claude brain runs on your Claude Code login: run \`claude\` once and /login. If your login is stored elsewhere, ignore this; the chat check below decides."
+  fi
+}
+
+# Warn only: a missing .env.local makes the daemon fail its health check later anyway, with the
+# reason in the journal. This says why up front, and whether the GLM fallback is configured.
+check_env_file() {
+  local f="$REPO_DIR/.env.local"
+  if [[ ! -e "$f" ]]; then
+    warn "missing $f. The daemon reads DATABASE_URL (and LLM_* for the chat bar's GLM fallback) from it. In a worktree: ln -s ~/mcp-notes/.env.local $f"
+    return 0
+  fi
+  if ! grep -qE '^LLM_BASE_URL=.+' "$f" || ! grep -qE '^LLM_API_KEY=.+' "$f" || ! grep -qE '^LLM_MODEL=.+' "$f"; then
+    warn "$f has no complete LLM_BASE_URL / LLM_API_KEY / LLM_MODEL: the chat bar's GLM fallback is off."
   fi
 }
 
@@ -102,6 +138,8 @@ install_unit() {
       -e "s|@NODE_DIR@|$NODE_DIR|g" \
       -e "s|@REPO_DIR@|$REPO_DIR|g" \
       -e "s|@DATA_DIR@|$DATA_DIR|g" \
+      -e "s|@CLAUDE_BIN@|$CLAUDE_REAL|g" \
+      -e "s|@HOME_DIR@|$HOME|g" \
       "$UNIT_TEMPLATE" > "$rendered"
   if grep -q '@[A-Z_]*@' "$rendered"; then
     rm -f "$rendered"
@@ -163,6 +201,35 @@ link_skill() {
   ln -sfn "$SKILL_SRC" "$SKILL_DST"
 }
 
+# One real chat message through the installed daemon. Success = the SSE stream's last event is
+# `done`. The brain that answered is printed; anything but claude is a warning (GLM answering
+# means the Claude login or usage limit failed and the fallback worked).
+chat_smoke() {
+  if [[ "${SKIP_CHAT_CHECK:-}" == 1 ]]; then
+    printf 'POST %s: skipped (SKIP_CHAT_CHECK=1)\n' "$CHAT_URL"
+    return 0
+  fi
+  local body resp last done_data brain err
+  body="$(printf '{"message":"%s"}' "$CHAT_SMOKE_MESSAGE")"
+  resp="$(curl -sS -N --max-time "$CHAT_SMOKE_SECONDS" \
+    -H 'content-type: application/json' -H 'accept: text/event-stream' \
+    --data-binary "$body" "$CHAT_URL" 2>&1)" || true
+  last="$(printf '%s\n' "$resp" | sed -n 's/^event: *//p' | tail -n 1)"
+  if [[ "$last" == "done" ]]; then
+    done_data="$(printf '%s\n' "$resp" | sed -n '/^event: *done/{n;s/^data: *//p;}' | tail -n 1)"
+    brain="$(printf '%s' "$done_data" | grep -o '"brain":"[a-z]*"' | cut -d'"' -f4 || true)"
+    printf 'POST %s: done, brain=%s\n' "$CHAT_URL" "${brain:-<none>}"
+    if [[ "$brain" != "claude" ]]; then
+      warn "the chat check was answered by ${brain:-no brain (the stub?)}, not claude. Check the login and: journalctl --user -u $UNIT_NAME -n 50"
+    fi
+    return 0
+  fi
+  err="$(printf '%s\n' "$resp" | sed -n '/^event: *error/{n;s/^data: *//p;}' | tail -n 1)"
+  if [[ -z "$err" ]]; then err="$(printf '%s' "$resp" | tail -c 300)"; fi
+  printf 'POST %s: FAILED (last event: %s; %s)\n' "$CHAT_URL" "${last:-<none>}" "$err"
+  return 1
+}
+
 verify() {
   local ok=1 active health mcp_line
   printf '\n--- verification ---\n'
@@ -178,6 +245,8 @@ verify() {
   mcp_line="$("$CLAUDE_BIN" mcp list 2>&1 | grep -E '^notes: ' || true)"
   printf 'claude mcp list: %s\n' "${mcp_line:-<notes not listed>}"
   [[ "$mcp_line" == *Connected* ]] || ok=0
+  printf 'chat bar claude: %s (%s)\n' "$CLAUDE_REAL" "$("$CLAUDE_REAL" --version 2>/dev/null || echo 'version unknown')"
+  chat_smoke || ok=0
   printf 'skill: %s -> %s\n' "$SKILL_DST" "$(readlink "$SKILL_DST")"
   printf 'linger: %s\n' "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || echo unknown)"
   printf 'unit runs: %s/dist/main.js\n' "$REPO_DIR"
@@ -193,6 +262,8 @@ main() {
   resolve_node
   resolve_claude
   check_preconditions
+  check_claude_login
+  check_env_file
   install_deps
   build
   make_data_dir

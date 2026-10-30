@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 10:34:41
+**Last Updated**: 2026-10-30 11:29:05
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 8
+- Completed: 12
 
 ---
 
@@ -31,6 +31,67 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `deploy/notesd.service` (`NOTESD_CLAUDE_BIN`, `HOME`), `scripts/install.sh` (resolved claude path, credential/LLM_* warnings, chat smoke in `verify`), `vitest.config.ts` + `package.json` `test:live`, `tests/live/chat.live.test.ts` (real Claude + GLM message), `docs/INSTALL.md` (6 files); links `.env.local` into the worktree, runs install.sh from the worktree and the acceptance prompts against the installed daemon; re-running install.sh from `~/mcp-notes` happens after landing. Exit: the installed daemon answers each acceptance prompt for real, and the live suite passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R5 — Daemon fit: unit + install.sh give the SDK `claude` and the login, verified through the installed daemon; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A009, P1-NOTES-A010
+  - **Plan**: `.workflows/plan/P1-NOTES-A011.md`
+  - **Completed**: 2026-10-30 11:29
+  - **Method**: /do
+  - **Files**: deploy/notesd.service, scripts/install.sh, vitest.config.ts, package.json, tests/live/chat.live.test.ts, docs/INSTALL.md
+  - **Drift**:
+    - None in code. Wall SSE note event op is 'updated' on the wire (plan text said 'update'); A2 matched on it.
+    - Owner's Neon store had zero live notes before acceptance (only two image notes 3-3XZ, 9-C0C soft-deleted at 10:23 local, before this phase). A1 correctly answered 'no #seer notes'.
+- [x] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `@anthropic-ai/claude-agent-sdk@0.3.311` + `@anthropic-ai/sdk@0.135.0` in `dependencies`, new `src/chat/agent.ts` (`createAgentChatBackend`), `src/chat/prompt.ts`, `src/chat/status.ts`, `src/chat/env.ts` (child env, strips parent-session markers), four unit test files against a fake `query`, `src/daemon.ts` (real backend by default, lazy MCP url, `close()` on stop), `tests/integration/daemon.int.test.ts` (stub injected; agent-by-default start/stop test) (12 files). Exit: unit tests cover delta streaming, status mapping, ids passed through, resume, abort (client + supersede + timeout + close), max turns, fallback (pre-text auth/limit error → one GLM retry; post-text error → no retry; `CHAT_BRAIN=glm` → GLM only, no fallback), and session-marker stripping. No integration test spawns `claude`. `npm run build` succeeds.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 2 of 4)
+  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A008
+  - **Plan**: `.workflows/plan/P1-NOTES-A009.md`
+  - **Completed**: 2026-10-30 11:21
+  - **Method**: /do
+  - **Files**: package.json, package-lock.json, src/chat/agent.ts, src/chat/env.ts, src/chat/prompt.ts, src/chat/status.ts, src/daemon.ts, tests/integration/daemon.int.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-env.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-status.test.ts
+  - **Drift**:
+    - none: src/daemon.ts and daemon.int.test.ts matched Phase 1's quoted text exactly
+    - npm install warned that esbuild postinstall scripts were not approved (install-scripts policy); tsx/vitest/vite already worked, build and tests green
+
+- [x] **P1-NOTES-A010** Phase 3: Panel: status caption, brain label, thread reset on dismiss
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/hooks/useChat.ts` (`status`, `brain`, `close()` clears thread), `web/src/components/AnswerPanel.tsx` (one `.answer-status` span), `web/src/styles.css`, `web/src/App.tsx` (two prop lines), `web/src/App.test.tsx`, new `web/src/hooks/useChat.test.tsx` (6 files). Exit: a fake SSE stream with `status` + `done{brain}` renders caption then label; dismiss → the next post has no `thread_id`; pinned + a second ask → same `thread_id`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header
+  - **Depends on**: P1-NOTES-A008
+  - **Plan**: `.workflows/plan/P1-NOTES-A010.md`
+  - **Completed**: 2026-10-30 11:17
+  - **Method**: /implement
+  - **Files**: web/src/hooks/useChat.ts, web/src/hooks/useChat.test.tsx, web/src/components/AnswerPanel.tsx, web/src/App.tsx, web/src/App.test.tsx, web/src/styles.css
+
+- [x] **P1-NOTES-A008** Phase 1: Chat seam v2: status events, brain, config, daemon injection
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns the `ChatBackend` contract in `src/chat/backend.ts`, `src/chat/stub.ts` (delta-only), `src/http/api.ts` (`status` + `done.brain`), `src/http/app.ts`, `src/daemon.ts` (`CHAT_SUBDIR`, `StartDaemonOptions { chat? }`, stub by default), `src/config.ts` (`Config.chat`, `DEFAULT_CHAT_CONFIG`), new `tests/integration/helpers/scripted-chat.ts`, api/daemon int tests + harness, and `chat: DEFAULT_CHAT_CONFIG` in the other `Config` literals (15 files). Exit: contract types compile, the stub passes, the int tests cover status/brain/error/abort through `/api/chat`, the daemon still serves the stub by default.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 1 of 4)
+  - **Satisfies**: R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A008.md`
+  - **Completed**: 2026-10-30 11:13
+  - **Method**: /do
+  - **Files**: src/chat/backend.ts, src/chat/stub.ts, src/config.ts, src/daemon.ts, src/http/api.ts, src/http/app.ts, tests/unit/chat-stub.test.ts, tests/unit/config.test.ts, tests/integration/helpers/scripted-chat.ts, tests/integration/helpers/api-harness.ts, tests/integration/api.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/imageHarness.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/images.int.test.ts
+  - **Drift**:
+    - tests/integration/helpers/api-harness.ts: the deps literal was one line, not the multi-line shape the plan quoted; replaced lines 34-48 per the plan's block (no behavioural difference).
+    - Worktree had no node_modules; ran `npm ci` (package-lock unchanged).
+    - Manual curl against `npm run dev` skipped: daemon.int.test.ts 'serves the stub chat backend when none is injected' covers the stub over real HTTP with no brain.
 
 - [x] **P1-NOTES-A007** Phase 8: Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder
   - **Difficulty**: NORMAL

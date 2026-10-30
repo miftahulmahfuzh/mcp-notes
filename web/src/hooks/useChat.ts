@@ -8,6 +8,10 @@ export interface ChatState {
   query: string;
   text: string;
   done: boolean;
+  /** Terse tool caption while the brain works ("searching notes"); '' when there is none. */
+  status: string;
+  /** Which brain answered ('claude' | 'glm'), from `done.brain`; null when the server named none. */
+  brain: string | null;
 }
 
 export interface Chat extends ChatState {
@@ -26,7 +30,15 @@ function parse(data: string): Record<string, unknown> {
 }
 
 export function useChat(): Chat {
-  const [st, setSt] = useState<ChatState>({ open: false, pinned: false, query: '', text: '', done: false });
+  const [st, setSt] = useState<ChatState>({
+    open: false,
+    pinned: false,
+    query: '',
+    text: '',
+    done: false,
+    status: '',
+    brain: null,
+  });
   const threadId = useRef<string | undefined>(undefined);
   const ctrl = useRef<AbortController | null>(null);
 
@@ -36,11 +48,17 @@ export function useChat(): Chat {
     ctrl.current?.abort();
     const c = new AbortController();
     ctrl.current = c;
-    setSt((s) => ({ ...s, open: true, query: q, text: '', done: false }));
+    setSt((s) => ({ ...s, open: true, query: q, text: '', done: false, status: '', brain: null }));
 
-    const finish = (extra?: string) => {
+    const finish = (extra?: string, brain: string | null = null) => {
       if (ctrl.current !== c) return;
-      setSt((s) => ({ ...s, done: true, text: extra ? (s.text ? `${s.text}\n\n${extra}` : extra) : s.text }));
+      setSt((s) => ({
+        ...s,
+        done: true,
+        status: '',
+        brain,
+        text: extra ? (s.text ? `${s.text}\n\n${extra}` : extra) : s.text,
+      }));
     };
 
     try {
@@ -55,11 +73,14 @@ export function useChat(): Chat {
         if (ev.event === 'delta') {
           const t = parse(ev.data).text;
           if (typeof t === 'string' && t) setSt((s) => ({ ...s, text: s.text + t }));
+        } else if (ev.event === 'status') {
+          const t = parse(ev.data).text;
+          if (typeof t === 'string') setSt((s) => ({ ...s, status: t }));
         } else if (ev.event === 'done') {
-          const id = parse(ev.data).thread_id;
-          if (typeof id === 'string' && id) threadId.current = id;
+          const d = parse(ev.data);
+          if (typeof d.thread_id === 'string' && d.thread_id) threadId.current = d.thread_id;
           ended = true;
-          finish();
+          finish(undefined, typeof d.brain === 'string' && d.brain ? d.brain : null);
         } else if (ev.event === 'error') {
           const d = parse(ev.data);
           const m = typeof d.message === 'string' ? d.message : typeof d.error === 'string' ? d.error : ev.data;
@@ -77,7 +98,9 @@ export function useChat(): Chat {
   const close = useCallback(() => {
     ctrl.current?.abort();
     ctrl.current = null;
-    setSt((s) => ({ ...s, open: false, pinned: false, text: '', done: false }));
+    // Dismissing ends the conversation: the next message starts a new thread.
+    threadId.current = undefined;
+    setSt((s) => ({ ...s, open: false, pinned: false, text: '', done: false, status: '', brain: null }));
   }, []);
 
   const togglePin = useCallback(() => setSt((s) => ({ ...s, pinned: !s.pinned })), []);

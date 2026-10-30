@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ChatBackend, ChatRequest, ChatTurn } from './backend.js';
+import type { ChatBackend, ChatEvent, ChatRequest, ChatTurn } from './backend.js';
 
 export const STUB_REPLY =
   'The chat brain arrives in iteration 4. Until then this panel only echoes that fact.';
@@ -34,23 +34,24 @@ async function* streamDeltas(
   parts: string[],
   delayMs: number,
   signal: AbortSignal,
-): AsyncGenerator<string> {
+): AsyncGenerator<ChatEvent> {
   for (const part of parts) {
     if (signal.aborted) return;
     if (delayMs > 0) await sleep(delayMs, signal);
     if (signal.aborted) return;
-    yield part;
+    yield { type: 'delta', text: part };
   }
 }
 
+/** A fixed reply as word deltas. No status events, no brain: `done` carries only the thread id. */
 export function createStubChatBackend(options: StubChatOptions = {}): ChatBackend {
   const delayMs = options.delayMs ?? 40;
   return {
     async reply(request: ChatRequest): Promise<ChatTurn> {
       const threadId = request.threadId ?? `stub-${randomUUID()}`;
       return {
-        threadId,
-        deltas: streamDeltas(splitIntoDeltas(STUB_REPLY), delayMs, request.signal),
+        events: streamDeltas(splitIntoDeltas(STUB_REPLY), delayMs, request.signal),
+        end: () => ({ threadId }),
       };
     },
   };

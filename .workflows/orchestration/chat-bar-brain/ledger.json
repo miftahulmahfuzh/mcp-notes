@@ -1,0 +1,100 @@
+{
+  "branch": "feature/chat-bar-brain",
+  "coordinator": "orch-chat-bar-brain",
+  "coordinator_session_id": "a947848f-8658-4bf1-964e-23e26768b399",
+  "created": "2026-10-30T04:10:38+00:00",
+  "note": "Gate (plan_graph.py) on worktree index docs/plans/CHAT_BAR_BRAIN_PLAN.md: exit 0, no file written by two phases. Open Questions: none (Decisions table settled). Wave 0 = phase 1 alone in the set worktree. | p1 426bddf verified: code files exactly phase 1's owned set; extras are bookkeeping (todos, P1-NOTES-A008..A011 plans, TaskID column). | Wave 1 (p2 server, p3 web/) runs in the SHARED set worktree: gate exit 0, disjoint write sets; rung 6 (gate exit 0 -> shared, as notes-spine-images-ui). | p3 c805206 verified: 6 web/src files + bookkeeping (todos, package_readme, index); committed via private index, p2's package.json/lock excluded. | p2 433914d verified: code files = phase 2's owned set; package.json only dependencies; invariant 3/4 options (settingSources [], strictMcpConfig, allowedTools 13 notes + 2 web, CLAUDE_CODE_* stripped) present. | LANDING MUST: phase 4 installs notesd from the worktree; after merge, before cleanup, run `cd ~/mcp-notes && git pull && scripts/install.sh`. | p4 306bb96 verified: deploy/scripts/live/vitest/INSTALL + package.json test:live + bookkeeping; no key in unit. Acceptance A1-A7 PASS on installed daemon, A8 (panel in browser) not checked. Throwaway notes F-UVZ, K-VMG soft-deleted on owner DB. Trailer says Haiku 5.5 (pusher slip), not rewritten.",
+  "phases": [
+    {
+      "card": null,
+      "commit": "426bddfc0e0734063017ca6142126c5833080b27",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": "seam v2 contract, status/done.brain SSE, config.chat, createApp/startDaemon chat injection, scripted fake; no ladder decisions",
+      "package": "src/chat`, `src/http`, `src`, `tests",
+      "plan": ".workflows/plan/chat-bar-brain/phase-1.md",
+      "reported_at": "2026-10-30T04:15:44+00:00",
+      "satisfies": [
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A008",
+      "title": "Chat seam v2: status events, brain, config, daemon injection"
+    },
+    {
+      "card": null,
+      "commit": "433914d",
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": "Agent SDK backend (claude/glm fallback, threads, guardrails) + daemon default; no ladder decisions; 301 unit / 95 int green",
+      "package": "src/chat`, `src`, `tests",
+      "plan": ".workflows/plan/chat-bar-brain/phase-2.md",
+      "reported_at": "2026-10-30T11:23:29+07:00",
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A009",
+      "title": "Agent SDK backend: Claude, GLM, fallback, threads, guardrails"
+    },
+    {
+      "card": null,
+      "commit": "c8052063277cda3e95333d4292b119ddd2514435",
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": "useChat status/brain + close() clears thread, .answer-status caption span, App passes props; no ladder decisions, no drift",
+      "package": "web/src",
+      "plan": ".workflows/plan/chat-bar-brain/phase-3.md",
+      "reported_at": "2026-10-30T11:19:46+07:00",
+      "satisfies": [
+        "R2",
+        "R3",
+        "R4"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A010",
+      "title": "Panel: status caption, brain label, thread reset on dismiss"
+    },
+    {
+      "card": null,
+      "commit": "306bb96",
+      "depends_on": [
+        2,
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": "unit+install.sh chat smoke+live suite; A1-A7 pass, A8 unchecked; no backend fixes; unit points at worktree",
+      "package": "deploy`, `scripts`, `tests/live`, root config",
+      "plan": ".workflows/plan/chat-bar-brain/phase-4.md",
+      "reported_at": "2026-10-30T11:30:31+07:00",
+      "satisfies": [
+        "R1",
+        "R5",
+        "R6"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A011",
+      "title": "Daemon fit: unit, install.sh, live suite, installed acceptance"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "chat-bar-brain",
+  "updated": "2026-10-30T11:30:31+07:00",
+  "verified_at": "2026-10-30T11:19:58+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/chat-bar-brain"
+}

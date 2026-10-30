@@ -14,6 +14,12 @@ ExecStart="@NODE_BIN@" "@REPO_DIR@/dist/main.js"
 Environment=NODE_ENV=production
 Environment="NOTES_DATA_DIR=@DATA_DIR@"
 Environment="PATH=@NODE_DIR@:/usr/local/bin:/usr/bin:/bin"
+# The chat bar's brain spawns Claude Code through the Agent SDK. HOME is where it finds the
+# login (~/.claude/.credentials.json) and keeps its sessions; NOTESD_CLAUDE_BIN is the real path
+# of the claude executable. Chat settings (CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS) and the
+# GLM fallback keys (LLM_*) come from the checkout's .env.local, never from this file.
+Environment="HOME=@HOME_DIR@"
+Environment="NOTESD_CLAUDE_BIN=@CLAUDE_BIN@"
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15

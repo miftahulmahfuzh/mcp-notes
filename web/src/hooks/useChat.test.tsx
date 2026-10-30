@@ -1,0 +1,188 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { useChat } from './useChat';
+
+interface Frame {
+  event: string;
+  data: unknown;
+}
+interface Posted {
+  message: string;
+  thread_id?: string;
+}
+
+const enc = new TextEncoder();
+const sse = (frames: Frame[]): string => frames.map((f) => `event: ${f.event}\ndata: ${JSON.stringify(f.data)}\n\n`).join('');
+const sseHeaders = { 'content-type': 'text/event-stream' };
+
+/** Stubs fetch with one queued body per POST /api/chat and records what each POST sent. */
+function stubChat(...bodies: Array<string | ReadableStream<Uint8Array>>): Posted[] {
+  const posted: Posted[] = [];
+  const queue = [...bodies];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      posted.push(JSON.parse(String(init?.body)) as Posted);
+      return new Response(queue.shift() ?? '', { headers: sseHeaders });
+    }),
+  );
+  return posted;
+}
+
+/** A response body the test writes frames into by hand. */
+function handStream(): { body: ReadableStream<Uint8Array>; send: (frames: Frame[]) => void; end: () => void } {
+  let ctl!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctl = c;
+    },
+  });
+  return { body, send: (frames) => ctl.enqueue(enc.encode(sse(frames))), end: () => ctl.close() };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe('useChat', () => {
+  it('shows status captions while streaming, clears on "", and stores the brain on done', async () => {
+    const s = handStream();
+    stubChat(s.body);
+    const { result } = renderHook(() => useChat());
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.ask('what did I note about seer?');
+    });
+
+    s.send([{ event: 'status', data: { text: 'searching notes' } }]);
+    await waitFor(() => expect(result.current.status).toBe('searching notes'));
+    expect(result.current.done).toBe(false);
+    expect(result.current.brain).toBeNull();
+
+    s.send([
+      { event: 'status', data: { text: '' } },
+      { event: 'delta', data: { text: 'Found it.' } },
+    ]);
+    await waitFor(() => expect(result.current.text).toBe('Found it.'));
+    expect(result.current.status).toBe('');
+
+    s.send([
+      { event: 'status', data: { text: 'reading 3 notes' } },
+      { event: 'done', data: { thread_id: 's-1', brain: 'glm' } },
+    ]);
+    s.end();
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.done).toBe(true);
+    expect(result.current.status).toBe('');
+    expect(result.current.brain).toBe('glm');
+  });
+
+  it('leaves brain null when done names none (the stub)', async () => {
+    stubChat(sse([{ event: 'delta', data: { text: 'hi' } }, { event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('hi');
+    });
+    expect(result.current.done).toBe(true);
+    expect(result.current.brain).toBeNull();
+  });
+
+  it('clears the status and shows no brain when the turn errors', async () => {
+    stubChat(sse([{ event: 'status', data: { text: 'searching the web' } }, { event: 'error', data: { error: 'boom' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('news?');
+    });
+    expect(result.current.done).toBe(true);
+    expect(result.current.status).toBe('');
+    expect(result.current.brain).toBeNull();
+    expect(result.current.text).toBe('Chat failed: boom');
+  });
+
+  it('continues the thread on a follow-up while the panel stays open', async () => {
+    const posted = stubChat(
+      sse([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]),
+      sse([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]),
+    );
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('first');
+    });
+    await act(async () => {
+      await result.current.ask('and compare it to last month');
+    });
+    expect(posted[0].thread_id).toBeUndefined();
+    expect(posted[1].thread_id).toBe('t1');
+  });
+
+  it('a pinned panel keeps its thread', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]), sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('first');
+    });
+    act(() => result.current.togglePin());
+    expect(result.current.pinned).toBe(true);
+    await act(async () => {
+      await result.current.ask('second');
+    });
+    expect(posted[1].thread_id).toBe('t1');
+  });
+
+  it('dismissing the panel starts a new thread on the next message', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]), sse([{ event: 'done', data: { thread_id: 't2' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('first');
+    });
+    act(() => result.current.close());
+    expect(result.current.open).toBe(false);
+    expect(result.current.brain).toBeNull();
+    await act(async () => {
+      await result.current.ask('unrelated');
+    });
+    expect(posted[1].thread_id).toBeUndefined();
+  });
+
+  it('a late done from a dismissed stream does not restore the old thread', async () => {
+    const s = handStream();
+    const posted = stubChat(s.body, sse([{ event: 'done', data: { thread_id: 't2' } }]));
+    const { result } = renderHook(() => useChat());
+    act(() => {
+      void result.current.ask('first');
+    });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    act(() => result.current.close());
+    await act(async () => {
+      await result.current.ask('second');
+    });
+    expect(posted[1].thread_id).toBeUndefined();
+  });
+
+  it('a new ask clears the previous brain and status', async () => {
+    const s = handStream();
+    stubChat(sse([{ event: 'done', data: { thread_id: 't1', brain: 'glm' } }]), s.body);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('first');
+    });
+    expect(result.current.brain).toBe('glm');
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.ask('second');
+    });
+    expect(result.current.brain).toBeNull();
+    expect(result.current.status).toBe('');
+    expect(result.current.done).toBe(false);
+    s.send([{ event: 'done', data: { thread_id: 't1', brain: 'claude' } }]);
+    s.end();
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.brain).toBe('claude');
+  });
+});

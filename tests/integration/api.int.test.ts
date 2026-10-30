@@ -3,7 +3,8 @@ import { STUB_REPLY } from '../../src/chat/stub.js';
 import { generateId } from '../../src/notes/ids.js';
 import type { Note } from '../../src/notes/types.js';
 import { createApiHarness, uniqueTag, type ApiHarness } from './helpers/api-harness.js';
-import { parseSse } from './helpers/sse.js';
+import { createScriptedChatBackend, type ScriptedChatBackend } from './helpers/scripted-chat.js';
+import { parseSse, readUntil, waitFor } from './helpers/sse.js';
 
 interface ListResponse {
   notes: Note[];
@@ -226,5 +227,98 @@ describe('POST /api/chat', () => {
       expect(res.headers.get('content-type')).toMatch(/application\/json/);
       expect(await res.json()).toHaveProperty('error');
     }
+  });
+});
+
+describe('POST /api/chat with an injected backend', () => {
+  let f: ApiHarness;
+  let fake: ScriptedChatBackend;
+
+  beforeAll(async () => {
+    fake = createScriptedChatBackend();
+    f = await createApiHarness({ chat: fake });
+  });
+
+  afterAll(async () => {
+    await f.close();
+  });
+
+  async function chat(payload: unknown) {
+    const res = await f.sendJson('POST', '/api/chat', payload);
+    expect(res.status).toBe(200);
+    return parseSse(await res.text());
+  }
+
+  it('streams status and delta events in backend order, then done with thread_id and brain', async () => {
+    fake.push({
+      steps: [
+        { type: 'status', text: 'searching notes' },
+        { type: 'status', text: 'reading 3 notes' },
+        { type: 'status', text: '' },
+        { type: 'delta', text: 'You saved ' },
+        { type: 'delta', text: 'A-B32.' },
+      ],
+      end: { threadId: 'sess-1', brain: 'claude' },
+    });
+    const messages = await chat({ message: 'what did I save?' });
+    expect(messages).toEqual([
+      { event: 'status', data: { text: 'searching notes' } },
+      { event: 'status', data: { text: 'reading 3 notes' } },
+      { event: 'status', data: { text: '' } },
+      { event: 'delta', data: { text: 'You saved ' } },
+      { event: 'delta', data: { text: 'A-B32.' } },
+      { event: 'done', data: { thread_id: 'sess-1', brain: 'claude' } },
+    ]);
+    const req = fake.requests.at(-1);
+    expect(req?.message).toBe('what did I save?');
+    expect(req?.threadId).toBeNull();
+  });
+
+  it('passes thread_id to the backend and reports the thread and brain the backend ended with', async () => {
+    fake.push({ steps: [{ type: 'delta', text: 'ok' }], end: { threadId: 'sess-2', brain: 'glm' } });
+    const messages = await chat({ message: 'and last month?', thread_id: 'sess-1' });
+    expect(fake.requests.at(-1)?.threadId).toBe('sess-1');
+    expect(messages.at(-1)).toEqual({ event: 'done', data: { thread_id: 'sess-2', brain: 'glm' } });
+  });
+
+  it('omits brain from done when the backend reports none', async () => {
+    fake.push({ steps: [{ type: 'delta', text: 'hi' }], end: { threadId: 'sess-3' } });
+    const messages = await chat({ message: 'hi' });
+    const done = messages.at(-1);
+    expect(done).toEqual({ event: 'done', data: { thread_id: 'sess-3' } });
+    expect(done?.data).not.toHaveProperty('brain');
+  });
+
+  it('sends event: error and no done when the events stream throws mid-turn', async () => {
+    fake.push({ steps: [{ type: 'delta', text: 'partial ' }, { type: 'throw', message: 'usage limit reached' }] });
+    const messages = await chat({ message: 'x' });
+    expect(messages).toEqual([
+      { event: 'delta', data: { text: 'partial ' } },
+      { event: 'error', data: { error: 'usage limit reached' } },
+    ]);
+  });
+
+  it('sends event: error when reply() itself rejects', async () => {
+    fake.push({ steps: [], rejectWith: 'claude not found' });
+    const messages = await chat({ message: 'x' });
+    expect(messages).toEqual([{ event: 'error', data: { error: 'claude not found' } }]);
+  });
+
+  it('aborts the backend request signal when the client disconnects', async () => {
+    fake.push({ steps: [{ type: 'delta', text: 'first ' }, { type: 'hang' }] });
+    const res = await f.request('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'slow one' }),
+    });
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    const text = await readUntil(reader, (t) => t.includes('event: delta'));
+    expect(parseSse(text)[0]).toEqual({ event: 'delta', data: { text: 'first ' } });
+    const req = fake.requests.at(-1);
+    expect(req?.message).toBe('slow one');
+    expect(req?.signal.aborted).toBe(false);
+    await reader.cancel();
+    await waitFor(() => req?.signal.aborted === true);
   });
 });
