@@ -51,7 +51,7 @@ beforeAll(async () => {
       CHAT_BRAIN: 'claude',
     },
   });
-  daemon = await startDaemon(config, { chat: createStubChatBackend({ delayMs: 0 }) });
+  daemon = await startDaemon(config, { chat: createStubChatBackend({ delayMs: 0 }), embedder: null });
   const note = await daemon.deps.service.create({
     body: `Live chat check. The codeword is ${codeword}. #${tag}`,
     origin: null,

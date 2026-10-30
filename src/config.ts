@@ -53,6 +53,15 @@ export const DEFAULT_CHAT_CONFIG: ChatConfig = {
   glm: null,
 }
 
+/** OpenRouter embeddings: semantic search, `related`, and the embedding worker. */
+export interface EmbeddingsConfig {
+  /** `OPENROUTER_API_KEY`, trimmed; null when unset or blank (semantic features off). Never logged. */
+  apiKey: string | null
+}
+
+/** What `loadConfig` returns for `embeddings` without OPENROUTER_API_KEY. Tests build `Config` literals with it. */
+export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = { apiKey: null }
+
 export interface Config {
   /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
   databaseUrl: string
@@ -64,6 +73,8 @@ export interface Config {
   dataDir: string
   /** The chat bar brain (POST /api/chat). */
   chat: ChatConfig
+  /** Note embeddings via OpenRouter. `apiKey: null` turns semantic features off. */
+  embeddings: EmbeddingsConfig
 }
 
 export interface LoadConfigOptions {
@@ -190,10 +201,17 @@ function parseChat(env: Record<string, string | undefined>): ChatConfig {
   }
 }
 
+function parseEmbeddings(env: Record<string, string | undefined>): EmbeddingsConfig {
+  const apiKey = env.OPENROUTER_API_KEY?.trim() ?? ''
+  return { apiKey: apiKey === '' ? null : apiKey }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
- * LLM_API_KEY, LLM_MODEL. Unknown keys (OPENROUTER_API_KEY) are ignored.
+ * LLM_API_KEY, LLM_MODEL. Embeddings key: OPENROUTER_API_KEY (unset or blank: semantic search and
+ * the embedding worker are off, `related` answers only from vectors already stored; note writes are
+ * unaffected). Other keys are ignored.
  * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, or on CHAT_BRAIN=glm without LLM_*.
  */
@@ -218,5 +236,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     host: parseHost(env.NOTESD_HOST),
     dataDir: path.resolve(expandHome(dataDirRaw)),
     chat: parseChat(env),
+    embeddings: parseEmbeddings(env),
   }
 }

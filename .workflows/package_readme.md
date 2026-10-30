@@ -1,21 +1,23 @@
 # Package: mcp-notes
 
 **Location**: `.` (repo root)
-**Last Updated**: 2026-10-30 (after task P1-NOTES-A012)
+**Last Updated**: 2026-10-30 (after task P1-NOTES-A019)
 **Documentation Created**: 2026-10-30T03:03Z (after task P1-NOTES-A000)
 
 ## Overview
 
-`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place. Iteration 4 (`docs/plans/CHAT_BAR_BRAIN_PLAN.md`) gives the chat bar a real brain. Its phase 1 (P1-NOTES-A008) widened the chat seam: backends yield `delta` and `status` events and report which brain answered, `Config` gained a `chat` block, and `startDaemon` takes the backend as an injectable option. Its phase 2 (P1-NOTES-A009) added the real brain under `src/chat/` (`agent.ts`, `env.ts`, `prompt.ts`, `status.ts`): each chat message is one Claude Agent SDK run on the owner's Claude Code login, restricted to the daemon's own `notes` MCP tools plus WebSearch/WebFetch, with threads mapped to SDK sessions, a turn cap, a wall-clock timeout, one run in flight, and a single retry on GLM when Claude fails on auth or a usage limit before any text. `startDaemon` now builds that backend by default. Its phase 3 (P1-NOTES-A010) taught the web answer panel to show the `status` caption while streaming and the brain label from `done.brain`, and made dismissing the panel start a new thread. Its phase 4 (P1-NOTES-A011) fitted the daemon for the brain: the systemd unit now sets `HOME` and `NOTESD_CLAUDE_BIN` (the resolved absolute `claude` path), `scripts/install.sh` warns on a missing Claude login or GLM keys and smoke-tests `/api/chat`, and `npm run test:live` runs an opt-in suite with one real Claude and one real GLM message. Iteration 5 (`docs/plans/CONNECTORS_PLAN.md`) lets the same `/mcp` server read three of the owner's other apps (expense-tracking, run-insights, Seer), strictly read-only. Its phase 1 (P1-NOTES-A012) added the connector core under `src/connectors/`: one stateless connector per system that re-reads the sibling repo's `.env.local` on every call, connects only to the direct (non-pooler) host with `default_transaction_read_only=on` and runs each query in `BEGIN READ ONLY` with a statement timeout and a row cap; Seer's `lab.sqlite` is read in a short-lived, killable child process. It registers six generic tools (`expenses_schema`/`expenses_sql`, `runs_schema`/`runs_sql`, `seer_schema`/`seer_sql`) behind a single-SELECT guard, appends a `Connectors.` paragraph to the MCP instructions, fixes all 15 connector tool names in `src/connectors/names.ts`, leaves no-op curated stubs for phases 2-4, and adds a second Docker container whose databases are built from the sibling repos' own migrations. Its phase 2 (P1-NOTES-A013) filled expense-tracking's curated tools: `expenses_spending` (one WIB day range broken down by category, day, ISO week and largest items), `expenses_get` (one expense group with items and photos) and `expenses_months` (zero-filled monthly totals), all integer rupiah, with the app's 17 categories copied as data. Its phase 3 (P1-NOTES-A014) filled run-insights' curated tools: `runs_list`, `runs_get` and `runs_review`, in the app's units with readable companions. Its phase 4 (P1-NOTES-A015) filled Seer's curated tools: `seer_leaderboard`, `seer_positions` and `seer_sera_best`. Its phase 5 (P1-NOTES-A016) opened the connectors to the chat bar and `/n`: the chat brain may call all 15 connector tools (captioned `reading expenses`/`reading runs`/`reading seer`), its system prompt names the three apps and asks for data answers with an opinion in the apps' units, and the `/n` skill routes spending, runs and Seer questions to those tools.
+`mcp-notes` is a local Node/TypeScript daemon (`notesd`) that keeps short notes and images in Postgres on Neon. It exposes them to Claude Code over MCP and to a React web UI on loopback. All 8 phases of `docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md` have landed. Phase 1 added config loading, the Drizzle schema and its one migration, the database client factory, note id generation, `#hashtag` parsing, and the unit and Docker-Postgres integration test harness. Phase 2 added the notes service (the only writer), the `notesd` daemon (Hono on 127.0.0.1) with `/health`, and a stateless MCP streamable-HTTP endpoint at `/mcp` exposing 11 note tools. Phase 3 added deployment: a systemd user unit for `notesd`, an idempotent `scripts/install.sh` (and `scripts/uninstall.sh`) that also registers the `notes` MCP server at user scope and links the `/n` Claude Code skill, and a Windows logon task that keeps WSL running. Phase 4 (P1-NOTES-A003) added the image store under `src/images/`: magic-byte probing, byte-exact storage, sha256 dedupe, lazy derivatives and the inbox watcher. Phase 5 (P1-NOTES-A004) added the image HTTP routes and upload, the MCP tools `create_image` and `view_images`, and the `has_image` and taken-date filters. Phase 6 (P1-NOTES-A005) added the UI JSON API under `/api` (notes CRUD, tags), a live `/api/events` SSE stream of note changes, a streamed `/api/chat` stub behind the `ChatBackend` interface, and static serving of the built SPA from `web/dist` with a 503 fallback when it is not built. Phase 7 (P1-NOTES-A006) added the web UI core in `web/`: a Vite + React + TypeScript SPA with the note wall, rail, sidebar, header, inline editing, the chat bar and answer panel, tooltips, live updates over SSE plus a 60 s refetch, and a text/images/all visibility mode. Phase 8 (P1-NOTES-A007) added images to the web UI: a justified gallery, a photo modal, a full-screen tab at `/full/<id>` (a second Vite entry, `fullscreen.html`), drag/drop and paste upload, and a "not on this machine" placeholder, by rewriting the four stub components phase 7 left in place. Iteration 4 (`docs/plans/CHAT_BAR_BRAIN_PLAN.md`) gives the chat bar a real brain. Its phase 1 (P1-NOTES-A008) widened the chat seam: backends yield `delta` and `status` events and report which brain answered, `Config` gained a `chat` block, and `startDaemon` takes the backend as an injectable option. Its phase 2 (P1-NOTES-A009) added the real brain under `src/chat/` (`agent.ts`, `env.ts`, `prompt.ts`, `status.ts`): each chat message is one Claude Agent SDK run on the owner's Claude Code login, restricted to the daemon's own `notes` MCP tools plus WebSearch/WebFetch, with threads mapped to SDK sessions, a turn cap, a wall-clock timeout, one run in flight, and a single retry on GLM when Claude fails on auth or a usage limit before any text. `startDaemon` now builds that backend by default. Its phase 3 (P1-NOTES-A010) taught the web answer panel to show the `status` caption while streaming and the brain label from `done.brain`, and made dismissing the panel start a new thread. Its phase 4 (P1-NOTES-A011) fitted the daemon for the brain: the systemd unit now sets `HOME` and `NOTESD_CLAUDE_BIN` (the resolved absolute `claude` path), `scripts/install.sh` warns on a missing Claude login or GLM keys and smoke-tests `/api/chat`, and `npm run test:live` runs an opt-in suite with one real Claude and one real GLM message. Iteration 5 (`docs/plans/CONNECTORS_PLAN.md`) lets the same `/mcp` server read three of the owner's other apps (expense-tracking, run-insights, Seer), strictly read-only. Its phase 1 (P1-NOTES-A012) added the connector core under `src/connectors/`: one stateless connector per system that re-reads the sibling repo's `.env.local` on every call, connects only to the direct (non-pooler) host with `default_transaction_read_only=on` and runs each query in `BEGIN READ ONLY` with a statement timeout and a row cap; Seer's `lab.sqlite` is read in a short-lived, killable child process. It registers six generic tools (`expenses_schema`/`expenses_sql`, `runs_schema`/`runs_sql`, `seer_schema`/`seer_sql`) behind a single-SELECT guard, appends a `Connectors.` paragraph to the MCP instructions, fixes all 15 connector tool names in `src/connectors/names.ts`, leaves no-op curated stubs for phases 2-4, and adds a second Docker container whose databases are built from the sibling repos' own migrations. Its phase 2 (P1-NOTES-A013) filled expense-tracking's curated tools: `expenses_spending` (one WIB day range broken down by category, day, ISO week and largest items), `expenses_get` (one expense group with items and photos) and `expenses_months` (zero-filled monthly totals), all integer rupiah, with the app's 17 categories copied as data. Its phase 3 (P1-NOTES-A014) filled run-insights' curated tools: `runs_list`, `runs_get` and `runs_review`, in the app's units with readable companions. Its phase 4 (P1-NOTES-A015) filled Seer's curated tools: `seer_leaderboard`, `seer_positions` and `seer_sera_best`. Its phase 5 (P1-NOTES-A016) opened the connectors to the chat bar and `/n`: the chat brain may call all 15 connector tools (captioned `reading expenses`/`reading runs`/`reading seer`), its system prompt names the three apps and asks for data answers with an opinion in the apps' units, and the `/n` skill routes spending, runs and Seer questions to those tools. Iteration 6 (`docs/plans/SEMANTIC_SEARCH_PLAN.md`) adds semantic search. Its phase 1 (P1-NOTES-A017) laid the storage only: migration `drizzle/0001_note_embeddings.sql` enables pgvector and adds the `note_embeddings` side table (one row per note, 1536-dim vector, HNSW cosine index, failure/backoff columns), and `src/embeddings/` gained the constants, the pure state rules (`bodySha256`, `embedInput`, `embeddingState`, `retryDelayMs`, `clampError`) and the repo (`listPending`, `saveEmbedding`, `recordFailure`, `embeddingStats`). The notes integration container is now `pgvector/pgvector:pg16`. Its phase 2 (P1-NOTES-A018) added the embedder seam: the `Embedder` interface and `EmbeddingError` in `src/embeddings/embedder.ts`, the OpenRouter client in `src/embeddings/openrouter.ts` (one `fetch` per batch of up to 64, 15 s timeout, strict response validation), `Config.embeddings` read from `OPENROUTER_API_KEY`, and an `embedder: Embedder | null` threaded through `startDaemon` options, `AppDeps` and `NotesService`. Tests get a deterministic offline `FakeEmbedder` (`tests/helpers/fakeEmbedder.ts`). Phase 2 alone called nothing. Its phase 3 (P1-NOTES-A019) made notes get embedded: `src/embeddings/backfill.ts` holds the shared drain loop (`runBackfill`: batches of 16, a per-note fallback when a batch call fails, a 1 s `RateLimiter` between calls, abort between batches), `src/embeddings/worker.ts` runs it inside `notesd` (started by `startBackground` when an embedder is configured, kicked by `created`/`updated` events with a 500 ms debounce, swept every 60 s, one log line per batch that did work), and `npm run embed:backfill` (`src/cli/embedBackfill.ts`) runs the same loop once with progress, `--retry-failed`, and Ctrl-C stopping after the current batch. Writes never wait on OpenRouter. Its phase 4 (P1-NOTES-A020) made `search` hybrid by default: `src/search/blend.ts` scores candidates by full-text rank, cosine similarity, tag match and recency (all weights in one `BLEND` object), `src/search/queryVector.ts` embeds the query once per (model, text) with a 5 s ceiling and an LRU cache, `repo.searchCandidates` unions full-text matches, nearest current vectors and notes named by id under the same filters, and the MCP `search` tool takes an optional `mode` (`hybrid` | `text`) and reports `mode` plus a `fallback` sentence when it had to answer with full text only. `tests/fixtures/semantic/labelled.ts` is the labelled evaluation set (16 notes, 10 queries) used to tune and check the blend. Its phase 5 (P1-NOTES-A021) added `related`: `embeddings.nearestNotes` walks the HNSW cosine index from one note's current vector, `NotesService.related` returns the live notes closest in meaning (never the note itself, a deleted note or a stale vector) and embeds an unembedded source on demand, the MCP `related` tool exposes it, the server instructions gained a `Related.` paragraph, and the chat bar may call it (captioned `finding related notes`). Its phase 6 (P1-NOTES-A022) checked it against the real model: `npm run test:live:embeddings` (`tests/live/embeddings.live.test.ts`) embeds the labelled set with one OpenRouter request, `BLEND.minSimilarity` was retuned from 0.3 to 0.22 on those numbers, and Neon was migrated (pgvector 0.8.6, `note_embeddings` with its HNSW index) and backfilled (12 embedded, 0 pending).
 
 **Key Responsibilities:**
 - Resolve runtime config (`DATABASE_URL`, port, loopback host, data dir, chat brain settings) from `.env.local` plus the environment
-- Own the whole schema for iterations 1-3 (`notes`, `note_revisions`) and its single migration `drizzle/0000_init.sql`
+- Own the whole schema: `notes`, `note_revisions` (migration `drizzle/0000_init.sql`, iterations 1-3) and `note_embeddings` plus the pgvector extension (migration `drizzle/0001_note_embeddings.sql`, iteration 6)
+- Track one embedding per note keyed by body hash and model, with failure backoff, ready for semantic search (iteration 6; the `notesd` embedding worker and `npm run embed:backfill` keep it filled)
 - Build one Drizzle type over two drivers: Neon websocket pool in production, `pg` for the Docker test database
 - Generate and normalise short note ids (`A-B32`)
 - Parse `#hashtags` from note bodies into the `tags` column (pure module, shareable with the web app)
 - Create, read, update, append, soft-delete, restore and revert notes atomically, keeping every prior body as a revision in the same transaction
-- List and full-text search notes with tag, date, image and deleted filters plus offset cursors
+- List and search notes with tag, date, image and deleted filters plus offset cursors; search is hybrid (words + meaning + tags + recency) by default, with full-text `mode: "text"` and an automatic full-text fallback (iteration 6 phase 4)
+- Find the notes closest in meaning to one note (`related`, iteration 6 phase 5)
 - Serve the notes to Claude Code as MCP tools over loopback HTTP, and emit in-process change events
 - Serve image notes over HTTP (upload, original, display, thumb, preview) and to Claude through `create_image` / `view_images` (phase 5)
 - Serve the web UI a JSON API, an SSE change feed, a streamed chat endpoint (a Claude Agent SDK run over the notes MCP tools, GLM fallback) and the built SPA
@@ -27,17 +29,27 @@
 
 ```
 src/config.ts          loadConfig, ConfigError, REPO_ROOT, defaults
-src/db/schema.ts       Drizzle tables notes, note_revisions; ImageMeta, NoteOrigin; row types
+src/db/schema.ts       Drizzle tables notes, note_revisions, note_embeddings; ImageMeta, NoteOrigin; row types
+src/embeddings/constants.ts  EMBEDDING_MODEL, EMBEDDING_DIMENSIONS (1536), EMBEDDING_MAX_CHARS, OPENROUTER_EMBEDDINGS_URL
+src/embeddings/state.ts      pure: bodySha256, embedInput, embeddingState, retryDelayMs, clampError
+src/embeddings/repo.ts       note_embeddings queries: listPending, saveEmbedding, recordFailure, embeddingStats, nearestNotes, SQL fragments
+src/embeddings/embedder.ts   Embedder interface, EmbedOptions, EmbeddingError, embeddingErrorText
+src/embeddings/openrouter.ts createOpenRouterEmbedder (fetch, batching, validation), embedderFromConfig
+src/embeddings/backfill.ts   runBackfill drain loop, RateLimiter, Clock/realClock, EmbeddingStore + dbEmbeddingStore
+src/embeddings/worker.ts     startEmbeddingWorker (events + 60 s sweep around runBackfill), formatBatch
+src/cli/embedBackfill.ts     `npm run embed:backfill`: one-shot backfill with progress, --retry-failed, Ctrl-C resumes later
+src/search/blend.ts          pure: BLEND weights, queryTerms, tagMatch, recencyScore, similarityScore, blendScore, isEligible, rankCandidates
+src/search/queryVector.ts    QueryVectorCache (LRU), embedQuery (5 s ceiling), SEMANTIC_OFF_FALLBACK, embedFailedFallback
 src/db/client.ts       createDb / closeDb / isNeonUrl; Db type; re-exports schema
 src/notes/ids.ts       generateId, normalizeId, parseId, isValidId, InvalidIdError
 src/notes/tags.ts      parseTags, tagSpans, normalizeTag
-src/notes/types.ts     wire Note/NoteImage/Revision/TagCount/NotePage, NoteError, rowToNote, cleanOrigin
+src/notes/types.ts     wire Note/NoteImage/Revision/TagCount/NotePage/SearchPage, SearchMode, RelatedNote/RelatedResult, NoteError, rowToNote, cleanOrigin
 src/notes/dates.ts     parseDateBound (YYYY-MM-DD local day or ISO datetime)
 src/notes/events.ts    NoteEvents in-process bus (created/updated/deleted/restored)
-src/notes/repo.ts      Drizzle queries: NoteFilter, list/search/insert/lock/revisions/tags, cursors
+src/notes/repo.ts      Drizzle queries: NoteFilter, list/search/searchCandidates/insert/lock/revisions/tags, cursors
 src/notes/service.ts   NotesService, the only writer of notes
 src/mcp/instructions.ts buildInstructions(timeZone): MCP server instructions text (+ Connectors paragraph)
-src/mcp/tools.ts       registerNoteTools (11 tools), noteFilterShape (+ has_image, taken_from/to), toFilter, ToolDeps (+ connectors?), run/jsonResult (compact), IMAGE_FILTER_HINT
+src/mcp/tools.ts       registerNoteTools (12 tools, `related` since iteration 6 phase 5), noteFilterShape (+ has_image, taken_from/to), toFilter, ToolDeps (+ connectors?), run/jsonResult (compact), IMAGE_FILTER_HINT
 src/mcp/imageTools.ts  registerImageTools: create_image, view_images; describeImageNote, VIEW_IMAGES_MAX
 src/mcp/server.ts      createMcpServer (notes, image and connector tools), handleMcpRequest (stateless, JSON responses)
 src/connectors/names.ts     CONNECTOR_SYSTEMS, CONNECTOR_TOOL_NAMES (all 15), ALL_CONNECTOR_TOOL_NAMES, SYSTEM_META, schemaToolName/sqlToolName
@@ -74,7 +86,7 @@ src/chat/prompt.ts     buildChatSystemPrompt (date/time/tz, id quoting, the thre
 src/chat/status.ts     allowedChatTools (notes + connector + web), captionForToolUse, NOTES_TOOL_NAMES, WEB_TOOL_NAMES, CONNECTOR_CAPTIONS
 src/deps.ts            AppDeps { config, db, events, service }
 src/daemon.ts          startDaemon (+ StartDaemonOptions.chat), ensureDataDirs, DATA_SUBDIRS, CHAT_SUBDIR
-src/background.ts      startBackground: ensures data dirs, starts the inbox watcher
+src/background.ts      startBackground: ensures data dirs, starts the inbox watcher and (with an embedder) the embedding worker
 src/images/probe.ts    magic-byte sniff, probeImage (mime, oriented size, EXIF taken_at), sha256Hex, HEIC decode
 src/images/store.ts    data-dir paths, images/YYYY/MM/<id>.<ext>, atomic write/copy/move (EXDEV-safe)
 src/images/derive.ts   lazy cache/<id>/{thumb.webp,preview.jpg,display.jpg}
@@ -82,9 +94,9 @@ src/images/records.ts  ImageRecords: raw read-only image lookups by sha256 / id
 src/images/ingest.ts   ingestImage (dedupe by sha256, store, create note), locateImage, imageDeps
 src/images/inbox.ts    startInboxWatcher (chokidar on <dataDir>/inbox, failures to inbox/failed/)
 src/main.ts            notesd entry: loadConfig, startDaemon, SIGINT/SIGTERM shutdown
-drizzle/               0000_init.sql + meta/ (generated by drizzle-kit; do not hand-edit)
+drizzle/               0000_init.sql, 0001_note_embeddings.sql + meta/ (generated by drizzle-kit; do not hand-edit, except 0001's prepended CREATE EXTENSION)
 drizzle.config.ts      drizzle-kit config, picks the DIRECT (unpooled) Neon URL
-scripts/test-int.sh    starts/reuses Docker containers mcp-notes-pg-test (55433) and mcp-notes-pg-connectors (55435), runs integration suite
+scripts/test-int.sh    starts/reuses Docker containers mcp-notes-pg-test (55433) and mcp-notes-pg-connectors (55435), both pgvector/pgvector:pg16 (recreated if on another image), runs integration suite
 scripts/install.sh     idempotent WSL install: deps, build, systemd user unit, linger, MCP registration, /n skill link
 scripts/uninstall.sh   removes the unit, the MCP registration and the skill link (keeps data dir and linger)
 scripts/windows/install-wsl-keepalive.ps1  Task Scheduler logon task keeping the WSL distro up (-Uninstall removes it)
@@ -94,8 +106,8 @@ docs/INSTALL.md        install, WSL keepalive rationale, post-merge re-install, 
 tests/unit/            vitest unit tests (node)
 tests/integration/     *.int.test.ts, setup.ts helpers, globalSetup.ts (migrates once)
 tests/integration/connectors/  connector harness (harness.ts, siblings.ts), globalSetup.ts (builds connectors_<id> DBs), core/generic/mcp int tests, runs.curated.int.test.ts
-tests/live/            chat.live.test.ts (npm run test:live), connectors.live.test.ts (npm run test:live:connectors)
-vitest.config.ts       the only vitest config; switches mode on VITEST_INTEGRATION=1, CHAT_LIVE_TEST=1 or CONNECTORS_LIVE_TEST=1
+tests/live/            chat.live.test.ts (npm run test:live), connectors.live.test.ts (npm run test:live:connectors), embeddings.live.test.ts (npm run test:live:embeddings)
+vitest.config.ts       the only vitest config; switches mode on VITEST_INTEGRATION=1, CHAT_LIVE_TEST=1, CONNECTORS_LIVE_TEST=1 or EMBEDDINGS_LIVE_TEST=1
 tsconfig.json          typecheck (noEmit); tsconfig.server.json builds src/ to dist/
 tsconfig.web.json      web typecheck (noEmit, DOM libs, react-jsx, Bundler resolution), include web/src
 web/index.html         SPA entry (#root, dark color-scheme), loads web/src/main.tsx
@@ -117,6 +129,7 @@ web/dist/              build output, gitignored, served by staticRoutes
 - `DEFAULT_DATA_DIR = '~/mcp-notes-data'`
 - `DEFAULT_CHAT_MAX_TURNS = 24`, `DEFAULT_CHAT_TIMEOUT_MS = 180_000`, `DEFAULT_CLAUDE_BIN = 'claude'`
 - `DEFAULT_CHAT_CONFIG: ChatConfig`: `{ brain: 'claude', maxTurns: 24, timeoutMs: 180000, claudeBin: 'claude', glm: null }`, what `loadConfig` returns when no chat key is set. Tests that build `Config` literals use it.
+- `DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig`: `{ apiKey: null }`, what `loadConfig` returns without `OPENROUTER_API_KEY`. Tests that build `Config` literals use it too.
 
 #### Config
 ```ts
@@ -126,6 +139,10 @@ interface Config {
   host: '127.0.0.1'            // always loopback, the daemon has no auth
   dataDir: string              // absolute; NOTES_DATA_DIR, default ~/mcp-notes-data; not created here
   chat: ChatConfig             // the chat bar brain (POST /api/chat)
+  embeddings: EmbeddingsConfig // note embeddings via OpenRouter (iteration 6)
+}
+interface EmbeddingsConfig {
+  apiKey: string | null        // OPENROUTER_API_KEY, trimmed; null when unset or blank = semantic features off; never logged
 }
 interface ChatConfig {
   brain: ChatBrain             // CHAT_BRAIN: 'claude' (default) | 'glm' (GLM only, no fallback); case-insensitive
@@ -149,7 +166,7 @@ Merges the dotenv file under the real environment (real env wins). Database URL 
 1. `DATABASE_URL` in the real env wins outright (how tests point the daemon at Docker Postgres).
 2. Otherwise, of `DATABASE_URL` / `DATABASE_URL_UNPOOLED`, the pooled one (`-pooler` in host) if any, else whichever exists. Selection goes by host, not key name, because the owner's `.env.local` has the two names swapped.
 
-Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, when `NOTESD_HOST` is anything but empty or `127.0.0.1`, when `CHAT_BRAIN` is not `claude`/`glm`, when `CHAT_MAX_TURNS`/`CHAT_TIMEOUT_MS` is not a positive integer, or when `CHAT_BRAIN=glm` and any `LLM_*` key is missing (the message names the missing keys). With `CHAT_BRAIN=claude` and incomplete `LLM_*`, `glm` is null and Claude runs have no fallback. Unknown keys (`OPENROUTER_API_KEY`) are ignored. Synchronous file read; no other side effects.
+Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, when `NOTESD_HOST` is anything but empty or `127.0.0.1`, when `CHAT_BRAIN` is not `claude`/`glm`, when `CHAT_MAX_TURNS`/`CHAT_TIMEOUT_MS` is not a positive integer, or when `CHAT_BRAIN=glm` and any `LLM_*` key is missing (the message names the missing keys). With `CHAT_BRAIN=claude` and incomplete `LLM_*`, `glm` is null and Claude runs have no fallback. `OPENROUTER_API_KEY` fills `embeddings.apiKey` (unset or blank gives null and never throws; note writes are unaffected). Other unknown keys are ignored. Synchronous file read; no other side effects.
 
 #### isPooledUrl
 ```ts
@@ -186,12 +203,29 @@ Indexes: GIN on `tags`; GIN on `to_tsvector('simple', body)`; btree on `created_
 
 Index: `(note_id, saved_at desc)`.
 
+#### note_embeddings (iteration 6, migration 0001)
+A side table, not a column on `notes`, so every `select().from(notes)` stays free of the vector and it never enters `NoteRow` or the wire `Note`.
+
+| column | type | notes |
+|---|---|---|
+| `note_id` | text PK, FK `notes.id` on delete cascade | one row per note that has (or had) text |
+| `embedding` | `vector(1536)` | null while the latest attempt for `body_sha256` failed |
+| `body_sha256` | text not null | hex sha256 of the UTF-8 body this row refers to |
+| `model` | text not null | e.g. `openai/text-embedding-3-small` |
+| `attempts` | integer not null default 0 | consecutive failures for this body + model; 0 after success |
+| `last_error` | text | at most 500 chars, keys redacted (`clampError`) |
+| `next_attempt_at` | timestamptz | failures only: not retried before this |
+| `embedded_at` | timestamptz | when `embedding` was written; null on a failure row |
+| `updated_at` | timestamptz not null default now() | |
+
+Indexes: HNSW on `embedding vector_cosine_ops`; btree on `next_attempt_at`. The vector is *current* iff `embedding is not null`, `body_sha256` equals the note's current body hash and `model` equals the asked model. Deleted notes keep their row, so a restore needs no embedding call.
+
 #### Types
 - `ImageMeta`: `{ sha256, mime, width, height, bytes, taken_at: string|null (UTC ISO 'Z'), original_name: string|null, host: string|null }`
 - `NoteOrigin`: `{ cwd?, repo?, claude_session?, source? }`
 - `NoteRow`, `NewNoteRow`, `NoteRevisionRow`, `NewNoteRevisionRow`: Drizzle `$inferSelect` / `$inferInsert`.
 
-The schema is final for iterations 1-3: later phases must not add a migration.
+Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`. The test suite asserts pgvector >= 0.8 (phases 4-5 use `hnsw.iterative_scan`; Neon has 0.8.6).
 
 ### src/db/client.ts
 
@@ -242,7 +276,11 @@ interface Note { id; body; tags: string[]; created_at; updated_at; deleted_at?; 
 interface Revision { revision: number; note_id; body; saved_at }
 interface TagCount { tag; count: number; last_used }
 interface NotePage { notes: Note[]; next_cursor: string|null }
-type NoteErrorCode = 'invalid_id'|'invalid_input'|'not_found'|'deleted'|'empty_body'|'conflict'|'duplicate_image'|'invalid_revision'
+type SearchMode = 'hybrid' | 'text'                                 // iteration 6 phase 4
+interface SearchPage extends NotePage { mode: SearchMode; fallback?: string }   // mode = ranking actually used; fallback only when hybrid was asked but could not run
+interface RelatedNote { note: Note; similarity: number }            // iteration 6 phase 5; similarity = 1 - cosine distance, 4 decimals
+interface RelatedResult { note_id: string; related: RelatedNote[] } // most similar first
+type NoteErrorCode = 'invalid_id'|'invalid_input'|'not_found'|'deleted'|'empty_body'|'conflict'|'duplicate_image'|'invalid_revision'|'not_embedded'
 class NoteError extends Error { readonly code: NoteErrorCode }
 function cleanOrigin(value: unknown): Origin | null       // keeps known non-blank string keys; null if none left
 function imageAvailable(dataDir: string, imagePath: string): boolean   // file exists and stays inside dataDir
@@ -291,6 +329,9 @@ function clampLimit(limit?: number): number       // 1..MAX_LIMIT
 function filterConditions(filter): SQL[]
 listNotes(db, filter): Promise<RowPage>           // order: date col desc, id desc
 searchNotes(db, query, filter): Promise<RowPage>  // websearch_to_tsquery('simple'); ts_rank desc, updated_at desc, id desc
+interface CandidateQuery { query; vector: readonly number[]; model; ids: readonly string[]; excluded: readonly string[]; textLimit; vectorLimit }
+interface CandidateRow { row: NoteRow; textRank: number | null; similarity: number | null }
+searchCandidates(db: Db, q: CandidateQuery, filter): Promise<CandidateRow[]>   // hybrid candidates, unordered (phase 4)
 findNotesByIds, findNoteById, lockNote (SELECT ... FOR UPDATE), findNoteBySha256(db, sha, includeDeleted)
 insertNote(db, values): Promise<NoteRow | null>   // null on id clash; sha256 unique clash -> NoteError('duplicate_image')
 idExists, setBody, setOrigin, setDeleted, insertRevision, listRevisions (newest first), getRevision
@@ -298,12 +339,16 @@ listTags(db): Promise<TagRow[]>                   // live notes only; count desc
 ```
 Paging fetches `limit + 1` rows with an offset cursor. `next_cursor` is non-null only when another page exists. `takenFrom`/`takenTo` compare `image_meta->>'taken_at'` as text against `parseDateBound(...).toISOString()` (`>= from`, `< to`). That works because `taken_at` is always a UTC ISO `Z` string, and it uses the `taken_at` btree index. Notes with no EXIF date never match a taken bound. MCP exposes `hasImage`/`takenFrom`/`takenTo` as `has_image`/`taken_from`/`taken_to`; `/api/notes` exposes only `has_image`. The search vector expression must stay `to_tsvector('simple', body)` to hit the GIN index.
 
+`searchCandidates` (iteration 6 phase 4) runs three queries, every one under the same `filterConditions(filter)`, so filters apply before ranking: (1) up to `textLimit` full-text matches in text mode's order, left-joined to the note's *current* embedding (`isCurrentEmbeddingSql(model)`); (2) up to `vectorLimit` nearest current vectors (`ORDER BY embedding <=> $q LIMIT k`, the HNSW cosine shape) inside a transaction with `set local hnsw.iterative_scan = strict_order`, so selective filters still yield up to k rows, and with the query's `-word` exclusions applied as `not (tsv @@ websearch_to_tsquery(...))`; (3) the notes whose ids the query names. Rows are merged by id, first source wins; each carries both `textRank` (raw `ts_rank`, null without a full-text match) and `similarity` (`1 - cosine distance`, null without a current vector) whichever source found it. It does not page; the service ranks and slices.
+
 ### src/notes/service.ts
 
 ```ts
 const MAX_ID_ATTEMPTS = 20
+const RELATED_DEFAULT_LIMIT = 10, RELATED_MAX_LIMIT = 50
+interface RelatedOptions { limit?: number }          // clamped to 1..50, default 10
 class NotesService {
-  constructor(deps: { db: Db; dataDir: string; events: NoteEvents })
+  constructor(deps: { db: Db; dataDir: string; events: NoteEvents; embedder?: Embedder | null })   // embedder: query side of hybrid search (phase 4) and related (phase 5); writes never use it
   requireId(input: string): string                    // normalizeId or NoteError('invalid_id')
   newId(): Promise<string>                            // free id, for callers that must name a file first
   create(input: { body; origin?; image?: { path; meta }; allowEmpty?; id? }): Promise<Note>
@@ -311,8 +356,10 @@ class NotesService {
   get(ids, { includeDeleted? }): Promise<{ notes; missing; deleted }>   // input order, deduped
   findBySha256(sha256, { includeDeleted? }): Promise<Note | null>
   list(filter?: NoteFilter): Promise<NotePage>
-  search(query, filter?): Promise<NotePage>           // blank query -> invalid_input
+  search(query, filter?, opts?: SearchOptions): Promise<SearchPage>   // blank query -> invalid_input; opts { mode?: 'hybrid'|'text' (default hybrid), queryTimeoutMs? }
   tags(): Promise<TagCount[]>
+  related(id, opts?: RelatedOptions): Promise<RelatedResult>   // iteration 6 phase 5
+  private embedNow(id, body, input): Promise<void>    // embeds one source note now; not_embedded on no embedder / failure / empty result
   revisions(id): Promise<Revision[]>                  // not_found if the id has no note
   update(id, body, { origin?, allowEmpty? }): Promise<Note>
   append(id, text, { origin? }): Promise<Note>        // joins with a blank line
@@ -323,13 +370,17 @@ class NotesService {
 ```
 Every mutation runs in one transaction that locks the row (`FOR UPDATE`), writes the previous body to `note_revisions`, then writes the new state. Delete also stores the body as a revision. Exactly one `NoteEvents` event is emitted after commit, and none for a no-op: an unchanged body on update, a revert to an identical body, a repeat delete or restore. `update`, `append` and `revert` on a deleted note throw `deleted`. `create` retries generated ids up to 20 times on a PK clash. With an explicit `id`, a clash throws `conflict` without retry. `allowEmpty` exists for HTTP and image notes. MCP never sets it.
 
+`search` (iteration 6 phase 4): `mode: 'text'` is exactly the pre-iteration-6 `repo.searchNotes` ranking and never calls the embedder. Hybrid (the default) checks the cursor first, then embeds the query through `embedQuery` (per-service `QueryVectorCache`, so paging embeds once). With no embedder it returns the text ranking with `fallback: SEMANTIC_OFF_FALLBACK`; if the embedding throws or times out, it returns the text ranking with `fallback: embedFailedFallback(err)`. Either way `mode` is `'text'`. Otherwise it calls `repo.searchCandidates` with `queryTerms(query)` ids and exclusions and `BLEND.textCandidates` / `BLEND.vectorCandidates`, ranks with `rankCandidates` (tag match from the note's `tags`, `now = new Date()`) and slices `[offset, offset + limit)`. The cursor is an offset into whichever ranking produced the page.
+
+`related` (iteration 6 phase 5) clamps `limit` to 1..50 (default 10), throws `not_found` for an unknown id, `deleted` for a deleted note (the message suggests `restore`), and `invalid_input` when `embedInput(body)` is null (a photo with no text or an empty body; the message suggests `append` or `list` by date). It calls `embeddings.nearestNotes` with `embedder?.model ?? EMBEDDING_MODEL`. When that returns null (the source has no current vector), `embedNow` embeds the body once and stores it through `saveEmbedding` (the same body-hash-guarded upsert the worker uses), then asks again; a second null means the body changed meanwhile and throws `not_embedded` ("try again"). `embedNow` throws `not_embedded` with no embedder (semantic search off, use `search` instead), when the embedder throws (the background job retries), or when it returns no vector. With no embedder, sources that already have a current vector still answer. Similarity is `1 - distance` rounded to 4 decimals. It is read-only apart from that on-demand vector and emits no event.
+
 ### src/mcp/instructions.ts
 
 ```ts
 function localTimeZone(): string                    // Intl resolved IANA zone
 function buildInstructions(timeZone?: string): string
 ```
-The server-instructions text Claude reads once per session. It covers the note model, id format, writing and revision semantics, reading and search syntax, and date semantics (it names the daemon's timezone). It also says comparisons are Claude's job. Phase 5 added an `Images.` section: the `image` field shape, `available: false` meaning the file is on another host, `view_images` with up to 8 ids, saved-date queries (`has_image` + `from`/`to`) versus taken-date queries (`taken_from`/`taken_to`), and `create_image` copying a local file with dedupe. Iteration 5 phase 1 appended a `Connectors.` section: the three systems and their `expenses_*` / `runs_*` / `seer_*` prefixes, strictly read-only, prefer the curated tools (the list is generated from `CONNECTOR_TOOL_NAMES`, skipping each system's first two), fall back to `<system>_sql` only after `<system>_schema`, units and timezone (Asia/Jakarta days, whole rupiah, Seer in USD), and "if a system is not reachable, say so and answer from the rest".
+The server-instructions text Claude reads once per session. It covers the note model, id format, writing and revision semantics, reading and search syntax, and date semantics (it names the daemon's timezone). It also says comparisons are Claude's job. Phase 5 added an `Images.` section: the `image` field shape, `available: false` meaning the file is on another host, `view_images` with up to 8 ids, saved-date queries (`has_image` + `from`/`to`) versus taken-date queries (`taken_from`/`taken_to`), and `create_image` copying a local file with dedupe. Iteration 5 phase 1 appended a `Connectors.` section: the three systems and their `expenses_*` / `runs_*` / `seer_*` prefixes, strictly read-only, prefer the curated tools (the list is generated from `CONNECTOR_TOOL_NAMES`, skipping each system's first two), fall back to `<system>_sql` only after `<system>_schema`, units and timezone (Asia/Jakarta days, whole rupiah, Seer in USD), and "if a system is not reachable, say so and answer from the rest". Iteration 6 phase 4 rewrote the search part of the `Reading.` paragraph: search understands meaning by default (mode `"hybrid"`, with the "ArangoDB credentials" and "auth failures after resume" examples), pass the question in plain words, ids and code tokens still rank first, mode `"text"` keeps the old exact-word syntax, and a result carrying `fallback` means meaning search was unavailable, so tell the user. Iteration 6 phase 5 added a `Related.` paragraph after `Reading.`: `related(id)` returns the notes closest in meaning to one note, most similar first with a similarity score (1 = same meaning, near 0 = unrelated), never the note itself or a deleted note, for "what else do I have on this?".
 
 ### src/mcp/tools.ts
 
@@ -353,8 +404,9 @@ function registerNoteTools(server: McpServer, deps: ToolDeps): void
 | `append` | `id`, `text` | `{ note }` |
 | `delete` / `restore` | `id` | `{ note }` |
 | `list` | `noteFilterShape` | `{ notes, next_cursor }` |
-| `search` | `query` + `noteFilterShape` | `{ notes, next_cursor }` |
+| `search` | `query`, `mode?` (`hybrid` default \| `text`) + `noteFilterShape` | `{ notes, next_cursor, mode, fallback? }` |
 | `tags` | none | `{ tags }` |
+| `related` | `id`, `limit?` (1-50, default 10) | `{ note_id, related: [{ note, similarity }] }`; `readOnlyHint` (iteration 6 phase 5) |
 | `revisions` | `id` | `{ revisions }` |
 | `revert` | `id`, `revision` | `{ note }` |
 
@@ -614,16 +666,16 @@ function buildChatSystemPrompt(now?: Date, timeZone?: string): string   // timeZ
 
 // status.ts
 const NOTES_MCP_SERVER = 'notes'
-const NOTES_TOOL_NAMES: readonly [13 names from mcp/tools + mcp/imageTools]
+const NOTES_TOOL_NAMES: readonly [14 names from mcp/tools + mcp/imageTools]
 type NotesToolName
 const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch']
 const CONNECTOR_CAPTIONS: Record<SystemId, string>                     // from SYSTEM_META[id].caption: 'reading expenses' / 'reading runs' / 'reading seer'
-function allowedChatTools(): string[]                                  // mcp__notes__<name> x13 + mcp__notes__<connector> x15 (ALL_CONNECTOR_TOOL_NAMES) + WebSearch, WebFetch
+function allowedChatTools(): string[]                                  // mcp__notes__<name> x14 + mcp__notes__<connector> x15 (ALL_CONNECTOR_TOOL_NAMES) + WebSearch, WebFetch
 function captionForToolUse(name: string, input: unknown): string | null
 ```
 `createAgentChatBackend` runs one SDK `query` per `reply()`. Every run gets: `cwd` (`<dataDir>/chat`), `settingSources: []`, `strictMcpConfig: true`, one MCP server `notes` of type `http` at `mcpUrl()` (read at run start, with `alwaysLoad`), built-in `tools` limited to WebSearch/WebFetch, `allowedTools` from `allowedChatTools()`, `permissionMode: 'dontAsk'`, `includePartialMessages`, `maxTurns: chat.maxTurns`, a fresh `buildChatSystemPrompt(now())` as the whole system prompt, `resume: threadId` when the client sent one, and `pathToClaudeCodeExecutable` from `resolveExecutable(chat.claudeBin, PATH)` (resolved once at construction). A Claude run uses `claudeEnv` (the daemon env minus every key, base URL, model override and parent-Claude-Code marker, so it runs on the owner's OAuth login; `CLAUDE_CONFIG_DIR` is kept). A GLM run uses `glmEnv` (same base plus `ANTHROPIC_BASE_URL`/`AUTH_TOKEN`/`MODEL`/`DEFAULT_*_MODEL` from `chat.glm`) and `model: glm.model`.
 
-Streaming: only top-level messages count (`parent_tool_use_id === null`). `stream_event` `text_delta`s become `delta` events. A top-level assistant `tool_use` block becomes a `status` caption from `captionForToolUse` (`searching notes`, `reading 3 notes`, `looking at a photo`, `searching the web`, `saving a note`, ...; any of a system's connector tools from `CONNECTOR_TOOL_NAMES` gives that system's `CONNECTOR_CAPTIONS` entry, an unknown `mcp__notes__*` name gives null; repeats are not re-sent), and the next text clears it with `status ""`. Text that follows a tool use after earlier text is prefixed with a blank line (leading whitespace trimmed). A `result` of subtype `success` without `is_error` sets `end()` to `{ threadId: session_id, brain }`; the SDK session id is the thread id.
+Streaming: only top-level messages count (`parent_tool_use_id === null`). `stream_event` `text_delta`s become `delta` events. A top-level assistant `tool_use` block becomes a `status` caption from `captionForToolUse` (`searching notes`, `finding related notes`, `reading 3 notes`, `looking at a photo`, `searching the web`, `saving a note`, ...; any of a system's connector tools from `CONNECTOR_TOOL_NAMES` gives that system's `CONNECTOR_CAPTIONS` entry, an unknown `mcp__notes__*` name gives null; repeats are not re-sent), and the next text clears it with `status ""`. Text that follows a tool use after earlier text is prefixed with a blank line (leading whitespace trimmed). A `result` of subtype `success` without `is_error` sets `end()` to `{ threadId: session_id, brain }`; the SDK session id is the thread id.
 
 Guardrails: one run in flight per backend (a new `reply()` stops the previous one, `superseded`); the request `signal` (`client`), a `chat.timeoutMs` wall-clock timer (`timeout`, unref'd) and `close()` (`closed`, called by daemon `stop()`) all abort the SDK child. A stopped run throws `Chat stopped: ...` from `events`. `error_max_turns` throws `Chat stopped: the agent hit its N-turn cap ...` and never falls back.
 
@@ -653,7 +705,7 @@ Files are read only when they resolve to a regular file inside the dist root. Ba
 
 Image notes are ordinary notes whose `image_path` and `image_meta` are set. All note writes still go through `NotesService`. The image modules only place files and read raw image fields. Phase 5 reaches them through `src/http/imageAccess.ts` (`imageDeps`/`toolImageDeps`, `ingestImage`, `locateImage` and the derive getters).
 
-`startBackground` (in `src/background.ts`) builds `imageDeps(deps)` and runs `images/store.ensureDataDirs`, which is idempotent (tests call it without `startDaemon`). It then starts the inbox watcher with `ingest = ingestImage(img, { path, move: true, origin: { source: 'inbox' } })`. The stop function it returns closes the watcher and waits for the queue to drain.
+`startBackground` (in `src/background.ts`) builds `imageDeps(deps)` and runs `images/store.ensureDataDirs`, which is idempotent (tests call it without `startDaemon`). It then starts the inbox watcher with `ingest = ingestImage(img, { path, move: true, origin: { source: 'inbox' } })`. The stop function it returns closes the watcher and waits for the queue to drain. Since iteration 6 phase 3 it also starts `startEmbeddingWorker({ store: dbEmbeddingStore(deps.db), events: deps.events, embedder: deps.embedder })` when `deps.embedder` is set (logging `[notesd] embedding notes with <model>`), or logs once that embeddings are off when it is null; stop closes the inbox watcher first, then the worker.
 
 #### src/images/probe.ts
 ```ts
@@ -734,19 +786,167 @@ function startInboxWatcher(opts): Promise<InboxWatcher>   // resolves after chok
 ```
 It watches the top level of the inbox only (depth 0, subdirectories ignored), including files already there at startup. A file is taken once its size and mtime hold still for the stability threshold. Files are handled one at a time in arrival order. Non-images are logged and left in place. A failed ingest moves the file to `inbox/failed/<name>`, or `<stem>-<epoch ms>[-n]<ext>` if that name is taken, and logs one `[inbox]` line. `idle()` resolves once every file seen so far is handled, and `close()` stops the watcher and drains the queue.
 
+### Embeddings: src/embeddings/ (iteration 6 phases 1-3, 5)
+
+Storage, rules (phase 1), the embedder (phase 2), and the drain loop, worker and backfill CLI (phase 3) that fill `note_embeddings`. Hybrid search (phase 4, `src/search/` + `repo.searchCandidates`) reads it, and so does `related` (phase 5, `nearestNotes`). A null `Embedder` everywhere means semantic features are off (no `OPENROUTER_API_KEY`).
+
+#### src/embeddings/constants.ts
+```ts
+const EMBEDDING_MODEL = 'openai/text-embedding-3-small'
+const EMBEDDING_DIMENSIONS = 1536        // must equal vector(1536) in schema.ts (unit test asserts)
+const EMBEDDING_MAX_CHARS = 8_000        // UTF-16 units, run-insights' clamp
+const OPENROUTER_EMBEDDINGS_URL = 'https://openrouter.ai/api/v1/embeddings'
+```
+Mirrors `~/run-insights/lib/nina/embedding.ts` (read, never imported). A model or width change means a new migration plus a full re-embed.
+
+#### src/embeddings/state.ts (pure, no I/O)
+```ts
+function bodySha256(body: string): string                 // hex sha256 of UTF-8; SQL twin is currentBodySha256Sql()
+function embedInput(body: string): string | null           // trim, cut to EMBEDDING_MAX_CHARS, no marker; null if blank; never ends on half a surrogate
+type EmbeddingState = 'current' | 'stale' | 'missing' | 'failed' | 'none'
+interface StoredEmbedding { bodySha256; model; hasVector; attempts }
+function embeddingState(body, stored: StoredEmbedding | null, model): EmbeddingState
+function retryDelayMs(attempts: number): number            // 30 s doubling, capped at 1 h; <1/NaN treated as 1
+function clampError(message: string): string               // redacts sk-or-... and Bearer tokens, collapses whitespace, <= 500 chars
+```
+`embeddingState`: `none` when blank; `missing` without a row; `stale` on another body hash or model (re-embed at once, no backoff); `failed` when the row for this body and model has no vector; else `current`.
+
+#### src/embeddings/repo.ts
+```ts
+function currentBodySha256Sql(): SQL                     // encode(sha256(convert_to(notes.body,'UTF8')),'hex')
+function isCurrentEmbeddingSql(model: string): SQL       // null (not false) when the left join found no row
+function toVectorLiteral(v: readonly number[]): string   // JSON text for ${..}::vector; throws on NaN/Infinity
+interface PendingNote { id; body; bodySha256 }
+function listPending(db: Executor, opts: { model; limit; ignoreBackoff? }): Promise<PendingNote[]>
+function saveEmbedding(db, v: { noteId; bodySha256; model; embedding: number[] }): Promise<boolean>
+function recordFailure(db, v: { noteId; bodySha256; model; error }): Promise<void>
+interface EmbeddingStats { withText; current; pending; failing }
+function embeddingStats(db: Executor, model: string): Promise<EmbeddingStats>
+interface NearestOptions { noteId; model; limit }        // limit already clamped by the caller (phase 5)
+interface NearestNote { row: NoteRow; distance: number } // cosine distance, 0..2
+function nearestNotes(db: Db, opts: NearestOptions): Promise<NearestNote[] | null>
+```
+- `listPending`: live and deleted notes with non-blank text (a Postgres regex matching exactly what JS `trim` keeps) whose row is missing, stale, or failed and due (`next_attempt_at <= now()`, or any failure with `ignoreBackoff`). Live first, then newest `updated_at`, then id.
+- `saveEmbedding`: throws on a wrong width before any I/O. Upserts only if the note's body still hashes to `bodySha256`, resetting attempts/error/backoff. False when skipped (body changed or note gone). Idempotent.
+- `recordFailure`: sets `embedding` null, `attempts` +1 when the prior row was a failure for the same body and model (else 1), `next_attempt_at = now() + retryDelayMs(attempts)`, `last_error = clampError(error)`. No-op when the body changed, the note is gone, or a current vector already exists (another daemon succeeded).
+- `embeddingStats`: counts over live and deleted notes; `pending = withText - current`; `failing` = last attempt for this body and model failed.
+- `nearestNotes` (phase 5): in one transaction, returns null when `noteId` has no current vector for `model` (no row, stale body, failed attempt or another model). Otherwise it sets `hnsw.iterative_scan = strict_order` and selects live notes other than `noteId` with a current vector, `ORDER BY embedding <=> (source vector) LIMIT limit` (the HNSW cosine shape), closest first. Deleted notes keep their vectors but never come back.
+
+#### src/embeddings/embedder.ts (phase 2)
+```ts
+interface EmbedOptions { timeoutMs?: number }            // per-call override of the embedder's default
+interface Embedder {
+  readonly model: string                                 // stored in note_embeddings.model
+  readonly dimensions: number                            // equals the vector(n) column
+  embed(inputs: readonly string[], opts?: EmbedOptions): Promise<number[][]>   // one vector per input, input order
+}
+class EmbeddingError extends Error { name = 'EmbeddingError'; readonly detail?: unknown }
+function embeddingErrorText(cause: unknown): string      // one line for a log or last_error, includes `detail` (the transport cause)
+```
+`EmbeddingError` is the only failure class (missing key, empty input, transport, timeout, non-2xx, non-JSON, bad count/index, wrong width, non-finite element); no caller branches on which. It never carries the API key. `embed` throws it with no request when `inputs` is empty or any input is blank after trim.
+
+#### src/embeddings/openrouter.ts (phase 2)
+```ts
+const OPENROUTER_EMBED_TIMEOUT_MS = 15_000
+const OPENROUTER_EMBED_MAX_BATCH = 64                    // larger embed() calls become sequential requests
+const RESPONSE_SNIPPET_CHARS = 300
+interface OpenRouterEmbedderOptions { apiKey: string; fetch?: typeof fetch; timeoutMs?: number; maxBatch?: number }
+function createOpenRouterEmbedder(opts): Embedder        // blank key -> EmbeddingError; bad maxBatch -> RangeError; no network at construction
+function embedderFromConfig(config: EmbeddingsConfig, opts?: { fetch? }): Embedder | null   // null without a key
+```
+Each batch is one `POST OPENROUTER_EMBEDDINGS_URL` with `{ model: EMBEDDING_MODEL, input, encoding_format: 'float' }`, a bearer key and `AbortSignal.timeout`. Inputs pass through `embedInput` (trim and clamp, no marker). The body is read as text and then parsed, so errors carry a 300-char snippet. Each `data[i].index` (or position when absent) places a vector; a repeated or out-of-range index, a count mismatch, a width other than `EMBEDDING_DIMENSIONS` or a non-finite element is an `EmbeddingError` naming the model and column width. A failed chunk fails the whole call. No SDK.
+
+#### src/embeddings/backfill.ts (phase 3)
+```ts
+const DEFAULT_BATCH_SIZE = 16                            // inputs per embed() call
+const DEFAULT_MIN_INTERVAL_MS = 1_000                    // min gap between the starts of two embed() calls
+interface Clock { now(): number; sleep(ms, signal?): Promise<void> }   // sleep resolves early on abort, never rejects
+const realClock: Clock
+class RateLimiter { constructor(minIntervalMs, clock?); acquire(signal?): Promise<boolean> }   // false (no slot taken) when aborted
+interface EmbeddingStore { listPending(opts); saveEmbedding(v): Promise<boolean>; recordFailure(v) }   // the three repo calls
+function dbEmbeddingStore(db: Db): EmbeddingStore       // thin adapter over src/embeddings/repo.ts
+interface BackfillProgress { batches; calls; embedded; failed; skipped }
+interface BatchReport { notes; calls; embedded; failed; skipped; fellBack; ms; failures: { id; error }[] }
+interface BackfillResult extends BackfillProgress { aborted: boolean }
+interface BackfillOptions { store; embedder; batchSize?; limiter?; minIntervalMs?; ignoreBackoff?; signal?; clock?; onBatch?; onProgress? }
+function runBackfill(opts: BackfillOptions): Promise<BackfillResult>
+function errorMessage(err: unknown): string
+```
+`runBackfill` is the one drain loop used by the worker and the CLI. Each pass lists pending notes (asking for `batchSize` plus the number already settled this run), drops settled ones and those whose `embedInput` is null, and embeds up to `batchSize` in one call. When a batch call fails it retries each note alone, so one bad input cannot block the others; a note that fails alone gets `recordFailure` (phase 1's backoff). A `saveEmbedding` that returns false (body changed during the call) counts as `skipped`. Every `(id, body hash)` that failed or was skipped is settled for the rest of the run, so neither `ignoreBackoff` nor a body that keeps changing can make the loop spin. Every call waits on the shared `RateLimiter`. The signal is checked between batches and before each call; a call already in flight finishes and its result is saved. The loop ends when a pass finds nothing new, or on abort (`aborted: true`).
+
+#### src/embeddings/worker.ts (phase 3)
+```ts
+const DEFAULT_SWEEP_MS = 60_000                          // periodic drain: the other laptop's writes, retries now due
+const DEFAULT_DEBOUNCE_MS = 500                          // coalesces bursts of events into one drain
+const DEFAULT_CLOSE_GRACE_MS = 5_000                     // close() stops waiting for an in-flight call after this
+interface EmbeddingWorkerOptions { store; events: NoteEvents; embedder; batchSize?; minIntervalMs?; sweepMs?; debounceMs?; closeGraceMs?; clock?; log? }
+interface EmbeddingWorker { kick(): void; idle(): Promise<void>; close(): Promise<void> }
+function startEmbeddingWorker(opts): EmbeddingWorker     // drains once at start
+function formatBatch(r: BatchReport): string             // `[notesd] embeddings: 15/16 embedded, 1 failed (A-B32: ...), per-note fallback, 17 calls, 2310ms`
+```
+One `RateLimiter` and `AbortController` per worker. `created` and `updated` events call `kick()` (debounced); `deleted` and `restored` do not, since a deleted note keeps its vector. The sweep is an unref'd `setInterval`. At most one drain runs; a kick during a drain sets a flag and runs one more pass afterwards. A drain that throws (e.g. a store error) is logged as `[notesd] embeddings: drain failed: ...` and the worker keeps going. Only batches that did work are logged; an idle sweep logs nothing. `idle()` flushes a pending debounce and waits until no drain runs (tests). `close()` is idempotent: it unsubscribes, clears the sweep and debounce, aborts, and waits for the in-flight drain up to `closeGraceMs`; past that the call is abandoned, its save fails once the pool closes, and the note stays pending for the next start.
+
+#### src/cli/embedBackfill.ts (phase 3): `npm run embed:backfill`
+```ts
+interface EmbedBackfillIo { loadConfig; createDb; closeDb; createEmbedder(apiKey); out; err; signal?; minIntervalMs? }
+function defaultIo(signal: AbortSignal): EmbedBackfillIo  // real config, Neon db, OpenRouter embedder, console
+function embedBackfill(args: readonly string[], io): Promise<number>   // returns the exit code
+```
+`package.json` script `"embed:backfill": "tsx src/cli/embedBackfill.ts"`; the file runs `main()` only when executed directly. Arguments: `--retry-failed` (passes `ignoreBackoff`), `--help`/`-h` (usage, exit 0); anything else exits 2. Exit 1 on a config error or a missing `OPENROUTER_API_KEY` (no database opened). It prints `embeddingStats` before, an `embedded n/total, failed m` line after each batch, each failure on stderr, then a `done:` line (with `nothing to embed` when no call was made) and a hint about notes waiting on backoff. Exit 0 when nothing failed, 1 when any note failed, 130 when stopped. The first Ctrl-C aborts after the current batch (rerun to resume; finished notes are not embedded again); a second one exits at once. The database is always closed.
+
+### Search: src/search/ (iteration 6 phase 4)
+
+The ranking half of hybrid search. `NotesService.search` gathers candidates with `repo.searchCandidates` and hands them here.
+
+#### src/search/blend.ts (pure, no I/O)
+
+```ts
+interface BlendTuning { textFloor; text; vector; minSimilarity; tag; hashtagHit; wordTagHit; recency; recencyHalfLifeDays; exactId; textCandidates; vectorCandidates }
+const BLEND: BlendTuning   // 0.6, 0.4, 0.6, 0.22, 0.25, 1, 0.5, 0.1, 90, 2, 500, 100: the one place weights live
+interface QueryTerms { hashtags: string[]; words: string[]; ids: string[]; excluded: string[] }
+function queryTerms(query: string): QueryTerms
+function tagMatch(tags, terms, tuning?): number              // 0..1
+function recencyScore(updatedAt, now, tuning?): number       // 0.5^(ageDays / half-life); future = now
+function similarityScore(similarity | null, tuning?): number // (cos - minSimilarity) / (1 - minSimilarity), clamped; null -> 0
+interface BlendInput { exactId; textRank: number | null; similarity: number | null; tagMatch; recency }
+function blendScore(x: BlendInput, tuning?): number
+function isEligible(x: BlendInput, tuning?): boolean         // id or text match always; meaning-only needs cos >= minSimilarity
+interface BlendCandidate { id; textRank: number | null; similarity: number | null; tagMatch; updatedAt: Date; exactId? }
+type Ranked<T> = T & { score: number }
+function rankCandidates<T extends BlendCandidate>(candidates, { now, tuning? }): Ranked<T>[]
+```
+
+`score = exactId? + (textFloor + text * rank/bestRank if full-text match) + vector * similarityScore + tag * tagMatch + recency * recencyScore`. Two invariants are asserted in `tests/unit/search.blend.test.ts` and must survive any retune: `textFloor + text > vector + tag + recency` (the best literal hit beats every meaning-only note) and `exactId > sum of all the rest` (a named id goes first). `queryTerms`: hashtags via `parseTags`; `-word` exclusions; ids from `X-XXX` tokens (any case) or a lone four-character query that contains a digit (so "pool" stays a word); words are the remaining tokens of 2+ chars, minus `or`. A `#hashtag` hit fills `tagMatch`; a bare word that equals a tag counts half. `rankCandidates` normalizes `textRank` by the best candidate, drops ineligible rows and sorts score desc, then `updated_at` desc, then id desc (text mode's tie-break). Numbers were tuned on the labelled set with the concept-bag fake embedder; phase 6's live test may change them, never the names.
+
+#### src/search/queryVector.ts
+
+```ts
+const QUERY_EMBED_TIMEOUT_MS = 5_000
+const QUERY_CACHE_SIZE = 64
+class QueryVectorCache { constructor(capacity?); get size; get(key); set(key, vector) }   // LRU
+function embedQuery(embedder, cache, query, timeoutMs?): Promise<number[]>
+const SEMANTIC_OFF_FALLBACK: string            // no OPENROUTER_API_KEY
+function embedFailedFallback(err): string      // reason clipped to 200 chars; never carries the key
+```
+
+`embedQuery` runs the query through `embedInput`, keys the cache by `${model}\n${input}`, and races one `embed([input], { timeoutMs })` against its own unref'd timer. It throws on an empty query, a timeout, an embedder error, no vector, or a width other than `EMBEDDING_DIMENSIONS`. Only successes are cached. Both fallback strings tell the user the results are full-text only.
+
 ### src/deps.ts, src/daemon.ts, src/background.ts, src/main.ts
 
 ```ts
-interface AppDeps { config: Config; db: Db; events: NoteEvents; service: NotesService }
+interface AppDeps { config: Config; db: Db; events: NoteEvents; service: NotesService; embedder: Embedder | null }   // null: semantic features off
 const CHAT_SUBDIR = 'chat'   // <dataDir>/chat: fixed cwd of every chat brain run, so SDK sessions resume across restarts
 const DATA_SUBDIRS = ['images', 'cache', 'inbox', 'inbox/failed', CHAT_SUBDIR]
 function ensureDataDirs(dataDir: string): Promise<void>
 interface RunningDaemon { deps: AppDeps; port: number; stop: () => Promise<void> }
-interface StartDaemonOptions { chat?: ChatBackend }   // omitted: createAgentChatBackend from config.chat; tests inject the stub or a scripted fake
+interface StartDaemonOptions {
+  chat?: ChatBackend               // omitted: createAgentChatBackend from config.chat; tests inject the stub or a scripted fake
+  embedder?: Embedder | null       // omitted: embedderFromConfig(config.embeddings); tests inject FakeEmbedder or null
+}
 function startDaemon(config: Config, options?: StartDaemonOptions): Promise<RunningDaemon>
-function startBackground(deps: AppDeps): Promise<StopBackground>   // StopBackground = () => Promise<void>
+function startBackground(deps: AppDeps): Promise<StopBackground>   // StopBackground = () => Promise<void>; also runs the embedding worker when deps.embedder is set
 ```
-`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, `createDb`, `NoteEvents`, `NotesService`, the chat backend (`options.chat`, or `createAgentChatBackend({ chat: config.chat, cwd: <dataDir>/chat, mcpUrl })`), `createApp(deps, { chat })`, `serve` on `config.host:config.port`, then `startBackground`. `mcpUrl` returns `http://<host>:<bound port>/mcp` and throws until `serve` has bound, so the agent always reaches this daemon's own `/mcp` even when `config.port` is 0. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and first calls `close()` on the default agent backend (stopping any in-flight run), then stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
+`startDaemon` runs these steps in order: refuse a non-loopback host, create the data dirs, the embedder (`options.embedder` when given, even null, else `embedderFromConfig`; before `createDb`, so a blank key throws with no pool to leak), `createDb`, `NoteEvents`, `NotesService` (given the embedder), the chat backend (`options.chat`, or `createAgentChatBackend({ chat: config.chat, cwd: <dataDir>/chat, mcpUrl })`), `createApp(deps, { chat })`, `serve` on `config.host:config.port`, then `startBackground`. `mcpUrl` returns `http://<host>:<bound port>/mcp` and throws until `serve` has bound, so the agent always reaches this daemon's own `/mcp` even when `config.port` is 0. If listening fails it closes the db and rethrows. `port` is the bound port, which matters when `config.port` is 0. `stop()` is idempotent (it memoises one promise) and first calls `close()` on the default agent backend (stopping any in-flight run), then stops background jobs, then the server (closing all connections), then the db. `src/main.ts` is the `dev`/`start` entry. It logs the listen URL and handles SIGINT/SIGTERM with a 10 s forced exit.
 
 ## Web UI: web/ (phases 7-8)
 
@@ -875,11 +1075,13 @@ Claude Code skill `n` (`/n <request>`, also triggered by note save/find/edit/com
 
 ## Data Flow
 
-Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, picks the chat backend (injected, or the Agent SDK backend), then `createApp()`, and serves Hono on 127.0.0.1.
+Startup (`src/main.ts`): `loadConfig()` feeds `startDaemon()`, which creates the data dirs, builds the embedder (null without `OPENROUTER_API_KEY`) and calls `createDb()`. It then builds `NoteEvents` and `NotesService`, picks the chat backend (injected, or the Agent SDK backend), then `createApp()`, and serves Hono on 127.0.0.1.
 
 MCP call: Claude Code POSTs to `/mcp`, `loopbackOnly` checks the host, and `handleMcpRequest` builds a fresh server. The tool handler calls `NotesService`, which calls `repo` (Drizzle), which queries Postgres. The result goes back through `rowToNote` as a `Note` JSON text result.
 
-Write path: `requireId` and `parseTags(body)`, then one transaction: lock the row, insert the previous body into `note_revisions`, update `notes`. After commit, `NoteEvents.emit(op, id)`. Shutdown (signal) runs `stop()`: background jobs, then server close, then `closeDb()`.
+Hybrid search (iteration 6 phase 4): MCP `search` calls `NotesService.search(query, filter, { mode })`. Unless `mode` is `text`, the service embeds the query (cache hit, or one OpenRouter call capped at 5 s), runs `repo.searchCandidates` (full-text matches, nearest current vectors via HNSW, ids named in the query; all filtered first), scores them with `rankCandidates` and returns the page with `mode: 'hybrid'`. No embedder, or a failed or slow embedding, returns `repo.searchNotes`' ranking with `mode: 'text'` and a `fallback` sentence. `/api/notes` does not expose search, so the web UI is unaffected.
+
+Write path: `requireId` and `parseTags(body)`, then one transaction: lock the row, insert the previous body into `note_revisions`, update `notes`. After commit, `NoteEvents.emit(op, id)`. With an embedder configured, `created`/`updated` events kick the embedding worker (iteration 6 phase 3): after a 500 ms debounce it runs `runBackfill`, which lists pending notes, embeds them in batches of 16 through OpenRouter (1 s apart) and saves each vector only if the body still hashes the same; failures go to `recordFailure` and come back on a later 60 s sweep once due. The write itself never waits. `npm run embed:backfill` runs the same loop once against the configured database. Shutdown (signal) runs `stop()`: background jobs, then server close, then `closeDb()`.
 
 Inbox ingest (phase 4): a file lands in `<dataDir>/inbox`. chokidar reports it, and the watcher waits for its size to settle and sniffs the magic bytes. `ingestImage` then hashes it and looks up `ImageRecords.bySha256`. A match is returned, or restored if deleted. Otherwise the file is probed, moved to `images/YYYY/MM/<id>.<ext>`, and `NotesService.create` inserts the note with `origin.source = 'inbox'`, which emits `created`. Any failure moves the file to `inbox/failed/`. Derivatives (`cache/<id>/...`) are not made at ingest. They are generated on first read.
 
@@ -921,17 +1123,18 @@ Migrations come from `src/db/schema.ts`: `npm run db:generate` writes `drizzle/*
 
 ### Internal
 - `src/db/client.ts` imports `src/db/schema.ts`.
+- `embeddings/repo` uses `db/schema` (`notes`, `noteEmbeddings`), the `Executor` type from `notes/repo`, `embeddings/constants` and `embeddings/state`. `embeddings/state` uses only `embeddings/constants`. `embeddings/openrouter` uses `embeddings/{constants,embedder,state}` and the `EmbeddingsConfig` type; `embeddings/embedder` depends on nothing internal. `daemon` imports `embedderFromConfig`; `deps` and `notes/service` import only the `Embedder` type. `tests/helpers/fakeEmbedder.ts` uses `embeddings/{constants,embedder}`.
 - `notes/service` uses `notes/{repo,ids,tags,types,events}`. `notes/repo` uses `db/schema`, `notes/dates` and `notes/types`.
 - `mcp/tools` uses `NotesService`, `NoteFilter` and `NoteError`. `mcp/server` uses `tools`, `imageTools` and `instructions`.
 - `http/api` uses `chat/{backend,stub}`, `notes/{events,ids,repo,types}` and `AppDeps`. `http/static` uses only the filesystem. `http/imageAccess` uses `images/{derive,ingest,probe,records}`, `notes/ids` and `ToolDeps`; `http/images` uses `imageAccess` and `images/ingest`; `mcp/imageTools` uses `imageAccess`, `notes/ids` and `ToolDeps`.
-- `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `notes/{events,service}`, `chat/agent`, `http/app` and `background`.
+- `http/app` uses `mcp/server` and the `http/{api,images,static}` routers. `daemon` wires `config`, `db/client`, `embeddings/openrouter`, `notes/{events,service}`, `chat/agent`, `http/app` and `background`.
 - `chat/agent` uses `chat/{backend,env,prompt,status}` and the `Config` type. `chat/prompt` uses `localTimeZone` from `mcp/instructions`. `chat/status` and `chat/env` depend on nothing internal (status mirrors the tool names in `mcp/tools` and `mcp/imageTools`).
 - `tests/integration/setup.ts` imports `createDb`, `closeDb`, `isNeonUrl`.
 - `connectors/*` depend only on each other plus `config` (`REPO_ROOT`, `isPooledUrl`) and `mcp/tools` (`run`, in `schema` and `sql`). `mcp/server` uses `connectors/register`; `mcp/tools` imports `ConnectorError`/`Connectors` from `connectors/types`; `mcp/instructions` imports `connectors/names`.
 - `images/ingest` uses `images/{probe,store,records}`, `NotesService` (as `ImageNotes`), `NoteError` and `AppDeps`. `images/derive` uses `probe` and `store`. `images/inbox` uses `probe` and `store`. `images/records` uses `db/schema` and `notes/ids`. `background` wires `images/{ingest,inbox,store}`.
 
 ### Standard library
-`node:crypto` (`randomInt`, `randomUUID`), `node:fs`, `node:fs/promises`, `node:os`, `node:path`, `node:url`, `node:events`, `node:net` (type only), `node:child_process` (the lab reader), `node:sqlite` (inside the lab child only; needs Node 22.5+).
+`node:crypto` (`randomInt`, `randomUUID`, `createHash` in `embeddings/state`), `node:fs`, `node:fs/promises`, `node:os`, `node:path`, `node:url`, `node:events`, `node:net` (type only), `node:child_process` (the lab reader), `node:sqlite` (inside the lab child only; needs Node 22.5+).
 
 ## Reverse Dependencies
 
@@ -943,14 +1146,17 @@ The only global state is `neonConfig.webSocketConstructor`, set in `createDb`. A
 
 Image ingest keeps a per-process promise chain per sha256, so two ingests of the same bytes in one daemon run in sequence. Across hosts, the unique live-sha256 index decides, and the loser gets `duplicate_image` and returns the winner. Derivative generation shares one in-flight promise per output path and writes through a temp file and rename. The inbox watcher handles one file at a time on a single promise queue.
 
+The embedding worker runs at most one drain at a time per daemon; events during a drain set a flag for one more pass, and all embed calls share one `RateLimiter`. Two daemons (two laptops) may embed the same note: `saveEmbedding` upserts only for the current body hash and `recordFailure` never overwrites a current vector, so the race is harmless.
+
 The agent chat backend allows one run in flight per daemon: a new `reply()` aborts the previous run (`superseded`) before starting. Each run owns an `AbortController` that the client signal, the timeout timer and `close()` all trigger; each SDK attempt gets its own child controller relayed from it and aborted when the attempt is not drained.
 
 ## Error Handling
 
 - `ConfigError` (config), `InvalidIdError` (ids, carries `input`), `RangeError` (generateId with a bad injected RNG).
-- `NoteError` with `code` is the service's only deliberate error. Its codes: `invalid_id`, `invalid_input` (bad date, cursor or empty search), `not_found`, `deleted`, `empty_body`, `conflict`, `duplicate_image` (Postgres 23505 on the live-sha256 index) and `invalid_revision`.
+- `NoteError` with `code` is the service's only deliberate error. Its codes: `invalid_id`, `invalid_input` (bad date, cursor or empty search), `not_found`, `deleted`, `empty_body`, `conflict`, `duplicate_image` (Postgres 23505 on the live-sha256 index), `invalid_revision` and `not_embedded` (`related` on a source with no current vector that cannot be embedded now, iteration 6 phase 5).
 - MCP handlers never throw. `run()` turns errors into `isError` results with text `"<code>: <message>"`, the bare message for a `ConnectorError`, or `"error: <message>"` for anything else.
 - `ConnectorError` (connectors) has exactly two message shapes: `"<label> is not reachable: <reason>"` (no repo dir, no `.env.local`, no `DATABASE_URL`/`DATABASE_URL_UNPOOLED`, connect/auth/network failure, missing lab file) and `"<label> query failed: <reason>"` (SQL error, statement timeout, read-only violation, guard refusal, lab timeout). The URL, user, password and host are scrubbed to `***`. A failure in one system never affects another system or the notes tools. `SqlRefused` (guard) is always rewrapped as `query failed`.
+- `EmbeddingError` (embeddings, carries optional `detail`) is every embedder failure; callers record and retry (worker) or fall back to text (search). `embeddingErrorText` renders it with its detail. A blank `OPENROUTER_API_KEY` passed to `createOpenRouterEmbedder` throws it at daemon start.
 - `/mcp` returns JSON-RPC-shaped errors: 403 for a non-loopback host or Origin, 405 for GET/DELETE.
 - `/api` errors are `{ error: string }`. One mapping turns `NoteError` into a status: `not_found` and `deleted` are 404 `not_found`, `conflict` and `duplicate_image` are 409 with the code, `invalid_id` is 400 `invalid_id`, and any other code is 400 `"<code>: <message>"`. Bad JSON is 400 `invalid_json`, and zod failures are 400 with `"<path>: <message>"` joined by `; `. Non-`NoteError` exceptions are rethrown (Hono 500).
 - `/api/chat` errors after streaming starts arrive as `event: error`, not as an HTTP status.
@@ -965,12 +1171,13 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 ## Testing
 
 - `npm test`: unit tests in `tests/unit/**/*.test.ts` (node) plus `web/src/**/*.test.tsx` (jsdom via a per-file `// @vitest-environment jsdom` pragma).
-- `npm run test:int`: `scripts/test-int.sh` creates, starts or reuses the Docker container `mcp-notes-pg-test` (postgres:16, `127.0.0.1:55433`, db `mcp_notes_test`) and, unless `CHAT_LIVE_TEST=1`, `mcp-notes-pg-connectors` (`pgvector/pgvector:pg16`, `127.0.0.1:55435`, db `postgres`), waiting on `pg_isready` for each. It then exports `TEST_DATABASE_URL`, `TEST_CONNECTORS_URL` and `VITEST_INTEGRATION=1` and runs `tests/integration/**/*.int.test.ts`. `globalSetup` applies `drizzle/*.sql` once, and `tests/integration/connectors/globalSetup.ts` rebuilds `connectors_expenses`, `connectors_runs` and `connectors_seer` from the sibling repos' own migrations.
+- `npm run test:int`: `scripts/test-int.sh` creates, starts or reuses the Docker container `mcp-notes-pg-test` (`pgvector/pgvector:pg16`, `127.0.0.1:55433`, db `mcp_notes_test`) and, unless `CHAT_LIVE_TEST=1`, `mcp-notes-pg-connectors` (`pgvector/pgvector:pg16`, `127.0.0.1:55435`, db `postgres`), waiting on `pg_isready` for each. A container created from another image (e.g. an old `postgres:16` `mcp-notes-pg-test`) is removed and recreated; both hold test data only. It then exports `TEST_DATABASE_URL`, `TEST_CONNECTORS_URL` and `VITEST_INTEGRATION=1` and runs `tests/integration/**/*.int.test.ts`. `globalSetup` applies `drizzle/*.sql` once, and `tests/integration/connectors/globalSetup.ts` rebuilds `connectors_expenses`, `connectors_runs` and `connectors_seer` from the sibling repos' own migrations.
 - Connector harness (`tests/integration/connectors/harness.ts`, non-vitest half in `siblings.ts`), used by phases 2-4: `connectorsAdminUrl()` (refuses Neon), `siblingRepo(id)` and `describeWithRepo(id, name, fn)` (skips with a reason when the sibling repo's migrations are absent), `systemDbName`/`systemDbUrl` (writable admin URL), `truncateSystem`, `seedSystem`, `withAdmin`, `connectorFor(id, overrides?)` (a real read-only connector over a temp repo with a generated `.env.local`), `makeLab(rows?)` (temp `lab.sqlite` with `meta`, `methods`, `trials`, `trial_funding`, `insights`), `connectorClient(connectors)` (in-memory MCP client over `registerConnectorTools`) and `cleanupHarness()`. Only `truncateSystem`, `seedSystem`, `withAdmin` and `connectorClient` are async.
 - Connector suites (P1-NOTES-A012): unit `tests/unit/connectors/{names,rows,guard,env,failsoft}.test.ts` (15 names, row cap, guard accepts/refuses per dialect and masking, direct-URL pick, `prepareUrl`, `loadDatabaseTarget`, per-call settings, scrubbing, fail-soft messages and the lab runner) and `mcp.instructions` (the Connectors paragraph); integration `core.int` (read-only at the database even outside `BEGIN READ ONLY`, Jakarta session, guard vs database refusals, row caps, type parsing, statement timeout, fail-soft per system, lab reads and write refusals), `generic.int` (`_schema`/`_sql` per system on the migrated schemas) and `mcp.int` (six generic tools listed on the real `/mcp` next to the notes tools; an unreachable system leaves the notes tools working).
 - Expenses curated suites (P1-NOTES-A013): unit `tests/unit/connectors/expenses.{dates,categories,queries}.test.ts` (calendar math and ISO weeks, the 17 slugs and the `other` fallback, row builders and fetchers over a fake `ReadOnlySource`) and integration `tests/integration/connectors/expenses.curated.int.test.ts` (`describeWithRepo('expenses', ...)`: exactly three read-only tools; October totals, categories, days, weeks and largest items; the meals-worst-week case; several categories and an empty range; reversed range and unknown id as tool errors; `expenses_get` order, photos and raw text; zero-filled `expenses_months` with and without a category filter).
 - `npm run test:live:connectors`: `CONNECTORS_LIVE_TEST=1 vitest run`, no Docker, only `tests/live/connectors.live.test.ts` (60 s timeout). It calls each `<system>_schema` against the owner's real databases and Seer's real `lab.sqlite`, prints table counts only and asserts no password reaches a result. Opt-in.
-- Integration helpers in `tests/integration/setup.ts`: `testDatabaseUrl()` (refuses a Neon URL), `openTestDb()`, `closeTestDb()`, `migrateTestDb()`, `truncateAll(db)` (call in `beforeEach` of any file that writes).
+- `npm run test:live:embeddings`: `EMBEDDINGS_LIVE_TEST=1 vitest run`, no Docker and no database, only `tests/live/embeddings.live.test.ts`. It needs `OPENROUTER_API_KEY` in `.env.local` and makes one real, billed OpenRouter request that embeds every labelled note and query (`tests/fixtures/semantic/labelled.ts`). It checks one finite 1536-dim vector per input, the raw cosine ordering, that every relevant note appears on the default page (`MCP_DEFAULT_LIMIT`) of the in-memory `rankCandidates` blend, and that `BLEND.minSimilarity` keeps every relevant note sharing no word with its query. The 0.3 -> 0.22 retune came from this run: one such positive scored 0.240 and was dropped at 0.3; live blend MRR went 0.708 -> 0.733. Opt-in.
+- Integration helpers in `tests/integration/setup.ts`: `testDatabaseUrl()` (refuses a Neon URL), `openTestDb()`, `closeTestDb()`, `migrateTestDb()`, `truncateAll(db)` (truncates `note_embeddings`, `note_revisions`, `notes`; call in `beforeEach` of any file that writes).
 - `npm run test:live`: `CHAT_LIVE_TEST=1` on top of `scripts/test-int.sh`, so only `tests/live/chat.live.test.ts` runs (300 s test timeout), against the notes Docker Postgres (the connectors container is not started). `chat.live.test.ts` starts an in-process daemon on port 0 with the stub chat backend (only its `/mcp` is used), builds the Agent backend itself, and sends one real Claude and one real GLM message. Needs a logged-in `claude` and `LLM_*` in `.env.local`. Opt-in, slow and billed; never part of `npm test` or `test:int`.
 - There is one `vitest.config.ts`. Do not add a second.
 - Phase 6 suites: `chat-stub` (delta splitting, thread id, abort), `static` (503 fallback, reserved prefixes, assets cache, `/full/:id`, SPA fallback, traversal), `api.int` (all `/api` routes, filters, paging, error mapping, chat SSE) and `events.int` (connect comment, note events, heartbeat, unsubscribe on abort). Helpers: `tests/integration/helpers/api-harness.ts` (`createApiHarness` mounts `apiRoutes` over the Docker DB with a zero-delay stub, or `options.chat`; `uniqueTag()`), `tests/integration/helpers/scripted-chat.ts` (iteration 4: `createScriptedChatBackend()`, a fake `ChatBackend` that replays queued `ChatScript`s of `delta`/`status`/`throw`/`hang` steps, an optional `end` and `rejectWith`, and records every `ChatRequest`) and `tests/integration/helpers/sse.ts` (`parseSse`, `readUntil`, `waitFor`).
@@ -979,6 +1186,12 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 - Phase 5 suites: `tests/unit/takenFilter.test.ts` (taken bounds as UTC ISO text compares, `invalid_input` on garbage), `tests/unit/imageAccess.test.ts` (`expandHome`, `etagMatches`), `images.http.int` (upload and dedupe, byte-exact original with immutable cache and sha256 ETag, id spellings, thumb/preview sizes, display for PNG vs TIFF, 400/413/415 refusals, `not_found`/`no_image`, `not_on_this_machine`, no cached derivative once the original is gone) and `images.mcp.int` (tool and filter listing, `create_image` copies and dedupes, refusals, `view_images` content, text/unknown/missing explanations, the 8-id cap, `has_image` and taken-range filters on list and search). Harness: `tests/integration/imageHarness.ts` (`startHarness` builds real `createApp` over the Docker DB and a temp data dir, with `listen()`, `reset()`, `close()`; `makeImage` makes solid-colour PNG/JPEG/TIFF bytes; `insertTextNote`).
 - Phase 7 suites (jsdom, colocated in `web/src`): `lib/{text,filter,usedIds,dates,sse}.test.tsx` (font sizing, tag parsing and segmenting, AND filter, mode cycle, heading and count line, used-id extraction, relative dates, SSE parsing across chunks and CRLF), `components/NoteCard.test.tsx` (font size, tag chip vs edit click, copy, blur commit, thumb aspect ratio) and `App.test.tsx` (text mode hides image notes, mode cycle, tag filter rail chip, streamed chat with used-note chips and dimming, status caption while streaming then the brain label). Iteration 4 phase 3 (P1-NOTES-A010) added `hooks/useChat.test.tsx` (status captions and `""` clearing, brain from `done` or null, error clears status, follow-up continues the thread, pinned keeps it, dismiss starts a new thread, a late `done` after dismiss does not restore it, a new ask resets brain and status). `npm run typecheck` checks both the server and web tsconfigs.
 - Phase 8 suites (jsdom): `components/NoteImage.test.tsx` (film filter, display variant, placeholder with and without host, error fallback), `Gallery.test.tsx` (tile flex math, modal open, close when the photo leaves the list), `PhotoModal.test.tsx` (wraparound, Escape not reaching document listeners, backdrop vs inner clicks, copy, `/full/<id>` open), `DropOverlay.test.tsx` (first-image paste, text paste ignored, dedupe hit, Files-only overlay, serial drop uploads) and `fullscreen/FullscreenApp.test.tsx` (view reducer click vs drag threshold, `idFromLocation`, title and unfiltered image, `not_on_this_machine` placeholder).
+- Iteration 6 phase 1 (P1-NOTES-A017) suites: unit `tests/unit/embeddings.state.test.ts` (constants match run-insights and the column width, `bodySha256`, `embedInput` trim/clamp/surrogates, every `embeddingState` case, `retryDelayMs`, `clampError`, `toVectorLiteral`); integration `embeddings.repo.int` (SQL hash equals JS hash, `listPending` order/limit/backoff/deleted notes, `saveEmbedding` race and idempotence, `recordFailure` counting, reset and no-ops, `isCurrentEmbeddingSql`, `embeddingStats`) and `schema.int` (now migrations 0000 + 0001: pgvector >= 0.8, HNSW cosine index, re-migrate is a no-op with 2 journal rows, defaults, vector width error 22000, cascade).
+- Iteration 6 phase 2 (P1-NOTES-A018) suites: unit `tests/unit/embeddings/openrouter.test.ts` (a fake `fetch`: request shape, clamp, index ordering and position fallback, batching and chunk failure, transport/timeout/per-call timeout, non-2xx snippet, 401 without the key, non-JSON, missing data, count/index/width/finite checks, `embedderFromConfig`, `embeddingErrorText`), `tests/unit/embeddings/fakeEmbedder.test.ts` and the `loadConfig embeddings` block in `config.test.ts`; `daemon.int` checks a null embedder without a key and an injected one. Every hand-built `Config` and `AppDeps` in the integration harnesses (`api-harness`, `imageHarness`, `images.int`, `mcp.tools.int`, `connectors/mcp.int`, `chat.live`) now sets `embeddings: DEFAULT_EMBEDDINGS_CONFIG` and `embedder: null`.
+- Iteration 6 phase 3 (P1-NOTES-A019) suites: unit `tests/unit/embeddings/backfill.test.ts` (batching and progress, per-note fallback recording only the bad note, backoff and once-per-run `ignoreBackoff`, abort and resume without re-embedding, changed body skipped then re-embedded, rate limit on a fake clock, `RateLimiter` abort), `tests/unit/embeddings/worker.test.ts` (start drain and per-batch log, idle silence, which events kick, coalescing, failure logs, store errors, close waits and bounded close grace) and `tests/unit/embeddings/embedBackfillCli.test.ts` (usage, unknown argument, missing key, config error); integration `tests/integration/embeddings.worker.int.test.ts` (create/update/append/revert and image notes end current, textless photos skipped, failing and slow embedders never affect the write, retry after backoff, sweep picks up event-less writes, delete/restore keeps the vector, resumable `runBackfill`, `startBackground` with and without an embedder, the CLI end to end and `--retry-failed`). `tests/helpers/memoryEmbeddingStore.ts` provides `MemoryEmbeddingStore` (an in-memory `EmbeddingStore` with the repo's rules) and `ScriptedEmbedder` for the unit suites.
+- Iteration 6 phase 4 (P1-NOTES-A020) suites: unit `tests/unit/search.blend.test.ts` (the two `BLEND` invariants and ranges, `queryTerms` hashtags/words/ids/exclusions, `tagMatch`, `recencyScore`, `similarityScore`, `isEligible`, `blendScore`, `rankCandidates` ordering, rank normalization, minSimilarity cut and tie-break), `tests/unit/search.queryVector.test.ts` (LRU eviction, cache keyed by model, failures not cached, timeout, wrong width, empty query, fallback texts and clipping) and a new `mcp.instructions` case (the `Reading.` paragraph mentions meaning, both modes and the fallback); integration `tests/integration/search.hybrid.int.test.ts` (hybrid beats text-only on MRR and recall@3 over the labelled set, every usage example ranks a relevant note first, literal queries stay first, exact id and rare code tokens beat perfect meaning matches, no-vector stores still answer, `-exclusions` on the meaning side, filters before ranking for tags/dates/`has_image`/`deleted`, fallback on embed failure, timeout and no embedder, `mode: 'text'` makes no embedding call, paging embeds once, and the MCP `search` tool's description, `mode` and `fallback`). The labelled set lives in `tests/fixtures/semantic/labelled.ts`: `LABELLED_NOTES` (16 notes with `ageDays` backdating), `LABELLED_QUERIES` (10 queries with relevant keys, `usage` flags for the brief's examples, and a `why`), `SEMANTIC_LEXICON` for the fake embedder, and `evaluateRanking` (MRR, recall@k). Phase 6's live test reuses it against the real model.
+- Iteration 6 phase 5 (P1-NOTES-A021) suites: integration `tests/integration/related.int.test.ts` (`NotesService.related`: meaning order, self excluded, similarity = 1 - distance; limit and its 1..50 clamp; deleted notes never returned; stale and other-model vectors ignored; on-demand embed of an unembedded or changed source, once; no embedder answers from existing vectors and gives `not_embedded` otherwise; a failing embed stores nothing; bad, unknown, deleted ids and a textless photo. The MCP `related` tool: listed, read-only, result shape, limit outside 1-50 refused, service errors as `code: message`), plus updated unit cases in `tests/unit/chat-status.test.ts` (14 notes tools) and `tests/unit/mcp.instructions.test.ts` (one `Related.` paragraph).
+- `tests/helpers/fakeEmbedder.ts`: `FakeEmbedder` / `createFakeEmbedder(opts?)`, a deterministic offline `Embedder` with the real model id and width by default. Tokens matching a synonym group of the `Lexicon` (`DEFAULT_LEXICON`, prefix entries end in `*`) add to that group's concept axis; other tokens hash (FNV-1a) into tail axes at `DEFAULT_TAIL_WEIGHT`; stopwords are dropped; vectors are unit length and never zero. It validates like the real client, records each batch in `calls`, and offers `failNext(n, err?)`, `failWhen(pred, err?)`, `delayMs`, `reset()` and synchronous `vectorFor(text)`. Also exports `tokenize` and `cosine`.
 - Phase 4 suites: `tests/unit/images/{probe,store,derive,ingest,inbox}.test.ts` and `tests/integration/images.int.test.ts` (byte-exact storage, dedupe, restore of a deleted duplicate, the sha256 unique index, HEIC display/thumb/preview, missing original, and an inbox drop through `startBackground`).
 - Image fixtures in `tests/fixtures/images/`: `exif.jpg` (64x48, EXIF 2024:10:30 14:05:09), `plain.png` (40x30, no EXIF), `photo.heic` (64x48 HEVC with EXIF). They are committed because Node cannot encode HEVC. `make-fixtures.py` (Pillow + pillow-heif) regenerates them, possibly with different bytes. Helpers: `tests/helpers/fixtures.ts` (`FIXTURES_DIR`, `JPEG_EXIF`, `PNG_PLAIN`, `HEIC_PHOTO`, `fixtureBytes`, `tempDir`) and `tests/helpers/fakeNotes.ts` (`FakeNotes`, an in-memory `ImageNotes` + `ImageRecords` with the schema's id and live-sha256 uniqueness rules, plus `beforeInsert` / `failNextCreate` hooks for race and failure tests).
 
@@ -986,6 +1199,13 @@ The agent chat backend allows one run in flight per daemon: a new `reply()` abor
 
 - In `.env.local`, `DATABASE_URL` and `DATABASE_URL_UNPOOLED` are swapped. Runtime and drizzle-kit both choose by host (`-pooler`), never by key name.
 - Runtime uses the pooled host. Migrations must use the direct host.
+- `src/embeddings/repo.ts` SQL fragments render columns as `"notes"."body"` / `"note_embeddings"."embedding"`, so any query that embeds them must not alias those two tables. `repo.searchCandidates` relies on this.
+- Hybrid search weights live only in `BLEND` (`src/search/blend.ts`). Retune the numbers freely, but keep the two invariants its unit test asserts, or literal hits and named ids stop ranking first. A hybrid page's cursor is an offset into the blended list and a fallback page's cursor is an offset into the text ranking, so a cursor from one is not meaningful in the other. Hybrid considers at most `textCandidates` (500) full-text matches; `mode: "text"` is still the exhaustive option.
+- `hnsw.iterative_scan` needs pgvector >= 0.8 (`schema.int` asserts this on the Docker image); without it a selective filter can starve the vector side of `searchCandidates`.
+- Every note-table Postgres (Neon, the Docker test container) must have pgvector: migration 0001 runs `CREATE EXTENSION IF NOT EXISTS vector`. A plain `postgres:16` container fails it.
+- The vector column is never selected except by callers that rank by it; it must not enter `NoteRow`, the wire `Note` or a log line.
+- `startDaemon` without `options.embedder` builds the real OpenRouter client whenever `OPENROUTER_API_KEY` is set. Tests must inject `FakeEmbedder` or `null` (from phase 3 the worker would call the network). Passing `embedder: null` explicitly means off; only `undefined` falls back to config.
+- `OPENROUTER_API_KEY` must never reach a log, an error or `last_error`: `createOpenRouterEmbedder` keeps it out of messages and `clampError` redacts `sk-or-...`/`Bearer` as a backstop.
 - The daemon binds 127.0.0.1 only. A different `NOTESD_HOST` is a hard error, not a warning.
 - `dataDir` is resolved but not created by `loadConfig`. `startDaemon` creates it, along with `images`, `cache`, `inbox` and `inbox/failed`.
 - `YYYY-MM-DD` date filters use the daemon process's local timezone, which the MCP instructions name. Tests that depend on day boundaries must account for TZ.

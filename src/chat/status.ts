@@ -24,6 +24,7 @@ export const NOTES_TOOL_NAMES = [
   'list',
   'search',
   'tags',
+  'related',
   'revisions',
   'revert',
   'create_image',
@@ -42,8 +43,9 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 13 notes tools, the 15 connector tools and WebSearch + WebFetch
- * (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4).
+ * Exactly the 14 notes tools, the 15 connector tools and WebSearch + WebFetch
+ * (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
+ * SEMANTIC_SEARCH_PLAN phase 5 adds `related`).
  */
 export function allowedChatTools(): string[] {
   return [
@@ -88,6 +90,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
     case 'list':
     case 'tags':
       return 'searching notes';
+    case 'related':
+      return 'finding related notes';
     case 'get':
       return counted(idCount(input), 'reading a note', (n) => `reading ${n} notes`, 'reading notes');
     case 'view_images':

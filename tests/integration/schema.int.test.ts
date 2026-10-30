@@ -2,8 +2,8 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
-import { noteRevisions, notes, type ImageMeta } from '../../src/db/schema.js'
-import { closeTestDb, openTestDb, truncateAll } from './setup.js'
+import { noteEmbeddings, noteRevisions, notes, type ImageMeta } from '../../src/db/schema.js'
+import { closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js'
 
 function imageMeta(sha256: string, takenAt: string | null = null): ImageMeta {
   return {
@@ -28,7 +28,7 @@ function pgErrorCode(err: unknown): string | undefined {
   return undefined
 }
 
-describe('schema (migration 0000)', () => {
+describe('schema (migrations 0000 + 0001)', () => {
   let db: Db
 
   beforeAll(() => {
@@ -57,6 +57,9 @@ describe('schema (migration 0000)', () => {
         'notes_image_taken_at_idx',
         'note_revisions_pkey',
         'note_revisions_note_saved_idx',
+        'note_embeddings_pkey',
+        'note_embeddings_embedding_hnsw_idx',
+        'note_embeddings_next_attempt_idx',
       ]),
     )
   })
@@ -159,5 +162,54 @@ describe('schema (migration 0000)', () => {
     expect(row?.body).toBe('before')
     const revs = await db.select().from(noteRevisions)
     expect(revs).toHaveLength(0)
+  })
+
+  it('installs pgvector >= 0.8 and an HNSW cosine index on note_embeddings', async () => {
+    const ext = await db.execute<{ extname: string; extversion: string }>(
+      sql`select extname, extversion from pg_extension where extname = 'vector'`,
+    )
+    expect(ext.rows).toHaveLength(1)
+    // Phases 4 and 5 use `set local hnsw.iterative_scan`, which exists from pgvector 0.8 (Neon: 0.8.6).
+    const [major = 0, minor = 0] = (ext.rows[0]?.extversion ?? '0.0').split('.').map(Number)
+    expect(major > 0 || minor >= 8).toBe(true)
+    const idx = await db.execute<{ indexdef: string }>(
+      sql`select indexdef from pg_indexes where indexname = 'note_embeddings_embedding_hnsw_idx'`,
+    )
+    expect(idx.rows[0]?.indexdef).toMatch(/USING hnsw \(embedding vector_cosine_ops\)/)
+  })
+
+  it('re-applying the migrations is a no-op', async () => {
+    const count = async () =>
+      (await db.execute<{ n: number }>(sql`select count(*)::int as n from drizzle.__drizzle_migrations`)).rows[0]?.n
+    expect(await count()).toBe(2)
+    await migrateTestDb()
+    expect(await count()).toBe(2)
+  })
+
+  it('applies note_embeddings defaults and enforces the vector width', async () => {
+    await db.insert(notes).values({ id: 'W-X23', body: 'hello' })
+    const [row] = await db
+      .insert(noteEmbeddings)
+      .values({ noteId: 'W-X23', bodySha256: 'abc', model: 'm' })
+      .returning({
+        attempts: noteEmbeddings.attempts,
+        embeddedAt: noteEmbeddings.embeddedAt,
+        updatedAt: noteEmbeddings.updatedAt,
+      })
+    expect(row).toMatchObject({ attempts: 0, embeddedAt: null })
+    expect(row?.updatedAt).toBeInstanceOf(Date)
+
+    const narrow = await db
+      .execute(sql`update note_embeddings set embedding = '[1,2,3]'::vector where note_id = 'W-X23'`)
+      .then(() => null, (e: unknown) => e)
+    expect(pgErrorCode(narrow)).toBe('22000')
+  })
+
+  it('cascades note_embeddings when a note row is removed', async () => {
+    await db.insert(notes).values({ id: 'Y-Z45', body: 'x' })
+    await db.insert(noteEmbeddings).values({ noteId: 'Y-Z45', bodySha256: 'abc', model: 'm' })
+    await db.delete(notes).where(eq(notes.id, 'Y-Z45'))
+    const left = await db.select().from(noteEmbeddings)
+    expect(left).toHaveLength(0)
   })
 })

@@ -55,9 +55,32 @@ export interface TagCount {
   last_used: string;
 }
 
+/** One neighbour returned by `related`. similarity = 1 - cosine distance, rounded to 4 decimals. */
+export interface RelatedNote {
+  note: Note;
+  similarity: number;
+}
+
+/** Result of `related`: the source note's canonical id and its neighbours, most similar first. */
+export interface RelatedResult {
+  note_id: string;
+  related: RelatedNote[];
+}
+
 export interface NotePage {
   notes: Note[];
   next_cursor: string | null;
+}
+
+/** 'hybrid': full text + meaning + tags + recency. 'text': full-text ranking only (pre-iteration-6). */
+export type SearchMode = 'hybrid' | 'text';
+
+/** `search` result: a NotePage plus which ranking produced it. */
+export interface SearchPage extends NotePage {
+  /** The ranking actually used. 'text' when asked for, or when hybrid had to fall back. */
+  mode: SearchMode;
+  /** Present only when hybrid was asked for but could not run; says why, in a sentence for the user. */
+  fallback?: string;
 }
 
 export type NoteErrorCode =
@@ -68,7 +91,8 @@ export type NoteErrorCode =
   | 'empty_body'
   | 'conflict'
   | 'duplicate_image'
-  | 'invalid_revision';
+  | 'invalid_revision'
+  | 'not_embedded';
 
 /** The only error type the notes service throws on purpose. HTTP maps `code` to a status. */
 export class NoteError extends Error {

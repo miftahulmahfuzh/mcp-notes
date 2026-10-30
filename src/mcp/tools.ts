@@ -257,15 +257,24 @@ export function registerNoteTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Search notes',
       description:
-        'Full-text search over note bodies, with the same tag and date filters as list. Words match exactly (no stemming), so code identifiers and version strings work; supports "quoted phrases", OR, and -word to exclude. Results are ranked by relevance, then recency. Returns { notes, next_cursor }.' +
+        'Search notes by meaning as well as by words, with the same tag and date filters as list. By default (mode "hybrid") it understands what the query means, not only its words: "ArangoDB credentials" finds a note saying "arango root password is in the vault", so pass the question in plain words. Results blend word matches, closeness in meaning, matching tags and recency; a note id, code identifier or version string that appears word for word still ranks first. mode "text" is exact-word full-text search only: no stemming; supports "quoted phrases", OR, and -word to exclude; ranked by relevance, then recency. Returns { notes, next_cursor, mode, fallback? }: mode is the ranking actually used; fallback is present when meaning search was unavailable and the results are word matches only - tell the user.' +
         IMAGE_FILTER_HINT,
       inputSchema: {
-        query: z.string().min(1).describe('Words to look for, e.g. "retry backoff" or "\\"connection pool\\" -redis".'),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            'What to look for: a plain question ("have we seen auth failures after resume?") or exact terms ("retry backoff", "\\"connection pool\\" -redis").',
+          ),
+        mode: z
+          .enum(['hybrid', 'text'])
+          .optional()
+          .describe('"hybrid" (default): meaning + words + tags + recency. "text": exact-word full-text search only.'),
         ...noteFilterShape,
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ query, ...filter }) => run(() => service.search(query, toFilter(filter))),
+    async ({ query, mode, ...filter }) => run(() => service.search(query, toFilter(filter), { mode })),
   );
 
   server.registerTool(
@@ -277,6 +286,27 @@ export function registerNoteTools(server: McpServer, deps: ToolDeps): void {
       annotations: { readOnlyHint: true },
     },
     async () => run(async () => ({ tags: await service.tags() })),
+  );
+
+  server.registerTool(
+    'related',
+    {
+      title: 'Related notes',
+      description:
+        'Notes closest in meaning to one note, most similar first, each with a similarity score (1 = same meaning, near 0 = unrelated). Finds notes that share no words with it. Never includes the note itself or deleted notes. Use it for "what else do I have on this?" or "notes related to A-B32" after finding a note with get, list or search. Returns { note_id, related: [{ note, similarity }] }. Fails on a deleted note and on a photo that has no text.',
+      inputSchema: {
+        id: idField,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe('How many related notes to return, 1-50. Default 10.'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id, limit }) => run(() => service.related(id, limit === undefined ? {} : { limit })),
   );
 
   server.registerTool(

@@ -15,8 +15,8 @@ repo. A Windows logon task keeps WSL itself running.
   key goes in this repo.
 - Optional, for the chat bar's GLM fallback: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in
   `.env.local` (see "4. Chat bar brain").
-- `.env.local` at the repo root with `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (the Neon pooled and direct hosts; the daemon picks the pooled one by host name, so the key names do not have to be right).
-- The Neon schema migrated once: `npm run db:migrate`.
+- `.env.local` at the repo root with `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (the Neon pooled and direct hosts; the daemon picks the pooled one by host name, so the key names do not have to be right), and `OPENROUTER_API_KEY` for search by meaning (see "6. Semantic search"; without it notes still save and search is full text only).
+- The Neon schema migrated once: `npm run db:migrate` (again after a pull that adds a migration file under `drizzle/`).
 
 ## 1. Install (WSL)
 
@@ -223,6 +223,45 @@ notesd reads expense-tracking, run-insights and Seer read-only (tools `expenses_
 They are read on every call from the environment, merged over this repo's `.env.local`, so a change
 needs no restart. Check the real databases (read-only, schema only) with
 `npm run test:live:connectors`.
+
+## 6. Semantic search
+
+`search` blends full text with vector similarity, tags and recency, and `related` finds the notes
+nearest in meaning to a note. Embeddings come from OpenRouter (`openai/text-embedding-3-small`,
+1536 dimensions) and live in the `note_embeddings` table (pgvector) on the same Neon database.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `OPENROUTER_API_KEY` | unset | OpenRouter key. Unset: notes save as usual, `search` answers with full text and says so, `related` answers from vectors already stored and returns a `not_embedded` error for a note that has none. |
+
+Once per database (the second machine skips this, the schema and vectors are shared):
+
+```sh
+cd ~/mcp-notes
+npm run db:migrate          # applies drizzle/0001_*: CREATE EXTENSION vector, note_embeddings, HNSW index
+npm run embed:backfill      # embeds every note that has text; prints progress and ends with "done: … 0 pending"
+scripts/install.sh          # restart notesd on the new code
+```
+
+The backfill is optional: `notesd` embeds pending notes in the background by itself (batched,
+rate-limited, resumable), and logs only when it has work. Run it again after changing the model.
+A note written while OpenRouter is down is saved normally, then retried with backoff.
+
+`npm run embed:backfill -- --retry-failed` also retries failed notes whose backoff has not run
+out yet. Ctrl-C stops after the current batch; running it again resumes. Exit codes: 0 done,
+1 a note failed (or no key / config or database error), 2 bad argument, 130 interrupted.
+
+`notesd` logs `[notesd] embedding notes with openai/text-embedding-3-small` at start (or
+`[notesd] embeddings off: OPENROUTER_API_KEY is not set, search stays full text` without a key),
+then one `[notesd] embeddings: …` line per batch that did work. Both laptops may run the worker
+at once; the writes are idempotent.
+
+Check it:
+
+- `journalctl --user -u notesd | grep -i embed`: the background job's progress and any failure (never the key).
+- `/n find a relevant notes that talks about ArangoDB credentials` should return the vault note
+  even though it never says "credentials".
+- Live check of the model itself (one billed call, no database): `npm run test:live:embeddings`.
 
 ## Uninstall
 

@@ -61,8 +61,9 @@ The wall is for browsing, writing quickly, and dropping in photos.
 ## Why it is different
 
 - **Claude is the search engine.** There is no search bar. Claude Code reaches your notes through
-  MCP with filters for tags, dates, full text and images, and does the reading, comparing and
-  summarizing itself. The same tools work from any repo through `/n`.
+  MCP with filters for tags, dates, full text and images, and search understands meaning, not
+  only words: "ArangoDB credentials" finds "arango root password is in the vault". Claude does
+  the reading, comparing and summarizing itself. The same tools work from any repo through `/n`.
 - **Ids you can say.** `A-B32`: one character, a dash, three characters. Lookup ignores case and
   a missing dash (`ab32` finds `A-B32`). Every card has a copy-id button, and Claude quotes ids
   in its answers.
@@ -315,9 +316,10 @@ spending, real runs and real positions.
 ```sh
 git clone git@github.com:miftahulmahfuzh/mcp-notes.git ~/mcp-notes
 cd ~/mcp-notes
-cp /path/to/your/.env.local .env.local    # DATABASE_URL, DATABASE_URL_UNPOOLED
+cp /path/to/your/.env.local .env.local    # DATABASE_URL, DATABASE_URL_UNPOOLED, OPENROUTER_API_KEY
 npm ci
 npm run db:migrate                         # once, against the direct (unpooled) host
+npm run embed:backfill                     # optional: embed existing notes now (notesd also does it in the background)
 scripts/install.sh
 ```
 
@@ -351,11 +353,11 @@ an alternative (`instanceIdleTimeout=-1` in `.wslconfig`) are in [docs/INSTALL.m
 ### A second machine
 
 The text database is shared, so a second laptop can run its own `notesd` against it. Clone the
-repo there, copy the same `.env.local`, and run `scripts/install.sh` (no
-`db:migrate`: the schema is already there). Notes, tags, revisions and the chat bar work the
-same. Photos do not move: a photo note made on one machine shows "not on this machine" on the
-other, by design. The connectors need the three sibling repos (or `*_DIR` pointing at them) on
-that machine too.
+repo there, copy the same `.env.local`, and run `scripts/install.sh` (no `db:migrate` and no
+`embed:backfill`: the schema and the embeddings are already there). Notes, tags, revisions,
+search by meaning and the chat bar work the same. Photos do not move: a photo note made on one
+machine shows "not on this machine" on the other, by design. The connectors need the three
+sibling repos (or `*_DIR` pointing at them) on that machine too.
 
 ### Run it by hand
 
@@ -379,13 +381,17 @@ npm run typecheck
 npm test                       # unit tests, server and web (jsdom)
 npm run test:int               # integration tests against real Postgres in Docker
 npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
+npm run test:live:embeddings   # opt-in: one real OpenRouter embeddings call over the labelled search set
 ```
 
-`test:int` starts or reuses two containers: `mcp-notes-pg-test` (Postgres 16, port 55433) for the
-notes, and `mcp-notes-pg-connectors` (pgvector Postgres 16, port 55435), where it rebuilds one
+`test:int` starts or reuses two containers, both on `pgvector/pgvector:pg16` (one that runs another
+image is recreated): `mcp-notes-pg-test` (port 55433) for the notes, and
+`mcp-notes-pg-connectors` (port 55435), where it rebuilds one
 database per connector from that repo's own migration files (read, never imported; a repo that is
-not there is skipped with a message). Neither suite touches a Neon database. `test:live` (chat)
-and `test:live:connectors` are opt-in and never part of `npm test` or `test:int`.
+not there is skipped with a message). Neither suite touches a Neon database.
+Embeddings in `npm test` and `test:int` come from a deterministic fake, so neither makes a network
+call. `test:live` (chat), `test:live:connectors` and `test:live:embeddings` are opt-in and never
+part of `npm test` or `test:int`.
 
 ### Configuration
 
@@ -398,6 +404,7 @@ and `test:live:connectors` are opt-in and never part of `npm test` or `test:int`
 | `NOTES_DATA_DIR` | `~/mcp-notes-data` | Photos, derived images, inbox. |
 | `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | — | The GLM fallback endpoint (z.ai). |
+| `OPENROUTER_API_KEY` | — | OpenRouter key for note embeddings (`openai/text-embedding-3-small`). Unset: notes save as usual, `search` is full text only and says so, `related` answers only for notes that already have a vector. |
 | `TEST_DATABASE_URL` | set by `test:int` | Integration test database. |
 | `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer` | Where the connectors find each repo and its `.env.local`. Read on every call. |
 | `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query. |
@@ -430,7 +437,8 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `append` | Add text to the end of a note |
 | `delete`, `restore` | Soft delete and undo it |
 | `list` | Filter by tags (any or all), created/updated date range, `has_image`, EXIF taken-date range. Newest first, paged |
-| `search` | Full text (Postgres `simple` config, so code tokens survive) plus the same filters, ranked |
+| `search` | By meaning and by words: full text (Postgres `simple` config, so ids and code tokens still rank first) blended with vector similarity, tag match and recency, after the same filters. `mode: "text"` for exact words only |
+| `related` | The notes nearest in meaning to a note `id`, each with a similarity score, never the note itself |
 | `tags` | Every tag with its count and last use |
 | `revisions`, `revert` | A note's earlier bodies, and putting one back |
 | `create_image` | Photo note from a local file path, with optional text |
@@ -440,6 +448,21 @@ The 15 connector tools are listed under [Connectors](#connectors-spending-runs-s
 
 The server also sends Claude short instructions: what mcp-notes is, how ids look, that
 comparisons are Claude's job, and that the connectors are read-only and the curated tools come first.
+
+### Search by meaning
+
+Every note body is embedded with OpenRouter (`openai/text-embedding-3-small`, 1536 dimensions)
+into `note_embeddings` (pgvector, HNSW cosine index), next to the sha256 of the body it was made
+from, so a vector that no longer matches its note is never used. Embedding happens in the
+background after a write commits: a slow or failing OpenRouter never blocks or fails a save, the
+note is retried with backoff, and a periodic sweep picks up notes written on the other machine.
+Textless photo notes have no vector; deleted notes keep theirs, so a restore needs no new call.
+
+`search` takes full-text matches and the nearest vectors under the same filters and blends four
+signals: text rank, similarity, tag match and recency. The weights live in `src/search/blend.ts`,
+each with a comment. If the query cannot be embedded, it returns today's full-text ranking and
+says so in `fallback`. `npm run embed:backfill` embeds everything pending in one go and prints
+progress (first run, or after a model change).
 
 ### HTTP API
 
@@ -460,6 +483,7 @@ comparisons are Claude's job, and that the connectors are read-only and the cura
 ```
 Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, updated_at, deleted_at)
            note_revisions(note_id, body, saved_at)
+           note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
 ~/mcp-notes-data/
   images/YYYY/MM/<id>.<ext>        originals, byte for byte
   cache/<id>/thumb.webp            480 px wide, for the wall and gallery
@@ -478,8 +502,10 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 - **Full size costs disk.** Originals are kept exactly as they arrive, so a phone's 4 MB HEIC
   stays 4 MB, plus a full-resolution JPEG for viewing.
 - **Text needs the network.** Notes live in Neon. With no connection, nothing loads.
-- **No semantic search yet.** Search is full text plus tags and dates. "Notes about ArangoDB
-  credentials" works only when those words appear. Embeddings come in iteration 6.
+- **Meaning needs OpenRouter.** A note becomes findable by meaning shortly after it is saved,
+  not in the same instant. Without `OPENROUTER_API_KEY`, or while OpenRouter is down, `search`
+  falls back to full text and says so, and `related` answers only for notes embedded earlier.
+  Pictures are found by their text and dates, not by what is in them.
 - **Connectors are read-only.** Nothing in expense-tracking, run-insights or Seer can be changed from here, by design.
 - **Single user, no auth.** It binds to `127.0.0.1` only. Anyone with a shell on the machine can
   read it.
@@ -500,7 +526,7 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 | 3 | Web UI: wall, three views, gallery, modal, full-screen tab, upload | done |
 | 4 | Chat bar brain: Claude Agent SDK, streaming, threads, GLM fallback | done |
 | 5 | Read-only connectors: expense-tracking, run-insights, Seer | done |
-| 6 | Semantic search: pgvector embeddings, hybrid ranking | in progress |
+| 6 | Semantic search: pgvector embeddings, hybrid ranking, `related` | done |
 | 7 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).

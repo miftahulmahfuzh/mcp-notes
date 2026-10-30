@@ -1,9 +1,12 @@
 import { sql } from 'drizzle-orm'
-import { bigserial, index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { bigserial, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, vector } from 'drizzle-orm/pg-core'
 
 /**
- * The whole schema for iterations 1-3. Phase 1 owns it and its single migration
- * (drizzle/0000_init.sql); no later phase adds a migration.
+ * The notes schema. Migration 0000 (drizzle/0000_init.sql, iterations 1-3) created `notes` and
+ * `note_revisions`; migration 0001 (iteration 6, semantic search) adds the pgvector extension and
+ * `note_embeddings`. Change a table here, then `npm run db:generate`; never edit an applied
+ * migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended
+ * `CREATE EXTENSION IF NOT EXISTS vector`.
  */
 
 /** `notes.image_meta`. Written by the image ingest (iteration 2). */
@@ -74,6 +77,43 @@ export const noteRevisions = pgTable(
     savedAt: timestamp('saved_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [index('note_revisions_note_saved_idx').on(t.noteId, t.savedAt.desc())],
+)
+
+/**
+ * One row per note that has (or had) text to embed. Iteration 6 (semantic search), migration
+ * 0001. A side table, not a column on `notes`, so `db.select().from(notes)` (every list, get and
+ * search) never drags 1536 floats along, and the vector never enters `NoteRow`.
+ *
+ * The vector is *current* iff `embedding is not null`, `body_sha256` equals the note's current
+ * body hash and `model` equals EMBEDDING_MODEL (src/embeddings/repo.ts `isCurrentEmbeddingSql`).
+ * Deleted notes keep their row, so a restore needs no embedding call.
+ */
+export const noteEmbeddings = pgTable(
+  'note_embeddings',
+  {
+    noteId: text('note_id')
+      .primaryKey()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    /** Null while the latest attempt for `body_sha256` failed. Width = EMBEDDING_DIMENSIONS (unit test asserts it). */
+    embedding: vector('embedding', { dimensions: 1536 }),
+    /** Hex sha256 of the UTF-8 body this row refers to (embedded, or whose embedding failed). */
+    bodySha256: text('body_sha256').notNull(),
+    /** Model id the vector came from, e.g. `openai/text-embedding-3-small`. */
+    model: text('model').notNull(),
+    /** Consecutive failures for this `body_sha256` + `model`; 0 after a success. */
+    attempts: integer('attempts').notNull().default(0),
+    /** At most 500 chars, keys redacted (src/embeddings/state.ts `clampError`). */
+    lastError: text('last_error'),
+    /** Failures only: not retried before this time. */
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' }),
+    /** When `embedding` was written. Null on a failure row. */
+    embeddedAt: timestamp('embedded_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('note_embeddings_embedding_hnsw_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+    index('note_embeddings_next_attempt_idx').on(t.nextAttemptAt),
+  ],
 )
 
 export type NoteRow = typeof notes.$inferSelect
