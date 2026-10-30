@@ -29,6 +29,20 @@ describe('buildInstructions', () => {
     for (const name of ['expenses_spending', 'runs_review', 'seer_sera_best']) expect(p).toContain(name);
     expect(p).not.toContain('expenses_schema,');
   });
+
+  it('says search understands meaning, offers mode "text" and explains the fallback', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Reading.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(p).toContain('search understands meaning, not only words');
+    expect(p).toContain('mode "hybrid"');
+    expect(p).toContain('mode "text"');
+    expect(p).toContain('fallback');
+    expect(p).toContain('ArangoDB credentials');
+    expect(p).toMatch(/no stemming/);
+  });
 });
 
 describe('toFilter', () => {

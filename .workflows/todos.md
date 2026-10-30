@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 21
+- Blocked: 1
+- Completed: 22
 
 ---
 
@@ -22,21 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A020** Phase 4: Hybrid search + labelled set
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `src/search/{blend,queryVector}.ts`, `src/notes/repo.ts` (`searchCandidates`), `src/notes/service.ts` (`search`, `textSearch`, imports), `src/notes/types.ts` (`SearchMode`, `SearchPage`), `src/mcp/tools.ts` (`search` only), `src/mcp/instructions.ts` (`Reading.` paragraph), one `it` in `tests/unit/mcp.instructions.test.ts`, `tests/fixtures/semantic/labelled.ts`, unit + integration tests. Exit: hybrid beats text-only on the labelled set (stated metric); exact id and rare code token at rank 1; failing query embed → `mode: 'text'` + `fallback`; `mode: 'text'` matches today's ordering.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 4 of 6)
-  - **Satisfies**: R4, R6 — Hybrid `search`: text + vector + tags + recency, filters before ranking, ids/code tokens still first, fallback to text that says so, weights in one commented place tuned on a labelled set, optional `mode`, description + instructions updated, caption unchanged; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
-  - **Plan**: `.workflows/plan/P1-NOTES-A020.md`
-
 - [ ] **P1-NOTES-A021** Phase 5: `related` tool
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `nearestNotes` in `src/embeddings/repo.ts`, `NotesService.related` / `embedNow`, `src/notes/types.ts` (`RelatedNote`, `RelatedResult`, `not_embedded`), the `related` tool in `src/mcp/tools.ts`, the `Related.` element in `src/mcp/instructions.ts`, one `it` in `tests/unit/mcp.instructions.test.ts`, `src/chat/status.ts` + `tests/unit/chat-status.test.ts`, `tests/integration/related.int.test.ts`. Exit: related never returns the note itself or a deleted note; ignores stale and other-model vectors; embeds an unembedded source once on demand; `not_embedded` without an embedder or on embed failure; textless photo → `invalid_input`; chat allow list is 14 + 15 + 2.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 5 of 6)
   - **Satisfies**: R5, R6 — `related` MCP tool: nearest notes by meaning with similarity, excluding the note itself; no UI change; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A017, P1-NOTES-A018, P1-NOTES-A020
@@ -61,6 +51,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A020** Phase 4: Hybrid search + labelled set
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/search/{blend,queryVector}.ts`, `src/notes/repo.ts` (`searchCandidates`), `src/notes/service.ts` (`search`, `textSearch`, imports), `src/notes/types.ts` (`SearchMode`, `SearchPage`), `src/mcp/tools.ts` (`search` only), `src/mcp/instructions.ts` (`Reading.` paragraph), one `it` in `tests/unit/mcp.instructions.test.ts`, `tests/fixtures/semantic/labelled.ts`, unit + integration tests. Exit: hybrid beats text-only on the labelled set (stated metric); exact id and rare code token at rank 1; failing query embed → `mode: 'text'` + `fallback`; `mode: 'text'` matches today's ordering.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R4, R6 — Hybrid `search`: text + vector + tags + recency, filters before ranking, ids/code tokens still first, fallback to text that says so, weights in one commented place tuned on a labelled set, optional `mode`, description + instructions updated, caption unchanged; Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A017, P1-NOTES-A018
+  - **Plan**: `.workflows/plan/P1-NOTES-A020.md`
+  - **Completed**: 2026-10-30 15:05
+  - **Method**: /do
+  - **Files**: src/search/blend.ts, src/search/queryVector.ts, src/notes/repo.ts, src/notes/service.ts, src/notes/types.ts, src/mcp/tools.ts, src/mcp/instructions.ts, tests/unit/mcp.instructions.test.ts, tests/fixtures/semantic/labelled.ts, tests/unit/search.blend.test.ts, tests/unit/search.queryVector.test.ts, tests/integration/search.hybrid.int.test.ts
+  - **Decided**:
+    - search.hybrid.int.test.ts built one module-level NotesService, so its query-vector LRU served cached vectors across tests and the fallback (failNext, timeout) and paging (calls === 1) tests failed → rebuild the service in beforeEach; no assertion changed (rung 2: exit criteria 'failing/slow embedder returns mode text' and 'paging embeds once' are what the tests check; the cache leak was test isolation, not product behaviour)
 
 - [x] **P1-NOTES-A019** Phase 3: Embedding worker, background backfill, `embed:backfill`
   - **Difficulty**: HARD

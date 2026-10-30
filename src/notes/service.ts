@@ -1,5 +1,13 @@
 import type { Db } from '../db/client.js';
 import type { Embedder } from '../embeddings/embedder.js';
+import { BLEND, queryTerms, rankCandidates, tagMatch } from '../search/blend.js';
+import {
+  QUERY_EMBED_TIMEOUT_MS,
+  QueryVectorCache,
+  SEMANTIC_OFF_FALLBACK,
+  embedFailedFallback,
+  embedQuery,
+} from '../search/queryVector.js';
 import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
@@ -15,6 +23,8 @@ import {
   type NoteRow,
   type Origin,
   type Revision,
+  type SearchMode,
+  type SearchPage,
   type TagCount,
 } from './types.js';
 
@@ -57,6 +67,13 @@ export interface GetOptions {
   includeDeleted?: boolean;
 }
 
+export interface SearchOptions {
+  /** 'hybrid' (default): full text + meaning + tags + recency. 'text': today's full-text ranking only. */
+  mode?: SearchMode | undefined;
+  /** Ceiling for the query embedding call. Default QUERY_EMBED_TIMEOUT_MS; tests shorten it. */
+  queryTimeoutMs?: number | undefined;
+}
+
 export interface GetResult {
   /** In the order the ids were asked for, without duplicates. */
   notes: Note[];
@@ -77,6 +94,8 @@ export class NotesService {
   private readonly dataDir: string;
   private readonly events: NoteEvents;
   private readonly embedder: Embedder | null;
+  /** Query vectors, so paging through one search embeds its query once. */
+  private readonly queryVectors = new QueryVectorCache();
 
   constructor(deps: NotesServiceDeps) {
     this.db = deps.db;
@@ -170,10 +189,69 @@ export class NotesService {
     return { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor };
   }
 
-  async search(query: string, filter: NoteFilter = {}): Promise<NotePage> {
+  /**
+   * Hybrid by default: full-text rank, closeness in meaning, tag match and recency, blended by
+   * src/search/blend.ts over candidates that already passed the filter. Falls back to the
+   * full-text ranking, with `fallback` saying why, when there is no embedder or the query
+   * cannot be embedded in time. mode 'text' is exactly the pre-iteration-6 ranking. The cursor
+   * is an offset into whichever ranking produced the page.
+   */
+  async search(query: string, filter: NoteFilter = {}, opts: SearchOptions = {}): Promise<SearchPage> {
     if (query.trim() === '') throw new NoteError('invalid_input', 'search needs a non-empty query.');
+    if (opts.mode === 'text') return this.textSearch(query, filter);
+    // Reject a bad cursor before spending an embedding call on it.
+    const offset = repo.decodeCursor(filter.cursor);
+    const limit = repo.clampLimit(filter.limit);
+    const embedder = this.embedder;
+    if (embedder === null) return this.textSearch(query, filter, SEMANTIC_OFF_FALLBACK);
+
+    let vector: number[];
+    try {
+      vector = await embedQuery(embedder, this.queryVectors, query, opts.queryTimeoutMs ?? QUERY_EMBED_TIMEOUT_MS);
+    } catch (err) {
+      return this.textSearch(query, filter, embedFailedFallback(err));
+    }
+
+    const terms = queryTerms(query);
+    const rows = await repo.searchCandidates(
+      this.db,
+      {
+        query,
+        vector,
+        model: embedder.model,
+        ids: terms.ids,
+        excluded: terms.excluded,
+        textLimit: BLEND.textCandidates,
+        vectorLimit: BLEND.vectorCandidates,
+      },
+      filter,
+    );
+    const ranked = rankCandidates(
+      rows.map((r) => ({
+        id: r.row.id,
+        textRank: r.textRank,
+        similarity: r.similarity,
+        tagMatch: tagMatch(r.row.tags, terms),
+        updatedAt: r.row.updatedAt,
+        exactId: terms.ids.includes(r.row.id),
+        row: r.row,
+      })),
+      { now: new Date() },
+    );
+    const end = offset + limit;
+    return {
+      notes: ranked.slice(offset, end).map((c) => this.toNote(c.row)),
+      next_cursor: ranked.length > end ? repo.encodeCursor(end) : null,
+      mode: 'hybrid',
+    };
+  }
+
+  /** Today's full-text ranking (repo.searchNotes, unchanged), optionally marked as a fallback. */
+  private async textSearch(query: string, filter: NoteFilter, fallback?: string): Promise<SearchPage> {
     const page = await repo.searchNotes(this.db, query, filter);
-    return { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor };
+    const result: SearchPage = { notes: page.rows.map((r) => this.toNote(r)), next_cursor: page.nextCursor, mode: 'text' };
+    if (fallback !== undefined) result.fallback = fallback;
+    return result;
   }
 
   async tags(): Promise<TagCount[]> {

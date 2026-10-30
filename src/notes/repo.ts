@@ -1,6 +1,7 @@
 import { and, arrayContains, arrayOverlaps, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { noteRevisions, notes } from '../db/schema.js';
+import { noteEmbeddings, noteRevisions, notes } from '../db/schema.js';
+import { isCurrentEmbeddingSql, toVectorLiteral } from '../embeddings/repo.js';
 import { parseDateBound } from './dates.js';
 import { NoteError, type ImageMeta, type NoteRow, type Origin } from './types.js';
 
@@ -170,6 +171,102 @@ export async function searchNotes(db: Executor, query: string, filter: NoteFilte
     .limit(limit + 1)
     .offset(offset);
   return page(rows, limit, offset);
+}
+
+/** Input of the hybrid candidate query. */
+export interface CandidateQuery {
+  /** The raw query, for websearch_to_tsquery (same as text mode). */
+  query: string;
+  /** The query's embedding (EMBEDDING_DIMENSIONS wide). */
+  vector: readonly number[];
+  /** Model whose vectors count as current (the embedder's). */
+  model: string;
+  /** Note ids named in the query: always candidates, if they pass the filter. */
+  ids: readonly string[];
+  /** websearch "-word" exclusions; also applied to the meaning-only side. */
+  excluded: readonly string[];
+  /** Max full-text matches, best ts_rank first. */
+  textLimit: number;
+  /** Max nearest notes by meaning. */
+  vectorLimit: number;
+}
+
+export interface CandidateRow {
+  row: NoteRow;
+  /** Raw ts_rank; null when the note does not match the full-text query. */
+  textRank: number | null;
+  /** 1 - cosine distance of the note's current vector; null when it has none. */
+  similarity: number | null;
+}
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Candidates for hybrid search: full-text matches ∪ nearest current vectors ∪ notes named by
+ * id, every source under the same filterConditions, so filters apply before ranking. Each row
+ * carries both signals (text rank and similarity) whichever source found it. Unordered;
+ * src/search/blend.ts ranks. `notes` and `note_embeddings` are never aliased, because
+ * isCurrentEmbeddingSql interpolates their columns by real name.
+ */
+export async function searchCandidates(db: Db, q: CandidateQuery, filter: NoteFilter): Promise<CandidateRow[]> {
+  const filters = filterConditions(filter);
+  // Same expressions as searchNotes / the GIN index.
+  const tsv = sql`to_tsvector('simple', ${notes.body})`;
+  const tsq = sql`websearch_to_tsquery('simple', ${q.query})`;
+  const qvec = sql`${toVectorLiteral(q.vector)}::vector`;
+  const distance = sql`(${noteEmbeddings.embedding} <=> ${qvec})`;
+  const joinCurrent = sql`${noteEmbeddings.noteId} = ${notes.id} and ${isCurrentEmbeddingSql(q.model)}`;
+  const fields = {
+    note: notes,
+    textRank: sql<number | null>`(case when ${tsv} @@ ${tsq} then ts_rank(${tsv}, ${tsq}) end)::float8`,
+    similarity: sql<number | null>`(1 - ${distance})::float8`,
+  };
+
+  // 1. Full-text matches, in text mode's order, with their similarity when they have a current vector.
+  const textRows = await db
+    .select(fields)
+    .from(notes)
+    .leftJoin(noteEmbeddings, joinCurrent)
+    .where(and(sql`${tsv} @@ ${tsq}`, ...filters))
+    .orderBy(desc(sql`ts_rank(${tsv}, ${tsq})`), desc(notes.updatedAt), desc(notes.id))
+    .limit(q.textLimit);
+
+  // 2. Nearest current vectors. ORDER BY <distance> LIMIT is the shape the HNSW cosine index
+  // serves; iterative_scan keeps walking the index when filters drop rows (pgvector >= 0.8,
+  // same setting phase 5's nearestNotes uses), so selective filters still get up to K rows.
+  const excludedConds: SQL[] =
+    q.excluded.length > 0 ? [sql`not (${tsv} @@ websearch_to_tsquery('simple', ${q.excluded.join(' OR ')}))`] : [];
+  const vectorRows = await db.transaction(async (tx) => {
+    await tx.execute(sql`set local hnsw.iterative_scan = strict_order`);
+    return tx
+      .select(fields)
+      .from(notes)
+      .innerJoin(noteEmbeddings, joinCurrent)
+      .where(and(...filters, ...excludedConds))
+      .orderBy(distance)
+      .limit(q.vectorLimit);
+  });
+
+  // 3. Notes the query names by id.
+  const idRows =
+    q.ids.length > 0
+      ? await db
+          .select(fields)
+          .from(notes)
+          .leftJoin(noteEmbeddings, joinCurrent)
+          .where(and(inArray(notes.id, [...q.ids]), ...filters))
+      : [];
+
+  const byId = new Map<string, CandidateRow>();
+  for (const r of [...textRows, ...vectorRows, ...idRows]) {
+    if (byId.has(r.note.id)) continue;
+    byId.set(r.note.id, { row: r.note, textRank: toNumberOrNull(r.textRank), similarity: toNumberOrNull(r.similarity) });
+  }
+  return [...byId.values()];
 }
 
 export async function findNotesByIds(db: Executor, ids: readonly string[]): Promise<NoteRow[]> {

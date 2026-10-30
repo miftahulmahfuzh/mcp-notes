@@ -60,6 +60,17 @@ export interface NotePage {
   next_cursor: string | null;
 }
 
+/** 'hybrid': full text + meaning + tags + recency. 'text': full-text ranking only (pre-iteration-6). */
+export type SearchMode = 'hybrid' | 'text';
+
+/** `search` result: a NotePage plus which ranking produced it. */
+export interface SearchPage extends NotePage {
+  /** The ranking actually used. 'text' when asked for, or when hybrid had to fall back. */
+  mode: SearchMode;
+  /** Present only when hybrid was asked for but could not run; says why, in a sentence for the user. */
+  fallback?: string;
+}
+
 export type NoteErrorCode =
   | 'invalid_id'
   | 'invalid_input'
