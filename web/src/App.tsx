@@ -7,7 +7,7 @@ import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
 import { useNow } from './hooks/useNow';
 import { useCopied } from './hooks/useCopied';
-import { countLineFor, headingFor, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
+import { countLineFor, headingFor, imageCount, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
 import { tagsOf } from './lib/text';
@@ -42,7 +42,7 @@ export function App() {
 
   const visible = useMemo(() => visibleOnWall(notes, mode, active, editing), [notes, mode, active, editing]);
   const photos = useMemo(() => photosOf(notes, active), [notes, active]);
-  const photoCount = useMemo(() => notes.filter((n) => n.image).length, [notes]);
+  const photoCount = useMemo(() => imageCount(notes), [notes]);
   const last = useMemo(() => lastEdited(notes), [notes]);
   const used = useMemo(() => extractUsedIds(chat.text, notes.map((n) => n.id)), [chat.text, notes]);
   const highlight = chat.open && chat.text.length > 0 && used.length > 0;
@@ -85,7 +85,7 @@ export function App() {
   const commit = useCallback(
     async (note: Note, draft: string) => {
       setEditing((cur) => (cur === note.id ? null : cur));
-      if (!draft.trim() && !note.image) {
+      if (!draft.trim() && note.images.length === 0) {
         removeLocal(note.id);
         try {
           await deleteNote(note.id);
@@ -163,7 +163,7 @@ export function App() {
           />
           <div className="rule" />
           {mode === 'images' ? (
-            <Gallery photos={photos} copiedId={copied} onCopy={copy} />
+            <Gallery items={photos} copiedId={copied} onCopy={copy} />
           ) : (
             <Wall
               notes={visible}

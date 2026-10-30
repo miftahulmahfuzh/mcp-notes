@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { FullscreenApp, idFromLocation } from './FullscreenApp';
+import { FullscreenApp, describeMissing, idFromLocation } from './FullscreenApp';
 import { initialView, viewReducer } from './view';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,6 +29,8 @@ function mouse(el: Element, type: string, x: number, y: number) {
     el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
   });
 }
+
+const jsonRes = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 
 describe('viewReducer', () => {
   it('a click (no move) toggles fit and resets the pan', () => {
@@ -66,20 +68,37 @@ describe('viewReducer', () => {
 });
 
 describe('idFromLocation', () => {
-  it('reads /full/<id> and falls back to ?id=', () => {
-    expect(idFromLocation({ pathname: '/full/A-B32', search: '' })).toBe('A-B32');
+  it('reads /full/<imageId> and falls back to ?id=', () => {
+    expect(idFromLocation({ pathname: '/full/M-N11', search: '' })).toBe('M-N11');
     expect(idFromLocation({ pathname: '/full/A-B32/', search: '' })).toBe('A-B32');
     expect(idFromLocation({ pathname: '/fullscreen.html', search: '?id=K-F07' })).toBe('K-F07');
     expect(idFromLocation({ pathname: '/', search: '' })).toBeNull();
   });
 });
 
+describe('describeMissing', () => {
+  it('reads the reason from the display route and the dims from GET /api/images/<id>', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url === '/api/images/M-N11/display') return jsonRes({ error: 'not_found' }, 404);
+      return jsonRes({ id: 'M-N11', note_id: 'K-F07', width: 400, height: 900 });
+    }) as unknown as typeof fetch;
+    expect(await describeMissing('M-N11', fetchImpl)).toEqual({ caption: 'not found', host: null, w: 400, h: 900 });
+    expect(calls).toEqual(['/api/images/M-N11/display', '/api/images/M-N11']);
+  });
+  it('falls back to 3:2 when the image JSON has no dims', async () => {
+    const fetchImpl = vi.fn(async () => jsonRes({ error: 'not_found' }, 404)) as unknown as typeof fetch;
+    expect(await describeMissing('Z-Z99', fetchImpl)).toEqual({ caption: 'not found', host: null, w: 3, h: 2 });
+  });
+});
+
 describe('FullscreenApp', () => {
-  it('sets the title, shows the unfiltered display image, click toggles fit, drag does not', () => {
-    const el = render(<FullscreenApp id="A-B32" />);
-    expect(document.title).toBe('A-B32');
+  it('sets the title, shows the unfiltered display image by image id, click toggles fit, drag does not', () => {
+    const el = render(<FullscreenApp id="M-N11" />);
+    expect(document.title).toBe('M-N11');
     const img = el.querySelector('img')!;
-    expect(img.getAttribute('src')).toBe('/api/notes/A-B32/display');
+    expect(img.getAttribute('src')).toBe('/api/images/M-N11/display');
     expect(img.style.filter).toBe('');
     expect(img.dataset.fit).toBe('fit');
     const stage = el.querySelector('[data-fullscreen]')!;
@@ -102,10 +121,8 @@ describe('FullscreenApp', () => {
 
   it('shows the placeholder with the host when the display endpoint 404s not_on_this_machine', async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (url === '/api/notes/K-F07/display') {
-        return new Response(JSON.stringify({ error: 'not_on_this_machine', host: 'lenovo' }), { status: 404, headers: { 'content-type': 'application/json' } });
-      }
-      return new Response(JSON.stringify({ id: 'K-F07', image: { width: 600, height: 400 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (url === '/api/images/K-F07/display') return jsonRes({ error: 'not_on_this_machine', host: 'lenovo' }, 404);
+      return jsonRes({ id: 'K-F07', note_id: 'K-F07', width: 600, height: 400 });
     });
     vi.stubGlobal('fetch', fetchMock);
     const el = render(<FullscreenApp id="K-F07" />);

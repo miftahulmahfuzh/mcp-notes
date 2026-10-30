@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Gallery, galleryTile } from './Gallery';
-import type { ImageNote } from './NoteImage';
+import { photosOf } from '../lib/filter';
+import { makeImage, makeNote } from '../testing/fixtures';
 
 vi.mock('../lib/dates', () => ({ relativeDate: () => 'Today' }));
 
@@ -25,13 +26,13 @@ afterEach(() => {
   host = null;
 });
 
-const n = (id: string, w: number, h: number, tags: string[] = []): ImageNote => ({
-  id,
-  body: `photo ${tags.map((t) => '#' + t).join(' ')}`,
-  tags,
-  created_at: '2026-10-30T01:00:00.000Z',
-  image: { width: w, height: h, available: true, host: null },
-});
+const notes = [
+  makeNote('K-F07', 'two photos #walks', {
+    images: [makeImage('K-F07', { width: 600, height: 400 }), makeImage('M-N11', { note_id: 'K-F07', position: 1, width: 400, height: 600 })],
+  }),
+  makeNote('A-B32', 'text only'),
+  makeNote('D-P90', 'one photo', { images: [makeImage('D-P90', { width: 600, height: 800 })] }),
+];
 
 describe('galleryTile', () => {
   it('grow = w/h to 3 places, basis = round(w/h * 230)', () => {
@@ -43,28 +44,31 @@ describe('galleryTile', () => {
 });
 
 describe('Gallery', () => {
-  it('renders one tile per photo, a trailing spacer, and opens the modal on click', () => {
-    const photos = [n('K-F07', 600, 400), n('D-P90', 600, 800)];
-    const el = render(<Gallery photos={photos} copiedId={null} onCopy={() => {}} />);
+  it('renders one tile per image in note order, a trailing spacer, and opens the modal on the clicked image', () => {
+    const el = render(<Gallery items={photosOf(notes, [])} copiedId={null} onCopy={() => {}} />);
     const section = el.querySelector('[data-gallery]')!;
-    expect(section.querySelectorAll('[data-photo]').length).toBe(2);
+    const tiles = Array.from(section.querySelectorAll('[data-photo]'));
+    expect(tiles.map((t) => t.getAttribute('data-photo'))).toEqual(['K-F07', 'M-N11', 'D-P90']);
+    expect(tiles.map((t) => t.getAttribute('data-note'))).toEqual(['K-F07', 'K-F07', 'D-P90']);
+    expect(tiles[1].querySelector('img')!.getAttribute('src')).toBe('/api/images/M-N11/thumb');
     expect(section.lastElementChild!.hasAttribute('data-gallery-spacer')).toBe(true);
     expect(document.querySelector('[data-modal="photo"]')).toBeNull();
     act(() => {
-      (el.querySelector('[data-photo="D-P90"]') as HTMLElement).click();
+      (el.querySelector('[data-photo="M-N11"]') as HTMLElement).click();
     });
     const modal = document.querySelector('[data-modal="photo"]')!;
     expect(modal).not.toBeNull();
-    expect(modal.querySelector('[data-meta]')!.textContent).toBe('2 / 2  Today');
+    expect(modal.querySelector('[data-meta]')!.textContent).toBe('2 / 3  2/2  Today');
+    expect(modal.querySelector('img')!.getAttribute('src')).toBe('/api/images/M-N11/display');
   });
 
-  it('closes the modal when the open photo leaves the list', () => {
-    const photos = [n('K-F07', 600, 400), n('D-P90', 600, 800)];
-    const el = render(<Gallery photos={photos} copiedId={null} onCopy={() => {}} />);
+  it('closes the modal when the open image leaves the list', () => {
+    const items = photosOf(notes, []);
+    const el = render(<Gallery items={items} copiedId={null} onCopy={() => {}} />);
     act(() => {
-      (el.querySelector('[data-photo="D-P90"]') as HTMLElement).click();
+      (el.querySelector('[data-photo="M-N11"]') as HTMLElement).click();
     });
-    act(() => root!.render(<Gallery photos={[photos[0]]} copiedId={null} onCopy={() => {}} />));
+    act(() => root!.render(<Gallery items={items.filter((it) => it.image.id !== 'M-N11')} copiedId={null} onCopy={() => {}} />));
     expect(document.querySelector('[data-modal="photo"]')).toBeNull();
   });
 });

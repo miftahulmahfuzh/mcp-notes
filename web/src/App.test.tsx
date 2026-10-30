@@ -3,20 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Note } from './types';
 import { App } from './App';
+import { makeNote } from './testing/fixtures';
 
 const iso = new Date().toISOString();
 const notes: Note[] = [
-  { id: 'A-B32', body: '#seer onboarding is long', tags: ['seer'], created_at: iso, updated_at: iso, origin: null, image: null },
-  { id: 'C-D45', body: 'buy fennel #kitchen', tags: ['kitchen'], created_at: iso, updated_at: iso, origin: null, image: null },
-  {
-    id: 'K-F07',
-    body: 'River #walks',
-    tags: ['walks'],
-    created_at: iso,
-    updated_at: iso,
-    origin: null,
-    image: { mime: 'image/jpeg', width: 600, height: 400, bytes: 10, taken_at: null, original_name: 'r.jpg', host: 'lenovo', available: true },
-  },
+  makeNote('A-B32', '#seer onboarding is long', { created: iso }),
+  makeNote('C-D45', 'buy fennel #kitchen', { created: iso }),
+  makeNote('K-F07', 'River #walks', { created: iso, images: ['K-F07', 'M-N11'] }),
 ];
 const tags = [
   { tag: 'seer', count: 1, last_used: iso },
@@ -65,7 +58,27 @@ describe('App', () => {
     expect(document.querySelector('.gallery')).not.toBeNull();
     fireEvent.click(screen.getByLabelText('Image notes only (click to switch)'));
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Everything.');
-    expect(document.querySelector('[data-note="K-F07"] img')?.getAttribute('src')).toBe('/api/notes/K-F07/thumb');
+    expect(document.querySelector('[data-note="K-F07"] img')?.getAttribute('src')).toBe('/api/images/K-F07/thumb');
+  });
+
+  it('counts images, shows one gallery tile per image, steps the modal within a note, and puts the count on the cover', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expect(screen.getByText(/2 notes, 1 photo notes hidden\./)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Text notes only (click to switch)'));
+    expect(screen.getByText(/2 photos\./)).toBeTruthy();
+    const tiles = Array.from(document.querySelectorAll('.gallery [data-photo]')).map((t) => t.getAttribute('data-photo'));
+    expect(tiles).toEqual(['K-F07', 'M-N11']);
+    fireEvent.click(document.querySelector('[data-photo="K-F07"]') as HTMLElement);
+    expect(document.querySelector('[data-modal="photo"] [data-meta]')?.textContent).toContain('1 / 2  1/2');
+    fireEvent.click(screen.getByLabelText('Next'));
+    expect(document.querySelector('[data-modal="photo"] [data-meta]')?.textContent).toContain('2 / 2  2/2');
+    expect(document.querySelector('[data-modal="photo"] img')?.getAttribute('src')).toBe('/api/images/M-N11/display');
+    fireEvent.click(screen.getByLabelText('Close'));
+    expect(document.querySelector('[data-modal="photo"]')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Image notes only (click to switch)'));
+    expect(document.querySelectorAll('[data-note="K-F07"] img')).toHaveLength(1);
+    expect(document.querySelector('[data-note="K-F07"] .card-count')?.textContent).toBe('2');
   });
 
   it('filters by a tag chip and shows it as an active rail chip', async () => {

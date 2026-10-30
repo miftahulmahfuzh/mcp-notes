@@ -36,7 +36,7 @@ function CardEditor({ note, onCommit }: { note: Note; onCommit: (note: Note, dra
       className="card-edit"
       value={draft}
       rows={rowsFor(draft.length)}
-      style={{ fontSize: fontSizeFor(draft, !!note.image) }}
+      style={{ fontSize: fontSizeFor(draft, note.images.length > 0) }}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => onCommit(note, draft)}
     />
@@ -44,12 +44,23 @@ function CardEditor({ note, onCommit }: { note: Note; onCommit: (note: Note, dra
 }
 
 function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onToggleTag }: NoteCardProps) {
-  const hasImg = !!note.image;
+  const count = note.images.length;
+  const cover = count > 0 ? note.images[0] : undefined;
+  const hasImg = cover !== undefined;
   const fs = fontSizeFor(note.body, hasImg);
   const cls = ['card', hasImg ? 'img' : '', dim ? 'dim' : '', used ? 'used' : ''].filter(Boolean).join(' ');
   return (
     <article className={cls} data-note={note.id}>
-      {hasImg && <NoteImage note={note} />}
+      {cover && (
+        <div className="card-cover">
+          <NoteImage image={cover} />
+          {count > 1 && (
+            <span className="card-count" data-count={count}>
+              {count}
+            </span>
+          )}
+        </div>
+      )}
       <div className="card-body">
         {editing ? (
           <CardEditor note={note} onCommit={onCommit} />

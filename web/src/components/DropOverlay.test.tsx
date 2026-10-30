@@ -61,7 +61,7 @@ describe('file helpers', () => {
 
 describe('DropOverlay', () => {
   it('paste uploads only the first image file and prevents default', async () => {
-    fetchMock.mockResolvedValue(okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', image: null }, created: true }));
+    fetchMock.mockResolvedValue(okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', images: [] }, created: true }));
     const onImageAdded = vi.fn();
     render(<DropOverlay onImageAdded={onImageAdded} />);
     const e = eventWith('paste', 'clipboardData', { files: [txt, png, jpg] });
@@ -90,7 +90,7 @@ describe('DropOverlay', () => {
   });
 
   it('a dedupe hit is handed to onImageAdded like any upload', async () => {
-    fetchMock.mockResolvedValue(okResponse({ note: { id: 'K-F07', body: '', tags: [], created_at: '', image: null }, created: false }));
+    fetchMock.mockResolvedValue(okResponse({ note: { id: 'K-F07', body: '', tags: [], created_at: '', images: [] }, created: false }));
     const onImageAdded = vi.fn();
     render(<DropOverlay onImageAdded={onImageAdded} />);
     act(() => {
@@ -125,7 +125,7 @@ describe('DropOverlay', () => {
     expect(el.querySelector('[data-drop-overlay]')).toBeNull();
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolvers[0](okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', image: null }, created: true }));
+    resolvers[0](okResponse({ note: { id: 'A-B32', body: '', tags: [], created_at: '', images: [] }, created: true }));
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as FormData).get('file') as File).name).toBe('c.jpg');

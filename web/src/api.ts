@@ -66,6 +66,14 @@ export function postChat(message: string, threadId: string | undefined, signal: 
   });
 }
 
-export const thumbUrl = (id: string): string => `/api/notes/${enc(id)}/thumb`;
-export const displayUrl = (id: string): string => `/api/notes/${enc(id)}/display`;
-export const originalUrl = (id: string): string => `/api/notes/${enc(id)}/original`;
+export type ImageFileVariant = 'thumb' | 'display' | 'original' | 'preview';
+
+/** `/api/images/<imageId>/<variant>` — serves any image row's file (phase 2). */
+export function imageUrl(imageId: string, variant: ImageFileVariant): string {
+  return `/api/images/${enc(imageId)}/${variant}`;
+}
+
+/** `GET /api/images/<imageId>` → the image's wire `NoteImage` JSON. */
+export function imageInfoUrl(imageId: string): string {
+  return `/api/images/${enc(imageId)}`;
+}

@@ -1,7 +1,9 @@
 import { useEffect, useReducer, useState } from 'react';
-import { ImagePlaceholder, aspectOf, imageUrl } from '../components/NoteImage';
+import { imageInfoUrl, imageUrl } from '../api';
+import { ImagePlaceholder, aspectOf } from '../components/NoteImage';
 import { cursorFor, imgStyleFor, initialView, viewReducer, type Natural } from './view';
 
+/** The image id from `/full/<imageId>` (or `?id=`). */
 export function idFromLocation(loc: Pick<Location, 'pathname' | 'search'>): string | null {
   const m = /^\/full\/([^/]+)\/?$/.exec(loc.pathname);
   if (m) return decodeURIComponent(m[1]);
@@ -11,7 +13,7 @@ export function idFromLocation(loc: Pick<Location, 'pathname' | 'search'>): stri
 
 export type Missing = { caption: string; host: string | null; w: number; h: number };
 
-/** Why the display image did not load, plus the note's aspect ratio when it can be read. */
+/** Why the display image did not load, plus the image's aspect ratio when it can be read. */
 export async function describeMissing(id: string, fetchImpl: typeof fetch = fetch): Promise<Missing> {
   let caption = 'unavailable';
   let host: string | null = null;
@@ -31,11 +33,12 @@ export async function describeMissing(id: string, fetchImpl: typeof fetch = fetc
   }
   let dims = aspectOf(null);
   try {
-    const res = await fetchImpl(`/api/notes/${encodeURIComponent(id)}`);
+    const res = await fetchImpl(imageInfoUrl(id));
     if (res.ok) {
-      const json = (await res.json()) as { note?: { image?: { width: number; height: number } | null }; image?: { width: number; height: number } | null };
-      const note = json && 'note' in json && json.note ? json.note : json;
-      dims = aspectOf(note?.image ?? null);
+      const json = (await res.json()) as { width?: unknown; height?: unknown } | null;
+      if (json && typeof json.width === 'number' && typeof json.height === 'number') {
+        dims = aspectOf({ width: json.width, height: json.height });
+      }
     }
   } catch {
     // keep the 3:2 fallback

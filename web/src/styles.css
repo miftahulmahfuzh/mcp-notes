@@ -81,6 +81,10 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .card.dim { opacity: .22; }
 .card.used { outline-color: var(--ring); }
 .card-img { display: block; width: 100%; height: auto; filter: var(--film); background: var(--img-bg); }
+/* Several images: the cover is images[0]; the count sits on it, bottom-right. No pill, no shadow;
+   difference blending keeps the mono digits legible on light and dark photos alike. */
+.card-cover { position: relative; }
+.card-count { position: absolute; right: 7px; bottom: 6px; font-family: var(--mono); font-size: 11px; line-height: 1; letter-spacing: .03em; color: var(--fg); mix-blend-mode: difference; pointer-events: none; user-select: none; }
 .card-body { padding: 13px 14px 10px; }
 .card.img .card-body { padding: 9px 2px 4px; }
 .card-text { margin: 0 0 10px; line-height: 1.32; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; cursor: text; color: var(--text); }

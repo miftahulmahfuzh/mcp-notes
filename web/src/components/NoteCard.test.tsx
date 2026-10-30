@@ -4,20 +4,13 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import type { Note } from '../types';
 import { NoteCard } from './NoteCard';
 import type { NoteCardProps } from './NoteCard';
+import { makeNote } from '../testing/fixtures';
 
 afterEach(cleanup);
 
 const now = new Date();
-function note(body: string, image = false): Note {
-  return {
-    id: 'A-B32',
-    body,
-    tags: [],
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-    origin: null,
-    image: image ? { mime: 'image/jpeg', width: 600, height: 400, bytes: 1, taken_at: null, original_name: null, host: 'lenovo', available: true } : null,
-  };
+function note(body: string, images: string[] = []): Note {
+  return makeNote('A-B32', body, { images, tags: [], created: now.toISOString() });
 }
 
 function renderCard(n: Note, over: Partial<NoteCardProps> = {}) {
@@ -39,14 +32,15 @@ function renderCard(n: Note, over: Partial<NoteCardProps> = {}) {
 
 describe('NoteCard', () => {
   it('renders the font size by text length', () => {
-    const cases: Array<[string, boolean, string]> = [
-      ['short #a', false, '26px'],
-      ['a'.repeat(50), false, '17px'],
-      ['a'.repeat(120), false, '13.5px'],
-      ['a'.repeat(10), true, '13px'],
+    const cases: Array<[string, string[], string]> = [
+      ['short #a', [], '26px'],
+      ['a'.repeat(50), [], '17px'],
+      ['a'.repeat(120), [], '13.5px'],
+      ['a'.repeat(10), ['A-B32'], '13px'],
+      ['a'.repeat(10), ['A-B32', 'M-N11'], '13px'],
     ];
-    for (const [body, image, fs] of cases) {
-      const { container, unmount } = renderCard(note(body, image));
+    for (const [body, images, fs] of cases) {
+      const { container, unmount } = renderCard(note(body, images));
       expect((container.querySelector('.card-text') as HTMLElement).style.fontSize).toBe(fs);
       unmount();
     }
@@ -82,10 +76,30 @@ describe('NoteCard', () => {
     expect(props.onCommit).toHaveBeenCalledWith(n, '');
   });
 
-  it('renders the thumbnail for image notes with the image aspect ratio', () => {
-    const { container } = renderCard(note('pic', true));
-    const img = container.querySelector('img') as HTMLImageElement;
-    expect(img.getAttribute('src')).toBe('/api/notes/A-B32/thumb');
+  it('a text note has no cover', () => {
+    const { container } = renderCard(note('just text'));
+    expect(container.querySelector('.card-cover')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('article')!.className).not.toContain('img');
+  });
+
+  it('a one-image note shows that image as the cover with no count', () => {
+    const { container } = renderCard(note('pic', ['A-B32']));
+    const img = container.querySelector('.card-cover img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('/api/images/A-B32/thumb');
     expect(img.style.aspectRatio).toBe('600 / 400');
+    expect(container.querySelector('.card-count')).toBeNull();
+    expect(container.querySelector('article')!.className).toContain('img');
+  });
+
+  it('a multi-image note shows images[0] as the cover and the count on it, as plain text', () => {
+    const { container } = renderCard(note('pics', ['A-B32', 'M-N11', 'P-Q22']));
+    const imgs = container.querySelectorAll('img');
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].getAttribute('src')).toBe('/api/images/A-B32/thumb');
+    const count = container.querySelector('.card-cover .card-count') as HTMLElement;
+    expect(count.textContent).toBe('3');
+    expect(count.tagName).toBe('SPAN');
+    expect(container.querySelector('.card-cover button')).toBeNull();
   });
 });

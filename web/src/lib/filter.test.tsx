@@ -1,25 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { Note } from '../types';
-import { countLineFor, headingFor, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './filter';
-
-const img = { mime: 'image/jpeg', width: 600, height: 400, bytes: 1, taken_at: null, original_name: null, host: 'lenovo', available: true };
-function note(id: string, body: string, opts: { image?: boolean; updated?: string } = {}): Note {
-  return {
-    id,
-    body,
-    tags: [],
-    created_at: '2026-10-30T00:00:00Z',
-    updated_at: opts.updated ?? '2026-10-30T00:00:00Z',
-    origin: null,
-    image: opts.image ? img : null,
-  };
-}
+import { countLineFor, hasImages, headingFor, imageCount, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './filter';
+import { makeNote } from '../testing/fixtures';
 
 const notes = [
-  note('A-AAA', '#seer #ux both'),
-  note('B-BBB', '#seer only'),
-  note('C-CCC', '#ux only'),
-  note('D-DDD', 'photo #seer #ux', { image: true }),
+  makeNote('A-AAA', '#seer #ux both'),
+  makeNote('B-BBB', '#seer only'),
+  makeNote('C-CCC', '#ux only'),
+  makeNote('D-DDD', 'photos #seer #ux', { images: ['D-DDD', 'E-EE1', 'F-FF2'] }),
+  makeNote('G-GGG', 'one photo #ux', { images: ['G-GGG'] }),
 ];
 
 describe('visibleOnWall', () => {
@@ -27,12 +15,35 @@ describe('visibleOnWall', () => {
     expect(visibleOnWall(notes, 'all', ['seer', 'ux']).map((n) => n.id)).toEqual(['A-AAA', 'D-DDD']);
     expect(visibleOnWall(notes, 'all', ['seer']).map((n) => n.id)).toEqual(['A-AAA', 'B-BBB', 'D-DDD']);
   });
-  it('hides image notes in text mode only', () => {
+  it('hides notes with images in text mode only', () => {
     expect(visibleOnWall(notes, 'text', []).map((n) => n.id)).toEqual(['A-AAA', 'B-BBB', 'C-CCC']);
-    expect(visibleOnWall(notes, 'all', [])).toHaveLength(4);
+    expect(visibleOnWall(notes, 'all', [])).toHaveLength(5);
   });
   it('always keeps the note being edited', () => {
-    expect(visibleOnWall([...notes, note('E-EEE', '')], 'text', ['seer'], 'E-EEE').map((n) => n.id)).toContain('E-EEE');
+    expect(visibleOnWall([...notes, makeNote('E-EEE', '')], 'text', ['seer'], 'E-EEE').map((n) => n.id)).toContain('E-EEE');
+  });
+});
+
+describe('images', () => {
+  it('hasImages and imageCount', () => {
+    expect(hasImages(notes[0])).toBe(false);
+    expect(hasImages(notes[3])).toBe(true);
+    expect(imageCount(notes)).toBe(4);
+    expect(imageCount([])).toBe(0);
+  });
+  it('photosOf flattens note by note, images in position order, with k/n per note', () => {
+    const items = photosOf(notes, []);
+    expect(items.map((it) => [it.image.id, it.note.id, it.k, it.n])).toEqual([
+      ['D-DDD', 'D-DDD', 1, 3],
+      ['E-EE1', 'D-DDD', 2, 3],
+      ['F-FF2', 'D-DDD', 3, 3],
+      ['G-GGG', 'G-GGG', 1, 1],
+    ]);
+    expect(items[1].note).toBe(notes[3]);
+  });
+  it('photosOf applies tag filters to the owning note', () => {
+    expect(photosOf(notes, ['seer']).map((it) => it.image.id)).toEqual(['D-DDD', 'E-EE1', 'F-FF2']);
+    expect(photosOf(notes, ['nope'])).toEqual([]);
   });
 });
 
@@ -48,22 +59,23 @@ describe('modes and header', () => {
     expect(headingFor('images', ['seer'])).toBe('Photos.');
     expect(headingFor('text', ['seer', 'ux'])).toBe('#seer #ux');
   });
-  it('builds the count line per mode', () => {
+  it('builds the count line per mode: photos count images, the rest count notes', () => {
     const textVis = visibleOnWall(notes, 'text', []);
-    expect(countLineFor('text', [], notes, textVis, [])).toBe('3 notes, 1 photo notes hidden.');
-    expect(countLineFor('all', [], notes, notes, [])).toBe('4 notes, 1 with photos.');
-    expect(countLineFor('images', [], notes, [], photosOf(notes, []))).toBe('1 photos.');
+    expect(countLineFor('text', [], notes, textVis, [])).toBe('3 notes, 2 photo notes hidden.');
+    expect(countLineFor('all', [], notes, notes, [])).toBe('5 notes, 2 with photos.');
+    expect(countLineFor('images', [], notes, [], photosOf(notes, []))).toBe('4 photos.');
     const tagged = visibleOnWall(notes, 'all', ['ux']);
-    expect(countLineFor('all', ['ux'], notes, tagged, [])).toBe('3 of 4 notes.');
+    expect(countLineFor('all', ['ux'], notes, tagged, [])).toBe('4 of 5 notes.');
   });
   it('knows which notes a mode hides', () => {
     expect(isHiddenByMode(notes[0], 'images')).toBe(true);
     expect(isHiddenByMode(notes[3], 'text')).toBe(true);
     expect(isHiddenByMode(notes[0], 'text')).toBe(false);
     expect(isHiddenByMode(notes[3], 'all')).toBe(false);
+    expect(isHiddenByMode(undefined, 'text')).toBe(false);
   });
   it('finds the last edited note by updated_at', () => {
-    const list = [note('A-AAA', 'x', { updated: '2026-10-29T10:00:00Z' }), note('B-BBB', 'y', { updated: '2026-10-30T09:00:00Z' })];
+    const list = [makeNote('A-AAA', 'x', { updated: '2026-10-29T10:00:00Z' }), makeNote('B-BBB', 'y', { updated: '2026-10-30T09:00:00Z' })];
     expect(lastEdited(list)?.id).toBe('B-BBB');
     expect(lastEdited([])).toBeNull();
   });

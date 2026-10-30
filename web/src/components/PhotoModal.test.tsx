@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { PhotoModal, stepIndex, stripTags } from './PhotoModal';
-import type { ImageNote } from './NoteImage';
+import { PhotoModal, metaLine, stepIndex, stripTags } from './PhotoModal';
+import { photosOf } from '../lib/filter';
+import { makeNote } from '../testing/fixtures';
 
 vi.mock('../lib/dates', () => ({ relativeDate: () => 'Today' }));
 
@@ -26,18 +27,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const photo = (id: string, body: string, tags: string[]): ImageNote => ({
-  id,
-  body,
-  tags,
-  created_at: '2026-10-30T01:00:00.000Z',
-  image: { width: 600, height: 400, available: true, host: null },
-});
-const photos = [
-  photo('K-F07', 'River below the old bridge, 6:40am. Fog lifting. #walks #film', ['walks', 'film']),
-  photo('D-P90', 'Pug on the tram again. #walks', ['walks']),
-  photo('B-Y66', '#film #kitchen', ['film', 'kitchen']),
-];
+// 4 items: K-F07 (2 images: K-F07, M-N11), D-P90 (1), B-Y66 (1).
+const items = photosOf(
+  [
+    makeNote('K-F07', 'River below the old bridge, 6:40am. Fog lifting. #walks #film', { images: ['K-F07', 'M-N11'] }),
+    makeNote('D-P90', 'Pug on the tram again. #walks', { images: ['D-P90'] }),
+    makeNote('B-Y66', '#film #kitchen', { images: ['B-Y66'] }),
+  ],
+  [],
+);
 
 function key(k: string) {
   act(() => {
@@ -45,7 +43,12 @@ function key(k: string) {
   });
 }
 
-describe('stepIndex / stripTags', () => {
+function modal(index: number, over: Partial<React.ComponentProps<typeof PhotoModal>> = {}) {
+  render(<PhotoModal items={items} index={index} onIndex={() => {}} onClose={() => {}} copiedId={null} onCopy={() => {}} {...over} />);
+  return document.querySelector('[data-modal="photo"]') as HTMLElement;
+}
+
+describe('stepIndex / stripTags / metaLine', () => {
   it('wraps both ways', () => {
     expect(stepIndex(0, -1, 3)).toBe(2);
     expect(stepIndex(2, 1, 3)).toBe(0);
@@ -58,28 +61,44 @@ describe('stepIndex / stripTags', () => {
     expect(stripTags('#film #kitchen')).toBe('');
     expect(stripTags('learn C# and a#b #todo')).toBe('learn C# and a#b');
   });
+  it('shows k/n only for multi-image notes', () => {
+    expect(metaLine(2, 7, { k: 2, n: 3 }, 'Today')).toBe('3 / 7  2/3  Today');
+    expect(metaLine(0, 1, { k: 1, n: 1 }, 'Today')).toBe('1 / 1  Today');
+  });
 });
 
 describe('PhotoModal', () => {
-  it('shows text without tags, tag chips, id and meta', () => {
-    render(<PhotoModal photos={photos} index={0} onIndex={() => {}} onClose={() => {}} copiedId={null} onCopy={() => {}} />);
-    const modal = document.querySelector('[data-modal="photo"]')!;
-    expect(modal.querySelector('p')!.textContent).toBe('River below the old bridge, 6:40am. Fog lifting.');
-    expect(modal.textContent).toContain('#walks');
-    expect(modal.textContent).toContain('#film');
-    expect(modal.textContent).toContain('K-F07');
-    expect(modal.querySelector('[data-meta]')!.textContent).toBe('1 / 3  Today');
-    expect(modal.querySelector('img')!.getAttribute('src')).toBe('/api/notes/K-F07/display');
+  it('shows the note text without tags, tag chips, the note id, and meta with k/n', () => {
+    const m = modal(0);
+    expect(m.querySelector('p')!.textContent).toBe('River below the old bridge, 6:40am. Fog lifting.');
+    expect(m.textContent).toContain('#walks');
+    expect(m.textContent).toContain('#film');
+    expect(m.textContent).toContain('K-F07');
+    expect(m.querySelector('[data-meta]')!.textContent).toBe('1 / 4  1/2  Today');
+    expect(m.querySelector('img')!.getAttribute('src')).toBe('/api/images/K-F07/display');
   });
 
-  it('arrow keys step with wraparound; Escape closes and does not reach document listeners', () => {
+  it('the second image of a note shows that image, the same note, and 2/2', () => {
+    const m = modal(1);
+    expect(m.querySelector('img')!.getAttribute('src')).toBe('/api/images/M-N11/display');
+    expect(m.querySelector('p')!.textContent).toBe('River below the old bridge, 6:40am. Fog lifting.');
+    expect(m.querySelector('[data-meta]')!.textContent).toBe('2 / 4  2/2  Today');
+  });
+
+  it('a single-image note has no k/n', () => {
+    const m = modal(2);
+    expect(m.querySelector('[data-meta]')!.textContent).toBe('3 / 4  Today');
+    expect(m.textContent).toContain('D-P90');
+  });
+
+  it('arrow keys step image by image with wraparound; Escape closes and does not reach document listeners', () => {
     const onIndex = vi.fn();
     const onClose = vi.fn();
     const docEsc = vi.fn();
     document.addEventListener('keydown', docEsc);
-    render(<PhotoModal photos={photos} index={0} onIndex={onIndex} onClose={onClose} copiedId={null} onCopy={() => {}} />);
+    modal(0, { onIndex, onClose });
     key('ArrowLeft');
-    expect(onIndex).toHaveBeenLastCalledWith(2);
+    expect(onIndex).toHaveBeenLastCalledWith(3);
     key('ArrowRight');
     expect(onIndex).toHaveBeenLastCalledWith(1);
     key('Escape');
@@ -90,35 +109,35 @@ describe('PhotoModal', () => {
     document.removeEventListener('keydown', docEsc);
   });
 
-  it('wraps forward from the last photo via the Next button', () => {
+  it('Next steps from the last image of a note to the next note, and wraps from the end', () => {
     const onIndex = vi.fn();
-    render(<PhotoModal photos={photos} index={2} onIndex={onIndex} onClose={() => {}} copiedId={null} onCopy={() => {}} />);
-    act(() => {
-      (document.querySelector('[data-tip="Next"]') as HTMLElement).click();
-    });
-    expect(onIndex).toHaveBeenCalledWith(0);
+    modal(1, { onIndex });
+    act(() => (document.querySelector('[data-tip="Next"]') as HTMLElement).click());
+    expect(onIndex).toHaveBeenLastCalledWith(2);
+    act(() => root!.render(<PhotoModal items={items} index={3} onIndex={onIndex} onClose={() => {}} copiedId={null} onCopy={() => {}} />));
+    act(() => (document.querySelector('[data-tip="Next"]') as HTMLElement).click());
+    expect(onIndex).toHaveBeenLastCalledWith(0);
   });
 
   it('backdrop click closes; clicks on the image, panel and prev do not', () => {
     const onClose = vi.fn();
-    render(<PhotoModal photos={photos} index={1} onIndex={() => {}} onClose={onClose} copiedId={null} onCopy={() => {}} />);
-    const modal = document.querySelector('[data-modal="photo"]') as HTMLElement;
-    act(() => (modal.querySelector('img') as HTMLElement).click());
-    act(() => (modal.querySelector('p') as HTMLElement).click());
-    act(() => (modal.querySelector('[data-tip="Previous"]') as HTMLElement).click());
+    const m = modal(1, { onClose });
+    act(() => (m.querySelector('img') as HTMLElement).click());
+    act(() => (m.querySelector('p') as HTMLElement).click());
+    act(() => (m.querySelector('[data-tip="Previous"]') as HTMLElement).click());
     expect(onClose).not.toHaveBeenCalled();
-    act(() => modal.click());
+    act(() => m.click());
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('copy calls onCopy, "copied" follows copiedId, and full screen opens /full/<id>', () => {
+  it('copy copies the note id, "copied" follows copiedId, and full screen opens /full/<imageId>', () => {
     const onCopy = vi.fn();
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
-    render(<PhotoModal photos={photos} index={1} onIndex={() => {}} onClose={() => {}} copiedId={'D-P90'} onCopy={onCopy} />);
+    const m = modal(1, { copiedId: 'K-F07', onCopy });
     act(() => (document.querySelector('[data-tip="Copy ID"]') as HTMLElement).click());
-    expect(onCopy).toHaveBeenCalledWith('D-P90');
-    expect(document.querySelector('[data-modal="photo"]')!.textContent).toContain('copied');
+    expect(onCopy).toHaveBeenCalledWith('K-F07');
+    expect(m.textContent).toContain('copied');
     act(() => (document.querySelector('[data-tip="Show full screen"]') as HTMLElement).click());
-    expect(open).toHaveBeenCalledWith('/full/D-P90', '_blank', 'noopener');
+    expect(open).toHaveBeenCalledWith('/full/M-N11', '_blank', 'noopener');
   });
 });

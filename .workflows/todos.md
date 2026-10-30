@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 5
-- Completed: 28
+- Completed: 29
 
 ---
 
@@ -41,16 +41,6 @@
   - **Satisfies**: R3, R5 — Delete icon on card/editor/modal with quiet undo; "Deleted." bin view with restore and inline-confirmed delete forever; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
   - **Depends on**: P1-NOTES-A025
   - **Plan**: `.workflows/plan/P1-NOTES-A026.md`
-
-- [ ] **P1-NOTES-A028** Phase 6: Web on `images[]`: cards, gallery, modal stepping, full-screen by image
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `web/src/types.ts`, `web/src/api.ts` (URLs by image id), `web/src/components/{NoteImage,NoteCard,Gallery,PhotoModal}.tsx`, `web/src/fullscreen/FullscreenApp.tsx`, `web/src/lib/filter.ts` (`hasImages`, `imageCount`, `photosOf`), `web/src/App.tsx` (photo count, empty rule, `<Gallery items>`), `styles.css` (`.card-cover`, `.card-count`), `web/src/testing/fixtures.ts` (new) and tests. Exit: wall cover + count, gallery tile per image, modal steps image by image then across notes with `k/n`, full-screen by image id; grep gates empty.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 6 of 11)
-  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A024
-  - **Plan**: `.workflows/plan/P1-NOTES-A028.md`
 
 - [ ] **P1-NOTES-A029** Phase 7: Web big editor modal + attach on drop/paste
   - **Difficulty**: HARD
@@ -115,6 +105,21 @@
   - **Method**: /implement
   - **Files**: src/http/reveal.ts, src/http/app.ts, tests/unit/reveal.test.ts, tests/integration/reveal.int.test.ts
   - **Drift**: none — app.ts hunks placed by anchor text as planned; locateImage/sameOriginOnly/normalizeId/imageHarness matched phase 2's tree
+
+- [x] **P1-NOTES-A028** Phase 6: Web on `images[]`: cards, gallery, modal stepping, full-screen by image
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `web/src/types.ts`, `web/src/api.ts` (URLs by image id), `web/src/components/{NoteImage,NoteCard,Gallery,PhotoModal}.tsx`, `web/src/fullscreen/FullscreenApp.tsx`, `web/src/lib/filter.ts` (`hasImages`, `imageCount`, `photosOf`), `web/src/App.tsx` (photo count, empty rule, `<Gallery items>`), `styles.css` (`.card-cover`, `.card-count`), `web/src/testing/fixtures.ts` (new) and tests. Exit: wall cover + count, gallery tile per image, modal steps image by image then across notes with `k/n`, full-screen by image id; grep gates empty.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 6 of 11)
+  - **Satisfies**: R1, R5 — Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A024
+  - **Plan**: `.workflows/plan/P1-NOTES-A028.md`
+  - **Completed**: 2026-10-30 16:39
+  - **Method**: /do
+  - **Files**: web/src/types.ts, web/src/api.ts, web/src/App.tsx, web/src/App.test.tsx, web/src/styles.css, web/src/components/NoteImage.tsx, web/src/components/NoteImage.test.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/Gallery.tsx, web/src/components/Gallery.test.tsx, web/src/components/PhotoModal.tsx, web/src/components/PhotoModal.test.tsx, web/src/components/DropOverlay.test.tsx, web/src/fullscreen/FullscreenApp.tsx, web/src/fullscreen/FullscreenApp.test.tsx, web/src/lib/filter.ts, web/src/lib/filter.test.tsx, web/src/testing/fixtures.ts
+  - **Drift**: none — every quoted hunk matched the tree (phase 11 already landed; App.tsx hunks applied by content)
+  - **Decided**: Grep gate 1 (`\.image\b`) also matches PhotoItem.image (`it.image`) that the phase's own code blocks introduce → gate judged by its intent, narrowed to `(note|n)\.image\b`, which is empty (rung 3: phase code blocks)
 
 - [x] **P1-NOTES-A024** Phase 2: Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile
   - **Difficulty**: HARD
