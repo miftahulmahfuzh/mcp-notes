@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 13:40:00
+**Last Updated**: 2026-10-30 13:37:00
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 13
+- Completed: 14
 
 ---
 
@@ -31,6 +31,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A013** Phase 2: expense-tracking curated tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/expenses/{curated,categories,dates,queries}.ts`, `tests/unit/connectors/expenses.{dates,categories,queries}.test.ts`, `tests/integration/connectors/expenses.curated.int.test.ts`. Exit: `expenses_spending` (`from`/`to`, optional `categories`, `top` → total, by category with Indonesian label, by day, by ISO week Monday–Sunday with partial flags, largest items), `expenses_get` (`id` → one expense group with items, photo count/urls, note, raw text), `expenses_months` (`months`, `to_month`, `categories` → monthly totals, zero-filled) return correct integers on seeded data; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p2/docs/plans/CONNECTORS_PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (curated, WIB / integer rupiah); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A013.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /implement
+  - **Files**: src/connectors/expenses/curated.ts, src/connectors/expenses/categories.ts, src/connectors/expenses/dates.ts, src/connectors/expenses/queries.ts, tests/unit/connectors/expenses.dates.test.ts, tests/unit/connectors/expenses.categories.test.ts, tests/unit/connectors/expenses.queries.test.ts, tests/integration/connectors/expenses.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A013.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Plan index names worktree connectors / branch feature/connectors; session is in connectors-p2 on phase-2-connectors → proceed on phase-2-connectors (coordinator orch-connectors assigned this branch explicitly; rung 5 task text)
+    - TaskID → P1-NOTES-A013 as assigned by the coordinator; only phase 2's task created in this worktree (tie-break: narrower blast radius, same as phase 1)
+    - Code applied verbatim from the plan's eight code blocks (rung 3); no drift against phase 1's types.ts/rows.ts/tools.ts/harness.ts or ~/expense-tracking's drizzle schema
 
 - [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
   - **Difficulty**: EASY
