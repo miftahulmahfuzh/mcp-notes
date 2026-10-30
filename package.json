@@ -58,6 +58,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:int": "bash scripts/test-int.sh",
+    "test:live": "CHAT_LIVE_TEST=1 bash scripts/test-int.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check"

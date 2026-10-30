@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 11:21:12
-**Total Active Tasks**: 1
+**Last Updated**: 2026-10-30 11:29:05
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 11
+- Completed: 12
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `deploy/notesd.service` (`NOTESD_CLAUDE_BIN`, `HOME`), `scripts/install.sh` (resolved claude path, credential/LLM_* warnings, chat smoke in `verify`), `vitest.config.ts` + `package.json` `test:live`, `tests/live/chat.live.test.ts` (real Claude + GLM message), `docs/INSTALL.md` (6 files); links `.env.local` into the worktree, runs install.sh from the worktree and the acceptance prompts against the installed daemon; re-running install.sh from `~/mcp-notes` happens after landing. Exit: the installed daemon answers each acceptance prompt for real, and the live suite passes.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 4 of 4)
-  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R5 — Daemon fit: unit + install.sh give the SDK `claude` and the login, verified through the installed daemon; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A009, P1-NOTES-A010
-  - **Plan**: `.workflows/plan/P1-NOTES-A011.md`
 
 ### [P2] Medium
 
@@ -42,6 +32,21 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `deploy/notesd.service` (`NOTESD_CLAUDE_BIN`, `HOME`), `scripts/install.sh` (resolved claude path, credential/LLM_* warnings, chat smoke in `verify`), `vitest.config.ts` + `package.json` `test:live`, `tests/live/chat.live.test.ts` (real Claude + GLM message), `docs/INSTALL.md` (6 files); links `.env.local` into the worktree, runs install.sh from the worktree and the acceptance prompts against the installed daemon; re-running install.sh from `~/mcp-notes` happens after landing. Exit: the installed daemon answers each acceptance prompt for real, and the live suite passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R5 — Daemon fit: unit + install.sh give the SDK `claude` and the login, verified through the installed daemon; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A009, P1-NOTES-A010
+  - **Plan**: `.workflows/plan/P1-NOTES-A011.md`
+  - **Completed**: 2026-10-30 11:29
+  - **Method**: /do
+  - **Files**: deploy/notesd.service, scripts/install.sh, vitest.config.ts, package.json, tests/live/chat.live.test.ts, docs/INSTALL.md
+  - **Drift**:
+    - None in code. Wall SSE note event op is 'updated' on the wire (plan text said 'update'); A2 matched on it.
+    - Owner's Neon store had zero live notes before acceptance (only two image notes 3-3XZ, 9-C0C soft-deleted at 10:23 local, before this phase). A1 correctly answered 'no #seer notes'.
 - [x] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
   - **Difficulty**: HARD
   - **Type**: Feature
