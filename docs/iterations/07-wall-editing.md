@@ -1,4 +1,4 @@
-# Iteration 7 — Wall editing: big editor, several images per note, recycle bin, open file location, collapsible answer panel
+# Iteration 7 — Wall editing: big editor, several images per note, recycle bin, open file location, collapsible answer panel, multi-line chat bar
 
 One `/analyze` run. Everything below the line is the owner's request, verbatim input for
 /analyze Step 0.
@@ -117,6 +117,23 @@ R6 — Collapsible answer panel. Added by the owner after this brief was first w
   - Used-note outlines and dimming on the wall stay while collapsed, since the answer is still
     the current one.
 
+R7 — Multi-line chat bar. Added by the owner after this brief was first written:
+
+> also, make it so the query bar can be added newlines, for example typing "Shift+Enter" will
+> create a newline instead of sending the query to backend
+
+  - The chat bar's single-line input becomes a textarea. Enter sends; Shift+Enter inserts a
+    newline. Enter while an IME composition is active does not send.
+  - The pill grows upward with its content, one line at a time, up to about six lines, then
+    scrolls inside. It keeps its pill shape, colours and the round send button pinned to the
+    bottom right. After sending it shrinks back to one line. The answer panel stays clear of the
+    taller bar (it sits above it, whatever its height).
+  - Pasted multi-line text keeps its newlines. The message reaches `/api/chat` with its newlines
+    intact.
+  - The answer panel's header shows the query on one line: newlines become spaces and a long
+    query is cut with an ellipsis (the collapsed line from R6 included). The full query is in the
+    header's tooltip.
+
 R5 — Tests. Unit and component tests for the editor (save on blur/close, attach on drop and
 paste, empty-on-close rule, mode switch), the bin (restore, undo, delete-forever confirm), and
 the reveal button's visibility rules. Integration tests for the migration (an iteration-6
@@ -140,6 +157,8 @@ Acceptance (in the browser at http://localhost:7317, and through `/n`):
   - /n attach ~/Pictures/Screenshots/<file>.png to note <id>
   - Ask in the chat bar → collapse while it streams → the line shows "<query> · <status>" and
     then "<query> · claude" → click it → the full answer is there.
+  - Type two lines in the chat bar with Shift+Enter between them → the bar grows to two lines →
+    Enter sends both lines as one message → the bar is one line again.
 
 Out of scope: rich text or markdown rendering in notes, reordering images by drag (order is
 attach order; removing and restoring keeps position), image editing or cropping, a bin auto-purge
