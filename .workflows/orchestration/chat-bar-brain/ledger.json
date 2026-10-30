@@ -3,7 +3,7 @@
   "coordinator": "orch-chat-bar-brain",
   "coordinator_session_id": "a947848f-8658-4bf1-964e-23e26768b399",
   "created": "2026-10-30T04:10:38+00:00",
-  "note": "Gate (plan_graph.py) on worktree index docs/plans/CHAT_BAR_BRAIN_PLAN.md: exit 0, no file written by two phases. Open Questions: none (Decisions table settled). Wave 0 = phase 1 alone in the set worktree. | p1 426bddf verified: code files exactly phase 1's owned set; extras are bookkeeping (todos, P1-NOTES-A008..A011 plans, TaskID column). | Wave 1 (p2 server, p3 web/) runs in the SHARED set worktree: gate exit 0, disjoint write sets; rung 6 (gate exit 0 -> shared, as notes-spine-images-ui).",
+  "note": "Gate (plan_graph.py) on worktree index docs/plans/CHAT_BAR_BRAIN_PLAN.md: exit 0, no file written by two phases. Open Questions: none (Decisions table settled). Wave 0 = phase 1 alone in the set worktree. | p1 426bddf verified: code files exactly phase 1's owned set; extras are bookkeeping (todos, P1-NOTES-A008..A011 plans, TaskID column). | Wave 1 (p2 server, p3 web/) runs in the SHARED set worktree: gate exit 0, disjoint write sets; rung 6 (gate exit 0 -> shared, as notes-spine-images-ui). | p3 c805206 verified: 6 web/src files + bookkeeping (todos, package_readme, index); committed via private index, p2's package.json/lock excluded.",
   "phases": [
     {
       "card": null,
@@ -49,23 +49,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "c8052063277cda3e95333d4292b119ddd2514435",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "useChat status/brain + close() clears thread, .answer-status caption span, App passes props; no ladder decisions, no drift",
       "package": "web/src",
       "plan": ".workflows/plan/chat-bar-brain/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T11:19:46+07:00",
       "satisfies": [
         "R2",
         "R3",
         "R4"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A010",
       "title": "Panel: status caption, brain label, thread reset on dismiss"
     },
     {
@@ -94,6 +94,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-bar-brain",
-  "updated": "2026-10-30T04:15:44+00:00",
+  "updated": "2026-10-30T11:19:58+07:00",
+  "verified_at": "2026-10-30T11:19:58+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-bar-brain"
 }
