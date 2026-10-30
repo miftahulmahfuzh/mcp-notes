@@ -3,6 +3,7 @@ import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, Trash, X } from '@phosph
 import type { Note, PhotoItem } from '../types';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
+import { RevealButton } from './RevealButton';
 import './PhotoModal.css';
 
 /** (i + d) modulo len, wrapping both ways. -1 when there is nothing to show. */
@@ -132,6 +133,7 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
           <button type="button" className="pm-btn" data-tip="Copy ID" aria-label="Copy ID" onClick={copy} style={toolBtn}>
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
+          <RevealButton image={image} className="pm-btn" style={toolBtn} />
           <button type="button" className="pm-btn" data-tip="Show full screen" aria-label="Show full screen" onClick={full} style={toolBtn}>
             <ArrowsOut weight="duotone" />
           </button>

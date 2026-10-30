@@ -4,6 +4,7 @@ import type { Note } from '../types';
 import { fontSizeFor, letterSpacingFor, rowsFor, segmentBody } from '../lib/text';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
+import { RevealButton } from './RevealButton';
 
 export interface NoteCardProps {
   note: Note;
@@ -117,6 +118,7 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
           <span className={copied ? 'copied on' : 'copied'}>copied</span>
+          {note.images.length > 0 && <RevealButton image={note.images[0]} />}
           <span className="card-date">{relativeDate(note.created_at, now)}</span>
           <button
             type="button"

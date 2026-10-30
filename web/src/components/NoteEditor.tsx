@@ -3,6 +3,7 @@ import { Check, Copy, Trash, X } from '@phosphor-icons/react';
 import type { Note, NoteImage as NoteImageData } from '../types';
 import { tagsOf } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
+import { RevealButton } from './RevealButton';
 import './NoteEditor.css';
 
 export interface NoteEditorProps {
@@ -132,6 +133,7 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             {note.images.map((img) => (
               <div key={img.id} className="ed-thumb" data-image={img.id} style={{ aspectRatio: aspectOf(img).css }}>
                 <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <RevealButton image={img} className="ed-rm ed-reveal" />
                 <button type="button" className="ed-rm" data-tip="Remove image" aria-label="Remove image" onClick={() => onRemoveImage(img)}>
                   <X weight="duotone" />
                 </button>

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 33
+- Blocked: 0
+- Completed: 34
 
 ---
 
@@ -22,24 +22,14 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `web/src/hooks/useCapabilities.ts`, `web/src/components/RevealButton.tsx` (+ tests, new), `api.ts` (`Capabilities`, `fetchCapabilities`, `revealImage`), mount points in `NoteCard`, `PhotoModal`, `NoteEditor` (`.ed-reveal` rule in `NoteEditor.css`), `RevealMounts.test.tsx`; not server/`App.tsx`/`Gallery.tsx`/`styles.css`. Exit: visibility rules tested (caps false -> none; unavailable image -> none; both true -> icon, click POSTs); icon in card meta, modal toolbar and editor strip.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 9 of 11)
-  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
-  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A031.md`
-
 - [ ] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns `README.md` (photos, gallery, modal, editor, bin, reveal, answer panel, chat bar, API/storage/MCP tables), `claude/skills/n/SKILL.md`, `docs/INSTALL.md` (0002 migrate step), `npm run db:migrate` against Neon with before/after verification, `npm run build`; no source changes (defects fixed in the owning phase). Exit: full suite + build green; Neon `note_images` has one row per legacy image (matches `notes where image_path is not null`, minus listed late ingests) with identical metadata; installed daemon untouched.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 10 of 11)
   - **Satisfies**: R5, R1 — Unit/component + integration tests for all of the above; README photo/gallery/modal text updated; Several images per note: per-image table, lossless migration, per-image dedupe, wire `images[]`, HTTP + MCP attach and soft remove of one image
-  - **Depends on**: P1-NOTES-A031, P1-NOTES-A033
+  - **Depends on**: P1-NOTES-A031 (satisfied), P1-NOTES-A033 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A032.md`
 
 ### [P2] Medium
@@ -51,6 +41,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A031** Phase 9: Web reveal button + capabilities
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/hooks/useCapabilities.ts`, `web/src/components/RevealButton.tsx` (+ tests, new), `api.ts` (`Capabilities`, `fetchCapabilities`, `revealImage`), mount points in `NoteCard`, `PhotoModal`, `NoteEditor` (`.ed-reveal` rule in `NoteEditor.css`), `RevealMounts.test.tsx`; not server/`App.tsx`/`Gallery.tsx`/`styles.css`. Exit: visibility rules tested (caps false -> none; unavailable image -> none; both true -> icon, click POSTs); icon in card meta, modal toolbar and editor strip.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md` (phase 9 of 11)
+  - **Satisfies**: R4, R5 — Folder icon on photos runs `explorer.exe /select,<wslpath -w>` via notesd; own-Origin only; only when local + WSL interop; Unit/component + integration tests for all of the above; README photo/gallery/modal text updated
+  - **Depends on**: P1-NOTES-A027 (satisfied), P1-NOTES-A030 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A031.md`
+  - **Completed**: 2026-10-30 17:07
+  - **Method**: /do
+  - **Files**: web/src/api.ts, web/src/components/NoteCard.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.tsx, web/src/components/PhotoModal.tsx, web/src/components/RevealButton.tsx, web/src/components/RevealButton.test.tsx, web/src/components/RevealMounts.test.tsx, web/src/hooks/useCapabilities.ts, web/src/hooks/useCapabilities.test.tsx
+  - **Drift**: RevealMounts.test.tsx: NoteCardProps now requires onExpand (phase 7); added onExpand: vi.fn() to the card props literal so the `as NoteCardProps` cast typechecks (plan Step 9 anticipated adding required props).
+    No existing test needed a resetCapabilitiesForTests prime; no fetch-count assertion broke.
+  - **Verified**: typecheck, npm test (766 tests), build:web, test:int (294 tests)
 
 - [x] **P1-NOTES-A030** Phase 8: Web delete, undo, recycle bin view
   - **Difficulty**: HARD

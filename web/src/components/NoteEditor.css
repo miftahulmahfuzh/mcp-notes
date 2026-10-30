@@ -17,3 +17,6 @@
 .ed-rm { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 999px; background: rgba(18, 18, 17, .72); color: var(--fg); font-size: 13px; cursor: pointer; display: grid; place-items: center; opacity: 0; transition: opacity .2s; }
 .ed-thumb:hover .ed-rm, .ed-rm:focus-visible { opacity: 1; }
 .ed-rm:hover { background: var(--fg); color: var(--bg); }
+
+/* Phase 9: "Show in Explorer" sits left of the remove icon (26px button + 4px gap). */
+.ed-reveal { right: 34px; }

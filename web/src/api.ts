@@ -154,3 +154,22 @@ export async function purgeImage(imageId: string): Promise<PurgeResult> {
   const res = await check(await fetch(`/api/bin/images/${enc(imageId)}`, { method: 'DELETE' }));
   return (await res.json()) as PurgeResult;
 }
+
+/** Phase 9: what this notesd can do on this machine (`GET /api/capabilities`). */
+export interface Capabilities {
+  /** True only when notesd runs under WSL with interop and can launch explorer.exe. */
+  reveal: boolean;
+}
+
+/** Phase 9: `GET /api/capabilities` → `{ reveal }`. Anything other than `reveal: true` reads as false. */
+export async function fetchCapabilities(): Promise<Capabilities> {
+  const res = await check(await fetch('/api/capabilities'));
+  const j: unknown = await res.json();
+  const reveal = !!j && typeof j === 'object' && (j as { reveal?: unknown }).reveal === true;
+  return { reveal };
+}
+
+/** Phase 9: `POST /api/images/<imageId>/reveal` → 202. notesd spawns Explorer and does not wait for it. */
+export async function revealImage(imageId: string): Promise<void> {
+  await check(await fetch(`/api/images/${enc(imageId)}/reveal`, { method: 'POST' }));
+}
