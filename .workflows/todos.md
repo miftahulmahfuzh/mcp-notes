@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 23
+- Completed: 24
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A022** Phase 6: Live test, docs, Neon migration + first backfill
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `tests/live/embeddings.live.test.ts`, `vitest.config.ts`, `package.json` (`test:live:embeddings`), README (all but phase 1's sentence), `docs/INSTALL.md`, `claude/skills/n/SKILL.md`; `docs/ROADMAP.md` checked, no change; may retune `src/search/blend.ts` constants if the live run demands it; runs `npm run db:migrate` against Neon and `npm run embed:backfill`. Exit: live test passes once against OpenRouter (one request) with both usage examples ranked first by raw similarity and through the blend; Neon has `vector` 0.8.6, `note_embeddings` and its HNSW index; backfill ends with `done: … 0 pending` and the independent query agrees.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 6 of 6)
-  - **Satisfies**: R6 — Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
-  - **Depends on**: P1-NOTES-A019, P1-NOTES-A020, P1-NOTES-A021
-  - **Plan**: `.workflows/plan/P1-NOTES-A022.md`
 
 ### [P2] Medium
 
@@ -41,6 +31,27 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A022** Phase 6: Live test, docs, Neon migration + first backfill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `tests/live/embeddings.live.test.ts`, `vitest.config.ts`, `package.json` (`test:live:embeddings`), README (all but phase 1's sentence), `docs/INSTALL.md`, `claude/skills/n/SKILL.md`; `docs/ROADMAP.md` checked, no change; may retune `src/search/blend.ts` constants if the live run demands it; runs `npm run db:migrate` against Neon and `npm run embed:backfill`. Exit: live test passes once against OpenRouter (one request) with both usage examples ranked first by raw similarity and through the blend; Neon has `vector` 0.8.6, `note_embeddings` and its HNSW index; backfill ends with `done: … 0 pending` and the independent query agrees.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R6 — Unit + integration tests with a deterministic fake embedder on the pgvector container; opt-in live test `EMBEDDINGS_LIVE_TEST=1`
+  - **Depends on**: P1-NOTES-A019, P1-NOTES-A020, P1-NOTES-A021
+  - **Plan**: `.workflows/plan/P1-NOTES-A022.md`
+  - **Completed**: 2026-10-30 15:28
+  - **Method**: /do
+  - **Files**: tests/live/embeddings.live.test.ts, vitest.config.ts, package.json, src/search/blend.ts, README.md, docs/INSTALL.md, claude/skills/n/SKILL.md
+  - **Drift**:
+    - None in code. main gained web/src/styles.css (079c284) after the branch point; the branch itself changes nothing under web/.
+  - **Decided**:
+    - Headline acceptance: rank 1 vs 'must come back' → 'must come back': each example has raw cosine >= BLEND.minSimilarity, raw rank <= 5, and is on the default hybrid page (MCP_DEFAULT_LIMIT=50) (coordinator, rungs 1 and 4: brief's Why)
+    - Literal hit vs closer meaning-only note → phase 4 invariant stands, literal text hit ranks first; textFloor, fixture, phase 4 tests untouched (coordinator, rungs 1 and 4)
+    - BLEND.minSimilarity 0.3 → 0.22: real-model labelled positive seer-incident scored 0.240 and was dropped; live blend MRR 0.708 → 0.733; phase 4 unit+int tests still green (plan Step 8 retune allowance)
+    - Live test has no database: 'hybrid search page' is checked as the in-memory rankCandidates ranking over real vectors, truncated to MCP_DEFAULT_LIMIT (rung 3: plan says the live test needs no Docker/DB)
+
 
 - [x] **P1-NOTES-A021** Phase 5: `related` tool
   - **Difficulty**: NORMAL

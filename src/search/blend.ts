@@ -45,10 +45,12 @@ export const BLEND: BlendTuning = {
   // Closeness in meaning, the main signal for notes that share no word with the query. Equal
   // to the floor, so a very close meaning match can pass a weak literal hit but never the best one.
   vector: 0.6,
-  // Cosine floor for meaning-only notes. text-embedding-3-small scores unrelated short notes
-  // around 0.1-0.25 and paraphrases above ~0.35; below this a meaning-only candidate is noise
-  // and is dropped instead of padding every result with the K nearest notes.
-  minSimilarity: 0.3,
+  // Cosine floor for meaning-only notes; below it a meaning-only candidate is noise and is
+  // dropped instead of padding every result with the K nearest notes. Tuned on the real model,
+  // 2026-10-30 (tests/live/embeddings.live.test.ts): the lowest labelled positive with no shared
+  // word scored 0.240 (seer-incident for "have we met this kind of accidents before?"), so 0.3
+  // dropped it; 0.22 keeps it. Live blend MRR 0.708 at 0.3, 0.733 at 0.22.
+  minSimilarity: 0.22,
   // The note carries a tag the query names. Smaller than `vector`: a tag is shared by many
   // notes, so it says "same area", not "same thing".
   tag: 0.25,

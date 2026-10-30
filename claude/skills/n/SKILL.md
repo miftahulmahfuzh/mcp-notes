@@ -28,12 +28,14 @@ apps' tools are the source of truth.
 
 The spine tools are `create`, `get` (one or several ids), `update` (full body replace),
 `append`, `delete` (soft), `restore`, `list` (tag any/all filters, created/updated date range,
-newest first, limit + cursor), `search` (full text + tag + date filters, ranked), `tags` (every
-tag with count and last-used date), `revisions` and `revert`. If the server also offers image
-tools (for example `create_image` from a local file path, `view_images` to see a note's picture,
-and `has_image` / taken-date filters on `list` and `search`), use them as described under
-Images. Always follow each tool's own schema and description for parameter names and formats;
-they win over anything written here.
+newest first, limit + cursor), `search` (ranked by meaning and by words, with tag and date
+filters; `mode: "text"` for exact words only), `related` (the notes nearest in meaning to one
+note id, with a similarity score), `tags` (every tag with count and last-used date),
+`revisions` and `revert`. If the server also offers image tools (for example `create_image`
+from a local file path, `view_images` to see a note's picture, and `has_image` / taken-date
+filters on `list` and `search`), use them as described under Images. Always follow each tool's
+own schema and description for parameter names and formats; they win over anything written
+here.
 
 ## Saving
 
@@ -63,8 +65,13 @@ and `origin`, then reply with the new id and a two-line summary of what it holds
 - A note id in the request (`A-B32`, `ab32`) → `get` it.
 - "Notes tagged X", "my last note about X" → `list` filtered by that tag, newest first, small
   limit. A tag filter needs the tag without `#`, unless the tool schema says otherwise.
-- Words or a topic rather than a tag → `search`, then `get` the best hits if you need full
+- Words, a topic or a question rather than a tag → `search` with the user's words as they are
+  (it understands meaning, so "have we seen auth failures after resume before?" finds a note
+  that says "the login broke after the laptop slept"), then `get` the best hits if you need full
   bodies. If `search` finds nothing, try `list` by a likely tag, or `tags` to see what exists.
+- An exact id, code token, error string or command the note must contain → `search` with
+  `mode: "text"`.
+- "What else is related to A-B32", "anything similar to this note" → `related` with that id.
 - Page with the cursor when the user asks about "all" of something and the first page is full.
 
 ## Editing
