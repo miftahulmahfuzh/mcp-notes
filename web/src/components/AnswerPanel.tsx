@@ -5,6 +5,10 @@ export interface AnswerPanelProps {
   query: string;
   text: string;
   done: boolean;
+  /** Tool caption while streaming; '' for none. */
+  status: string;
+  /** Brain that answered, shown once done; null for none. */
+  brain: string | null;
   pinned: boolean;
   usedIds: string[];
   onTogglePin: () => void;
@@ -12,12 +16,14 @@ export interface AnswerPanelProps {
   onJump: (id: string) => void;
 }
 
-export function AnswerPanel({ left, query, text, done, pinned, usedIds, onTogglePin, onClose, onJump }: AnswerPanelProps) {
+export function AnswerPanel({ left, query, text, done, status, brain, pinned, usedIds, onTogglePin, onClose, onJump }: AnswerPanelProps) {
   const parts = text.split('\n\n');
+  const caption = done ? (brain ?? '') : status;
   return (
     <div className="answer" style={{ left, width: `min(680px, calc(100vw - ${left}px - 16px))` }}>
       <div className="answer-head">
         <span className="answer-q">{query}</span>
+        {caption && <span className="answer-status">{caption}</span>}
         <span className="spacer" />
         <button type="button" className={pinned ? 'pbtn on' : 'pbtn'} data-tip={pinned ? 'Unpin' : 'Pin'} aria-label={pinned ? 'Unpin' : 'Pin'} onClick={onTogglePin}>
           <PushPin weight="duotone" />

@@ -98,6 +98,8 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .answer { position: fixed; bottom: 86px; max-height: 52vh; overflow: auto; background: var(--panel); border: 1px solid var(--line-14); z-index: 40; padding: 16px 20px 20px; box-sizing: border-box; }
 .answer-head { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
 .answer-q { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.answer-status { font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+.answer-status::before { content: "·"; margin-right: 6px; }
 .spacer { flex: 1; }
 .pbtn { width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--fg); font-size: 16px; cursor: pointer; display: grid; place-items: center; }
 .pbtn.on { background: var(--fg); color: var(--bg); }

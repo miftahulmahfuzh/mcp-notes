@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-30 11:13:48
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 1
-- Completed: 9
+- Completed: 10
 
 ---
 
@@ -31,16 +31,6 @@
   - **Satisfies**: R1 — Claude brain: Agent SDK `ChatBackend`. One run per message, token streaming, notes MCP + WebSearch/WebFetch only (writes allowed), `view_images`, system prompt, no saved answers, max turns, timeout, abort; R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header; R6 — Tests: backend unit tests vs a fake `query`, `/api/chat` int tests with the fake injected, opt-in live suite `CHAT_LIVE_TEST=1`
   - **Depends on**: P1-NOTES-A008
   - **Plan**: `.workflows/plan/P1-NOTES-A009.md`
-
-- [ ] **P1-NOTES-A010** Phase 3: Panel: status caption, brain label, thread reset on dismiss
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `web/src/hooks/useChat.ts` (`status`, `brain`, `close()` clears thread), `web/src/components/AnswerPanel.tsx` (one `.answer-status` span), `web/src/styles.css`, `web/src/App.tsx` (two prop lines), `web/src/App.test.tsx`, new `web/src/hooks/useChat.test.tsx` (6 files). Exit: a fake SSE stream with `status` + `done{brain}` renders caption then label; dismiss → the next post has no `thread_id`; pinned + a second ask → same `thread_id`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 3 of 4)
-  - **Satisfies**: R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header
-  - **Depends on**: P1-NOTES-A008
-  - **Plan**: `.workflows/plan/P1-NOTES-A010.md`
 
 - [ ] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
   - **Difficulty**: HARD
@@ -61,6 +51,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A010** Phase 3: Panel: status caption, brain label, thread reset on dismiss
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/hooks/useChat.ts` (`status`, `brain`, `close()` clears thread), `web/src/components/AnswerPanel.tsx` (one `.answer-status` span), `web/src/styles.css`, `web/src/App.tsx` (two prop lines), `web/src/App.test.tsx`, new `web/src/hooks/useChat.test.tsx` (6 files). Exit: a fake SSE stream with `status` + `done{brain}` renders caption then label; dismiss → the next post has no `thread_id`; pinned + a second ask → same `thread_id`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R2 — Threads: `thread_id` = SDK session. Resume on follow-up, dismiss = new thread, pin keeps it, survives a daemon restart; R3 — GLM fallback: `CHAT_BRAIN=claude\|glm` (default claude), one GLM retry after a Claude usage-limit/auth failure, brain label in the panel header; R4 — Progress: `event: status` in the SSE contract, terse tool captions in the panel header
+  - **Depends on**: P1-NOTES-A008
+  - **Plan**: `.workflows/plan/P1-NOTES-A010.md`
+  - **Completed**: 2026-10-30 11:17
+  - **Method**: /implement
+  - **Files**: web/src/hooks/useChat.ts, web/src/hooks/useChat.test.tsx, web/src/components/AnswerPanel.tsx, web/src/App.tsx, web/src/App.test.tsx, web/src/styles.css
 
 - [x] **P1-NOTES-A008** Phase 1: Chat seam v2: status events, brain, config, daemon injection
   - **Difficulty**: NORMAL
