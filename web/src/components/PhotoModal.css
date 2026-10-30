@@ -1,0 +1,4 @@
+/* The design's style-hover="background:#222220" on modal icon buttons (Notes Wall.dc.html:133-153). */
+.pm-btn:hover {
+  background: #222220 !important;
+}

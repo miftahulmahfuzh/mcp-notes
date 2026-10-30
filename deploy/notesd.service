@@ -1,0 +1,22 @@
+# notesd: the mcp-notes daemon, as a systemd user service.
+# Rendered from deploy/notesd.service by scripts/install.sh. Edit the template, not this copy,
+# and re-run scripts/install.sh.
+
+[Unit]
+Description=mcp-notes daemon (notesd, 127.0.0.1:7317)
+Documentation=file://@REPO_DIR@/docs/INSTALL.md
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+ExecStart="@NODE_BIN@" "@REPO_DIR@/dist/main.js"
+Environment=NODE_ENV=production
+Environment="NOTES_DATA_DIR=@DATA_DIR@"
+Environment="PATH=@NODE_DIR@:/usr/local/bin:/usr/bin:/bin"
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

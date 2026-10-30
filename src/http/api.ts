@@ -1,0 +1,222 @@
+import { Hono, type Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import { z } from 'zod';
+import type { ChatBackend } from '../chat/backend.js';
+import { createStubChatBackend } from '../chat/stub.js';
+import type { AppDeps } from '../deps.js';
+import type { NoteEvent } from '../notes/events.js';
+import { normalizeId } from '../notes/ids.js';
+import { MAX_LIMIT } from '../notes/repo.js';
+import { NoteError } from '../notes/types.js';
+
+export const DEFAULT_LIST_LIMIT = 2000;
+export const MAX_LIST_LIMIT = MAX_LIMIT; // 5000, P2's repo cap
+export const SSE_HEARTBEAT_MS = 25_000;
+
+export interface ApiOptions {
+  /** Defaults to the iteration-3 stub. Iteration 4 passes the real backend here. */
+  chat?: ChatBackend;
+  /** Defaults to SSE_HEARTBEAT_MS. Tests pass a small value. */
+  sseHeartbeatMs?: number;
+}
+
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
+  cursor: z.string().min(1).optional(),
+  has_image: z.enum(['true', 'false']).optional(),
+});
+
+const noteBodySchema = z.object({
+  body: z.string(),
+});
+
+const chatSchema = z.object({
+  message: z.string().trim().min(1),
+  thread_id: z.string().trim().min(1).max(200).optional(),
+});
+
+function describeIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'request'}: ${issue.message}`)
+    .join('; ');
+}
+
+function badRequest(c: Context, error: string): Response {
+  return c.json({ error }, 400);
+}
+
+function notFound(c: Context): Response {
+  return c.json({ error: 'not_found' }, 404);
+}
+
+/** The one NoteError → HTTP mapping. Anything else is rethrown (Hono answers 500). */
+function noteErrorResponse(c: Context, err: unknown): Response {
+  if (!(err instanceof NoteError)) throw err;
+  switch (err.code) {
+    case 'not_found':
+    case 'deleted':
+      return notFound(c);
+    case 'conflict':
+    case 'duplicate_image':
+      return c.json({ error: err.code }, 409);
+    case 'invalid_id':
+      return badRequest(c, 'invalid_id');
+    default:
+      return badRequest(c, `${err.code}: ${err.message}`);
+  }
+}
+
+async function readJson(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  try {
+    return { ok: true, value: await c.req.json() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** `?tag=a&tag=%23B` -> ['a', 'b']: leading '#' stripped, lower-cased, deduped, empties dropped. */
+function parseTagParams(raw: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  for (const value of raw ?? []) {
+    const tag = value.trim().replace(/^#/, '').toLowerCase();
+    if (tag.length > 0) seen.add(tag);
+  }
+  return [...seen];
+}
+
+export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
+  const api = new Hono();
+  const service = deps.service;
+  const chat = options.chat ?? createStubChatBackend();
+  const heartbeatMs = options.sseHeartbeatMs ?? SSE_HEARTBEAT_MS;
+
+  api.get('/api/notes', async (c) => {
+    const parsed = listQuerySchema.safeParse({
+      limit: c.req.query('limit'),
+      cursor: c.req.query('cursor'),
+      has_image: c.req.query('has_image'),
+    });
+    if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
+    const { limit, cursor, has_image } = parsed.data;
+    const tags = parseTagParams(c.req.queries('tag'));
+    try {
+      const page = await service.list({
+        limit,
+        ...(cursor !== undefined ? { cursor } : {}),
+        ...(tags.length > 0 ? { tagsAll: tags } : {}),
+        ...(has_image !== undefined ? { hasImage: has_image === 'true' } : {}),
+      });
+      return c.json({ notes: page.notes, next_cursor: page.next_cursor });
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  api.get('/api/notes/:id', async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    if (id === null) return badRequest(c, 'invalid_id');
+    const note = await service.getOne(id);
+    if (note === null) return notFound(c);
+    return c.json(note);
+  });
+
+  api.post('/api/notes', async (c) => {
+    const json = await readJson(c);
+    if (!json.ok) return badRequest(c, 'invalid_json');
+    const parsed = noteBodySchema.safeParse(json.value);
+    if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
+    try {
+      const note = await service.create({ body: parsed.data.body, origin: { source: 'web' }, allowEmpty: true });
+      return c.json(note, 201);
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  api.patch('/api/notes/:id', async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    if (id === null) return badRequest(c, 'invalid_id');
+    const json = await readJson(c);
+    if (!json.ok) return badRequest(c, 'invalid_json');
+    const parsed = noteBodySchema.safeParse(json.value);
+    if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
+    try {
+      return c.json(await service.update(id, parsed.data.body, { allowEmpty: true }));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  api.delete('/api/notes/:id', async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    if (id === null) return badRequest(c, 'invalid_id');
+    // P2's delete is idempotent; the UI contract is 404 for a note that is not live.
+    if ((await service.getOne(id)) === null) return notFound(c);
+    try {
+      return c.json(await service.delete(id));
+    } catch (err) {
+      return noteErrorResponse(c, err);
+    }
+  });
+
+  api.get('/api/tags', async (c) => {
+    return c.json(await service.tags());
+  });
+
+  api.get('/api/events', (c) =>
+    streamSSE(c, async (stream) => {
+      let closed = false;
+      const listener = (event: NoteEvent): void => {
+        if (closed) return;
+        void stream
+          .writeSSE({ event: 'note', data: JSON.stringify({ op: event.op, id: event.id }) })
+          .catch(() => undefined);
+      };
+      const unsubscribe = deps.events.on(listener);
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (!closed) void stream.write(': heartbeat\n\n').catch(() => undefined);
+        }, heartbeatMs);
+        stream.onAbort(() => {
+          closed = true;
+          clearInterval(timer);
+          unsubscribe();
+          resolve();
+        });
+        void stream.write(': connected\n\n').catch(() => undefined);
+      });
+    }),
+  );
+
+  api.post('/api/chat', async (c) => {
+    const json = await readJson(c);
+    if (!json.ok) return badRequest(c, 'invalid_json');
+    const parsed = chatSchema.safeParse(json.value);
+    if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
+    const { message, thread_id } = parsed.data;
+
+    return streamSSE(c, async (stream) => {
+      const controller = new AbortController();
+      stream.onAbort(() => controller.abort());
+      try {
+        const turn = await chat.reply({
+          message,
+          threadId: thread_id ?? null,
+          signal: controller.signal,
+        });
+        for await (const text of turn.deltas) {
+          if (controller.signal.aborted) return;
+          await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text }) });
+        }
+        if (controller.signal.aborted) return;
+        await stream.writeSSE({ event: 'done', data: JSON.stringify({ thread_id: turn.threadId }) });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const error = err instanceof Error ? err.message : String(err);
+        await stream.writeSSE({ event: 'error', data: JSON.stringify({ error }) });
+      }
+    });
+  });
+
+  return api;
+}
