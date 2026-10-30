@@ -45,24 +45,24 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "8501ad1",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "worker+backfill+embed:backfill CLI; drift: RateLimiter abort check via local fn (TS2367); no ladder decisions",
       "package": "src/embeddings`, `src/background.ts`, `src/cli",
       "plan": ".workflows/plan/semantic-search/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T14:55:21+07:00",
       "satisfies": [
         "R3",
         "R1",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A019",
       "title": "Embedding worker, background backfill, `embed:backfill"
     },
     {
@@ -74,15 +74,15 @@
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": null,
+      "note": "verify downgraded spawned->pending (no commit yet) while window @164 was live; coordinator restored running",
       "package": "src/search`, `src/notes`, `src/mcp",
       "plan": ".workflows/plan/semantic-search/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T14:55:45+07:00",
       "satisfies": [
         "R4",
         "R6"
       ],
-      "status": "spawned",
+      "status": "running",
       "task_id": null,
       "title": "Hybrid search + labelled set"
     },
@@ -133,6 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/semantic-search/.workflows/orchestration/semantic-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "semantic-search",
-  "updated": "2026-10-30T14:47:06+07:00",
+  "updated": "2026-10-30T14:55:45+07:00",
+  "verified_at": "2026-10-30T14:55:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/semantic-search"
 }
