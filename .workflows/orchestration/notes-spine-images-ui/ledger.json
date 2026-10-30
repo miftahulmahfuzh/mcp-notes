@@ -1,0 +1,166 @@
+{
+  "branch": "feature/notes-spine-images-ui",
+  "coordinator": "orch-notes-spine-images-ui",
+  "coordinator_session_id": "a6e61305-1952-498a-b355-47aaa80ae8c5",
+  "created": "2026-10-30T02:59:53+00:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "root, `src/db`, `src/notes",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Scaffold, config, schema, ids, tags, test harness"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/notes`, `src/mcp`, `src/http`, `src/",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Notes service, MCP server and tools, notesd daemon"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "claude/`, `deploy/`, `scripts/`, `docs/",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "/n` skill, systemd unit, install + Windows scripts, live verification"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "src/images`, `src/background.ts",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Image store, derivatives, ingest service, inbox watcher"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/http/{images,imageAccess}.ts`, `src/mcp`, `src/notes/repo.ts",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Image HTTP routes + upload, MCP image tools, image/date filters"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 6,
+      "note": null,
+      "package": "src/http/api.ts`, `src/http/static.ts`, `src/chat",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "UI JSON API, SSE events, chat stub, static SPA serving"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        6
+      ],
+      "difficulty": "HARD",
+      "n": 7,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web UI core: wall, rail, sidebar, header, inline edit, chat bar + answer panel, tooltips, live updates"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        5,
+        7
+      ],
+      "difficulty": "NORMAL",
+      "n": 8,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/notes-spine-images-ui/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web UI images: gallery, photo modal, full-screen tab, drag/paste upload, missing-file placeholder"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/notes-spine-images-ui/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "notes-spine-images-ui",
+  "updated": "2026-10-30T02:59:53+00:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/notes-spine-images-ui",
+  "note": "Gate (plan_graph.py) run against the worktree index docs/plans/NOTES_SPINE_IMAGES_UI_PLAN.md: exit 0, 13 shared files all sequential. Against the tracked PLAN.md it exits 1 only because its Plan column paths (.workflows/plan/...) resolve against the main checkout; children are spawned with the worktree index. No collisions -> shared set worktree, no per-phase isolation. Open Questions: none."
+}
