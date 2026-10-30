@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/semantic-search`
 **Branch:** `feature/semantic-search` (base: `origin/main` @ `66b8e98`)
 **Phases:** 6
-**Status:** planned
+**Status:** phase 1/6 complete
 **Coordinator:** —
 
 ---
@@ -148,12 +148,12 @@ Phase 1's fragments (`currentBodySha256Sql`, `isCurrentEmbeddingSql`) render `"n
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | pgvector schema, migration, embedding state + repo | R2, R1, R6 | `src/db`, `src/embeddings`, `drizzle`, `scripts` | 13 | — | NORMAL | `.workflows/plan/semantic-search/phase-1.md` | — | — |
-| 2 | OpenRouter embedder, config, deps wiring, fake embedder | R1, R6 | `src/embeddings`, `src/config.ts`, `src/daemon.ts` | 17 | 1 | NORMAL | `.workflows/plan/semantic-search/phase-2.md` | — | — |
-| 3 | Embedding worker, background backfill, `embed:backfill` | R3, R1, R6 | `src/embeddings`, `src/background.ts`, `src/cli` | 10 | 1, 2 | HARD | `.workflows/plan/semantic-search/phase-3.md` | — | — |
-| 4 | Hybrid search + labelled set | R4, R6 | `src/search`, `src/notes`, `src/mcp` | 12 | 1, 2 | HARD | `.workflows/plan/semantic-search/phase-4.md` | — | — |
-| 5 | `related` tool | R5, R6 | `src/embeddings`, `src/notes`, `src/mcp`, `src/chat` | 9 | 1, 2, 4 | NORMAL | `.workflows/plan/semantic-search/phase-5.md` | — | — |
-| 6 | Live test, docs, Neon migration + first backfill | R6 | `tests/live`, docs | 6 (+ `src/search/blend.ts` numbers, only if the live run demands it) | 3, 4, 5 | NORMAL | `.workflows/plan/semantic-search/phase-6.md` | — | — |
+| 1 ✓ | pgvector schema, migration, embedding state + repo | R2, R1, R6 | `src/db`, `src/embeddings`, `drizzle`, `scripts` | 13 | — | NORMAL | `.workflows/plan/semantic-search/phase-1.md` | P1-NOTES-A017 | — |
+| 2 | OpenRouter embedder, config, deps wiring, fake embedder | R1, R6 | `src/embeddings`, `src/config.ts`, `src/daemon.ts` | 17 | 1 | NORMAL | `.workflows/plan/semantic-search/phase-2.md` | P1-NOTES-A018 | — |
+| 3 | Embedding worker, background backfill, `embed:backfill` | R3, R1, R6 | `src/embeddings`, `src/background.ts`, `src/cli` | 10 | 1, 2 | HARD | `.workflows/plan/semantic-search/phase-3.md` | P1-NOTES-A019 | — |
+| 4 | Hybrid search + labelled set | R4, R6 | `src/search`, `src/notes`, `src/mcp` | 12 | 1, 2 | HARD | `.workflows/plan/semantic-search/phase-4.md` | P1-NOTES-A020 | — |
+| 5 | `related` tool | R5, R6 | `src/embeddings`, `src/notes`, `src/mcp`, `src/chat` | 9 | 1, 2, 4 | NORMAL | `.workflows/plan/semantic-search/phase-5.md` | P1-NOTES-A021 | — |
+| 6 | Live test, docs, Neon migration + first backfill | R6 | `tests/live`, docs | 6 (+ `src/search/blend.ts` numbers, only if the live run demands it) | 3, 4, 5 | NORMAL | `.workflows/plan/semantic-search/phase-6.md` | P1-NOTES-A022 | — |
 
 DAG: 1 → 2 → {3, 4}; 4 → 5; {3, 4, 5} → 6. Phases 3 and 4 can run in parallel; 5 can run in parallel with 3.
 

@@ -381,8 +381,9 @@ npm run test:int               # integration tests against real Postgres in Dock
 npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
 ```
 
-`test:int` starts or reuses two containers: `mcp-notes-pg-test` (Postgres 16, port 55433) for the
-notes, and `mcp-notes-pg-connectors` (pgvector Postgres 16, port 55435), where it rebuilds one
+`test:int` starts or reuses two containers, both on `pgvector/pgvector:pg16` (one that runs another
+image is recreated): `mcp-notes-pg-test` (port 55433) for the notes, and
+`mcp-notes-pg-connectors` (port 55435), where it rebuilds one
 database per connector from that repo's own migration files (read, never imported; a repo that is
 not there is skipped with a message). Neither suite touches a Neon database. `test:live` (chat)
 and `test:live:connectors` are opt-in and never part of `npm test` or `test:int`.
