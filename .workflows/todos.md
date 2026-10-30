@@ -66,6 +66,23 @@
     - Step 3 task creation in per-phase worktree → only phase 3's task, in root .workflows/todos.md (tie-break: narrower blast radius; matches phases 1 and 6 precedent)
     - Integration tests run serialized under flock /tmp/mcp-notes-test-int.lock (shared Docker containers with peers)
 
+- [x] **P1-NOTES-A015** Phase 4: Seer curated tools (db + lab)
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/seer/{curated,rows,ranking,leaderboard,positions,sera}.ts`, `tests/unit/connectors/seer.{ranking,sera,curated}.test.ts`, `tests/integration/connectors/seer.curated.int.test.ts`. Exit: `seer_leaderboard` ranks as the app does (common dates, ≥63 shared sessions, annualised Sharpe, tie-breaks; benchmarks and retired not ranked, shown separately), `seer_positions` lists open bracket orders and book positions with marks and unrealised P&L, `seer_sera_best` lists the best variant per method from lab.sqlite with the lab's metrics, correct on seeded Postgres + `makeLab()` lab; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p4/docs/plans/CONNECTORS_PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (Seer curated tools); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A015.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /do
+  - **Files**: src/connectors/seer/curated.ts, src/connectors/seer/rows.ts, src/connectors/seer/ranking.ts, src/connectors/seer/leaderboard.ts, src/connectors/seer/positions.ts, src/connectors/seer/sera.ts, tests/unit/connectors/seer.ranking.test.ts, tests/unit/connectors/seer.sera.test.ts, tests/unit/connectors/seer.curated.test.ts, tests/integration/connectors/seer.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A015.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Plan index names worktree .../connectors on feature/connectors; this session runs in .../connectors-p4 on phase-4-connectors → proceed (coordinator cut per-phase worktrees from af45c9e and said to commit here)
+    - TaskID → P1-NOTES-A015 (assigned by coordinator orch-connectors)
+    - Step 3 task creation → only phase 4's task created, inline (narrower blast radius; each phase session mints its own)
+
 - [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
   - **Difficulty**: EASY
   - **Type**: Feature
