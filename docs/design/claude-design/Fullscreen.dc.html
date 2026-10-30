@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>html,body{margin:0;background:#000;overflow:hidden}a{color:#ecebe4}a:hover{color:#fff}</style>
+</helmet>
+<div onMouseDown="{{ down }}" onMouseMove="{{ move }}" onMouseUp="{{ up }}" onMouseLeave="{{ leave }}" style="position:fixed;inset:0;background:#000;overflow:hidden;cursor:{{ cursor }};user-select:none">
+  <img src="{{ src }}" alt="" draggable="false" style="{{ imgStyle }}"></img>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  params = new URLSearchParams(location.search);
+  state = { fit: true, x: 0, y: 0, drag: null };
+  componentDidMount() { document.title = this.params.get('id') || 'Image'; }
+  renderVals() {
+    const src = this.params.get('src') || 'https://picsum.photos/id/1015/2400/1600';
+    const { fit, x, y, drag } = this.state;
+    const imgStyle = fit
+      ? { position: 'absolute', inset: 0, margin: 'auto', maxWidth: '100%', maxHeight: '100%', display: 'block' }
+      : { position: 'absolute', left: '50%', top: '50%', maxWidth: 'none', maxHeight: 'none', display: 'block', transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))` };
+    return {
+      src, imgStyle,
+      cursor: fit ? 'zoom-in' : drag && drag.moved ? 'grabbing' : 'grab',
+      down: e => this.setState({ drag: { sx: e.clientX, sy: e.clientY, ox: x, oy: y, moved: false } }),
+      move: e => {
+        const d = this.state.drag; if (!d || this.state.fit) return;
+        const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+        if (d.moved || Math.abs(dx) + Math.abs(dy) > 4) this.setState({ x: d.ox + dx, y: d.oy + dy, drag: { ...d, moved: true } });
+      },
+      up: () => { const d = this.state.drag; if (d && !d.moved) this.setState(s => ({ fit: !s.fit, x: 0, y: 0 })); this.setState({ drag: null }); },
+      leave: () => this.setState({ drag: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

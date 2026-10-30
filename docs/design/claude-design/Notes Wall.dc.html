@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@300..800&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css">
+<style>
+html,body{margin:0;background:#121211;color:#ecebe4}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:999;opacity:.07;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+a{color:#ecebe4;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+a:hover{color:#fff}
+input::placeholder{color:#7a7972}
+textarea:focus,input:focus,button:focus{outline:none}
+::selection{background:#ecebe4;color:#121211}
+</style>
+</helmet>
+<div onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="min-height:100vh;background:#121211;color:#ecebe4;font-family:'Host Grotesk',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <nav style="position:fixed;left:0;top:0;bottom:0;width:56px;border-right:1px solid rgba(236,235,228,.1);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0;z-index:30;background:#121211;box-sizing:border-box">
+    <button data-tip="Toggle sidebar" data-tip-side="right" onClick="{{ toggleSide }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:21px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-sidebar-simple"></i></button>
+    <button data-tip="New note" data-tip-side="right" onClick="{{ addNote }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:21px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-note-pencil"></i></button>
+    <button data-tip="Show image notes" data-tip-side="right" onClick="{{ toggleImages }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ imgBtnBg }};color:{{ imgBtnFg }};font-size:21px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-images"></i></button>
+    <div style="width:24px;height:1px;background:rgba(236,235,228,.12);margin:8px 0"></div>
+    <sc-for list="{{ activeChips }}" as="c" hint-placeholder-count="0">
+      <button data-tip="Remove filter" data-tip-side="right" onClick="{{ c.remove }}" style="writing-mode:vertical-rl;transform:rotate(180deg);border:0;border-radius:999px;background:#ecebe4;color:#121211;font-family:'Geist Mono',monospace;font-size:11px;padding:10px 4px;cursor:pointer;letter-spacing:.02em">{{ c.label }}</button>
+    </sc-for>
+    <sc-if value="{{ hasFilters }}" hint-placeholder-val="{{ false }}">
+      <button data-tip="Clear filters" data-tip-side="right" onClick="{{ clearTags }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:19px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-x-circle"></i></button>
+    </sc-if>
+  </nav>
+
+  <sc-if value="{{ side }}" hint-placeholder-val="{{ false }}">
+    <aside style="position:fixed;left:56px;top:0;bottom:0;width:240px;border-right:1px solid rgba(236,235,228,.1);background:#121211;z-index:29;padding:14px 12px 100px;box-sizing:border-box;overflow:auto;display:flex;flex-direction:column;gap:18px">
+      <div style="display:flex;align-items:center;gap:10px;height:40px">
+        <button data-tip="Show image notes" onClick="{{ toggleImages }}" style="width:40px;height:40px;border:0;border-radius:999px;background:{{ imgBtnBg }};color:{{ imgBtnFg }};font-size:20px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-images"></i></button>
+        <span style="font-family:'Geist Mono',monospace;font-size:11px;color:#8a897f">{{ photoCount }} photos</span>
+      </div>
+      <div style="height:1px;background:rgba(236,235,228,.1)"></div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ tagList }}" as="t" hint-placeholder-count="8">
+          <div onClick="{{ t.toggle }}" style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;border-radius:999px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }};font-size:13px" style-hover="background:#222220">
+            <span>#{{ t.name }}</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:11px;opacity:.7">{{ t.count }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </aside>
+  </sc-if>
+
+  <main style="margin-left:{{ mainLeft }}px;padding:0 20px 150px;transition:margin-left .2s">
+    <header style="position:relative;padding-top:72px;display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);align-items:end;gap:24px">
+      <p style="margin:0 0 18px;font-size:12px;line-height:1.5;color:#c9c8c0;max-width:220px;text-wrap:pretty">{{ countLine }} Last edited <a href="#" onClick="{{ jumpLast }}">{{ lastId }}</a> {{ lastWhen }}. Drop or paste an image anywhere to make a photo note.</p>
+      <h1 style="margin:0;font-weight:400;font-size:clamp(72px,13vw,230px);line-height:.84;letter-spacing:-.06em;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-bottom:.24em;margin-bottom:-.24em">{{ heading }}</h1>
+      <sc-if value="{{ notImageMode }}" hint-placeholder-val="{{ true }}">
+        <button data-tip="New note" onClick="{{ addNote }}" style="position:absolute;left:30%;bottom:-58px;width:108px;height:108px;border-radius:999px;border:0;background:#ecebe4;color:#121211;font-size:46px;cursor:pointer;transform:rotate(-14deg);display:grid;place-items:center;z-index:5" style-hover="transform:rotate(-4deg) scale(1.04)"><i class="ph-duotone ph-plus"></i></button>
+      </sc-if>
+    </header>
+    <div style="height:1px;background:rgba(236,235,228,.12);margin-top:26px"></div>
+
+    <sc-if value="{{ notImageMode }}" hint-placeholder-val="{{ true }}">
+      <section style="columns:{{ colWidth }}px;column-gap:10px;padding-top:30px">
+        <sc-for list="{{ wall }}" as="n" hint-placeholder-count="14">
+          <article data-note="{{ n.id }}" style="break-inside:avoid;margin:0 0 10px;background:{{ n.bg }};opacity:{{ n.op }};outline:{{ n.ring }};outline-offset:3px;transition:opacity .35s,outline-color .35s">
+            <sc-if value="{{ n.img }}">
+              <img src="{{ n.img }}" alt="" draggable="false" style="display:block;width:100%;height:auto;aspect-ratio:{{ n.ar }};filter:{{ photoFilter }};background:#1c1c1a"></img>
+            </sc-if>
+            <div style="padding:{{ n.pad }}">
+              <sc-if value="{{ n.editing }}">
+                <textarea autoFocus="{{ true }}" value="{{ n.text }}" onChange="{{ n.onInput }}" onBlur="{{ n.onBlur }}" rows="{{ n.rows }}" style="display:block;width:100%;box-sizing:border-box;background:transparent;color:#ecebe4;border:0;resize:none;font:inherit;font-size:{{ n.fs }}px;line-height:1.32;padding:0;margin:0 0 10px"></textarea>
+              </sc-if>
+              <sc-if value="{{ n.notEditing }}">
+                <p onClick="{{ n.edit }}" style="margin:0 0 10px;font-size:{{ n.fs }}px;line-height:1.32;letter-spacing:{{ n.ls }};white-space:pre-wrap;text-wrap:pretty;cursor:text;color:#e4e3dc"><sc-for list="{{ n.segs }}" as="s"><sc-if value="{{ s.tag }}"><span onClick="{{ s.onTag }}" style="display:inline-block;font-size:11px;line-height:1;padding:3px 7px 4px;border-radius:999px;background:#2a2a27;color:#d6d5cd;cursor:pointer;vertical-align:.15em;letter-spacing:0" style-hover="background:#ecebe4;color:#121211">{{ s.tag }}</span></sc-if><sc-if value="{{ s.txt }}"><span>{{ s.txt }}</span></sc-if></sc-for></p>
+              </sc-if>
+              <div style="display:flex;align-items:center;gap:4px;font-family:'Geist Mono',monospace;font-size:10.5px;color:#8a897f">
+                <span style="color:#bdbcb4;letter-spacing:.03em">{{ n.id }}</span>
+                <button data-tip="Copy ID" onClick="{{ n.copy }}" style="border:0;background:transparent;color:#bdbcb4;font-size:13px;padding:3px;border-radius:999px;cursor:pointer;display:grid;place-items:center" style-hover="background:#2a2a27;color:#ecebe4"><i class="{{ n.copyIcon }}"></i></button>
+                <span style="opacity:{{ n.copiedOp }};transition:opacity .25s">copied</span>
+                <span style="margin-left:auto">{{ n.date }}</span>
+              </div>
+            </div>
+          </article>
+        </sc-for>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ imageMode }}" hint-placeholder-val="{{ false }}">
+      <section style="display:flex;flex-wrap:wrap;gap:4px;padding-top:30px">
+        <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="12">
+          <div onClick="{{ g.open }}" style="flex:{{ g.grow }} 1 {{ g.basis }}px;cursor:zoom-in;background:#1c1c1a">
+            <img src="{{ g.src }}" alt="" draggable="false" style="display:block;width:100%;height:auto;aspect-ratio:{{ g.ar }};filter:{{ photoFilter }}"></img>
+          </div>
+        </sc-for>
+        <div style="flex:999 1 0px"></div>
+      </section>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{ chatOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:{{ chatLeft }}px;bottom:86px;width:min(680px,calc(100vw - {{ chatLeft }}px - 16px));max-height:52vh;overflow:auto;background:#191918;border:1px solid rgba(236,235,228,.14);z-index:40;padding:16px 20px 20px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+        <span style="font-family:'Geist Mono',monospace;font-size:10.5px;color:#8a897f">{{ queryShown }}</span>
+        <span style="flex:1"></span>
+        <button data-tip="{{ pinTip }}" onClick="{{ togglePin }}" style="width:32px;height:32px;border:0;border-radius:999px;background:{{ pinBg }};color:{{ pinFg }};font-size:16px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-push-pin"></i></button>
+        <button data-tip="Dismiss" onClick="{{ closeChat }}" style="width:32px;height:32px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:16px;cursor:pointer;display:grid;place-items:center" style-hover="background:#2a2a27"><i class="ph-duotone ph-x"></i></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.5;color:#e4e3dc;text-wrap:pretty">
+        <sc-for list="{{ answerParas }}" as="p" hint-placeholder-count="2"><p style="margin:0">{{ p.t }}</p></sc-for>
+      </div>
+      <sc-if value="{{ answerDone }}">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:16px;padding-top:12px;border-top:1px solid rgba(236,235,228,.1)">
+          <sc-for list="{{ usedChips }}" as="u">
+            <button data-tip="Show on wall" onClick="{{ u.go }}" style="border:1px solid rgba(236,235,228,.25);background:transparent;color:#ecebe4;font-family:'Geist Mono',monospace;font-size:10.5px;padding:4px 8px;border-radius:999px;cursor:pointer" style-hover="background:#ecebe4;color:#121211">{{ u.id }}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <form onSubmit="{{ send }}" style="position:fixed;left:{{ chatLeft }}px;right:16px;bottom:16px;height:54px;border-radius:999px;background:#ecebe4;display:flex;align-items:center;padding:0 7px 0 24px;z-index:41;box-sizing:border-box">
+    <input value="{{ q }}" onChange="{{ onQ }}" placeholder="Ask about your notes" style="flex:1;border:0;background:transparent;color:#121211;font:inherit;font-size:14px;height:100%"></input>
+    <button type="submit" data-tip="Send" style="width:40px;height:40px;border-radius:999px;border:0;background:#121211;color:#ecebe4;font-size:18px;cursor:pointer;display:grid;place-items:center"><i class="ph-duotone ph-arrow-right"></i></button>
+  </form>
+
+  <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeModal }}" style="position:fixed;inset:0;background:rgba(10,10,9,.94);z-index:60;display:grid;grid-template-columns:56px minmax(0,1fr) 300px 56px;align-items:center;gap:16px;padding:24px 16px;box-sizing:border-box">
+      <button data-tip="Previous" onClick="{{ prev }}" style="width:44px;height:44px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:22px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-caret-left"></i></button>
+      <div style="height:100%;display:grid;place-items:center;min-width:0">
+        <img onClick="{{ stop }}" src="{{ m.src }}" alt="" style="display:block;max-width:100%;max-height:calc(100vh - 48px);aspect-ratio:{{ m.ar }};filter:{{ photoFilter }}"></img>
+      </div>
+      <div onClick="{{ stop }}" style="align-self:stretch;display:flex;flex-direction:column;gap:18px;padding-top:4px">
+        <div style="display:flex;gap:2px;justify-content:flex-end">
+          <button data-tip="Copy ID" onClick="{{ m.copy }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:19px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="{{ m.copyIcon }}"></i></button>
+          <button data-tip="Show full screen" onClick="{{ m.full }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:19px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-arrows-out"></i></button>
+          <button data-tip="Close" onClick="{{ closeModal }}" style="width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:19px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-x"></i></button>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.45;color:#e4e3dc;text-wrap:pretty">{{ m.text }}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ m.tags }}" as="t"><span style="font-size:11px;padding:3px 8px 4px;border-radius:999px;background:#2a2a27;color:#d6d5cd">{{ t.t }}</span></sc-for>
+        </div>
+        <div style="height:1px;background:rgba(236,235,228,.1)"></div>
+        <div style="display:flex;align-items:center;gap:8px;font-family:'Geist Mono',monospace;font-size:11px;color:#bdbcb4">
+          <span>{{ m.id }}</span><span style="opacity:{{ m.copiedOp }};color:#8a897f;transition:opacity .25s">copied</span>
+          <span style="margin-left:auto;color:#8a897f">{{ m.meta }}</span>
+        </div>
+      </div>
+      <button data-tip="Next" onClick="{{ next }}" style="width:44px;height:44px;border:0;border-radius:999px;background:transparent;color:#ecebe4;font-size:22px;cursor:pointer;display:grid;place-items:center" style-hover="background:#222220"><i class="ph-duotone ph-caret-right"></i></button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ dragging }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:10px;border:1px dashed rgba(236,235,228,.5);z-index:70;pointer-events:none;display:grid;place-items:center;font-size:48px;color:#ecebe4;background:rgba(18,18,17,.6)"><i class="ph-duotone ph-image-square"></i></div>
+  </sc-if>
+
+  <sc-if value="{{ tip }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:{{ tipX }}px;top:{{ tipY }}px;transform:{{ tipTf }};background:#ecebe4;color:#121211;font-size:11px;padding:4px 8px 5px;border-radius:3px;pointer-events:none;z-index:200;white-space:nowrap">{{ tipText }}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wall&quot;,&quot;filtered&quot;,&quot;chat&quot;,&quot;gallery&quot;,&quot;modal&quot;],&quot;default&quot;:&quot;wall&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dense&quot;,&quot;regular&quot;,&quot;loose&quot;],&quot;default&quot;:&quot;regular&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Wall&quot;},&quot;filmTone&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Wall&quot;}}">
+class Component extends DCLogic {
+  seed = [
+    ['A-B32','#seer onboarding is two screens too long. Cut the permissions step, ask later in context.',0,0,0,'Today'],
+    ['K-F07','River below the old bridge, 6:40am. Fog lifting. #walks #film',1015,600,400,'Today'],
+    ['Z-E11','Buy fennel #kitchen #todo',0,0,0,'Today'],
+    ['R-M14','#seer pricing page: people read the table, not the copy. Make the table the page.',0,0,0,'Today'],
+    ['D-P90','Pug on the tram again. Same seat. #walks',1025,600,800,'Yesterday'],
+    ['M-J21','Mira asked why the moon follows the car. Told her it\'s shy. She said that\'s not a reason. #kids',0,0,0,'Yesterday'],
+    ['C-K48','#reading Calvino, Invisible Cities p.82: the city is redundant, it repeats itself so something will stick in the mind.',0,0,0,'Yesterday'],
+    ['B-Y66','Coffee at the counter, borrowed light. #film #kitchen',1060,640,427,'Oct 28'],
+    ['F-T02','#idea a clock that only shows the hour you\'re in',0,0,0,'Oct 28'],
+    ['L-S03','#seer latency on the summary call ~2.4s p50. Was 1.6s last week. Check model routing.',0,0,0,'Oct 28'],
+    ['S-A73','Market strawberries, too early in the season, bought anyway. #kitchen',1080,500,750,'Oct 28'],
+    ['W-O15','Call Dad Sunday #todo',0,0,0,'Oct 27'],
+    ['N-X39','#film roll 14, frame 22. Underexposed but I like it.',1039,700,467,'Oct 27'],
+    ['E-G84','#kids Arlo built a bus for ants out of a shoebox. Two windows, no doors.',0,0,0,'Oct 27'],
+    ['H-Q55','#seer interviews: 4 of 6 used it at night, on the couch. Design for one hand.',0,0,0,'Oct 27'],
+    ['J-R27','Wet stones on the lower path #walks',129,600,400,'Oct 26'],
+    ['U-I08','#idea notes app with no search. You find things by asking.',0,0,0,'Oct 26'],
+    ['Y-L50','Zoo, Thursday. He didn\'t move once. #kids',1084,600,600,'Oct 26'],
+    ['O-V62','#reading "Attention is the rarest and purest form of generosity." Weil.',0,0,0,'Oct 26'],
+    ['Q-H91','#film dried hydrangeas on the sill',152,500,700,'Oct 25'],
+    ['P-D19','#seer ship a weekly digest email? Maybe not. Nobody asked.',0,0,0,'Oct 25'],
+    ['I-Z34','#walks ridge trail, last light',1043,640,427,'Oct 24'],
+    ['X-B77','Batteries AA ×8, film 400 ×3 #todo',0,0,0,'Oct 24'],
+    ['T-W60','#seer crash on resume fixed. Root cause: stale token after sleep.',0,0,0,'Oct 23'],
+    ['V-C41','#seer empty state confuses people. Two of them thought it was broken.',0,0,0,'Oct 22'],
+    ['G-N28','#seer sync dupes when two devices edit offline. Last-write-wins is fine for now.',0,0,0,'Oct 21'],
+    ['A-K13','#kids neighbour\'s dog, now Mira\'s best friend',237,500,500,'Oct 21'],
+    ['R-F45','#film forest after rain, the green went almost black',28,640,427,'Oct 20'],
+    ['M-U70','Tram depot at dusk #walks #film',1074,600,400,'Oct 19']
+  ].map(([id, text, pic, w, h, date]) => ({ id, text, pic, w, h, date }));
+
+  answerText = 'You wrote 5 #seer notes this week, against 3 last week.\n\nThis week is about the product\'s shape. Onboarding should lose the permissions step (A-B32), the pricing page should become the table (R-M14), and interviews say people use it one-handed at night (H-Q55). One open question: whether to ship a weekly digest (P-D19).\n\nLast week was maintenance. The crash on resume and the sync duplicates are both settled (T-W60, G-N28), and the empty state was flagged as confusing (V-C41).\n\nFewer bugs, more decisions. The one thing getting worse is summary latency, up from 1.6s to 2.4s p50 (L-S03).';
+  usedIds = ['A-B32','R-M14','H-Q55','P-D19','L-S03','T-W60','G-N28','V-C41'];
+
+  state = { notes: this.seed, tags: [], side: false, imageMode: false, modal: -1, chatOpen: false, pinned: false, q: '', query: '', streamed: 0, copied: null, editing: null, tip: null, dragging: false };
+
+  componentDidMount() {
+    this.applyScreen(this.props.screen ?? 'wall');
+    this.onOver = e => {
+      const el = e.target.closest && e.target.closest('[data-tip]');
+      if (!el) { if (this.state.tip) this.setState({ tip: null }); return; }
+      const r = el.getBoundingClientRect(); const right = el.dataset.tipSide === 'right';
+      this.setState({ tip: { text: el.dataset.tip, x: right ? r.right + 8 : r.left + r.width / 2, y: right ? r.top + r.height / 2 : r.top - 6, right } });
+    };
+    this.onKey = e => {
+      if (e.key === 'Escape') {
+        if (this.state.modal >= 0) this.setState({ modal: -1 });
+        else if (this.state.chatOpen && !this.state.pinned) this.closeChat();
+      }
+      if (this.state.modal >= 0 && e.key === 'ArrowRight') this.step(1);
+      if (this.state.modal >= 0 && e.key === 'ArrowLeft') this.step(-1);
+    };
+    this.onPaste = e => {
+      const f = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith('image/'));
+      if (f) { e.preventDefault(); this.addImage(f); }
+    };
+    document.addEventListener('mouseover', this.onOver);
+    document.addEventListener('keydown', this.onKey);
+    document.addEventListener('paste', this.onPaste);
+  }
+  componentDidUpdate(prev) { if (prev.screen !== this.props.screen) this.applyScreen(this.props.screen ?? 'wall'); }
+  componentWillUnmount() {
+    document.removeEventListener('mouseover', this.onOver);
+    document.removeEventListener('keydown', this.onKey);
+    document.removeEventListener('paste', this.onPaste);
+    clearInterval(this.timer);
+  }
+
+  applyScreen(s) {
+    clearInterval(this.timer);
+    const base = { tags: [], side: false, imageMode: false, modal: -1, chatOpen: false, pinned: false, q: '', streamed: 0 };
+    if (s === 'filtered') this.setState({ ...base, side: true, tags: ['seer'] });
+    else if (s === 'chat') { this.setState(base); setTimeout(() => this.ask('summarize my #seer notes this week, compare to last week'), 300); }
+    else if (s === 'gallery') this.setState({ ...base, imageMode: true });
+    else if (s === 'modal') this.setState({ ...base, imageMode: true, modal: 3 });
+    else this.setState(base);
+  }
+
+  newId() { const L = 'ABCDEFGHJKLMNPRSTUVWXYZ'; const r = () => L[Math.floor(Math.random() * L.length)]; return r() + '-' + r() + String(Math.floor(Math.random() * 90) + 10); }
+  tagsOf(t) { return (t.match(/#[a-z0-9-]+/gi) || []).map(x => x.slice(1).toLowerCase()); }
+  toggleTag(t) { this.setState(s => ({ tags: s.tags.includes(t) ? s.tags.filter(x => x !== t) : [...s.tags, t], imageMode: false })); }
+  copy(id) {
+    try { navigator.clipboard.writeText(id); } catch (e) {
+      const ta = document.createElement('textarea'); ta.value = id; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    this.setState({ copied: id }); clearTimeout(this.ct); this.ct = setTimeout(() => this.setState({ copied: null }), 1400);
+  }
+  addNote() { const id = this.newId(); this.setState(s => ({ notes: [{ id, text: '', pic: 0, date: 'Now' }, ...s.notes], editing: id, imageMode: false })); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  addImage(file) {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => this.setState(s => ({ notes: [{ id: this.newId(), text: '', pic: -1, url, w: img.naturalWidth, h: img.naturalHeight, date: 'Now' }, ...s.notes] }));
+    img.src = url;
+  }
+  picUrl(n, k = 1) { return n.pic === -1 ? n.url : `https://picsum.photos/id/${n.pic}/${Math.round(n.w * k)}/${Math.round(n.h * k)}`; }
+  ask(text) {
+    const q = (text || '').trim() || 'summarize my #seer notes this week, compare to last week';
+    clearInterval(this.timer);
+    this.setState({ chatOpen: true, query: q, q: '', streamed: 0, imageMode: false, modal: -1 });
+    this.timer = setInterval(() => {
+      this.setState(s => { const n = Math.min(s.streamed + 4, this.answerText.length); if (n >= this.answerText.length) clearInterval(this.timer); return { streamed: n }; });
+    }, 22);
+  }
+  closeChat() { clearInterval(this.timer); this.setState({ chatOpen: false, pinned: false, streamed: 0 }); }
+  jump(id) {
+    const go = () => { const el = document.querySelector(`[data-note="${id}"]`); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 140, behavior: 'smooth' }); };
+    if (this.state.imageMode) this.setState({ imageMode: false }, () => setTimeout(go, 50)); else go();
+  }
+  step(d) { const len = this.photos().length; this.setState(s => ({ modal: (s.modal + d + len) % len })); }
+  photos() { const { notes, tags } = this.state; return notes.filter(n => n.pic && tags.every(t => this.tagsOf(n.text).includes(t))); }
+
+  renderVals() {
+    const st = this.state;
+    const film = this.props.filmTone ?? true;
+    const photoFilter = film ? 'sepia(.14) saturate(1.12) contrast(1.05) brightness(.97)' : 'none';
+    const colWidth = { dense: 200, regular: 240, loose: 300 }[this.props.density ?? 'regular'];
+    const visible = st.notes.filter(n => st.tags.every(t => this.tagsOf(n.text).includes(t)));
+    const highlight = st.chatOpen && st.streamed > 0;
+    const counts = {};
+    st.notes.forEach(n => this.tagsOf(n.text).forEach(t => counts[t] = (counts[t] || 0) + 1));
+    const tagList = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(name => {
+      const on = st.tags.includes(name);
+      return { name, count: counts[name], bg: on ? '#ecebe4' : 'transparent', fg: on ? '#121211' : '#d6d5cd', toggle: () => this.toggleTag(name) };
+    });
+    const wall = visible.map(n => {
+      const len = n.text.length; const hasImg = !!n.pic; const used = this.usedIds.includes(n.id);
+      const fs = hasImg ? 13 : len < 36 ? 26 : len < 80 ? 17 : 13.5;
+      const segs = n.text.split(/(#[a-z0-9-]+)/gi).filter(Boolean).map(p => p[0] === '#'
+        ? { tag: p, onTag: e => { e.stopPropagation(); this.toggleTag(p.slice(1).toLowerCase()); } }
+        : { txt: p });
+      return {
+        id: n.id, text: n.text, segs, fs, ls: fs > 20 ? '-0.03em' : '-0.005em',
+        img: hasImg ? this.picUrl(n) : null, ar: hasImg ? `${n.w} / ${n.h}` : 'auto',
+        bg: hasImg ? 'transparent' : '#1a1a18', pad: hasImg ? '9px 2px 4px' : '13px 14px 10px',
+        editing: st.editing === n.id, notEditing: st.editing !== n.id, rows: Math.max(3, Math.ceil(len / 28)),
+        edit: () => this.setState({ editing: n.id }),
+        onInput: e => { const v = e.target.value; this.setState(s => ({ notes: s.notes.map(x => x.id === n.id ? { ...x, text: v } : x) })); },
+        onBlur: () => this.setState(s => ({ editing: null, notes: s.notes.filter(x => x.id !== n.id || x.text.trim() || x.pic) })),
+        copy: e => { e.stopPropagation(); this.copy(n.id); },
+        copyIcon: st.copied === n.id ? 'ph-duotone ph-check' : 'ph-duotone ph-copy', copiedOp: st.copied === n.id ? 1 : 0,
+        op: highlight ? (used ? 1 : 0.22) : 1, ring: highlight && used ? '1px solid rgba(236,235,228,.85)' : '1px solid transparent',
+        date: n.date
+      };
+    });
+    const photos = this.photos();
+    const gallery = photos.map((n, i) => ({ src: this.picUrl(n), ar: `${n.w} / ${n.h}`, grow: (n.w / n.h).toFixed(3), basis: Math.round(n.w / n.h * 230), open: () => this.setState({ modal: i }) }));
+    const mp = st.modal >= 0 ? photos[st.modal] : null;
+    const m = mp ? {
+      src: this.picUrl(mp, 2), ar: `${mp.w} / ${mp.h}`, id: mp.id, meta: `${st.modal + 1} / ${photos.length}  ${mp.date}`,
+      text: mp.text.replace(/#[a-z0-9-]+/gi, '').replace(/\s+/g, ' ').trim() || '',
+      tags: this.tagsOf(mp.text).map(t => ({ t: '#' + t })),
+      copy: () => this.copy(mp.id), copyIcon: st.copied === mp.id ? 'ph-duotone ph-check' : 'ph-duotone ph-copy', copiedOp: st.copied === mp.id ? 1 : 0,
+      full: () => window.open(`Fullscreen.dc.html?src=${encodeURIComponent(this.picUrl(mp, 4))}&id=${mp.id}`, '_blank')
+    } : {};
+    const shown = this.answerText.slice(0, st.streamed);
+    const done = st.streamed >= this.answerText.length;
+    const paras = shown.split('\n\n').map((t, i, a) => ({ t: t + (!done && i === a.length - 1 ? ' ▍' : '') }));
+    const mainLeft = st.side ? 296 : 56;
+    const tip = st.tip;
+    const last = st.notes[0];
+    return {
+      side: st.side, imageMode: st.imageMode, notImageMode: !st.imageMode, mainLeft, chatLeft: mainLeft + 16, colWidth, photoFilter,
+      toggleSide: () => this.setState(s => ({ side: !s.side })),
+      toggleImages: () => this.setState(s => ({ imageMode: !s.imageMode, modal: -1 })),
+      imgBtnBg: st.imageMode ? '#ecebe4' : 'transparent', imgBtnFg: st.imageMode ? '#121211' : '#ecebe4',
+      addNote: () => this.addNote(),
+      activeChips: st.tags.map(t => ({ label: '#' + t, remove: () => this.toggleTag(t) })),
+      hasFilters: st.tags.length > 0, clearTags: () => this.setState({ tags: [] }),
+      tagList, photoCount: st.notes.filter(n => n.pic).length,
+      heading: st.imageMode ? 'Photos.' : st.tags.length ? st.tags.map(t => '#' + t).join(' ') : 'Everything.',
+      countLine: st.imageMode ? `${photos.length} photos.` : st.tags.length ? `${visible.length} of ${st.notes.length} notes.` : `${st.notes.length} notes, ${st.notes.filter(n => n.pic).length} with photos.`,
+      lastId: last ? last.id : '', lastWhen: last && last.date === 'Now' ? 'just now' : '14 min ago',
+      jumpLast: e => { e.preventDefault(); last && this.jump(last.id); },
+      wall, gallery,
+      modalOpen: !!mp, m, closeModal: () => this.setState({ modal: -1 }), stop: e => e.stopPropagation(),
+      prev: e => { e.stopPropagation(); this.step(-1); }, next: e => { e.stopPropagation(); this.step(1); },
+      chatOpen: st.chatOpen, queryShown: st.query, answerParas: paras, answerDone: done,
+      usedChips: this.usedIds.map(id => ({ id, go: () => this.jump(id) })),
+      pinTip: st.pinned ? 'Unpin' : 'Pin', pinBg: st.pinned ? '#ecebe4' : 'transparent', pinFg: st.pinned ? '#121211' : '#ecebe4',
+      togglePin: () => this.setState(s => ({ pinned: !s.pinned })), closeChat: () => this.closeChat(),
+      q: st.q, onQ: e => this.setState({ q: e.target.value }), send: e => { e.preventDefault(); this.ask(st.q); },
+      dragging: st.dragging,
+      onDragOver: e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); if (!st.dragging) this.setState({ dragging: true }); } },
+      onDragLeave: e => { if (!e.relatedTarget) this.setState({ dragging: false }); },
+      onDrop: e => { e.preventDefault(); this.setState({ dragging: false }); [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')).forEach(f => this.addImage(f)); },
+      tip: !!tip, tipText: tip ? tip.text : '', tipX: tip ? tip.x : 0, tipY: tip ? tip.y : 0,
+      tipTf: tip && tip.right ? 'translateY(-50%)' : 'translate(-50%,-100%)'
+    };
+  }
+}
+</script>
+</body>
+</html>
