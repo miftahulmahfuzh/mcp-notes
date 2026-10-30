@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Note, PhotoItem } from '../types';
 import { NoteImage, aspectOf, type ImageInfo } from './NoteImage';
@@ -25,7 +25,9 @@ export interface GalleryProps {
   onDelete?: (note: Note) => void;
 }
 
-export function Gallery({ items, copiedId, onCopy, onDelete }: GalleryProps) {
+export function Gallery({ items: all, copiedId, onCopy, onDelete }: GalleryProps) {
+  /** Photos whose file is not on this machine are left out: a placeholder tile is a hole in the grid. */
+  const items = useMemo(() => all.filter((it) => it.image.available), [all]);
   /** The open image's id; the modal hides itself when that image leaves `items`. */
   const [openId, setOpenId] = useState<string | null>(null);
   const index = openId === null ? -1 : items.findIndex((it) => it.image.id === openId);
