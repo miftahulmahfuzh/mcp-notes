@@ -166,23 +166,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e6e774b",
       "depends_on": [
         5,
         8
       ],
       "difficulty": "NORMAL",
       "n": 9,
-      "note": null,
+      "note": "RevealButton + useCapabilities; no gallery mount (coordinator grep); drift: RevealMounts.test card props gain onExpand; trailer Haiku 5.5 left (pushed); unit 766, int 294",
       "package": "web/src",
       "plan": ".workflows/plan/wall-editing/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T17:09:57+07:00",
       "satisfies": [
         "R4",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A031",
       "title": "Web reveal button + capabilities"
     },
     {
@@ -202,7 +202,7 @@
         "R5",
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Docs, Neon migration 0002, full verification"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T17:04:40+07:00",
+  "updated": "2026-10-30T17:09:58+07:00",
   "verified_at": "2026-10-30T16:54:41+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
