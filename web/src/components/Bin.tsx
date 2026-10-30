@@ -54,8 +54,9 @@ function BinActions({ what, confirming, busy, onRestore, onAsk, onConfirm, onCan
 
 /** A deleted note in wall style: cover + count, read-only text with inert tag chips, id, deleted date, actions. */
 function BinCard({ note, now, actions }: { note: Note; now: Date; actions: ReactNode }) {
-  const n = note.images.length;
-  const cover = note.images[0];
+  const shown = note.images.filter((img) => img.available);
+  const n = shown.length;
+  const cover = shown[0];
   const fs = fontSizeFor(note.body, n > 0);
   return (
     <article className={n > 0 ? 'card img' : 'card'} data-bin-note={note.id}>
@@ -167,9 +168,9 @@ export function Bin({ store, now, onRestored }: BinProps) {
 
   return (
     <section className="bin" data-bin="">
-      {bin.images.length > 0 && (
+      {bin.images.some((b) => b.image.available) && (
         <div className="bin-grid">
-          {bin.images.map((b) => {
+          {bin.images.filter((b) => b.image.available).map((b) => {
             const t = targetOf(b);
             const g = galleryTile(b.image);
             const notice = notices[keyOf(t)];

@@ -212,9 +212,9 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             ))}
           </div>
         )}
-        {note.images.length > 0 && (
+        {note.images.some((img) => img.available) && (
           <div className="ed-strip" data-strip="">
-            {note.images.map((img) => (
+            {note.images.filter((img) => img.available).map((img) => (
               <div key={img.id} className="ed-thumb" data-image={img.id} style={{ aspectRatio: aspectOf(img).css }}>
                 <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 <RevealButton image={img} className="ed-rm ed-reveal" />
