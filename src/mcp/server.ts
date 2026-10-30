@@ -11,7 +11,7 @@ export const SERVER_VERSION = '0.1.0';
 export function createMcpServer(deps: ToolDeps): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: buildInstructions() },
+    { instructions: buildInstructions(undefined, deps.wallUrl) },
   );
   registerNoteTools(server, deps);
   registerImageTools(server, deps);

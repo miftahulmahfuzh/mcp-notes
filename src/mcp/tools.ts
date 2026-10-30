@@ -14,6 +14,11 @@ export interface ToolDeps {
   db: Db;
   /** Connectors for the connector tools. Omitted: defaultConnectors() (sibling repos, read per call). Tests inject their own. */
   connectors?: Connectors;
+  /**
+   * The wall's base URL (`http://localhost:<port>`, no trailing slash) named in the instructions'
+   * Links paragraph. Omitted: `DEFAULT_WALL_URL` (port 7317), e.g. a daemon on port 0 in tests.
+   */
+  wallUrl?: string;
 }
 
 /** Appended to the `list` and `search` descriptions. */

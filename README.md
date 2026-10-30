@@ -24,6 +24,7 @@ its own chat bar.
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
   - [Editing a note, live on the wall](#editing-a-note-live-on-the-wall)
+  - [Clickable note ids](#clickable-note-ids)
   - [Spending, runs and Seer](#spending-runs-and-seer)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
@@ -293,6 +294,19 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ![/n edits note E-VZY while the wall updates live](docs/readme/cc-edit.gif)
 
+### Clickable note ids
+
+`/n`, and any session that loads the `notes` server, writes every note id as a markdown link to
+the wall, for example `[F-ZH5](http://localhost:7317/?note=F-ZH5)`. Claude Code draws a markdown
+link as a terminal hyperlink (OSC 8), so Ctrl+click on the id (Cmd+click on macOS) opens the
+wall in your browser on that note. The wall URL is not written into the skill: the daemon puts
+`http://localhost:<NOTESD_PORT>` into the MCP server's instructions, so a different port needs no
+edit. Ids inside note bodies and tool calls stay plain.
+
+Inside tmux the link reaches the terminal only when tmux knows the terminal supports hyperlinks.
+One line in your tmux config does it; see
+[Clickable ids under WSL2 + tmux](docs/INSTALL.md#8-clickable-ids-under-wsl2--tmux).
+
 ### Spending, runs and Seer
 
 The same server reads three of your own apps, read-only: expense-tracking (spending in rupiah),
@@ -526,7 +540,7 @@ part of `npm test` or `test:int`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | — | Postgres URLs. The daemon uses the pooled Neon host, migrations the direct one, chosen by host name. |
-| `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. |
+| `NOTESD_PORT` | `7317` | HTTP port. The host is always `127.0.0.1`. The MCP instructions give Claude `http://localhost:<port>` as the wall URL for clickable note ids. `scripts/install.sh` registers the MCP server and checks health on 7317. |
 | `NOTES_DATA_DIR` | `~/mcp-notes-data` | Photos, derived images, inbox. |
 | `NOTESD_EXPLORER_BIN` | `explorer.exe` on `PATH`, else `/mnt/c/Windows/explorer.exe` | The Windows Explorer binary "open file location" starts. The systemd unit's `PATH` has no `/mnt/c`, so the fallback is what normally runs. |
 | `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
