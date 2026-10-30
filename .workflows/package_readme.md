@@ -57,6 +57,10 @@ src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (expenses: 3
 src/connectors/expenses/categories.ts  EXPENSE_CATEGORIES (17 slugs), EXPENSE_CATEGORY_LABELS, EATING_CATEGORIES, toExpenseCategory, categoryLabel
 src/connectors/expenses/dates.ts       pure WIB calendar helpers: DATE_RE/MONTH_RE, addDays, daysInclusive, isoWeekMonday/Key, todayWib, addMonths
 src/connectors/expenses/queries.ts     curated SQL, row builders, fetchSpending / fetchGroup / fetchMonths, limits
+src/connectors/runs/curated.ts   registerRunsCurated: runs_list, runs_get, runs_review (+ runsList/runsGet/runsReview)
+src/connectors/runs/queries.ts   curated SQL (/* runs:* */), row shapers (runMetrics, periodTotals, splitOut, zonesOut, insightOut), read helpers
+src/connectors/runs/periods.ts   WIB days, ISO week / month keys: resolvePeriod, resolveRange, isRealDate, todayInWib
+src/connectors/runs/format.ts    unit helpers: metresToKm, formatDuration ("h:mm:ss"), formatPace ("m:ss /km"), hrDrop1Min, percentOf
 src/http/app.ts        createApp: /health, /mcp (+ loopbackOnly guard), mounts the routers below
 src/http/api.ts        apiRoutes: /api/notes CRUD, /api/tags, /api/events (SSE), /api/chat (SSE)
 src/http/static.ts     staticRoutes: web/dist SPA, /assets, /full/:id, 503 when not built
@@ -89,7 +93,7 @@ claude/skills/n/SKILL.md  the /n Claude Code skill, symlinked to ~/.claude/skill
 docs/INSTALL.md        install, WSL keepalive rationale, post-merge re-install, uninstall, troubleshooting
 tests/unit/            vitest unit tests (node)
 tests/integration/     *.int.test.ts, setup.ts helpers, globalSetup.ts (migrates once)
-tests/integration/connectors/  connector harness (harness.ts, siblings.ts), globalSetup.ts (builds connectors_<id> DBs), core/generic/mcp int tests
+tests/integration/connectors/  connector harness (harness.ts, siblings.ts), globalSetup.ts (builds connectors_<id> DBs), core/generic/mcp int tests, runs.curated.int.test.ts
 tests/live/            chat.live.test.ts (npm run test:live), connectors.live.test.ts (npm run test:live:connectors)
 vitest.config.ts       the only vitest config; switches mode on VITEST_INTEGRATION=1, CHAT_LIVE_TEST=1 or CONNECTORS_LIVE_TEST=1
 tsconfig.json          typecheck (noEmit); tsconfig.server.json builds src/ to dist/
@@ -519,6 +523,14 @@ function fetchSpending(source, args, now?), fetchGroup(source, id), fetchMonths(
 ```
 
 Semantics mirror the app: money is `sum(expense_items.amount_idr)` as integer rupiah, days are `expense_groups.occurred_on` (a WIB date), and there is no `user_id` filter (one owner per app). Totals for `expenses_spending` are summed from `by_day`. `by_week` lists every ISO week (Monday-Sunday, keyed `YYYY-Www` plus its Monday) the range touches, zero-filled, with `partial`/`days_in_range` for weeks the range cuts. `by_category` merges unknown stored slugs into `other` (its `group_count` is then an upper bound) and sorts by total, ties in display order. `largest_items` breaks ties by newest day, then item id. `expenses_get` orders items by `sort_order, id` and photos by `sort_order, created_at`, like `getGroupDetail`. `expenses_months` mirrors `getMonthlyTotals` (LEFT JOIN, zero-fill in JS); each month is `complete`, `in_progress` or `future`, and `average_per_month_idr` averages complete months only. A bad range, a reversed range, an over-long range or an unknown group id throws a plain `Error` with a hint Claude can act on, which `run()` turns into an `isError` result.
+
+Run-insights curated tools (phase 3, P1-NOTES-A014), all compact and `readOnlyHint`, dates as WIB calendar days, raw app units each with a readable companion (km, `h:mm:ss`, `m:ss /km`):
+
+| tool | input | returns |
+|---|---|---|
+| `runs_list` | `from` YYYY-MM-DD, `to?` (default today) | `{ from, to, totals, runs, truncated }`: reviewed runs only, newest first, with headline/verdict of the app's analysis; totals use distance-weighted pace and time-weighted HR |
+| `runs_get` | exactly one of `id` or `date` | `{ id \| date, ... }` full metrics, per-km splits (last flagged partial), HR zones 1-5, note, `reviewed`, latest analysis, `profile`; unreviewed runs included; unknown id or unreal date throws |
+| `runs_review` | `scope` `week` (ISO) / `month`, `key?` (`2026-W34`, `2026-08` or a day inside; default current) | `{ scope, key, from, to, review, review_missing, totals, runs }` (brief runs); `review` null when the app stored none |
 
 ### src/http/app.ts
 

@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 13:37:00
+**Last Updated**: 2026-10-30 13:37:28
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -48,6 +48,23 @@
     - Plan index names worktree connectors / branch feature/connectors; session is in connectors-p2 on phase-2-connectors → proceed on phase-2-connectors (coordinator orch-connectors assigned this branch explicitly; rung 5 task text)
     - TaskID → P1-NOTES-A013 as assigned by the coordinator; only phase 2's task created in this worktree (tie-break: narrower blast radius, same as phase 1)
     - Code applied verbatim from the plan's eight code blocks (rung 3); no drift against phase 1's types.ts/rows.ts/tools.ts/harness.ts or ~/expense-tracking's drizzle schema
+
+- [x] **P1-NOTES-A014** Phase 3: run-insights curated tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/runs/{curated,format,periods,queries}.ts`, `tests/unit/connectors/runs.{format,periods,curated}.test.ts`, `tests/integration/connectors/runs.curated.int.test.ts`. Exit: `runs_list` (`from`, `to` default today → reviewed runs with key metrics and period totals), `runs_get` (exactly one of `id` or `date`: metrics, splits, zones, the app's latest session insight), `runs_review` (`scope` week|month, `key` week/month/day → latest review + totals) correct on seeded data; app units with readable companions; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p3/docs/plans/CONNECTORS_PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (curated runs tools); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A014.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /implement
+  - **Files**: src/connectors/runs/curated.ts, src/connectors/runs/format.ts, src/connectors/runs/periods.ts, src/connectors/runs/queries.ts, tests/unit/connectors/runs.format.test.ts, tests/unit/connectors/runs.periods.test.ts, tests/unit/connectors/runs.curated.test.ts, tests/integration/connectors/runs.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A014.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - TaskID → P1-NOTES-A014 as assigned by coordinator orch-connectors (rung 5: task text / coordinator brief)
+    - Step 3 task creation in per-phase worktree → only phase 3's task, in root .workflows/todos.md (tie-break: narrower blast radius; matches phases 1 and 6 precedent)
+    - Integration tests run serialized under flock /tmp/mcp-notes-test-int.lock (shared Docker containers with peers)
 
 - [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
   - **Difficulty**: EASY
@@ -95,6 +112,7 @@
   - **Drift**:
     - None in code. Wall SSE note event op is 'updated' on the wire (plan text said 'update'); A2 matched on it.
     - Owner's Neon store had zero live notes before acceptance (only two image notes 3-3XZ, 9-C0C soft-deleted at 10:23 local, before this phase). A1 correctly answered 'no #seer notes'.
+
 - [x] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
   - **Difficulty**: HARD
   - **Type**: Feature
