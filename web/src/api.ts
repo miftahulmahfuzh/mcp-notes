@@ -33,6 +33,14 @@ export async function fetchNotes(): Promise<Note[]> {
   return j.notes;
 }
 
+/** `GET /api/notes/:id` → the live note, or null on 404 (unknown or deleted). The server normalises the id. */
+export async function fetchNote(id: string): Promise<Note | null> {
+  const res = await fetch(`/api/notes/${enc(id)}`);
+  if (res.status === 404) return null;
+  await check(res);
+  return (await res.json()) as Note;
+}
+
 /** Phase 6: `GET /api/tags` → `[{ tag, count, last_used }]`. */
 export async function fetchTags(): Promise<TagCount[]> {
   const res = await check(await fetch('/api/tags'));

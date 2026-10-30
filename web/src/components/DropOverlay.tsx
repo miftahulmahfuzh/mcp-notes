@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { ImageSquare, Paperclip } from '@phosphor-icons/react';
 import type { Note } from '../types';
 import { attachImage, type AttachResult } from '../api';
+import { flashNote } from '../lib/flash';
+
+/** Moved to lib/flash (shared with the wall's deep link); re-exported for existing importers. */
+export { flashNote };
 
 /** Phase 5: `POST /api/images` → 201 `{ note, created: true }` or 200 `{ note, created: false }`. */
 export type UploadResult = { note: Note; created: boolean };
@@ -33,24 +37,6 @@ export async function uploadImage(file: File, fetchImpl: typeof fetch = fetch): 
     throw new Error(`upload failed: ${res.status} ${detail}`.trim());
   }
   return (await res.json()) as UploadResult;
-}
-
-/** Scroll the card (or gallery tile) of `id` into view and pulse an outline on it. */
-export function flashNote(id: string, delayMs = 450): void {
-  window.setTimeout(() => {
-    const el = document.querySelector<HTMLElement>(`[data-note="${id}"]`);
-    if (!el) return;
-    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (typeof el.animate !== 'function') return;
-    el.animate(
-      [
-        { outline: '1px solid rgba(236,235,228,.85)', outlineOffset: '3px' },
-        { outline: '1px solid rgba(236,235,228,.85)', outlineOffset: '3px', offset: 0.6 },
-        { outline: '1px solid rgba(236,235,228,0)', outlineOffset: '3px' },
-      ],
-      { duration: 1600, easing: 'ease-out' },
-    );
-  }, delayMs);
 }
 
 export interface DropOverlayProps {

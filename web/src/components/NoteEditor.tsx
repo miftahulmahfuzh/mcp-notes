@@ -24,11 +24,13 @@ export interface NoteEditorProps {
   onDelete?: (note: Note, draft: string) => void;
   /** Existing tags (App's store) offered while typing `#…`. Absent = no autocomplete. */
   tags?: TagCount[];
+  /** Bumped by App to close this editor the normal way (draft saved, empty rule), e.g. a deep link to another note. The value at mount never closes it. */
+  closeSignal?: number;
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, tags: knownTags = [] }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -57,6 +59,11 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
     closedRef.current = true;
     onCloseRef.current(noteRef.current, draftRef.current, draftRef.current !== savedRef.current);
   }, []);
+
+  const mountSignal = useRef(closeSignal);
+  useEffect(() => {
+    if (closeSignal !== mountSignal.current) close();
+  }, [closeSignal, close]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
