@@ -14,6 +14,21 @@ describe('buildInstructions', () => {
     expect(text).toContain('Asia/Jakarta');
     expect(text).toMatch(/Comparisons and summaries/);
   });
+
+  it('has exactly one connectors paragraph: read-only, the three systems, curated tools first', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Connectors.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(p).toMatch(/read-only/);
+    for (const word of ['expense-tracking', 'run-insights', 'Seer', 'lab.sqlite', 'Asia/Jakarta', 'rupiah']) expect(p).toContain(word);
+    expect(p).toContain('Prefer the curated tools');
+    expect(p).toContain("only when they don't answer");
+    expect(p).toContain('_schema before writing SQL');
+    for (const name of ['expenses_spending', 'runs_review', 'seer_sera_best']) expect(p).toContain(name);
+    expect(p).not.toContain('expenses_schema,');
+  });
 });
 
 describe('toFilter', () => {

@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { defaultConnectors, registerConnectorTools } from '../connectors/register.js';
 import { registerImageTools } from './imageTools.js';
 import { buildInstructions } from './instructions.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
@@ -14,6 +15,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   );
   registerNoteTools(server, deps);
   registerImageTools(server, deps);
+  // Lazy: nothing is read or connected until a connector tool is called.
+  registerConnectorTools(server, deps.connectors ?? defaultConnectors());
   return server;
 }
 

@@ -1,7 +1,16 @@
+import {
+  ALL_CONNECTOR_TOOL_NAMES,
+  CONNECTOR_SYSTEMS,
+  CONNECTOR_TOOL_NAMES,
+  SYSTEM_META,
+  type SystemId,
+} from '../connectors/names.js';
+
 /**
  * The chat agent's tool surface and the terse captions the answer panel shows while a tool runs.
- * Tool names match src/mcp/tools.ts and src/mcp/imageTools.ts. Claude Code exposes them as
- * `mcp__notes__<name>` because the daemon registers its MCP server under the name `notes`.
+ * Notes tool names match src/mcp/tools.ts and src/mcp/imageTools.ts; connector tool names come
+ * from src/connectors/names.ts. Claude Code exposes all of them as `mcp__notes__<name>` because
+ * the daemon registers its one MCP server under the name `notes`.
  */
 export const NOTES_MCP_SERVER = 'notes';
 
@@ -25,11 +34,23 @@ export type NotesToolName = (typeof NOTES_TOOL_NAMES)[number];
 
 export const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
 
+/** Status-line caption for every tool of one read-only system ('reading expenses' / 'reading runs' / 'reading seer'). */
+export const CONNECTOR_CAPTIONS = Object.fromEntries(
+  CONNECTOR_SYSTEMS.map((id) => [id, SYSTEM_META[id].caption]),
+) as Record<SystemId, string>;
+
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
-/** Exactly the 13 notes tools plus WebSearch and WebFetch (plan invariant 4). */
+/**
+ * Exactly the 13 notes tools, the 15 connector tools and WebSearch + WebFetch
+ * (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4).
+ */
 export function allowedChatTools(): string[] {
-  return [...NOTES_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`), ...WEB_TOOL_NAMES];
+  return [
+    ...NOTES_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    ...WEB_TOOL_NAMES,
+  ];
 }
 
 function idCount(input: unknown): number | null {
@@ -44,6 +65,15 @@ function counted(n: number | null, one: string, many: (n: number) => string, unk
   return unknown;
 }
 
+/** The caption for a connector tool name (without the MCP prefix), or null if it is not one. */
+function connectorCaption(tool: string): string | null {
+  for (const system of CONNECTOR_SYSTEMS) {
+    const names: readonly string[] = CONNECTOR_TOOL_NAMES[system];
+    if (names.includes(tool)) return CONNECTOR_CAPTIONS[system];
+  }
+  return null;
+}
+
 /**
  * The caption for one top-level `tool_use` block, or null for a tool the panel does not name.
  * `input` is the block's raw input; only `ids` (get, view_images) is read.
@@ -52,7 +82,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
   if (name === 'WebSearch') return 'searching the web';
   if (name === 'WebFetch') return 'reading a web page';
   if (!name.startsWith(MCP_PREFIX)) return null;
-  switch (name.slice(MCP_PREFIX.length)) {
+  const tool = name.slice(MCP_PREFIX.length);
+  switch (tool) {
     case 'search':
     case 'list':
     case 'tags':
@@ -75,6 +106,6 @@ export function captionForToolUse(name: string, input: unknown): string | null {
     case 'restore':
       return 'restoring a note';
     default:
-      return null;
+      return connectorCaption(tool);
   }
 }

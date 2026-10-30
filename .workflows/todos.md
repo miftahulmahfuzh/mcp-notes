@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30 11:29:05
+**Last Updated**: 2026-10-30 14:05:00
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 12
+- Completed: 18
 
 ---
 
@@ -32,6 +32,104 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A013** Phase 2: expense-tracking curated tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/expenses/{curated,categories,dates,queries}.ts`, `tests/unit/connectors/expenses.{dates,categories,queries}.test.ts`, `tests/integration/connectors/expenses.curated.int.test.ts`. Exit: `expenses_spending` (`from`/`to`, optional `categories`, `top` → total, by category with Indonesian label, by day, by ISO week Monday–Sunday with partial flags, largest items), `expenses_get` (`id` → one expense group with items, photo count/urls, note, raw text), `expenses_months` (`months`, `to_month`, `categories` → monthly totals, zero-filled) return correct integers on seeded data; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p2/docs/plans/CONNECTORS_PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (curated, WIB / integer rupiah); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A013.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /implement
+  - **Files**: src/connectors/expenses/curated.ts, src/connectors/expenses/categories.ts, src/connectors/expenses/dates.ts, src/connectors/expenses/queries.ts, tests/unit/connectors/expenses.dates.test.ts, tests/unit/connectors/expenses.categories.test.ts, tests/unit/connectors/expenses.queries.test.ts, tests/integration/connectors/expenses.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A013.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Plan index names worktree connectors / branch feature/connectors; session is in connectors-p2 on phase-2-connectors → proceed on phase-2-connectors (coordinator orch-connectors assigned this branch explicitly; rung 5 task text)
+    - TaskID → P1-NOTES-A013 as assigned by the coordinator; only phase 2's task created in this worktree (tie-break: narrower blast radius, same as phase 1)
+    - Code applied verbatim from the plan's eight code blocks (rung 3); no drift against phase 1's types.ts/rows.ts/tools.ts/harness.ts or ~/expense-tracking's drizzle schema
+
+- [x] **P1-NOTES-A014** Phase 3: run-insights curated tools
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/runs/{curated,format,periods,queries}.ts`, `tests/unit/connectors/runs.{format,periods,curated}.test.ts`, `tests/integration/connectors/runs.curated.int.test.ts`. Exit: `runs_list` (`from`, `to` default today → reviewed runs with key metrics and period totals), `runs_get` (exactly one of `id` or `date`: metrics, splits, zones, the app's latest session insight), `runs_review` (`scope` week|month, `key` week/month/day → latest review + totals) correct on seeded data; app units with readable companions; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p3/docs/plans/CONNECTORS_PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (curated runs tools); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A014.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /implement
+  - **Files**: src/connectors/runs/curated.ts, src/connectors/runs/format.ts, src/connectors/runs/periods.ts, src/connectors/runs/queries.ts, tests/unit/connectors/runs.format.test.ts, tests/unit/connectors/runs.periods.test.ts, tests/unit/connectors/runs.curated.test.ts, tests/integration/connectors/runs.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A014.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - TaskID → P1-NOTES-A014 as assigned by coordinator orch-connectors (rung 5: task text / coordinator brief)
+    - Step 3 task creation in per-phase worktree → only phase 3's task, in root .workflows/todos.md (tie-break: narrower blast radius; matches phases 1 and 6 precedent)
+    - Integration tests run serialized under flock /tmp/mcp-notes-test-int.lock (shared Docker containers with peers)
+
+- [x] **P1-NOTES-A015** Phase 4: Seer curated tools (db + lab)
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/seer/{curated,rows,ranking,leaderboard,positions,sera}.ts`, `tests/unit/connectors/seer.{ranking,sera,curated}.test.ts`, `tests/integration/connectors/seer.curated.int.test.ts`. Exit: `seer_leaderboard` ranks as the app does (common dates, ≥63 shared sessions, annualised Sharpe, tie-breaks; benchmarks and retired not ranked, shown separately), `seer_positions` lists open bracket orders and book positions with marks and unrealised P&L, `seer_sera_best` lists the best variant per method from lab.sqlite with the lab's metrics, correct on seeded Postgres + `makeLab()` lab; handlers use `run(…, { compact: true })` and phase 1's `toObjects`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p4/docs/plans/CONNECTORS_PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R2, R5 — MCP tools per system (Seer curated tools); unit + Docker integration tests
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A015.md`
+  - **Completed**: 2026-10-30 13:37
+  - **Method**: /do
+  - **Files**: src/connectors/seer/curated.ts, src/connectors/seer/rows.ts, src/connectors/seer/ranking.ts, src/connectors/seer/leaderboard.ts, src/connectors/seer/positions.ts, src/connectors/seer/sera.ts, tests/unit/connectors/seer.ranking.test.ts, tests/unit/connectors/seer.sera.test.ts, tests/unit/connectors/seer.curated.test.ts, tests/integration/connectors/seer.curated.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A015.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Plan index names worktree .../connectors on feature/connectors; this session runs in .../connectors-p4 on phase-4-connectors → proceed (coordinator cut per-phase worktrees from af45c9e and said to commit here)
+    - TaskID → P1-NOTES-A015 (assigned by coordinator orch-connectors)
+    - Step 3 task creation → only phase 4's task created, inline (narrower blast radius; each phase session mints its own)
+
+- [x] **P1-NOTES-A016** Phase 5: Chat bar + /n for connectors
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns src/chat/status.ts, src/chat/prompt.ts, tests/unit/chat-status.test.ts, tests/unit/chat-prompt.test.ts, claude/skills/n/SKILL.md, README (TOC line + "Spending, runs and Seer" /n subsection + first two paragraphs of "The chat bar"), docs/plans/CHAT_BAR_BRAIN_PLAN.md invariant 4 note. Exit: allowedChatTools() = 13 notes + 15 connector + 2 web tools; captions "reading expenses"/"reading runs"/"reading seer" from SYSTEM_META for every connector tool, null for unknown; system prompt names the three systems, says curated first / _sql last / _schema before SQL, asks for what the data shows plus an opinion in the apps' units; /n routes spending/runs/Seer questions to the connector tools; typecheck and unit tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p5/docs/plans/CONNECTORS_PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R3 — Chat bar allows + captions the new tools; `/n` routes data questions and gives an opinion
+  - **Depends on**: P1-NOTES-A012
+  - **Plan**: `.workflows/plan/P1-NOTES-A016.md`
+  - **Completed**: 2026-10-30 14:05
+  - **Method**: /do
+  - **Files**: src/chat/status.ts, src/chat/prompt.ts, tests/unit/chat-status.test.ts, tests/unit/chat-prompt.test.ts, claude/skills/n/SKILL.md, README.md, docs/plans/CHAT_BAR_BRAIN_PLAN.md, docs/plans/CONNECTORS_PLAN.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A016.md
+  - **Decided**:
+    - Worktree mismatch (index names connectors/feature/connectors; session is in connectors-p5/phase-5-connectors) → proceed in the per-phase worktree (rung 6: swarm coordinator's per-phase worktree convention, cut from af45c9e which contains phase 1)
+    - TaskID → P1-NOTES-A016, assigned by coordinator orch-connectors; only phase 5's task minted in root .workflows/todos.md (same convention phases 1 and 6 used)
+
+- [x] **P2-NOTES-C506** Phase 6: Readable links in the answer panel
+  - **Difficulty**: EASY
+  - **Type**: Feature
+  - **Context**: Owns `web/src/components/AnswerPanel.tsx`, `web/src/lib/links.ts` + `web/src/lib/links.test.tsx`, `web/src/styles.css` (link style), `web/src/components/AnswerPanel.test.tsx` (new). Exit: markdown links `[text](https://…)` render as an underlined `<a>` showing the text, bare `http(s)://` URLs render as underlined links, both open in a new tab with `rel="noreferrer noopener"`, styled in the caption family; raw `[..](..)` never appears; streaming partial links degrade to plain text until complete.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p6/docs/plans/CONNECTORS_PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R4 — Answer panel never shows raw markdown link syntax
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P2-NOTES-C506.md`
+  - **Completed**: 2026-10-30 13:40
+  - **Method**: /do
+  - **Files**: web/src/lib/links.ts, web/src/lib/links.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/AnswerPanel.test.tsx, web/src/styles.css, .workflows/todos.md, .workflows/plan/P2-NOTES-C506.md, docs/plans/CONNECTORS_PLAN.md
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm → mint only phase 6's task, as P2-NOTES-C506 (non-sequential ID to avoid colliding with phase 1's counter), in root .workflows/todos.md (tie-break: narrower blast radius; rung 6 convention: earlier plan sets tracked in root todos)
+    - test:int not run for a web-only phase → skipped to avoid disturbing phase 1's concurrent Docker containers (tie-break: narrower blast radius; no src/ or tests/integration change)
+
+- [x] **P1-NOTES-A012** Phase 1: Connector core, generic tools, test harness
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/connectors/{names,types,errors,env,rows,pg,lab,guard,connector,schema,sql,register}.ts`, `src/connectors/<id>/index.ts` + stub `curated.ts` for all three systems, `src/mcp/{server,tools,instructions}.ts`, `scripts/test-int.sh`, `vitest.config.ts`, `package.json` (scripts), connector unit/integration/live tests, README connectors sections, `docs/INSTALL.md` ("5. Connectors") (39 files). Exit: `tools/list` on `/mcp` shows the 6 generic tools; `_schema` returns tables/columns/types/comments from the live DB (and lab for seer); `_sql` rejects writes and multi-statements before the DB, caps rows, and `nextval`/INSERT through the unguarded executor fail with a read-only error; missing repo / `.env.local` / unreachable DB give the short error and other tools keep working; `npm run test:live:connectors` exists and is excluded by default.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/connectors-p1/docs/plans/CONNECTORS_PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R1, R2, R5 — Connector core (read-only connectors per system); MCP tools per system; unit + Docker integration tests
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A012.md`
+  - **Completed**: 2026-10-30 13:28
+  - **Method**: /do
+  - **Files**: src/connectors/names.ts, src/connectors/types.ts, src/connectors/errors.ts, src/connectors/env.ts, src/connectors/rows.ts, src/connectors/pg.ts, src/connectors/lab.ts, src/connectors/guard.ts, src/connectors/connector.ts, src/connectors/schema.ts, src/connectors/sql.ts, src/connectors/register.ts, src/connectors/expenses/index.ts, src/connectors/expenses/curated.ts, src/connectors/runs/index.ts, src/connectors/runs/curated.ts, src/connectors/seer/index.ts, src/connectors/seer/curated.ts, src/mcp/instructions.ts, src/mcp/server.ts, src/mcp/tools.ts, tests/unit/mcp.instructions.test.ts, tests/unit/connectors/names.test.ts, tests/unit/connectors/guard.test.ts, tests/unit/connectors/rows.test.ts, tests/unit/connectors/env.test.ts, tests/unit/connectors/failsoft.test.ts, tests/integration/connectors/siblings.ts, tests/integration/connectors/globalSetup.ts, tests/integration/connectors/harness.ts, tests/integration/connectors/core.int.test.ts, tests/integration/connectors/generic.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/live/connectors.live.test.ts, scripts/test-int.sh, vitest.config.ts, package.json, README.md, docs/INSTALL.md
+  - **Decided**:
+    - Step 3 task creation in a per-phase-worktree swarm: create all 6 phases' tasks vs only phase 1's → only phase 1's (tie-break: narrower blast radius; each phase's own session/branch mints its own). TaskID P1-NOTES-A012 was minted as next-after-A011; sibling phase branches may mint the same number, so the coordinator should renumber on integration.
+
 - [x] **P1-NOTES-A011** Phase 4: Daemon fit: unit, install.sh, live suite, installed acceptance
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -47,6 +145,7 @@
   - **Drift**:
     - None in code. Wall SSE note event op is 'updated' on the wire (plan text said 'update'); A2 matched on it.
     - Owner's Neon store had zero live notes before acceptance (only two image notes 3-3XZ, 9-C0C soft-deleted at 10:23 local, before this phase). A1 correctly answered 'no #seer notes'.
+
 - [x] **P1-NOTES-A009** Phase 2: Agent SDK backend: Claude, GLM, fallback, threads, guardrails
   - **Difficulty**: HARD
   - **Type**: Feature

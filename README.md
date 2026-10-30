@@ -21,8 +21,10 @@ its own chat bar.
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
   - [Editing a note, live on the wall](#editing-a-note-live-on-the-wall)
+  - [Spending, runs and Seer](#spending-runs-and-seer)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
+- [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
   - [Install on WSL](#install-on-wsl)
@@ -177,6 +179,22 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 ![/n edits note E-VZY while the wall updates live](docs/readme/cc-edit.gif)
 
+### Spending, runs and Seer
+
+The same server reads three of your own apps, read-only: expense-tracking (spending in rupiah),
+run-insights (Apple Watch runs, the app's analyses and reviews, coach Nina) and Seer (the trading lab's
+leaderboard and positions, and the best Sera methods). `/n` sends questions about them to their
+curated tools, falls back to a system's `_sql` tool only when those don't answer, and replies
+with what the data shows plus Claude's own read and a suggestion, not a tally. The tools are
+listed under [Connectors](#connectors-spending-runs-seer).
+
+```
+/n how are my spending this week? don't just tally the numbers and give me your inputs
+/n i did a run yesterday. show me how it went. what are your thoughts on this run?
+/n compare my running this month with last month
+/n what are the best sera method that we have found up until now?
+```
+
 ### More things to ask
 
 ```
@@ -191,13 +209,17 @@ picks up the change and "Last edited" moves to `E-VZY`, with no reload.
 
 The pill at the bottom of the wall is a natural-language command line. Its answer streams into a
 panel that rises above it, which you can pin or dismiss. A terse status line ("searching
-notes", "looking at 2 photos", "searching the web") shows what the agent is doing. Notes the
-answer mentions are outlined on the wall and the rest dim. Chips under the answer jump to each
-note, switching the view if that note is hidden.
+notes", "looking at 2 photos", "reading expenses", "reading runs", "reading seer", "searching
+the web") shows what the agent is doing. Notes the answer mentions are outlined on the wall and
+the rest dim. Chips under the answer jump to each note, switching the view if that note is
+hidden.
 
 Behind it is the Claude Agent SDK: headless Claude Code on your existing login, one run per
-message, with the same `notes` tools `/n` uses plus web search. A follow-up continues the same
-thread. Dismissing the panel starts a new one. Answers are not saved as notes.
+message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
+expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
+in october, and which week was the worst?" and it answers with the numbers and an opinion. A
+follow-up continues the same thread. Dismissing the panel starts a new one. Answers are not
+saved as notes.
 
 The recordings below are real runs against the demo instance. The time spent waiting for the
 answer is sped up 1.8×.
@@ -220,6 +242,54 @@ in your `#reading` note.
 If Claude fails on a usage limit or a login problem, the same message is retried once on GLM
 (z.ai, configured through `.env.local`'s `LLM_*` keys), and the panel's header says which brain
 answered. `CHAT_BRAIN=glm` makes GLM the only brain.
+
+## Connectors: spending, runs, Seer
+
+The same `notes` MCP server also reads three of my own apps, read-only, so `/n` and the chat bar
+can answer "how much did I spend on meals in October?" or "how did yesterday's run go?" straight
+from their data:
+
+| System | Repo | What it holds |
+|---|---|---|
+| `expenses` | `~/expense-tracking` | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
+| `runs` | `~/run-insights` | Apple Watch runs (pace, distance, heart rate, splits), weekly and monthly reviews, the coach Nina |
+| `seer` | `~/seer` | The trading lab: strategies, positions, trades, the leaderboard, and Sera's experiments in `lab/lab.sqlite` |
+
+| Tool | What it does |
+|---|---|
+| `expenses_schema` | Tables, columns, types and what they mean, from the live database |
+| `expenses_sql` | One read-only SELECT, row-capped |
+| `expenses_spending` | `from`–`to` (WIB days, up to 366): total, by category with its Indonesian label, by day, by ISO week (Monday–Sunday, partial weeks flagged), and the largest items. Optional `categories` (e.g. `["meals"]`) and `top` |
+| `expenses_get` | One expense group by `id`: its items in the app's order, photos, note and the original pasted text |
+| `expenses_months` | Monthly totals for the last `months` (default 6) ending at `to_month`, zero-filled, each marked complete or in progress. Optional `categories` |
+| `runs_schema` | Tables, columns, types and what they mean |
+| `runs_sql` | One read-only SELECT, row-capped |
+| `runs_list` | Reviewed runs from `from` to `to` (default today) with key metrics and the app's headline per run, plus period totals (distance-weighted pace) |
+| `runs_get` | One run by `id`, or every run on a `date`: metrics, per-km splits, heart-rate zones, note, and the app's own latest analysis |
+| `runs_review` | The app's latest `week` or `month` review (`key` like `2026-W44`, `2026-10` or any day in it; default the current one) with that period's totals and runs |
+| `seer_schema` | Tables and columns of the Seer database and of `lab.sqlite` |
+| `seer_sql` | One read-only SELECT against `source` `db` or `lab` |
+| `seer_leaderboard` | The leaderboard ranked as the app ranks it, over the common window; the benchmark, retired and too-new strategies listed apart |
+| `seer_positions` | Open bracket orders and book positions with marks and unrealised P&L, in USD. Optional `strategy` and `include_pending` |
+| `seer_sera_best` | The best dev variant of each Sera method by MAR, with the lab's metrics, hurdles and test trials; eligibility is as of the run date. Optional `status`, `only_eligible`, `limit` |
+
+How it stays safe:
+
+- **Read-only twice.** Every Postgres connection starts with `default_transaction_read_only=on`
+  and every query runs inside `BEGIN READ ONLY`, so a write fails at the database even if a tool
+  were wrong. `lab.sqlite` is opened read-only in a short-lived reader process (no write lock,
+  safe while Seer's own jobs use it). `_sql` also refuses anything but one SELECT before it
+  reaches the database.
+- **Credentials stay where they are.** Each call reads that repo's `.env.local` (the direct,
+  non-pooler `DATABASE_URL*`), so rotated credentials work without a restart. Nothing is copied
+  into this repo, a log, a note or a tool result; errors are scrubbed.
+- **Limits.** 10 s statement timeout, 200 rows by default, 1000 at most.
+- **Fail-soft.** A missing repo, a missing `.env.local` or an unreachable database is a short
+  error for that one call ("expense-tracking is not reachable: …"); notes and the other systems
+  keep working.
+- Dates are calendar days in Asia/Jakarta (WIB), money is whole rupiah (Seer: US dollars), and
+  run units are the app's own (metres, seconds, sec/km, bpm). Nothing is cached in the notes
+  database.
 
 ## Install and run
 
@@ -290,11 +360,16 @@ claude --mcp-config demo-mcp.json --strict-mcp-config    # {"mcpServers":{"notes
 
 ```sh
 npm run typecheck
-npm test                 # unit tests, server and web (jsdom)
-npm run test:int         # integration tests against a real Postgres 16 in Docker (container mcp-notes-pg-test, port 55433)
+npm test                       # unit tests, server and web (jsdom)
+npm run test:int               # integration tests against real Postgres in Docker
+npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
 ```
 
-The integration suite starts or reuses its own container and never touches the Neon database.
+`test:int` starts or reuses two containers: `mcp-notes-pg-test` (Postgres 16, port 55433) for the
+notes, and `mcp-notes-pg-connectors` (pgvector Postgres 16, port 55435), where it rebuilds one
+database per connector from that repo's own migration files (read, never imported; a repo that is
+not there is skipped with a message). Neither suite touches a Neon database. `test:live` (chat)
+and `test:live:connectors` are opt-in and never part of `npm test` or `test:int`.
 
 ### Configuration
 
@@ -308,6 +383,9 @@ The integration suite starts or reuses its own container and never touches the N
 | `CHAT_BRAIN` | `claude` | `glm` runs the chat bar on GLM only. |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | — | The GLM fallback endpoint (z.ai). |
 | `TEST_DATABASE_URL` | set by `test:int` | Integration test database. |
+| `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer` | Where the connectors find each repo and its `.env.local`. Read on every call. |
+| `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query. |
+| `TEST_CONNECTORS_URL` | set by `test:int` | Connector test container (admin URL). |
 
 ## How it works
 
@@ -342,8 +420,10 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `create_image` | Photo note from a local file path, with optional text |
 | `view_images` | Previews of up to 8 photo notes as image content, with their metadata |
 
-The server also sends Claude short instructions: what mcp-notes is, how ids look, and that
-comparisons are Claude's job.
+The 15 connector tools are listed under [Connectors](#connectors-spending-runs-seer).
+
+The server also sends Claude short instructions: what mcp-notes is, how ids look, that
+comparisons are Claude's job, and that the connectors are read-only and the curated tools come first.
 
 ### HTTP API
 
@@ -384,7 +464,7 @@ Postgres   notes(id, body, tags[], image_path, image_meta, origin, created_at, u
 - **Text needs the network.** Notes live in Neon. With no connection, nothing loads.
 - **No semantic search yet.** Search is full text plus tags and dates. "Notes about ArangoDB
   credentials" works only when those words appear. Embeddings come in iteration 6.
-- **No connectors yet.** Spending, runs and Seer experiments (iteration 5) are not reachable.
+- **Connectors are read-only.** Nothing in expense-tracking, run-insights or Seer can be changed from here, by design.
 - **Single user, no auth.** It binds to `127.0.0.1` only. Anyone with a shell on the machine can
   read it.
 - **Built for WSL.** The installer assumes a systemd user session. The Windows keepalive task
@@ -411,7 +491,7 @@ Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMA
 ## Repository layout
 
 ```
-src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat agent
+src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat agent, connectors
 web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n

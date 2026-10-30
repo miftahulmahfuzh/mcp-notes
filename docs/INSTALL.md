@@ -206,6 +206,24 @@ to look when an answer is wrong.
 - Live suite (real Claude + real GLM, against the Docker test database, not your notes):
   `npm run test:live`. Opt-in; `npm test` and `npm run test:int` never run it.
 
+## 5. Connectors
+
+notesd reads expense-tracking, run-insights and Seer read-only (tools `expenses_*`, `runs_*`,
+`seer_*`). Nothing to install: each call reads `~/expense-tracking/.env.local`,
+`~/run-insights/.env.local` and `~/seer/.env.local` (the direct `DATABASE_URL*` host) and
+`~/seer/lab/lab.sqlite`. Credentials are never copied into the unit or this repo.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `EXPENSE_TRACKING_DIR` | `~/expense-tracking` | Repo dir of expense-tracking. |
+| `RUN_INSIGHTS_DIR` | `~/run-insights` | Repo dir of run-insights. |
+| `SEER_DIR` | `~/seer` | Repo dir of Seer; the lab is `<dir>/lab/lab.sqlite`. |
+| `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per query. |
+
+They are read on every call from the environment, merged over this repo's `.env.local`, so a change
+needs no restart. Check the real databases (read-only, schema only) with
+`npm run test:live:connectors`.
+
 ## Uninstall
 
 ```sh
