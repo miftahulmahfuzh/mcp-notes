@@ -1,0 +1,99 @@
+{
+  "branch": "feature/chat-bar-brain",
+  "coordinator": "orch-chat-bar-brain",
+  "coordinator_session_id": "a947848f-8658-4bf1-964e-23e26768b399",
+  "created": "2026-10-30T04:10:38+00:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/chat`, `src/http`, `src`, `tests",
+      "plan": ".workflows/plan/chat-bar-brain/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Chat seam v2: status events, brain, config, daemon injection"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/chat`, `src`, `tests",
+      "plan": ".workflows/plan/chat-bar-brain/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Agent SDK backend: Claude, GLM, fallback, threads, guardrails"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/chat-bar-brain/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R3",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Panel: status caption, brain label, thread reset on dismiss"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "deploy`, `scripts`, `tests/live`, root config",
+      "plan": ".workflows/plan/chat-bar-brain/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Daemon fit: unit, install.sh, live suite, installed acceptance"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/chat-bar-brain/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "chat-bar-brain",
+  "updated": "2026-10-30T04:10:38+00:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/chat-bar-brain",
+  "note": "Gate (plan_graph.py) on worktree index docs/plans/CHAT_BAR_BRAIN_PLAN.md: exit 0, no file written by two phases. Open Questions: none (Decisions table settled). Wave 0 = phase 1 alone in the set worktree."
+}
