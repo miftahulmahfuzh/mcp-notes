@@ -6,21 +6,21 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "f47bb32",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "on phase-1-connectors; typecheck/test 368/test:int 115/live 3 green per phase",
       "package": "src/connectors`, `src/mcp`, `tests`, `scripts",
       "plan": ".workflows/plan/connectors/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T13:31:34+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A012",
       "title": "Connector core, generic tools, test harness"
     },
     {
@@ -39,7 +39,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "expense-tracking curated tools"
     },
@@ -59,7 +59,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "run-insights curated tools"
     },
@@ -79,7 +79,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Seer curated tools (db + lab)"
     },
@@ -98,7 +98,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Chat bar + /n for connectors"
     },
@@ -123,7 +123,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/connectors/.workflows/orchestration/connectors/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "connectors",
-  "updated": "2026-10-30T13:26:53+07:00",
+  "updated": "2026-10-30T13:33:59+07:00",
   "verified_at": "2026-10-30T13:26:49+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/connectors"
 }
