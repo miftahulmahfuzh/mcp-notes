@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "048870c",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "note_images + 0002 (additive: only ALTER is FK on the new table, coordinator-checked); migration0002/imageRepo/schema int tests 35/35 re-run by coordinator; carried phase 11's package_readme lines + A023-A032 plan copies (bookkeeping, not rewritten)",
       "package": "src/db`, `drizzle`, `src/notes`, `src/images",
       "plan": ".workflows/plan/wall-editing/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-10-30T16:26:40+07:00",
       "satisfies": [
         "R1",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A023",
       "title": "note_images` table, migration 0002, legacy copy/reconcile, image repo"
     },
     {
@@ -38,7 +38,7 @@
         "R1",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Cut the server over to per-image: wire `images[]`, filters, ingest, image-id routes, `view_images`, same-origin guard, startup reconcile"
     },
@@ -229,7 +229,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/wall-editing/.workflows/orchestration/wall-editing/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wall-editing",
-  "updated": "2026-10-30T16:25:00+07:00",
+  "updated": "2026-10-30T16:26:41+07:00",
   "verified_at": "2026-10-30T16:25:00+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wall-editing"
 }
