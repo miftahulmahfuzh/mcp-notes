@@ -3,6 +3,12 @@
   "coordinator": "orch-chat-history-files-image-search",
   "coordinator_session_id": "bc2cb768-6433-47f0-80f5-603d1caed877",
   "created": "2026-10-31T09:14:22+07:00",
+  "landed": {
+    "at": "2026-10-31T11:44:27+07:00",
+    "base": "main",
+    "commit": "5e311fb4c513e4b42f5b84dfc63095276a456716",
+    "machine": "GPD"
+  },
   "phases": [
     {
       "card": null,
@@ -200,28 +206,28 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "fe24530766d5347479add8306cbc2f50cdb555e8",
       "depends_on": [
         10
       ],
       "difficulty": "NORMAL",
       "n": 11,
-      "note": null,
+      "note": "note-id links open modal in place via ChatInline/NoteLinkContext; Show on wall icon; no decisions overruled",
       "package": "web",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-11.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T11:43:27+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A044",
       "title": "Note-id links open the note modal in place; \"show on wall\" button"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T11:32:45+07:00",
+  "updated": "2026-10-31T11:44:27+07:00",
   "verified_at": "2026-10-31T10:16:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
