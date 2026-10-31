@@ -138,28 +138,28 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2b10224c0c83241c5938cd7cd2abdc47cf5a0342",
       "depends_on": [
         6,
         7
       ],
       "difficulty": "HARD",
       "n": 8,
-      "note": null,
+      "note": "Stop+PreToolUse hooks, POST /api/capture/claude-code, install/uninstall merge; no decisions off-plan; run verify:paste-hook pre-merge (updatedInput unconfirmed, fallback NOTES_PASTE_STRATEGY=deny)",
       "package": "claude/hooks`, `src/http`, `src/chat`, `scripts`, `src/mcp",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T11:05:55+07:00",
       "satisfies": [
         "R1",
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A041",
       "title": "Claude Code capture: hook, ingest endpoint, install, `/n` pasted images"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "83481059d25b633cb461fd257feb41521de73123",
       "depends_on": [
         2,
         3,
@@ -168,15 +168,15 @@
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": null,
+      "note": "history page, rail/sidebar icon, full-screen button, shared /api/events; App.test answer-head buttons 3->4 (new full-screen button); thumbWidth param typed object (typecheck)",
       "package": "web",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T10:57:42+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A042",
       "title": "History page, sidebar icon, full-screen button, timeline, thumbnails"
     },
     {
@@ -221,7 +221,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T10:28:48+07:00",
+  "updated": "2026-10-31T11:05:55+07:00",
   "verified_at": "2026-10-31T10:16:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
