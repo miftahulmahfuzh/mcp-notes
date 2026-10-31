@@ -418,3 +418,38 @@ describe('NoteEditor files (R2)', () => {
     expect(btn.className).toBe('ed-btn');
   });
 });
+
+describe('NoteEditor: show on wall (phase 11)', () => {
+  it('has no icon without onShowOnWall', () => {
+    const { queryByLabelText } = renderEditor(note('x'));
+    expect(queryByLabelText('Show on wall')).toBeNull();
+  });
+
+  it('closes the normal way first (draft and dirty flag), then asks to show the note', () => {
+    const onShowOnWall = vi.fn();
+    const n = note('first');
+    const { ta, getByLabelText, props } = renderEditor(n, { onShowOnWall });
+    fireEvent.change(ta, { target: { value: 'first, edited' } });
+    const btn = getByLabelText('Show on wall');
+    expect(btn.getAttribute('data-tip')).toBe('Show on wall');
+    expect(btn.querySelector('svg')).not.toBeNull();
+    fireEvent.click(btn);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onClose).toHaveBeenCalledWith(n, 'first, edited', true);
+    expect(onShowOnWall).toHaveBeenCalledWith(n);
+    expect(vi.mocked(props.onClose).mock.invocationCallOrder[0]).toBeLessThan(onShowOnWall.mock.invocationCallOrder[0]);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled while the note is empty (no text, no images, no files)', () => {
+    const { ta, getByLabelText } = renderEditor(note(''), { onShowOnWall: vi.fn() });
+    const btn = () => getByLabelText('Show on wall') as HTMLButtonElement;
+    expect(btn().disabled).toBe(true);
+    fireEvent.change(ta, { target: { value: 'now text' } });
+    expect(btn().disabled).toBe(false);
+    cleanup();
+    const withImage = renderEditor(note('', [img('P-IC1', 'A-B32')]), { onShowOnWall: vi.fn() });
+    expect((withImage.getByLabelText('Show on wall') as HTMLButtonElement).disabled).toBe(false);
+  });
+});

@@ -408,6 +408,15 @@ the web") shows what the agent is doing. Notes the answer mentions are outlined 
 the rest dim. Chips under the answer jump to each note, switching the view if that note is
 hidden.
 
+Note ids in an answer, and in every bubble on the history page, are links. A click opens the note
+in the big editor right where you are: the wall, the bin or the history page stay as they were
+when you close it. Ctrl/cmd-click or middle-click opens the wall on that note in a new tab. A note
+the wall has not loaded is fetched; a deleted one says "A-B32 is deleted. Restore it from the
+bin." and an unknown one "no note A-B32". Ids in code spans, inside URLs, paths and longer words
+are left alone, and links to the wall written as `[A-B32](http://localhost:7317/?note=A-B32)` open
+in place too. In the editor, the crosshair icon ("Show on wall") closes it, goes to
+`/?note=<id>` and outlines the card.
+
 The bar takes several lines. Shift+Enter starts a new line and Enter sends, but not while an
 input method is still composing. The bar grows upward one line at a time up to about six lines,
 then scrolls inside, and drops back to one line after sending. Newlines reach the agent as you

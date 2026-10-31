@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 46
+- Completed: 47
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns note-id segmenting in chat text (`segmentChat`, `ChatInline`) in `Bubble` (as P10 leaves it) and `AnswerPanel` (as P9 leaves it); clicking opens the bigger-note-view modal in place (loaded or fetched note; deleted/unknown handled quietly); wall deep links in chat text become in-place links too, keeping `href="/?note=ID"` so modified/middle clicks and new tabs navigate normally; `NoteEditor` icon button (after P5's buttons in `.ed-top`) that goes to `/?note=ID` and flashes the note on the wall. Exit: ids inside code-ish tokens and longer words are not linked; opening from the history page does not navigate; ctrl/middle click keeps the real link; the modal button switches to the wall view and flashes the card.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 11 of 11)
-  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A043 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A044.md`
 
 ### [P2] Medium
 
@@ -41,6 +31,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns note-id segmenting in chat text (`segmentChat`, `ChatInline`) in `Bubble` (as P10 leaves it) and `AnswerPanel` (as P9 leaves it); clicking opens the bigger-note-view modal in place (loaded or fetched note; deleted/unknown handled quietly); wall deep links in chat text become in-place links too, keeping `href="/?note=ID"` so modified/middle clicks and new tabs navigate normally; `NoteEditor` icon button (after P5's buttons in `.ed-top`) that goes to `/?note=ID` and flashes the note on the wall. Exit: ids inside code-ish tokens and longer words are not linked; opening from the history page does not navigate; ctrl/middle click keeps the real link; the modal button switches to the wall view and flashes the card.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 11 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A043 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A044.md`
+  - **Completed**: 2026-10-31 11:39
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, web/src/App.test.tsx, web/src/App.tsx, web/src/App.notelinks.test.tsx, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/Bubble.tsx, web/src/components/Bubble.notelinks.test.tsx, web/src/components/ChatText.tsx, web/src/components/ChatText.test.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/lib/chatSegments.ts, web/src/lib/chatSegments.test.tsx, web/src/lib/deepLink.ts, web/src/styles.css
 
 - [x] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
   - **Difficulty**: NORMAL

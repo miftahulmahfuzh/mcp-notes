@@ -37,3 +37,8 @@ export function parseDeepLink(search: string, hash: string): string | null {
 export function deepLinkFromLocation(loc: Pick<Location, 'search' | 'hash'>): string | null {
   return parseDeepLink(loc.search, loc.hash);
 }
+
+/** The wall URL of a note: `/?note=<ID>`, the form useDeepLink reads on load and on popstate. */
+export function noteHref(id: string): string {
+  return `/?note=${encodeURIComponent(id)}`;
+}

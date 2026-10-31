@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AnswerPanel } from './AnswerPanel';
 import type { AnswerPanelProps } from './AnswerPanel';
+import { NoteLinkContext, type NoteLinks } from './ChatText';
 
 afterEach(cleanup);
 
@@ -219,5 +220,51 @@ describe('AnswerPanel sent thumbnails', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(document.querySelector('[data-lightbox]')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('AnswerPanel note ids (phase 11)', () => {
+  function renderLinked(links: NoteLinks, over: Partial<AnswerPanelProps> = {}) {
+    return render(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props(over)} />
+      </NoteLinkContext.Provider>,
+    );
+  }
+
+  it('links note ids in place, keeps URLs as new-tab links and keeps the used-chips row', () => {
+    const open = vi.fn();
+    const onJump = vi.fn();
+    const { container } = renderLinked(
+      { isKnown: (id) => id === 'A-B32', open },
+      { text: 'Look at a-b32 and https://e.com/C-D45.', usedIds: ['A-B32'], onJump },
+    );
+    const notes = [...body(container).querySelectorAll('a.note-link')];
+    expect(notes.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['a-b32', '/?note=A-B32']]);
+    expect(body(container).querySelector('a[target="_blank"]')?.getAttribute('href')).toBe('https://e.com/C-D45');
+    expect(body(container).textContent).toBe('Look at a-b32 and https://e.com/C-D45.');
+    expect(fireEvent.click(notes[0] as HTMLElement)).toBe(false);
+    expect(open).toHaveBeenCalledWith('A-B32');
+    fireEvent.click(screen.getByRole('button', { name: 'A-B32' }));
+    expect(onJump).toHaveBeenCalledWith('A-B32');
+  });
+
+  it('does not link the id still arriving at the end of the streaming paragraph', () => {
+    const links: NoteLinks = { isKnown: () => true, open: vi.fn() };
+    const { container, rerender } = renderLinked(links, { text: 'first A-B32\n\nnow C-D4', done: false });
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32']);
+    rerender(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props({ text: 'first A-B32\n\nnow C-D45', done: false })} />
+      </NoteLinkContext.Provider>,
+    );
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32']);
+    rerender(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props({ text: 'first A-B32\n\nnow C-D45', done: true })} />
+      </NoteLinkContext.Provider>,
+    );
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32', 'C-D45']);
   });
 });

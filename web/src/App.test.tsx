@@ -100,7 +100,8 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'A-B32' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Z-Z99' })).toBeNull();
     expect(screen.getByText('what about seer?')).toBeTruthy();
-    expect(screen.getByText('Look at a-b32 and Z-Z99.')).toBeTruthy();
+    expect(document.querySelector('.answer-body p')?.textContent).toBe('Look at a-b32 and Z-Z99.');
+    expect([...document.querySelectorAll('.answer-body a.note-link')].map((a) => a.textContent)).toEqual(['a-b32', 'Z-Z99']);
     await waitFor(() => {
       expect(document.querySelector('[data-note="A-B32"]')?.className).toContain('used');
       expect(document.querySelector('[data-note="C-D45"]')?.className).toContain('dim');

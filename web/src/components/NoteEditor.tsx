@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
-import { Check, Copy, Paperclip, Trash, X } from '@phosphor-icons/react';
+import { Check, Copy, Crosshair, Paperclip, Trash, X } from '@phosphor-icons/react';
 import type { Note, NoteFile, NoteImage as NoteImageData, TagCount } from '../types';
 import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
@@ -33,11 +33,13 @@ export interface NoteEditorProps {
   onAttachFiles?: (files: File[]) => void;
   /** Phase 5 (R2): a file chip's remove icon (soft remove; App offers a 6 s undo). Absent = no remove icon on chips. */
   onRemoveFile?: (file: NoteFile) => void;
+  /** Phase 11: the "Show on wall" icon. The editor first closes the normal way (draft saved, empty rule), then this runs. Absent = no icon. */
+  onShowOnWall?: (note: Note) => void;
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, onShowOnWall, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -109,6 +111,8 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   };
 
   const tags = tagsOf(draft);
+  // Nothing to show on the wall: close() would delete it under the empty rule.
+  const blank = draft.trim() === '' && note.images.length === 0 && (note.files?.length ?? 0) === 0;
 
   const query = tagQueryAt(draft, caret);
   const suggestions = query && query.start !== dismissed ? suggestTags(knownTags, query.text) : [];
@@ -192,6 +196,22 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
                 }}
               />
             </>
+          )}
+          {onShowOnWall && (
+            <button
+              type="button"
+              className="ed-btn"
+              data-tip="Show on wall"
+              aria-label="Show on wall"
+              disabled={blank}
+              onClick={() => {
+                if (closedRef.current) return;
+                close();
+                onShowOnWall(noteRef.current);
+              }}
+            >
+              <Crosshair weight="duotone" />
+            </button>
           )}
           {onDelete && (
             <button

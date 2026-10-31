@@ -1,9 +1,9 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import { ArrowsOut, CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
 import { Lightbox } from './Lightbox';
+import { ChatInline } from './ChatText';
 import { chatImageUrl } from '../api';
-import { segmentLinks } from '../lib/links';
 import { oneLine } from '../lib/oneLine';
 
 export interface AnswerPanelProps {
@@ -121,15 +121,7 @@ export function AnswerPanel({
             const streaming = !done && i === parts.length - 1;
             return (
               <p key={i}>
-                {segmentLinks(t, { streaming }).map((s, j) =>
-                  s.kind === 'link' ? (
-                    <a key={j} className="answer-link" href={s.href} target="_blank" rel="noreferrer noopener">
-                      {s.text}
-                    </a>
-                  ) : (
-                    <Fragment key={j}>{s.text}</Fragment>
-                  ),
-                )}
+                <ChatInline text={t} streaming={streaming} />
                 {streaming ? ' ▍' : ''}
               </p>
             );

@@ -14,6 +14,7 @@ import { useUndo } from './hooks/useUndo';
 import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
 import { useHistory } from './hooks/useHistory';
+import { normalizeNoteId, noteHref } from './lib/deepLink';
 import { hrefForView, routeFromLocation } from './lib/route';
 import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
 import { HistoryPage } from './pages/HistoryPage';
@@ -31,6 +32,7 @@ import { Wall } from './components/Wall';
 import { AnswerPanel } from './components/AnswerPanel';
 import { ChatBar } from './components/ChatBar';
 import { Tooltip } from './components/Tooltip';
+import { NoteLinkContext, type NoteLinks } from './components/ChatText';
 import { Gallery } from './components/Gallery';
 import { DropOverlay } from './components/DropOverlay';
 import { NoteEditor } from './components/NoteEditor';
@@ -85,7 +87,18 @@ export function App() {
   wallRef.current = { view, mode, active, editing, expanded };
 
   const visible = useMemo(() => visibleOnWall(notes, mode, active, [editing, expanded]), [notes, mode, active, editing, expanded]);
-  const expandedNote = useMemo(() => (expanded ? (notes.find((n) => n.id === expanded) ?? null) : null), [notes, expanded]);
+  // The big editor's note. A note opened from a chat link may lie past the wall's 2000-note page:
+  // the next refetch drops it from the store, and the editor keeps its last version instead of
+  // unmounting mid-edit (phase 11). Closing or deleting clears `expanded`, so this never revives one.
+  const lastExpanded = useRef<Note | null>(null);
+  const expandedNote = useMemo(() => {
+    if (!expanded) return null;
+    const live = notes.find((n) => n.id === expanded);
+    if (live) return live;
+    const last = lastExpanded.current;
+    return last !== null && last.id === expanded ? last : null;
+  }, [notes, expanded]);
+  lastExpanded.current = expandedNote;
   const photos = useMemo(() => photosOf(notes, active), [notes, active]);
   const photoCount = useMemo(() => imageCount(notes), [notes]);
   const last = useMemo(() => lastEdited(notes), [notes]);
@@ -461,6 +474,105 @@ export function App() {
     void openLinked(id);
   });
 
+  // Note links in chat text (phase 11): open the big editor over whatever page is showing.
+  const modalSeq = useRef(0);
+  /** A link clicked while another note's editor is open: opened once that editor has closed. */
+  const pendingModal = useRef<string | null>(null);
+
+  /**
+   * A note id clicked in chat text. A loaded note opens at once (`expand`, no draft); else
+   * GET /api/notes/:id and upsert; a 404 the bin holds or an unknown id gets the deep link's quiet
+   * notice. Never changes the view, the URL or the scroll position. Only the newest click acts.
+   */
+  const openNoteModal = useCallback(
+    async (raw: string) => {
+      const id = normalizeNoteId(raw);
+      if (id === null) return;
+      const seq = ++modalSeq.current;
+      const stale = () => seq !== modalSeq.current;
+      const open = (note: Note) => {
+        const cur = expandedRef.current;
+        if (cur === note.id) return;
+        if (cur !== null) {
+          // Close the open editor the normal way (draft saved, empty rule) before swapping notes.
+          pendingModal.current = note.id;
+          setCloseSignal((n) => n + 1);
+          return;
+        }
+        expand(note, null);
+      };
+      const known = notesRef.current.find((n) => n.id === id);
+      if (known) {
+        open(known);
+        return;
+      }
+      let note: Note | null;
+      try {
+        note = await fetchNote(id);
+      } catch (e) {
+        if (stale()) return;
+        console.error('note link: fetch note failed', e);
+        showLinkNotice(`could not open ${id}`);
+        return;
+      }
+      if (stale()) return;
+      if (note) {
+        upsertLocal(note);
+        open(note);
+        return;
+      }
+      let deleted = false;
+      try {
+        deleted = (await fetchBin()).notes.some((n) => n.id === id);
+      } catch (e) {
+        console.error('note link: bin lookup failed', e);
+      }
+      if (stale()) return;
+      showLinkNotice(deleted ? `${id} is deleted. Restore it from the bin.` : `no note ${id}`);
+    },
+    [expand, upsertLocal, showLinkNotice],
+  );
+
+  useEffect(() => {
+    if (expanded !== null) return;
+    const id = pendingModal.current;
+    if (id === null) return;
+    pendingModal.current = null;
+    const note = notesRef.current.find((n) => n.id === id);
+    if (note) expand(note, null);
+  }, [expanded, expand]);
+
+  /**
+   * The editor's "Show on wall" icon. The editor has already closed itself (closeEditor ran), but
+   * the wall mirror still says it is open until the next render. Without the reset, revealLinked
+   * would treat the note as kept by the editor and skip the tag/mode reveal. Then push the wall
+   * URL (a pushState fires no popstate, so the deep link is acted on here, not by useDeepLink;
+   * Back and Forward later fire popstate, which useDeepLink and P9's view sync already follow) and
+   * reveal: planReveal switches history/bin to the wall, fixes mode and tags, and flashes the card.
+   */
+  const showOnWall = useCallback(
+    (note: Note) => {
+      wallRef.current = { ...wallRef.current, expanded: null };
+      pendingModal.current = null;
+      const href = noteHref(note.id);
+      const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (here !== href) window.history.pushState(null, '', href);
+      void openLinked(note.id);
+    },
+    [openLinked],
+  );
+
+  const knownIds = useMemo(() => new Set(notes.map((n) => n.id.toUpperCase())), [notes]);
+  const noteLinks = useMemo<NoteLinks>(
+    () => ({
+      isKnown: (id: string) => knownIds.has(id.toUpperCase()),
+      open: (id: string) => {
+        void openNoteModal(id);
+      },
+    }),
+    [knownIds, openNoteModal],
+  );
+
   useEffect(() => () => cancelFlash.current(), []);
 
   const send = (e: FormEvent<HTMLFormElement>) => {
@@ -488,131 +600,134 @@ export function App() {
 
   return (
     <IconContext.Provider value={ICONS}>
-      <div className="app">
-        <Rail
-          mode={mode}
-          view={view}
-          active={active}
-          onToggleSide={() => setSide((s) => !s)}
-          onAdd={() => void addNote()}
-          onCycleMode={() => {
-            setMode(nextMode);
-            setView('wall');
-          }}
-          onToggleHistory={toggleHistory}
-          onToggleBin={toggleBin}
-          onToggleTag={toggleTag}
-          onClear={() => setActive([])}
-        />
-        {side && (
-          <Sidebar
+      <NoteLinkContext.Provider value={noteLinks}>
+        <div className="app">
+          <Rail
             mode={mode}
             view={view}
-            photoCount={photoCount}
-            tags={tags}
             active={active}
-            onMode={pickMode}
+            onToggleSide={() => setSide((s) => !s)}
+            onAdd={() => void addNote()}
+            onCycleMode={() => {
+              setMode(nextMode);
+              setView('wall');
+            }}
             onToggleHistory={toggleHistory}
             onToggleBin={toggleBin}
             onToggleTag={toggleTag}
+            onClear={() => setActive([])}
           />
-        )}
-        <main className="main" style={{ marginLeft: mainLeft }}>
-          <Header
-            heading={view === 'history' ? HISTORY_HEADING : view === 'bin' ? BIN_HEADING : headingFor(mode, active)}
-            countLine={
-              view === 'history'
-                ? historyCountLine(history.items, history.hasMore)
-                : view === 'bin'
-                  ? binCountLine(binStore.bin, active)
-                  : countLineFor(mode, active, notes, visible, photos)
-            }
-            last={last}
-            lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
-            showSticker={view === 'wall' && mode !== 'images'}
-            bin={view === 'bin'}
-            history={view === 'history'}
-            onJumpLast={() => last && jump(last.id)}
-            onAdd={() => void addNote()}
-          />
-          <div className="rule" />
-          {view === 'history' ? (
-            <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} />
-          ) : view === 'bin' ? (
-            <Bin store={binStore} now={now} onRestored={onRestored} />
-          ) : mode === 'images' ? (
-            <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} />
-          ) : (
-            <Wall
-              notes={visible}
-              now={now}
-              editingId={editing}
-              usedIds={usedSet}
-              copiedId={copied}
-              onCopy={copy}
-              onEdit={setEditing}
-              onCommit={commit}
-              onDelete={removeNote}
+          {side && (
+            <Sidebar
+              mode={mode}
+              view={view}
+              photoCount={photoCount}
+              tags={tags}
+              active={active}
+              onMode={pickMode}
+              onToggleHistory={toggleHistory}
+              onToggleBin={toggleBin}
               onToggleTag={toggleTag}
-              onExpand={expand}
             />
           )}
-        </main>
-        {chat.open && view !== 'history' && (
-          <AnswerPanel
-            left={chatLeft}
-            query={chat.query}
-            images={chat.images}
-            text={chat.text}
-            done={chat.done}
-            status={chat.status}
-            brain={chat.brain}
-            pinned={chat.pinned}
-            collapsed={chat.collapsed}
-            usedIds={used}
-            onTogglePin={chat.togglePin}
-            onToggleCollapse={chat.toggleCollapsed}
-            onClose={chat.close}
-            onJump={jump}
-            onFullScreen={openHistoryThread}
-          />
-        )}
-        {view !== 'history' && (
-          <ChatBar
-            left={chatLeft}
-            value={q}
-            onChange={setQ}
-            onSubmit={send}
-            images={chatImages.images}
-            onPasteFiles={chatImages.add}
-            onRemoveImage={chatImages.remove}
-            sendBlocked={chatImages.blocked}
-          />
-        )}
-        <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
-        {expandedNote &&
-          createPortal(
-            <NoteEditor
-              key={expandedNote.id}
-              note={expandedNote}
-              copied={copied === expandedNote.id}
-              notice={notice}
-              onCopy={copy}
-              onSave={save}
-              onClose={closeEditor}
-              onRemoveImage={removeImageWithUndo}
-              onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
-              onRemoveFile={removeFileWithUndo}
-              onDelete={removeNote}
-              tags={tags}
-              closeSignal={closeSignal}
-            />,
-            document.body,
+          <main className="main" style={{ marginLeft: mainLeft }}>
+            <Header
+              heading={view === 'history' ? HISTORY_HEADING : view === 'bin' ? BIN_HEADING : headingFor(mode, active)}
+              countLine={
+                view === 'history'
+                  ? historyCountLine(history.items, history.hasMore)
+                  : view === 'bin'
+                    ? binCountLine(binStore.bin, active)
+                    : countLineFor(mode, active, notes, visible, photos)
+              }
+              last={last}
+              lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
+              showSticker={view === 'wall' && mode !== 'images'}
+              bin={view === 'bin'}
+              history={view === 'history'}
+              onJumpLast={() => last && jump(last.id)}
+              onAdd={() => void addNote()}
+            />
+            <div className="rule" />
+            {view === 'history' ? (
+              <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} />
+            ) : view === 'bin' ? (
+              <Bin store={binStore} now={now} onRestored={onRestored} />
+            ) : mode === 'images' ? (
+              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} />
+            ) : (
+              <Wall
+                notes={visible}
+                now={now}
+                editingId={editing}
+                usedIds={usedSet}
+                copiedId={copied}
+                onCopy={copy}
+                onEdit={setEditing}
+                onCommit={commit}
+                onDelete={removeNote}
+                onToggleTag={toggleTag}
+                onExpand={expand}
+              />
+            )}
+          </main>
+          {chat.open && view !== 'history' && (
+            <AnswerPanel
+              left={chatLeft}
+              query={chat.query}
+              images={chat.images}
+              text={chat.text}
+              done={chat.done}
+              status={chat.status}
+              brain={chat.brain}
+              pinned={chat.pinned}
+              collapsed={chat.collapsed}
+              usedIds={used}
+              onTogglePin={chat.togglePin}
+              onToggleCollapse={chat.toggleCollapsed}
+              onClose={chat.close}
+              onJump={jump}
+              onFullScreen={openHistoryThread}
+            />
           )}
-        <UndoBar entry={undoEntry} onUndo={runUndo} />
-        <LinkNotice text={linkNotice} />
-        <Tooltip />
-      </div>
+          {view !== 'history' && (
+            <ChatBar
+              left={chatLeft}
+              value={q}
+              onChange={setQ}
+              onSubmit={send}
+              images={chatImages.images}
+              onPasteFiles={chatImages.add}
+              onRemoveImage={chatImages.remove}
+              sendBlocked={chatImages.blocked}
+            />
+          )}
+          <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
+          {expandedNote &&
+            createPortal(
+              <NoteEditor
+                key={expandedNote.id}
+                note={expandedNote}
+                copied={copied === expandedNote.id}
+                notice={notice}
+                onCopy={copy}
+                onSave={save}
+                onClose={closeEditor}
+                onRemoveImage={removeImageWithUndo}
+                onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
+                onRemoveFile={removeFileWithUndo}
+                onShowOnWall={showOnWall}
+                onDelete={removeNote}
+                tags={tags}
+                closeSignal={closeSignal}
+              />,
+              document.body,
+            )}
+          <UndoBar entry={undoEntry} onUndo={runUndo} />
+          <LinkNotice text={linkNotice} />
+          <Tooltip />
+        </div>
+      </NoteLinkContext.Provider>
     </IconContext.Provider>
   );
 }

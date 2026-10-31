@@ -1,8 +1,8 @@
-import { Fragment, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { LightboxItem } from './Lightbox';
+import { ChatInline } from './ChatText';
 import { chatImageSrc } from '../chatHistoryApi';
 import { chatTime, chatTimeTitle } from '../lib/chatTime';
-import { segmentLinks } from '../lib/links';
 import type { TimelineItem } from '../lib/timeline';
 import type { ChatAttachment } from '../types';
 
@@ -102,15 +102,7 @@ export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps)
           const tail = streaming && i === parts.length - 1;
           return (
             <p key={i}>
-              {segmentLinks(t, { streaming: tail }).map((s, j) =>
-                s.kind === 'link' ? (
-                  <a key={j} className="answer-link" href={s.href} target="_blank" rel="noreferrer noopener">
-                    {s.text}
-                  </a>
-                ) : (
-                  <Fragment key={j}>{s.text}</Fragment>
-                ),
-              )}
+              <ChatInline text={t} streaming={tail} />
               {tail ? ' ▍' : ''}
             </p>
           );
