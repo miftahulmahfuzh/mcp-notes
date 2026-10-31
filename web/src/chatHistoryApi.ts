@@ -49,20 +49,22 @@ export async function fetchChatMessages(q: ChatPageQuery = {}): Promise<ChatPage
   return { messages, next_before: next };
 }
 
-/** Phase 10 adds `replyTo?: string` (sent as `reply_to`); phase 9 never sets it. */
 export interface StreamChatRequest {
   message: string;
   /** Our thread id (phase 7, a UUID); absent (or unknown to the server) = a new thread. */
   threadId?: string;
   /** Phase 3 chat image ids, already uploaded. */
   imageIds?: string[];
+  /** Phase 10: the bubble this message replies to (a 4-char message id), sent as `reply_to`. */
+  replyTo?: string;
   signal: AbortSignal;
 }
 
 /** `POST /api/chat` for the history composer; the caller reads the SSE body (lib/sse `readSSE`). */
 export function streamChat(r: StreamChatRequest): Promise<Response> {
-  const payload: { message: string; thread_id?: string; image_ids?: string[] } = { message: r.message };
+  const payload: { message: string; thread_id?: string; image_ids?: string[]; reply_to?: string } = { message: r.message };
   if (r.threadId) payload.thread_id = r.threadId;
+  if (r.replyTo) payload.reply_to = r.replyTo;
   if (r.imageIds && r.imageIds.length > 0) payload.image_ids = r.imageIds;
   return fetch('/api/chat', {
     method: 'POST',
@@ -70,6 +72,35 @@ export function streamChat(r: StreamChatRequest): Promise<Response> {
     body: JSON.stringify(payload),
     signal: r.signal,
   });
+}
+
+/** Phase 7: `PATCH /api/chat/messages/:id {text}`, user messages only. Returns the updated message; the old text is kept as a revision server-side. */
+export async function editChatMessage(id: string, text: string): Promise<ChatMessage> {
+  const res = await fetch(`/api/chat/messages/${enc(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw await failure(res);
+  return normalize((await res.json()) as ChatMessage);
+}
+
+/**
+ * Phase 7: soft delete, `?with_answer=1` also deletes the question's answer. Resolves to the ids
+ * the server deleted (`{deleted}`, question first); a row that was already deleted is not listed.
+ */
+export async function deleteChatMessage(id: string, withAnswer: boolean): Promise<string[]> {
+  const res = await fetch(`/api/chat/messages/${enc(id)}${withAnswer ? '?with_answer=1' : ''}`, { method: 'DELETE' });
+  if (!res.ok) throw await failure(res);
+  const j = (await res.json()) as { deleted?: unknown };
+  return Array.isArray(j.deleted) ? j.deleted.filter((x): x is string => typeof x === 'string') : [];
+}
+
+/** Phase 7: `POST /api/chat/messages/:id/restore`, one id per call. Restoring a live message is a 200 no-op. */
+export async function restoreChatMessage(id: string): Promise<ChatMessage> {
+  const res = await fetch(`/api/chat/messages/${enc(id)}/restore`, { method: 'POST' });
+  if (!res.ok) throw await failure(res);
+  return normalize((await res.json()) as ChatMessage);
 }
 
 export type ChatImageVariant = 'thumb' | 'display';

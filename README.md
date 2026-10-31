@@ -474,6 +474,8 @@ appear without a reload. The pill at the bottom works as on the wall and accepts
 message continues the newest conversation when that one came from the wall, and starts a new one
 otherwise. Back and forward move between the wall and this page.
 
+Hover or Tab onto a bubble for **Reply**, **Edit** (your own messages) and **Delete**. A reply shows a quote of the original; click it to jump there. Replying to a wall bubble continues that conversation; replying to a "claude code" bubble starts a new one. Edits only change what later turns see. Deletes can be undone for 6 seconds, and **Show deleted** lists them with a Restore button.
+
 ## Connectors: spending, runs, Seer
 
 The same `notes` MCP server also reads three of your own apps, read-only, so `/n` and the chat bar

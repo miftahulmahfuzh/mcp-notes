@@ -1,11 +1,17 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { Bubble } from '../components/Bubble';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Bubble, type BubbleProps } from '../components/Bubble';
 import { ChatBar } from '../components/ChatBar';
+import { HistoryTools } from '../components/HistoryTools';
 import { Lightbox, type LightboxItem } from '../components/Lightbox';
+import { MessageItem } from '../components/MessageItem';
+import { ReplyChip } from '../components/ReplyChip';
 import { useChatImages } from '../hooks/useChatImages';
+import { useHistoryActions } from '../hooks/useHistoryActions';
+import type { UndoEntry } from '../hooks/useUndo';
 import { chatTime } from '../lib/chatTime';
 import type { TimelineItem } from '../lib/timeline';
 import type { HistoryStore } from '../hooks/useHistory';
+import type { ChatMessage } from '../types';
 import './HistoryPage.css';
 
 /** Within this many px of the bottom counts as "at the bottom": new messages keep the page pinned there. */
@@ -21,7 +27,14 @@ export interface HistoryPageProps {
   /** `/history?thread=ID`: scroll to that thread and outline it once it is loaded. */
   focusThread: string | null;
   now: Date;
+  /**
+   * App's single undo store (one UndoBar on screen): bubble deletes push their restore here. App
+   * always passes it; optional only so P9's `HistoryPage.test.tsx` renders keep compiling (no undo bar there).
+   */
+  pushUndo?: (entry: UndoEntry) => void;
 }
+
+const NO_UNDO = (): void => {};
 
 /**
  * The page's composer: Phase 3's `ChatBar` in its `page` variant (laid out here, sticky at the
@@ -29,7 +42,16 @@ export interface HistoryPageProps {
  * `useChatImages()` instance, so the wall bar's draft and pasted images are untouched by a visit.
  * The draft lives as long as the page is shown.
  */
-function HistoryComposer({ store }: { store: HistoryStore }) {
+function HistoryComposer({
+  store,
+  replyTo,
+  onCancelReply,
+}: {
+  store: HistoryStore;
+  /** Phase 10: the bubble being replied to (the chip above the bar), or null. */
+  replyTo: ChatMessage | null;
+  onCancelReply: () => void;
+}) {
   const images = useChatImages();
   const [draft, setDraft] = useState('');
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -38,13 +60,16 @@ function HistoryComposer({ store }: { store: HistoryStore }) {
     if (images.blocked) return;
     const ids = images.readyIds;
     if (!draft.trim() && ids.length === 0) return;
-    if (store.send(draft, ids)) {
+    // Two arguments when not replying: P9's callers and tests see the call they always saw.
+    if (replyTo ? store.send(draft, ids, replyTo) : store.send(draft, ids)) {
       setDraft('');
       images.clear();
+      onCancelReply();
     }
   };
   return (
     <div className="hist-composer">
+      {replyTo && <ReplyChip target={replyTo} onCancel={onCancelReply} />}
       <ChatBar
         variant="page"
         value={draft}
@@ -79,8 +104,11 @@ const scrollToBottom = (): void => {
   window.scrollTo(0, document.documentElement.scrollHeight);
 };
 
-export function HistoryPage({ store, focusThread, now }: HistoryPageProps) {
+export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO }: HistoryPageProps) {
   const { items, loaded, error, hasMore, loadingOlder, loadOlder } = store;
+  const ha = useHistoryActions({ history: store, pushUndo });
+  // Deleted server rows are loaded (App fetches include_deleted=1) and shown only with "Show deleted".
+  const shown = useMemo(() => items.filter((it) => it.local !== null || ha.isShown(it.msg)), [items, ha.isShown]);
   const [box, setBox] = useState<{ items: LightboxItem[]; index: number } | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -153,6 +181,7 @@ export function HistoryPage({ store, focusThread, now }: HistoryPageProps) {
 
   return (
     <section className="history" aria-label="Chat history">
+      <HistoryTools showDeleted={ha.showDeleted} onToggleDeleted={ha.toggleShowDeleted} notice={ha.notice} />
       {hasMore && (
         <button type="button" className="hist-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
           {loadingOlder ? 'Loading earlier messages' : 'Earlier messages'}
@@ -166,23 +195,25 @@ export function HistoryPage({ store, focusThread, now }: HistoryPageProps) {
       {!loaded && <p className="hist-note">Loading…</p>}
       {loaded && items.length === 0 && !error && <p className="hist-note">No chats yet. Ask something below.</p>}
       <ol className="hist-list" ref={listRef}>
-        {items.map((it, i) => {
-          const prev = i > 0 ? items[i - 1] : undefined;
+        {shown.map((it, i) => {
+          const prev = i > 0 ? shown[i - 1] : undefined;
           const divider = prev === undefined || prev.msg.thread_id !== it.msg.thread_id;
+          const bubble: BubbleProps = {
+            item: it,
+            now,
+            focused: flash !== null && it.msg.thread_id === flash,
+            onOpenImages: (lbItems, index) => setBox({ items: lbItems, index }),
+          };
           return (
             <Fragment key={it.key}>
               {divider && <ThreadDivider item={it} now={now} />}
-              <Bubble
-                item={it}
-                now={now}
-                focused={flash !== null && it.msg.thread_id === flash}
-                onOpenImages={(lbItems, index) => setBox({ items: lbItems, index })}
-              />
+              {/* Server rows get the phase 10 actions; local (sending / streaming / failed) bubbles stay plain. */}
+              {it.local === null ? <MessageItem {...ha.itemProps(it.msg)} bubble={bubble} /> : <Bubble {...bubble} />}
             </Fragment>
           );
         })}
       </ol>
-      <HistoryComposer store={store} />
+      <HistoryComposer store={store} replyTo={ha.replyTo} onCancelReply={ha.cancelReply} />
       {box && (
         <Lightbox
           items={box.items}

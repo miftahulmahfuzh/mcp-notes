@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { chatImageSrc, fetchChatMessages, streamChat } from '../chatHistoryApi';
+import { threadForReply } from '../lib/chatReply';
 import { subscribeEvents } from '../lib/events';
 import { readSSE } from '../lib/sse';
 import { mergeMessages, oldestMs, pruneLocal, threadForSend, timelineOf, type LocalBubble, type TimelineItem } from '../lib/timeline';
@@ -37,8 +38,12 @@ export interface HistoryStore {
   refresh: () => void;
   /** Local optimistic change of the server rows (phase 10: edit, delete, restore). The next refresh wins. */
   mutate: (fn: (messages: ChatMessage[]) => ChatMessage[]) => void;
-  /** Send from the history composer. False when refused (empty, or a reply still streaming): keep the draft. */
-  send: (text: string, imageIds: string[]) => boolean;
+  /**
+   * Send from the history composer. False when refused (empty, or a reply still streaming): keep the
+   * draft. `replyTo` (phase 10): the bubble this message answers; a wall bubble continues its thread,
+   * a claude_code bubble starts a new one (Decision), and the POST carries `reply_to`.
+   */
+  send: (text: string, imageIds: string[], replyTo?: ChatMessage) => boolean;
 }
 
 interface State {
@@ -211,12 +216,14 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
     });
   }, []);
 
-  const send = useCallback((text: string, imageIds: string[]): boolean => {
+  const send = useCallback((text: string, imageIds: string[], replyTo?: ChatMessage): boolean => {
     const message = text.trim();
     if (sendingRef.current) return false;
     if (!message && imageIds.length === 0) return false;
     const now = stRef.current;
-    const threadId = threadForSend(timelineOf(now.server, now.local));
+    const threadId = replyTo
+      ? (threadForReply(replyTo) ?? undefined)
+      : threadForSend(timelineOf(now.server, now.local));
     const n = ++seq.current;
     const createdAt = new Date().toISOString();
     const userKey = `local-${n}-u`;
@@ -263,7 +270,7 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
 
     void (async () => {
       try {
-        const res = await streamChat({ message, threadId, imageIds, signal: c.signal });
+        const res = await streamChat({ message, threadId, imageIds, replyTo: replyTo?.id, signal: c.signal });
         if (!res.ok || !res.body) {
           fail(`Chat failed: ${res.status} ${res.statusText}`.trim());
           return;

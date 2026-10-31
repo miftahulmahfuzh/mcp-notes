@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import type { LightboxItem } from './Lightbox';
 import { chatImageSrc } from '../chatHistoryApi';
 import { chatTime, chatTimeTitle } from '../lib/chatTime';
@@ -27,29 +27,57 @@ export function lightboxItemsOf(images: ChatAttachment[]): LightboxItem[] {
   }));
 }
 
+/** Phase 10: what MessageItem puts into a history bubble. All optional; absent = P9's bubble unchanged. */
+export interface BubbleSlots {
+  /** Quoted header of a reply, first inside the bubble. */
+  quote?: ReactNode;
+  /** In-place editor; while set, `.bubble-body` is hidden and this is shown in its place. */
+  editor?: ReactNode;
+  /** The "edited" mark and the action buttons, after `.bubble-meta`. */
+  foot?: ReactNode;
+  /** Extra root classes (`msg-deleted`). */
+  className?: string;
+  /** Root aria-label (a deleted message). */
+  label?: string;
+}
+
 export interface BubbleProps {
   item: TimelineItem;
   now: Date;
   /** Part of the thread the page was opened on (`/history?thread=`): briefly outlined. */
   focused: boolean;
   onOpenImages: (items: LightboxItem[], index: number) => void;
+  /** Phase 10: actions, reply quote and editor (server rows on the history page only). */
+  slots?: BubbleSlots;
 }
 
 const CHIP_KIND: Record<ChatAttachment['kind'], string> = { chat_image: 'upload', note_image: 'image', note_file: 'file' };
 
-export function Bubble({ item, now, focused, onOpenImages }: BubbleProps) {
+export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps) {
   const { msg, local } = item;
   const mine = msg.role === 'user';
   const streaming = local?.streaming ?? false;
   const images = msg.attachments.filter((a) => a.kind === 'chat_image');
   const chips = msg.attachments.filter((a) => a.kind !== 'chat_image');
   const parts = msg.text ? msg.text.split('\n\n') : [];
-  const cls = ['bubble', mine ? 'mine' : 'theirs', local?.error ? 'error' : '', focused ? 'focus' : ''].filter(Boolean).join(' ');
+  const cls = ['bubble', mine ? 'mine' : 'theirs', local?.error ? 'error' : '', focused ? 'focus' : '', slots?.className ?? '']
+    .filter(Boolean)
+    .join(' ');
+  const editing = slots?.editor !== undefined;
   const caption = streaming ? (local?.status ?? '') : msg.role === 'assistant' ? (msg.brain ?? '') : '';
 
   return (
-    <li className={cls} data-msg={msg.id || undefined} data-msg-key={item.key} data-thread={msg.thread_id || undefined}>
-      <div className="bubble-body">
+    <li
+      className={cls}
+      data-msg={msg.id || undefined}
+      data-msg-key={item.key}
+      data-thread={msg.thread_id || undefined}
+      tabIndex={slots ? -1 : undefined}
+      aria-label={slots?.label}
+    >
+      {slots?.quote}
+      {slots?.editor}
+      <div className="bubble-body" hidden={editing || undefined}>
         {msg.source === 'claude_code' && <span className="bubble-badge">claude code</span>}
         {images.length > 0 && (
           <div className="bubble-thumbs">
@@ -105,6 +133,7 @@ export function Bubble({ item, now, focused, onOpenImages }: BubbleProps) {
         </time>
         {caption && <span className="bubble-caption">{caption}</span>}
       </div>
+      {slots?.foot}
     </li>
   );
 }

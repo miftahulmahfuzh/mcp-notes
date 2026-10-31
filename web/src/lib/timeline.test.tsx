@@ -75,3 +75,13 @@ describe('timeline', () => {
     expect(historyCountLine(items, true)).toBe('Latest 2 messages in 2 threads.');
   });
 });
+
+describe('historyCountLine (phase 10)', () => {
+  it('does not count deleted rows', () => {
+    const items = timelineOf(
+      [makeMessage('A001'), makeMessage('A002', { deleted_at: '2026-10-31T02:00:00.000Z' })],
+      [],
+    );
+    expect(historyCountLine(items, false)).toBe('1 messages in 1 threads.');
+  });
+});

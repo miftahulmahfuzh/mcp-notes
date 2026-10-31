@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 45
+- Blocked: 0
+- Completed: 46
 
 ---
 
@@ -22,24 +22,14 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns reply action → quote chip inside P9's `HistoryComposer` → `reply_to` in the request (`streamChat` `replyTo`, `send(text, imageIds, replyTo?)`; a reply to a wall bubble continues its thread, to a claude_code bubble starts a new one); `MessageItem` rendering P9's `Bubble` through new optional `slots` (one `li` per message, no wrapper); reply bubbles show a quoted header (`reply_to.text`, role or "message"), click scrolls to and highlights the target, deleted target reads "message deleted"; edit user bubbles in place with "edited" mark; delete any bubble with "delete the answer too?" prompt for questions; undo bar restores each id from `deleted[]`; "show deleted" toggle filtering client-side (App fetches with `includeDeleted: true`); `HistoryPage` `pushUndo?`. Exit: tests for each action against mocked API; keyboard accessible.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 10 of 11)
-  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A042 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A043.md`
-
 - [ ] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns note-id segmenting in chat text (`segmentChat`, `ChatInline`) in `Bubble` (as P10 leaves it) and `AnswerPanel` (as P9 leaves it); clicking opens the bigger-note-view modal in place (loaded or fetched note; deleted/unknown handled quietly); wall deep links in chat text become in-place links too, keeping `href="/?note=ID"` so modified/middle clicks and new tabs navigate normally; `NoteEditor` icon button (after P5's buttons in `.ed-top`) that goes to `/?note=ID` and flashes the note on the wall. Exit: ids inside code-ish tokens and longer words are not linked; opening from the history page does not navigate; ctrl/middle click keeps the real link; the modal button switches to the wall view and flashes the card.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 11 of 11)
   - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A043 (pending)
+  - **Depends on**: P1-NOTES-A043 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A044.md`
 
 ### [P2] Medium
@@ -51,6 +41,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns reply action → quote chip inside P9's `HistoryComposer` → `reply_to` in the request (`streamChat` `replyTo`, `send(text, imageIds, replyTo?)`; a reply to a wall bubble continues its thread, to a claude_code bubble starts a new one); `MessageItem` rendering P9's `Bubble` through new optional `slots` (one `li` per message, no wrapper); reply bubbles show a quoted header (`reply_to.text`, role or "message"), click scrolls to and highlights the target, deleted target reads "message deleted"; edit user bubbles in place with "edited" mark; delete any bubble with "delete the answer too?" prompt for questions; undo bar restores each id from `deleted[]`; "show deleted" toggle filtering client-side (App fetches with `includeDeleted: true`); `HistoryPage` `pushUndo?`. Exit: tests for each action against mocked API; keyboard accessible.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 10 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A042 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A043.md`
+  - **Completed**: 2026-10-31 11:30
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, web/src/App.tsx, web/src/api.chatActions.test.tsx, web/src/chatHistoryApi.ts, web/src/components/Bubble.tsx, web/src/components/BubbleActions.flow.test.tsx, web/src/components/HistoryTools.tsx, web/src/components/MessageItem.css, web/src/components/MessageItem.test.tsx, web/src/components/MessageItem.tsx, web/src/components/ReplyChip.tsx, web/src/hooks/useHistory.reply.test.tsx, web/src/hooks/useHistory.ts, web/src/hooks/useHistoryActions.ts, web/src/hooks/useJumpToMessage.test.tsx, web/src/hooks/useJumpToMessage.ts, web/src/hooks/useMessageActions.ts, web/src/hooks/useShowDeleted.ts, web/src/lib/chatReply.test.tsx, web/src/lib/chatReply.ts, web/src/lib/timeline.test.tsx, web/src/lib/timeline.ts, web/src/pages/HistoryPage.tsx
+  - **Drift**:
+    - Plan's HistoryComposer called store.send(draft, ids, replyTo ?? undefined), which broke P9's HistoryPage.test (expects send called with exactly 2 args); changed to call with 2 args when not replying.
+  - **Decided**:
+    - HistoryComposer send arity: P9 test asserts toHaveBeenCalledWith('and now?', []) vs plan code block passing undefined third arg → call send(draft, ids) when no reply target (rung 2: exit criteria 'P9 tests still pass' over rung 3 code block)
 
 - [x] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
   - **Difficulty**: HARD

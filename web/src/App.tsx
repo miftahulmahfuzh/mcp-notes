@@ -66,7 +66,8 @@ export function App() {
   const [view, setView] = useState<View>(() => (routeFromLocation(window.location).history ? 'history' : 'wall'));
   const [historyThread, setHistoryThread] = useState<string | null>(() => routeFromLocation(window.location).thread);
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
-  const history = useHistory(view === 'history');
+  // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
+  const history = useHistory(view === 'history', { includeDeleted: true });
   const { entry: undoEntry, push: pushUndo, undo: runUndo } = useUndo();
   const binStore = useBin(active, view === 'bin');
   // Deep link (?note=<id> / #<id>): its own quiet notice (App's other notice is shown in the big
@@ -536,7 +537,7 @@ export function App() {
           />
           <div className="rule" />
           {view === 'history' ? (
-            <HistoryPage store={history} focusThread={historyThread} now={now} />
+            <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} />
           ) : view === 'bin' ? (
             <Bin store={binStore} now={now} onRestored={onRestored} />
           ) : mode === 'images' ? (

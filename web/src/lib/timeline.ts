@@ -120,7 +120,8 @@ export function threadForSend(items: TimelineItem[]): string | undefined {
 
 /** Header count line on the history page. */
 export function historyCountLine(items: TimelineItem[], hasMore: boolean): string {
-  const shown = items.filter((i) => !i.local?.error);
+  // Phase 10 keeps deleted rows loaded for "Show deleted"; the header counts live messages only.
+  const shown = items.filter((i) => !i.local?.error && !i.msg.deleted_at);
   const threads = new Set(shown.map((i) => i.msg.thread_id).filter((t) => t !== '')).size;
   const lead = hasMore ? `Latest ${shown.length} messages` : `${shown.length} messages`;
   return `${lead} in ${threads} threads.`;
