@@ -145,6 +145,7 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout }: Lightb
             type="button"
             className="lb-btn"
             data-tip="Chat about this image"
+            data-tip-side="below"
             aria-label="Chat about this image"
             onClick={(e) => {
               e.stopPropagation();
@@ -154,7 +155,7 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout }: Lightb
             <ChatCircleDots weight="duotone" />
           </button>
         )}
-        <button type="button" className="lb-btn" data-tip="Close" aria-label="Close image viewer" onClick={close}>
+        <button type="button" className="lb-btn" data-tip="Close" data-tip-side="below" aria-label="Close image viewer" onClick={close}>
           <X weight="duotone" />
         </button>
       </div>
