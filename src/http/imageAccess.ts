@@ -1,6 +1,8 @@
 import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { locateChatImage } from '../chat/images.js';
+import type { Db } from '../db/client.js';
 import { getDisplay, getPreview, getThumb, OriginalMissingError } from '../images/derive.js';
 import {
   attachImage,
@@ -39,7 +41,18 @@ export type ResolveResult =
   | { status: 'no_image'; id: string }
   | { status: 'not_on_this_machine'; id: string; host: string | null };
 
-export type ImageInputErrorCode = 'not_absolute' | 'not_found' | 'not_a_file' | 'not_an_image' | 'too_large';
+export type ImageInputErrorCode =
+  | 'not_absolute'
+  | 'not_found'
+  | 'not_a_file'
+  | 'not_an_image'
+  | 'too_large'
+  /** MCP only: neither or both of path / image_id were given. */
+  | 'bad_arguments'
+  /** MCP only: image_id names no row in chat_images (never looked up among note images). */
+  | 'unknown_chat_image'
+  /** MCP only: the chat image's original is not under this machine's data dir (pasted on the other laptop). */
+  | 'not_on_this_machine';
 
 export class ImageInputError extends Error {
   constructor(
@@ -259,4 +272,94 @@ export async function attachFromUpload(
 export async function attachFromPath(img: AttachDeps, noteId: string, rawPath: string): Promise<AttachResult> {
   const p = await checkLocalImagePath(rawPath);
   return runAttach(img, noteId, { path: p, originalName: path.basename(p), move: false });
+}
+
+/** The tail of every unknown_chat_image message: where a pasted image's id can be found. */
+export const CHAT_IMAGE_ID_HINT =
+  'Pasted image ids look like G-0NC and appear as [image upload:ID] in chat or in the pasted-images note of a Claude Code /n prompt';
+
+/** What resolving a chat image id needs: the daemon's db and data dir (ToolDeps has both). */
+export type ChatImageFileDeps = { db: Db; dataDir: string };
+
+/** A pasted chat image whose original is on this machine. */
+export interface ChatImageFile {
+  /** Canonical chat image id (A-B32 form, chat_images id space). */
+  id: string;
+  /** Absolute path of the stored original under `<dataDir>/chat-images/`. */
+  absPath: string;
+  /** The client's file name at paste time, or null (e.g. a Claude Code capture). */
+  originalName: string | null;
+}
+
+/** ChatImageFileDeps for the MCP tools. */
+export function toolChatImageDeps(deps: ToolDeps): ChatImageFileDeps {
+  return { db: deps.db, dataDir: deps.dataDir };
+}
+
+/** Which image source an MCP call named. */
+export type ImageSourceArg = { kind: 'path'; path: string } | { kind: 'image_id'; imageId: string };
+
+/** create_image / attach_image take exactly one of path and image_id. */
+export function oneImageSource(args: { path?: string | undefined; image_id?: string | undefined }): ImageSourceArg {
+  const hasPath = args.path !== undefined;
+  const hasImageId = args.image_id !== undefined;
+  if (hasPath === hasImageId) {
+    throw new ImageInputError('bad_arguments', 'give exactly one of path or image_id');
+  }
+  return hasPath ? { kind: 'path', path: args.path as string } : { kind: 'image_id', imageId: args.image_id as string };
+}
+
+/**
+ * A pasted chat image by id (any case, dash optional) -> its original on this machine. Looks only
+ * in chat_images: a note image id is never matched here (it is "no pasted image"). Throws
+ * ImageInputError unknown_chat_image / not_on_this_machine.
+ */
+export async function resolveChatImageFile(chat: ChatImageFileDeps, rawId: string): Promise<ChatImageFile> {
+  const shown = normalizeId(rawId) ?? rawId.trim();
+  const loc = await locateChatImage(chat, rawId);
+  if (loc === null) {
+    throw new ImageInputError('unknown_chat_image', `no pasted image ${shown}. ${CHAT_IMAGE_ID_HINT}`);
+  }
+  if (!loc.available) {
+    throw new ImageInputError(
+      'not_on_this_machine',
+      `pasted image ${loc.row.id} is stored on ${loc.row.host ?? 'another machine'}, not on this machine`,
+    );
+  }
+  return { id: loc.row.id, absPath: loc.source.originalPath, originalName: loc.row.originalName };
+}
+
+/** The name a chat image gets in the note: its paste-time name, else its stored file name (`G-0NC.png`). */
+function chatImageOriginalName(file: ChatImageFile): string {
+  return file.originalName ?? path.basename(file.absPath);
+}
+
+/** MCP create_image with image_id: the pasted chat image's original, copied (never moved). */
+export async function ingestFromChatImage(
+  img: ImageDeps,
+  chat: ChatImageFileDeps,
+  rawId: string,
+  body: string | undefined,
+  origin: Origin | null,
+): Promise<{ note: Note; created: boolean }> {
+  const file = await resolveChatImageFile(chat, rawId);
+  const b = blankToUndefined(body);
+  return runIngest(img, {
+    path: file.absPath,
+    originalName: chatImageOriginalName(file),
+    origin,
+    move: false,
+    ...(b !== undefined ? { body: b } : {}),
+  });
+}
+
+/** MCP attach_image with image_id: the pasted chat image's original, copied (never moved). */
+export async function attachFromChatImage(
+  img: AttachDeps,
+  chat: ChatImageFileDeps,
+  noteId: string,
+  rawId: string,
+): Promise<AttachResult> {
+  const file = await resolveChatImageFile(chat, rawId);
+  return runAttach(img, noteId, { path: file.absPath, originalName: chatImageOriginalName(file), move: false });
 }

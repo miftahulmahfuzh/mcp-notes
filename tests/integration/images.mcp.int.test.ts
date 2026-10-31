@@ -3,9 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ingestChatImage, locateChatImage } from '../../src/chat/images.js';
 import { setImageDeleted } from '../../src/notes/imageRepo.js';
+import type { Note } from '../../src/notes/types.js';
 import {
   addImage,
   cacheDirOf,
@@ -217,5 +220,111 @@ describe('MCP image tools and filters', () => {
     const r = await call('view_images', { ids: ['R-EM2'] });
     expect(r.content.some((c) => c.type === 'image')).toBe(false);
     expect(texts(r).join('\n')).toContain(`R-EM2: this image was removed from note ${id}`);
+  });
+
+  /** Stores bytes in chat_images as a wall paste would; returns the chat image id. */
+  async function paste(bytes: Buffer, originalName: string | null = 'pasted.png'): Promise<string> {
+    const r = await ingestChatImage({ db: h.deps.db, dataDir: h.dataDir }, { bytes, originalName, source: 'wall' });
+    return r.image.id;
+  }
+
+  async function noteCount(): Promise<number> {
+    const res = await h.deps.db.execute<{ n: number }>(sql`select count(*)::int as n from notes`);
+    return res.rows[0]?.n ?? 0;
+  }
+
+  const BAD_ARGS = 'create_image refused (bad_arguments): give exactly one of path or image_id';
+
+  it('publishes path and image_id on create_image, neither required', async () => {
+    const { tools } = await client.listTools();
+    const t = tools.find((x) => x.name === 'create_image');
+    const schema = t!.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+    expect(Object.keys(schema.properties ?? {})).toEqual(expect.arrayContaining(['path', 'image_id', 'body', 'origin']));
+    expect(schema.required ?? []).not.toContain('path');
+    expect(schema.required ?? []).not.toContain('image_id');
+    expect(t!.description).toMatch(/CHAT image id/);
+  });
+
+  it('create_image takes a pasted chat image by image_id, copies it, and dedupes', async () => {
+    const png = await makeImage('png', 40, 30, { r: 9, g: 99, b: 199 });
+    const chatId = await paste(png);
+    const loc = await locateChatImage({ db: h.deps.db, dataDir: h.dataDir }, chatId);
+
+    const r = await call('create_image', { image_id: chatId.toLowerCase().replace('-', ''), body: 'from the chat #pasted' });
+    expect(r.isError, texts(r).join('\n')).toBeFalsy();
+    const first = JSON.parse(texts(r)[0]!) as { note: Note; created: boolean };
+    expect(first.created).toBe(true);
+    expect(first.note.body).toBe('from the chat #pasted');
+    expect(first.note.tags).toEqual(['pasted']);
+    expect(first.note.origin?.source).toBe('mcp');
+    expect(first.note.images).toHaveLength(1);
+    expect(first.note.images[0]!.original_name).toBe('pasted.png');
+    // The note image has its own id in the note-image space; the chat original stays where it was.
+    expect(Buffer.compare(await readFile(await originalPathOf(h, first.note.id)), png)).toBe(0);
+    await expect(access(loc!.source.originalPath)).resolves.toBeUndefined();
+
+    const again = await call('create_image', { image_id: chatId });
+    expect(again.isError, texts(again).join('\n')).toBeFalsy();
+    expect(JSON.parse(texts(again)[0]!)).toMatchObject({ note: { id: first.note.id }, created: false });
+
+    // Same bytes by path: the same note, no duplicate.
+    expect(await createFromFile('same.png', png)).toEqual({ id: first.note.id, created: false });
+    expect(await noteCount()).toBe(1);
+  });
+
+  it('create_image names a chat image without an original name by its stored file name', async () => {
+    const chatId = await paste(await makeImage('png', 20, 20, { r: 77, g: 7, b: 177 }), null);
+    const r = await call('create_image', { image_id: chatId });
+    expect(r.isError, texts(r).join('\n')).toBeFalsy();
+    const j = JSON.parse(texts(r)[0]!) as { note: Note };
+    expect(j.note.images[0]!.original_name).toBe(`${chatId}.png`);
+  });
+
+  it('create_image dedupes a pasted image against a note that already holds the bytes', async () => {
+    const png = await makeImage('png', 24, 24, { r: 15, g: 25, b: 35 });
+    const held = await createFromFile('held.png', png, 'saved earlier');
+    const chatId = await paste(png);
+    const r = await call('create_image', { image_id: chatId });
+    expect(r.isError, texts(r).join('\n')).toBeFalsy();
+    expect(JSON.parse(texts(r)[0]!)).toMatchObject({ note: { id: held.id }, created: false });
+  });
+
+  it('create_image refuses both, neither, unknown, note-image and other-machine image_ids', async () => {
+    const png = await makeImage('png', 16, 16, { r: 200, g: 20, b: 2 });
+    const p = path.join(srcDir, 'both.png');
+    await writeFile(p, png);
+    const chatId = await paste(png);
+
+    const both = await call('create_image', { path: p, image_id: chatId });
+    expect(both.isError).toBe(true);
+    expect(texts(both).join('\n')).toBe(BAD_ARGS);
+
+    const neither = await call('create_image', { body: 'no picture' });
+    expect(neither.isError).toBe(true);
+    expect(texts(neither).join('\n')).toBe(BAD_ARGS);
+
+    const unknown = await call('create_image', { image_id: 'z-zzz' });
+    expect(unknown.isError).toBe(true);
+    expect(texts(unknown).join('\n')).toBe(
+      'create_image refused (unknown_chat_image): no pasted image Z-ZZZ. Pasted image ids look like G-0NC and appear as [image upload:ID] in chat or in the pasted-images note of a Claude Code /n prompt',
+    );
+
+    // A NOTE image id is a different id space: never matched as a pasted image.
+    const noteImg = await createFromFile('note.png', await makeImage('png', 16, 16, { r: 2, g: 20, b: 200 }));
+    const asChat = await call('create_image', { image_id: noteImg.id });
+    expect(asChat.isError).toBe(true);
+    expect(texts(asChat).join('\n')).toContain(`create_image refused (unknown_chat_image): no pasted image ${noteImg.id}.`);
+
+    // Pasted on the other laptop: the row is here, the file is not.
+    const loc = await locateChatImage({ db: h.deps.db, dataDir: h.dataDir }, chatId);
+    await h.deps.db.execute(sql`update chat_images set host = 'other-laptop' where id = ${chatId}`);
+    await rm(loc!.source.originalPath);
+    const away = await call('create_image', { image_id: chatId });
+    expect(away.isError).toBe(true);
+    expect(texts(away).join('\n')).toBe(
+      `create_image refused (not_on_this_machine): pasted image ${chatId} is stored on other-laptop, not on this machine`,
+    );
+
+    expect(await noteCount()).toBe(1); // only noteImg
   });
 });

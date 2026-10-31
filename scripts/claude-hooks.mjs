@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Adds, removes or reports the two mcp-notes Claude Code hooks in a settings.json
+ * Adds, removes or reports the three mcp-notes Claude Code hooks in a settings.json
  * (normally ~/.claude/settings.json), leaving every other key and every other hook as it was.
  *
  *   node scripts/claude-hooks.mjs install   --settings FILE --node /abs/node --hooks-dir /abs/repo/claude/hooks [--paste-strategy updatedInput|deny]
@@ -8,7 +8,7 @@
  *   node scripts/claude-hooks.mjs status    --settings FILE
  *
  * Our handlers are recognised by the script name in their command (notes-capture.mjs,
- * notes-paste.mjs), so an entry left by another checkout is replaced, never duplicated. install is
+ * notes-paste.mjs, notes-prompt.mjs), so an entry left by another checkout is replaced, never duplicated. install is
  * idempotent: a second run leaves the file byte-identical. Before the first change to an existing
  * file a copy is kept at FILE.bak-notes-hooks (once; never overwritten). Writes are atomic
  * (temp file + rename) on the symlink target, keeping the file's mode.
@@ -19,11 +19,12 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
-export const OUR_SCRIPT = /notes-(?:capture|paste)\.mjs(?=['"\s]|$)/;
+export const OUR_SCRIPT = /notes-(?:capture|paste|prompt)\.mjs(?=['"\s]|$)/;
 export const PASTE_MATCHER = 'mcp__notes__similar_images';
 export const BACKUP_SUFFIX = '.bak-notes-hooks';
 export const STOP_TIMEOUT_S = 60;
 export const PASTE_TIMEOUT_S = 30;
+export const PROMPT_TIMEOUT_S = 20;
 export const PASTE_STRATEGIES = ['updatedInput', 'deny'];
 
 function isPlainObject(value) {
@@ -62,7 +63,7 @@ function stripOurs(groups) {
   return { groups: kept, removed };
 }
 
-/** The two matcher groups this repo installs. */
+/** The three matcher groups this repo installs. */
 export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' }) {
   const pasteEnv = pasteStrategy === 'deny' ? { NOTES_PASTE_STRATEGY: 'deny' } : {};
   return {
@@ -86,10 +87,19 @@ export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' })
         },
       ],
     },
+    UserPromptSubmit: {
+      hooks: [
+        {
+          type: 'command',
+          command: hookCommand(nodeBin, path.join(hooksDir, 'notes-prompt.mjs')),
+          timeout: PROMPT_TIMEOUT_S,
+        },
+      ],
+    },
   };
 }
 
-/** `settings` with our handlers removed from every event and our two groups appended last. */
+/** `settings` with our handlers removed from every event and our groups appended last. */
 export function mergeHooks(settings, options) {
   const base = isPlainObject(settings) ? settings : {};
   const hooks = isPlainObject(base.hooks) ? { ...base.hooks } : {};
@@ -203,7 +213,7 @@ async function main(argv) {
     if (nodeBin === undefined || !path.isAbsolute(nodeBin)) fail('--node must be an absolute path');
     if (hooksDir === undefined || !path.isAbsolute(hooksDir)) fail('--hooks-dir must be an absolute path');
     if (!PASTE_STRATEGIES.includes(pasteStrategy)) fail(`--paste-strategy must be one of ${PASTE_STRATEGIES.join(', ')}`);
-    for (const script of ['notes-capture.mjs', 'notes-paste.mjs']) {
+    for (const script of ['notes-capture.mjs', 'notes-paste.mjs', 'notes-prompt.mjs']) {
       if (!existsSync(path.join(hooksDir, script))) fail(`missing ${path.join(hooksDir, script)}`);
     }
     const result = await writeSettings(file, current, mergeHooks(current.value, { nodeBin, hooksDir, pasteStrategy }));
@@ -223,6 +233,7 @@ async function main(argv) {
     const found = ourHandlers(current.value);
     process.stdout.write(`Stop notes-capture: ${found.Stop ?? 'not registered'}\n`);
     process.stdout.write(`PreToolUse notes-paste: ${found.PreToolUse ?? 'not registered'}\n`);
+    process.stdout.write(`UserPromptSubmit notes-prompt: ${found.UserPromptSubmit ?? 'not registered'}\n`);
     return;
   }
   fail('usage: claude-hooks.mjs install|uninstall|status --settings FILE [--node ABS --hooks-dir ABS --paste-strategy updatedInput|deny]');

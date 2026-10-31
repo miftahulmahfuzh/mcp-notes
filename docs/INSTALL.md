@@ -44,7 +44,14 @@ What it does, every run (it is idempotent, re-run it after every pull):
    `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`.
 8. Symlinks `~/.claude/skills/n` -> `<this checkout>/claude/skills/n`. An existing symlink is
    replaced; a real directory there stops the script before it changes anything.
-9. Prints the verification and exits non-zero unless all four checks pass:
+9. Merges three hooks into `~/.claude/settings.json` (user scope, every repo), keeping everything
+   else; a copy of the original is kept once as `settings.json.bak-notes-hooks`. `--skip-hooks`
+   or `NOTES_SKIP_HOOKS=1` skips this.
+   - `notes-capture` (Stop): saves each `/n` exchange to the chat history.
+   - `notes-paste` (PreToolUse on `similar_images`): searches with a pasted image.
+   - `notes-prompt` (UserPromptSubmit, `/n` prompts only): stores the session's pasted images and
+     tells Claude their ids, so `/n make that image a new note` works. Other prompts are not read.
+10. Prints the verification and exits non-zero unless all four checks pass:
 
 ```sh
 systemctl --user is-active notesd           # active
@@ -387,7 +394,9 @@ scripts/uninstall.sh
 ```
 
 Stops and removes the unit, runs `claude mcp remove --scope user notes`, removes the skill
-symlink. It keeps `~/mcp-notes-data` and linger (`sudo loginctl disable-linger $USER` to undo).
+symlink and our three hook entries from `~/.claude/settings.json`. It keeps `~/mcp-notes-data`,
+the hooks' state in `~/.local/state/notes-capture` and linger (`sudo loginctl disable-linger $USER`
+to undo).
 Windows: run the keepalive script with `-Uninstall`.
 
 ## Troubleshooting
@@ -397,6 +406,9 @@ Windows: run the keepalive script with `-Uninstall`.
   `localhost`, which resolves to IPv4 first or falls back to it.
 - `/n` not found in Claude Code: `ls -l ~/.claude/skills/n` must point at an existing
   `claude/skills/n`; re-run `scripts/install.sh`.
+- `/n make that image a new note` says it has no id for the picture: `tail
+  ~/.local/state/notes-capture/prompt.log`, check `jq .hooks.UserPromptSubmit ~/.claude/settings.json`
+  names `notes-prompt.mjs` (re-run `scripts/install.sh` if not), and run `npm run verify:prompt-hook`.
 - Port 7317 taken by a dev run: stop it; the installer's health check would otherwise pass
   against the wrong process. `ss -ltnp 'sport = :7317'` shows the owner.
 - Chat answers `Chat failed: …` or the installer's chat check fails: `journalctl --user -u notesd -n 50`.

@@ -95,6 +95,16 @@ export function isNotesPrompt(entry) {
 }
 
 /**
+ * True when a raw prompt string is a `/n` prompt: `/n` then whitespace or the end, after leading
+ * whitespace. Accepts the typed form (`/n save this`) and the command XML Claude Code writes for a
+ * typed slash command. Pure: the UserPromptSubmit hook calls it before any I/O.
+ */
+export function isNotesPromptText(text) {
+  if (typeof text !== 'string') return false;
+  return NOTES_PROMPT.test(typedFromCommandXml(text).trimStart());
+}
+
+/**
  * The base64 image blocks of an entry, in block order. `paste_id` is the matching
  * `imagePasteIds` value (the N of "[Image #N]"), or the 1-based image position when absent.
  */
@@ -164,6 +174,26 @@ export function findLatestImagePrompt(entries) {
     if (isHumanPrompt(entry) && extractImages(entry).length > 0) return entry;
   }
   return null;
+}
+
+/**
+ * Every human prompt that carries at least one base64 image, oldest first, with its images
+ * (`extractImages`). An entry whose uuid was already seen (a rewritten line) is listed once.
+ */
+export function listImagePrompts(entries) {
+  const prompts = [];
+  if (!Array.isArray(entries)) return prompts;
+  const seen = new Set();
+  for (const entry of entries) {
+    if (!isHumanPrompt(entry)) continue;
+    if (typeof entry.uuid === 'string' && entry.uuid !== '') {
+      if (seen.has(entry.uuid)) continue;
+      seen.add(entry.uuid);
+    }
+    const images = extractImages(entry);
+    if (images.length > 0) prompts.push({ entry, images });
+  }
+  return prompts;
 }
 
 /** "[Image #n]": the image whose paste id is n, else the n-th image in block order, else null. */

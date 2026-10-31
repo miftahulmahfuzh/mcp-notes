@@ -65,11 +65,31 @@ describe('buildInstructions', () => {
       .filter((p) => p.startsWith('Attaching.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
-    for (const word of ['attach_image(id, path)', 'remove_image(image_id)', 'restore_image(image_id)', 'attached: false', 'soft', 'old position']) {
+    for (const word of ['attach_image(id, path)', 'attach_image(id, image_id)', 'remove_image(image_id)', 'restore_image(image_id)', 'attached: false', 'soft', 'old position']) {
       expect(p).toContain(word);
     }
     expect(p).toContain('copied, not moved');
+    expect(p).toContain('never a pasted image');
     expect(p).toContain('Nothing you can call deletes a note or an image permanently');
+  });
+
+  it('has one Images paragraph: create_image takes path or a pasted image_id, "that image" is the latest, never ask for a path', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Images.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(p).toContain('call create_image with exactly one of path or image_id');
+    expect(p).toContain('[image upload:ID]');
+    expect(p).toContain('/n prompt');
+    expect(p).toContain('use the latest pasted image unless they name another id');
+    expect(p).toContain('never ask the user for a path to a picture they pasted');
+    expect(p).toContain('created: false');
+    expect(p).toContain('copied, not moved');
+    expect(p).toContain('only create_image and attach_image take a pasted image');
+    expect(p).toContain('on remove_image, restore_image and similar_images, image_id means an image already in a note');
+    expect(p).toContain('similar_images takes a pasted image as upload_id');
+    expect(p).not.toContain('To save a local image file');
   });
 
   it('has one Files paragraph: files are visible by name, type and size but not readable, and no tool writes them', () => {

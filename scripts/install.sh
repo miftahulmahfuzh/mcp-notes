@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Install or refresh notesd as a systemd user service, register it with Claude Code as the
 # `notes` MCP server (user scope), link the /n skill into ~/.claude/skills/n, and register the
-# mcp-notes Claude Code hooks (notes-capture: Stop, saves /n exchanges to the chat history;
-# notes-paste: PreToolUse on similar_images, uploads a pasted image) in ~/.claude/settings.json.
+# three mcp-notes Claude Code hooks (notes-capture: Stop, saves /n exchanges to the chat history;
+# notes-paste: PreToolUse on similar_images, uploads a pasted image; notes-prompt:
+# UserPromptSubmit on /n prompts, stores the session's pasted images and names their ids) in
+# ~/.claude/settings.json.
 #
 # Idempotent: run it again after every pull. The unit runs code from the checkout this script
 # lives in, so run it from the checkout you want the daemon to use (normally ~/mcp-notes).
@@ -107,7 +109,7 @@ check_preconditions() {
   done
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
   local hk
-  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_HELPER"; do
+  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_DIR/notes-prompt.mjs" "$HOOKS_HELPER"; do
     [[ -f "$hk" ]] || die "missing $hk."
   done
   [[ "$PASTE_STRATEGY" == "updatedInput" || "$PASTE_STRATEGY" == "deny" ]] \
@@ -244,7 +246,7 @@ link_skill() {
   done
 }
 
-# Merge the two hook entries into ~/.claude/settings.json (user scope: every repo). Everything
+# Merge the three hook entries into ~/.claude/settings.json (user scope: every repo). Everything
 # else in the file is kept; a copy of the original is kept once at settings.json.bak-notes-hooks.
 # A failure here warns and leaves the file alone: the daemon install is not undone for it.
 register_hooks() {
@@ -252,7 +254,7 @@ register_hooks() {
     log "skipping Claude Code hooks (--skip-hooks / NOTES_SKIP_HOOKS=1)"
     return 0
   fi
-  log "registering Claude Code hooks (notes-capture, notes-paste) in $CLAUDE_SETTINGS"
+  log "registering the three Claude Code hooks (notes-capture, notes-paste, notes-prompt) in $CLAUDE_SETTINGS"
   "$NODE_BIN" "$HOOKS_HELPER" install \
     --settings "$CLAUDE_SETTINGS" \
     --node "$NODE_BIN" \

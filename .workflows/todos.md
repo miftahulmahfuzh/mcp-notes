@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 47
+- Completed: 51
 
 ---
 
@@ -31,6 +31,61 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A048** Phase 4: End-to-end tests, live verify script, docs, CHANGELOG
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `tests/integration/prompt.hook.int.test.ts` (hook → real daemon → `chat_images`; then Stop capture of the same turn → same ids, no duplicate rows or threads; daemon down → `null`; then `create_image({image_id})` → note, again → `created:false`), `scripts/verify-prompt-hook.mjs` + `package.json` (`verify:prompt-hook` script), `README.md`, `docs/INSTALL.md`, `CHANGELOG.md`. Sole owner of README/INSTALL/CHANGELOG/`package.json` in this set. Exit: integration test green on Docker Postgres; docs say three hooks, `image_id`, the `/n`-only scope, the state files and the privacy/disk notes; CHANGELOG `[Unreleased]` entries (Added: `image_id`, prompt hook; Changed: hooks count).`prompt.hook.int.test.ts` green on Docker Postgres (8 tests); typecheck and `npm test` green; README says three hooks, `image_id`, the `/n`-only scope, `prompt.log` / `prompt-images/`, the privacy/disk note and `verify:prompt-hook`; INSTALL lists the hook step; CHANGELOG `[Unreleased]` has the two Added bullets and the Changed section.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R2 — `UserPromptSubmit` hook for `/n`: ingest pasted images into `chat_images` now, inject `additionalContext` with the ids; idempotent with the Stop capture; R4 — Robustness: any earlier turn's images resolve; 8 images / 20 MB caps; never block the prompt; idempotency key unchanged; R5 — Tests (vitest unit + integration, hook tests) and risk analysis; R6 — Docs and CHANGELOG
+  - **Depends on**: P1-NOTES-A045, P1-NOTES-A046, P1-NOTES-A047
+  - **Plan**: `.workflows/plan/P1-NOTES-A048.md`
+  - **Completed**: 2026-10-31 15:00
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, docs/INSTALL.md, package.json, scripts/verify-prompt-hook.mjs, tests/integration/prompt.hook.int.test.ts
+  - **Decided**: live verify:prompt-hook not run (billed claude call, needs demo daemon) → left as opt-in manual check (rung 6, narrower blast radius)
+
+- [x] **P1-NOTES-A046** Phase 2: Agent-facing text: instructions, wall prompt, captions
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/mcp/instructions.ts` (Images/Attaching paragraphs), `src/chat/prompt.ts` (picture paragraph: use `image_id`; "that image" = the id the owner names, else the picture in `<message>`, else the one in `<reply_to>`, else the latest `[image upload:ID]` in `<chat_history>`; never ask for a path), `src/chat/status.ts` (captions when input has `image_id`), and `tests/unit/{mcp.instructions,chat-prompt,chat-status}.test.ts`. Exit: instructions and wall prompt name `image_id` and the chat-id space and drop "ask for a path" for pasted images; captions distinguish a pasted-photo save; unit tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 2 of 4)
+  - **Satisfies**: R1 — `image_id` (chat image id; path XOR image_id) on `create_image` and `attach_image`, same ingest and sha dedupe; wall agent prompt, MCP instructions, status captions use it; R3 — "That image" = this session's latest pasted image; explicit id overrides; R5 — Tests (vitest unit + integration, hook tests) and risk analysis
+  - **Depends on**: P1-NOTES-A045
+  - **Plan**: `.workflows/plan/P1-NOTES-A046.md`
+  - **Completed**: 2026-10-31 13:05
+  - **Method**: /do
+  - **Files**: src/mcp/instructions.ts, src/chat/prompt.ts, src/chat/status.ts, tests/unit/mcp.instructions.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-status.test.ts
+
+- [x] **P1-NOTES-A045** Phase 1: Daemon: `image_id` on create_image / attach_image
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/http/imageAccess.ts` (`resolveChatImageFile`, `ingestFromChatImage`, `attachFromChatImage`, new error codes), `src/mcp/imageTools.ts` (schemas, XOR check, descriptions that state the id-space), unit + integration tests for them. Exit: `create_image({image_id})` makes an image note from a chat image; same bytes again → `created:false` same note; `attach_image({id, image_id})` appends or returns `attached:false`; unknown / other-machine / both-or-neither arguments are refused with the C1 wording; `path` calls unchanged; typecheck and unit and integration tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 1 of 4)
+  - **Satisfies**: R1 — `image_id` (chat image id; path XOR image_id) on `create_image` and `attach_image`, same ingest and sha dedupe; wall agent prompt, MCP instructions, status captions use it; R5 — Tests (vitest unit + integration, hook tests) and risk analysis
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A045.md`
+  - **Completed**: 2026-10-31 13:03
+  - **Method**: /do
+  - **Files**: src/http/imageAccess.ts, src/mcp/imageTools.ts, tests/unit/imageAccess.test.ts, tests/integration/images.mcp.int.test.ts, tests/integration/images.attach.int.test.ts
+  - **Drift**: plan's quoted line numbers/imports differed slightly (imageAccess had no locateChatImage/Db imports yet); applied by intent
+
+- [x] **P1-NOTES-A047** Phase 3: Claude Code `UserPromptSubmit` hook + registration + skill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (+ `.d.mts`), `claude/hooks/lib/transcript.mjs` (+ `.d.mts`: `listImagePrompts`), per-session memo, `scripts/claude-hooks.mjs` (+ `.d.mts`: third group, regex), `scripts/install.sh` / `uninstall.sh` file lists and messages, `claude/skills/n/SKILL.md` (use `create_image(image_id)` from the hook context), and `tests/unit/hooks/notesPrompt.test.ts`, `tests/unit/hooks/transcript.test.ts`, `tests/unit/scripts/claudeHooks.test.ts`. Exit: hook returns the C2 context for `/n` prompts with images in any session turn, nothing otherwise; uploads newest-first within a time budget; memo prevents re-upload; a failure that leaves no image stored returns null and logs, and a newest image that could not be stored is reported in the context (never replaced by an older one as "latest"); installer registers exactly three groups idempotently and uninstall removes them; unit tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R2 — `UserPromptSubmit` hook for `/n`: ingest pasted images into `chat_images` now, inject `additionalContext` with the ids; idempotent with the Stop capture; R3 — "That image" = this session's latest pasted image; explicit id overrides; R4 — Robustness: any earlier turn's images resolve; 8 images / 20 MB caps; never block the prompt; idempotency key unchanged; R5 — Tests (vitest unit + integration, hook tests) and risk analysis
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A047.md`
+  - **Completed**: 2026-10-31 12:59
+  - **Method**: /do
+  - **Files**: claude/hooks/notes-prompt.mjs, claude/hooks/notes-prompt.d.mts, claude/hooks/lib/transcript.mjs, claude/hooks/lib/transcript.d.mts, claude/skills/n/SKILL.md, scripts/claude-hooks.mjs, scripts/claude-hooks.d.mts, scripts/install.sh, scripts/uninstall.sh, tests/unit/hooks/notesPrompt.test.ts, tests/unit/hooks/transcript.test.ts, tests/unit/scripts/claudeHooks.test.ts
+  - **Drift**: SKILL.md pasted-image bullet text differed slightly from the plan's quoted original; replaced lines by intent with the plan's two bullets
 
 - [x] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
   - **Difficulty**: NORMAL

@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ingestChatImage, locateChatImage } from '../../src/chat/images.js';
 import { imageRoutes } from '../../src/http/images.js';
 import type { NoteEvent } from '../../src/notes/events.js';
 import type { Note } from '../../src/notes/types.js';
@@ -443,5 +444,90 @@ describe('MCP attach_image / remove_image / restore_image', () => {
     const unknown = await call('remove_image', { image_id: 'Z-ZZZ' });
     expect(unknown.isError).toBe(true);
     expect(textOf(unknown)).toMatch(/^not_found: /);
+  });
+
+  /** Stores bytes in chat_images as a wall paste would; returns the chat image id. */
+  async function paste(bytes: Buffer, originalName = 'pasted.png'): Promise<string> {
+    const r = await ingestChatImage({ db: h.deps.db, dataDir: h.dataDir }, { bytes, originalName, source: 'wall' });
+    return r.image.id;
+  }
+
+  const BAD_ARGS = 'attach_image refused (bad_arguments): give exactly one of path or image_id';
+
+  it('publishes path and image_id on attach_image, only id required', async () => {
+    const t = (await client.listTools()).tools.find((x) => x.name === 'attach_image');
+    const schema = t!.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+    expect(Object.keys(schema.properties ?? {})).toEqual(expect.arrayContaining(['id', 'path', 'image_id']));
+    expect(schema.required ?? []).toEqual(['id']);
+    expect(t!.description).toMatch(/CHAT image id/);
+  });
+
+  it('attach_image takes a pasted chat image by image_id, copies it, and dedupes', async () => {
+    const bytes = await solid(130, 131, 132);
+    const n = await h.deps.service.create({ body: 'needs a picture' });
+    const chatId = await paste(bytes);
+    const loc = await locateChatImage({ db: h.deps.db, dataDir: h.dataDir }, chatId);
+
+    const r = await call('attach_image', { id: n.id, image_id: chatId.toLowerCase() });
+    expect(r.isError, textOf(r)).toBeFalsy();
+    const first = JSON.parse(textOf(r)) as AttachBody;
+    expect(first.attached).toBe(true);
+    expect(first.note.id).toBe(n.id);
+    expect(first.note.images).toHaveLength(1);
+    const added = first.note.images[0]!;
+    expect(added.original_name).toBe('pasted.png');
+    expect(added.id).toMatch(ID);
+    const rows = await imageRows(h, n.id);
+    expect(await readFile(path.join(h.dataDir, rows[0]!.path))).toEqual(bytes);
+    await access(loc!.source.originalPath);
+
+    const again = await call('attach_image', { id: n.id, image_id: chatId });
+    expect(again.isError, textOf(again)).toBeFalsy();
+    expect(JSON.parse(textOf(again))).toMatchObject({ attached: false, note: { id: n.id } });
+
+    // Another note: the holder comes back, nothing is copied.
+    const other = await h.deps.service.create({ body: 'other note' });
+    const elsewhere = await call('attach_image', { id: other.id, image_id: chatId });
+    expect(elsewhere.isError, textOf(elsewhere)).toBeFalsy();
+    expect(JSON.parse(textOf(elsewhere))).toMatchObject({ attached: false, note: { id: n.id } });
+    expect(await imageRows(h, other.id)).toEqual([]);
+  });
+
+  it('attach_image refuses both, neither, unknown and other-machine image_ids; a deleted note stays an error', async () => {
+    const n = await h.deps.service.create({ body: 'target' });
+    const bytes = await solid(140, 141, 142);
+    const p = await file('both.png', bytes);
+    const chatId = await paste(bytes);
+
+    const both = await call('attach_image', { id: n.id, path: p, image_id: chatId });
+    expect(both.isError).toBe(true);
+    expect(textOf(both)).toBe(BAD_ARGS);
+
+    const neither = await call('attach_image', { id: n.id });
+    expect(neither.isError).toBe(true);
+    expect(textOf(neither)).toBe(BAD_ARGS);
+
+    const unknown = await call('attach_image', { id: n.id, image_id: 'Z-ZZZ' });
+    expect(unknown.isError).toBe(true);
+    expect(textOf(unknown)).toBe(
+      'attach_image refused (unknown_chat_image): no pasted image Z-ZZZ. Pasted image ids look like G-0NC and appear as [image upload:ID] in chat or in the pasted-images note of a Claude Code /n prompt',
+    );
+
+    const gone = await h.deps.service.create({ body: 'deleted target' });
+    await h.deps.service.delete(gone.id);
+    const deleted = await call('attach_image', { id: gone.id, image_id: chatId });
+    expect(deleted.isError).toBe(true);
+    expect(textOf(deleted)).toMatch(/^deleted: /);
+
+    const loc = await locateChatImage({ db: h.deps.db, dataDir: h.dataDir }, chatId);
+    await h.deps.db.execute(sql`update chat_images set host = 'other-laptop' where id = ${chatId}`);
+    await rm(loc!.source.originalPath);
+    const away = await call('attach_image', { id: n.id, image_id: chatId });
+    expect(away.isError).toBe(true);
+    expect(textOf(away)).toBe(
+      `attach_image refused (not_on_this_machine): pasted image ${chatId} is stored on other-laptop, not on this machine`,
+    );
+
+    expect(await imageRows(h, n.id)).toEqual([]);
   });
 });

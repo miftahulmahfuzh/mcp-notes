@@ -82,9 +82,17 @@ function connectorCaption(tool: string): string | null {
   return null;
 }
 
+/** True when a tool input carries a non-empty `image_id` string (a pasted chat image on create_image / attach_image). */
+function hasImageId(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null) return false;
+  const imageId = (input as { image_id?: unknown }).image_id;
+  return typeof imageId === 'string' && imageId.trim() !== '';
+}
+
 /**
  * The caption for one top-level `tool_use` block, or null for a tool the panel does not name.
- * `input` is the block's raw input; only `ids` (get, view_images) is read.
+ * `input` is the block's raw input; only `ids` (get, view_images) and `image_id` (create_image,
+ * attach_image: a pasted chat image rather than a file path) are read.
  */
 export function captionForToolUse(name: string, input: unknown): string | null {
   if (name === 'WebSearch') return 'searching the web';
@@ -107,8 +115,9 @@ export function captionForToolUse(name: string, input: unknown): string | null {
     case 'revisions':
       return 'reading history';
     case 'create':
-    case 'create_image':
       return 'saving a note';
+    case 'create_image':
+      return hasImageId(input) ? 'saving the pasted photo as a note' : 'saving a note';
     case 'update':
     case 'append':
     case 'revert':
@@ -118,7 +127,7 @@ export function captionForToolUse(name: string, input: unknown): string | null {
     case 'restore':
       return 'restoring a note';
     case 'attach_image':
-      return 'attaching a photo';
+      return hasImageId(input) ? 'attaching the pasted photo' : 'attaching a photo';
     case 'remove_image':
       return 'removing a photo';
     case 'restore_image':

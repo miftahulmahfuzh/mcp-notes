@@ -191,9 +191,11 @@ Three other ways in, all handy from Claude Code:
 - **The inbox folder.** Anything dropped into `~/mcp-notes-data/inbox` becomes a photo note, and
   the file is moved into the store.
 - **The `create_image` tool.** Claude Code often has a screenshot path at hand: "save this
-  screenshot as a note about the login bug".
-- **The `attach_image` tool.** It adds a local file to a note that already exists: "attach
-  ~/Pictures/Screenshots/login-bug-2.png to note A-B32".
+  screenshot as a note about the login bug". It also takes a picture pasted into the wall chat or
+  into a Claude Code `/n` prompt, by its pasted-image id (`image_id`, like `G-0NC`): "make that
+  image a new note".
+- **The `attach_image` tool.** It adds a local file or a pasted image to a note that already
+  exists: "attach ~/Pictures/Screenshots/login-bug-2.png to note A-B32".
 
 ### The photo modal and the full-screen tab
 
@@ -292,7 +294,7 @@ folder into one new image note, tags it, checks the note holds them all, then de
 /migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
 
-`install.sh` also registers two Claude Code hooks in `~/.claude/settings.json` (every repo; pass
+`install.sh` also registers three Claude Code hooks in `~/.claude/settings.json` (every repo; pass
 `--skip-hooks` to leave the file alone):
 
 - **notes-capture** (Stop, runs in the background): after every `/n` turn it saves the prompt as
@@ -303,6 +305,19 @@ folder into one new image note, tags it, checks the note holds them all, then de
   Claude calls `similar_images` with `pasted_image: 1`; the hook uploads `[Image #1]` and the
   search runs on it. `npm run verify:paste-hook` checks this against a running daemon (one
   short, billed Claude call).
+- **notes-prompt** (when you submit a prompt, `/n` prompts only): paste an image, in this turn or
+  in any earlier turn of the session, and ask `/n make that image a new note`. Before Claude
+  answers, the hook stores the session's pasted images (the newest 8, up to 20 MB each) in the
+  chat image store and tells Claude their ids, oldest first, with the latest marked. "That image"
+  is the latest one; `[Image #1]` or an id like `G-0NC` picks another. Claude then calls
+  `create_image` (or `attach_image`) with `image_id`. Every other prompt passes straight through:
+  the hook reads nothing and sends nothing, so a session that never uses `/n` stores no images.
+  Each image is uploaded once per session, the uploads stop after 8 s, and a failure never holds
+  the prompt; problems go to `~/.local/state/notes-capture/prompt.log`. `npm run
+  verify:prompt-hook` checks it against a running daemon (one short, billed Claude call). If it
+  reports that the current prompt's image was not yet in the transcript, an image pasted in the
+  `/n` prompt itself cannot be named in that turn (earlier turns' images still can); Claude is
+  never given an older image as "that image" in its place.
 
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
 edit is a blanked line where Claude Code printed account usage.
@@ -569,14 +584,14 @@ scripts/install.sh
 5. waits for `GET /health`,
 6. registers `notes` with `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`,
 7. symlinks the `/n` and `/migrate` skills into `~/.claude/skills`,
-8. merges the notes-capture and notes-paste hooks into `~/.claude/settings.json`, keeping
+8. merges the notes-capture, notes-paste and notes-prompt hooks into `~/.claude/settings.json`, keeping
    everything else (a copy of the original is kept once as `settings.json.bak-notes-hooks`;
    `--skip-hooks` or `NOTES_SKIP_HOOKS=1` skips this),
 9. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
    `notes` connected.
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
-Undo with `scripts/uninstall.sh` (it keeps your data and removes only our two hook entries).
+Undo with `scripts/uninstall.sh` (it keeps your data and removes only our three hook entries).
 
 ### Keep WSL running from Windows
 
@@ -624,6 +639,7 @@ npm run test:int               # integration tests against real Postgres in Dock
 npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
 npm run test:live:embeddings   # opt-in: one real OpenRouter embeddings call over the labelled search set
 npm run verify:paste-hook      # opt-in: one real claude -p run checks the paste hook rewrite
+npm run verify:prompt-hook     # opt-in: one real claude -p run checks /n sees a pasted image's id
 ```
 
 `test:int` starts or reuses two containers, both on `pgvector/pgvector:pg16` (one that runs another
@@ -685,8 +701,8 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `related` | The notes nearest in meaning to a note `id`, each with a similarity score, never the note itself |
 | `tags` | Every tag with its count and last use |
 | `revisions`, `revert` | A note's earlier bodies, and putting one back |
-| `create_image` | New photo note from a local file path, with optional text. The same file again returns the note that already holds it |
-| `attach_image` | Add a local file to an existing note `id` as its next photo. Returns `{note, attached}`; `attached: false` when the file is already in a note, which is returned instead |
+| `create_image` | New photo note, with optional text, from a local file (`path`) or from an image pasted into the wall chat or a Claude Code `/n` prompt (`image_id`, its pasted-image id like `G-0NC`, not a photo id); give exactly one. The same picture again returns the note that already holds it |
+| `attach_image` | Add a local file (`path`) or a pasted image (`image_id`) to an existing note `id` as its next photo; give exactly one. Returns `{note, attached}`; `attached: false` when the picture is already in a note, which is returned instead |
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
 | `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
@@ -787,7 +803,8 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
   cache/<imageId>/preview.jpg      long edge 1568 px, what Claude sees
   cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
   inbox/                           drop files here; failures go to inbox/failed/
-~/.local/state/notes-capture/      the Claude Code hooks: outbox/ (captures waiting for the daemon), capture.log, paste.log
+~/.local/state/notes-capture/      the Claude Code hooks: outbox/ (captures waiting for the daemon), capture.log, paste.log,
+                                   prompt.log, prompt-images/ (per session, which pasted images are already uploaded)
 ```
 
 Each photo is one `note_images` row with its own id, in the same `A-B32` form as note ids. A
@@ -816,6 +833,12 @@ removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
   machine" placeholder. Back up `~/mcp-notes-data/images` yourself.
 - **Full size costs disk.** Originals are kept exactly as they arrive, so a phone's 4 MB HEIC
   stays 4 MB, plus a full-resolution JPEG for viewing.
+- **Pasted images are kept.** Pictures pasted into the wall chat, and the pasted pictures of a
+  Claude Code session once you use `/n` in it (from every turn of that session, not only the
+  `/n` turn), are copied to `~/mcp-notes-data/chat-images/` and never deleted: there is no
+  clean-up yet. The same picture is stored once (by sha256), at most 8 of up to 20 MB each go in
+  per `/n` prompt, and each is uploaded once per session. A session that never uses `/n` stores
+  nothing. They never appear on the wall unless you make one a note.
 - **Text needs the network.** Notes live in Neon. With no connection, nothing loads.
 - **Meaning needs OpenRouter.** A note becomes findable by meaning shortly after it is saved,
   not in the same instant. Without `OPENROUTER_API_KEY`, or while OpenRouter is down, `search`
@@ -862,7 +885,7 @@ web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
 claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
-claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images)
+claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images; notes-prompt: /n prompt -> pasted image ids)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive

@@ -3,11 +3,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  attachFromChatImage,
   attachFromPath,
   ImageInputError,
+  ingestFromChatImage,
   ingestFromPath,
+  oneImageSource,
   resolveImageFile,
   toolAttachDeps,
+  toolChatImageDeps,
   toolImageDeps,
   type ResolveResult,
 } from '../http/imageAccess.js';
@@ -101,26 +105,44 @@ async function viewOne(img: ImageDeps, item: ViewItem): Promise<Content[]> {
 
 export function registerImageTools(server: McpServer, deps: ToolDeps): void {
   const img = toolImageDeps(deps);
+  const chat = toolChatImageDeps(deps);
 
   server.registerTool(
     'create_image',
     {
       title: 'Create image note',
       description:
-        'Save a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...) as a new note with that one image. ' +
-        'Give an absolute path (~/ is expanded). The file is COPIED byte for byte into the notes store; the source is left where it is. ' +
+        'Save an image as a new note with that one image. Give exactly one of path or image_id. ' +
+        'path: a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...), absolute or starting with ~/; ' +
+        'the file is COPIED byte for byte into the notes store and the source is left where it is. ' +
+        'image_id: a picture the user PASTED into a chat, by its CHAT image id like G-0NC ' +
+        '(the wall chat shows it as [image upload:ID]; a Claude Code /n prompt lists the pasted images by id). ' +
+        "This is a chat image id, NOT a note image id from a note's images[].id. Use image_id, never a path, for a pasted picture. " +
         'Optional body is the note text; #hashtags in it become tags. ' +
-        'If the exact same file already lives in a note, that note is returned (created: false) instead of a duplicate. ' +
+        'If the exact same picture already lives in a note, that note is returned (created: false) instead of a duplicate. ' +
         'Non-image files are refused. Returns { note, created }.',
       inputSchema: {
-        path: z.string().min(1).describe('Absolute path to the image file, or a path starting with ~/.'),
+        path: z.string().min(1).optional().describe('Absolute path to a local image file, or a path starting with ~/. Omit when giving image_id.'),
+        image_id: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Chat image id of a pasted picture, like G-0NC (shown as [image upload:ID]). Case-insensitive; the dash may be omitted. ' +
+              'Not a note image id. Omit when giving path.',
+          ),
         body: z.string().optional().describe('Text for the note. #hashtags become tags.'),
         origin: originShape,
       },
     },
-    async ({ path, body, origin }): Promise<CallToolResult> => {
+    async ({ path, image_id, body, origin }): Promise<CallToolResult> => {
       try {
-        const { note, created } = await ingestFromPath(img, path, body, { ...(origin ?? {}), source: 'mcp' });
+        const source = oneImageSource({ path, image_id });
+        const noteOrigin = { ...(origin ?? {}), source: 'mcp' };
+        const { note, created } =
+          source.kind === 'path'
+            ? await ingestFromPath(img, source.path, body, noteOrigin)
+            : await ingestFromChatImage(img, chat, source.imageId, body, noteOrigin);
         return { content: [text(JSON.stringify({ note, created }, null, 2))] };
       } catch (err) {
         if (err instanceof ImageInputError) {
@@ -229,19 +251,36 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Attach image to note',
       description:
-        'Add a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...) to an existing note; a note can hold several images, kept in attach order. ' +
-        'Give the note id and an absolute path (~/ is expanded). The file is COPIED byte for byte into the notes store; the source is left where it is. ' +
-        'If the exact same file already lives in a note (this one or another), nothing is copied and that note is returned with attached: false: tell the user which note holds it (a deleted holder note is restored). ' +
+        'Add an image to an existing note; a note can hold several images, kept in attach order. ' +
+        'Give the note id and exactly one of path or image_id. ' +
+        'path: a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...), absolute or starting with ~/; ' +
+        'the file is COPIED byte for byte into the notes store and the source is left where it is. ' +
+        'image_id: a picture the user PASTED into a chat, by its CHAT image id like G-0NC ' +
+        '(the wall chat shows it as [image upload:ID]; a Claude Code /n prompt lists the pasted images by id). ' +
+        "This is a chat image id, NOT a note image id from a note's images[].id. Use image_id, never a path, for a pasted picture. " +
+        'If the exact same picture already lives in a note (this one or another), nothing is copied and that note is returned with attached: false: tell the user which note holds it (a deleted holder note is restored). ' +
         'The note must not be deleted (restore it first). Non-image files are refused. Returns { note, attached }; a new image is the last entry of note.images.',
       inputSchema: {
         id: z.string().min(1).describe('Note id like A-B32 to attach to. Case-insensitive; the dash may be omitted.'),
-        path: z.string().min(1).describe('Absolute path to the image file, or a path starting with ~/.'),
+        path: z.string().min(1).optional().describe('Absolute path to a local image file, or a path starting with ~/. Omit when giving image_id.'),
+        image_id: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Chat image id of a pasted picture, like G-0NC (shown as [image upload:ID]). Case-insensitive; the dash may be omitted. ' +
+              'Not a note image id. Omit when giving path.',
+          ),
         origin: originShape,
       },
     },
-    async ({ id, path }): Promise<CallToolResult> => {
+    async ({ id, path, image_id }): Promise<CallToolResult> => {
       try {
-        const result = await attachFromPath(attach, id, path);
+        const source = oneImageSource({ path, image_id });
+        const result =
+          source.kind === 'path'
+            ? await attachFromPath(attach, id, source.path)
+            : await attachFromChatImage(attach, chat, id, source.imageId);
         return { content: [text(JSON.stringify(result, null, 2))] };
       } catch (err) {
         if (err instanceof ImageInputError) {

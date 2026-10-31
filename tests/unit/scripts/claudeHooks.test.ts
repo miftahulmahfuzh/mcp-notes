@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { hookCommand, mergeHooks, removeHooks, shQuote } from '../../../scripts/claude-hooks.mjs';
+import { hookCommand, mergeHooks, ourGroups, removeHooks, shQuote } from '../../../scripts/claude-hooks.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const HELPER = path.join(REPO, 'scripts', 'claude-hooks.mjs');
@@ -55,8 +55,8 @@ function sourced(script: 'install.sh' | 'uninstall.sh', body: string, extraEnv: 
 describe('mergeHooks / removeHooks', () => {
   const opts = { nodeBin: '/opt/node/bin/node', hooksDir: '/home/u/mcp-notes/claude/hooks' };
 
-  it('adds our two groups and keeps everything else', () => {
-    const merged = mergeHooks(EXISTING, opts) as typeof EXISTING;
+  it('adds our three groups and keeps everything else', () => {
+    const merged = mergeHooks(EXISTING, opts) as typeof EXISTING & { hooks: { UserPromptSubmit: unknown[] } };
     expect(merged.env).toEqual(EXISTING.env);
     expect(merged.enabledPlugins).toEqual(EXISTING.enabledPlugins);
     expect(merged.hooks.Stop).toHaveLength(2);
@@ -68,6 +68,35 @@ describe('mergeHooks / removeHooks', () => {
       matcher: 'mcp__notes__similar_images',
       hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-paste.mjs'", timeout: 30 }],
     });
+    expect(merged.hooks.UserPromptSubmit).toEqual([
+      { hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-prompt.mjs'", timeout: 20 }] },
+    ]);
+    expect(Object.keys(ourGroups(opts))).toEqual(['Stop', 'PreToolUse', 'UserPromptSubmit']);
+  });
+
+  it('keeps a user UserPromptSubmit hook and upgrades a two-hook install in place', () => {
+    const userHook = { hooks: [{ type: 'command', command: '/home/u/prompt-guard.sh' }] };
+    const twoHookInstall = {
+      ...EXISTING,
+      hooks: {
+        Stop: [...EXISTING.hooks.Stop, { hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-capture.mjs'", async: true, timeout: 60 }] }],
+        PreToolUse: [
+          ...EXISTING.hooks.PreToolUse,
+          { matcher: 'mcp__notes__similar_images', hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-paste.mjs'", timeout: 30 }] },
+        ],
+        UserPromptSubmit: [userHook],
+      },
+    };
+    const merged = mergeHooks(twoHookInstall, opts) as { hooks: Record<string, unknown[]> };
+    expect(merged.hooks.Stop).toHaveLength(2);
+    expect(merged.hooks.PreToolUse).toHaveLength(2);
+    expect(merged.hooks.UserPromptSubmit).toHaveLength(2);
+    expect(merged.hooks.UserPromptSubmit![0]).toEqual(userHook);
+    expect(JSON.stringify(merged)).not.toContain('/old/');
+    expect(mergeHooks(merged, opts)).toEqual(merged);
+    const removed = removeHooks(merged) as { hooks: Record<string, unknown[]> };
+    expect(removed.hooks.UserPromptSubmit).toEqual([userHook]);
+    expect(removed.hooks.Stop).toEqual(EXISTING.hooks.Stop);
   });
 
   it('is idempotent and replaces an entry left by another checkout', () => {
@@ -103,7 +132,7 @@ describe('scripts/claude-hooks.mjs against a temp HOME', () => {
   it('creates the file (0600) when there is none, without a backup', async () => {
     cli('install', '--settings', settings, '--node', NODE, '--hooks-dir', HOOKS_DIR);
     const value = JSON.parse(await readFile(settings, 'utf8'));
-    expect(Object.keys(value.hooks)).toEqual(['Stop', 'PreToolUse']);
+    expect(Object.keys(value.hooks)).toEqual(['Stop', 'PreToolUse', 'UserPromptSubmit']);
     expect((await stat(settings)).mode & 0o777).toBe(0o600);
     expect(existsSync(`${settings}.bak-notes-hooks`)).toBe(false);
   });
@@ -130,11 +159,14 @@ describe('scripts/claude-hooks.mjs against a temp HOME', () => {
     expect(await readFile(settings, 'utf8')).toBe('{ not json');
   });
 
-  it('status reports both hooks', async () => {
+  it('status reports all three hooks', async () => {
     cli('install', '--settings', settings, '--node', NODE, '--hooks-dir', HOOKS_DIR);
     const out = cli('status', '--settings', settings);
     expect(out).toMatch(/Stop notes-capture: .*notes-capture\.mjs/);
     expect(out).toMatch(/PreToolUse notes-paste: .*notes-paste\.mjs/);
+    expect(out).toMatch(/UserPromptSubmit notes-prompt: .*notes-prompt\.mjs/);
+    cli('uninstall', '--settings', settings);
+    expect(cli('status', '--settings', settings)).toMatch(/UserPromptSubmit notes-prompt: not registered/);
   });
 });
 
@@ -144,6 +176,7 @@ describe('install.sh / uninstall.sh (sourced, temp HOME)', () => {
     sourced('install.sh', 'register_hooks');
     const first = await readFile(settings, 'utf8');
     expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-capture.mjs'));
+    expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-prompt.mjs'));
     expect(first).toContain(NODE);
     sourced('install.sh', 'register_hooks');
     expect(await readFile(settings, 'utf8')).toBe(first);
