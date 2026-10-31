@@ -301,10 +301,13 @@ folder into one new image note, tags it, checks the note holds them all, then de
   you typed it, Claude's final answer and any pasted images to the chat history, as a
   single-turn thread badged "claude code". If the daemon is down the exchange waits in
   `~/.local/state/notes-capture/outbox/` and goes in on a later turn. Saving twice is harmless.
-- **notes-paste** (before `similar_images`): paste an image and ask `/n find photos like this`.
-  Claude calls `similar_images` with `pasted_image: 1`; the hook uploads `[Image #1]` and the
-  search runs on it. `npm run verify:paste-hook` checks this against a running daemon (one
-  short, billed Claude call).
+- **notes-paste** (before `similar_images`, `create_image` and `attach_image`): paste an image and
+  ask `/n find photos like this`, or `/n make this a note` with the picture in that same prompt.
+  Claude calls the tool with `pasted_image: 1`; the hook uploads `[Image #1]` and hands the call on
+  with `upload_id` (`similar_images`) or `image_id` (`create_image`, `attach_image`) instead.
+  `npm run verify:paste-hook` checks this against a running daemon (one short, billed Claude
+  call). After updating, run `scripts/install.sh` again so Claude Code's hook matcher covers the
+  two new tools.
 - **notes-prompt** (when you submit a prompt, `/n` prompts only): paste an image, in this turn or
   in any earlier turn of the session, and ask `/n make that image a new note`. Before Claude
   answers, the hook stores the session's pasted images (the newest 8, up to 20 MB each) in the
@@ -313,11 +316,14 @@ folder into one new image note, tags it, checks the note holds them all, then de
   `create_image` (or `attach_image`) with `image_id`. Every other prompt passes straight through:
   the hook reads nothing and sends nothing, so a session that never uses `/n` stores no images.
   Each image is uploaded once per session, the uploads stop after 8 s, and a failure never holds
-  the prompt; problems go to `~/.local/state/notes-capture/prompt.log`. `npm run
-  verify:prompt-hook` checks it against a running daemon (one short, billed Claude call). If it
-  reports that the current prompt's image was not yet in the transcript, an image pasted in the
-  `/n` prompt itself cannot be named in that turn (earlier turns' images still can); Claude is
-  never given an older image as "that image" in its place.
+  the prompt; problems go to `~/.local/state/notes-capture/prompt.log`. A picture pasted in the
+  `/n` prompt itself has no id yet: Claude Code writes the prompt to the transcript only after the
+  hooks finish (measured live, headless and interactive), so this hook reads the transcript once and
+  tells Claude to call `create_image` with `pasted_image N`; the notes-paste hook, which runs when
+  the transcript does hold the prompt, stores the picture and supplies the id. Claude is never
+  given an older image as "that image" in its place. `npm run verify:prompt-hook` checks the
+  hook live (one short, billed Claude call; headless paste ids are unpredictable, so it needs a
+  matching `[Image #N]`).
 
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
 edit is a blanked line where Claude Code printed account usage.

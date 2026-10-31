@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * notes-paste: Claude Code PreToolUse hook for `mcp__notes__similar_images` (mcp-notes).
+ * notes-paste: Claude Code PreToolUse hook for `similar_images`, `create_image` and `attach_image` (mcp-notes).
  *
  * A pasted image in Claude Code has no file path, so `/n` asks the model to call
  * similar_images({pasted_image: N}) for "[Image #N]". This hook finds the latest human prompt in
  * the transcript that carries images, takes image N (by imagePasteIds, else block order),
  * uploads it to notesd (POST /api/chat/images, source claude_code) and hands the call on with
- * `upload_id` instead of `pasted_image`.
+ * `upload_id` instead of `pasted_image`. For create_image / attach_image the call is handed on with
+ * `image_id` (the chat image id) instead: this is how an image pasted in the very `/n` prompt is
+ * saved, since the UserPromptSubmit hook cannot see that image in the transcript yet (Claude Code
+ * writes the prompt there only after the hooks finish) but a tool call can.
  *
  * THE SWITCH: DEFAULT_STRATEGY below.
  * - 'updatedInput' (default): permissionDecision 'allow' + updatedInput {…, upload_id}.
@@ -26,6 +29,12 @@ import { daemonBaseUrl, errorText, isMainModule, readStdin, stateDir, writeLog }
 import { extractImages, findLatestImagePrompt, parseTranscript, pickPastedImage } from './lib/transcript.mjs';
 
 export const TOOL_NAME = 'mcp__notes__similar_images';
+/** Every tool the hook rewrites, and the argument its `pasted_image` becomes. */
+export const TOOL_KEYS = {
+  mcp__notes__similar_images: 'upload_id',
+  mcp__notes__create_image: 'image_id',
+  mcp__notes__attach_image: 'image_id',
+};
 export const UPLOAD_PATH = '/api/chat/images';
 export const DEFAULT_STRATEGY = 'updatedInput';
 export const UPLOAD_TIMEOUT_MS = 15_000;
@@ -53,33 +62,33 @@ export function allowUnchanged() {
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } };
 }
 
-function withoutPasted(toolInput, uploadId) {
+function withoutPasted(toolInput, uploadId, key = 'upload_id') {
   const next = {};
-  for (const [key, value] of Object.entries(toolInput)) {
-    if (key !== 'pasted_image') next[key] = value;
+  for (const [name, value] of Object.entries(toolInput)) {
+    if (name !== 'pasted_image') next[name] = value;
   }
-  next.upload_id = uploadId;
+  next[key] = uploadId;
   return next;
 }
 
-export function rewriteOutput(toolInput, uploadId) {
+export function rewriteOutput(toolInput, uploadId, key = 'upload_id') {
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'allow',
-      updatedInput: withoutPasted(toolInput, uploadId),
+      updatedInput: withoutPasted(toolInput, uploadId, key),
     },
   };
 }
 
-export function denyOutput(toolInput, uploadId) {
-  const args = JSON.stringify(withoutPasted(toolInput, uploadId));
+export function denyOutput(toolInput, uploadId, toolName = TOOL_NAME, key = 'upload_id') {
+  const args = JSON.stringify(withoutPasted(toolInput, uploadId, key));
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
       permissionDecisionReason:
-        `The pasted image was uploaded as upload_id ${uploadId}. Call ${TOOL_NAME} again with exactly ` +
+        `The pasted image was uploaded as ${key} ${uploadId}. Call ${toolName} again with exactly ` +
         `these arguments: ${args}. Do not pass pasted_image.`,
     },
   };
@@ -143,7 +152,7 @@ export async function runPaste({
 }) {
   const log = (message) => writeLog(stateDir(env), LOG_FILE, message);
   try {
-    if (input === null || typeof input !== 'object' || input.tool_name !== TOOL_NAME) return null;
+    if (input === null || typeof input !== 'object' || !Object.hasOwn(TOOL_KEYS, input.tool_name)) return null;
     const toolInput = input.tool_input !== null && typeof input.tool_input === 'object' ? input.tool_input : {};
     const n = pastedImageNumber(toolInput);
     if (n === null) return null;
@@ -159,7 +168,10 @@ export async function runPaste({
       await log(`pasted image ${n}: ${errorText(err)}`);
       return allowUnchanged();
     }
-    return strategyFrom(env) === 'deny' ? denyOutput(toolInput, uploadId) : rewriteOutput(toolInput, uploadId);
+    const key = TOOL_KEYS[input.tool_name];
+    return strategyFrom(env) === 'deny'
+      ? denyOutput(toolInput, uploadId, input.tool_name, key)
+      : rewriteOutput(toolInput, uploadId, key);
   } catch (err) {
     await log(`hook: ${errorText(err)}`);
     return null;

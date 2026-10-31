@@ -112,7 +112,7 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Create image note',
       description:
-        'Save an image as a new note with that one image. Give exactly one of path or image_id. ' +
+        'Save an image as a new note with that one image. Give exactly one of path or image_id (in Claude Code, pasted_image N stands in for image_id when the prompt context gave the picture no id). ' +
         'path: a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...), absolute or starting with ~/; ' +
         'the file is COPIED byte for byte into the notes store and the source is left where it is. ' +
         'image_id: a picture the user PASTED into a chat, by its CHAT image id like G-0NC ' +
@@ -131,12 +131,22 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
             'Chat image id of a pasted picture, like G-0NC (shown as [image upload:ID]). Case-insensitive; the dash may be omitted. ' +
               'Not a note image id. Omit when giving path.',
           ),
+        pasted_image: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Claude Code only: the N of "[Image #N]" for a picture pasted into this very prompt when the /n context gave it no id. ' +
+              'The notes-paste hook uploads it and swaps in image_id before the call runs. Give it instead of path and image_id, never with them.',
+          ),
         body: z.string().optional().describe('Text for the note. #hashtags become tags.'),
         origin: originShape,
       },
     },
-    async ({ path, image_id, body, origin }): Promise<CallToolResult> => {
+    async ({ path, image_id, pasted_image, body, origin }): Promise<CallToolResult> => {
       try {
+        if (pasted_image !== undefined) return pastedImageUnresolved('create_image');
         const source = oneImageSource({ path, image_id });
         const noteOrigin = { ...(origin ?? {}), source: 'mcp' };
         const { note, created } =
@@ -252,7 +262,7 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
       title: 'Attach image to note',
       description:
         'Add an image to an existing note; a note can hold several images, kept in attach order. ' +
-        'Give the note id and exactly one of path or image_id. ' +
+        'Give the note id and exactly one of path or image_id (in Claude Code, pasted_image N stands in for image_id when the prompt context gave the picture no id). ' +
         'path: a local image file (screenshot, photo, PNG/JPEG/WebP/GIF/HEIC/TIFF...), absolute or starting with ~/; ' +
         'the file is COPIED byte for byte into the notes store and the source is left where it is. ' +
         'image_id: a picture the user PASTED into a chat, by its CHAT image id like G-0NC ' +
@@ -271,11 +281,21 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
             'Chat image id of a pasted picture, like G-0NC (shown as [image upload:ID]). Case-insensitive; the dash may be omitted. ' +
               'Not a note image id. Omit when giving path.',
           ),
+        pasted_image: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Claude Code only: the N of "[Image #N]" for a picture pasted into this very prompt when the /n context gave it no id. ' +
+              'The notes-paste hook uploads it and swaps in image_id before the call runs. Give it instead of path and image_id, never with them.',
+          ),
         origin: originShape,
       },
     },
-    async ({ id, path, image_id }): Promise<CallToolResult> => {
+    async ({ id, path, image_id, pasted_image }): Promise<CallToolResult> => {
       try {
+        if (pasted_image !== undefined) return pastedImageUnresolved('attach_image');
         const source = oneImageSource({ path, image_id });
         const result =
           source.kind === 'path'
@@ -320,4 +340,24 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
     },
     async ({ image_id }): Promise<CallToolResult> => run(async () => ({ note: await deps.service.restoreImage(image_id) })),
   );
+}
+
+/**
+ * Answer to a create_image / attach_image call that still carries pasted_image. With the
+ * notes-paste PreToolUse hook installed the daemon never sees it: the hook uploads the pasted
+ * picture and rewrites the call to image_id. Reaching this means the hook is missing, found no
+ * pasted image, or could not upload it.
+ */
+export function pastedImageUnresolved(tool: 'create_image' | 'attach_image'): CallToolResult {
+  return {
+    isError: true,
+    content: [
+      text(
+        `${tool} refused (pasted_image_unresolved): pasted_image reached the server without an image_id, so the Claude Code ` +
+          "notes-paste hook did not upload a pasted picture. Either the user's recent messages carry no pasted image, or the " +
+          'hook is not installed (run scripts/install.sh in ~/mcp-notes, then restart Claude Code). Ask the user to paste the ' +
+          'image again in the same message as the request, or use image_id (a pasted-image id) or path instead.',
+      ),
+    ],
+  };
 }

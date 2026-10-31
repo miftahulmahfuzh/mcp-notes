@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Same-prompt pasted image to note**: `create_image` and `attach_image` accept `pasted_image` (the N of `[Image #N]`); the `notes-paste` PreToolUse hook now also covers them, uploads that picture and hands the call on with `image_id`. Needed because Claude Code writes a prompt to the transcript only after UserPromptSubmit hooks finish (measured live), so the `notes-prompt` hook cannot name an image pasted in the same `/n` prompt; it now tells Claude to use `pasted_image N` for it. Without the hook the server refuses with `pasted_image_unresolved` and a pointer. Re-run `scripts/install.sh` to widen the installed matcher.
 - **Pasted image to note**: `create_image` and `attach_image` take `image_id`, the id of an image pasted into the wall chat or a Claude Code `/n` prompt (like `G-0NC`, any case, dash optional), as an alternative to `path` (exactly one of the two). Same copy and sha256 dedupe (`created: false` / `attached: false` for a known picture); an unknown id is refused as "no pasted image". The wall agent and `/n` now use it for "make that image a note" instead of asking for a file path.
 - **Claude Code prompt hook** (`notes-prompt`, UserPromptSubmit, `/n` prompts only): stores the session's pasted images (newest 8, 20 MB each, every turn of the session) in the chat image store before Claude answers and tells it their ids, latest marked, so "that image" resolves. Other prompts are untouched. Logs to `~/.local/state/notes-capture/prompt.log`; `npm run verify:prompt-hook` checks it live.
 - **Note-id links in chat**: ids in answers and history bubbles open the big editor in place (fetched, deleted and unknown ids handled quietly); the editor's "Show on wall" icon goes to `/?note=<id>` and flashes the card.
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `notes-prompt` no longer waits 2.5 s for the current prompt to appear in the transcript (it never does while a hook blocks); it reads once.
 - `scripts/install.sh` registers three Claude Code hooks (notes-capture, notes-paste, notes-prompt) instead of two; `scripts/uninstall.sh` removes all three.
 
 ### Fixed

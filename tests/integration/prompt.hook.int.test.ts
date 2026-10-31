@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runCapture } from '../../claude/hooks/notes-capture.mjs';
+import { runPaste } from '../../claude/hooks/notes-paste.mjs';
 import { runPrompt } from '../../claude/hooks/notes-prompt.mjs';
 import { sha256Hex } from '../../src/images/probe.js';
 import { CWD, RED_PNG_16, SESSION, assistantText, commandEntry, imagePromptEntry, jsonl } from '../unit/hooks/fixtures.js';
@@ -320,6 +321,46 @@ describe('notes-prompt hook against the real daemon', () => {
     expect(reattach.isError, textOf(reattach)).toBeFalsy();
     expect((JSON.parse(textOf(reattach)) as { attached: boolean }).attached).toBe(false);
     expect(await count('note_images')).toBe(2);
+  });
+
+  it('a picture pasted in the /n prompt itself: the prompt hook points at pasted_image, the PreToolUse hook turns it into image_id', async () => {
+    // At UserPromptSubmit the current prompt is not in the transcript yet: only the older turn is.
+    const before = await writeTranscript([imagePromptEntry('look [Image #1]', [{ media_type: 'image/png', data: bluePng }], [1]), assistantText('ok')]);
+    const context = contextOf(await submit(before, '/n save this [Image #2]'));
+    expect(context).toContain('The latest pasted image ([Image #2]) has no id yet');
+    expect(context).toContain('call create_image with pasted_image 2');
+    expect(context).not.toContain('(latest)');
+
+    // By the time the model calls the tool the transcript holds the prompt.
+    const after = await writeTranscript([
+      imagePromptEntry('look [Image #1]', [{ media_type: 'image/png', data: bluePng }], [1]),
+      assistantText('ok'),
+      imagePromptEntry('/n save this [Image #2]', [{ media_type: 'image/png', data: RED_PNG_16 }], [2]),
+    ]);
+    const rewrite = await runPaste({
+      input: {
+        session_id: SESSION,
+        transcript_path: after,
+        hook_event_name: 'PreToolUse',
+        tool_name: 'mcp__notes__create_image',
+        tool_input: { pasted_image: 2, body: 'pasted in the prompt #fresh' },
+      },
+      env: hookEnv(),
+      fetchImpl: (url: string, init: RequestInit) => fetch(url, init),
+      readText: (file: string) => readFile(file, 'utf8'),
+      sleep: async () => undefined,
+    });
+    const updated = rewrite?.hookSpecificOutput.updatedInput as { image_id?: string; pasted_image?: unknown; body?: string };
+    expect(updated.pasted_image).toBeUndefined();
+    expect(updated.body).toBe('pasted in the prompt #fresh');
+    expect(updated.image_id).toBe(await chatIdOf(RED_PNG_16));
+
+    const made = await call('create_image', updated as Record<string, unknown>);
+    expect(made.isError, textOf(made)).toBeFalsy();
+    const note = JSON.parse(textOf(made)) as { note: NoteJson; created: boolean };
+    expect(note.created).toBe(true);
+    const stored = await readFile(await originalPathOf(h, note.note.id));
+    expect(Buffer.compare(stored, Buffer.from(RED_PNG_16, 'base64'))).toBe(0);
   });
 
   it('image_id refusals: unknown chat id, a note image id, both or neither inputs', async () => {

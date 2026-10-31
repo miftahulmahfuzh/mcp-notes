@@ -39,6 +39,8 @@ export interface PromptIo {
 }
 
 export const HOOK_EVENT: 'UserPromptSubmit';
+export function pastedCall(n: number): string;
+export function buildPendingContext(n: number): string;
 export const TRANSCRIPT_WAIT_MS: number;
 export const TRANSCRIPT_POLL_MS: number;
 export const UPLOAD_BUDGET_MS: number;

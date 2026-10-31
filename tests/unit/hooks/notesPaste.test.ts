@@ -132,6 +132,42 @@ describe('runPaste', () => {
     expect(out?.hookSpecificOutput.permissionDecisionReason).toContain('{"limit":3,"upload_id":"D-0Q1"}');
   });
 
+  it('create_image and attach_image: uploads the picture and rewrites pasted_image to image_id', async () => {
+    await twoImageTranscript();
+    for (const [tool, args, expected] of [
+      ['mcp__notes__create_image', { pasted_image: 2, body: 'a red square #pic' }, { body: 'a red square #pic', image_id: 'C-K7F' }],
+      ['mcp__notes__attach_image', { id: 'A-B32', pasted_image: '1' }, { id: 'A-B32', image_id: 'C-K7F' }],
+    ] as const) {
+      const { fetchImpl, uploads } = fakeUpload(() => ok());
+      const out = await runPaste({ input: hookInput({ ...args }, tool), env, fetchImpl, sleep: noSleep });
+      expect(uploads).toHaveLength(1);
+      expect(out).toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: expected } });
+    }
+  });
+
+  it('create_image with a pasted image that cannot be found or uploaded is allowed unchanged (the server explains)', async () => {
+    await writeFile(transcript, jsonl([plainPromptEntry('hello'), assistantText('hi')]));
+    const { fetchImpl, uploads } = fakeUpload(() => ok());
+    const out = await runPaste({ input: hookInput({ pasted_image: 1 }, 'mcp__notes__create_image'), env, fetchImpl, sleep: noSleep });
+    expect(out).toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } });
+    expect(uploads).toHaveLength(0);
+  });
+
+  it('deny strategy on create_image names the tool and image_id', async () => {
+    await twoImageTranscript();
+    const { fetchImpl } = fakeUpload(() => ok('D-0Q1'));
+    const out = await runPaste({
+      input: hookInput({ pasted_image: 1 }, 'mcp__notes__create_image'),
+      env: { ...env, NOTES_PASTE_STRATEGY: 'deny' },
+      fetchImpl,
+      sleep: noSleep,
+    });
+    const reason = out?.hookSpecificOutput.permissionDecisionReason;
+    expect(reason).toContain('image_id D-0Q1');
+    expect(reason).toContain('Call mcp__notes__create_image again');
+    expect(reason).toContain('{"image_id":"D-0Q1"}');
+  });
+
   it('stays out of other tools and of calls without pasted_image', async () => {
     await twoImageTranscript();
     const { fetchImpl, uploads } = fakeUpload(() => ok());

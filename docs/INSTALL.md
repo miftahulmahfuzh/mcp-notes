@@ -48,7 +48,9 @@ What it does, every run (it is idempotent, re-run it after every pull):
    else; a copy of the original is kept once as `settings.json.bak-notes-hooks`. `--skip-hooks`
    or `NOTES_SKIP_HOOKS=1` skips this.
    - `notes-capture` (Stop): saves each `/n` exchange to the chat history.
-   - `notes-paste` (PreToolUse on `similar_images`): searches with a pasted image.
+   - `notes-paste` (PreToolUse on `similar_images`, `create_image`, `attach_image`): uploads an image
+     pasted in the current prompt and swaps its id into the call. Re-run `scripts/install.sh` after
+     updating so an existing install picks up the wider matcher.
    - `notes-prompt` (UserPromptSubmit, `/n` prompts only): stores the session's pasted images and
      tells Claude their ids, so `/n make that image a new note` works. Other prompts are not read.
 10. Prints the verification and exits non-zero unless all four checks pass:

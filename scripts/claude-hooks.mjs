@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 export const OUR_SCRIPT = /notes-(?:capture|paste|prompt)\.mjs(?=['"\s]|$)/;
-export const PASTE_MATCHER = 'mcp__notes__similar_images';
+export const PASTE_MATCHER = 'mcp__notes__(similar_images|create_image|attach_image)';
 export const BACKUP_SUFFIX = '.bak-notes-hooks';
 export const STOP_TIMEOUT_S = 60;
 export const PASTE_TIMEOUT_S = 30;

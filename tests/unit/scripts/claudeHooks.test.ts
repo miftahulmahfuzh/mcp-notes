@@ -65,7 +65,7 @@ describe('mergeHooks / removeHooks', () => {
       hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-capture.mjs'", async: true, timeout: 60 }],
     });
     expect(merged.hooks.PreToolUse[1]).toEqual({
-      matcher: 'mcp__notes__similar_images',
+      matcher: 'mcp__notes__(similar_images|create_image|attach_image)',
       hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-paste.mjs'", timeout: 30 }],
     });
     expect(merged.hooks.UserPromptSubmit).toEqual([
@@ -82,7 +82,7 @@ describe('mergeHooks / removeHooks', () => {
         Stop: [...EXISTING.hooks.Stop, { hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-capture.mjs'", async: true, timeout: 60 }] }],
         PreToolUse: [
           ...EXISTING.hooks.PreToolUse,
-          { matcher: 'mcp__notes__similar_images', hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-paste.mjs'", timeout: 30 }] },
+          { matcher: 'mcp__notes__(similar_images|create_image|attach_image)', hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-paste.mjs'", timeout: 30 }] },
         ],
         UserPromptSubmit: [userHook],
       },
