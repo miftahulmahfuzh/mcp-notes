@@ -48,6 +48,23 @@ function modal(index: number, over: Partial<React.ComponentProps<typeof PhotoMod
   return document.querySelector('[data-modal="photo"]') as HTMLElement;
 }
 
+describe('PhotoModal layout (long descriptions)', () => {
+  it('bounds the grid to one viewport-tall row so a long description cannot push the photo off-screen', () => {
+    const el = modal(0);
+    expect(el.style.gridTemplateRows).toBe('minmax(0,1fr)');
+  });
+
+  it('puts the description, tags and id row in the scrolling region and keeps the toolbar outside it', () => {
+    const el = modal(0);
+    const scroll = el.querySelector('[data-pm-scroll]') as HTMLElement;
+    expect(scroll).not.toBeNull();
+    expect(scroll.textContent).toContain('River below the old bridge');
+    expect(scroll.querySelector('[data-meta]')).not.toBeNull();
+    expect(scroll.querySelector('button')).toBeNull();
+    expect(el.querySelector('[aria-label="Close"]')).not.toBeNull();
+  });
+});
+
 describe('stepIndex / stripTags / metaLine', () => {
   it('wraps both ways', () => {
     expect(stepIndex(0, -1, 3)).toBe(2);

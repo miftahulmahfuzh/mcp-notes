@@ -104,6 +104,9 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
         zIndex: 60,
         display: 'grid',
         gridTemplateColumns: '56px minmax(0,1fr) 300px 56px',
+        // One row exactly as tall as the viewport minus padding: a long description scrolls inside
+        // its column instead of stretching the row (which pushed the photo off-screen).
+        gridTemplateRows: 'minmax(0,1fr)',
         alignItems: 'center',
         gap: 16,
         padding: '24px 16px',
@@ -124,12 +127,12 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
         <CaretLeft weight="duotone" />
       </button>
 
-      <div style={{ height: '100%', display: 'grid', placeItems: 'center', minWidth: 0 }}>
+      <div style={{ height: '100%', display: 'grid', placeItems: 'center', minWidth: 0, minHeight: 0 }}>
         <NoteImage key={image.id} image={image} variant="display" onClick={stop} />
       </div>
 
-      <div onClick={stop} style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 4 }}>
-        <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+      <div onClick={stop} style={{ alignSelf: 'stretch', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 4 }}>
+        <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end', flexShrink: 0 }}>
           <button type="button" className="pm-btn" data-tip="Copy ID" aria-label="Copy ID" onClick={copy} style={toolBtn}>
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
@@ -156,23 +159,25 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
             <X weight="duotone" />
           </button>
         </div>
-        <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, color: '#e4e3dc', textWrap: 'pretty' } as CSSProperties}>
-          {stripTags(note.body)}
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {note.tags.map((t) => (
-            <span key={t} style={{ fontSize: 11, padding: '3px 8px 4px', borderRadius: 999, background: '#2a2a27', color: '#d6d5cd' }}>
-              #{t}
+        <div className="pm-scroll" data-pm-scroll="">
+          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, color: '#e4e3dc', textWrap: 'pretty' } as CSSProperties}>
+            {stripTags(note.body)}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {note.tags.map((t) => (
+              <span key={t} style={{ fontSize: 11, padding: '3px 8px 4px', borderRadius: 999, background: '#2a2a27', color: '#d6d5cd' }}>
+                #{t}
+              </span>
+            ))}
+          </div>
+          <div style={{ height: 1, background: 'rgba(236,235,228,.1)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Geist Mono',monospace", fontSize: 11, color: '#bdbcb4' }}>
+            <span>{note.id}</span>
+            <span style={{ opacity: copied ? 1 : 0, color: '#8a897f', transition: 'opacity .25s' }}>copied</span>
+            <span data-meta="" style={{ marginLeft: 'auto', color: '#8a897f' }}>
+              {meta}
             </span>
-          ))}
-        </div>
-        <div style={{ height: 1, background: 'rgba(236,235,228,.1)' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Geist Mono',monospace", fontSize: 11, color: '#bdbcb4' }}>
-          <span>{note.id}</span>
-          <span style={{ opacity: copied ? 1 : 0, color: '#8a897f', transition: 'opacity .25s' }}>copied</span>
-          <span data-meta="" style={{ marginLeft: 'auto', color: '#8a897f' }}>
-            {meta}
-          </span>
+          </div>
         </div>
       </div>
 

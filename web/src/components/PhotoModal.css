@@ -2,3 +2,17 @@
 .pm-btn:hover {
   background: #222220 !important;
 }
+
+/* The description column under the toolbar: the one part of the modal that scrolls. The photo stays
+   fitted to the viewport; only long text needs the wheel. */
+.pm-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a36 transparent;
+}
