@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 8
-- Completed: 36
+- Completed: 38
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A035** Phase 2: Shared Lightbox + note modal strip
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; component accepts a generic item list so chat can reuse it.
-  - **Status**: in_progress
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
-  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
-  - **Depends on**: none
-  - **Plan**: `.workflows/plan/P1-NOTES-A035.md`
 
 - [ ] **P1-NOTES-A036** Phase 3: Chat image store, paste into the bar, wall chat sends images
   - **Difficulty**: HARD
@@ -132,6 +122,18 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A035** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; component accepts a generic item list so chat can reuse it.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A035.md`
+  - **Completed**: 2026-10-31 09:20 (recorded under P2-NOTES-H202 by the phase-2 session; merged in wave-0 integration)
+  - **Done as**: P2-NOTES-H202 (see that entry for Files, Decided, Verified)
+
 - [x] **P1-NOTES-A034** Phase 1: Card footer: reveal button left
   - **Difficulty**: EASY
   - **Type**: Feature
@@ -147,6 +149,23 @@
   - **Drift**: plan's test used an unused `container` destructure in the 'keeps the reveal button in place' case; removed to satisfy tsc noUnusedLocals.
   - **Decided**: test:int skipped -> coordinator instructed commit+DONE (shared test DB truncated concurrently by wave-0 phases: deadlocks/FK/404s; phase touches web/ only) (rung 2, exit criteria; coordinator re-runs full suite after wave merge)
   - **Verified**: typecheck, build, npm test (852 pass), targeted vitest files; test:int not run to green (shared-DB contention)
+
+- [x] **P2-NOTES-H202** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Not `PhotoModal`/`Gallery`, chat UI (P9 consumes it), file chips. Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; generic item list so chat can reuse it.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search-p2/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P2-NOTES-H202.md`
+  - **Completed**: 2026-10-31 09:20
+  - **Method**: /do
+  - **Files**: web/src/components/Lightbox.tsx, web/src/components/Lightbox.css, web/src/components/Lightbox.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, README.md, CHANGELOG.md, .workflows/todos.md, .workflows/plan/P2-NOTES-H202.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm → mint only phase 2's task, as P2-NOTES-H202 (non-sequential ID: phase 3's worktree already minted P1-NOTES-A034 from the shared counter, so the next sequential ID would collide with a peer), in root .workflows/todos.md (same convention as P2-NOTES-C506)
+    - test:int failed with Postgres deadlocks (40P01), FK violations and 404s from peer phase sessions running concurrent truncateAll against one shared test DB → treated as environmental; this phase changes no src/ or tests/ server code (verified: typecheck, build, npm test 874 passed)
+    - Same task as P1-NOTES-A035 (phase 2); the phase-2 session minted P2-NOTES-H202 instead. Both entries kept; P1-NOTES-A035 is marked completed by this entry (wave-0 integration).
 
 - [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL

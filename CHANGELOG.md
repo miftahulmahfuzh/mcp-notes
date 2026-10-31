@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Image lightbox**: click a photo in the big editor's strip to see it large; arrows (click or
+  keys) move between the note's photos without closing, Esc closes only the photo (R4).
+
 ### Fixed
 
 - Wall card footer: the "Show in Explorer" icon now sits right after the copy-ID icon instead of floating mid-footer.

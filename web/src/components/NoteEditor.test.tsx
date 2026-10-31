@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Note, NoteImage as NoteImageData } from '../types';
 import { makeImage, makeNote } from '../testing/fixtures';
 import { NoteEditor, type NoteEditorProps } from './NoteEditor';
@@ -210,5 +210,144 @@ describe('NoteEditor closeSignal', () => {
     expect(props.onClose).toHaveBeenCalledWith(n, 'kept text, edited', true);
     rerender(<NoteEditor {...props} closeSignal={5} />);
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('NoteEditor lightbox', () => {
+  const pics = () => note('pics', [img('A-B32', 'A-B32', 0), img('Q-RS1', 'A-B32', 1), img('Z-ZZ9', 'A-B32', 2)]);
+  const shown = () => document.querySelector('[data-lightbox] img')?.getAttribute('src');
+  const lightbox = () => document.querySelector('[data-lightbox]');
+  const esc = () => fireEvent.keyDown(document.body, { key: 'Escape' });
+
+  it('clicking a strip thumbnail opens the lightbox on that image', () => {
+    const { props } = renderEditor(pics());
+    expect(lightbox()).toBeNull();
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('2 / 3');
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('arrows by click and key move across the note images without closing, and stop at the ends', () => {
+    const { props } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' });
+    expect(shown()).toBe('/api/images/A-B32/display');
+    fireEvent.click(screen.getByLabelText('Next image'));
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Z-ZZ9/display');
+    expect((screen.getByLabelText('Next image') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Z-ZZ9/display');
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('skips images that are not on this machine', () => {
+    const away = { ...img('C-DD4', 'A-B32', 1), available: false };
+    renderEditor(note('pics', [img('A-B32', 'A-B32', 0), away, img('Q-RS1', 'A-B32', 2)]));
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('2 / 2');
+  });
+
+  it('Esc closes only the lightbox, never the editor or the chat panel; the next Esc closes the editor', () => {
+    const chatEsc = vi.fn();
+    document.addEventListener('keydown', chatEsc);
+    try {
+      const { props } = renderEditor(pics());
+      fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+      expect(esc()).toBe(false);
+      expect(lightbox()).toBeNull();
+      expect(props.onClose).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-modal="editor"]')).not.toBeNull();
+      expect(chatEsc).not.toHaveBeenCalled();
+      esc();
+      expect(props.onClose).toHaveBeenCalledTimes(1);
+      expect(chatEsc).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', chatEsc);
+    }
+  });
+
+  it('a click on the lightbox backdrop or its X closes the lightbox, not the editor', () => {
+    const { props } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.click(lightbox() as HTMLElement);
+    expect(lightbox()).toBeNull();
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.click(screen.getByLabelText('Close image viewer'));
+    expect(lightbox()).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+    // The editor's own backdrop still closes it.
+    fireEvent.click(document.querySelector('[data-modal="editor"]') as HTMLElement);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('focus moves into the lightbox and back to the thumbnail that opened it', () => {
+    renderEditor(pics());
+    const thumb = screen.getByLabelText('View image Q-RS1');
+    thumb.focus();
+    fireEvent.click(thumb);
+    expect(document.activeElement).toBe(lightbox());
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    esc();
+    expect(document.activeElement).toBe(thumb);
+  });
+
+  it('with the tag popup open, Esc closes the lightbox first, then the popup, then the editor', () => {
+    const known = [{ tag: 'seer', count: 5, last_used: null }];
+    const { ta, props, queryByRole } = renderEditor(pics(), { tags: known });
+    ta.setSelectionRange(3, 3);
+    fireEvent.change(ta, { target: { value: '#se', selectionStart: 3 } });
+    expect(queryByRole('listbox')).not.toBeNull();
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    esc();
+    expect(lightbox()).toBeNull();
+    expect(queryByRole('listbox')).not.toBeNull();
+    esc();
+    expect(queryByRole('listbox')).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+    esc();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps showing the same image when another one is attached while it is open', () => {
+    const { props, rerender } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    const grown = note('pics', [img('N-EW1', 'A-B32', 0), ...pics().images]);
+    rerender(<NoteEditor {...props} note={grown} />);
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('3 / 4');
+  });
+
+  it('closes when the viewed image leaves the note, and Esc then closes the editor', () => {
+    const { props, rerender } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    const shrunk = note('pics', pics().images.filter((i) => i.id !== 'Q-RS1'));
+    rerender(<NoteEditor {...props} note={shrunk} />);
+    expect(lightbox()).toBeNull();
+    esc();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    // The image coming back (undo) does not reopen the lightbox.
+    rerender(<NoteEditor {...props} note={pics()} />);
+    expect(lightbox()).toBeNull();
+  });
+
+  it('closeSignal while the lightbox is open closes the editor and the lightbox with it', () => {
+    const { props, rerender, unmount } = renderEditor(pics(), { closeSignal: 1 });
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    rerender(<NoteEditor {...props} closeSignal={2} />);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(lightbox()).toBeNull();
+  });
+
+  it('the strip remove icon still removes without opening the lightbox', () => {
+    const { props, getAllByLabelText } = renderEditor(pics());
+    fireEvent.click(getAllByLabelText('Remove image')[0]!);
+    expect(props.onRemoveImage).toHaveBeenCalledTimes(1);
+    expect(lightbox()).toBeNull();
   });
 });
