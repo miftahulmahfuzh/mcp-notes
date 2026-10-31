@@ -84,6 +84,16 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/then call view_images on the top hits/);
   });
 
+  it('saves or attaches a pasted image by its ID, resolves "that image", and never asks for a path', () => {
+    expect(prompt).toMatch(/call create_image with image_id set to its ID/);
+    expect(prompt).toMatch(/call attach_image with that note's id and image_id set to its ID/);
+    expect(prompt).toContain('"That image" is the one whose ID the owner names');
+    expect(prompt).toContain('otherwise the picture in <message>');
+    expect(prompt).toContain('otherwise the most recent [image upload:ID] in <chat_history>');
+    expect(prompt).toMatch(/Never ask the owner for a file path to a picture they pasted/);
+    expect(prompt).toMatch(/created: false, or attached: false for attach_image/);
+  });
+
   it('explains the context layout the turn arrives in', () => {
     expect(prompt).toContain('<chat_history>');
     expect(prompt).toContain('<reply_to>');
