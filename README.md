@@ -292,6 +292,18 @@ folder into one new image note, tags it, checks the note holds them all, then de
 /migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
 
+`install.sh` also registers two Claude Code hooks in `~/.claude/settings.json` (every repo; pass
+`--skip-hooks` to leave the file alone):
+
+- **notes-capture** (Stop, runs in the background): after every `/n` turn it saves the prompt as
+  you typed it, Claude's final answer and any pasted images to the chat history, as a
+  single-turn thread badged "claude code". If the daemon is down the exchange waits in
+  `~/.local/state/notes-capture/outbox/` and goes in on a later turn. Saving twice is harmless.
+- **notes-paste** (before `similar_images`): paste an image and ask `/n find photos like this`.
+  Claude calls `similar_images` with `pasted_image: 1`; the hook uploads `[Image #1]` and the
+  search runs on it. `npm run verify:paste-hook` checks this against a running daemon (one
+  short, billed Claude call).
+
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
 edit is a blanked line where Claude Code printed account usage.
 
@@ -533,11 +545,14 @@ scripts/install.sh
 5. waits for `GET /health`,
 6. registers `notes` with `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`,
 7. symlinks the `/n` and `/migrate` skills into `~/.claude/skills`,
-8. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
+8. merges the notes-capture and notes-paste hooks into `~/.claude/settings.json`, keeping
+   everything else (a copy of the original is kept once as `settings.json.bak-notes-hooks`;
+   `--skip-hooks` or `NOTES_SKIP_HOOKS=1` skips this),
+9. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
    `notes` connected.
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
-Undo with `scripts/uninstall.sh` (it keeps your data).
+Undo with `scripts/uninstall.sh` (it keeps your data and removes only our two hook entries).
 
 ### Keep WSL running from Windows
 
@@ -584,6 +599,7 @@ npm test                       # unit tests, server and web (jsdom)
 npm run test:int               # integration tests against real Postgres in Docker
 npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
 npm run test:live:embeddings   # opt-in: one real OpenRouter embeddings call over the labelled search set
+npm run verify:paste-hook      # opt-in: one real claude -p run checks the paste hook rewrite
 ```
 
 `test:int` starts or reuses two containers, both on `pgvector/pgvector:pg16` (one that runs another
@@ -649,7 +665,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `attach_image` | Add a local file to an existing note `id` as its next photo. Returns `{note, attached}`; `attached: false` when the file is already in a note, which is returned instead |
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
-| `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image` (Claude Code) needs the notes-paste hook |
+| `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -716,6 +732,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
 | `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
 | `POST /api/chat` | `{message, thread_id?, reply_to?, image_ids?}`. Streams `accepted {thread_id, user_message_id}`, then `status` and `delta` events, then `done {thread_id, user_message_id, assistant_message_id, reply_to, brain}`. The question is saved before the answer starts; the answer only when it finishes |
+| `POST /api/capture/claude-code` | One `/n` exchange from the notes-capture hook (JSON, header `X-Notes-Capture: 1`, loopback only). 201 with the thread and message ids, 200 `duplicate` when it was saved before |
 | `GET /api/chat/messages?before=&limit=&include_deleted=` | The chat timeline, all threads, `{messages, next_before}`, each page ascending |
 | `GET /api/chat/threads/:id` | One thread and its messages |
 | `PATCH /api/chat/messages/:id` | Edit your own message (`{text}`); the old text is kept. Same-origin only |
@@ -746,6 +763,7 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
   cache/<imageId>/preview.jpg      long edge 1568 px, what Claude sees
   cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
   inbox/                           drop files here; failures go to inbox/failed/
+~/.local/state/notes-capture/      the Claude Code hooks: outbox/ (captures waiting for the daemon), capture.log, paste.log
 ```
 
 Each photo is one `note_images` row with its own id, in the same `A-B32` form as note ids. A
@@ -820,6 +838,7 @@ web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
 claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
+claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive

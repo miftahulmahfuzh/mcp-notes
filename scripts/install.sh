@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Install or refresh notesd as a systemd user service, register it with Claude Code as the
-# `notes` MCP server (user scope), and link the /n skill into ~/.claude/skills/n.
+# `notes` MCP server (user scope), link the /n skill into ~/.claude/skills/n, and register the
+# mcp-notes Claude Code hooks (notes-capture: Stop, saves /n exchanges to the chat history;
+# notes-paste: PreToolUse on similar_images, uploads a pasted image) in ~/.claude/settings.json.
 #
 # Idempotent: run it again after every pull. The unit runs code from the checkout this script
 # lives in, so run it from the checkout you want the daemon to use (normally ~/mcp-notes).
+#
+# Flags:
+#   --skip-hooks    do not touch ~/.claude/settings.json (same as NOTES_SKIP_HOOKS=1)
 #
 # Env overrides:
 #   NODE_BIN        absolute path to a Node >= 22 binary (default: `node` on PATH, then
@@ -12,6 +17,9 @@
 #                   unit gets its real path (readlink -f) as NOTESD_CLAUDE_BIN for the chat bar.
 #   NOTES_DATA_DIR  data dir (default: ~/mcp-notes-data)
 #   SKIP_CHAT_CHECK set to 1 to skip the chat smoke check in the verification (offline runs)
+#   NOTES_SKIP_HOOKS set to 1 to leave ~/.claude/settings.json alone
+#   NOTES_PASTE_STRATEGY  `deny` registers the paste hook in its fallback mode (see
+#                   claude/hooks/notes-paste.mjs); default `updatedInput`
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -33,10 +41,29 @@ HEALTH_WAIT_SECONDS=30
 CHAT_SMOKE_SECONDS=200
 # Notes-only and read-only: it exercises the SDK child, the login and the notes MCP tools, no web.
 CHAT_SMOKE_MESSAGE='Install check. Call the notes tags tool once, then reply with only the number of tags it returned. Use no other tool.'
+HOOKS_DIR="$REPO_DIR/claude/hooks"
+HOOKS_HELPER="$REPO_DIR/scripts/claude-hooks.mjs"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+SKIP_HOOKS="${NOTES_SKIP_HOOKS:-0}"
+PASTE_STRATEGY="${NOTES_PASTE_STRATEGY:-updatedInput}"
 
 log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+parse_args() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --skip-hooks) SKIP_HOOKS=1 ;;
+      -h|--help)
+        sed -n '2,26p' "${BASH_SOURCE[0]}"
+        exit 0
+        ;;
+      *) die "unknown argument: $arg (try --help)" ;;
+    esac
+  done
+}
 
 resolve_node() {
   local n="${NODE_BIN:-}"
@@ -79,6 +106,12 @@ check_preconditions() {
     [[ -f "$SKILLS_SRC_DIR/$sk/SKILL.md" ]] || die "missing $SKILLS_SRC_DIR/$sk/SKILL.md."
   done
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
+  local hk
+  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_HELPER"; do
+    [[ -f "$hk" ]] || die "missing $hk."
+  done
+  [[ "$PASTE_STRATEGY" == "updatedInput" || "$PASTE_STRATEGY" == "deny" ]] \
+    || die "NOTES_PASTE_STRATEGY must be updatedInput or deny (got $PASTE_STRATEGY)."
   local p
   for p in "$REPO_DIR" "$NODE_BIN" "$NODE_DIR" "$DATA_DIR" "$CLAUDE_REAL" "$HOME"; do
     [[ "$p" != *'|'* && "$p" != *'&'* && "$p" != *'\'* ]] \
@@ -211,6 +244,24 @@ link_skill() {
   done
 }
 
+# Merge the two hook entries into ~/.claude/settings.json (user scope: every repo). Everything
+# else in the file is kept; a copy of the original is kept once at settings.json.bak-notes-hooks.
+# A failure here warns and leaves the file alone: the daemon install is not undone for it.
+register_hooks() {
+  if [[ "$SKIP_HOOKS" == 1 ]]; then
+    log "skipping Claude Code hooks (--skip-hooks / NOTES_SKIP_HOOKS=1)"
+    return 0
+  fi
+  log "registering Claude Code hooks (notes-capture, notes-paste) in $CLAUDE_SETTINGS"
+  "$NODE_BIN" "$HOOKS_HELPER" install \
+    --settings "$CLAUDE_SETTINGS" \
+    --node "$NODE_BIN" \
+    --hooks-dir "$HOOKS_DIR" \
+    --paste-strategy "$PASTE_STRATEGY" \
+    || warn "could not update $CLAUDE_SETTINGS; /n exchanges will not be captured. Fix the file and re-run, or pass --skip-hooks."
+}
+
+
 # One real chat message through the installed daemon. Success = the SSE stream's last event is
 # `done`. The brain that answered is printed; anything but claude is a warning (GLM answering
 # means the Claude login or usage limit failed and the fallback worked).
@@ -260,10 +311,15 @@ verify() {
   for sk in "${SKILL_NAMES[@]}"; do
     printf 'skill: %s -> %s\n' "$SKILLS_DIR/$sk" "$(readlink "$SKILLS_DIR/$sk")"
   done
+  if [[ "$SKIP_HOOKS" == 1 ]]; then
+    printf 'claude hooks: skipped\n'
+  else
+    "$NODE_BIN" "$HOOKS_HELPER" status --settings "$CLAUDE_SETTINGS" 2>&1 | sed 's/^/claude hook: /' || true
+  fi
   printf 'linger: %s\n' "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || echo unknown)"
   printf 'unit runs: %s/dist/main.js\n' "$REPO_DIR"
   if [[ "$REPO_DIR" == "$HOME/.worktrees/"* ]]; then
-    warn "the unit and the skill point at a worktree ($REPO_DIR). After the branch lands, re-run: cd ~/mcp-notes && git pull && scripts/install.sh"
+    warn "the unit, the skill and the hooks point at a worktree ($REPO_DIR). After the branch lands, re-run: cd ~/mcp-notes && git pull && scripts/install.sh"
   fi
   printf 'Windows side (keeps WSL up at logon): see docs/INSTALL.md, scripts/windows/install-wsl-keepalive.ps1\n'
   (( ok == 1 )) || die "verification failed."
@@ -271,6 +327,7 @@ verify() {
 }
 
 main() {
+  parse_args "$@"
   resolve_node
   resolve_claude
   check_preconditions
@@ -284,7 +341,11 @@ main() {
   wait_for_health
   register_mcp
   link_skill
+  register_hooks
   verify
 }
 
-main "$@"
+# Run only when executed; `source scripts/install.sh` (the tests) just defines the functions.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

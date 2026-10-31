@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 3
-- Completed: 43
+- Completed: 44
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `claude/hooks/notes-capture.mjs` (Stop, async, outbox retry, idempotent), `claude/hooks/notes-paste.mjs` (PreToolUse on `mcp__notes__similar_images`, uploads the pasted image with `source=claude_code` and rewrites `pasted_image` to `upload_id`; `updatedInput` default, `deny` fallback); `src/chat/capture.ts` + `POST /api/capture/claude-code` (loopback + custom-header guard, idempotent on external key through P7's `recordExchange`, images copied into P3's store with `ingestChatImage`); `scripts/install.sh`/`uninstall.sh` merge and remove the hooks in `~/.claude/settings.json` idempotently; final `pasted_image` text in `similar_images`; `/n` skill text; `npm run verify:paste-hook`. Exit: feeding a synthetic transcript (string-form and array-form user entries, image blocks, `imagePasteIds`) produces one single-turn `claude_code` thread with the images stored; replay is a no-op; daemon-down spools to the outbox and a later run delivers; install/uninstall tested against a temp `HOME`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
-  - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
 
 - [ ] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
   - **Difficulty**: HARD
@@ -71,6 +61,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `claude/hooks/notes-capture.mjs` (Stop, async, outbox retry, idempotent), `claude/hooks/notes-paste.mjs` (PreToolUse on `mcp__notes__similar_images`, uploads the pasted image with `source=claude_code` and rewrites `pasted_image` to `upload_id`; `updatedInput` default, `deny` fallback); `src/chat/capture.ts` + `POST /api/capture/claude-code` (loopback + custom-header guard, idempotent on external key through P7's `recordExchange`, images copied into P3's store with `ingestChatImage`); `scripts/install.sh`/`uninstall.sh` merge and remove the hooks in `~/.claude/settings.json` idempotently; final `pasted_image` text in `similar_images`; `/n` skill text; `npm run verify:paste-hook`. Exit: feeding a synthetic transcript (string-form and array-form user entries, image blocks, `imagePasteIds`) produces one single-turn `claude_code` thread with the images stored; replay is a no-op; daemon-down spools to the outbox and a later run delivers; install/uninstall tested against a temp `HOME`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
+  - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
+  - **Completed**: 2026-10-31 11:02
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, claude/skills/n/SKILL.md, package.json, scripts/install.sh, scripts/uninstall.sh, src/http/app.ts, src/mcp/similarTools.ts, tests/integration/similarImages.mcp.int.test.ts, claude/hooks/lib/transcript.mjs, claude/hooks/lib/transcript.d.mts, claude/hooks/lib/state.mjs, claude/hooks/lib/state.d.mts, claude/hooks/notes-capture.mjs, claude/hooks/notes-capture.d.mts, claude/hooks/notes-paste.mjs, claude/hooks/notes-paste.d.mts, scripts/claude-hooks.mjs, scripts/claude-hooks.d.mts, scripts/verify-paste-hook.mjs, src/chat/capture.ts, src/http/capture.ts, tests/unit/hooks/fixtures.ts, tests/unit/hooks/transcript.test.ts, tests/unit/hooks/notesCapture.test.ts, tests/unit/hooks/notesPaste.test.ts, tests/unit/scripts/claudeHooks.test.ts, tests/unit/captureGuard.test.ts, tests/integration/capture.int.test.ts, tests/integration/capture.hook.int.test.ts
+  - **Drift**:
+    - none; branch had no remote counterpart so nothing to rebase onto
+  - **Decided**:
+    - Completion bookkeeping: no task unblocked. Phases 9-11 do not depend on phase 8 (swarm coordinator owns ordering).
 
 - [x] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
   - **Difficulty**: HARD
