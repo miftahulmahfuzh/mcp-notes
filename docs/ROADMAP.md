@@ -35,7 +35,9 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | 5 | Connectors | expense-tracking, run-insights, seer (Neon + lab.sqlite), read-only | 1.d, 1.d2, 1.f, 1.g |
 | 6 | Semantic | Embeddings, backfill, hybrid search | 1.b, 1.c |
 | 7 | Wall editing | Big editor modal, several images per note, delete + recycle bin, open file location in Explorer | – |
-| 8+ | Later | GPD install, weekly digest, … | – |
+| 8 | Chat history, files, image search | Chat history on its own tables, `/history`, note files, Gemini image embeddings and `similar_images` (v0.2.0) | – |
+| 9 | Claude Code hooks | `/n` capture, pasted image to note (`image_id`, `pasted_image`), clickable note ids (v0.2.0) | – |
+| 10+ | Later | GPD install, weekly digest, … | – |
 
 5 and 6 depend only on 1, so they can run in parallel with 3 and 4.
 

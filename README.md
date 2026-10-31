@@ -5,7 +5,7 @@ your notes and photos and serves them three ways: to every Claude Code session a
 to `/n <anything>` typed from any repo, and to a dark web wall at `http://localhost:7317` with
 its own chat bar.
 
-![The wall in its default view: text notes only](docs/readme/wall-text.png)
+![The wall in its default view: text notes only, with paperclip counts on cards that hold files](docs/readme/wall-notes.png)
 
 ## Contents
 
@@ -29,6 +29,7 @@ its own chat bar.
   - [Spending, runs and Seer](#spending-runs-and-seer)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
+  - [The history page](#the-history-page)
 - [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
@@ -84,6 +85,10 @@ The wall is for browsing, writing quickly, and dropping in photos.
   in `note_revisions`. Claude can list revisions and revert. Deleted notes and removed photos go
   to a recycle bin on the wall. Only "delete forever" in that bin removes anything for good, and
   no tool Claude has can do that.
+- **Any file, not only photos.** Drop a PDF, spreadsheet or zip on an open note and it becomes a
+  chip under the text, stored byte for byte, and Claude sees it on the note too.
+- **Every chat is kept.** Wall chats and `/n` exchanges from the terminal land on one history
+  page, with replies, edits and undoable deletes.
 - **The wall follows Claude.** When Claude edits a note over MCP, the wall updates within a
   second over server-sent events. No reload.
 - **Notes remember where they came from.** A note saved from a repo records the working directory,
@@ -173,7 +178,17 @@ For a long note, press "+", type the first line, then expand it and keep writing
 - Removing a photo from the strip is soft. The photo goes to the recycle bin's photo grid, and
   restoring it puts it back at the same place in the note.
 
-The editor has no recording yet.
+![The big editor with two file chips under the text](docs/readme/files-editor.png)
+
+The paperclip picker attaching a file: the chip appears under the text, and the card's paperclip
+count goes up when the editor closes.
+
+![Attaching a file in the big editor](docs/readme/files-attach.gif)
+
+Clicking a photo in the strip opens it large. The arrows (or the keys) walk through the note's
+other photos, and Esc closes only the photo.
+
+![Stepping through a note's photos in the editor's lightbox](docs/readme/lightbox.gif)
 
 ### Adding photos
 
@@ -451,6 +466,8 @@ them, each named by an upload id (`upload:A-B32`). Pasted chat images are stored
 under `~/mcp-notes-data/chat-images/` and never appear on the wall. Pasting anywhere else still
 makes a new photo note, and pasting into the open big editor still attaches to that note.
 
+![A pasted picture as a thumbnail in the chat bar, with the question typed beside it](docs/readme/chat-paste.png)
+
 The caret icon next to pin and dismiss collapses the panel to its header line. That line shows
 the question on one line (newlines become spaces, a long question is cut with an ellipsis, and
 the full text is in the tooltip). After the question comes the status while it is still
@@ -504,7 +521,17 @@ appear without a reload. The pill at the bottom works as on the wall and accepts
 message continues the newest conversation when that one came from the wall, and starts a new one
 otherwise. Back and forward move between the wall and this page.
 
-Hover or Tab onto a bubble for **Reply**, **Edit** (your own messages) and **Delete**. A reply shows a quote of the original; click it to jump there. Replying to a wall bubble continues that conversation; replying to a "claude code" bubble starts a new one. Edits only change what later turns see. Deletes can be undone for 6 seconds, and **Show deleted** lists them with a Restore button.
+![The history page: wall chats and /n exchanges on one timeline, with the "claude code" badge and a pasted picture](docs/readme/history.png)
+
+Hover or Tab onto a bubble for **Reply**, **Edit** (your own messages) and **Delete**. A reply shows a quote of the original; click it to jump there. Replying to a wall bubble continues that conversation; replying to a "claude code" bubble starts a new one. Edits only change what later turns see. Deleting a question that has an answer asks whether to take the answer too. Deletes can be undone for 6 seconds, and **Show deleted** lists them with a Restore button.
+
+Reply, an edit (marked "edited") and a delete with its undo:
+
+![History page: reply to a message, edit one, delete one and undo](docs/readme/history-actions.gif)
+
+A note id in a bubble opens that note in the big editor without leaving the page:
+
+![History page: clicking a note id opens the editor in place](docs/readme/history-link.gif)
 
 ## Connectors: spending, runs, Seer
 
@@ -879,7 +906,9 @@ removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
 | 5 | Read-only connectors: expense-tracking, run-insights, Seer | done |
 | 6 | Semantic search: pgvector embeddings, hybrid ranking, `related` | done |
 | 7 | Wall editing: big editor, several photos per note, recycle bin, open file location, collapsible answer, multi-line chat bar | done |
-| 8 | A second machine (the GPD), weekly digest, … | later |
+| 8 | Chat history, note files, image similarity search (v0.2.0) | done |
+| 9 | Claude Code hooks: `/n` capture, pasted image to note, clickable note ids (v0.2.0) | done |
+| 10 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -901,13 +930,20 @@ docs/           roadmap, iteration briefs, design, plans, these screenshots
 
 ## About the screenshots
 
-The screenshots and recordings come from a throwaway instance (its own Postgres container and
-data folder) seeded with the sample notes from the Claude Design mock-up in `docs/design/`. The
-photos are from [Lorem Picsum](https://picsum.photos) (Unsplash), so they don't always match
+The older screenshots and recordings come from a throwaway instance (its own Postgres container
+and data folder) seeded with the sample notes from the Claude Design mock-up in `docs/design/`.
+The photos are from [Lorem Picsum](https://picsum.photos) (Unsplash), so they don't always match
 the captions. Everything shown is the real app, and the Claude Code sessions are real.
 
-All of them were captured before iteration 7. The wall, gallery and modal in them show one photo
-per note, with no photo count and no expand, delete or folder icons. The chat bar is one line and
-the answer panel has no collapse icon. The text above describes the current behaviour, and the
-captions say where a picture shows the older look. The big editor, the recycle bin and open file
-location have no screenshots yet.
+Those were captured before iteration 7. The wall, gallery and modal in them show one photo per
+note, with no photo count and no expand, delete or folder icons. The chat bar is one line and the
+answer panel has no collapse icon. The text above describes the current behaviour, and the
+captions say where a picture shows the older look.
+
+The v0.2.0 pictures (`wall-notes.png`, `files-editor.png`, `files-attach.gif`, `lightbox.gif`,
+`chat-paste.png`, `history.png`, `history-actions.gif`, `history-link.gif`) were driven with
+Playwright against a fresh throwaway instance on port 7400 with its own Postgres container and
+data folder, and a different, smaller set of made-up notes. The `/n` exchanges on the history
+page were posted to the capture endpoint, not recorded from a live session, so their answers are
+written by hand. There is no recording yet of the Claude Code hooks (pasted image to note) or of
+`similar_images`.
