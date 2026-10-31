@@ -76,7 +76,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "a9f62eb",
       "depends_on": [
         1,
         2,
@@ -85,35 +85,35 @@
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "web-only; test:int schema 'reapply no-op' fails only because shared test DB already has peer's migration 0005 (6 rows vs journal 5)",
       "package": "web",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T10:08:44+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A038",
       "title": "Note files UI: paperclip, chips, paste/drop routing, reveal"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "700a2e5d032fea1188e3e1e82c6c23d7635f3709",
       "depends_on": [
         3,
         4
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "image embeddings + similar_images; migration 0005; no decisions; int suite green on private DB (runs.curated flakes only on shared connectors DB)",
       "package": "src/embeddings`, `src/mcp`, `src/db`, `src/cli`, `src/chat",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T10:11:17+07:00",
       "satisfies": [
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A039",
       "title": "Image embeddings and `similar_images"
     },
     {
@@ -221,7 +221,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T09:50:23+07:00",
-  "verified_at": "2026-10-31T09:35:27+07:00",
+  "updated": "2026-10-31T10:16:48+07:00",
+  "verified_at": "2026-10-31T10:16:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
