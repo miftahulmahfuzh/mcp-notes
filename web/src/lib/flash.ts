@@ -41,7 +41,7 @@ export function flashSelector(selector: string, { delayMs = 450, waitMs = 0 }: F
   let cancelled = false;
   let tries = Math.max(0, Math.ceil(waitMs / POLL_MS));
   const look = (): void => {
-    if (cancelled) return;
+    if (cancelled || typeof document === 'undefined') return;
     const el = document.querySelector<HTMLElement>(selector);
     if (el) {
       pulse(el);
