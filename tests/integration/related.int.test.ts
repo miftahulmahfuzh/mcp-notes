@@ -41,7 +41,7 @@ const config: Config = {
   chat: DEFAULT_CHAT_CONFIG,
   embeddings: DEFAULT_EMBEDDINGS_CONFIG,
 };
-const deps: AppDeps = { config, db, events, service, embedder: fake };
+const deps: AppDeps = { config, db, events, service, embedder: fake, imageEmbedder: null };
 const app = createApp(deps);
 let client: Client;
 

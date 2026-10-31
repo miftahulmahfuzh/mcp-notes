@@ -47,6 +47,7 @@ export async function createApiHarness(options: ApiHarnessOptions = {}): Promise
     events,
     service: notes,
     embedder: null,
+    imageEmbedder: null,
   };
   const app = new Hono();
   app.route(

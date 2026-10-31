@@ -77,4 +77,10 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/files that are not pictures/);
     expect(prompt).toMatch(/cannot open them/);
   });
+
+  it('tells the agent how pasted images appear and to use similar_images, then view_images', () => {
+    expect(prompt).toContain('[image upload:ID]');
+    expect(prompt).toMatch(/similar_images with upload_id/);
+    expect(prompt).toMatch(/then call view_images on the top hits/);
+  });
 });

@@ -17,7 +17,7 @@ const dataDir = mkdtempSync(join(tmpdir(), 'notes-connectors-mcp-'));
 const config: Config = { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
 const events = new NoteEvents();
 const service = new NotesService({ db, dataDir, events });
-const deps: AppDeps = { config, db, events, service, embedder: null };
+const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null };
 const app = createApp(deps);
 let client: Client;
 

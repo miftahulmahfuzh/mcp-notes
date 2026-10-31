@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import type { ChatUploadSource } from '../embeddings/chatUploads.js';
+import type { ImageEmbedder } from '../embeddings/imageEmbedder.js';
 import type { NoteFilter } from '../notes/repo.js';
 import type { NotesService } from '../notes/service.js';
 import { NoteError } from '../notes/types.js';
@@ -19,6 +21,10 @@ export interface ToolDeps {
    * Links paragraph. Omitted: `DEFAULT_WALL_URL` (port 7317), e.g. a daemon on port 0 in tests.
    */
   wallUrl?: string;
+  /** Image embedder behind `similar_images`. Omitted or null: image search off (existing vectors still answer image_id). */
+  imageEmbedder?: ImageEmbedder | null;
+  /** Reads a wall-chat upload for `similar_images` upload_id. Omitted: upload_id answers that uploads are unavailable. */
+  chatUploads?: ChatUploadSource;
 }
 
 /** Appended to the `list` and `search` descriptions. */

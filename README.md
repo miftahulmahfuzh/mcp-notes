@@ -646,6 +646,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `attach_image` | Add a local file to an existing note `id` as its next photo. Returns `{note, attached}`; `attached: false` when the file is already in a note, which is returned instead |
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
+| `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image` (Claude Code) needs the notes-paste hook |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -671,6 +672,18 @@ signals: text rank, similarity, tag match and recency. The weights live in `src/
 each with a comment. If the query cannot be embedded, it returns today's full-text ranking and
 says so in `fallback`. `npm run embed:backfill` embeds everything pending in one go and prints
 progress (first run, or after a model change).
+
+### Similar photos
+
+Every note image is also embedded, by its pixels, with Gemini Embedding 2 (`google/gemini-embedding-2`
+over OpenRouter, the same key) into `note_image_embeddings` (1536 dimensions, HNSW cosine). The
+model puts words and pictures in one space, so `similar_images` answers both "photos like this
+one" and "photos of a red top in a car". What is sent is the photo's preview re-encoded as a PNG
+of at most 1024 px. The daemon embeds new images in the background; a photo whose file lives on
+the other laptop is skipped here and embedded by that laptop's daemon. `npm run
+embed:images:backfill -- --dry-run` counts what is pending and estimates the cost (about $0.45 per
+million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it embeds them
+(`--limit N` for a trial, `--retry-failed` to skip the backoff). It never runs by itself.
 
 ### HTTP API
 

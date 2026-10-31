@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { ChatBackend } from '../chat/backend.js';
 import type { AppDeps } from '../deps.js';
+import { dbChatUploadSource } from '../embeddings/chatUploads.js';
 import { wallUrlForPort } from '../mcp/instructions.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
@@ -46,6 +47,8 @@ export function mcpToolDeps(deps: AppDeps): ToolDeps {
     service: deps.service,
     dataDir: deps.config.dataDir,
     db: deps.db,
+    imageEmbedder: deps.imageEmbedder ?? null,
+    chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
   };
 }
