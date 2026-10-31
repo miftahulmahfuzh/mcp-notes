@@ -229,6 +229,20 @@ describe('NoteEditor lightbox', () => {
     expect(props.onClose).not.toHaveBeenCalled();
   });
 
+  it('the viewer has a "Chat about this image" icon only when the host gives one; it closes the editor then passes the image id', () => {
+    renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    expect(screen.queryByLabelText('Chat about this image')).toBeNull();
+    cleanup();
+
+    const onChatAbout = vi.fn();
+    const { props } = renderEditor(pics(), { onChatAbout });
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    fireEvent.click(screen.getByLabelText('Chat about this image'));
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(onChatAbout).toHaveBeenCalledWith('Q-RS1');
+  });
+
   it('arrows by click and key move across the note images without closing, and stop at the ends', () => {
     const { props } = renderEditor(pics());
     fireEvent.click(screen.getByLabelText('View image A-B32'));

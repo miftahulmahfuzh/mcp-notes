@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { CaretLeft, CaretRight, X } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, ChatCircleDots, X } from '@phosphor-icons/react';
 import { imageUrl } from '../api';
 import type { NoteImage as NoteImageData } from '../types';
 import { FILM_FILTER, ImagePlaceholder, aspectOf } from './NoteImage';
@@ -32,6 +32,8 @@ export interface LightboxProps {
   onIndex: (index: number) => void;
   /** Esc, a backdrop click or the X. The host unmounts the lightbox. */
   onClose: () => void;
+  /** "Chat about this image": gets the shown item (its `id` is the note image id). Absent = no icon. */
+  onChatAbout?: (item: LightboxItem) => void;
 }
 
 /** The lightbox root carries `data-lightbox`; its presence in the DOM means "a lightbox is open". */
@@ -69,7 +71,7 @@ export function noteImageItems(images: NoteImageData[]): LightboxItem[] {
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function Lightbox({ items, index, onIndex, onClose }: LightboxProps) {
+export function Lightbox({ items, index, onIndex, onClose, onChatAbout }: LightboxProps) {
   const len = items.length;
   const item = index >= 0 && index < len ? items[index] : undefined;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -138,6 +140,20 @@ export function Lightbox({ items, index, onIndex, onClose }: LightboxProps) {
       onClick={close}
     >
       <div className="lb-top">
+        {onChatAbout && (
+          <button
+            type="button"
+            className="lb-btn"
+            data-tip="Chat about this image"
+            aria-label="Chat about this image"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChatAbout(item);
+            }}
+          >
+            <ChatCircleDots weight="duotone" />
+          </button>
+        )}
         <button type="button" className="lb-btn" data-tip="Close" aria-label="Close image viewer" onClick={close}>
           <X weight="duotone" />
         </button>

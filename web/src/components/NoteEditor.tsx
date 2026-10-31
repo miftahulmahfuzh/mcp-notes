@@ -35,11 +35,13 @@ export interface NoteEditorProps {
   onRemoveFile?: (file: NoteFile) => void;
   /** Phase 11: the "Show on wall" icon. The editor first closes the normal way (draft saved, empty rule), then this runs. Absent = no icon. */
   onShowOnWall?: (note: Note) => void;
+  /** "Chat about this image" in the image viewer: the editor first closes the normal way (draft saved), then this runs with the note image id. Absent = no icon. */
+  onChatAbout?: (imageId: string) => void;
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, onShowOnWall, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, onShowOnWall, onChatAbout, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -310,6 +312,15 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             index={viewIndex}
             onIndex={(i) => setViewing(lightboxItems[i].id)}
             onClose={() => setViewing(null)}
+            onChatAbout={
+              onChatAbout
+                ? (item) => {
+                    if (closedRef.current) return;
+                    close();
+                    onChatAbout(item.id);
+                  }
+                : undefined
+            }
           />
         )}
       </div>

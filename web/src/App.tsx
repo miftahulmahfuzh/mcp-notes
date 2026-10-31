@@ -763,6 +763,7 @@ export function App() {
                 onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
                 onRemoveFile={removeFileWithUndo}
                 onShowOnWall={showOnWall}
+                onChatAbout={chatAboutImage}
                 onDelete={removeNote}
                 tags={tags}
                 closeSignal={closeSignal}
