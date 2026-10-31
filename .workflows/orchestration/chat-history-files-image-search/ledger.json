@@ -118,22 +118,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "65a730d827f0ce872954362932144150fb397528",
       "depends_on": [
         3,
         6
       ],
       "difficulty": "HARD",
       "n": 7,
-      "note": null,
+      "note": "chat persistence: migration 0006, ChatService, context rebuild, reply_to, edit/delete API; no decisions; chatSchema image_ids now default []",
       "package": "src/chat`, `src/http`, `src/db",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T10:28:48+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A040",
       "title": "Chat persistence: schema, context rebuild, reply_to, edit/delete API"
     },
     {
@@ -221,7 +221,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T10:16:48+07:00",
+  "updated": "2026-10-31T10:28:48+07:00",
   "verified_at": "2026-10-31T10:16:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
