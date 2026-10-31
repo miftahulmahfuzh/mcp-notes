@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30
-**Total Active Tasks**: 0
+**Last Updated**: 2026-10-31
+**Total Active Tasks**: 10
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 0
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
-- Completed: 35
+- Blocked: 8
+- Completed: 36
 
 ---
 
@@ -21,6 +21,106 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [ ] **P1-NOTES-A035** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; component accepts a generic item list so chat can reuse it.
+  - **Status**: in_progress
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A035.md`
+
+- [ ] **P1-NOTES-A036** Phase 3: Chat image store, paste into the bar, wall chat sends images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0003 `chat_images`; chat-image store `src/chat/images.ts` (sha256 dedupe, derivatives under `cache/c_<id>/`, `chat-images/YYYY/MM/`, `ingestChatImage`, `locateChatImage`, `resolveTurnImages`); `src/chat/compose.ts` (`composeUserTurn`, `toSdkPrompt`); `POST /api/chat/images` (multipart `file`, optional `source` = `wall` | `claude_code`, else 400 `invalid_source`; answers `{image, created}`) + `GET /api/chat/images/:id[/:variant]`; `chatSchema` gains `image_ids` (message may be empty when images are present; lookup errors 400 `unknown_image`, 409 `not_on_this_machine`, 422 `unreadable_image`); agent sends images as content blocks of one SDK user message and tags them `[image upload:ID]`; `useChatImages` hook; ChatBar paste handling with removable thumbnails and `variant: 'wall' | 'page'`; `DropOverlay` global paste yields when the ChatBar is focused (`chatBarHasFocus`); `AnswerPanel` shows the sent thumbnails; `useChat.ask(message, imageIds)`. Exit: pasting an image into the focused bar uploads it and shows a removable thumbnail; sending references it by id; the model receives the image; pasting elsewhere still creates a note and inside the open editor still attaches; integration tests cover upload (413/415/dedupe/`source`), chat request validation and prompt composition with a fake `query`.
+  - **Status**: in_progress
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 3 of 11)
+  - **Satisfies**: R1 — Paste an image into the chat query bar (wall chat and `/n`)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A036.md`
+
+- [ ] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0004 `note_files` (extracted_text + extraction_status, no extraction); `files/<noteId>/<safeName>` store with sha256 dedupe (stored name sanitised; `NoteFile.name` is the display name); `NotesService.attachFile/removeFile/restoreFile`; `Note.files` on the wire (required server-side, optional `files?` in `web/src/types.ts`); `POST /api/notes/:id/files` (`{note, attached, kind}`), `DELETE /api/files/:id`, `POST /api/files/:id/restore` (409 `duplicate_file`), `GET /api/files/:id`, `GET /api/files/:id/download`; reveal routes (`POST /api/files/:id/reveal` selects the file, `POST /api/notes/:id/reveal` opens the note's files folder, or selects the first image when the note has no files, 404 when it has neither); `purgeNote` removes the files folder; MCP `describeNote`/note JSON expose name, size, type; instructions, chat prompt sentence and `/n` skill text. Exit: attach/remove/restore/purge covered by integration tests; same bytes in two notes → holder returned; download is `attachment` with `nosniff`; `get`/`list` MCP results include `files`; migration chain intact.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 4 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A036 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A037.md`
+
+- [ ] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns paperclip button + hidden picker in `NoteEditor`; `FileChips` (name, size, type, download, per-file reveal, remove with 6 s undo); ctrl-v and drop of non-image files into the open modal attach to that note (images keep the image path); `NoteRevealButton` (card footer slot from P1 and editor top bar) calling the note-level route, visible by the same rule as the route; empty-note rules count files (`hasAttachments`); card paperclip count; `web/src/api.ts` file calls with `DuplicateFileError`; `makeNote` always sets `files: []` (the only phase that touches that fixture). Exit: component tests for picker, paste, drop, chips, undo, dedupe notice, reveal calls; a text-only note holding only files is not auto-deleted on close.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 5 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A037 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
+
+- [ ] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `ImageEmbedder` (Gemini Embedding 2 over OpenRouter, 1536 dims, PNG data URL, client-side truncate + renormalise guard) and its fake; migration 0005 `note_image_embeddings`; repo (pending, save, failure, nearest); worker + backfill reusing `RateLimiter`/`Clock`; `npm run embed:images:backfill` with `--dry-run`/`--limit`/`--retry-failed`; MCP `similar_images` (`image_id` | `upload_id` (resolved through P3's `locateChatImage`) | `query`, `limit`; `pasted_image` accepted and answered with a provisional "needs the notes-paste hook" error until P8); `startHarness({chat, imageEmbedder})`; chat allowlist, captions, prompt, instructions, `/n` skill; opt-in live test. Exit: worker embeds new images and skips images whose file is not on this machine without recording failures; nearest search excludes the source image and deleted notes; text query works through the same space; live probe test documents the verified request shape.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 6 of 11)
+  - **Satisfies**: R5 — Image similarity search (Gemini Embedding 2 via OpenRouter, table, worker, backfill, `similar_images`, text→image)
+  - **Depends on**: P1-NOTES-A036 (pending), P1-NOTES-A037 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A039.md`
+
+- [ ] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0006 (`chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`); `ChatService` (create thread/messages, short ids, edit with revision, soft delete/restore, timeline, `recordExchange` for P8); context builder (history + reply targets, char budget, `[msg:ID]` labels, image placeholders); `composeWallTurn` extending P3's `compose.ts` (`ChatTurnImage.messageId?`, `[image upload:ID] from [msg:ID]`); leading-`[msg:ID]` citation parser → `reply_to`; backend contract change (`ChatRequest {turn, signal}`, no `resume`, `persistSession` off; preview bytes still read by P3's `readPreview`); `POST /api/chat` persists the user row first, sends `event: accepted {thread_id, user_message_id}`, the assistant row on success, `done {thread_id, user_message_id, assistant_message_id, reply_to, brain?}`; `GET /api/chat/messages` (`{messages, next_before}`, `include_deleted`), `GET /api/chat/threads/:id`, `PATCH`, `DELETE` (`{deleted: [ids]}`), `restore` (one id, idempotent); `event: chat {op: created|updated|deleted|restored, thread_id, id}` on `/api/events`; system prompt teaches `[msg:ID]`. Exit: a two-turn wall conversation survives a daemon restart and brain fallback with identical context; reply_to to a bubble in another thread is injected; edit keeps a revision; deleted messages leave context; integration tests with the scripted backend.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 7 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A036 (pending), P1-NOTES-A039 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A040.md`
+
+- [ ] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `claude/hooks/notes-capture.mjs` (Stop, async, outbox retry, idempotent), `claude/hooks/notes-paste.mjs` (PreToolUse on `mcp__notes__similar_images`, uploads the pasted image with `source=claude_code` and rewrites `pasted_image` to `upload_id`; `updatedInput` default, `deny` fallback); `src/chat/capture.ts` + `POST /api/capture/claude-code` (loopback + custom-header guard, idempotent on external key through P7's `recordExchange`, images copied into P3's store with `ingestChatImage`); `scripts/install.sh`/`uninstall.sh` merge and remove the hooks in `~/.claude/settings.json` idempotently; final `pasted_image` text in `similar_images`; `/n` skill text; `npm run verify:paste-hook`. Exit: feeding a synthetic transcript (string-form and array-form user entries, image blocks, `imagePasteIds`) produces one single-turn `claude_code` thread with the images stored; replay is a no-op; daemon-down spools to the outbox and a later run delivers; install/uninstall tested against a temp `HOME`.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
+  - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A039 (pending), P1-NOTES-A040 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
+
+- [ ] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` gains `history` with `/history[?thread=ID]` URL sync (back/forward), including the pathname guard that keeps `/?note=ID` when switching to the wall; chat wire types mirroring P7 (`ChatMessage`, `ChatAttachment {kind,id,url,thumb_url}`, `ChatReplyPreview`, `ChatPage`, `ChatOp`); `chatHistoryApi.ts`; `useHistory(enabled, {includeDeleted})` (`messages`, `mutate`, `loadOlder`, `send`); `HistoryPage` timeline (unified, ascending, thread dividers, "claude code" badge, UTC+7 timestamps on every bubble, thumbnails opening the Lightbox) with its own `HistoryComposer` (`<ChatBar variant="page">` + its own `useChatImages()`); `Bubble`; live refresh from `event: chat` on one shared `/api/events` connection; chat-history icon above the recycle bin in `Rail` and `Sidebar`; "chat in full screen" button and Lightbox-opening thumbnails in `AnswerPanel`; `makeMessage` fixture (only creator). Exit: component and hook tests; new wall exchanges and captured `/n` exchanges appear without reload; navigation keeps the notes store; `/?note=ID` survives a switch to the wall.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (pending), P1-NOTES-A040 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
+
+- [ ] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns reply action → quote chip inside P9's `HistoryComposer` → `reply_to` in the request (`streamChat` `replyTo`, `send(text, imageIds, replyTo?)`; a reply to a wall bubble continues its thread, to a claude_code bubble starts a new one); `MessageItem` rendering P9's `Bubble` through new optional `slots` (one `li` per message, no wrapper); reply bubbles show a quoted header (`reply_to.text`, role or "message"), click scrolls to and highlights the target, deleted target reads "message deleted"; edit user bubbles in place with "edited" mark; delete any bubble with "delete the answer too?" prompt for questions; undo bar restores each id from `deleted[]`; "show deleted" toggle filtering client-side (App fetches with `includeDeleted: true`); `HistoryPage` `pushUndo?`. Exit: tests for each action against mocked API; keyboard accessible.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 10 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A042 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A043.md`
+
+- [ ] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns note-id segmenting in chat text (`segmentChat`, `ChatInline`) in `Bubble` (as P10 leaves it) and `AnswerPanel` (as P9 leaves it); clicking opens the bigger-note-view modal in place (loaded or fetched note; deleted/unknown handled quietly); wall deep links in chat text become in-place links too, keeping `href="/?note=ID"` so modified/middle clicks and new tabs navigate normally; `NoteEditor` icon button (after P5's buttons in `.ed-top`) that goes to `/?note=ID` and flashes the note on the wall. Exit: ids inside code-ish tokens and longer words are not linked; opening from the history page does not navigate; ctrl/middle click keeps the real link; the modal button switches to the wall view and flashes the card.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 11 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A043 (pending)
+  - **Plan**: `.workflows/plan/P1-NOTES-A044.md`
 
 ### [P2] Medium
 
@@ -31,6 +131,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A034** Phase 1: Card footer: reveal button left
+  - **Difficulty**: EASY
+  - **Type**: Feature
+  - **Context**: Owns moving the card-footer "Show in Explorer" button so it sits immediately after the copy-ID button, left side; tests (`footerSequence` order tests in `NoteCard.test.tsx`, a position check in `RevealMounts.test.tsx`). Exit: footer order is id, copy, reveal, (copied label), date-right; `.copied` label no longer pushes the reveal button; existing `NoteCard`/`RevealButton` tests updated and a new test asserts DOM order.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 1 of 11)
+  - **Satisfies**: R6 — "Show in explorer" aligned left in the note card footer
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A034.md`
+  - **Completed**: 2026-10-31 09:22
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/RevealMounts.test.tsx
+  - **Drift**: plan's test used an unused `container` destructure in the 'keeps the reveal button in place' case; removed to satisfy tsc noUnusedLocals.
+  - **Decided**: test:int skipped -> coordinator instructed commit+DONE (shared test DB truncated concurrently by wave-0 phases: deadlocks/FK/404s; phase touches web/ only) (rung 2, exit criteria; coordinator re-runs full suite after wave merge)
+  - **Verified**: typecheck, build, npm test (852 pass), targeted vitest files; test:int not run to green (shared-DB contention)
 
 - [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL

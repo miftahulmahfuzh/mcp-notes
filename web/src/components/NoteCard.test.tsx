@@ -5,6 +5,7 @@ import type { Note } from '../types';
 import { NoteCard } from './NoteCard';
 import type { NoteCardProps } from './NoteCard';
 import { makeNote } from '../testing/fixtures';
+import { resetCapabilitiesForTests } from '../hooks/useCapabilities';
 
 afterEach(cleanup);
 
@@ -142,5 +143,43 @@ describe('NoteCard', () => {
   it('has no trash icon without onDelete', () => {
     const { container } = renderCard(note('hello'));
     expect(container.querySelector('[aria-label="Delete note"]')).toBeNull();
+  });
+});
+
+/** The footer's children in order: aria-label for buttons, first class name for spans. */
+function footerSequence(container: HTMLElement): string[] {
+  const meta = container.querySelector('.card-meta') as HTMLElement;
+  return Array.from(meta.children).map((el) => el.getAttribute('aria-label') ?? el.className.split(' ')[0]);
+}
+
+describe('NoteCard footer order', () => {
+  afterEach(() => resetCapabilitiesForTests());
+
+  it('puts Show in Explorer right after Copy ID, before the copied label, with the date on the right', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderCard(note('pic', ['A-B32']), { onDelete: vi.fn() });
+    expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'Show in Explorer', 'copied', 'card-date', 'Expand note', 'Delete note']);
+  });
+
+  it('keeps the reveal button in place while the copied label is showing', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { getByLabelText } = renderCard(note('pic', ['A-B32']), { copied: true });
+    const reveal = getByLabelText('Show in Explorer');
+    expect(reveal.previousElementSibling?.getAttribute('aria-label')).toBe('Copy ID');
+    const label = reveal.nextElementSibling as HTMLElement;
+    expect(label.className).toBe('copied on');
+    expect(label.nextElementSibling?.className).toBe('card-date');
+  });
+
+  it('a text note has no reveal button and keeps id, copy, copied, date', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderCard(note('just text'));
+    expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'copied', 'card-date', 'Expand note']);
+  });
+
+  it('without the reveal capability the footer is id, copy, copied, date', () => {
+    resetCapabilitiesForTests({ reveal: false });
+    const { container } = renderCard(note('pic', ['A-B32']));
+    expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'copied', 'card-date', 'Expand note']);
   });
 });
