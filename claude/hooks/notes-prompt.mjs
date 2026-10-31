@@ -8,8 +8,8 @@
  *
  * 1. Any prompt that is not `/n` returns at once: no transcript read, no network, no log, no
  *    output.
- * 2. On `/n` it reads the transcript, waiting up to TRANSCRIPT_WAIT_MS for the current prompt's
- *    "[Image #N]" pictures to be written, and gathers the pictures of EVERY human prompt of the
+ * 2. On `/n` it reads the transcript once (the current prompt is not in it yet; a picture pasted in
+ *    this very prompt is handed to the notes-paste PreToolUse hook via `pasted_image N`), and gathers the pictures of EVERY human prompt of the
  *    session (not only `/n` ones), newest MAX_IMAGES, with the Stop hook's caps.
  * 3. Pictures not uploaded before (per-session memo, prompt-images/<session>.json) are uploaded
  *    newest first to POST /api/chat/images (source claude_code, sha-deduped by the daemon, so the
@@ -32,7 +32,10 @@ import { uploadImage } from './notes-paste.mjs';
 export { IMAGE_MEDIA_TYPES, MAX_IMAGE_BYTES, MAX_IMAGES, MAX_IMAGES_BASE64_CHARS };
 
 export const HOOK_EVENT = 'UserPromptSubmit';
-export const TRANSCRIPT_WAIT_MS = 2500;
+// Claude Code writes the current prompt to the transcript only after the UserPromptSubmit hooks
+// finish (measured live, headless and interactive: the entry never appears while a hook blocks), so
+// waiting for it cannot succeed. The wait stays a parameter, at 0: one read, no polling.
+export const TRANSCRIPT_WAIT_MS = 0;
 export const TRANSCRIPT_POLL_MS = 250;
 export const UPLOAD_BUDGET_MS = 8000;
 export const MIN_UPLOAD_TIMEOUT_MS = 1000;
@@ -43,6 +46,20 @@ export const CONTEXT_HEADER = 'Pasted images in this Claude Code session, oldest
 export const TOOLS_HINT =
   'To save one as a new note call create_image with image_id (never path); to add one to an existing note ' +
   'call attach_image with id and image_id; to search with one call similar_images with upload_id.';
+
+/** The tool-call advice for a picture pasted in the current prompt, which has no id until a tool call carries it. */
+export function pastedCall(n) {
+  return (
+    `call create_image with pasted_image ${n} (never path or image_id) to save it as a new note, attach_image with id and ` +
+    `pasted_image ${n} to add it to a note, or similar_images with pasted_image ${n} to search with it; the notes-paste hook ` +
+    'uploads it when the call runs.'
+  );
+}
+
+/** The context for a `/n` prompt whose pasted picture is not in the transcript yet and no earlier picture exists. */
+export function buildPendingContext(n) {
+  return `This prompt pastes [Image #${n}], which has no id yet. If the user means it, ${pastedCall(n)}`;
+}
 
 const IMAGE_PLACEHOLDER = /\[Image #(\d{1,4})\]/g;
 const CHAT_IMAGE_ID = /^[0-9A-Z]-[0-9A-Z]{3}$/;
@@ -245,13 +262,20 @@ export function buildContext(images, missing) {
   } else {
     const which = missing.paste_id === null ? 'The latest pasted image' : `The latest pasted image ([Image #${missing.paste_id}])`;
     lines.push(
-      `${which} could not be stored (it was not readable in time or its upload failed), so it has no id. ` +
-        'If the user means that image, tell them it could not be stored and ask them to paste it again with the request; ' +
-        'do not use an older image in its place.',
+      missing.pending === true && missing.paste_id !== null
+        ? `${which} has no id yet: it is the picture pasted in this very prompt. If the user means that image, ` +
+            `${pastedCall(missing.paste_id)} Do not use an older image in its place.`
+        : `${which} could not be stored (it was not readable in time or its upload failed), so it has no id. ` +
+            'If the user means that image, tell them it could not be stored and ask them to paste it again with the request; ' +
+            'do not use an older image in its place.',
     );
   }
   lines.push(TOOLS_HINT);
   return lines.join('\n');
+}
+
+function pendingOutput(n) {
+  return { hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: buildPendingContext(n) } };
 }
 
 /** The hook output for one UserPromptSubmit input, or null to add nothing. Never throws. */
@@ -275,12 +299,15 @@ export async function runPrompt({
     const read = await readSettled(input.transcript_path, wanted, { readText, sleep, now });
     if (read === null) {
       await log(`transcript unreadable: ${input.transcript_path}`);
-      return null;
+      // A session's first prompt: Claude Code creates the file only after the hooks finish.
+      return wanted.length === 0 ? null : pendingOutput(wanted[wanted.length - 1]);
     }
     const { entries, settled } = read;
-    if (!settled) await log(`[Image #${wanted[wanted.length - 1]}] not in the transcript after ${TRANSCRIPT_WAIT_MS} ms`);
+    if (!settled) await log(`[Image #${wanted[wanted.length - 1]}] not in the transcript yet; the context points the model at pasted_image`);
     const candidates = collectImages(entries);
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      return wanted.length === 0 ? null : pendingOutput(wanted[wanted.length - 1]);
+    }
 
     await pruneMemos(path.join(dir, MEMO_DIR), now());
     const file = memoFile(env, input.session_id);
@@ -307,7 +334,7 @@ export async function runPrompt({
     const newestStored = settled && stored.length > 0 && stored[stored.length - 1].order === newestOrder;
     const missing = newestStored
       ? null
-      : { paste_id: settled ? candidates[newestOrder].paste_id : (wanted[wanted.length - 1] ?? null) };
+      : { paste_id: settled ? candidates[newestOrder].paste_id : (wanted[wanted.length - 1] ?? null), pending: !settled };
     const context = buildContext(
       stored.map((image) => ({ paste_id: image.paste_id, id: image.id })),
       missing,

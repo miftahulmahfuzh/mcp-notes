@@ -3,16 +3,19 @@
  * Opt-in live check, never part of npm test / test:int: does Claude Code honour the notes-paste
  * PreToolUse hook for the MCP tool mcp__notes__similar_images?
  *
- *   npm run verify:paste-hook -- [--port 7400] [--strategy updatedInput|deny] [--model sonnet] [--claude claude]
+ *   npm run verify:paste-hook -- [--port 7400] [--tool similar_images|create_image] [--strategy updatedInput|deny] [--model sonnet] [--claude claude]
  *
  * Needs a running notesd built from this checkout on --port (default NOTESD_PORT, else 7317; a
  * demo daemon is fine: NOTESD_PORT=7400 NOTES_DATA_DIR=/tmp/notes-demo npm start), and the claude
  * CLI logged in. Runs one short headless session (`claude -p --input-format stream-json`) with a
- * throwaway --settings file that registers only this repo's paste hook, and --strict-mcp-config
+ * throwaway --settings file that registers only this repo's paste hook under the installer's matcher (PASTE_MATCHER), and --strict-mcp-config
  * pointing at that daemon. Bills one small model call and leaves one transcript under
  * ~/.claude/projects (cwd is a temp dir). The upload lands in chat_images (source claude_code).
  *
- * Exit 0: the tool received an upload_id (the strategy works). 1: it did not (with
+ * --tool create_image checks the same for a picture pasted in the prompt that saves it (the call must
+ * reach the server with an image_id and create a note; run it against a demo daemon).
+ *
+ * Exit 0: the tool received an upload_id / image_id (the strategy works). 1: it did not (with
  * updatedInput: flip DEFAULT_STRATEGY in claude/hooks/notes-paste.mjs to 'deny', or reinstall with
  * NOTES_PASTE_STRATEGY=deny scripts/install.sh, and re-run this with --strategy deny). 2: could not run.
  */
@@ -22,11 +25,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { PASTE_MATCHER } from './claude-hooks.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(REPO, 'claude', 'hooks', 'notes-paste.mjs');
-const TOOL = 'mcp__notes__similar_images';
-const UNRESOLVED = 'pasted_image could not be resolved';
+const UNRESOLVED = ['pasted_image could not be resolved', 'pasted_image_unresolved'];
+const TOOLS = {
+  similar_images: '{"pasted_image": 1, "limit": 3}',
+  create_image: '{"pasted_image": 1, "body": "paste hook check #verify"}',
+};
 const RED_PNG_16 =
   'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAGUlEQVQokWO4o6FBEmIY1aAxGkp3hmvSAAAyBCwQ7wckpgAAAABJRU5ErkJggg==';
 const TIMEOUT_MS = 180_000;
@@ -48,10 +55,17 @@ async function main() {
       strategy: { type: 'string', default: 'updatedInput' },
       model: { type: 'string', default: 'sonnet' },
       claude: { type: 'string', default: 'claude' },
+      tool: { type: 'string' },
     },
   });
   const port = values.port ?? process.env.NOTESD_PORT ?? '7317';
   const strategy = values.strategy === 'deny' ? 'deny' : 'updatedInput';
+  const toolName = values.tool ?? 'similar_images';
+  if (!Object.hasOwn(TOOLS, toolName)) {
+    console.error(`--tool must be one of ${Object.keys(TOOLS).join(', ')}`);
+    return 2;
+  }
+  const TOOL = `mcp__notes__${toolName}`;
   try {
     const health = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(3000) });
     if (!health.ok) throw new Error(`HTTP ${health.status}`);
@@ -67,12 +81,12 @@ async function main() {
     const command = `NOTESD_PORT=${quote(port)} NOTES_PASTE_STRATEGY=${quote(strategy)} ${quote(process.execPath)} ${quote(HOOK)}`;
     await writeFile(
       settingsFile,
-      JSON.stringify({ hooks: { PreToolUse: [{ matcher: TOOL, hooks: [{ type: 'command', command, timeout: 30 }] }] } }),
+      JSON.stringify({ hooks: { PreToolUse: [{ matcher: PASTE_MATCHER, hooks: [{ type: 'command', command, timeout: 30 }] }] } }),
     );
     await writeFile(mcpFile, JSON.stringify({ mcpServers: { notes: { type: 'http', url: `http://127.0.0.1:${port}/mcp` } } }));
 
     const prompt =
-      `[Image #1]\nCall the tool ${TOOL} with exactly the arguments {"pasted_image": 1, "limit": 3}. ` +
+      `[Image #1]\nCall the tool ${TOOL} with exactly the arguments ${TOOLS[toolName]}. ` +
       'If the call is denied with instructions, follow them once. Then reply with only the first 300 characters of the last tool result.';
     const message = {
       type: 'user',
@@ -140,8 +154,8 @@ async function main() {
       return 2;
     }
     for (const r of results) console.log(`call ${JSON.stringify(r.input)} -> ${r.isError ? 'error' : 'ok'}: ${r.text.slice(0, 200)}`);
-    const reached = results.some((r) => !r.text.includes(UNRESOLVED) && !/permission|denied/i.test(r.text) && !r.text.includes('pasted_image'));
-    console.log(reached ? `PASS: similar_images received an upload_id (${strategy})` : `FAIL: the ${strategy} strategy did not reach the tool with an upload_id`);
+    const reached = results.some((r) => !UNRESOLVED.some((u) => r.text.includes(u)) && !/permission|denied/i.test(r.text) && !r.text.includes('pasted_image'));
+    console.log(reached ? `PASS: ${toolName} received a resolved id (${strategy})` : `FAIL: the ${strategy} strategy did not reach ${toolName} with an id`);
     return reached ? 0 : 1;
   } finally {
     await rm(tmp, { recursive: true, force: true });

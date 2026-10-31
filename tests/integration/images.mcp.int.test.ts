@@ -245,6 +245,24 @@ describe('MCP image tools and filters', () => {
     expect(t!.description).toMatch(/CHAT image id/);
   });
 
+  it('a pasted_image that reaches the server (hook missing or found nothing) is refused with a pointer, creating nothing', async () => {
+    const { tools } = await client.listTools();
+    for (const name of ['create_image', 'attach_image']) {
+      const schema = tools.find((x) => x.name === name)!.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+      expect(Object.keys(schema.properties ?? {})).toContain('pasted_image');
+      expect(schema.required ?? []).not.toContain('pasted_image');
+    }
+    const before = await noteCount();
+    const created = await call('create_image', { pasted_image: 1 });
+    expect(created.isError).toBe(true);
+    expect(texts(created).join('\n')).toMatch(/^create_image refused \(pasted_image_unresolved\): pasted_image reached the server without an image_id/);
+    expect(texts(created).join('\n')).toMatch(/notes-paste hook/);
+    const attached = await call('attach_image', { id: 'A-B32', pasted_image: 2 });
+    expect(attached.isError).toBe(true);
+    expect(texts(attached).join('\n')).toMatch(/^attach_image refused \(pasted_image_unresolved\)/);
+    expect(await noteCount()).toBe(before);
+  });
+
   it('create_image takes a pasted chat image by image_id, copies it, and dedupes', async () => {
     const png = await makeImage('png', 40, 30, { r: 9, g: 99, b: 199 });
     const chatId = await paste(png);

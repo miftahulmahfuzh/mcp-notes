@@ -15,6 +15,7 @@ import {
   TOOLS_HINT,
   TRANSCRIPT_POLL_MS,
   TRANSCRIPT_WAIT_MS,
+  buildPendingContext,
   buildContext,
   imagesSettled,
   isNotesPromptInput,
@@ -264,19 +265,7 @@ describe('runPrompt: /n', () => {
     expect(second).toEqual(first);
   });
 
-  it('waits for a lagging transcript until the current prompt\'s picture is written', async () => {
-    const older = imagePromptEntry('look [Image #1]', [png(A)], [1]);
-    const current = imagePromptEntry('/n save this [Image #2]', [png(B)], [2]);
-    const texts = [jsonl([older, assistantText('ok')]), jsonl([older, assistantText('ok')]), jsonl([older, assistantText('ok'), current])];
-    let reads = 0;
-    const readText = async (): Promise<string> => texts[Math.min(reads++, texts.length - 1)]!;
-    const daemon = fakeDaemon({ [A]: 'G-AAA', [B]: 'G-BBB' });
-    const out = await runPrompt({ input: hookInput('/n save this [Image #2]'), env, fetchImpl: daemon.fetchImpl, readText, ...fakeClock() });
-    expect(reads).toBe(3);
-    expect(contextOf(out).split('\n')[0]).toBe(`${CONTEXT_HEADER}[Image #1] = G-AAA; [Image #2] = G-BBB (latest).`);
-  });
-
-  it('never calls an older picture the latest when the current one never shows up', async () => {
+  it('reads the transcript once and points the model at pasted_image for a picture the transcript does not hold yet', async () => {
     const older = imagePromptEntry('look [Image #1]', [png(A)], [1]);
     let reads = 0;
     const readText = async (): Promise<string> => {
@@ -285,12 +274,32 @@ describe('runPrompt: /n', () => {
     };
     const daemon = fakeDaemon({ [A]: 'G-AAA' });
     const out = await runPrompt({ input: hookInput('/n save this [Image #2]'), env, fetchImpl: daemon.fetchImpl, readText, ...fakeClock() });
-    expect(reads).toBe(TRANSCRIPT_WAIT_MS / TRANSCRIPT_POLL_MS + 1);
+    expect(reads).toBe(1);
     const context = contextOf(out);
     expect(context.split('\n')[0]).toBe(`${CONTEXT_HEADER}[Image #1] = G-AAA.`);
-    expect(context).toContain('The latest pasted image ([Image #2]) could not be stored');
+    expect(context).toContain('The latest pasted image ([Image #2]) has no id yet');
+    expect(context).toContain('call create_image with pasted_image 2');
+    expect(context).toContain('Do not use an older image in its place.');
     expect(context).not.toContain('(latest)');
-    expect(await readFile(logPath(), 'utf8')).toContain('[Image #2] not in the transcript');
+    expect(await readFile(logPath(), 'utf8')).toContain('[Image #2] not in the transcript yet');
+  });
+
+  it('a session whose only picture is in the current prompt gets the pasted_image advice, with or without a transcript', async () => {
+    const daemon = fakeDaemon({});
+    const noFile = async (): Promise<string> => {
+      throw new Error('ENOENT');
+    };
+    const first = await runPrompt({ input: hookInput('/n save [Image #1]'), env, fetchImpl: daemon.fetchImpl, readText: noFile, ...fakeClock() });
+    expect(contextOf(first)).toBe(buildPendingContext(1));
+    expect(contextOf(first)).toContain('call create_image with pasted_image 1');
+    const empty = await runPrompt({ input: hookInput('/n save [Image #3]'), env, fetchImpl: daemon.fetchImpl, readText: async () => jsonl([assistantText('hi')]), ...fakeClock() });
+    expect(contextOf(empty)).toBe(buildPendingContext(3));
+    expect(daemon.uploads).toEqual([]);
+  });
+
+  it('a /n prompt with no [Image #N] and no stored picture still adds nothing', async () => {
+    const daemon = fakeDaemon({});
+    expect(await runPrompt({ input: hookInput('/n save it'), env, fetchImpl: daemon.fetchImpl, readText: async () => jsonl([assistantText('hi')]), ...fakeClock() })).toBeNull();
   });
 
   it('says the latest could not be stored when its upload fails, and marks no older one', async () => {

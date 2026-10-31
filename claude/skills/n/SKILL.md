@@ -204,8 +204,10 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
   with hashtags, and `origin`. "Add it to A-B32" → `attach_image` with `id` and `image_id`.
   `created: false` / `attached: false` mean that picture is already in a note: say which note.
   Never ask for a file path for a pasted image and never pass one. If the note says the latest
-  image could not be stored, tell the user in one line and ask them to paste it again with the
-  request; do not use an older image instead. With no such note there is no id: ask the user to
+  image has no id yet (it is the picture pasted in this very prompt), call `create_image` (or
+  `attach_image`, or `similar_images`) with `pasted_image: N` for its `[Image #N]`; a hook stores
+  it and supplies the id. If the note says the latest image could not be stored, tell the user in
+  one line and ask them to paste it again with the request; do not use an older image instead. With no such note there is no id: ask the user to
   paste the image again together with the `/n` request. Save a pasted image as a note only when
   asked.
 - An image the user pasted into this conversation shows as `[Image #1]`, `[Image #2]`, … in
