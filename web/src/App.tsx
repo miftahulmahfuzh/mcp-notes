@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
-import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
+import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchImageOwner, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
 import type { Mode, Note, NoteFile, NoteImage as NoteImageData, View } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
@@ -481,8 +481,8 @@ export function App() {
 
   /**
    * A note id clicked in chat text. A loaded note opens at once (`expand`, no draft); else
-   * GET /api/notes/:id and upsert; a 404 the bin holds or an unknown id gets the deep link's quiet
-   * notice. Never changes the view, the URL or the scroll position. Only the newest click acts.
+   * GET /api/notes/:id and upsert; an image id opens its note; a 404 the bin holds or an unknown id gets
+   * the deep link's quiet notice. Never changes the view, the URL or the scroll position. Only the newest click acts.
    */
   const openNoteModal = useCallback(
     async (raw: string) => {
@@ -528,7 +528,24 @@ export function App() {
         console.error('note link: bin lookup failed', e);
       }
       if (stale()) return;
-      showLinkNotice(deleted ? `${id} is deleted. Restore it from the bin.` : `no note ${id}`);
+      if (deleted) {
+        showLinkNotice(`${id} is deleted. Restore it from the bin.`);
+        return;
+      }
+      // Image ids look like note ids, and the model quotes them ("image 5-RI4 in note B-SMK"):
+      // an image id opens the note that holds it.
+      let owner: string | null = null;
+      try {
+        owner = await fetchImageOwner(id);
+      } catch (e) {
+        console.error('note link: image lookup failed', e);
+      }
+      if (stale()) return;
+      if (owner !== null && owner !== id) {
+        void openNoteModal(owner);
+        return;
+      }
+      showLinkNotice(`no note ${id}`);
     },
     [expand, upsertLocal, showLinkNotice],
   );

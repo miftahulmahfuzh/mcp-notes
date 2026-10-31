@@ -17,7 +17,7 @@ const far = makeNote('Q-R88', 'an old note past the first page', { created: olde
 const gone: Note = { ...makeNote('G-H19', 'a deleted draft', { created: older }), deleted_at: iso };
 const page = [textA, textC, photoK];
 
-const ANSWER = 'See a-b32, Q-R88, G-H19, Z-Z99 and K-F07.';
+const ANSWER = 'See a-b32, Q-R88, G-H19, Z-Z99, K-F07 and image W-X12.';
 
 // P7 wire for GET /api/chat/messages (`ChatPage`), built with P9's fixture. App asks with include_deleted=1 (P10).
 const HISTORY = {
@@ -62,6 +62,7 @@ beforeEach(() => {
         const base = [...page, far].find((n) => n.id === id) as Note;
         return json({ ...base, body });
       }
+      if (method === 'GET' && url === '/api/images/W-X12') return json({ id: 'W-X12', note_id: 'Q-R88' });
       if (url.startsWith('/api/tags')) return json([]);
       if (url.startsWith('/api/bin')) {
         const bin: Bin = { notes: [gone], images: [] };
@@ -199,6 +200,15 @@ describe('App: note ids in chat open the big editor in place', () => {
     await waitFor(() => expect(notice()).toBe('no note Z-Z99'));
     expect(calls).toContain('GET /api/notes/Z-Z99');
     expect(document.querySelector('[data-modal="editor"]')).toBeNull();
+  });
+
+  it('an image id opens the note that holds it', async () => {
+    await loadedWall();
+    await ask();
+    press(link('W-X12') as HTMLElement);
+    await waitFor(() => expect(dialog('Q-R88')).not.toBeNull());
+    expect(calls).toContain('GET /api/images/W-X12');
+    expect(notice()).toBeNull();
   });
 
   it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }])('a modified click %j keeps the real link', async (init) => {

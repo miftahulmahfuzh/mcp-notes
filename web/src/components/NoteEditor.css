@@ -1,5 +1,5 @@
 /* Big note editor (iteration 7, R2). Idiom: PhotoModal backdrop + the wall's type. */
-.ed { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 9, .94); display: grid; place-items: center; padding: 24px 16px; box-sizing: border-box; }
+.ed { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 9, .94); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px 16px; box-sizing: border-box; }
 .ed-panel { width: min(1080px, 100%); height: min(880px, calc(100vh - 48px)); display: flex; flex-direction: column; gap: 14px; background: var(--bg); border: 1px solid var(--line-14); padding: 12px 18px 18px; box-sizing: border-box; color: var(--fg); font-family: var(--sans); }
 .ed-top { display: flex; align-items: center; gap: 4px; min-height: 40px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .ed-id { color: var(--id); letter-spacing: .03em; }

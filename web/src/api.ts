@@ -42,6 +42,14 @@ export async function fetchNote(id: string): Promise<Note | null> {
   return (await res.json()) as Note;
 }
 
+/** `GET /api/images/:id` → the id of the note holding that image, or null when there is no such image. Image ids share the note-id shape, so chat text links them like notes. */
+export async function fetchImageOwner(id: string): Promise<string | null> {
+  const res = await fetch(`/api/images/${enc(id)}`);
+  if (res.status === 404) return null;
+  await check(res);
+  return ((await res.json()) as { note_id?: string }).note_id ?? null;
+}
+
 /** Phase 6: `GET /api/tags` → `[{ tag, count, last_used }]`. */
 export async function fetchTags(): Promise<TagCount[]> {
   const res = await check(await fetch('/api/tags'));
