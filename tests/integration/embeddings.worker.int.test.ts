@@ -324,6 +324,7 @@ describe('startBackground', () => {
       events,
       service: new NotesService({ db, dataDir, events }),
       embedder,
+      imageEmbedder: null,
     };
   }
 

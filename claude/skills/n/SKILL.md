@@ -41,7 +41,8 @@ note id, with a similarity score), `tags` (every tag with count and last-used da
 `revisions` and `revert`. The image tools are `create_image` (a new note from a local file
 path), `attach_image` (add a local file to an existing note), `remove_image` and
 `restore_image` (take one image out of its note, softly, and put it back), `view_images` (see
-the images of notes, or single images), and the `has_image` / taken-date filters on `list` and
+the images of notes, or single images), `similar_images` (the pictures that look most like one
+picture, or that match a description), and the `has_image` / taken-date filters on `list` and
 `search`. Use them as described under Images. Always follow each tool's own schema and
 description for parameter names and formats; they win over anything written here.
 
@@ -187,6 +188,19 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
   list by position, and call `remove_image` with that image's id (not the note id). Removal is
   soft: the image goes to the recycle bin on the wall, and `restore_image` with the same image
   id puts it back at its old place. Reply with the note id and the image id.
+- "Find photos like this one" about a picture already in a note → `similar_images` with that
+  image's `image_id` (from the note's `images`; a note's first image has the note's id). Then
+  `view_images` on the top few `image_id`s and say which ones really match and why. The
+  similarity score only ranks; your own look decides.
+- "Photos of a red top in a car", "pictures of a whiteboard" → `similar_images` with `query`
+  in plain words. It looks at what is in the pictures; for words written in the notes use
+  `search`. Again `view_images` on the top hits before answering.
+- An image the user pasted into this conversation plus "find similar" → `similar_images` with
+  `pasted_image: 1` (2 for the second image of that message). If it answers that the
+  notes-paste hook is not installed, tell the user to run `scripts/install.sh` in
+  `~/mcp-notes` and restart Claude Code. Do not try to save the pasted image yourself.
+- If `similar_images` says semantic image search is off, the daemon has no
+  `OPENROUTER_API_KEY`; say so and fall back to `list` with `has_image: true` or `search`.
 - An image whose file is not on this machine (`available: false`) still has its note and
   metadata. Say the file lives on the machine that saved it (`host`) instead of treating it as
   an error.

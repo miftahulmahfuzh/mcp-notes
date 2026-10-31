@@ -5,11 +5,11 @@ import { NOTES_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 17 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 18 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
-    expect(NOTES_TOOL_NAMES).toHaveLength(17);
+    expect(NOTES_TOOL_NAMES).toHaveLength(18);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(17 + 15 + 2);
+    expect(tools).toHaveLength(18 + 15 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -17,6 +17,7 @@ describe('allowedChatTools', () => {
     expect(tools).toContain('mcp__notes__attach_image');
     expect(tools).toContain('mcp__notes__remove_image');
     expect(tools).toContain('mcp__notes__restore_image');
+    expect(tools).toContain('mcp__notes__similar_images');
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
@@ -34,6 +35,7 @@ describe('captionForToolUse', () => {
     [n('list'), {}, 'searching notes'],
     [n('tags'), {}, 'searching notes'],
     [n('related'), { id: 'A-B32' }, 'finding related notes'],
+    [n('similar_images'), { image_id: 'A-B32' }, 'finding similar photos'],
     [n('get'), { ids: ['A-B32'] }, 'reading a note'],
     [n('get'), { ids: ['A-B32', 'B-C43', 'C-D54'] }, 'reading 3 notes'],
     [n('get'), {}, 'reading notes'],

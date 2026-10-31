@@ -140,6 +140,7 @@ describe('inbox via startBackground', () => {
       events: new NoteEvents(),
       service: notes,
       embedder: null,
+      imageEmbedder: null,
     };
     stop = await startBackground(app);
     const dropped = path.join(dir, 'inbox', 'phone.jpg');
@@ -169,6 +170,7 @@ describe('inbox via startBackground', () => {
       events: new NoteEvents(),
       service: notes,
       embedder: null,
+      imageEmbedder: null,
     };
     stop = await startBackground(app);
     const note = (await notes.getOne('L-EG1'))!;

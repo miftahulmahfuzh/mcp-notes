@@ -10,9 +10,9 @@ import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniq
  * `chat_images`, the images pasted into a chat; migration 0004 (note files) adds `note_files`:
  * non-image files attached to a note, stored under `files/<noteId>/<safeName>`, with
  * `extracted_text` / `extraction_status` ready for a later text extraction (v1 writes only
- * 'none'). Change a table here, then `npm run db:generate`; never edit an applied migration.
- * drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended
- * `CREATE EXTENSION IF NOT EXISTS vector`.
+ * 'none'); migration 0005 (image similarity search) adds `note_image_embeddings`. Change a table
+ * here, then `npm run db:generate`; never edit an applied migration. drizzle-kit does not emit
+ * `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
 
 /** `notes.image_meta`. Written by the image ingest (iteration 2). */
@@ -227,6 +227,44 @@ export const noteEmbeddings = pgTable(
   ],
 )
 
+/**
+ * One row per note image that has (or had) an image embedding. Image similarity search,
+ * migration 0005. A side table like `note_embeddings`, so no image listing drags 1536 floats.
+ * Model `google/gemini-embedding-2`, a vector space separate from `note_embeddings`.
+ *
+ * The vector is *current* iff `embedding is not null`, `image_sha256` equals the image's
+ * `note_images.sha256` and `model` equals IMAGE_EMBEDDING_MODEL (src/embeddings/imageRepo.ts).
+ * Removed images and images of deleted notes keep their row, so a restore needs no call.
+ * Width = IMAGE_EMBEDDING_DIMENSIONS (a unit test asserts it).
+ */
+export const noteImageEmbeddings = pgTable(
+  'note_image_embeddings',
+  {
+    imageId: text('image_id')
+      .primaryKey()
+      .references(() => noteImages.id, { onDelete: 'cascade' }),
+    /** Null while the latest attempt for `image_sha256` failed. */
+    embedding: vector('embedding', { dimensions: 1536 }),
+    /** `note_images.sha256` of the bytes this row refers to (embedded, or whose embedding failed). */
+    imageSha256: text('image_sha256').notNull(),
+    /** Model id the vector came from, e.g. `google/gemini-embedding-2`. */
+    model: text('model').notNull(),
+    /** Consecutive failures for this `image_sha256` + `model`; 0 after a success. */
+    attempts: integer('attempts').notNull().default(0),
+    /** At most 500 chars, keys redacted (src/embeddings/state.ts `clampError`). */
+    lastError: text('last_error'),
+    /** Failures only: not retried before this time. */
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' }),
+    /** When `embedding` was written. Null on a failure row. */
+    embeddedAt: timestamp('embedded_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('note_image_embeddings_embedding_hnsw_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+    index('note_image_embeddings_next_attempt_idx').on(t.nextAttemptAt),
+  ],
+)
+
 /** Where a chat image came from: pasted into the wall's chat bar, or captured from a Claude Code `/n` exchange. */
 export type ChatImageSource = 'wall' | 'claude_code'
 
@@ -277,3 +315,4 @@ export type NoteRevisionRow = typeof noteRevisions.$inferSelect
 export type NewNoteRevisionRow = typeof noteRevisions.$inferInsert
 export type ChatImageRow = typeof chatImages.$inferSelect
 export type NewChatImageRow = typeof chatImages.$inferInsert
+export type NoteImageEmbeddingRow = typeof noteImageEmbeddings.$inferSelect

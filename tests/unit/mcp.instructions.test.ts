@@ -86,6 +86,20 @@ describe('buildInstructions', () => {
     const order = text.split('\n\n').map((s) => s.split('.')[0]);
     expect(order.indexOf('Files')).toBe(order.indexOf('Attaching') + 1);
   });
+
+  it('has one Similar images paragraph: the four sources, what it leaves out, view_images after', () => {
+    const paragraphs = buildInstructions('Asia/Jakarta')
+      .split('\n\n')
+      .filter((p) => p.startsWith('Similar images.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['similar_images', 'image_id', 'upload_id', 'query', 'pasted_image', '[image upload:ID]', 'view_images']) {
+      expect(p).toContain(word);
+    }
+    expect(p).toContain('never the source image, a removed image or an image of a deleted note');
+    const order = buildInstructions('Asia/Jakarta').split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.indexOf('Similar images')).toBe(order.indexOf('Files') + 1);
+  });
 });
 
 function linksParagraphs(text: string): string[] {

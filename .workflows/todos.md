@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 5
-- Completed: 40
+- Blocked: 4
+- Completed: 41
 
 ---
 
@@ -32,24 +32,14 @@
   - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
 
-- [ ] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `ImageEmbedder` (Gemini Embedding 2 over OpenRouter, 1536 dims, PNG data URL, client-side truncate + renormalise guard) and its fake; migration 0005 `note_image_embeddings`; repo (pending, save, failure, nearest); worker + backfill reusing `RateLimiter`/`Clock`; `npm run embed:images:backfill` with `--dry-run`/`--limit`/`--retry-failed`; MCP `similar_images` (`image_id` | `upload_id` (resolved through P3's `locateChatImage`) | `query`, `limit`; `pasted_image` accepted and answered with a provisional "needs the notes-paste hook" error until P8); `startHarness({chat, imageEmbedder})`; chat allowlist, captions, prompt, instructions, `/n` skill; opt-in live test. Exit: worker embeds new images and skips images whose file is not on this machine without recording failures; nearest search excludes the source image and deleted notes; text query works through the same space; live probe test documents the verified request shape.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 6 of 11)
-  - **Satisfies**: R5 — Image similarity search (Gemini Embedding 2 via OpenRouter, table, worker, backfill, `similar_images`, text→image)
-  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A039.md`
-
 - [ ] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns migration 0006 (`chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`); `ChatService` (create thread/messages, short ids, edit with revision, soft delete/restore, timeline, `recordExchange` for P8); context builder (history + reply targets, char budget, `[msg:ID]` labels, image placeholders); `composeWallTurn` extending P3's `compose.ts` (`ChatTurnImage.messageId?`, `[image upload:ID] from [msg:ID]`); leading-`[msg:ID]` citation parser → `reply_to`; backend contract change (`ChatRequest {turn, signal}`, no `resume`, `persistSession` off; preview bytes still read by P3's `readPreview`); `POST /api/chat` persists the user row first, sends `event: accepted {thread_id, user_message_id}`, the assistant row on success, `done {thread_id, user_message_id, assistant_message_id, reply_to, brain?}`; `GET /api/chat/messages` (`{messages, next_before}`, `include_deleted`), `GET /api/chat/threads/:id`, `PATCH`, `DELETE` (`{deleted: [ids]}`), `restore` (one id, idempotent); `event: chat {op: created|updated|deleted|restored, thread_id, id}` on `/api/events`; system prompt teaches `[msg:ID]`. Exit: a two-turn wall conversation survives a daemon restart and brain fallback with identical context; reply_to to a bubble in another thread is injected; edit keeps a revision; deleted messages leave context; integration tests with the scripted backend.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 7 of 11)
   - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A036 (pending), P1-NOTES-A039 (pending)
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A039 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A040.md`
 
 - [ ] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
@@ -59,7 +49,7 @@
   - **Status**: blocked
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
   - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A039 (pending), P1-NOTES-A040 (pending)
+  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (pending)
   - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
 
 - [ ] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
@@ -101,6 +91,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `ImageEmbedder` (Gemini Embedding 2 over OpenRouter, 1536 dims, PNG data URL, client-side truncate + renormalise guard) and its fake; migration 0005 `note_image_embeddings`; repo (pending, save, failure, nearest); worker + backfill reusing `RateLimiter`/`Clock`; `npm run embed:images:backfill` with `--dry-run`/`--limit`/`--retry-failed`; MCP `similar_images` (`image_id` | `upload_id` (resolved through P3's `locateChatImage`) | `query`, `limit`; `pasted_image` accepted and answered with a provisional "needs the notes-paste hook" error until P8); `startHarness({chat, imageEmbedder})`; chat allowlist, captions, prompt, instructions, `/n` skill; opt-in live test. Exit: worker embeds new images and skips images whose file is not on this machine without recording failures; nearest search excludes the source image and deleted notes; text query works through the same space; live probe test documents the verified request shape.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 6 of 11)
+  - **Satisfies**: R5 — Image similarity search (Gemini Embedding 2 via OpenRouter, table, worker, backfill, `similar_images`, text→image)
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A039.md`
+  - **Completed**: 2026-10-31 10:05
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, claude/skills/n/SKILL.md, drizzle/0005_note_image_embeddings.sql, drizzle/meta/0005_snapshot.json, drizzle/meta/_journal.json, package.json, src/background.ts, src/chat/prompt.ts, src/chat/status.ts, src/cli/embedImagesBackfill.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/embeddings/chatUploads.ts, src/embeddings/imageBackfill.ts, src/embeddings/imageConstants.ts, src/embeddings/imageEmbedder.ts, src/embeddings/imageInput.ts, src/embeddings/imageRepo.ts, src/embeddings/imageWorker.ts, src/embeddings/openrouter.ts, src/embeddings/openrouterImage.ts, src/http/app.ts, src/mcp/instructions.ts, src/mcp/server.ts, src/mcp/similarTools.ts, src/mcp/tools.ts, tests/helpers/fakeImageEmbedder.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageEmbeddings.repo.int.test.ts, tests/integration/imageEmbeddings.worker.int.test.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/setup.ts, tests/integration/similarImages.mcp.int.test.ts, tests/live/chat.live.test.ts, tests/live/imageEmbeddings.live.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-status.test.ts, tests/unit/embeddings/fakeImageEmbedder.test.ts, tests/unit/embeddings/imageBackfill.test.ts, tests/unit/embeddings/imageConstants.test.ts, tests/unit/embeddings/openrouterImage.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/similarTools.test.ts, vitest.config.ts
+  - **Decided**:
+    - Completion bookkeeping: unblocked P1-NOTES-A040 (phase 7; depends on phases 3 and 6, both satisfied). P1-NOTES-A041 (phase 8) stays blocked on phase 7.
 
 - [x] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
   - **Difficulty**: HARD

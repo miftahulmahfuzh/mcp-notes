@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import type { ChatBackend } from '../../src/chat/backend.js';
 import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
+import type { ImageEmbedder } from '../../src/embeddings/imageEmbedder.js';
 import { createApp } from '../../src/http/app.js';
 import { sha256Hex } from '../../src/images/probe.js';
 import { dbImageRecords } from '../../src/images/records.js';
@@ -28,6 +29,8 @@ export interface Harness {
 export interface HarnessOptions {
   /** The brain behind POST /api/chat. Omitted: createApp's default (the stub). */
   chat?: ChatBackend;
+  /** Image embedder for similar_images over /mcp. Default null (image search off). */
+  imageEmbedder?: ImageEmbedder | null;
 }
 
 export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
@@ -45,6 +48,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     events,
     service,
     embedder: null,
+    imageEmbedder: options.imageEmbedder ?? null,
   };
   const app = createApp(deps, options.chat !== undefined ? { chat: options.chat } : {});
   let server: ServerType | undefined;

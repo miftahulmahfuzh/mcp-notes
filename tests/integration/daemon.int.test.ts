@@ -6,6 +6,7 @@ import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../
 import { createStubChatBackend } from '../../src/chat/stub.js';
 import { startDaemon, type RunningDaemon } from '../../src/daemon.js';
 import { createFakeEmbedder } from '../helpers/fakeEmbedder.js';
+import { FakeImageEmbedder } from '../helpers/fakeImageEmbedder.js';
 import { createScriptedChatBackend } from './helpers/scripted-chat.js';
 import { parseSse } from './helpers/sse.js';
 import { testDatabaseUrl } from './setup.js';
@@ -111,19 +112,23 @@ describe('startDaemon', () => {
     }
   });
 
-  it('has no embedder without OPENROUTER_API_KEY, and carries an injected one', async () => {
-    // The shared daemon's config has embeddings.apiKey null and no embedder option.
+  it('has no embedders without OPENROUTER_API_KEY, and carries injected ones', async () => {
+    // The shared daemon's config has embeddings.apiKey null and no embedder options.
     expect(daemon.deps.embedder).toBeNull();
-    // The "with a key" path is unit-tested through embedderFromConfig: a daemon started here with
-    // a key would hold a real OpenRouter client, and once phase 3's worker exists it would call it.
+    expect(daemon.deps.imageEmbedder).toBeNull();
+    // The "with a key" path is unit-tested through embedderFromConfig / imageEmbedderFromConfig:
+    // a daemon started here with a key would hold real OpenRouter clients and its workers would call them.
     const fakeDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
     const fake = createFakeEmbedder();
+    const fakeImages = new FakeImageEmbedder();
     const withFake = await startDaemon(config(fakeDir), {
       chat: createStubChatBackend({ delayMs: 0 }),
       embedder: fake,
+      imageEmbedder: fakeImages,
     });
     try {
       expect(withFake.deps.embedder).toBe(fake);
+      expect(withFake.deps.imageEmbedder).toBe(fakeImages);
       const res = await fetch(`http://127.0.0.1:${withFake.port}/health`);
       expect(res.status).toBe(200);
     } finally {
