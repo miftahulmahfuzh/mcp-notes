@@ -1,6 +1,7 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
+import { ArrowsOut, CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
+import { Lightbox } from './Lightbox';
 import { chatImageUrl } from '../api';
 import { segmentLinks } from '../lib/links';
 import { oneLine } from '../lib/oneLine';
@@ -24,6 +25,8 @@ export interface AnswerPanelProps {
   onToggleCollapse: () => void;
   onClose: () => void;
   onJump: (id: string) => void;
+  /** Phase 9: open the history page on this conversation's thread. Absent = no button. */
+  onFullScreen?: () => void;
 }
 
 const NO_IMAGES: readonly string[] = [];
@@ -50,7 +53,10 @@ export function AnswerPanel({
   onToggleCollapse,
   onClose,
   onJump,
+  onFullScreen,
 }: AnswerPanelProps) {
+  // Phase 3 left the sent thumbnails inert; they open the Phase 2 Lightbox over the panel.
+  const [viewing, setViewing] = useState<number | null>(null);
   const parts = text.split('\n\n');
   const caption = done ? (brain ?? '') : status;
   const label = questionLabel(query, images.length);
@@ -70,6 +76,11 @@ export function AnswerPanel({
         </span>
         {caption && <span className="answer-status">{caption}</span>}
         <span className="spacer" />
+        {onFullScreen && (
+          <button type="button" className="pbtn hov" data-tip="Chat in full screen" aria-label="Chat in full screen" onClick={onFullScreen}>
+            <ArrowsOut weight="duotone" />
+          </button>
+        )}
         <button
           type="button"
           className="pbtn hov"
@@ -89,10 +100,20 @@ export function AnswerPanel({
       </div>
       {!collapsed && images.length > 0 && (
         <div className="answer-images">
-          {images.map((id) => (
-            <img key={id} src={chatImageUrl(id, 'thumb')} alt={`pasted image ${id}`} />
+          {images.map((id, i) => (
+            <button key={id} type="button" className="answer-image" aria-label={`View image upload:${id}`} onClick={() => setViewing(i)}>
+              <img src={chatImageUrl(id, 'thumb')} alt={`pasted image ${id}`} />
+            </button>
           ))}
         </div>
+      )}
+      {viewing !== null && viewing < images.length && (
+        <Lightbox
+          items={images.map((id) => ({ id, src: chatImageUrl(id, 'display'), label: `upload:${id}` }))}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(null)}
+        />
       )}
       {!collapsed && (
         <div className="answer-body">

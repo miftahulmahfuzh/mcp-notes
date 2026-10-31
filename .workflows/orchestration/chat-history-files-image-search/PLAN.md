@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search`
 **Branch:** `feature/chat-history-files-image-search` (base: `main` @ `d3ef659`)
 **Phases:** 11
-**Status:** phase 7/11 complete
+**Status:** phase 9/11 complete (phases 1-7 and 9 landed or committed; phase 8 still in flight)
 **Coordinator:** —
 
 ---

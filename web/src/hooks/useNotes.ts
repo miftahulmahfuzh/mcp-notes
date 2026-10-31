@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchNotes, fetchTags } from '../api';
+import { subscribeEvents } from '../lib/events';
 import type { Note, TagCount } from '../types';
 
 export interface NotesStore {
@@ -68,19 +69,17 @@ export function useNotes(): NotesStore {
     void load();
     const poll = window.setInterval(() => void load(), POLL_MS);
 
-    let es: EventSource | null = null;
-    if (typeof EventSource !== 'undefined') {
-      es = new EventSource('/api/events');
-      es.addEventListener('note', schedule);
-      // After a daemon restart the browser reconnects; refetch what was missed.
-      es.addEventListener('open', schedule);
-    }
+    // The page's one /api/events connection (lib/events.ts), shared with the history page.
+    const offNote = subscribeEvents('note', schedule);
+    // After a daemon restart the browser reconnects; refetch what was missed.
+    const offOpen = subscribeEvents('open', schedule);
 
     return () => {
       alive = false;
       window.clearTimeout(timer);
       window.clearInterval(poll);
-      es?.close();
+      offNote();
+      offOpen();
       refetchRef.current = () => {};
     };
   }, []);

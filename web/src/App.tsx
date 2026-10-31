@@ -13,6 +13,10 @@ import { useNotice } from './hooks/useNotice';
 import { useUndo } from './hooks/useUndo';
 import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
+import { useHistory } from './hooks/useHistory';
+import { hrefForView, routeFromLocation } from './lib/route';
+import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
+import { HistoryPage } from './pages/HistoryPage';
 import { BIN_HEADING, binCountLine, countLineFor, headingFor, imageCount, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
@@ -58,7 +62,11 @@ export function App() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const { notice, show: showNotice } = useNotice();
-  const [view, setView] = useState<View>('wall');
+  // `/history[?thread=ID]` opens straight into the chat history page (served by the SPA fallback).
+  const [view, setView] = useState<View>(() => (routeFromLocation(window.location).history ? 'history' : 'wall'));
+  const [historyThread, setHistoryThread] = useState<string | null>(() => routeFromLocation(window.location).thread);
+  // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
+  const history = useHistory(view === 'history');
   const { entry: undoEntry, push: pushUndo, undo: runUndo } = useUndo();
   const binStore = useBin(active, view === 'bin');
   // Deep link (?note=<id> / #<id>): its own quiet notice (App's other notice is shown in the big
@@ -243,6 +251,39 @@ export function App() {
   );
 
   const toggleBin = useCallback(() => setView((v) => (v === 'bin' ? 'wall' : 'bin')), []);
+
+  /** Rail / sidebar chat-history icon: open the page (no thread focus); a second press returns to the wall. */
+  const toggleHistory = useCallback(() => {
+    setHistoryThread(null);
+    setView((v) => (v === 'history' ? 'wall' : 'history'));
+  }, []);
+
+  /** Answer panel "Chat in full screen": the history page on this conversation's thread. */
+  const openHistoryThread = useCallback(() => {
+    setHistoryThread(chat.threadId);
+    setView('history');
+  }, [chat.threadId]);
+
+  // The address bar follows the view (pathname guard, lib/route.ts hrefForView): entering the
+  // history page pushes /history[?thread=]; leaving it pushes / only when the path is /history.
+  // Wall and bin never rewrite a non-history URL, so /?note=ID survives a switch to the wall
+  // (Phase 11's show-on-wall relies on this). This is the one URL-sync owner; no other phase adds one.
+  useEffect(() => {
+    const href = hrefForView(view, historyThread, window.location);
+    if (href !== null) window.history.pushState(null, '', href);
+  }, [view, historyThread]);
+
+  // Back / forward between /history and the wall. A /?note= target is handled by useDeepLink's own
+  // popstate listener (planReveal moves the view to the wall).
+  useEffect(() => {
+    const onPop = () => {
+      const r = routeFromLocation(window.location);
+      setHistoryThread(r.thread);
+      setView((v) => (r.history ? 'history' : v === 'history' ? 'wall' : v));
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   const pickMode = useCallback((m: Mode) => {
     setMode(m);
@@ -437,11 +478,12 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.key === 'Escape' && chatOpen && !pinned) closeChat();
+      // The answer panel is hidden on the history page; Esc there must not end the wall conversation.
+      if (e.key === 'Escape' && chatOpen && !pinned && view !== 'history') closeChat();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [chatOpen, pinned, closeChat]);
+  }, [chatOpen, pinned, closeChat, view]);
 
   return (
     <IconContext.Provider value={ICONS}>
@@ -456,6 +498,7 @@ export function App() {
             setMode(nextMode);
             setView('wall');
           }}
+          onToggleHistory={toggleHistory}
           onToggleBin={toggleBin}
           onToggleTag={toggleTag}
           onClear={() => setActive([])}
@@ -468,23 +511,33 @@ export function App() {
             tags={tags}
             active={active}
             onMode={pickMode}
+            onToggleHistory={toggleHistory}
             onToggleBin={toggleBin}
             onToggleTag={toggleTag}
           />
         )}
         <main className="main" style={{ marginLeft: mainLeft }}>
           <Header
-            heading={view === 'bin' ? BIN_HEADING : headingFor(mode, active)}
-            countLine={view === 'bin' ? binCountLine(binStore.bin, active) : countLineFor(mode, active, notes, visible, photos)}
+            heading={view === 'history' ? HISTORY_HEADING : view === 'bin' ? BIN_HEADING : headingFor(mode, active)}
+            countLine={
+              view === 'history'
+                ? historyCountLine(history.items, history.hasMore)
+                : view === 'bin'
+                  ? binCountLine(binStore.bin, active)
+                  : countLineFor(mode, active, notes, visible, photos)
+            }
             last={last}
             lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
             showSticker={view === 'wall' && mode !== 'images'}
             bin={view === 'bin'}
+            history={view === 'history'}
             onJumpLast={() => last && jump(last.id)}
             onAdd={() => void addNote()}
           />
           <div className="rule" />
-          {view === 'bin' ? (
+          {view === 'history' ? (
+            <HistoryPage store={history} focusThread={historyThread} now={now} />
+          ) : view === 'bin' ? (
             <Bin store={binStore} now={now} onRestored={onRestored} />
           ) : mode === 'images' ? (
             <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} />
@@ -504,7 +557,7 @@ export function App() {
             />
           )}
         </main>
-        {chat.open && (
+        {chat.open && view !== 'history' && (
           <AnswerPanel
             left={chatLeft}
             query={chat.query}
@@ -520,18 +573,21 @@ export function App() {
             onToggleCollapse={chat.toggleCollapsed}
             onClose={chat.close}
             onJump={jump}
+            onFullScreen={openHistoryThread}
           />
         )}
-        <ChatBar
-          left={chatLeft}
-          value={q}
-          onChange={setQ}
-          onSubmit={send}
-          images={chatImages.images}
-          onPasteFiles={chatImages.add}
-          onRemoveImage={chatImages.remove}
-          sendBlocked={chatImages.blocked}
-        />
+        {view !== 'history' && (
+          <ChatBar
+            left={chatLeft}
+            value={q}
+            onChange={setQ}
+            onSubmit={send}
+            images={chatImages.images}
+            onPasteFiles={chatImages.add}
+            onRemoveImage={chatImages.remove}
+            sendBlocked={chatImages.blocked}
+          />
+        )}
         <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
         {expandedNote &&
           createPortal(

@@ -39,3 +39,5 @@
 /* the images sent with the current question, above the answer */
 .answer-images { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .answer-images img { width: 64px; height: 64px; object-fit: cover; display: block; border: 1px solid var(--line-14); }
+.answer-image { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; line-height: 0; }
+.answer-image:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }

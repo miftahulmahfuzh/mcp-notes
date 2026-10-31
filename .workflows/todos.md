@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 3
-- Completed: 43
+- Blocked: 1
+- Completed: 44
 
 ---
 
@@ -32,24 +32,14 @@
   - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
 
-- [ ] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `View` gains `history` with `/history[?thread=ID]` URL sync (back/forward), including the pathname guard that keeps `/?note=ID` when switching to the wall; chat wire types mirroring P7 (`ChatMessage`, `ChatAttachment {kind,id,url,thumb_url}`, `ChatReplyPreview`, `ChatPage`, `ChatOp`); `chatHistoryApi.ts`; `useHistory(enabled, {includeDeleted})` (`messages`, `mutate`, `loadOlder`, `send`); `HistoryPage` timeline (unified, ascending, thread dividers, "claude code" badge, UTC+7 timestamps on every bubble, thumbnails opening the Lightbox) with its own `HistoryComposer` (`<ChatBar variant="page">` + its own `useChatImages()`); `Bubble`; live refresh from `event: chat` on one shared `/api/events` connection; chat-history icon above the recycle bin in `Rail` and `Sidebar`; "chat in full screen" button and Lightbox-opening thumbnails in `AnswerPanel`; `makeMessage` fixture (only creator). Exit: component and hook tests; new wall exchanges and captured `/n` exchanges appear without reload; navigation keeps the notes store; `/?note=ID` survives a switch to the wall.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
-  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
-
 - [ ] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns reply action → quote chip inside P9's `HistoryComposer` → `reply_to` in the request (`streamChat` `replyTo`, `send(text, imageIds, replyTo?)`; a reply to a wall bubble continues its thread, to a claude_code bubble starts a new one); `MessageItem` rendering P9's `Bubble` through new optional `slots` (one `li` per message, no wrapper); reply bubbles show a quoted header (`reply_to.text`, role or "message"), click scrolls to and highlights the target, deleted target reads "message deleted"; edit user bubbles in place with "edited" mark; delete any bubble with "delete the answer too?" prompt for questions; undo bar restores each id from `deleted[]`; "show deleted" toggle filtering client-side (App fetches with `includeDeleted: true`); `HistoryPage` `pushUndo?`. Exit: tests for each action against mocked API; keyboard accessible.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 10 of 11)
   - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A042 (pending)
+  - **Depends on**: P1-NOTES-A042 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A043.md`
 
 - [ ] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
@@ -71,6 +61,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` gains `history` with `/history[?thread=ID]` URL sync (back/forward), including the pathname guard that keeps `/?note=ID` when switching to the wall; chat wire types mirroring P7 (`ChatMessage`, `ChatAttachment {kind,id,url,thumb_url}`, `ChatReplyPreview`, `ChatPage`, `ChatOp`); `chatHistoryApi.ts`; `useHistory(enabled, {includeDeleted})` (`messages`, `mutate`, `loadOlder`, `send`); `HistoryPage` timeline (unified, ascending, thread dividers, "claude code" badge, UTC+7 timestamps on every bubble, thumbnails opening the Lightbox) with its own `HistoryComposer` (`<ChatBar variant="page">` + its own `useChatImages()`); `Bubble`; live refresh from `event: chat` on one shared `/api/events` connection; chat-history icon above the recycle bin in `Rail` and `Sidebar`; "chat in full screen" button and Lightbox-opening thumbnails in `AnswerPanel`; `makeMessage` fixture (only creator). Exit: component and hook tests; new wall exchanges and captured `/n` exchanges appear without reload; navigation keeps the notes store; `/?note=ID` survives a switch to the wall.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
+  - **Completed**: 2026-10-31 10:55
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, tests/unit/static.test.ts, web/src/App.test.tsx, web/src/App.tsx, web/src/App.history.test.tsx, web/src/chatHistoryApi.ts, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/Bubble.tsx, web/src/components/ChatBar.css, web/src/components/Header.tsx, web/src/components/Rail.test.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/hooks/useChat.test.tsx, web/src/hooks/useChat.ts, web/src/hooks/useHistory.test.tsx, web/src/hooks/useHistory.ts, web/src/hooks/useNotes.ts, web/src/lib/chatTime.test.tsx, web/src/lib/chatTime.ts, web/src/lib/events.test.tsx, web/src/lib/events.ts, web/src/lib/route.test.tsx, web/src/lib/route.ts, web/src/lib/timeline.test.tsx, web/src/lib/timeline.ts, web/src/pages/HistoryPage.css, web/src/pages/HistoryPage.test.tsx, web/src/pages/HistoryPage.tsx, web/src/testing/chatFixtures.ts, web/src/types.ts
+  - **Decided**:
+    - Bubble.thumbWidth param type {width?,height?} → `object` with internal cast (TS weak-type check rejects ChatAttachment) (rung 1: invariant 1, typecheck green)
+    - App.test.tsx answer-head button count 3 → 4 (new Chat in full screen button is intended by the plan; plan's Impact omitted this existing assertion) (rung 2: exit criteria / plan code blocks)
+    - Completion bookkeeping: corrected the stale "(pending)" markers for P1-NOTES-A035 and P1-NOTES-A036 in this task's Depends on (both landed). Phase 8 (P1-NOTES-A041) is still open in this tree, so the plan index Status reads phases 1-7 and 9 complete.
 
 - [x] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
   - **Difficulty**: HARD

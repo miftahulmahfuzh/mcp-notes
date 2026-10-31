@@ -135,7 +135,7 @@ describe('App', () => {
     await waitFor(() => expect(document.querySelector('.answer-head .answer-status')?.textContent).toBe('searching notes'));
     expect(document.querySelector('.answer-head .answer-q')?.textContent).toBe('what about seer?');
     expect(document.querySelector('.answer-head button')).not.toBeNull();
-    expect(document.querySelectorAll('.answer-head button')).toHaveLength(3);
+    expect(document.querySelectorAll('.answer-head button')).toHaveLength(4);
 
     send('event: status\ndata: {"text":""}\n\nevent: delta\ndata: {"text":"Look at A-B32."}\n\n');
     await waitFor(() => expect(document.querySelector('.answer-body p')?.textContent).toBe('Look at A-B32. ▍'));

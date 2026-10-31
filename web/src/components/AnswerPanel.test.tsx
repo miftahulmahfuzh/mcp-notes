@@ -187,3 +187,37 @@ describe('AnswerPanel pasted images', () => {
     expect(plain.container.querySelector('.answer-images')).toBeNull();
   });
 });
+
+describe('AnswerPanel full screen', () => {
+  it('shows a "Chat in full screen" button only when the host passes onFullScreen', () => {
+    const onFullScreen = vi.fn();
+    const { rerender } = render(<AnswerPanel {...props()} />);
+    expect(screen.queryByRole('button', { name: 'Chat in full screen' })).toBeNull();
+    rerender(<AnswerPanel {...props({ onFullScreen })} />);
+    const btn = screen.getByRole('button', { name: 'Chat in full screen' });
+    expect(btn.getAttribute('data-tip')).toBe('Chat in full screen');
+    fireEvent.click(btn);
+    expect(onFullScreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('works from the collapsed header without expanding it', () => {
+    const onFullScreen = vi.fn();
+    const onToggleCollapse = vi.fn();
+    render(<AnswerPanel {...props({ collapsed: true, onFullScreen, onToggleCollapse })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Chat in full screen' }));
+    expect(onFullScreen).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapse).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnswerPanel sent thumbnails', () => {
+  it('a thumbnail opens the shared Lightbox; Esc closes only the lightbox', () => {
+    const onClose = vi.fn();
+    render(<AnswerPanel {...props({ images: ['U-AA1', 'U-BB2'], onClose })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View image upload:U-BB2' }));
+    expect(document.querySelector('[data-lightbox] img')?.getAttribute('src')).toBe('/api/chat/images/U-BB2/display');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('[data-lightbox]')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,42 @@
+/* Chat history page (phase 9). The wall's dark mono language: hairlines, Geist Mono meta, no
+   shadows. Bubbles are the one rounded thing, echoing the chat pill. Chat uploads carry no film tone
+   (the lightbox shows them untoned too). The page scrolls with the window like the wall; .main's
+   150px bottom padding keeps the last bubble above the pill. */
+.history { max-width: 760px; margin: 0 auto; padding-top: 30px; }
+.hist-older { display: block; margin: 0 auto 18px; border: 1px solid var(--line-25); background: transparent; color: var(--fg); font-family: var(--mono); font-size: 10.5px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.hist-older:hover:not(:disabled) { background: var(--fg); color: var(--bg); }
+.hist-older:disabled { opacity: .5; cursor: default; }
+.hist-note { margin: 30px 0 0; font-family: var(--mono); font-size: 11px; color: var(--dim); text-align: center; }
+.hist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.hist-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+.hist-divider::before, .hist-divider::after { content: ""; flex: 1; height: 1px; background: var(--line-12); }
+
+.bubble { display: flex; flex-direction: column; max-width: min(620px, 82%); }
+.bubble.mine { align-self: flex-end; align-items: flex-end; }
+.bubble.theirs { align-self: flex-start; align-items: flex-start; }
+.bubble-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.5; color: var(--text); text-wrap: pretty; overflow-wrap: anywhere; outline: 1px solid transparent; outline-offset: 3px; transition: outline-color .35s; }
+.bubble.mine .bubble-body { background: var(--chip-bg); border-radius: 16px 16px 4px 16px; }
+.bubble.theirs .bubble-body { background: var(--panel); border: 1px solid var(--line-14); border-radius: 16px 16px 16px 4px; }
+.bubble.focus .bubble-body { outline-color: var(--ring); }
+.bubble-body p { margin: 0; white-space: pre-wrap; }
+.bubble-badge { align-self: flex-start; font-family: var(--mono); font-size: 10px; line-height: 1; padding: 3px 7px 4px; border-radius: 999px; background: var(--fg); color: var(--bg); letter-spacing: .02em; }
+.bubble.mine .bubble-badge { align-self: flex-end; }
+.bubble-thumbs { display: flex; flex-wrap: wrap; gap: 4px; }
+.bubble.mine .bubble-thumbs { justify-content: flex-end; }
+.bubble-thumb { display: block; padding: 0; border: 0; background: var(--img-bg); cursor: zoom-in; line-height: 0; }
+.bubble-thumb img { display: block; object-fit: cover; background: var(--img-bg); }
+.bubble-thumb:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
+.bubble-wait { color: var(--dim); font-family: var(--mono); font-size: 11px; }
+.bubble-error { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.bubble.error .bubble-body { border-color: var(--line-25); }
+.bubble-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.bubble-chip { font-family: var(--mono); font-size: 10.5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-25); color: var(--chip); }
+.bubble-meta { display: flex; gap: 8px; margin-top: 4px; padding: 0 6px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.bubble-meta time { cursor: default; }
+.bubble-caption::before { content: "·"; margin-right: 8px; }
+
+/* The page composer: Phase 3's ChatBar with variant="page" (class .chatbar-page, no inline left,
+   does not publish --chatbar-h). It sticks to the bottom of the column instead of the wall's
+   fixed pill; .main's 150px bottom padding leaves room under the last bubble. */
+.hist-composer { position: sticky; bottom: 16px; margin-top: 24px; z-index: 41; }
+.chatbar.chatbar-page { position: relative; left: auto; right: auto; bottom: auto; width: 100%; }
