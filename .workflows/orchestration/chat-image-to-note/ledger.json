@@ -24,23 +24,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "16c517b",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "image_id wording in MCP instructions, wall prompt, captions; 1324 unit tests green",
       "package": "src/mcp`, `src/chat",
       "plan": ".workflows/plan/chat-image-to-note/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T13:06:42+07:00",
       "satisfies": [
         "R1",
         "R3",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A046",
       "title": "Agent-facing text: instructions, wall prompt, captions"
     },
     {
@@ -83,7 +83,7 @@
         "R5",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "End-to-end tests, live verify script, docs, CHANGELOG"
     }
@@ -91,7 +91,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-image-to-note",
-  "updated": "2026-10-31T13:04:33+07:00",
+  "updated": "2026-10-31T13:06:48+07:00",
   "verified_at": "2026-10-31T13:02:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note"
 }
