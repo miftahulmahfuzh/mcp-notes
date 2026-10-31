@@ -9,6 +9,8 @@ import {
   listImagePrompts,
   parseTranscript,
   pickPastedImage,
+  promptImages,
+  findLatestPromptImages,
   promptText,
 } from '../../../claude/hooks/lib/transcript.mjs';
 import {
@@ -17,6 +19,7 @@ import {
   assistantText,
   assistantToolUse,
   attachmentEntry,
+  skillBodyWithImagesEntry,
   commandEntry,
   imagePromptEntry,
   jsonl,
@@ -209,5 +212,34 @@ describe('listImagePrompts', () => {
     const entry = imagePromptEntry('x [Image #1]', [{ media_type: 'image/png', data: RED_PNG_16 }]);
     expect(listImagePrompts(parseTranscript(jsonl([entry, entry])))).toHaveLength(1);
     expect(listImagePrompts(parseTranscript(jsonl([commandEntry('hi'), assistantText('ok')])))).toEqual([]);
+  });
+});
+
+describe('pictures of a slash-command prompt (they sit on the isMeta entry after it)', () => {
+  const png = { media_type: 'image/png', data: RED_PNG_16 };
+
+  it('promptImages counts the meta entry\'s pictures as the command\'s, numbered from 1, skipping attachments', () => {
+    const entries = [commandEntry('save this [Image #1]'), attachmentEntry(), skillBodyWithImagesEntry([png])];
+    expect(promptImages(entries, 0).map((i) => [i.paste_id, i.data_base64])).toEqual([[1, RED_PNG_16]]);
+    expect(extractImages(entries[0])).toEqual([]);
+  });
+
+  it('stops at the assistant and does not borrow a later turn\'s meta pictures', () => {
+    const entries = [commandEntry('save it'), skillBodyEntry(), assistantText('ok'), skillBodyWithImagesEntry([png])];
+    expect(promptImages(entries, 0)).toEqual([]);
+  });
+
+  it('listImagePrompts and findLatestPromptImages see the command prompt with its pictures', () => {
+    const entries = [commandEntry('save this [Image #1]'), skillBodyWithImagesEntry([png]), assistantText('ok')];
+    const listed = listImagePrompts(entries);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.entry).toBe(entries[0]);
+    expect(findLatestImagePrompt(entries)).toBe(entries[0]);
+    expect(pickPastedImage(findLatestPromptImages(entries)!.images, 1)?.data_base64).toBe(RED_PNG_16);
+  });
+
+  it('findTurn carries the command prompt\'s pictures', () => {
+    const turn = findTurn([commandEntry('save this [Image #1]'), skillBodyWithImagesEntry([png]), assistantText('done')]);
+    expect(turn?.images).toHaveLength(1);
   });
 });

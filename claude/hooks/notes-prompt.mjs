@@ -25,7 +25,7 @@ import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { daemonBaseUrl, errorText, isMainModule, readStdin, stateDir, writeLog } from './lib/state.mjs';
-import { extractImages, isHumanPrompt, isNotesPromptText, listImagePrompts, parseTranscript } from './lib/transcript.mjs';
+import { isHumanPrompt, isNotesPromptText, listImagePrompts, parseTranscript, promptImages } from './lib/transcript.mjs';
 import { IMAGE_MEDIA_TYPES, MAX_IMAGE_BYTES, MAX_IMAGES, MAX_IMAGES_BASE64_CHARS } from './notes-capture.mjs';
 import { uploadImage } from './notes-paste.mjs';
 
@@ -89,7 +89,7 @@ export function imagesSettled(entries, wanted) {
   if (wanted.length === 0) return true;
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     if (!isHumanPrompt(entries[i])) continue;
-    const pasteIds = new Set(extractImages(entries[i]).map((image) => image.paste_id));
+    const pasteIds = new Set(promptImages(entries, i).map((image) => image.paste_id));
     return wanted.every((n) => pasteIds.has(n));
   }
   return false;

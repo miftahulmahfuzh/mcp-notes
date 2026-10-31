@@ -88,7 +88,7 @@ export function buildPayload(hookInput, turn, answer, nowIso) {
     prompt_timestamp: validIso(prompt.timestamp) ?? nowIso,
     answered_at: nowIso,
     cwd,
-    images: selectImages(extractImages(prompt)),
+    images: selectImages(Array.isArray(turn.images) ? turn.images : extractImages(prompt)),
   };
 }
 

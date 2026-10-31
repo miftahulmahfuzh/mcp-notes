@@ -56,6 +56,21 @@ export function skillBodyEntry(): Entry {
   });
 }
 
+/** The meta entry Claude Code writes after a `/n` command when the prompt carried pictures: image blocks, no imagePasteIds (seen on 2.1.316). */
+export function skillBodyWithImagesEntry(images: { media_type: string; data: string }[]): Entry {
+  return base({
+    type: 'user',
+    isMeta: true,
+    message: {
+      role: 'user',
+      content: [
+        ...images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } })),
+        { type: 'text', text: 'Base directory for this skill: /home/u/.claude/skills/n\n\n# /n — mcp-notes' },
+      ],
+    },
+  });
+}
+
 /** A typed prompt with pasted images (array content, imagePasteIds). */
 export function imagePromptEntry(
   text: string,
