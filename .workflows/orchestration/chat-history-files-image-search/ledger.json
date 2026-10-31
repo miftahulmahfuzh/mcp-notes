@@ -57,21 +57,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "5fa302eff587252b87a0e460b17687bfca97c774",
       "depends_on": [
         3
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": null,
+      "note": "note files backend landed; fixed 2 plan test bugs (malformed id 'nope' is valid N-OPE; reveal test default-param sent Origin) without relaxing asserts; added 'files' to daemon.int subdir check",
       "package": "src/notes`, `src/files`, `src/http`, `src/db`, `src/mcp",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T09:50:23+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A037",
       "title": "Note files backend: schema, store, service, API, reveal, MCP visibility"
     },
     {
@@ -221,7 +221,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T09:35:27+07:00",
+  "updated": "2026-10-31T09:50:23+07:00",
   "verified_at": "2026-10-31T09:35:27+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
