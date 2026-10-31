@@ -420,8 +420,11 @@ Behind it is the Claude Agent SDK: headless Claude Code on your existing login, 
 message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
 expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
 in october, and which week was the worst?" and it answers with the numbers and an opinion. A
-follow-up continues the same thread. Dismissing the panel starts a new one. Answers are not
-saved as notes.
+follow-up continues the same thread. Dismissing the panel starts a new one. Every question and
+answer is kept in notesd's own database (not as notes). Each turn rebuilds the conversation from
+there, so Claude and the GLM fallback see the same history and nothing depends on Claude Code's
+saved sessions. The agent may start an answer with `[msg:K7F2]` to reply to one earlier message;
+the page hides the label and keeps the link.
 
 The recordings below are real runs against the demo instance. The time spent waiting for the
 answer is sped up 1.8×. They were made before the bar took several lines and before the panel
@@ -694,7 +697,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET/PATCH/DELETE /api/notes/:id`, `POST /api/notes` | One note. `DELETE` is soft (to the recycle bin) |
 | `POST /api/notes/:id/restore` | Bring a deleted note back |
 | `GET /api/tags` | Tags with counts, live notes only |
-| `GET /api/events` | Server-sent events, `event: note` on every change |
+| `GET /api/events` | Server-sent events, `event: note` on every note change and `event: chat {op, thread_id, id}` on every chat change |
 | `POST /api/images` | Multipart upload (`file`, optional `body`), returns `{note, created}` |
 | `POST /api/notes/:id/images` | Multipart `file`, attached to that live note: 201 `{note, attached: true}`, or 200 with the note that already holds the file |
 | `GET /api/images/:imageId` | One photo's metadata and URLs, whatever its state |
@@ -712,7 +715,12 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
 | `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
 | `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
-| `POST /api/chat` | Streams `status` and `delta` events, then `done` with the `thread_id` and the brain that answered |
+| `POST /api/chat` | `{message, thread_id?, reply_to?, image_ids?}`. Streams `accepted {thread_id, user_message_id}`, then `status` and `delta` events, then `done {thread_id, user_message_id, assistant_message_id, reply_to, brain}`. The question is saved before the answer starts; the answer only when it finishes |
+| `GET /api/chat/messages?before=&limit=&include_deleted=` | The chat timeline, all threads, `{messages, next_before}`, each page ascending |
+| `GET /api/chat/threads/:id` | One thread and its messages |
+| `PATCH /api/chat/messages/:id` | Edit your own message (`{text}`); the old text is kept. Same-origin only |
+| `DELETE /api/chat/messages/:id?with_answer=1` | Delete a message (soft), optionally with its answer. Same-origin only |
+| `POST /api/chat/messages/:id/restore` | Bring a deleted message back. Same-origin only |
 | `/full/:imageId` | The full-screen photo page |
 
 ### Where things are stored
@@ -726,6 +734,11 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
                       extracted_text, extraction_status, created_at, deleted_at)
            note_revisions(note_id, body, saved_at)
            note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
+           chat_threads(id, source, brain, external_key, created_at, updated_at)
+           chat_messages(id [msg:K7F2], thread_id, role, text, source, brain, reply_to, seq,
+                         created_at, edited_at, deleted_at)
+           chat_message_revisions(message_id, text, saved_at)
+           chat_message_attachments(message_id, position, kind, ref_id)
 ~/mcp-notes-data/
   images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
   files/<noteId>/<name>            a note's other files, byte for byte, Windows-safe names

@@ -14,6 +14,14 @@ import { createScriptedChatBackend, type ScriptedChatBackend } from './helpers/s
 import { parseSse } from './helpers/sse.js';
 import { makeImage, startHarness, type Harness } from './imageHarness.js';
 
+const MSG_ID = /^[0-9A-Z]{4}$/;
+type Done = { thread_id: string; user_message_id: string; assistant_message_id: string; reply_to: string | null; brain?: string };
+const doneOf = (body: string): Done => {
+  const last = parseSse(body).at(-1);
+  if (last?.event !== 'done') throw new Error(`expected done, got ${JSON.stringify(last)}`);
+  return last.data as Done;
+};
+
 interface WireChatImage {
   id: string;
   mime: string;
@@ -268,35 +276,37 @@ describe('GET /api/chat/images/:id[/variant]', () => {
 describe('POST /api/chat with image_ids', () => {
   it('hands the resolved images to the backend, previews derived under cache/c_<id>/', async () => {
     const image = await uploaded();
-    scripted.push({ steps: [{ type: 'delta', text: 'red' }], end: { threadId: 't1' } });
+    scripted.push({ steps: [{ type: 'delta', text: 'red' }] });
     const res = await postChat({ message: 'what is it?', image_ids: [image.id.toLowerCase().replace('-', '')] });
     expect(res.status).toBe(200);
-    expect(parseSse(await res.text()).at(-1)).toEqual({ event: 'done', data: { thread_id: 't1' } });
+    const done = doneOf(await res.text());
+    expect(done.user_message_id).toMatch(MSG_ID);
+    expect(done.assistant_message_id).toMatch(MSG_ID);
     const req = scripted.requests.at(-1);
-    expect(req?.message).toBe('what is it?');
+    expect(req?.turn.text).toContain('what is it?');
+    expect(req?.turn.text).toContain(`[image upload:${image.id}]`);
     const previewPath = path.join(h.dataDir, 'cache', `c_${image.id}`, 'preview.jpg');
-    expect(req?.images).toEqual([
-      { id: image.id, previewPath, previewMime: 'image/jpeg', width: 40, height: 30, originalName: 'shot.png' },
+    expect(req?.turn.images).toEqual([
+      { id: image.id, previewPath, previewMime: 'image/jpeg', width: 40, height: 30, originalName: 'shot.png', messageId: done.user_message_id },
     ]);
     expect(existsSync(previewPath)).toBe(true);
   });
 
   it('accepts images with no text, and dedupes repeated ids', async () => {
     const image = await uploaded();
-    scripted.push({ steps: [], end: { threadId: 't2' } });
+    scripted.push({ steps: [] });
     const res = await postChat({ image_ids: [image.id, image.id.toLowerCase()] });
     expect(res.status).toBe(200);
     await res.text();
     const req = scripted.requests.at(-1);
-    expect(req?.message).toBe('');
-    expect(req?.images.map((i) => i.id)).toEqual([image.id]);
+    expect(req?.turn.images.map((i) => i.id)).toEqual([image.id]);
   });
 
   it('a text-only message carries no images', async () => {
-    scripted.push({ steps: [], end: { threadId: 't3' } });
+    scripted.push({ steps: [] });
     const res = await postChat({ message: 'hello' });
     await res.text();
-    expect(scripted.requests.at(-1)?.images).toEqual([]);
+    expect(scripted.requests.at(-1)?.turn.images).toEqual([]);
   });
 
   it('rejects, as JSON before any stream: no text and no images, too many images, unknown ids, missing originals', async () => {
@@ -345,7 +355,7 @@ describe('the agent backend sends pasted images to the model', () => {
     backend = agentWith(prompts);
     const res = await postChat({ message: 'what colour is this?', image_ids: [image.id] });
     expect(res.status).toBe(200);
-    expect(parseSse(await res.text()).at(-1)).toEqual({ event: 'done', data: { thread_id: 'sess-int', brain: 'claude' } });
+    expect(doneOf(await res.text()).brain).toBe('claude');
     expect(prompts).toHaveLength(1);
     const prompt = prompts[0];
     if (prompt === undefined || typeof prompt === 'string') throw new Error('expected a user-message stream');
@@ -361,9 +371,9 @@ describe('the agent backend sends pasted images to the model', () => {
     });
     const text = content[1];
     expect(text?.type).toBe('text');
-    expect(text?.type === 'text' ? text.text : '').toBe(
-      `what colour is this?\n\nThe owner attached 1 image to this message. It is shown above, and its upload id is:\n[image upload:${image.id}]`,
-    );
+    const body = text?.type === 'text' ? text.text : '';
+    expect(body).toContain('what colour is this?');
+    expect(body).toMatch(new RegExp(`\\n\\nThe picture shown above is:\\n\\[image upload:${image.id}\\] from \\[msg:[0-9A-Z]{4}\\]$`));
   });
 
   it('a text-only message still reaches the SDK as a plain string', async () => {
@@ -371,6 +381,9 @@ describe('the agent backend sends pasted images to the model', () => {
     backend = agentWith(prompts);
     const res = await postChat({ message: 'hello' });
     await res.text();
-    expect(prompts).toEqual(['hello']);
+    expect(prompts).toHaveLength(1);
+    expect(typeof prompts[0]).toBe('string');
+    expect(prompts[0]).toContain('<message>');
+    expect(prompts[0]).toContain('hello');
   });
 });

@@ -1,27 +1,16 @@
 /**
- * The chat brain seam. The HTTP layer (src/http/api.ts POST /api/chat) is the only consumer:
- * it writes each `ChatEvent` as an SSE event of the same name, then `event: done` with
- * `end()`, or `event: error` when `events` throws. Implementations: the stub
- * (src/chat/stub.ts) and the Agent SDK backend (src/chat/agent.ts, iteration 4).
+ * The chat brain seam. The HTTP layer (src/http/api.ts POST /api/chat) is the only consumer: it
+ * writes the user row, composes the turn from our own rows (src/chat/turn.ts), streams each
+ * `ChatEvent` as an SSE event of the same name, then writes the assistant row and `event: done`,
+ * or `event: error` when `events` throws. Implementations: the stub (src/chat/stub.ts) and the
+ * Agent SDK backend (src/chat/agent.ts). Backends keep no conversation state: everything the
+ * model should know about earlier turns is in `turn.text`.
  */
 
-/** Which model family answered. The stub reports none. */
-export type ChatBrain = 'claude' | 'glm';
-
-export type ChatEvent =
-  /** -> `event: delta {"text": "..."}`. Concatenated, the deltas are the full reply. */
-  | { type: 'delta'; text: string }
-  /** -> `event: status {"text": "searching notes"}`. `""` clears the caption. */
-  | { type: 'status'; text: string };
-
-export interface ChatTurnEnd {
-  /** The thread this reply belongs to (new or continued). -> `done.thread_id`. */
-  threadId: string;
-  /** The brain that answered. -> `done.brain`; omitted from `done` when undefined. */
-  brain?: ChatBrain;
-}
-
-/** One pasted image of a turn, resolved by the HTTP layer from `image_ids` (src/chat/images.ts `resolveTurnImages`). */
+/**
+ * One pasted image of a turn, resolved from `chat_images` (src/chat/images.ts `resolveTurnImages`).
+ * Phase 3's declaration, kept as is, plus `messageId` (phase 7).
+ */
 export interface ChatTurnImage {
   /** `chat_images.id` (`A-B32`). The model sees it as `[image upload:ID]`. */
   id: string;
@@ -33,15 +22,38 @@ export interface ChatTurnImage {
   width: number;
   height: number;
   originalName: string | null;
+  /** The chat message this image belongs to (phase 7). Set: its label reads `[image upload:ID] from [msg:K7F2]`. */
+  messageId?: string;
+}
+
+/** Which model family answered. The stub reports none. */
+export type ChatBrain = 'claude' | 'glm';
+
+export type ChatEvent =
+  /** -> `event: delta {"text": "..."}`. Concatenated, the deltas are the full reply. */
+  | { type: 'delta'; text: string }
+  /** -> `event: status {"text": "searching notes"}`. `""` clears the caption. */
+  | { type: 'status'; text: string };
+
+export interface ChatTurnEnd {
+  /** The brain that answered. -> `done.brain`; omitted from `done` when undefined. */
+  brain?: ChatBrain;
+}
+
+/**
+ * One composed user turn: the whole prompt text (context blocks + current message) and the images
+ * sent as image blocks. The agent reads each image's preview and shapes the SDK message with
+ * phase 3's src/chat/compose.ts (`composeUserTurn` -> `toSdkPrompt`).
+ */
+export interface ComposedTurn {
+  /** src/chat/context.ts layout. Identical for every brain and every attempt. */
+  text: string;
+  /** Current-turn images, then reply-target images, each with `messageId`. Earlier images are only labels inside `text`. */
+  images: readonly ChatTurnImage[];
 }
 
 export interface ChatRequest {
-  /** The user's message, trimmed. Empty only when `images` is non-empty. */
-  message: string;
-  /** Images pasted with this message, in the order the user sent them. Empty for a text-only message. */
-  images: readonly ChatTurnImage[];
-  /** The thread the client wants to continue, or null to start a new one. */
-  threadId: string | null;
+  turn: ComposedTurn;
   /** Aborted when the HTTP client disconnects. Backends must stop yielding promptly. */
   signal: AbortSignal;
 }

@@ -22,7 +22,7 @@ export type QueryFn = (params: { prompt: string | AsyncIterable<SDKUserMessage>;
 
 export interface AgentChatOptions {
   chat: AgentChatConfig;
-  /** Fixed cwd of every run (`<dataDir>/chat`), so sessions live in one ~/.claude/projects dir. */
+  /** Fixed cwd of every run (`<dataDir>/chat`). Sessions are not persisted (`persistSession: false`); the cwd only keeps the child out of the daemon's own directory. */
   cwd: string;
   /** The daemon's own MCP endpoint. Read at the start of each run; the port is known only after listen. */
   mcpUrl: () => string;
@@ -114,7 +114,7 @@ interface RunDeps {
   chat: AgentChatConfig;
   query: QueryFn;
   log: (line: string) => void;
-  optionsFor: (brain: ChatBrain, resume: string | null, abortController: AbortController) => Options;
+  optionsFor: (brain: ChatBrain, abortController: AbortController) => Options;
   readPreview: (absPath: string) => Promise<Uint8Array>;
 }
 
@@ -160,11 +160,16 @@ class ChatRun {
     return this.outcome;
   }
 
-  /** Reads each pasted image's preview once and composes the turn. A missing file fails the turn without a fallback. */
+  /**
+   * Reads each image's preview once and shapes the turn with phase 3's composeUserTurn. Built once
+   * per run, so the GLM fallback gets exactly the prompt claude got. A missing file fails the turn
+   * without a fallback.
+   */
   private userTurn(): Promise<UserTurn> {
     this.turnLoad ??= (async (): Promise<UserTurn> => {
+      const { text, images } = this.request.turn;
       const previews: string[] = [];
-      for (const image of this.request.images) {
+      for (const image of images) {
         let bytes: Uint8Array;
         try {
           bytes = await this.deps.readPreview(image.previewPath);
@@ -173,7 +178,7 @@ class ChatRun {
         }
         previews.push(Buffer.from(bytes).toString('base64'));
       }
-      return composeUserTurn(this.request, previews);
+      return composeUserTurn({ message: text, images }, previews);
     })();
     return this.turnLoad;
   }
@@ -237,8 +242,9 @@ class ChatRun {
     let drained = false;
     try {
       const messages = this.deps.query({
+        // A fresh one-message stream per attempt (a stream can be read once); text-only: the plain string.
         prompt: toSdkPrompt(turn),
-        options: this.deps.optionsFor(brain, this.request.threadId, controller),
+        options: this.deps.optionsFor(brain, controller),
       });
       for await (const message of messages) {
         if (this.reason !== null) break;
@@ -270,7 +276,7 @@ class ChatRun {
           }
         } else if (message.type === 'result') {
           if (message.subtype === 'success' && !message.is_error) {
-            this.outcome = { threadId: message.session_id, brain };
+            this.outcome = { brain };
             succeeded = true;
           } else {
             failure = resultFailure(message, lastError, this.deps.chat.maxTurns);
@@ -298,8 +304,10 @@ class ChatRun {
 }
 
 /**
- * The real chat brain: one Claude Agent SDK run per message (plan R1-R4).
- * Single user, so at most one run is in flight; a new reply() stops the previous one.
+ * The real chat brain: one Claude Agent SDK run per message. The run is stateless: no `resume`,
+ * no session written to ~/.claude/projects (`persistSession: false`). Continuity comes from the
+ * composed turn, which src/chat/turn.ts rebuilds from our own rows, so claude and the glm fallback
+ * see the same conversation. Single user: a new reply() stops the run in flight.
  */
 export function createAgentChatBackend(options: AgentChatOptions): AgentChatBackend {
   const { chat, cwd, mcpUrl } = options;
@@ -311,7 +319,7 @@ export function createAgentChatBackend(options: AgentChatOptions): AgentChatBack
   const claudeBin = resolveExecutable(chat.claudeBin, baseEnv.PATH);
   const allowedTools = allowedChatTools();
 
-  function optionsFor(brain: ChatBrain, resume: string | null, abortController: AbortController): Options {
+  function optionsFor(brain: ChatBrain, abortController: AbortController): Options {
     const glm = chat.glm;
     if (brain === 'glm' && glm === null) {
       throw new AttemptError('CHAT_BRAIN=glm needs LLM_BASE_URL, LLM_API_KEY and LLM_MODEL.', false);
@@ -331,7 +339,7 @@ export function createAgentChatBackend(options: AgentChatOptions): AgentChatBack
       includePartialMessages: true,
       maxTurns: chat.maxTurns,
       systemPrompt: buildChatSystemPrompt(now()),
-      resume: resume ?? undefined,
+      persistSession: false,
     };
   }
 

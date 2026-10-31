@@ -44,6 +44,7 @@ afterAll(async () => {
 describe('startDaemon', () => {
   it('creates the data dirs, including the chat cwd', () => {
     for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat', 'chat-images', 'files']) expect(existsSync(join(dataDir, sub))).toBe(true);
+    expect(daemon.deps.chat).toBeDefined();
   });
 
   it('listens on 127.0.0.1 and answers /health', async () => {
@@ -72,9 +73,11 @@ describe('startDaemon', () => {
 
   it('serves an injected stub over real HTTP', async () => {
     const messages = await postChat(daemon.port, 'hello');
-    expect(messages.every((m) => m.event === 'delta' || m.event === 'done')).toBe(true);
+    expect(messages[0]?.event).toBe('accepted');
+    expect(messages.slice(1, -1).every((m) => m.event === 'delta')).toBe(true);
     expect(messages.at(-1)?.event).toBe('done');
-    expect((messages.at(-1)?.data as { thread_id: string }).thread_id).toMatch(/^stub-/);
+    const accepted = messages[0]?.data as { thread_id: string };
+    expect((messages.at(-1)?.data as { thread_id: string }).thread_id).toBe(accepted.thread_id);
   });
 
   it('starts and stops with the default (Agent SDK) backend without spawning anything', async () => {
@@ -96,14 +99,24 @@ describe('startDaemon', () => {
     const fake = createScriptedChatBackend();
     fake.push({
       steps: [{ type: 'status', text: 'searching notes' }, { type: 'delta', text: 'injected' }],
-      end: { threadId: 'sess-d', brain: 'claude' },
+      end: { brain: 'claude' },
     });
     const other = await startDaemon(config(otherDir), { chat: fake });
     try {
       expect(await postChat(other.port, 'hi')).toEqual([
+        { event: 'accepted', data: { thread_id: expect.any(String), user_message_id: expect.stringMatching(/^[0-9A-Z]{4}$/) } },
         { event: 'status', data: { text: 'searching notes' } },
         { event: 'delta', data: { text: 'injected' } },
-        { event: 'done', data: { thread_id: 'sess-d', brain: 'claude' } },
+        {
+          event: 'done',
+          data: {
+            thread_id: expect.any(String),
+            user_message_id: expect.stringMatching(/^[0-9A-Z]{4}$/),
+            assistant_message_id: expect.stringMatching(/^[0-9A-Z]{4}$/),
+            reply_to: null,
+            brain: 'claude',
+          },
+        },
       ]);
       expect(fake.requests).toHaveLength(1);
     } finally {

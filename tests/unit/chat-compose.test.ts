@@ -1,6 +1,14 @@
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
-import { composePromptText, composeUserTurn, toSdkPrompt, uploadTag, userTurnContent } from '../../src/chat/compose.js';
+import {
+  composeLabelledText,
+  composePromptText,
+  composeUserTurn,
+  imageLabel,
+  toSdkPrompt,
+  uploadTag,
+  userTurnContent,
+} from '../../src/chat/compose.js';
 
 const IMG = { id: 'U-PL1', previewMime: 'image/jpeg' as const };
 const IMG2 = { id: 'V-QM2', previewMime: 'image/jpeg' as const };
@@ -65,5 +73,25 @@ describe('userTurnContent / toSdkPrompt', () => {
       parent_tool_use_id: null,
       message: { role: 'user', content: userTurnContent(turn) },
     });
+  });
+});
+
+describe('phase 7 labels', () => {
+  it('imageLabel names the message when known', () => {
+    expect(imageLabel({ id: 'U-PL1' })).toBe('[image upload:U-PL1]');
+    expect(imageLabel({ id: 'U-PL1', messageId: 'K7F2' })).toBe('[image upload:U-PL1] from [msg:K7F2]');
+  });
+
+  it('composeUserTurn uses the labelled text once any image has a messageId', () => {
+    const turn = composeUserTurn(
+      { message: '<message>...</message>', images: [{ ...IMG, messageId: 'K7F2' }, { ...IMG2, messageId: 'Z1Y2' }] },
+      ['AAA', 'BBB'],
+    );
+    expect(turn.text).toBe(
+      '<message>...</message>\n\nThe 2 pictures shown above are, in this order:\n' +
+        '[image upload:U-PL1] from [msg:K7F2]\n[image upload:V-QM2] from [msg:Z1Y2]',
+    );
+    expect(turn.images.map((i) => i.id)).toEqual(['U-PL1', 'V-QM2']);
+    expect(composeLabelledText('x', [])).toBe('x');
   });
 });

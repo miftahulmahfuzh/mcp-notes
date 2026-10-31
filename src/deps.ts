@@ -1,3 +1,4 @@
+import type { ChatService } from './chat/service.js';
 import type { Config } from './config.js';
 import type { Db } from './db/client.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -15,4 +16,6 @@ export interface AppDeps {
   embedder: Embedder | null;
   /** Gemini image embedder for `similar_images` and the image worker. Null: image search off. */
   imageEmbedder: ImageEmbedder | null;
+  /** Chat history: threads, messages, edits, deletes (phase 7). The only writer of the chat tables. */
+  chat: ChatService;
 }

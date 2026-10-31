@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { ChatBackend, ChatEvent, ChatRequest, ChatTurn } from './backend.js';
 
 export const STUB_REPLY =
@@ -43,15 +42,14 @@ async function* streamDeltas(
   }
 }
 
-/** A fixed reply as word deltas. No status events, no brain: `done` carries only the thread id. */
+/** A fixed reply as word deltas. No status events and no brain; the turn's text is ignored. */
 export function createStubChatBackend(options: StubChatOptions = {}): ChatBackend {
   const delayMs = options.delayMs ?? 40;
   return {
     async reply(request: ChatRequest): Promise<ChatTurn> {
-      const threadId = request.threadId ?? `stub-${randomUUID()}`;
       return {
         events: streamDeltas(splitIntoDeltas(STUB_REPLY), delayMs, request.signal),
-        end: () => ({ threadId }),
+        end: () => ({}),
       };
     },
   };

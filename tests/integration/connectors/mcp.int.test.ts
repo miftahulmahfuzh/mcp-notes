@@ -11,13 +11,14 @@ import { createApp } from '../../../src/http/app.js';
 import { NoteEvents } from '../../../src/notes/events.js';
 import { NotesService } from '../../../src/notes/service.js';
 import { closeTestDb, openTestDb, testDatabaseUrl } from '../setup.js';
+import { ChatService } from '../../../src/chat/service.js';
 
 const db = openTestDb();
 const dataDir = mkdtempSync(join(tmpdir(), 'notes-connectors-mcp-'));
 const config: Config = { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
 const events = new NoteEvents();
 const service = new NotesService({ db, dataDir, events });
-const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null };
+const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null, chat: new ChatService({ db }) };
 const app = createApp(deps);
 let client: Client;
 

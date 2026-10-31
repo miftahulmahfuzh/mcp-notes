@@ -1,5 +1,18 @@
 import { sql } from 'drizzle-orm'
-import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, vector } from 'drizzle-orm/pg-core'
+import {
+  type AnyPgColumn,
+  bigserial,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  vector,
+} from 'drizzle-orm/pg-core'
 
 /**
  * The notes schema. Migration 0000 (drizzle/0000_init.sql, iterations 1-3) created `notes` and
@@ -10,7 +23,10 @@ import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniq
  * `chat_images`, the images pasted into a chat; migration 0004 (note files) adds `note_files`:
  * non-image files attached to a note, stored under `files/<noteId>/<safeName>`, with
  * `extracted_text` / `extraction_status` ready for a later text extraction (v1 writes only
- * 'none'); migration 0005 (image similarity search) adds `note_image_embeddings`. Change a table
+ * 'none'); migration 0005 (image similarity search) adds `note_image_embeddings`. Migration 0006
+ * (chat history) adds `chat_threads`, `chat_messages`, `chat_message_revisions` and
+ * `chat_message_attachments`: our own record of every wall chat turn and every captured Claude
+ * Code `/n` exchange (src/chat/service.ts is the only writer). Change a table
  * here, then `npm run db:generate`; never edit an applied migration. drizzle-kit does not emit
  * `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -305,6 +321,115 @@ export const chatImages = pgTable(
   ],
 )
 
+/** Where a chat thread came from: the wall's chat bar, or a captured Claude Code `/n` exchange (phase 8). */
+export const CHAT_SOURCES = ['wall', 'claude_code'] as const
+export type ChatSource = (typeof CHAT_SOURCES)[number]
+
+export const CHAT_ROLES = ['user', 'assistant'] as const
+export type ChatRole = (typeof CHAT_ROLES)[number]
+
+/** `chat_image`: a chat_images row (phase 3); `note_image`: a note_images row; `note_file`: a note_files row (phase 4). */
+export const CHAT_ATTACHMENT_KINDS = ['chat_image', 'note_file', 'note_image'] as const
+export type ChatAttachmentKind = (typeof CHAT_ATTACHMENT_KINDS)[number]
+
+/**
+ * One conversation (migration 0006). Wall threads hold many turns; a captured Claude Code exchange
+ * is one single-turn thread whose `external_key` (`<claude_session>:<user entry uuid>`) makes the
+ * capture idempotent. Ids are random UUIDs; they never reach the model.
+ */
+export const chatThreads = pgTable(
+  'chat_threads',
+  {
+    id: text('id').primaryKey(),
+    source: text('source').$type<ChatSource>().notNull(),
+    /** The brain of the latest answer (`claude`, `glm`, ...), or null before any answer. */
+    brain: text('brain'),
+    /** Idempotency key for captured exchanges (phase 8). Null for wall threads. */
+    externalKey: text('external_key'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Bumped (never lowered) by every message written to the thread. */
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('chat_threads_external_key_uniq').on(t.externalKey),
+    index('chat_threads_updated_at_idx').on(t.updatedAt),
+    check('chat_threads_source_check', sql`${t.source} in ('wall', 'claude_code')`),
+  ],
+)
+
+/**
+ * One chat bubble. `id` is 4 characters from [0-9A-Z] (src/chat/ids.ts), shown to the model as
+ * `[msg:K7F2]`. `seq` breaks ties in `created_at` so the timeline order is total and stable.
+ * `text` is the current text; an edit (user rows only) keeps the old text in
+ * `chat_message_revisions`. `deleted_at` is a soft delete: deleted rows leave the model context and
+ * the default timeline, and restore brings them back. `reply_to` names the bubble this one replies
+ * to, possibly in another thread; it becomes null if that row is ever removed for good.
+ */
+export const chatMessages = pgTable(
+  'chat_messages',
+  {
+    id: text('id').primaryKey(),
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: 'cascade' }),
+    role: text('role').$type<ChatRole>().notNull(),
+    text: text('text').notNull(),
+    /** Copied from the thread at insert, so the timeline needs no join. */
+    source: text('source').$type<ChatSource>().notNull(),
+    /** Assistant rows: the brain that answered. Null for user rows. */
+    brain: text('brain'),
+    replyTo: text('reply_to').references((): AnyPgColumn => chatMessages.id, { onDelete: 'set null' }),
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
+    /** UTC. Always written by ChatService from its clock (or the captured transcript's timestamp). */
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    editedAt: timestamp('edited_at', { withTimezone: true, mode: 'date' }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    index('chat_messages_timeline_idx').on(t.createdAt, t.seq),
+    index('chat_messages_thread_idx').on(t.threadId, t.createdAt, t.seq),
+    index('chat_messages_reply_to_idx').on(t.replyTo),
+    uniqueIndex('chat_messages_seq_uniq').on(t.seq),
+    check('chat_messages_role_check', sql`${t.role} in ('user', 'assistant')`),
+    check('chat_messages_source_check', sql`${t.source} in ('wall', 'claude_code')`),
+  ],
+)
+
+/** The text of a chat message BEFORE an edit replaced it. */
+export const chatMessageRevisions = pgTable(
+  'chat_message_revisions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: 'cascade' }),
+    text: text('text').notNull(),
+    savedAt: timestamp('saved_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [index('chat_message_revisions_message_saved_idx').on(t.messageId, t.savedAt.desc())],
+)
+
+/**
+ * What a chat message carries, in order. `ref_id` names a row of the table `kind` points at; it is
+ * not a foreign key because the kinds live in different tables.
+ */
+export const chatMessageAttachments = pgTable(
+  'chat_message_attachments',
+  {
+    messageId: text('message_id')
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    kind: text('kind').$type<ChatAttachmentKind>().notNull(),
+    refId: text('ref_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.messageId, t.position] }),
+    index('chat_message_attachments_ref_idx').on(t.kind, t.refId),
+    check('chat_message_attachments_kind_check', sql`${t.kind} in ('chat_image', 'note_file', 'note_image')`),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -316,3 +441,7 @@ export type NewNoteRevisionRow = typeof noteRevisions.$inferInsert
 export type ChatImageRow = typeof chatImages.$inferSelect
 export type NewChatImageRow = typeof chatImages.$inferInsert
 export type NoteImageEmbeddingRow = typeof noteImageEmbeddings.$inferSelect
+export type ChatThreadRow = typeof chatThreads.$inferSelect
+export type ChatMessageRow = typeof chatMessages.$inferSelect
+export type ChatMessageRevisionRow = typeof chatMessageRevisions.$inferSelect
+export type ChatMessageAttachmentRow = typeof chatMessageAttachments.$inferSelect

@@ -15,6 +15,7 @@ import { NoteEvents } from '../../src/notes/events.js';
 import { insertImage } from '../../src/notes/imageRepo.js';
 import { NotesService } from '../../src/notes/service.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 export interface Harness {
   deps: AppDeps;
@@ -49,6 +50,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     service,
     embedder: null,
     imageEmbedder: options.imageEmbedder ?? null,
+    chat: new ChatService({ db }),
   };
   const app = createApp(deps, options.chat !== undefined ? { chat: options.chat } : {});
   let server: ServerType | undefined;

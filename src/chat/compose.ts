@@ -24,7 +24,8 @@ export interface UserTurn {
 
 export interface ComposeInput {
   message: string;
-  images: readonly Pick<ChatTurnImage, 'id' | 'previewMime'>[];
+  /** `messageId` (phase 7): the chat message the image belongs to; it is then labelled `from [msg:ID]`. */
+  images: readonly Pick<ChatTurnImage, 'id' | 'previewMime' | 'messageId'>[];
 }
 
 /**
@@ -41,16 +42,37 @@ export function composePromptText(message: string, imageIds: readonly string[]):
   return message === '' ? block : `${message}\n\n${block}`;
 }
 
+/** `[image upload:ID]`, plus ` from [msg:K7F2]` when the image belongs to a known chat message (phase 7). */
+export function imageLabel(image: { id: string; messageId?: string }): string {
+  return image.messageId === undefined ? uploadTag(image.id) : `${uploadTag(image.id)} from [msg:${image.messageId}]`;
+}
+
+/**
+ * The text block of a rebuilt wall turn (phase 7): the context text, then one label per image in
+ * the order the image blocks are shown. The context lines already name every image; this tells the
+ * model which picture above is which, including reply-target pictures from another message.
+ */
+export function composeLabelledText(message: string, images: readonly { id: string; messageId?: string }[]): string {
+  if (images.length === 0) return message;
+  const header =
+    images.length === 1
+      ? 'The picture shown above is:'
+      : `The ${images.length} pictures shown above are, in this order:`;
+  return `${message}\n\n${[header, ...images.map(imageLabel)].join('\n')}`;
+}
+
 /** Pure. `previews[i]` is the base64 of `input.images[i]`'s preview file. */
 export function composeUserTurn(input: ComposeInput, previews: readonly string[]): UserTurn {
   if (previews.length !== input.images.length) {
     throw new Error(`composeUserTurn: ${input.images.length} images but ${previews.length} previews`);
   }
   return {
-    text: composePromptText(
-      input.message,
-      input.images.map((image) => image.id),
-    ),
+    text: input.images.some((image) => image.messageId !== undefined)
+      ? composeLabelledText(input.message, input.images)
+      : composePromptText(
+          input.message,
+          input.images.map((image) => image.id),
+        ),
     images: input.images.map((image, i) => ({ id: image.id, mediaType: image.previewMime, data: previews[i] as string })),
   };
 }

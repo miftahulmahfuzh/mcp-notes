@@ -13,6 +13,7 @@ import { NoteEvents, type NoteEvent } from '../../src/notes/events.js';
 import { NotesService } from '../../src/notes/service.js';
 import type { Note } from '../../src/notes/types.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 const url = testDatabaseUrl();
 const db = openTestDb();
@@ -20,7 +21,7 @@ const dataDir = mkdtempSync(join(tmpdir(), 'notes-mcp-'));
 const config: Config = { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
 const events = new NoteEvents();
 const service = new NotesService({ db, dataDir, events });
-const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null };
+const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null, chat: new ChatService({ db }) };
 const app: Hono = createApp(deps);
 const seen: NoteEvent[] = [];
 events.on((e) => seen.push(e));

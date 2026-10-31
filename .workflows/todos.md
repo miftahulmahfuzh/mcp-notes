@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 42
+- Blocked: 3
+- Completed: 43
 
 ---
 
@@ -22,24 +22,14 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns migration 0006 (`chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`); `ChatService` (create thread/messages, short ids, edit with revision, soft delete/restore, timeline, `recordExchange` for P8); context builder (history + reply targets, char budget, `[msg:ID]` labels, image placeholders); `composeWallTurn` extending P3's `compose.ts` (`ChatTurnImage.messageId?`, `[image upload:ID] from [msg:ID]`); leading-`[msg:ID]` citation parser → `reply_to`; backend contract change (`ChatRequest {turn, signal}`, no `resume`, `persistSession` off; preview bytes still read by P3's `readPreview`); `POST /api/chat` persists the user row first, sends `event: accepted {thread_id, user_message_id}`, the assistant row on success, `done {thread_id, user_message_id, assistant_message_id, reply_to, brain?}`; `GET /api/chat/messages` (`{messages, next_before}`, `include_deleted`), `GET /api/chat/threads/:id`, `PATCH`, `DELETE` (`{deleted: [ids]}`), `restore` (one id, idempotent); `event: chat {op: created|updated|deleted|restored, thread_id, id}` on `/api/events`; system prompt teaches `[msg:ID]`. Exit: a two-turn wall conversation survives a daemon restart and brain fallback with identical context; reply_to to a bubble in another thread is injected; edit keeps a revision; deleted messages leave context; integration tests with the scripted backend.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 7 of 11)
-  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A039 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A040.md`
-
 - [ ] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `claude/hooks/notes-capture.mjs` (Stop, async, outbox retry, idempotent), `claude/hooks/notes-paste.mjs` (PreToolUse on `mcp__notes__similar_images`, uploads the pasted image with `source=claude_code` and rewrites `pasted_image` to `upload_id`; `updatedInput` default, `deny` fallback); `src/chat/capture.ts` + `POST /api/capture/claude-code` (loopback + custom-header guard, idempotent on external key through P7's `recordExchange`, images copied into P3's store with `ingestChatImage`); `scripts/install.sh`/`uninstall.sh` merge and remove the hooks in `~/.claude/settings.json` idempotently; final `pasted_image` text in `similar_images`; `/n` skill text; `npm run verify:paste-hook`. Exit: feeding a synthetic transcript (string-form and array-form user entries, image blocks, `imagePasteIds`) produces one single-turn `claude_code` thread with the images stored; replay is a no-op; daemon-down spools to the outbox and a later run delivers; install/uninstall tested against a temp `HOME`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
   - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (pending)
+  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
 
 - [ ] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
@@ -49,7 +39,7 @@
   - **Status**: blocked
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
   - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (pending)
+  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
 
 - [ ] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
@@ -81,6 +71,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0006 (`chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`); `ChatService` (create thread/messages, short ids, edit with revision, soft delete/restore, timeline, `recordExchange` for P8); context builder (history + reply targets, char budget, `[msg:ID]` labels, image placeholders); `composeWallTurn` extending P3's `compose.ts` (`ChatTurnImage.messageId?`, `[image upload:ID] from [msg:ID]`); leading-`[msg:ID]` citation parser → `reply_to`; backend contract change (`ChatRequest {turn, signal}`, no `resume`, `persistSession` off; preview bytes still read by P3's `readPreview`); `POST /api/chat` persists the user row first, sends `event: accepted {thread_id, user_message_id}`, the assistant row on success, `done {thread_id, user_message_id, assistant_message_id, reply_to, brain?}`; `GET /api/chat/messages` (`{messages, next_before}`, `include_deleted`), `GET /api/chat/threads/:id`, `PATCH`, `DELETE` (`{deleted: [ids]}`), `restore` (one id, idempotent); `event: chat {op: created|updated|deleted|restored, thread_id, id}` on `/api/events`; system prompt teaches `[msg:ID]`. Exit: a two-turn wall conversation survives a daemon restart and brain fallback with identical context; reply_to to a bubble in another thread is injected; edit keeps a revision; deleted messages leave context; integration tests with the scripted backend.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 7 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A039 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A040.md`
+  - **Completed**: 2026-10-31 10:24
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, drizzle/0006_chat_history.sql, drizzle/meta/0006_snapshot.json, drizzle/meta/_journal.json, src/chat/agent.ts, src/chat/backend.ts, src/chat/citation.ts, src/chat/compose.ts, src/chat/context.ts, src/chat/events.ts, src/chat/ids.ts, src/chat/prompt.ts, src/chat/repo.ts, src/chat/service.ts, src/chat/stub.ts, src/chat/turn.ts, src/chat/types.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/http/api.ts, src/http/app.ts, src/http/chatApi.ts, tests/integration/api.int.test.ts, tests/integration/chat.api.int.test.ts, tests/integration/chat.images.int.test.ts, tests/integration/chat.service.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/helpers/scripted-chat.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/setup.ts, tests/live/chat.live.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-citation.test.ts, tests/unit/chat-compose.test.ts, tests/unit/chat-context.test.ts, tests/unit/chat-ids.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-stub.test.ts
+  - **Drift**:
+    - schema.ts header comment quoted by the plan differed slightly (P6 sentence was joined); merged the 0006 sentence into the existing text.
+    - api.ts chatSchema from P3 had image_ids optional; replaced with the plan's default([]).
 
 - [x] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
   - **Difficulty**: NORMAL

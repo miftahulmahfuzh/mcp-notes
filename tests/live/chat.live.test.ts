@@ -10,6 +10,7 @@
  *
  * Needs: the `claude` CLI (NOTESD_CLAUDE_BIN or `claude` on PATH) logged in, and LLM_BASE_URL,
  * LLM_API_KEY, LLM_MODEL in .env.local (a worktree carries a symlink to ~/mcp-notes/.env.local).
+ * No session is persisted (`persistSession: false`): each turn's context is the composed prompt.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -77,7 +78,7 @@ async function ask(brain: ChatBrain, message: string, images: ChatTurnImage[] = 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
   try {
-    const turn = await backend.reply({ message, images, threadId: null, signal: controller.signal });
+    const turn = await backend.reply({ turn: { text: message, images }, signal: controller.signal });
     let text = '';
     const statuses: string[] = [];
     for await (const event of turn.events) {
@@ -100,7 +101,6 @@ function codewordPrompt(): string {
 
 function expectNotesAnswer(answer: LiveAnswer, brain: ChatBrain): void {
   expect(answer.end.brain).toBe(brain);
-  expect(answer.end.threadId).toMatch(/\S/);
   expect(answer.text).toContain(codeword);
   expect(answer.text.toUpperCase()).toContain(noteId);
   expect(answer.statuses.length).toBeGreaterThan(0);

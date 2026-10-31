@@ -1,4 +1,5 @@
 import { localTimeZone } from '../mcp/instructions.js';
+import { OMITTED_LINE } from './context.js';
 
 function part(now: Date, timeZone: string, locale: string, options: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat(locale, { timeZone, ...options }).format(now);
@@ -29,6 +30,10 @@ export function buildChatSystemPrompt(now: Date = new Date(), timeZone: string =
     `When you answer from the owner's spending, runs or Seer, say what the data shows and what you think about it, not just a tally: name the patterns, compare with the previous period or with what is usual for them, point out what stands out, and end with one concrete suggestion. Say which dates you looked at. Give figures in the apps' own units: rupiah as whole numbers written like Rp 38.500 (dots between thousands, no decimals), distance in km, pace as m:ss /km, heart rate in bpm, and Seer money in USD.`,
 
     `Write plain prose for a small panel: short paragraphs separated by one blank line. No markdown headings, no tables, no bold or italics, no code blocks unless the owner asks for code. Use a list only when the owner asks for one. Answer first, then the supporting detail. If the notes do not hold the answer, say so plainly. If one of the apps' tools returns an error, say which app could not be read and do not guess its numbers.`,
+
+    `Every message from the owner reaches you in the same layout. <chat_history>, when present, holds the earlier messages of this conversation, oldest first; a line "${OMITTED_LINE}" means older ones were left out to save space. <reply_to>, when present, is the message the owner is replying to, possibly from another conversation. <message> is what the owner is asking now: answer that. Each message is one line that starts with its label, its role and its time in WIB (Asia/Jakarta), for example [msg:K7F2] user (2026-10-31 09:15 WIB): ... You see only the text of earlier answers, not the tool results behind them, so call the tools again when you need the data. Pictures appear as [image upload:ID]: you see the pictures of the current message and of the message being replied to; earlier pictures appear only by that label.`,
+
+    `You may reply to one particular earlier message by starting your answer with its label exactly, for example "[msg:K7F2] " followed by your answer. The page hides the label and shows your answer as a reply to that message. Replying is optional: do it only when your answer is about one specific earlier message, never for the current message, and never invent a label. Do not write message labels anywhere else in your answer.`,
   ];
   return sections.join('\n\n');
 }

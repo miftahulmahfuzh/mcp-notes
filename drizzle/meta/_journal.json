@@ -43,6 +43,13 @@
       "when": 1793415144181,
       "tag": "0005_note_image_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793416724681,
+      "tag": "0006_chat_history",
+      "breakpoints": true
     }
   ]
 }

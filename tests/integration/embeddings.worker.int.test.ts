@@ -18,6 +18,7 @@ import { NotesService } from '../../src/notes/service.js';
 import type { ImageMeta } from '../../src/notes/types.js';
 import { createFakeEmbedder } from '../helpers/fakeEmbedder.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 interface Probe extends Embedder {
   inputs: string[][];
@@ -325,6 +326,7 @@ describe('startBackground', () => {
       service: new NotesService({ db, dataDir, events }),
       embedder,
       imageEmbedder: null,
+      chat: new ChatService({ db }),
     };
   }
 
