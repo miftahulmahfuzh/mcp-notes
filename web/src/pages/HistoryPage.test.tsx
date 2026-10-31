@@ -82,14 +82,14 @@ describe('HistoryPage', () => {
     expect(seps[1]?.textContent).toContain('wall chat');
   });
 
-  it('reserves a square thumbnail box per chat image (the wire has no dimensions) and shows note attachments as id chips', () => {
+  it('reserves a square thumbnail box per picture (pasted or from a note; the wire has no dimensions) and keeps id chips only for files', () => {
     render(<HistoryPage store={store([item(q2)])} focusThread={null} now={NOW} />);
     const imgs = Array.from(bubble('Q002').querySelectorAll('.bubble-thumb img')) as HTMLImageElement[];
-    expect(imgs.map((i) => i.getAttribute('src'))).toEqual(['/api/chat/images/U-AA1/thumb', '/api/chat/images/U-BB2/thumb']);
+    expect(imgs.map((i) => i.getAttribute('src'))).toEqual(['/api/chat/images/U-AA1/thumb', '/api/chat/images/U-BB2/thumb', '/api/images/K-F07/thumb']);
     expect([imgs[0]?.getAttribute('width'), imgs[0]?.getAttribute('height')]).toEqual(['96', '96']);
     expect([imgs[1]?.getAttribute('width'), imgs[1]?.getAttribute('height')]).toEqual(['96', '96']);
     const chips = Array.from(bubble('Q002').querySelectorAll('.bubble-chip')).map((c) => c.textContent);
-    expect(chips).toEqual(['image K-F07', 'file F-Z11']);
+    expect(chips).toEqual(['file F-Z11']);
   });
 
   it('a thumbnail opens the lightbox on it; arrows move across the message images', () => {

@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { LightboxItem } from './Lightbox';
-import { ChatInline } from './ChatText';
+import { ChatInline, ImageLinkContext, type ImageLinks } from './ChatText';
 import { chatImageSrc } from '../chatHistoryApi';
 import { chatTime, chatTimeTitle } from '../lib/chatTime';
 import type { TimelineItem } from '../lib/timeline';
@@ -23,7 +23,7 @@ export function lightboxItemsOf(images: ChatAttachment[]): LightboxItem[] {
   return images.map((a) => ({
     id: a.id,
     src: a.url || chatImageSrc(a.id, 'display'),
-    label: a.kind === 'chat_image' ? `upload:${a.id}` : a.id,
+    label: a.kind === 'chat_image' ? `upload:${a.id}` : a.kind === 'note_image' ? `img:${a.id}` : a.id,
   }));
 }
 
@@ -51,14 +51,28 @@ export interface BubbleProps {
   slots?: BubbleSlots;
 }
 
-const CHIP_KIND: Record<ChatAttachment['kind'], string> = { chat_image: 'upload', note_image: 'image', note_file: 'file' };
+const CHIP_KIND: Record<ChatAttachment['kind'], string> = { chat_image: 'upload', note_image: 'img', note_file: 'file' };
+
+/** Pictures show as clickable thumbnails: pasted uploads and pictures attached from a note alike. */
+const isPicture = (a: ChatAttachment): boolean => a.kind === 'chat_image' || a.kind === 'note_image';
 
 export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps) {
   const { msg, local } = item;
   const mine = msg.role === 'user';
   const streaming = local?.streaming ?? false;
-  const images = msg.attachments.filter((a) => a.kind === 'chat_image');
-  const chips = msg.attachments.filter((a) => a.kind !== 'chat_image');
+  const images = msg.attachments.filter(isPicture);
+  const chips = msg.attachments.filter((a) => !isPicture(a));
+  // `img:ID` / `upload:ID` written in the text open the picture in the lightbox.
+  const imageLinks = useMemo<ImageLinks>(
+    () => ({
+      open: (source, id) =>
+        onOpenImages(
+          [{ id, src: source === 'img' ? `/api/images/${id}/display` : chatImageSrc(id, 'display'), label: `${source}:${id}` }],
+          0,
+        ),
+    }),
+    [onOpenImages],
+  );
   const parts = msg.text ? msg.text.split('\n\n') : [];
   const cls = ['bubble', mine ? 'mine' : 'theirs', local?.error ? 'error' : '', focused ? 'focus' : '', slots?.className ?? '']
     .filter(Boolean)
@@ -77,6 +91,7 @@ export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps)
     >
       {slots?.quote}
       {slots?.editor}
+      <ImageLinkContext.Provider value={imageLinks}>
       <div className="bubble-body" hidden={editing || undefined}>
         {msg.source === 'claude_code' && <span className="bubble-badge">claude code</span>}
         {images.length > 0 && (
@@ -88,8 +103,8 @@ export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps)
                   key={a.id}
                   type="button"
                   className="bubble-thumb"
-                  data-tip={`upload:${a.id}`}
-                  aria-label={`View image upload:${a.id}`}
+                  data-tip={a.kind === 'note_image' ? `img:${a.id}` : `upload:${a.id}`}
+                  aria-label={a.kind === 'note_image' ? `View image img:${a.id}` : `View image upload:${a.id}`}
                   onClick={() => onOpenImages(lightboxItemsOf(images), i)}
                 >
                   <img src={a.thumb_url ?? chatImageSrc(a.id, 'thumb')} alt="" width={w} height={THUMB_H} style={{ width: w, height: THUMB_H, objectFit: 'cover' }} loading="lazy" decoding="async" draggable={false} />
@@ -119,6 +134,7 @@ export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps)
           </div>
         )}
       </div>
+      </ImageLinkContext.Provider>
       <div className="bubble-meta">
         <time dateTime={msg.created_at} data-tip={chatTimeTitle(msg.created_at)}>
           {chatTime(msg.created_at, now)}

@@ -170,6 +170,7 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
       description:
         `Look at the pictures in notes. Takes 1 to ${VIEW_IMAGES_MAX} ids (any case, dash optional): a note id shows every image of that note in order, ` +
         "an image id (from a note's images[].id) shows that one image. " +
+        'An image id equals its note id for a note\'s first image, so a bare id means the NOTE; write img:ID (for example img:9-TD6) to mean that one picture wherever it lives now. ' +
         'Each picture comes after its metadata (note id, image id and "image k of n", saved date, EXIF taken date, dimensions, tags, body), ' +
         'downscaled to at most 1568 px on the long edge. Find ids first with list/search (has_image: true means at least one image). ' +
         `At most ${VIEW_IMAGES_MAX} images come back per call; a last text line lists the image ids left out, to pass to the next call. ` +
@@ -183,6 +184,10 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
       },
     },
     async ({ ids }): Promise<CallToolResult> => {
+      // `img:ID` names the picture and never the note that happens to share its id.
+      const IMG_PREFIX = /^img:/i;
+      const imageOnly = new Set(ids.filter((raw) => IMG_PREFIX.test(raw.trim())).map((raw) => normalizeId(raw.trim().replace(IMG_PREFIX, ''))));
+      ids = ids.map((raw) => raw.trim().replace(IMG_PREFIX, ''));
       const found = await deps.service.get(ids, { includeDeleted: true });
       const byId = new Map(found.notes.map((n) => [n.id, n]));
       const content: Content[] = [];
@@ -197,7 +202,7 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
           continue;
         }
         let items: ViewItem[];
-        const note = byId.get(id);
+        const note = imageOnly.has(id) ? undefined : byId.get(id);
         if (note) {
           if (note.deleted_at !== undefined) {
             content.push(text(`${note.id}: this note is deleted (restore it to view it).`));

@@ -82,6 +82,40 @@ describe('NotesService.moveImage', () => {
   });
 });
 
+describe('view_images img: prefix', () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await startHarness();
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+  beforeEach(async () => {
+    await h.reset();
+  });
+
+  it('img:ID means the picture, not the note that shares its id, even after it moved', async () => {
+    const note = await upload(h, await solid(200, 0, 0));
+    const first = note.images[0]!.id;
+    expect(first).toBe(note.id);
+    await attach(h, note.id, await solid(0, 200, 0));
+    const moved = await h.deps.service.moveImage(first, { body: 'prompt' });
+
+    const base = await h.listen();
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
+    const call = async (id: string) => {
+      const r = (await client.callTool({ name: 'view_images', arguments: { ids: [id] } })) as { content: Array<{ type: string; text?: string }> };
+      return r.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    };
+    expect(await call(`img:${first}`)).toContain(`id: ${moved.note.id}`);
+    expect(await call(first)).toContain(`id: ${note.id}`);
+    await client.close();
+  });
+});
+
 describe('POST /api/chat with note_image_ids', () => {
   let h: Harness;
   beforeAll(async () => {

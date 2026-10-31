@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useMemo, type MouseEvent } from 'react';
+import { createContext, useContext, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { segmentChat } from '../lib/chatSegments';
 import { noteHref } from '../lib/deepLink';
 
@@ -11,6 +11,16 @@ export interface NoteLinks {
 }
 
 export const NoteLinkContext = createContext<NoteLinks | null>(null);
+
+/** Opens the picture named by an `img:ID` (a note image) or `upload:ID` (a pasted image) written in chat text. */
+export interface ImageLinks {
+  open: (source: 'img' | 'upload', id: string) => void;
+}
+
+export const ImageLinkContext = createContext<ImageLinks | null>(null);
+
+/** `img:9-TD6`, `upload:G-0NC`: how an image is named in chat, so it is never mistaken for a note id. */
+const IMAGE_TOKEN = /(?<![0-9A-Za-z_:-])(img|upload):([0-9A-Za-z]-[0-9A-Za-z]{3})(?![0-9A-Za-z_-])/gi;
 
 const NOBODY = (): boolean => false;
 
@@ -37,7 +47,7 @@ export function ChatInline({ text, streaming = false }: ChatInlineProps) {
           );
         }
         if (s.kind === 'note') return <NoteLink key={j} id={s.id} text={s.text} open={links?.open ?? null} />;
-        return <Fragment key={j}>{s.text}</Fragment>;
+        return <PlainText key={j} text={s.text} streaming={streaming && j === segs.length - 1} />;
       })}
     </>
   );
@@ -67,4 +77,28 @@ function NoteLink({ id, text, open }: NoteLinkProps) {
       {text}
     </a>
   );
+}
+
+/** Plain text, with `img:ID` / `upload:ID` tokens turned into buttons that open the picture. */
+function PlainText({ text, streaming }: { text: string; streaming: boolean }) {
+  const images = useContext(ImageLinkContext);
+  if (images === null) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(IMAGE_TOKEN)) {
+    const at = m.index ?? 0;
+    if (streaming && at + m[0].length === text.length) continue;
+    if (at > last) out.push(text.slice(last, at));
+    const source = m[1].toLowerCase() as 'img' | 'upload';
+    const id = m[2].toUpperCase();
+    out.push(
+      <button key={at} type="button" className="img-token" data-img-token={`${source}:${id}`} onClick={() => images.open(source, id)}>
+        {source}:{id}
+      </button>,
+    );
+    last = at + m[0].length;
+  }
+  if (out.length === 0) return <>{text}</>;
+  if (last < text.length) out.push(text.slice(last));
+  return <>{out}</>;
 }
