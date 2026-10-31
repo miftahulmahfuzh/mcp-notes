@@ -27,3 +27,8 @@
 .ed-suggest li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 10px; cursor: pointer; }
 .ed-suggest li.on, .ed-suggest li:hover { background: var(--hover); }
 .ed-suggest-n { color: var(--dim); }
+
+/* R4: the thumbnail itself is a button that opens the shared lightbox. Fills the tile; the reveal and
+   remove icons stay above it (absolutely positioned siblings). */
+.ed-open { display: block; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.ed-open:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }

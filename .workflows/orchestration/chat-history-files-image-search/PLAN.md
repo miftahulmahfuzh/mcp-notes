@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search`
 **Branch:** `feature/chat-history-files-image-search` (base: `main` @ `d3ef659`)
 **Phases:** 11
-**Status:** planned (reconciled 2026-10-31)
+**Status:** phase 2/11 complete
 **Coordinator:** —
 
 ---
@@ -58,7 +58,7 @@ Couplings that are real facts about the work: P3 serves R1 only for the wall cha
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Card footer: reveal button left | R6 | `web` | 4 | — | EASY | `.workflows/plan/chat-history-files-image-search/phase-1.md` | — | — |
-| 2 | Shared Lightbox + note modal strip | R4 | `web` | 8 | — | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-2.md` | — | — |
+| 2 | Shared Lightbox + note modal strip | R4 | `web` | 8 | — | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-2.md` | P2-NOTES-H202 | — |
 | 3 | Chat image store, paste into the bar, wall chat sends images | R1 | `src/chat`, `src/http`, `src/db`, `web` | 40 | — | HARD | `.workflows/plan/chat-history-files-image-search/phase-3.md` | — | — |
 | 4 | Note files backend: schema, store, service, API, reveal, MCP visibility | R2 | `src/notes`, `src/files`, `src/http`, `src/db`, `src/mcp` | 38 | 3 | HARD | `.workflows/plan/chat-history-files-image-search/phase-4.md` | — | — |
 | 5 | Note files UI: paperclip, chips, paste/drop routing, reveal | R2 | `web` | 21 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-5.md` | — | — |

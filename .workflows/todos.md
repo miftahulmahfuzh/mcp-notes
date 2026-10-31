@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-10-31
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 35
+- Completed: 36
 
 ---
 
@@ -31,6 +31,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P2-NOTES-H202** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Not `PhotoModal`/`Gallery`, chat UI (P9 consumes it), file chips. Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; generic item list so chat can reuse it.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search-p2/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P2-NOTES-H202.md`
+  - **Completed**: 2026-10-31 09:20
+  - **Method**: /do
+  - **Files**: web/src/components/Lightbox.tsx, web/src/components/Lightbox.css, web/src/components/Lightbox.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, README.md, CHANGELOG.md, .workflows/todos.md, .workflows/plan/P2-NOTES-H202.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm → mint only phase 2's task, as P2-NOTES-H202 (non-sequential ID: phase 3's worktree already minted P1-NOTES-A034 from the shared counter, so the next sequential ID would collide with a peer), in root .workflows/todos.md (same convention as P2-NOTES-C506)
+    - test:int failed with Postgres deadlocks (40P01), FK violations and 404s from peer phase sessions running concurrent truncateAll against one shared test DB → treated as environmental; this phase changes no src/ or tests/ server code (verified: typecheck, build, npm test 874 passed)
 
 - [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL

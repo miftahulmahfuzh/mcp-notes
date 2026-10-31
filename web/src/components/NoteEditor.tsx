@@ -4,6 +4,7 @@ import type { Note, NoteImage as NoteImageData, TagCount } from '../types';
 import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
 import { RevealButton } from './RevealButton';
+import { Lightbox, isLightboxOpen, noteImageItems } from './Lightbox';
 import './NoteEditor.css';
 
 export interface NoteEditorProps {
@@ -45,6 +46,9 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   // Start index of the `#…` token whose popup Esc dismissed; a new token reopens it.
   const [dismissed, setDismissed] = useState<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
+  // Id of the strip image shown in the lightbox (R4), or null. An id, not an index: attaches and
+  // removes while it is open must not shift it onto another image.
+  const [viewing, setViewing] = useState<string | null>(null);
 
   useEffect(() => {
     const el = taRef.current;
@@ -68,6 +72,9 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // A lightbox over the editor owns Esc. It registers its own window capture listener after this
+      // one, so its stopPropagation cannot keep this listener from running: yield while it is open.
+      if (isLightboxOpen()) return;
       if (popupRef.current !== null) {
         // Esc with the tag popup open closes the popup only.
         e.preventDefault();
@@ -100,6 +107,16 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   const activeIdx = Math.min(active, Math.max(suggestions.length - 1, 0));
   const popupRef = useRef<number | null>(null);
   popupRef.current = open && query ? query.start : null;
+
+  const available = note.images.filter((img) => img.available);
+  const lightboxItems = noteImageItems(note.images);
+  const viewIndex = viewing === null ? -1 : lightboxItems.findIndex((item) => item.id === viewing);
+
+  // The viewed image left the note (removed here or elsewhere, or no longer on this machine): close
+  // the lightbox rather than let it reappear if that image comes back.
+  useEffect(() => {
+    if (viewing !== null && viewIndex < 0) setViewing(null);
+  }, [viewing, viewIndex]);
 
   useEffect(() => {
     if (pendingCaret.current === null) return;
@@ -212,11 +229,19 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             ))}
           </div>
         )}
-        {note.images.some((img) => img.available) && (
+        {available.length > 0 && (
           <div className="ed-strip" data-strip="">
-            {note.images.filter((img) => img.available).map((img) => (
+            {available.map((img) => (
               <div key={img.id} className="ed-thumb" data-image={img.id} style={{ aspectRatio: aspectOf(img).css }}>
-                <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button
+                  type="button"
+                  className="ed-open"
+                  data-open={img.id}
+                  aria-label={`View image ${img.id}`}
+                  onClick={() => setViewing(img.id)}
+                >
+                  <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </button>
                 <RevealButton image={img} className="ed-rm ed-reveal" />
                 <button type="button" className="ed-rm" data-tip="Remove image" aria-label="Remove image" onClick={() => onRemoveImage(img)}>
                   <X weight="duotone" />
@@ -224,6 +249,14 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
               </div>
             ))}
           </div>
+        )}
+        {viewIndex >= 0 && (
+          <Lightbox
+            items={lightboxItems}
+            index={viewIndex}
+            onIndex={(i) => setViewing(lightboxItems[i].id)}
+            onClose={() => setViewing(null)}
+          />
         )}
       </div>
     </div>

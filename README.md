@@ -147,13 +147,15 @@ the same note in a large editor:
 - the note id with its copy button
 - the tag chips
 - the note's photos as a strip, each with a remove icon and the folder icon (see
-  [Open file location](#open-file-location))
+  [Open file location](#open-file-location)). Click a photo to see it large; the left and right
+  arrows (buttons or keys) move to the note's other photos without closing it and stop at the first
+  and last one. Esc, a click beside the photo or the X closes the photo and leaves the editor open.
 
 For a long note, press "+", type the first line, then expand it and keep writing.
 
 - Text saves the way cards do: when the text area loses focus and when the editor closes, and
   only if it changed. The card on the wall shows the change at once.
-- Esc closes it.
+- Esc closes it (when a photo is open large, the first Esc closes only the photo).
 - While the editor is open, a dropped or pasted image is attached to this note instead of
   becoming a new one. The drop overlay shows a paperclip instead of the usual image icon to say
   so. A file that already lives in a note is not attached twice. The editor quietly says which
