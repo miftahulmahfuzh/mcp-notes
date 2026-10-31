@@ -276,7 +276,9 @@ describe('migration 0002 on an iteration-6 database', () => {
 
   it('applies only 0002 on top of 0000 + 0001', async () => {
     const res = await mig.execute<{ n: number }>(sql`select count(*)::int as n from drizzle.__drizzle_migrations`)
-    expect(res.rows[0]?.n).toBe(3)
+    // 0000 + 0001 were applied first; the full folder then added everything after them (0002 and any later migration).
+    const journal = JSON.parse(await readFile(path.join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf8')) as { entries: unknown[] }
+    expect(res.rows[0]?.n).toBe(journal.entries.length)
   })
 
   it('copies every legacy image into exactly one identical note_images row', async () => {

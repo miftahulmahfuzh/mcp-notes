@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AnswerPanel } from './AnswerPanel';
 import type { AnswerPanelProps } from './AnswerPanel';
+import { NoteLinkContext, type NoteLinks } from './ChatText';
 
 afterEach(cleanup);
 
@@ -164,5 +165,106 @@ describe('AnswerPanel collapse', () => {
     const q = head(container).querySelector('.answer-q');
     expect(q?.textContent).toBe('cari notes yang membahas fitur');
     expect(q?.getAttribute('data-tip')).toBe(query);
+  });
+});
+
+describe('AnswerPanel pasted images', () => {
+  it('shows the thumbnails sent with the query', () => {
+    const { container } = renderPanel({ images: ['U-PL1', 'V-QM2'] });
+    const srcs = [...container.querySelectorAll('.answer-images img')].map((i) => i.getAttribute('src'));
+    expect(srcs).toEqual(['/api/chat/images/U-PL1/thumb', '/api/chat/images/V-QM2/thumb']);
+  });
+
+  it('labels an image-only question by its image count', () => {
+    const { container } = renderPanel({ query: '', images: ['U-PL1'] });
+    expect(container.querySelector('.answer-q')?.textContent).toBe('1 image');
+  });
+
+  it('hides the thumbnails when collapsed, and shows none without images', () => {
+    const collapsed = renderPanel({ images: ['U-PL1'], collapsed: true });
+    expect(collapsed.container.querySelector('.answer-images')).toBeNull();
+    collapsed.unmount();
+    const plain = renderPanel();
+    expect(plain.container.querySelector('.answer-images')).toBeNull();
+  });
+});
+
+describe('AnswerPanel full screen', () => {
+  it('shows a "Chat in full screen" button only when the host passes onFullScreen', () => {
+    const onFullScreen = vi.fn();
+    const { rerender } = render(<AnswerPanel {...props()} />);
+    expect(screen.queryByRole('button', { name: 'Chat in full screen' })).toBeNull();
+    rerender(<AnswerPanel {...props({ onFullScreen })} />);
+    const btn = screen.getByRole('button', { name: 'Chat in full screen' });
+    expect(btn.getAttribute('data-tip')).toBe('Chat in full screen');
+    fireEvent.click(btn);
+    expect(onFullScreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('works from the collapsed header without expanding it', () => {
+    const onFullScreen = vi.fn();
+    const onToggleCollapse = vi.fn();
+    render(<AnswerPanel {...props({ collapsed: true, onFullScreen, onToggleCollapse })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Chat in full screen' }));
+    expect(onFullScreen).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapse).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnswerPanel sent thumbnails', () => {
+  it('a thumbnail opens the shared Lightbox; Esc closes only the lightbox', () => {
+    const onClose = vi.fn();
+    render(<AnswerPanel {...props({ images: ['U-AA1', 'U-BB2'], onClose })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View image upload:U-BB2' }));
+    expect(document.querySelector('[data-lightbox] img')?.getAttribute('src')).toBe('/api/chat/images/U-BB2/display');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('[data-lightbox]')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('AnswerPanel note ids (phase 11)', () => {
+  function renderLinked(links: NoteLinks, over: Partial<AnswerPanelProps> = {}) {
+    return render(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props(over)} />
+      </NoteLinkContext.Provider>,
+    );
+  }
+
+  it('links note ids in place, keeps URLs as new-tab links and keeps the used-chips row', () => {
+    const open = vi.fn();
+    const onJump = vi.fn();
+    const { container } = renderLinked(
+      { isKnown: (id) => id === 'A-B32', open },
+      { text: 'Look at a-b32 and https://e.com/C-D45.', usedIds: ['A-B32'], onJump },
+    );
+    const notes = [...body(container).querySelectorAll('a.note-link')];
+    expect(notes.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['a-b32', '/?note=A-B32']]);
+    expect(body(container).querySelector('a[target="_blank"]')?.getAttribute('href')).toBe('https://e.com/C-D45');
+    expect(body(container).textContent).toBe('Look at a-b32 and https://e.com/C-D45.');
+    expect(fireEvent.click(notes[0] as HTMLElement)).toBe(false);
+    expect(open).toHaveBeenCalledWith('A-B32');
+    fireEvent.click(screen.getByRole('button', { name: 'A-B32' }));
+    expect(onJump).toHaveBeenCalledWith('A-B32');
+  });
+
+  it('does not link the id still arriving at the end of the streaming paragraph', () => {
+    const links: NoteLinks = { isKnown: () => true, open: vi.fn() };
+    const { container, rerender } = renderLinked(links, { text: 'first A-B32\n\nnow C-D4', done: false });
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32']);
+    rerender(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props({ text: 'first A-B32\n\nnow C-D45', done: false })} />
+      </NoteLinkContext.Provider>,
+    );
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32']);
+    rerender(
+      <NoteLinkContext.Provider value={links}>
+        <AnswerPanel {...props({ text: 'first A-B32\n\nnow C-D45', done: true })} />
+      </NoteLinkContext.Provider>,
+    );
+    expect([...body(container).querySelectorAll('a.note-link')].map((a) => a.textContent)).toEqual(['A-B32', 'C-D45']);
   });
 });

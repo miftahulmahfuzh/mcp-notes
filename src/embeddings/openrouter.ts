@@ -29,7 +29,8 @@ export interface OpenRouterEmbedderOptions {
   maxBatch?: number;
 }
 
-function snippet(raw: string): string {
+/** The first RESPONSE_SNIPPET_CHARS of a response body, for error messages. */
+export function snippet(raw: string): string {
   return raw.slice(0, RESPONSE_SNIPPET_CHARS);
 }
 
@@ -47,8 +48,72 @@ function prepareInputs(inputs: readonly string[]): string[] {
   });
 }
 
-function errorName(cause: unknown): unknown {
+/** The `name` of a thrown value (TimeoutError / AbortError tell a timeout apart). */
+export function errorName(cause: unknown): unknown {
   return typeof cause === 'object' && cause !== null ? (cause as { name?: unknown }).name : undefined;
+}
+
+/**
+ * One POST to OpenRouter's /embeddings with `body` as JSON. Returns the parsed JSON and the raw
+ * text (for snippets). Every failure is an EmbeddingError: transport error, timeout (named with
+ * `timeoutMs`), unreadable body, non-2xx (with a snippet and `{status}` as detail), non-JSON.
+ * Shared by the text embedder (below) and the image embedder (./openrouterImage.ts). The key
+ * only ever goes into the Authorization header.
+ */
+export async function postOpenRouterEmbeddings(
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<{ json: unknown; raw: string }> {
+  let res: Response;
+  try {
+    res = await fetchImpl(OPENROUTER_EMBEDDINGS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (cause) {
+    const name = errorName(cause);
+    const timedOut = name === 'TimeoutError' || name === 'AbortError';
+    throw new EmbeddingError(
+      timedOut ? `embedding request timed out after ${timeoutMs} ms` : 'embedding request failed',
+      cause,
+    );
+  }
+
+  // Text first, then parse: a broker's error body is often HTML or a bare string, and the raw
+  // snippet is the most useful thing an error can carry.
+  let raw: string;
+  try {
+    raw = await res.text();
+  } catch (cause) {
+    const timedOut = errorName(cause) === 'TimeoutError' || errorName(cause) === 'AbortError';
+    throw new EmbeddingError(
+      timedOut
+        ? `embedding response timed out after ${timeoutMs} ms`
+        : 'embedding response body could not be read',
+      cause,
+    );
+  }
+
+  if (!res.ok) {
+    throw new EmbeddingError(`embedding endpoint returned ${res.status}: ${snippet(raw)}`, {
+      status: res.status,
+    });
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (cause) {
+    throw new EmbeddingError(`embedding response was not valid JSON: ${snippet(raw)}`, cause);
+  }
+  return { json, raw };
 }
 
 /**
@@ -125,55 +190,14 @@ export function createOpenRouterEmbedder(opts: OpenRouterEmbedderOptions): Embed
   }
 
   async function request(batch: string[], timeoutMs: number): Promise<number[][]> {
-    let res: Response;
-    try {
-      res = await fetchImpl(OPENROUTER_EMBEDDINGS_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        // encoding_format explicit: some providers behind the broker default to base64, which
-        // would arrive as a string and fail the array check with a confusing message.
-        body: JSON.stringify({ model: EMBEDDING_MODEL, input: batch, encoding_format: 'float' }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (cause) {
-      const name = errorName(cause);
-      const timedOut = name === 'TimeoutError' || name === 'AbortError';
-      throw new EmbeddingError(
-        timedOut ? `embedding request timed out after ${timeoutMs} ms` : 'embedding request failed',
-        cause,
-      );
-    }
-
-    // Text first, then parse: a broker's error body is often HTML or a bare string, and the raw
-    // snippet is the most useful thing an error can carry.
-    let raw: string;
-    try {
-      raw = await res.text();
-    } catch (cause) {
-      const timedOut = errorName(cause) === 'TimeoutError' || errorName(cause) === 'AbortError';
-      throw new EmbeddingError(
-        timedOut
-          ? `embedding response timed out after ${timeoutMs} ms`
-          : 'embedding response body could not be read',
-        cause,
-      );
-    }
-
-    if (!res.ok) {
-      throw new EmbeddingError(`embedding endpoint returned ${res.status}: ${snippet(raw)}`, {
-        status: res.status,
-      });
-    }
-
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch (cause) {
-      throw new EmbeddingError(`embedding response was not valid JSON: ${snippet(raw)}`, cause);
-    }
+    // encoding_format explicit: some providers behind the broker default to base64, which
+    // would arrive as a string and fail the array check with a confusing message.
+    const { json, raw } = await postOpenRouterEmbeddings(
+      fetchImpl,
+      apiKey,
+      { model: EMBEDDING_MODEL, input: batch, encoding_format: 'float' },
+      timeoutMs,
+    );
     return parseVectors(json, batch.length, raw);
   }
 

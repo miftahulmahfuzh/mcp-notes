@@ -1,0 +1,227 @@
+{
+  "branch": "feature/chat-history-files-image-search",
+  "coordinator": "orch-chat-history-files-image-search",
+  "coordinator_session_id": "bc2cb768-6433-47f0-80f5-603d1caed877",
+  "created": "2026-10-31T09:14:22+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": "db47666aef85c567192938f966ad814eb5c68c4f",
+      "depends_on": [],
+      "difficulty": "EASY",
+      "n": 1,
+      "note": "footer reorder done; typecheck/build/npm test green; test:int skipped per coordinator (shared-DB contention). Decision: skip test:int per coordinator, rung 2",
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-1.md",
+      "reported_at": "2026-10-31T09:23:58+07:00",
+      "satisfies": [
+        "R6"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A034",
+      "title": "Card footer: reveal button left"
+    },
+    {
+      "card": null,
+      "commit": "432a4a5",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": "Lightbox + NoteEditor strip wired; test:int red only from shared-test-DB races with peers (no server code touched)",
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-2.md",
+      "reported_at": "2026-10-31T09:21:15+07:00",
+      "satisfies": [
+        "R4"
+      ],
+      "status": "done",
+      "task_id": "P2-NOTES-H202",
+      "title": "Shared Lightbox + note modal strip"
+    },
+    {
+      "card": null,
+      "commit": "db9f133ca63ca2a276bcf0b4c330b1329be99421",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": "chat_images 0003 + paste in bar; schema/migration-count tests now read journal length; live image test not run",
+      "package": "src/chat`, `src/http`, `src/db`, `web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-3.md",
+      "reported_at": "2026-10-31T09:28:11+07:00",
+      "satisfies": [
+        "R1"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A034",
+      "title": "Chat image store, paste into the bar, wall chat sends images"
+    },
+    {
+      "card": null,
+      "commit": "5fa302eff587252b87a0e460b17687bfca97c774",
+      "depends_on": [
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": "note files backend landed; fixed 2 plan test bugs (malformed id 'nope' is valid N-OPE; reveal test default-param sent Origin) without relaxing asserts; added 'files' to daemon.int subdir check",
+      "package": "src/notes`, `src/files`, `src/http`, `src/db`, `src/mcp",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-4.md",
+      "reported_at": "2026-10-31T09:50:23+07:00",
+      "satisfies": [
+        "R2"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A037",
+      "title": "Note files backend: schema, store, service, API, reveal, MCP visibility"
+    },
+    {
+      "card": null,
+      "commit": "a9f62eb",
+      "depends_on": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": "web-only; test:int schema 'reapply no-op' fails only because shared test DB already has peer's migration 0005 (6 rows vs journal 5)",
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-5.md",
+      "reported_at": "2026-10-31T10:08:44+07:00",
+      "satisfies": [
+        "R2"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A038",
+      "title": "Note files UI: paperclip, chips, paste/drop routing, reveal"
+    },
+    {
+      "card": null,
+      "commit": "700a2e5d032fea1188e3e1e82c6c23d7635f3709",
+      "depends_on": [
+        3,
+        4
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": "image embeddings + similar_images; migration 0005; no decisions; int suite green on private DB (runs.curated flakes only on shared connectors DB)",
+      "package": "src/embeddings`, `src/mcp`, `src/db`, `src/cli`, `src/chat",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-6.md",
+      "reported_at": "2026-10-31T10:11:17+07:00",
+      "satisfies": [
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A039",
+      "title": "Image embeddings and `similar_images"
+    },
+    {
+      "card": null,
+      "commit": "65a730d827f0ce872954362932144150fb397528",
+      "depends_on": [
+        3,
+        6
+      ],
+      "difficulty": "HARD",
+      "n": 7,
+      "note": "chat persistence: migration 0006, ChatService, context rebuild, reply_to, edit/delete API; no decisions; chatSchema image_ids now default []",
+      "package": "src/chat`, `src/http`, `src/db",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-7.md",
+      "reported_at": "2026-10-31T10:28:48+07:00",
+      "satisfies": [
+        "R3"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A040",
+      "title": "Chat persistence: schema, context rebuild, reply_to, edit/delete API"
+    },
+    {
+      "card": null,
+      "commit": "2b10224c0c83241c5938cd7cd2abdc47cf5a0342",
+      "depends_on": [
+        6,
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 8,
+      "note": "Stop+PreToolUse hooks, POST /api/capture/claude-code, install/uninstall merge; no decisions off-plan; run verify:paste-hook pre-merge (updatedInput unconfirmed, fallback NOTES_PASTE_STRATEGY=deny)",
+      "package": "claude/hooks`, `src/http`, `src/chat`, `scripts`, `src/mcp",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-8.md",
+      "reported_at": "2026-10-31T11:05:55+07:00",
+      "satisfies": [
+        "R1",
+        "R3"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A041",
+      "title": "Claude Code capture: hook, ingest endpoint, install, `/n` pasted images"
+    },
+    {
+      "card": null,
+      "commit": "83481059d25b633cb461fd257feb41521de73123",
+      "depends_on": [
+        2,
+        3,
+        5,
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 9,
+      "note": "history page, rail/sidebar icon, full-screen button, shared /api/events; App.test answer-head buttons 3->4 (new full-screen button); thumbWidth param typed object (typecheck)",
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-9.md",
+      "reported_at": "2026-10-31T10:57:42+07:00",
+      "satisfies": [
+        "R3"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A042",
+      "title": "History page, sidebar icon, full-screen button, timeline, thumbnails"
+    },
+    {
+      "card": null,
+      "commit": "89a814e97094dabf951c7483839cdd72b0b6f41f",
+      "depends_on": [
+        9
+      ],
+      "difficulty": "NORMAL",
+      "n": 10,
+      "note": "bubble actions landed; HistoryComposer calls send(draft, ids) with 2 args when not replying (P9 test asserts exactly 2 args) per exit criteria",
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-10.md",
+      "reported_at": "2026-10-31T11:32:45+07:00",
+      "satisfies": [
+        "R3"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A043",
+      "title": "Bubble actions: reply_to, edit, delete, restore"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        10
+      ],
+      "difficulty": "NORMAL",
+      "n": 11,
+      "note": null,
+      "package": "web",
+      "plan": ".workflows/plan/chat-history-files-image-search/phase-11.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Note-id links open the note modal in place; \"show on wall\" button"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "chat-history-files-image-search",
+  "updated": "2026-10-31T11:32:45+07:00",
+  "verified_at": "2026-10-31T10:16:48+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
+}

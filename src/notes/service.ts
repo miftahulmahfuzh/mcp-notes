@@ -1,5 +1,6 @@
 import type { Db } from '../db/client.js';
-import type { NoteImageRow } from '../db/schema.js';
+import type { NoteFileRow, NoteImageRow } from '../db/schema.js';
+import { isNoteFileRelPath, removeNoteFile, removeNoteFolderIfEmpty } from '../files/store.js';
 import { removeImageFiles } from '../images/store.js';
 import { EMBEDDING_MODEL } from '../embeddings/constants.js';
 import type { Embedder } from '../embeddings/embedder.js';
@@ -17,11 +18,13 @@ import type { NoteEvents, NoteOp } from './events.js';
 import { generateId, normalizeId } from './ids.js';
 import * as repo from './repo.js';
 import * as imageRepo from './imageRepo.js';
+import * as fileRepo from './fileRepo.js';
 import * as bin from './binRepo.js';
 import type { BinImageRow } from './binRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
 import {
+  DuplicateFileError,
   DuplicateImageError,
   NoteError,
   cleanOrigin,
@@ -29,6 +32,7 @@ import {
   toNoteImage,
   type Bin,
   type BinImage,
+  type FileMeta,
   type ImageMeta,
   type Note,
   type NotePage,
@@ -75,6 +79,13 @@ export interface AttachImageInput {
   id: string;
   path: string;
   meta: ImageMeta;
+}
+
+/** One file to add to a live note. `id` comes from newId(); `path` is `files/<noteId>/<safeName>` (src/files/store.ts fileRelPath). */
+export interface AttachFileInput {
+  id: string;
+  path: string;
+  meta: FileMeta;
 }
 
 export interface UpdateOptions {
@@ -148,7 +159,7 @@ export class NotesService {
     return id;
   }
 
-  /** An id no note and no image (live or deleted) currently has. A note's first image takes the note's id. */
+  /** An id no note, image or file (live or deleted) currently has. A note's first image takes the note's id. */
   async newId(): Promise<string> {
     for (let attempt = 0; attempt < MAX_ID_ATTEMPTS; attempt += 1) {
       const id = generateId();
@@ -507,6 +518,85 @@ export class NotesService {
   }
 
   /**
+   * Adds one non-image file to a live note, after every file it ever had (position = max over
+   * all its file rows, removed included, + 1). `path` must be `files/<noteId>/<safe name>` ->
+   * else NoteError('invalid_input'). The same bytes live in another file -> NoteError('duplicate_file');
+   * a taken id or path -> NoteError('conflict'); a deleted note -> NoteError('deleted'). Emits `updated`.
+   */
+  async attachFile(noteIdInput: string, input: AttachFileInput): Promise<Note> {
+    const noteId = this.requireId(noteIdInput);
+    const fileId = this.requireFileId(input.id);
+    if (!isNoteFileRelPath(noteId, input.path)) {
+      throw new NoteError('invalid_input', `File path ${input.path} is not inside files/${noteId}/.`);
+    }
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      await this.lockLive(tx, noteId);
+      if (await imageRepo.imageIdTaken(tx, fileId)) {
+        throw new NoteError('conflict', `File id ${fileId} is already taken.`);
+      }
+      const position = await fileRepo.nextFilePosition(tx, noteId);
+      await fileRepo.insertFile(tx, fileValues(noteId, fileId, input.path, input.meta, position));
+      return { row: await repo.touchNote(tx, noteId), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Soft-removes one file from its note (the bytes stay on disk; position is kept for restore).
+   * Works whatever state the note is in. Removing a removed file is a no-op. Returns the owning
+   * note. Emits `updated` with the note id.
+   */
+  async removeFile(fileIdInput: string): Promise<Note> {
+    const fileId = this.requireFileId(fileIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, file } = await this.lockFile(tx, fileId);
+      if (file.deletedAt !== null) return { row: note, op: null };
+      await fileRepo.setFileDeleted(tx, fileId, true);
+      return { row: await repo.touchNote(tx, note.id), op: 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
+   * Puts a removed file back at its old position, and restores its note when the note is
+   * deleted. The same bytes already live in another file -> DuplicateFileError naming that
+   * file's note. A live file in a live note is a no-op. Emits `restored` when the note came back,
+   * else `updated`, with the note id.
+   */
+  async restoreFile(fileIdInput: string): Promise<Note> {
+    const fileId = this.requireFileId(fileIdInput);
+    const result = await this.db.transaction(async (tx): Promise<Mutation> => {
+      const { note, file } = await this.lockFile(tx, fileId);
+      const fileRemoved = file.deletedAt !== null;
+      const noteDeleted = note.deletedAt !== null;
+      if (!fileRemoved && !noteDeleted) return { row: note, op: null };
+      if (fileRemoved) {
+        const holder = await fileRepo.findLiveFileBySha256(tx, file.sha256);
+        if (holder !== null && holder.file.id !== file.id) {
+          throw new DuplicateFileError(
+            holder.file.noteId,
+            `File ${fileId} cannot be restored: the same file is already in note ${holder.file.noteId}. Open that note instead, or remove the file there first.`,
+          );
+        }
+        try {
+          await fileRepo.setFileDeleted(tx, fileId, false);
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new NoteError(
+              'duplicate_file',
+              `File ${fileId} cannot be restored: the same file was just saved in another note. Try again to see which.`,
+            );
+          }
+          throw err;
+        }
+      }
+      if (noteDeleted) await repo.setDeleted(tx, note.id, false);
+      return { row: await repo.touchNote(tx, note.id), op: noteDeleted ? 'restored' : 'updated' };
+    });
+    return this.finish(result);
+  }
+
+  /**
    * The recycle bin: deleted notes (each with its non-removed images) and every binned image,
    * both newest-deleted first, optionally narrowed to notes carrying every tag in `tagsAll`.
    * Read-only; live notes' sidebar counts (tags()) are unaffected.
@@ -521,31 +611,35 @@ export class NotesService {
   }
 
   /**
-   * Delete forever: only a deleted note. Removes the notes row (images, revisions and embeddings
-   * cascade) in one transaction, then the original and derived files of every image the note
-   * held, removed ones included. UI-only: no MCP tool calls this.
+   * Delete forever: only a deleted note. Removes the notes row (images, files, revisions and
+   * embeddings cascade) in one transaction, then, on disk, the original and derived files of
+   * every image the note held and every file under files/<noteId>/ that one of its file rows
+   * names, removed ones included, then that folder if it is empty. A file that cannot be removed
+   * is logged, never fails the purge. UI-only: no MCP tool calls this.
    */
   async purgeNote(idInput: string): Promise<PurgeResult> {
     const id = this.requireId(idInput);
-    const targets = await this.db.transaction(async (tx): Promise<Array<{ id: string; path: string }>> => {
+    type Target = { id: string; path: string };
+    const targets = await this.db.transaction(async (tx): Promise<{ images: Target[]; files: Target[] }> => {
       const cur = await repo.lockNote(tx, id);
       if (cur === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
       if (cur.deletedAt === null) {
         throw new NoteError('not_deleted', `Note ${id} is not deleted. Only notes in the bin can be deleted forever.`);
       }
       const rows = (await imageRepo.imagesForNotes(tx, [id], { includeRemoved: true })).get(id) ?? [];
-      const files = rows.map((img) => ({ id: img.id, path: img.path }));
+      const images = rows.map((img) => ({ id: img.id, path: img.path }));
       // The legacy column names a file too; after the reconcile it is the same path as the
       // note's first image row, so this only adds something if that row is somehow missing.
-      if (cur.imagePath !== null && !files.some((f) => f.path === cur.imagePath)) {
-        files.push({ id, path: cur.imagePath });
+      if (cur.imagePath !== null && !images.some((f) => f.path === cur.imagePath)) {
+        images.push({ id, path: cur.imagePath });
       }
+      const fileRows = (await fileRepo.filesForNotes(tx, [id], { includeRemoved: true })).get(id) ?? [];
       await bin.deleteNoteRow(tx, id);
-      return files;
+      return { images, files: fileRows.map((f) => ({ id: f.id, path: f.path })) };
     });
-    const files = await this.removeFiles(targets);
+    const removed = (await this.removeFiles(targets.images)) + (await this.removeNoteFiles(id, targets.files));
     this.events.emit('purged', id);
-    return { purged: id, files };
+    return { purged: id, files: removed };
   }
 
   /**
@@ -597,6 +691,29 @@ export class NotesService {
     return removed;
   }
 
+  /**
+   * Removes a purged note's files from files/<noteId>/, then the folder when it is empty. Each
+   * failure is logged and skipped: the rows are already gone, and a leftover file is harmless.
+   */
+  private async removeNoteFiles(noteId: string, targets: ReadonlyArray<{ id: string; path: string }>): Promise<number> {
+    let removed = 0;
+    for (const target of targets) {
+      try {
+        removed += await removeNoteFile(this.dataDir, noteId, target.path);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.error(`notesd: purge could not remove file ${target.id} (${target.path}) of note ${noteId}: ${reason}`);
+      }
+    }
+    try {
+      await removeNoteFolderIfEmpty(this.dataDir, noteId);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`notesd: purge could not remove the files folder of note ${noteId}: ${reason}`);
+    }
+    return removed;
+  }
+
   /** Brings back a revision's body; the body it replaces becomes a new revision. */
   async revert(idInput: string, revision: number): Promise<Note> {
     const id = this.requireId(idInput);
@@ -634,6 +751,18 @@ export class NotesService {
     return id;
   }
 
+  /** Canonical file id or NoteError('invalid_id'). File ids share the note-id format. */
+  private requireFileId(input: string): string {
+    const id = normalizeId(input);
+    if (id === null) {
+      throw new NoteError(
+        'invalid_id',
+        `"${input}" is not a file id. File ids look like A-B32 (case and the dash are optional); every note lists its files with their ids.`,
+      );
+    }
+    return id;
+  }
+
   /**
    * Locks the image's owning note, then re-reads the image, so concurrent changes to one note's
    * images run one after another. Unknown image -> NoteError('not_found').
@@ -649,6 +778,16 @@ export class NotesService {
     return { note, image };
   }
 
+  /** As lockImage, for files: the owning note row first, then the file is re-read. */
+  private async lockFile(tx: repo.Tx, fileId: string): Promise<{ note: NoteRow; file: NoteFileRow }> {
+    const first = await fileRepo.findFileById(tx, fileId);
+    if (first === null) throw fileNotFound(fileId);
+    const note = await repo.lockNote(tx, first.noteId);
+    const file = await fileRepo.findFileById(tx, fileId);
+    if (note === null || file === null) throw fileNotFound(fileId);
+    return { note, file };
+  }
+
   private async finish(result: Mutation): Promise<Note> {
     if (result.op !== null) this.events.emit(result.op, result.row.id);
     return this.toNote(result.row);
@@ -659,11 +798,13 @@ export class NotesService {
     return note!;
   }
 
-  /** Wire notes in input order, with every note's live images loaded in one query. */
+  /** Wire notes in input order, with every note's live images and live files loaded in one query each. */
   private async toNotes(rows: readonly NoteRow[]): Promise<Note[]> {
     if (rows.length === 0) return [];
-    const images = await imageRepo.imagesForNotes(this.db, rows.map((r) => r.id));
-    return rows.map((r) => rowToNote(r, this.dataDir, images.get(r.id) ?? []));
+    const ids = rows.map((r) => r.id);
+    const images = await imageRepo.imagesForNotes(this.db, ids);
+    const files = await fileRepo.filesForNotes(this.db, ids);
+    return rows.map((r) => rowToNote(r, this.dataDir, images.get(r.id) ?? [], files.get(r.id) ?? []));
   }
 }
 
@@ -705,13 +846,32 @@ function imageValues(noteId: string, id: string, path: string, meta: ImageMeta, 
   };
 }
 
+/** note_files insert values for one file (drizzle field names). extraction_status takes its default 'none'. */
+function fileValues(noteId: string, id: string, path: string, meta: FileMeta, position: number) {
+  return {
+    id,
+    noteId,
+    path,
+    sha256: meta.sha256,
+    mime: meta.mime,
+    bytes: meta.bytes,
+    originalName: meta.original_name,
+    host: meta.host,
+    position,
+  };
+}
+
 function imageNotFound(imageId: string): NoteError {
   return new NoteError('not_found', `Image ${imageId} does not exist. Image ids are listed in each note's images.`);
 }
 
-/** A unique-index clash: phase 1's NoteError('duplicate_image') or a raw Postgres 23505. */
+function fileNotFound(fileId: string): NoteError {
+  return new NoteError('not_found', `File ${fileId} does not exist. File ids are listed in each note's files.`);
+}
+
+/** A unique-index clash: NoteError('duplicate_image' | 'duplicate_file') or a raw Postgres 23505. */
 function isUniqueViolation(err: unknown): boolean {
-  if (err instanceof NoteError) return err.code === 'duplicate_image';
+  if (err instanceof NoteError) return err.code === 'duplicate_image' || err.code === 'duplicate_file';
   let cur: unknown = err;
   for (let depth = 0; depth < 4 && cur !== null && typeof cur === 'object'; depth += 1) {
     if ((cur as { code?: unknown }).code === '23505') return true;

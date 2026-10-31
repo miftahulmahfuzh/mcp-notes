@@ -1,0 +1,16 @@
+/* Shared image lightbox (R4): the note editor strip and, from Phase 9, chat thumbnails.
+   z-index 66: above the editor / photo modal (60) and the undo bar (65), below the drop overlay (70)
+   and tooltips (200). */
+.lb { position: fixed; inset: 0; z-index: 66; background: rgba(10, 10, 9, .96); display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; grid-template-rows: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 16px; box-sizing: border-box; color: var(--fg); font-family: var(--sans); outline: none; }
+.lb-top { grid-column: 1 / -1; grid-row: 1; display: flex; justify-content: flex-end; }
+.lb-nav { grid-row: 2; display: grid; place-items: center; }
+.lb-nav-prev { grid-column: 1; }
+.lb-nav-next { grid-column: 3; }
+.lb-stage { grid-column: 2; grid-row: 2; height: 100%; min-width: 0; min-height: 0; display: grid; place-items: center; }
+.lb-img { display: block; max-width: 100%; max-height: calc(100vh - 140px); object-fit: contain; background: var(--img-bg); }
+.lb-btn { width: 44px; height: 44px; border: 0; border-radius: 999px; background: transparent; color: var(--fg); font-size: 22px; cursor: pointer; display: grid; place-items: center; }
+.lb-btn:hover:not(:disabled) { background: var(--hover); }
+.lb-btn:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
+.lb-btn:disabled { opacity: .25; cursor: default; }
+.lb-meta { grid-column: 2; grid-row: 3; display: flex; justify-content: center; gap: 14px; min-width: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .03em; color: var(--dim); }
+.lb-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--id); }

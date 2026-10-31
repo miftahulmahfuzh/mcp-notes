@@ -11,7 +11,7 @@ import { defineConfig } from 'vitest/config'
  *   (the three connector schemas, rebuilt from the sibling repos' migrations by
  *   tests/integration/connectors/globalSetup.ts). Integration files run one at a time because
  *   they share databases and truncate them. Embeddings there come from the deterministic fake
- *   embedder; no network.
+ *   embedders; no network.
  * - `npm run test:live` sets CHAT_LIVE_TEST=1 on top of scripts/test-int.sh, which switches the
  *   run to `tests/live/chat.live.test.ts` only: real Claude and real GLM calls through the Agent
  *   SDK, on the notes Docker Postgres. Opt-in, slow and billed.
@@ -21,6 +21,9 @@ import { defineConfig } from 'vitest/config'
  * - `npm run test:live:embeddings` sets EMBEDDINGS_LIVE_TEST=1 (no Docker, no database), which
  *   runs only `tests/live/embeddings.live.test.ts`: one real, billed OpenRouter embeddings call
  *   (OPENROUTER_API_KEY from .env.local) over the labelled search set. Opt-in.
+ * - `npm run test:live:imageEmbeddings` sets IMAGE_EMBEDDINGS_LIVE_TEST=1 (no Docker, no
+ *   database), which runs only `tests/live/imageEmbeddings.live.test.ts`: a few real, billed
+ *   google/gemini-embedding-2 calls that document the request shapes and check the width. Opt-in.
  * None of the live files is ever part of `npm test` or `test:int`.
  *
  * Do not add a second config file.
@@ -28,10 +31,15 @@ import { defineConfig } from 'vitest/config'
 const chatLive = process.env.CHAT_LIVE_TEST === '1'
 const connectorsLive = process.env.CONNECTORS_LIVE_TEST === '1'
 const embeddingsLive = process.env.EMBEDDINGS_LIVE_TEST === '1'
+const imageEmbeddingsLive = process.env.IMAGE_EMBEDDINGS_LIVE_TEST === '1'
 const integration =
-  !connectorsLive && !embeddingsLive && (chatLive || process.env.VITEST_INTEGRATION === '1')
+  !connectorsLive &&
+  !embeddingsLive &&
+  !imageEmbeddingsLive &&
+  (chatLive || process.env.VITEST_INTEGRATION === '1')
 
 function includeFor(): string[] {
+  if (imageEmbeddingsLive) return ['tests/live/imageEmbeddings.live.test.ts']
   if (embeddingsLive) return ['tests/live/embeddings.live.test.ts']
   if (connectorsLive) return ['tests/live/connectors.live.test.ts']
   if (chatLive) return ['tests/live/chat.live.test.ts']
@@ -40,7 +48,7 @@ function includeFor(): string[] {
 }
 
 function globalSetupFor(): string[] {
-  if (embeddingsLive || connectorsLive) return []
+  if (embeddingsLive || connectorsLive || imageEmbeddingsLive) return []
   if (chatLive) return ['tests/integration/globalSetup.ts']
   if (integration) return ['tests/integration/globalSetup.ts', 'tests/integration/connectors/globalSetup.ts']
   return []
@@ -48,7 +56,7 @@ function globalSetupFor(): string[] {
 
 function testTimeoutFor(): number {
   if (chatLive) return 300_000
-  if (connectorsLive || embeddingsLive) return 60_000
+  if (connectorsLive || embeddingsLive || imageEmbeddingsLive) return 60_000
   if (integration) return 30_000
   return 5_000
 }
@@ -62,6 +70,6 @@ export default defineConfig({
     globalSetup: globalSetupFor(),
     fileParallelism: !integration,
     testTimeout: testTimeoutFor(),
-    hookTimeout: chatLive || connectorsLive || embeddingsLive || integration ? 60_000 : 10_000,
+    hookTimeout: chatLive || connectorsLive || embeddingsLive || imageEmbeddingsLive || integration ? 60_000 : 10_000,
   },
 })

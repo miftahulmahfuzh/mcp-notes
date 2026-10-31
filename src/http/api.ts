@@ -1,13 +1,26 @@
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
-import type { ChatBackend, ChatBrain, ChatEvent } from '../chat/backend.js';
+import type { ChatBackend, ChatBrain, ChatTurnImage } from '../chat/backend.js';
+import { CitationFilter } from '../chat/citation.js';
+import type { ChatChange } from '../chat/events.js';
+import { normalizeMessageId } from '../chat/ids.js';
+import {
+  ChatImageLookupError,
+  chatImageStoreFor,
+  MAX_CHAT_IMAGES_PER_MESSAGE,
+  resolveTurnImages,
+  type ChatImageLookupErrorCode,
+} from '../chat/images.js';
+import type { UserTurnStart } from '../chat/service.js';
 import { createStubChatBackend } from '../chat/stub.js';
+import { composeWallTurn } from '../chat/turn.js';
 import type { AppDeps } from '../deps.js';
 import type { NoteEvent } from '../notes/events.js';
 import { normalizeId } from '../notes/ids.js';
 import { MAX_LIMIT } from '../notes/repo.js';
 import { NoteError } from '../notes/types.js';
+import { chatErrorResponse } from './chatApi.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 export const DEFAULT_LIST_LIMIT = 2000;
@@ -31,12 +44,45 @@ const noteBodySchema = z.object({
   body: z.string(),
 });
 
-const chatSchema = z.object({
-  message: z.string().trim().min(1),
-  thread_id: z.string().trim().min(1).max(200).optional(),
-});
+/** `message` may be empty only when images come with it (phase 3). */
+const chatSchema = z
+  .object({
+    /** Defaults to '' (P3): an image-only message may omit it. */
+    message: z.string().trim().default(''),
+    thread_id: z.string().trim().min(1).max(200).optional(),
+    reply_to: z.string().trim().min(1).max(32).optional(),
+    /** Chat image ids from POST /api/chat/images, in paste order (phase 3). */
+    image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).default([]),
+  })
+  .refine((body) => body.message.length > 0 || body.image_ids.length > 0, {
+    message: 'a message or at least one image is required',
+    path: ['message'],
+  });
 
-function describeIssues(error: z.ZodError): string {
+/** `event: done` of POST /api/chat. */
+interface ChatDone {
+  /** OUR thread id (chat_threads.id). */
+  thread_id: string;
+  user_message_id: string;
+  assistant_message_id: string;
+  /** The bubble the answer replies to (leading `[msg:ID]`), or null. */
+  reply_to: string | null;
+  brain?: ChatBrain;
+}
+
+/** ChatImageLookupError -> HTTP status, answered as JSON before any SSE. */
+function chatImageErrorStatus(code: ChatImageLookupErrorCode): 400 | 409 | 422 {
+  switch (code) {
+    case 'unknown_image':
+      return 400;
+    case 'not_on_this_machine':
+      return 409;
+    case 'unreadable_image':
+      return 422;
+  }
+}
+
+export function describeIssues(error: z.ZodError): string {
   return error.issues
     .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'request'}: ${issue.message}`)
     .join('; ');
@@ -68,7 +114,7 @@ function noteErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-async function readJson(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
+export async function readJson(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     return { ok: true, value: await c.req.json() };
   } catch {
@@ -86,20 +132,11 @@ function parseTagParams(raw: string[] | undefined): string[] {
   return [...seen];
 }
 
-/** The SSE event name for a chat event. One per `ChatEvent` variant; both carry `{text}`. */
-function chatEventName(event: ChatEvent): 'delta' | 'status' {
-  switch (event.type) {
-    case 'delta':
-      return 'delta';
-    case 'status':
-      return 'status';
-  }
-}
-
 export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
   const api = new Hono();
   const service = deps.service;
-  const chat = options.chat ?? createStubChatBackend();
+  const history = deps.chat;
+  const backend = options.chat ?? createStubChatBackend();
   const heartbeatMs = options.sseHeartbeatMs ?? SSE_HEARTBEAT_MS;
 
   api.get('/api/notes', async (c) => {
@@ -221,13 +258,23 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
   api.get('/api/events', (c) =>
     streamSSE(c, async (stream) => {
       let closed = false;
-      const listener = (event: NoteEvent): void => {
+      const onNote = (event: NoteEvent): void => {
         if (closed) return;
         void stream
           .writeSSE({ event: 'note', data: JSON.stringify({ op: event.op, id: event.id }) })
           .catch(() => undefined);
       };
-      const unsubscribe = deps.events.on(listener);
+      const onChat = (change: ChatChange): void => {
+        if (closed) return;
+        void stream
+          .writeSSE({
+            event: 'chat',
+            data: JSON.stringify({ op: change.op, thread_id: change.thread_id, id: change.id }),
+          })
+          .catch(() => undefined);
+      };
+      const unsubscribeNote = deps.events.on(onNote);
+      const unsubscribeChat = history.events.on(onChat);
       await new Promise<void>((resolve) => {
         const timer = setInterval(() => {
           if (!closed) void stream.write(': heartbeat\n\n').catch(() => undefined);
@@ -235,7 +282,8 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
         stream.onAbort(() => {
           closed = true;
           clearInterval(timer);
-          unsubscribe();
+          unsubscribeNote();
+          unsubscribeChat();
           resolve();
         });
         void stream.write(': connected\n\n').catch(() => undefined);
@@ -243,35 +291,101 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     }),
   );
 
+  /**
+   * One wall chat turn. Order: validate -> write the user row (it survives any later failure) ->
+   * `event: accepted` -> rebuild context from our rows -> stream (a leading `[msg:ID]` is held back
+   * and stripped) -> on a clean finish only, write the assistant row -> `event: done`. A client
+   * abort persists nothing for the answer. An unknown thread_id (e.g. an Agent SDK session id from
+   * before phase 7) starts a new thread.
+   */
   api.post('/api/chat', async (c) => {
     const json = await readJson(c);
     if (!json.ok) return badRequest(c, 'invalid_json');
     const parsed = chatSchema.safeParse(json.value);
     if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
-    const { message, thread_id } = parsed.data;
+    const { message, thread_id, reply_to, image_ids } = parsed.data;
+
+    let replyTo: string | null = null;
+    if (reply_to !== undefined) {
+      replyTo = normalizeMessageId(reply_to);
+      if (replyTo === null) return badRequest(c, 'invalid_reply_to');
+    }
+    let currentImages: ChatTurnImage[] = [];
+    if (image_ids.length > 0) {
+      try {
+        currentImages = await resolveTurnImages(chatImageStoreFor(deps), image_ids);
+      } catch (err) {
+        if (!(err instanceof ChatImageLookupError)) throw err;
+        return c.json({ error: err.code, id: err.imageId, message: err.message }, chatImageErrorStatus(err.code));
+      }
+    }
+    let start: UserTurnStart;
+    try {
+      start = await history.addUserMessage({
+        threadId: thread_id ?? null,
+        source: 'wall',
+        text: message,
+        attachments: currentImages.map((image) => ({ kind: 'chat_image' as const, id: image.id })),
+        replyTo,
+      });
+    } catch (err) {
+      return chatErrorResponse(c, err);
+    }
+    const threadId = start.thread.id;
+    const userMessageId = start.message.id;
 
     return streamSSE(c, async (stream) => {
       const controller = new AbortController();
       stream.onAbort(() => controller.abort());
+      const send = (event: string, data: unknown): Promise<void> =>
+        stream.writeSSE({ event, data: JSON.stringify(data) });
       try {
-        const turn = await chat.reply({
-          message,
-          threadId: thread_id ?? null,
-          signal: controller.signal,
+        await send('accepted', { thread_id: threadId, user_message_id: userMessageId });
+        const composed = await composeWallTurn(history, chatImageStoreFor(deps), {
+          threadId,
+          currentMessageId: userMessageId,
+          currentImages,
         });
+        if (controller.signal.aborted) return;
+        const turn = await backend.reply({ turn: composed, signal: controller.signal });
+        const citation = new CitationFilter();
         for await (const event of turn.events) {
           if (controller.signal.aborted) return;
-          await stream.writeSSE({ event: chatEventName(event), data: JSON.stringify({ text: event.text }) });
+          if (event.type === 'delta') {
+            const text = citation.push(event.text);
+            if (text !== '') await send('delta', { text });
+          } else {
+            const held = citation.flush();
+            if (held !== '') await send('delta', { text: held });
+            await send('status', { text: event.text });
+          }
         }
         if (controller.signal.aborted) return;
+        const tail = citation.end();
+        if (tail !== '') await send('delta', { text: tail });
         const end = turn.end();
-        const done: { thread_id: string; brain?: ChatBrain } = { thread_id: end.threadId };
+        const cited = citation.replyTo;
+        const answerReplyTo =
+          cited !== null && cited !== userMessageId && (await history.liveMessageExists(cited)) ? cited : null;
+        if (controller.signal.aborted) return;
+        const answer = await history.addAssistantMessage({
+          threadId,
+          text: citation.text,
+          brain: end.brain ?? null,
+          replyTo: answerReplyTo,
+        });
+        const done: ChatDone = {
+          thread_id: threadId,
+          user_message_id: userMessageId,
+          assistant_message_id: answer.id,
+          reply_to: answerReplyTo,
+        };
         if (end.brain !== undefined) done.brain = end.brain;
-        await stream.writeSSE({ event: 'done', data: JSON.stringify(done) });
+        await send('done', done);
       } catch (err) {
         if (controller.signal.aborted) return;
         const error = err instanceof Error ? err.message : String(err);
-        await stream.writeSSE({ event: 'error', data: JSON.stringify({ error }) });
+        await send('error', { error });
       }
     });
   });

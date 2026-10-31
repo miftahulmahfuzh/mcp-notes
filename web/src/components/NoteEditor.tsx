@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
-import { Check, Copy, Trash, X } from '@phosphor-icons/react';
-import type { Note, NoteImage as NoteImageData, TagCount } from '../types';
+import { Check, Copy, Crosshair, Paperclip, Trash, X } from '@phosphor-icons/react';
+import type { Note, NoteFile, NoteImage as NoteImageData, TagCount } from '../types';
 import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
 import { RevealButton } from './RevealButton';
+import { Lightbox, isLightboxOpen, noteImageItems } from './Lightbox';
+import { FileChips } from './FileChips';
+import { NoteRevealButton } from './NoteRevealButton';
 import './NoteEditor.css';
 
 export interface NoteEditorProps {
@@ -26,11 +29,17 @@ export interface NoteEditorProps {
   tags?: TagCount[];
   /** Bumped by App to close this editor the normal way (draft saved, empty rule), e.g. a deep link to another note. The value at mount never closes it. */
   closeSignal?: number;
+  /** Phase 5 (R2): files picked with the paperclip, in order. App routes images to `/images` and the rest to `/files`. Absent = no paperclip. */
+  onAttachFiles?: (files: File[]) => void;
+  /** Phase 5 (R2): a file chip's remove icon (soft remove; App offers a 6 s undo). Absent = no remove icon on chips. */
+  onRemoveFile?: (file: NoteFile) => void;
+  /** Phase 11: the "Show on wall" icon. The editor first closes the normal way (draft saved, empty rule), then this runs. Absent = no icon. */
+  onShowOnWall?: (note: Note) => void;
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, onShowOnWall, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -45,6 +54,12 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   // Start index of the `#…` token whose popup Esc dismissed; a new token reopens it.
   const [dismissed, setDismissed] = useState<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
+  // Phase 5: the hidden multi-file input the paperclip clicks.
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const files = note.files ?? [];
+  // Id of the strip image shown in the lightbox (R4), or null. An id, not an index: attaches and
+  // removes while it is open must not shift it onto another image.
+  const [viewing, setViewing] = useState<string | null>(null);
 
   useEffect(() => {
     const el = taRef.current;
@@ -68,6 +83,9 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // A lightbox over the editor owns Esc. It registers its own window capture listener after this
+      // one, so its stopPropagation cannot keep this listener from running: yield while it is open.
+      if (isLightboxOpen()) return;
       if (popupRef.current !== null) {
         // Esc with the tag popup open closes the popup only.
         e.preventDefault();
@@ -93,6 +111,8 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   };
 
   const tags = tagsOf(draft);
+  // Nothing to show on the wall: close() would delete it under the empty rule.
+  const blank = draft.trim() === '' && note.images.length === 0 && (note.files?.length ?? 0) === 0;
 
   const query = tagQueryAt(draft, caret);
   const suggestions = query && query.start !== dismissed ? suggestTags(knownTags, query.text) : [];
@@ -100,6 +120,16 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   const activeIdx = Math.min(active, Math.max(suggestions.length - 1, 0));
   const popupRef = useRef<number | null>(null);
   popupRef.current = open && query ? query.start : null;
+
+  const available = note.images.filter((img) => img.available);
+  const lightboxItems = noteImageItems(note.images);
+  const viewIndex = viewing === null ? -1 : lightboxItems.findIndex((item) => item.id === viewing);
+
+  // The viewed image left the note (removed here or elsewhere, or no longer on this machine): close
+  // the lightbox rather than let it reappear if that image comes back.
+  useEffect(() => {
+    if (viewing !== null && viewIndex < 0) setViewing(null);
+  }, [viewing, viewIndex]);
 
   useEffect(() => {
     if (pendingCaret.current === null) return;
@@ -143,6 +173,46 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             {notice ?? ''}
           </span>
           <span className="ed-spacer" />
+          <NoteRevealButton note={note} className="ed-btn" />
+          {onAttachFiles && (
+            <>
+              <button type="button" className="ed-btn" data-tip="Attach files" aria-label="Attach files" onClick={() => pickerRef.current?.click()}>
+                <Paperclip weight="duotone" />
+              </button>
+              <input
+                ref={pickerRef}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                aria-hidden="true"
+                data-picker=""
+                onChange={(e) => {
+                  const input = e.currentTarget;
+                  // Copy first: clearing the value empties the live FileList. Clearing lets the same file be picked again.
+                  const picked = Array.from(input.files ?? []);
+                  input.value = '';
+                  if (picked.length > 0) onAttachFiles(picked);
+                }}
+              />
+            </>
+          )}
+          {onShowOnWall && (
+            <button
+              type="button"
+              className="ed-btn"
+              data-tip="Show on wall"
+              aria-label="Show on wall"
+              disabled={blank}
+              onClick={() => {
+                if (closedRef.current) return;
+                close();
+                onShowOnWall(noteRef.current);
+              }}
+            >
+              <Crosshair weight="duotone" />
+            </button>
+          )}
           {onDelete && (
             <button
               type="button"
@@ -212,11 +282,20 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             ))}
           </div>
         )}
-        {note.images.some((img) => img.available) && (
+        <FileChips files={files} onRemove={onRemoveFile} />
+        {available.length > 0 && (
           <div className="ed-strip" data-strip="">
-            {note.images.filter((img) => img.available).map((img) => (
+            {available.map((img) => (
               <div key={img.id} className="ed-thumb" data-image={img.id} style={{ aspectRatio: aspectOf(img).css }}>
-                <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button
+                  type="button"
+                  className="ed-open"
+                  data-open={img.id}
+                  aria-label={`View image ${img.id}`}
+                  onClick={() => setViewing(img.id)}
+                >
+                  <NoteImage image={img} variant="thumb" className="ed-thumb-img" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </button>
                 <RevealButton image={img} className="ed-rm ed-reveal" />
                 <button type="button" className="ed-rm" data-tip="Remove image" aria-label="Remove image" onClick={() => onRemoveImage(img)}>
                   <X weight="duotone" />
@@ -224,6 +303,14 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
               </div>
             ))}
           </div>
+        )}
+        {viewIndex >= 0 && (
+          <Lightbox
+            items={lightboxItems}
+            index={viewIndex}
+            onIndex={(i) => setViewing(lightboxItems[i].id)}
+            onClose={() => setViewing(null)}
+          />
         )}
       </div>
     </div>

@@ -4,8 +4,10 @@ import path from 'node:path';
 import { serve, type ServerType } from '@hono/node-server';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
+import type { ChatBackend } from '../../src/chat/backend.js';
 import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
+import type { ImageEmbedder } from '../../src/embeddings/imageEmbedder.js';
 import { createApp } from '../../src/http/app.js';
 import { sha256Hex } from '../../src/images/probe.js';
 import { dbImageRecords } from '../../src/images/records.js';
@@ -13,6 +15,7 @@ import { NoteEvents } from '../../src/notes/events.js';
 import { insertImage } from '../../src/notes/imageRepo.js';
 import { NotesService } from '../../src/notes/service.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 export interface Harness {
   deps: AppDeps;
@@ -24,10 +27,17 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function startHarness(): Promise<Harness> {
+export interface HarnessOptions {
+  /** The brain behind POST /api/chat. Omitted: createApp's default (the stub). */
+  chat?: ChatBackend;
+  /** Image embedder for similar_images over /mcp. Default null (image search off). */
+  imageEmbedder?: ImageEmbedder | null;
+}
+
+export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   const url = testDatabaseUrl();
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'mcp-notes-p5-'));
-  for (const sub of ['images', 'cache', 'inbox', 'inbox/failed']) {
+  for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat-images', 'files']) {
     await mkdir(path.join(dataDir, sub), { recursive: true });
   }
   const db = openTestDb();
@@ -39,8 +49,10 @@ export async function startHarness(): Promise<Harness> {
     events,
     service,
     embedder: null,
+    imageEmbedder: options.imageEmbedder ?? null,
+    chat: new ChatService({ db }),
   };
-  const app = createApp(deps);
+  const app = createApp(deps, options.chat !== undefined ? { chat: options.chat } : {});
   let server: ServerType | undefined;
 
   return {
@@ -59,10 +71,10 @@ export async function startHarness(): Promise<Harness> {
     },
     async reset() {
       await truncateAll(db);
-      await rm(path.join(dataDir, 'images'), { recursive: true, force: true });
-      await rm(path.join(dataDir, 'cache'), { recursive: true, force: true });
-      await mkdir(path.join(dataDir, 'images'), { recursive: true });
-      await mkdir(path.join(dataDir, 'cache'), { recursive: true });
+      for (const sub of ['images', 'cache', 'chat-images', 'files']) {
+        await rm(path.join(dataDir, sub), { recursive: true, force: true });
+        await mkdir(path.join(dataDir, sub), { recursive: true });
+      }
     },
     async close() {
       if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));

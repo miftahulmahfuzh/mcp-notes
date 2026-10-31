@@ -20,6 +20,7 @@ function note(id: string, images: NoteImageData[]): Note {
 }
 
 const reveals = (root: ParentNode) => Array.from(root.querySelectorAll<HTMLElement>('[data-reveal]')).map((b) => b.dataset.reveal);
+const noteReveals = (root: ParentNode) => Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-note]')).map((b) => b.dataset.revealNote);
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
@@ -49,26 +50,36 @@ function renderCard(n: Note) {
 }
 
 describe('reveal mount points', () => {
-  it('wall card: one icon in the meta row, for the cover image, when caps.reveal', () => {
+  it('wall card: one note-level icon in the meta row, right after Copy ID, when caps.reveal', () => {
     resetCapabilitiesForTests({ reveal: true });
     const { container } = renderCard(note('K-F07', [img('K-F07', 'K-F07', 0), img('M-Q11', 'K-F07', 1)]));
     const meta = container.querySelector('.card-meta') as HTMLElement;
-    expect(reveals(meta)).toEqual(['K-F07']);
+    expect(reveals(meta)).toEqual([]);
+    expect(noteReveals(meta)).toEqual(['K-F07']);
+    // Left-aligned: right after the copy-ID button, ahead of the (width-reserving) copied label.
+    const btn = meta.querySelector('[data-reveal-note]') as HTMLElement;
+    expect(btn.previousElementSibling?.getAttribute('aria-label')).toBe('Copy ID');
+    expect(btn.nextElementSibling?.classList.contains('copied')).toBe(true);
   });
 
-  it('wall card: none for a text note, none when caps.reveal is false, none when the cover is elsewhere', () => {
+  it('wall card: none for a text note, none when caps.reveal is false, none when every image is elsewhere', () => {
     resetCapabilitiesForTests({ reveal: true });
     const text = renderCard(note('A-B32', []));
-    expect(reveals(text.container)).toEqual([]);
+    expect(noteReveals(text.container)).toEqual([]);
     text.unmount();
 
     const away = renderCard(note('K-F07', [img('K-F07', 'K-F07', 0, false)]));
-    expect(reveals(away.container)).toEqual([]);
+    expect(noteReveals(away.container)).toEqual([]);
     away.unmount();
+
+    // A later local image is enough (the note-level route picks what to show).
+    const later = renderCard(note('K-F07', [img('K-F07', 'K-F07', 0, false), img('M-Q11', 'K-F07', 1)]));
+    expect(noteReveals(later.container)).toEqual(['K-F07']);
+    later.unmount();
 
     resetCapabilitiesForTests({ reveal: false });
     const off = renderCard(note('K-F07', [img('K-F07', 'K-F07', 0)]));
-    expect(reveals(off.container)).toEqual([]);
+    expect(noteReveals(off.container)).toEqual([]);
   });
 
   it('photo modal: the toolbar reveals the current image, not the note cover', () => {
@@ -107,5 +118,14 @@ describe('reveal mount points', () => {
     const props = { note: n } as NoteEditorProps;
     render(<NoteEditor {...props} />);
     expect(reveals(document.body)).toEqual([]);
+  });
+
+  it('editor top bar: one note-level icon besides the per-image strip icons', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const n = note('K-F07', [img('K-F07', 'K-F07', 0), img('P-R22', 'K-F07', 1)]);
+    const props = { note: n } as NoteEditorProps;
+    render(<NoteEditor {...props} />);
+    expect(noteReveals(document.body)).toEqual(['K-F07']);
+    expect(reveals(document.body)).toEqual(['K-F07', 'P-R22']);
   });
 });

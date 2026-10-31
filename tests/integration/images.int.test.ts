@@ -18,6 +18,7 @@ import { setImageDeleted } from '../../src/notes/imageRepo.js';
 import { NoteError } from '../../src/notes/types.js';
 import { fixtureBytes, HEIC_PHOTO, JPEG_EXIF, PNG_PLAIN, tempDir } from '../helpers/fixtures.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 const db = openTestDb();
 let dir: string;
@@ -140,6 +141,8 @@ describe('inbox via startBackground', () => {
       events: new NoteEvents(),
       service: notes,
       embedder: null,
+      imageEmbedder: null,
+      chat: new ChatService({ db }),
     };
     stop = await startBackground(app);
     const dropped = path.join(dir, 'inbox', 'phone.jpg');
@@ -169,6 +172,8 @@ describe('inbox via startBackground', () => {
       events: new NoteEvents(),
       service: notes,
       embedder: null,
+      imageEmbedder: null,
+      chat: new ChatService({ db }),
     };
     stop = await startBackground(app);
     const note = (await notes.getOne('L-EG1'))!;

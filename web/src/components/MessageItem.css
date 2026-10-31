@@ -1,0 +1,49 @@
+/* Phase 10: bubble actions on the history page. They live inside P9's li.bubble (slots), so P9's
+   alignment (.bubble.mine / .bubble.theirs) and look stay; these rules only add to them. */
+.bubble[data-msg]:focus { outline: none; }
+.bubble[data-msg]:focus-visible .bubble-body { outline-color: var(--line-25); }
+.bubble.msg-deleted > :not(.msg-foot) { opacity: .4; }
+
+/* quoted header of a reply bubble */
+.msg-quote { display: flex; align-items: baseline; gap: 6px; max-width: min(560px, 100%); margin: 0 0 4px; padding: 3px 8px; border: 0; border-left: 2px solid var(--line-25); background: transparent; color: var(--dim); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.msg-quote:hover, .msg-quote:focus-visible { color: var(--muted); border-left-color: var(--ring); outline: none; }
+.msg-quote-author { font-family: var(--mono); font-size: 10.5px; color: var(--id); flex-shrink: 0; }
+.msg-quote-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-quote-deleted { cursor: default; font-family: var(--mono); font-size: 10.5px; font-style: italic; }
+
+/* edited mark + action buttons */
+.msg-foot { display: flex; align-items: center; gap: 2px; min-height: 24px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--dim); }
+.msg-edited { padding: 0 4px; cursor: default; outline: none; }
+.msg-edited:focus-visible { color: var(--muted); }
+.msg-btn { opacity: 0; transition: opacity .12s ease-out; }
+.bubble:hover .msg-btn, .bubble:focus-within .msg-btn, .msg-deleted .msg-btn { opacity: 1; }
+
+/* inline "Delete the answer too?" */
+.msg-confirm { display: flex; align-items: center; gap: 6px; }
+.msg-confirm-q { color: var(--muted); }
+.msg-confirm button { height: 24px; padding: 0 8px; border: 1px solid var(--line-14); background: transparent; color: var(--muted); font-family: var(--mono); font-size: 10.5px; cursor: pointer; }
+.msg-confirm button:hover, .msg-confirm button:focus-visible { color: var(--fg); border-color: var(--line-25); outline: none; }
+
+/* in-place editor (shown in place of .bubble-body) */
+.msg-edit { width: min(560px, 100%); }
+.msg-edit textarea { display: block; width: 100%; box-sizing: border-box; margin: 0; padding: 8px 10px; border: 1px solid var(--line-25); background: var(--card); color: var(--text); font: inherit; font-size: 14px; line-height: 20px; resize: vertical; outline: none; }
+.msg-edit textarea:focus { border-color: var(--ring); }
+.msg-edit-hint, .msg-edit-error { margin: 4px 0 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.msg-edit-error { color: var(--muted); }
+
+/* reply chip: first row of P9's .hist-composer, right above the page ChatBar */
+.reply-chip { display: flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; margin: 0 0 6px; padding: 0 3px 0 10px; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line-14); font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--dim); }
+.reply-chip-author { color: var(--id); flex-shrink: 0; }
+.reply-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: 12px; letter-spacing: 0; color: var(--muted); }
+
+/* page tools: Show deleted toggle + quiet notice */
+.history-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 28px; margin-bottom: 12px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--dim); }
+.history-notice { color: var(--id); }
+.history-toggle { height: 24px; padding: 0 8px; border: 1px solid var(--line-14); background: transparent; color: var(--dim); font: inherit; cursor: pointer; }
+.history-toggle:hover, .history-toggle:focus-visible { color: var(--fg); border-color: var(--line-25); outline: none; }
+.history-toggle[aria-pressed="true"] { color: var(--fg); background: var(--chip-bg); }
+
+/* touch / narrow: no hover, so the actions are always visible */
+@media (max-width: 720px), (hover: none) {
+  .msg-btn { opacity: 1; }
+}

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
-import type { Note, NoteImage as NoteImageData } from '../types';
-import { makeImage, makeNote } from '../testing/fixtures';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { Note, NoteFile, NoteImage as NoteImageData } from '../types';
+import { makeFile, makeImage, makeNote } from '../testing/fixtures';
 import { NoteEditor, type NoteEditorProps } from './NoteEditor';
+import { resetCapabilitiesForTests } from '../hooks/useCapabilities';
 
 afterEach(cleanup);
 
@@ -210,5 +211,245 @@ describe('NoteEditor closeSignal', () => {
     expect(props.onClose).toHaveBeenCalledWith(n, 'kept text, edited', true);
     rerender(<NoteEditor {...props} closeSignal={5} />);
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('NoteEditor lightbox', () => {
+  const pics = () => note('pics', [img('A-B32', 'A-B32', 0), img('Q-RS1', 'A-B32', 1), img('Z-ZZ9', 'A-B32', 2)]);
+  const shown = () => document.querySelector('[data-lightbox] img')?.getAttribute('src');
+  const lightbox = () => document.querySelector('[data-lightbox]');
+  const esc = () => fireEvent.keyDown(document.body, { key: 'Escape' });
+
+  it('clicking a strip thumbnail opens the lightbox on that image', () => {
+    const { props } = renderEditor(pics());
+    expect(lightbox()).toBeNull();
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('2 / 3');
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('arrows by click and key move across the note images without closing, and stop at the ends', () => {
+    const { props } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' });
+    expect(shown()).toBe('/api/images/A-B32/display');
+    fireEvent.click(screen.getByLabelText('Next image'));
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Z-ZZ9/display');
+    expect((screen.getByLabelText('Next image') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Z-ZZ9/display');
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('skips images that are not on this machine', () => {
+    const away = { ...img('C-DD4', 'A-B32', 1), available: false };
+    renderEditor(note('pics', [img('A-B32', 'A-B32', 0), away, img('Q-RS1', 'A-B32', 2)]));
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('2 / 2');
+  });
+
+  it('Esc closes only the lightbox, never the editor or the chat panel; the next Esc closes the editor', () => {
+    const chatEsc = vi.fn();
+    document.addEventListener('keydown', chatEsc);
+    try {
+      const { props } = renderEditor(pics());
+      fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+      expect(esc()).toBe(false);
+      expect(lightbox()).toBeNull();
+      expect(props.onClose).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-modal="editor"]')).not.toBeNull();
+      expect(chatEsc).not.toHaveBeenCalled();
+      esc();
+      expect(props.onClose).toHaveBeenCalledTimes(1);
+      expect(chatEsc).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', chatEsc);
+    }
+  });
+
+  it('a click on the lightbox backdrop or its X closes the lightbox, not the editor', () => {
+    const { props } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.click(lightbox() as HTMLElement);
+    expect(lightbox()).toBeNull();
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    fireEvent.click(screen.getByLabelText('Close image viewer'));
+    expect(lightbox()).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+    // The editor's own backdrop still closes it.
+    fireEvent.click(document.querySelector('[data-modal="editor"]') as HTMLElement);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('focus moves into the lightbox and back to the thumbnail that opened it', () => {
+    renderEditor(pics());
+    const thumb = screen.getByLabelText('View image Q-RS1');
+    thumb.focus();
+    fireEvent.click(thumb);
+    expect(document.activeElement).toBe(lightbox());
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    esc();
+    expect(document.activeElement).toBe(thumb);
+  });
+
+  it('with the tag popup open, Esc closes the lightbox first, then the popup, then the editor', () => {
+    const known = [{ tag: 'seer', count: 5, last_used: null }];
+    const { ta, props, queryByRole } = renderEditor(pics(), { tags: known });
+    ta.setSelectionRange(3, 3);
+    fireEvent.change(ta, { target: { value: '#se', selectionStart: 3 } });
+    expect(queryByRole('listbox')).not.toBeNull();
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    esc();
+    expect(lightbox()).toBeNull();
+    expect(queryByRole('listbox')).not.toBeNull();
+    esc();
+    expect(queryByRole('listbox')).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+    esc();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps showing the same image when another one is attached while it is open', () => {
+    const { props, rerender } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    const grown = note('pics', [img('N-EW1', 'A-B32', 0), ...pics().images]);
+    rerender(<NoteEditor {...props} note={grown} />);
+    expect(shown()).toBe('/api/images/Q-RS1/display');
+    expect(document.querySelector('[data-lightbox-count]')?.textContent).toBe('3 / 4');
+  });
+
+  it('closes when the viewed image leaves the note, and Esc then closes the editor', () => {
+    const { props, rerender } = renderEditor(pics());
+    fireEvent.click(screen.getByLabelText('View image Q-RS1'));
+    const shrunk = note('pics', pics().images.filter((i) => i.id !== 'Q-RS1'));
+    rerender(<NoteEditor {...props} note={shrunk} />);
+    expect(lightbox()).toBeNull();
+    esc();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    // The image coming back (undo) does not reopen the lightbox.
+    rerender(<NoteEditor {...props} note={pics()} />);
+    expect(lightbox()).toBeNull();
+  });
+
+  it('closeSignal while the lightbox is open closes the editor and the lightbox with it', () => {
+    const { props, rerender, unmount } = renderEditor(pics(), { closeSignal: 1 });
+    fireEvent.click(screen.getByLabelText('View image A-B32'));
+    rerender(<NoteEditor {...props} closeSignal={2} />);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(lightbox()).toBeNull();
+  });
+
+  it('the strip remove icon still removes without opening the lightbox', () => {
+    const { props, getAllByLabelText } = renderEditor(pics());
+    fireEvent.click(getAllByLabelText('Remove image')[0]!);
+    expect(props.onRemoveImage).toHaveBeenCalledTimes(1);
+    expect(lightbox()).toBeNull();
+  });
+});
+
+describe('NoteEditor files (R2)', () => {
+  beforeEach(() => resetCapabilitiesForTests({ reveal: false }));
+  afterEach(() => resetCapabilitiesForTests());
+
+  const withFiles = (files: NoteFile[]): Note => makeNote('A-B32', 'with files', { files, tags: [], created: iso });
+
+  it('the paperclip opens a hidden multi-file picker and hands the picked files over once, in order', () => {
+    const onAttachFiles = vi.fn();
+    const { container, getByLabelText } = renderEditor(note('x'), { onAttachFiles });
+    const input = container.querySelector('input[data-picker]') as HTMLInputElement;
+    expect(input.type).toBe('file');
+    expect(input.multiple).toBe(true);
+    expect(input.hidden).toBe(true);
+    const click = vi.spyOn(input, 'click');
+    fireEvent.click(getByLabelText('Attach files'));
+    expect(click).toHaveBeenCalledTimes(1);
+    const a = new File(['a'], 'a.pdf', { type: 'application/pdf' });
+    const b = new File(['b'], 'b.png', { type: 'image/png' });
+    Object.defineProperty(input, 'files', { value: [a, b], configurable: true });
+    fireEvent.change(input);
+    expect(onAttachFiles).toHaveBeenCalledTimes(1);
+    expect(onAttachFiles).toHaveBeenCalledWith([a, b]);
+    expect(input.value).toBe('');
+  });
+
+  it('an empty pick (dialog cancelled) attaches nothing', () => {
+    const onAttachFiles = vi.fn();
+    const { container } = renderEditor(note('x'), { onAttachFiles });
+    const input = container.querySelector('input[data-picker]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [], configurable: true });
+    fireEvent.change(input);
+    expect(onAttachFiles).not.toHaveBeenCalled();
+  });
+
+  it('has no paperclip without onAttachFiles', () => {
+    const { container } = renderEditor(note('x'));
+    expect(container.querySelector('[aria-label="Attach files"]')).toBeNull();
+    expect(container.querySelector('input[data-picker]')).toBeNull();
+  });
+
+  it('shows the note files as chips under the text; the remove icon hands the file to onRemoveFile', () => {
+    const f1 = makeFile('F-IL1', { note_id: 'A-B32', name: 'contract.pdf' });
+    const f2 = makeFile('F-IL2', { note_id: 'A-B32', position: 1, name: 'notes.txt', mime: 'text/plain', bytes: 5 });
+    const onRemoveFile = vi.fn();
+    const { container, props } = renderEditor(withFiles([f1, f2]), { onRemoveFile });
+    const chips = Array.from(container.querySelectorAll('.ed-panel .fchips .fchip'));
+    expect(chips.map((c) => c.getAttribute('data-file'))).toEqual(['F-IL1', 'F-IL2']);
+    fireEvent.click(within(chips[1] as HTMLElement).getByLabelText('Remove file'));
+    expect(onRemoveFile).toHaveBeenCalledWith(f2);
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('renders no chips for a note without files', () => {
+    const { container } = renderEditor(note('text only'));
+    expect(container.querySelector('.fchips')).toBeNull();
+  });
+
+  it('the top bar has a note-level reveal when a file is local and caps.reveal', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderEditor(withFiles([makeFile('F-IL1', { note_id: 'A-B32' })]));
+    const btn = container.querySelector('.ed-top [data-reveal-note="A-B32"]') as HTMLElement;
+    expect(btn).not.toBeNull();
+    expect(btn.className).toBe('ed-btn');
+  });
+});
+
+describe('NoteEditor: show on wall (phase 11)', () => {
+  it('has no icon without onShowOnWall', () => {
+    const { queryByLabelText } = renderEditor(note('x'));
+    expect(queryByLabelText('Show on wall')).toBeNull();
+  });
+
+  it('closes the normal way first (draft and dirty flag), then asks to show the note', () => {
+    const onShowOnWall = vi.fn();
+    const n = note('first');
+    const { ta, getByLabelText, props } = renderEditor(n, { onShowOnWall });
+    fireEvent.change(ta, { target: { value: 'first, edited' } });
+    const btn = getByLabelText('Show on wall');
+    expect(btn.getAttribute('data-tip')).toBe('Show on wall');
+    expect(btn.querySelector('svg')).not.toBeNull();
+    fireEvent.click(btn);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onClose).toHaveBeenCalledWith(n, 'first, edited', true);
+    expect(onShowOnWall).toHaveBeenCalledWith(n);
+    expect(vi.mocked(props.onClose).mock.invocationCallOrder[0]).toBeLessThan(onShowOnWall.mock.invocationCallOrder[0]);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled while the note is empty (no text, no images, no files)', () => {
+    const { ta, getByLabelText } = renderEditor(note(''), { onShowOnWall: vi.fn() });
+    const btn = () => getByLabelText('Show on wall') as HTMLButtonElement;
+    expect(btn().disabled).toBe(true);
+    fireEvent.change(ta, { target: { value: 'now text' } });
+    expect(btn().disabled).toBe(false);
+    cleanup();
+    const withImage = renderEditor(note('', [img('P-IC1', 'A-B32')]), { onShowOnWall: vi.fn() });
+    expect((withImage.getByLabelText('Show on wall') as HTMLButtonElement).disabled).toBe(false);
   });
 });

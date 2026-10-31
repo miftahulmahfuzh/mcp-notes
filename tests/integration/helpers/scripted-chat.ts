@@ -11,7 +11,7 @@ export type ScriptStep = ChatEvent | { type: 'throw'; message: string } | { type
 
 export interface ChatScript {
   steps: ScriptStep[];
-  /** What `end()` returns. Default: `{ threadId: request.threadId ?? 'fake-thread' }` (no brain). */
+  /** What `end()` returns. Default: `{}` (no brain). */
   end?: ChatTurnEnd;
   /** When set, `reply()` itself rejects with this message before any event. */
   rejectWith?: string;
@@ -20,7 +20,7 @@ export interface ChatScript {
 export interface ScriptedChatBackend extends ChatBackend {
   /** Queues a script for the next `reply()`. A reply with nothing queued gets an empty script. */
   push(script: ChatScript): void;
-  /** Every request received, in arrival order (signals included, so tests can see aborts). */
+  /** Every request received, in arrival order (composed turn and signal), so tests can read the prompt. */
   readonly requests: ChatRequest[];
 }
 
@@ -59,7 +59,7 @@ export function createScriptedChatBackend(): ScriptedChatBackend {
       requests.push(request);
       const script = queue.shift() ?? { steps: [] };
       if (script.rejectWith !== undefined) throw new Error(script.rejectWith);
-      const end: ChatTurnEnd = script.end ?? { threadId: request.threadId ?? 'fake-thread' };
+      const end: ChatTurnEnd = script.end ?? {};
       return { events: play(script.steps, request.signal), end: () => end };
     },
   };

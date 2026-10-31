@@ -47,5 +47,5 @@ export async function migrateTestDb(): Promise<void> {
 
 /** Empties every app table. Call in `beforeEach` of any file that writes. */
 export async function truncateAll(db: Db): Promise<void> {
-  await db.execute(sql`truncate table note_images, note_embeddings, note_revisions, notes restart identity cascade`)
+  await db.execute(sql`truncate table chat_message_attachments, chat_message_revisions, chat_messages, chat_threads, note_image_embeddings, chat_images, note_files, note_images, note_embeddings, note_revisions, notes restart identity cascade`)
 }

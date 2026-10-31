@@ -1,4 +1,4 @@
-import { Images, NotePencil, SidebarSimple, SquaresFour, TextAa, Trash, XCircle } from '@phosphor-icons/react';
+import { ChatsCircle, Images, NotePencil, SidebarSimple, SquaresFour, TextAa, Trash, XCircle } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { Mode, View } from '../types';
 import { MODE_TIP } from '../lib/filter';
@@ -6,7 +6,10 @@ import { MODE_TIP } from '../lib/filter';
 export const MODE_ICON: Record<Mode, Icon> = { text: TextAa, images: Images, all: SquaresFour };
 
 /** Tooltip / label of the Trash toggle, by the view it is pressed from. */
-export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall' };
+export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall', history: 'Recycle bin' };
+
+/** Tooltip / label of the chat-history toggle (phase 9). Pressed state says when it is open; a second press returns to the wall. */
+export const HISTORY_TIP = 'Chat history';
 
 export interface RailProps {
   mode: Mode;
@@ -15,12 +18,13 @@ export interface RailProps {
   onToggleSide: () => void;
   onAdd: () => void;
   onCycleMode: () => void;
+  onToggleHistory: () => void;
   onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
   onClear: () => void;
 }
 
-export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleBin, onToggleTag, onClear }: RailProps) {
+export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleHistory, onToggleBin, onToggleTag, onClear }: RailProps) {
   const ModeIcon = MODE_ICON[mode];
   return (
     <nav className="rail">
@@ -39,6 +43,17 @@ export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onT
         onClick={onCycleMode}
       >
         <ModeIcon weight="duotone" />
+      </button>
+      <button
+        type="button"
+        className={view === 'history' ? 'ibtn on' : 'ibtn hov'}
+        data-tip={HISTORY_TIP}
+        data-tip-side="right"
+        aria-label={HISTORY_TIP}
+        aria-pressed={view === 'history'}
+        onClick={onToggleHistory}
+      >
+        <ChatsCircle weight="duotone" />
       </button>
       <button
         type="button"

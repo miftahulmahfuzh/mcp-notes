@@ -61,9 +61,12 @@
     "test:live": "CHAT_LIVE_TEST=1 bash scripts/test-int.sh",
     "test:live:connectors": "CONNECTORS_LIVE_TEST=1 vitest run",
     "test:live:embeddings": "EMBEDDINGS_LIVE_TEST=1 vitest run",
+    "test:live:imageEmbeddings": "IMAGE_EMBEDDINGS_LIVE_TEST=1 vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
-    "embed:backfill": "tsx src/cli/embedBackfill.ts"
+    "embed:backfill": "tsx src/cli/embedBackfill.ts",
+    "embed:images:backfill": "tsx src/cli/embedImagesBackfill.ts",
+    "verify:paste-hook": "node scripts/verify-paste-hook.mjs"
   }
 }

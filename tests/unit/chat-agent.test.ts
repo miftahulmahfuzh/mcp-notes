@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
 import {
   createAgentChatBackend,
   type AgentChatConfig,
+  type AgentChatOptions,
   type QueryFn,
 } from '../../src/chat/agent.js';
-import type { ChatEvent, ChatRequest, ChatTurn } from '../../src/chat/backend.js';
+import type { ChatEvent, ChatRequest, ChatTurn, ChatTurnImage } from '../../src/chat/backend.js';
 import { allowedChatTools } from '../../src/chat/status.js';
 
 // ---------- fake SDK messages ----------
@@ -126,8 +127,10 @@ function throwsAfter(before: SDKMessage[], message: string): Script {
   };
 }
 
-function fakeQuery(...scripts: Script[]): { query: QueryFn; calls: { prompt: string; options: Options }[] } {
-  const calls: { prompt: string; options: Options }[] = [];
+type QueryCall = Parameters<QueryFn>[0];
+
+function fakeQuery(...scripts: Script[]): { query: QueryFn; calls: QueryCall[] } {
+  const calls: QueryCall[] = [];
   const query: QueryFn = (params) => {
     calls.push(params);
     const script = scripts[calls.length - 1];
@@ -149,7 +152,7 @@ const GLM = { baseUrl: 'https://api.z.ai/api/anthropic', apiKey: 'glm-key', mode
 const CHAT: AgentChatConfig = { brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: '/opt/claude/bin/claude', glm: GLM };
 const MCP_URL = 'http://127.0.0.1:7317/mcp';
 
-function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}) {
+function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}, extra: Partial<AgentChatOptions> = {}) {
   return createAgentChatBackend({
     chat: { ...CHAT, ...chat },
     cwd: '/data/chat',
@@ -158,11 +161,12 @@ function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}) {
     now: () => new Date('2026-10-30T03:00:00Z'),
     baseEnv: { PATH: '/usr/bin', HOME: '/home/owner', ANTHROPIC_API_KEY: 'sk-ant-should-not-leak' },
     log: () => {},
+    ...extra,
   });
 }
 
-function req(message: string, threadId: string | null = null, signal = new AbortController().signal): ChatRequest {
-  return { message, threadId, signal };
+function req(text: string, signal = new AbortController().signal, images: ChatTurnImage[] = []): ChatRequest {
+  return { turn: { text, images }, signal };
 }
 
 async function collect(turn: ChatTurn): Promise<ChatEvent[]> {
@@ -187,7 +191,7 @@ const deltas = (events: ChatEvent[]): string =>
 // ---------- tests ----------
 
 describe('agent chat backend: streaming', () => {
-  it('streams top-level text deltas in order and reports the session as the thread', async () => {
+  it('streams top-level text deltas in order and reports the brain', async () => {
     const { query } = fakeQuery(
       scripted([textDelta('You saved '), textDelta('A-B32 '), textDelta('sub', 'toolu_sub'), textDelta('on Monday.'), success()]),
     );
@@ -198,7 +202,7 @@ describe('agent chat backend: streaming', () => {
       { type: 'delta', text: 'A-B32 ' },
       { type: 'delta', text: 'on Monday.' },
     ]);
-    expect(turn.end()).toEqual({ threadId: SESSION, brain: 'claude' });
+    expect(turn.end()).toEqual({ brain: 'claude' });
   });
 
   it('passes note ids through untouched', async () => {
@@ -281,6 +285,7 @@ describe('agent chat backend: run options', () => {
     expect(o.maxTurns).toBe(24);
     expect(o.pathToClaudeCodeExecutable).toBe('/opt/claude/bin/claude');
     expect(o.resume).toBeUndefined();
+    expect(o.persistSession).toBe(false);
     expect(o.model).toBeUndefined();
     expect(o.systemPrompt).toEqual(expect.stringContaining('2026-10-30'));
     expect(o.env?.HOME).toBe('/home/owner');
@@ -290,12 +295,15 @@ describe('agent chat backend: run options', () => {
     expect(o.abortController).toBeInstanceOf(AbortController);
   });
 
-  it('resumes the given thread and reports the session the SDK returns', async () => {
-    const { query, calls } = fakeQuery(scripted([textDelta('Same thread.'), success('sess-old')]));
-    const turn = await backend(query).reply(req('and last month?', 'sess-old'));
+  it('never resumes: the composed turn text is the whole prompt', async () => {
+    const { query, calls } = fakeQuery(scripted([textDelta('ok'), success('sess-new')]));
+    const text = '<chat_history>\n[msg:K7F2] user (2026-10-31 09:12 WIB): hi\n</chat_history>\n\n<message>\n[msg:P0Q1] user (2026-10-31 09:13 WIB): again\n</message>';
+    const turn = await backend(query).reply(req(text));
     await collect(turn);
-    expect(optionsOf(calls, 0).resume).toBe('sess-old');
-    expect(turn.end()).toEqual({ threadId: 'sess-old', brain: 'claude' });
+    expect(calls[0]?.prompt).toBe(text);
+    expect(optionsOf(calls, 0).resume).toBeUndefined();
+    expect(optionsOf(calls, 0).persistSession).toBe(false);
+    expect(turn.end()).toEqual({ brain: 'claude' });
   });
 
   it('reads the MCP url at run time, not at construction', async () => {
@@ -323,7 +331,7 @@ describe('agent chat backend: guardrails', () => {
   it('stops the run when the client disconnects', async () => {
     const { query, calls } = fakeQuery(hangs([textDelta('Working')]));
     const client = new AbortController();
-    const turn = await backend(query).reply(req('x', null, client.signal));
+    const turn = await backend(query).reply(req('x', client.signal));
     const it = turn.events[Symbol.asyncIterator]();
     expect(await it.next()).toEqual({ done: false, value: { type: 'delta', text: 'Working' } });
     const pending = it.next();
@@ -336,7 +344,7 @@ describe('agent chat backend: guardrails', () => {
     const { query, calls } = fakeQuery(scripted([textDelta('x'), success()]));
     const client = new AbortController();
     client.abort();
-    const { events, error } = await collectUntilError(await backend(query).reply(req('x', null, client.signal)));
+    const { events, error } = await collectUntilError(await backend(query).reply(req('x', client.signal)));
     expect(events).toEqual([]);
     expect(error.message).toMatch(/request was closed/);
     expect(calls).toHaveLength(0);
@@ -353,7 +361,7 @@ describe('agent chat backend: guardrails', () => {
     await expect(pending).rejects.toThrow(/newer message/);
     expect(optionsOf(calls, 0).abortController?.signal.aborted).toBe(true);
     expect(deltas(await collect(second))).toBe('second');
-    expect(second.end().threadId).toBe('sess-2');
+    expect(second.end()).toEqual({ brain: 'claude' });
   });
 
   it('stops at the wall-clock timeout', async () => {
@@ -384,7 +392,7 @@ describe('agent chat backend: guardrails', () => {
 });
 
 describe('agent chat backend: GLM fallback', () => {
-  it('retries once on GLM after a usage-limit error before any text, on the same thread', async () => {
+  it('retries once on GLM after a usage-limit error before any text, with the identical prompt', async () => {
     const { query, calls } = fakeQuery(
       scripted([
         toolUse('mcp__notes__search', {}),
@@ -393,7 +401,7 @@ describe('agent chat backend: GLM fallback', () => {
       ]),
       scripted([textDelta('From GLM: A-B32.'), success('sess-glm')]),
     );
-    const turn = await backend(query).reply(req('summarize', 'sess-old'));
+    const turn = await backend(query).reply(req('summarize'));
     const events = await collect(turn);
     expect(events).toEqual([
       { type: 'status', text: 'searching notes' },
@@ -406,9 +414,11 @@ describe('agent chat backend: GLM fallback', () => {
     expect(glm.env?.ANTHROPIC_AUTH_TOKEN).toBe('glm-key');
     expect(glm.env?.ANTHROPIC_MODEL).toBe('glm-5.3');
     expect(glm.model).toBe('glm-5.3');
-    expect(glm.resume).toBe('sess-old');
+    expect(glm.resume).toBeUndefined();
+    expect(glm.persistSession).toBe(false);
     expect(calls[1]?.prompt).toBe('summarize');
-    expect(turn.end()).toEqual({ threadId: 'sess-glm', brain: 'glm' });
+    expect(calls[1]?.prompt).toBe(calls[0]?.prompt);
+    expect(turn.end()).toEqual({ brain: 'glm' });
   });
 
   it('retries on an auth failure named only in the result text', async () => {
@@ -464,7 +474,7 @@ describe('agent chat backend: GLM fallback', () => {
   it('does not retry after a stop', async () => {
     const { query, calls } = fakeQuery(hangs([]), scripted([success()]));
     const client = new AbortController();
-    const turn = await backend(query).reply(req('x', null, client.signal));
+    const turn = await backend(query).reply(req('x', client.signal));
     const pending = collectUntilError(turn);
     await new Promise((r) => setTimeout(r, 5));
     client.abort();
@@ -482,7 +492,7 @@ describe('agent chat backend: CHAT_BRAIN=glm', () => {
     expect(o.env?.ANTHROPIC_BASE_URL).toBe(GLM.baseUrl);
     expect(o.env?.ANTHROPIC_AUTH_TOKEN).toBe('glm-key');
     expect(o.model).toBe('glm-5.3');
-    expect(turn.end()).toEqual({ threadId: 'sess-g', brain: 'glm' });
+    expect(turn.end()).toEqual({ brain: 'glm' });
   });
 
   it('never falls back from GLM', async () => {
@@ -499,6 +509,119 @@ describe('agent chat backend: CHAT_BRAIN=glm', () => {
     const { query, calls } = fakeQuery(scripted([success()]));
     const { error } = await collectUntilError(await backend(query, { brain: 'glm', glm: null }).reply(req('x')));
     expect(error.message).toMatch(/LLM_BASE_URL/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// ---------- pasted images ----------
+
+const RED: ChatTurnImage = { id: 'U-PL1', previewPath: '/cache/c_U-PL1/preview.jpg', previewMime: 'image/jpeg', width: 40, height: 30, originalName: 'red.png' };
+const BLUE: ChatTurnImage = { id: 'V-QM2', previewPath: '/cache/c_V-QM2/preview.jpg', previewMime: 'image/jpeg', width: 8, height: 8, originalName: null };
+const PREVIEWS: Record<string, Uint8Array> = {
+  [RED.previewPath]: new Uint8Array([1, 2, 3]),
+  [BLUE.previewPath]: new Uint8Array([4, 5, 6, 7]),
+};
+
+async function readPreview(absPath: string): Promise<Uint8Array> {
+  const bytes = PREVIEWS[absPath];
+  if (bytes === undefined) throw new Error(`ENOENT: no such file, open '${absPath}'`);
+  return bytes;
+}
+
+async function sentMessages(prompt: QueryCall['prompt'] | undefined): Promise<SDKUserMessage[]> {
+  if (prompt === undefined || typeof prompt === 'string') throw new Error('expected a user-message stream');
+  const out: SDKUserMessage[] = [];
+  for await (const m of prompt) out.push(m);
+  return out;
+}
+
+const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64');
+
+describe('agent chat backend: pasted images', () => {
+  it('sends one user message: an image block per image in order, then the text naming each upload id', async () => {
+    const { query, calls } = fakeQuery(scripted([textDelta('Red and blue.'), success()]));
+    const turn = await backend(query, {}, { readPreview }).reply(req('what are these?', undefined, [RED, BLUE]));
+    expect(deltas(await collect(turn))).toBe('Red and blue.');
+    const sent = await sentMessages(calls[0]?.prompt);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.type).toBe('user');
+    expect(sent[0]?.parent_tool_use_id).toBeNull();
+    expect(sent[0]?.message.role).toBe('user');
+    expect(sent[0]?.message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(PREVIEWS[RED.previewPath]!) } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(PREVIEWS[BLUE.previewPath]!) } },
+      {
+        type: 'text',
+        text:
+          'what are these?\n\nThe owner attached 2 images to this message. They are shown above in this order, with these upload ids:\n' +
+          '[image upload:U-PL1]\n[image upload:V-QM2]',
+      },
+    ]);
+  });
+
+  it('sends an image with no text', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    await collect(await backend(query, {}, { readPreview }).reply(req('', undefined, [RED])));
+    const sent = await sentMessages(calls[0]?.prompt);
+    const content = sent[0]?.message.content;
+    expect(Array.isArray(content) ? content.at(-1) : null).toEqual({
+      type: 'text',
+      text: 'The owner attached 1 image to this message. It is shown above, and its upload id is:\n[image upload:U-PL1]',
+    });
+  });
+
+  it('keeps a text-only message a plain string prompt', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    await collect(await backend(query, {}, { readPreview }).reply(req('hello')));
+    expect(calls[0]?.prompt).toBe('hello');
+  });
+
+  it('the GLM retry sends the same images again on a fresh stream, reading each preview once', async () => {
+    const reads: string[] = [];
+    const counting = async (p: string): Promise<Uint8Array> => {
+      reads.push(p);
+      return readPreview(p);
+    };
+    const { query, calls } = fakeQuery(
+      scripted([assistantError('rate_limit', 'You have hit your usage limit'), errorResult('usage limit reached')]),
+      scripted([textDelta('From GLM.'), success('sess-glm')]),
+    );
+    const turn = await backend(query, {}, { readPreview: counting }).reply(req('look', undefined, [RED]));
+    expect(deltas(await collect(turn))).toBe('From GLM.');
+    expect(calls).toHaveLength(2);
+    const first = await sentMessages(calls[0]?.prompt);
+    const second = await sentMessages(calls[1]?.prompt);
+    expect(second).toEqual(first);
+    expect(reads).toEqual([RED.previewPath]);
+    expect(turn.end()).toEqual({ brain: 'glm' });
+  });
+
+  it('labels rebuilt-turn images with their message, identically for each attempt', async () => {
+    const { query, calls } = fakeQuery(
+      scripted([assistantError('rate_limit', 'usage limit reached'), errorResult('Claude AI usage limit reached')]),
+      scripted([textDelta('From GLM.'), success('sess-glm')]),
+    );
+    const mine: ChatTurnImage = { ...RED, messageId: 'P0Q1' };
+    const turn = await backend(query, {}, { readPreview }).reply(req('look [image upload:U-PL1]', undefined, [mine]));
+    await collect(turn);
+    expect(calls).toHaveLength(2);
+    const first = await sentMessages(calls[0]?.prompt);
+    const second = await sentMessages(calls[1]?.prompt);
+    expect(second).toEqual(first);
+    expect(first[0]?.message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(PREVIEWS[RED.previewPath]!) } },
+      { type: 'text', text: 'look [image upload:U-PL1]\n\nThe picture shown above is:\n[image upload:U-PL1] from [msg:P0Q1]' },
+    ]);
+  });
+
+  it('fails the turn before any SDK call when a preview cannot be read, without a fallback', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    const missing: ChatTurnImage = { ...RED, id: 'W-RN3', previewPath: '/cache/c_W-RN3/preview.jpg' };
+    const { events, error } = await collectUntilError(
+      await backend(query, {}, { readPreview }).reply(req('x', undefined, [missing])),
+    );
+    expect(events).toEqual([]);
+    expect(error.message).toMatch(/Could not read pasted image W-RN3/);
     expect(calls).toHaveLength(0);
   });
 });

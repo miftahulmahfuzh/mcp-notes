@@ -17,6 +17,7 @@ import { NotesService } from '../../src/notes/service.js';
 import { NoteError, type ImageMeta, type Note, type RelatedResult } from '../../src/notes/types.js';
 import { createFakeEmbedder, type Lexicon } from '../helpers/fakeEmbedder.js';
 import { closeTestDb, openTestDb, testDatabaseUrl, truncateAll } from './setup.js';
+import { ChatService } from '../../src/chat/service.js';
 
 /** Synonym groups: each group is one concept axis in the fake embedder. */
 const LEXICON: Lexicon = [
@@ -41,7 +42,7 @@ const config: Config = {
   chat: DEFAULT_CHAT_CONFIG,
   embeddings: DEFAULT_EMBEDDINGS_CONFIG,
 };
-const deps: AppDeps = { config, db, events, service, embedder: fake };
+const deps: AppDeps = { config, db, events, service, embedder: fake, imageEmbedder: null, chat: new ChatService({ db }) };
 const app = createApp(deps);
 let client: Client;
 

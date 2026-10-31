@@ -72,4 +72,31 @@ describe('buildChatSystemPrompt', () => {
   it('leaves link formatting to the panel', () => {
     expect(prompt).not.toMatch(/markdown link|bare URL/i);
   });
+
+  it('says note files are visible by name, type and size but cannot be opened', () => {
+    expect(prompt).toMatch(/files that are not pictures/);
+    expect(prompt).toMatch(/cannot open them/);
+  });
+
+  it('tells the agent how pasted images appear and to use similar_images, then view_images', () => {
+    expect(prompt).toContain('[image upload:ID]');
+    expect(prompt).toMatch(/similar_images with upload_id/);
+    expect(prompt).toMatch(/then call view_images on the top hits/);
+  });
+
+  it('explains the context layout the turn arrives in', () => {
+    expect(prompt).toContain('<chat_history>');
+    expect(prompt).toContain('<reply_to>');
+    expect(prompt).toContain('<message>');
+    expect(prompt).toContain('[earlier messages omitted]');
+    expect(prompt).toContain('WIB (Asia/Jakarta)');
+    expect(prompt).toContain('[image upload:ID]');
+  });
+
+  it('teaches the optional leading [msg:ID] reply', () => {
+    expect(prompt).toContain('[msg:K7F2]');
+    expect(prompt).toMatch(/starting your answer with its label/);
+    expect(prompt).toMatch(/Replying is optional/);
+    expect(prompt).toMatch(/never for the current message, and never invent a label/);
+  });
 });

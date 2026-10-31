@@ -147,21 +147,29 @@ the same note in a large editor:
 - the note id with its copy button
 - the tag chips
 - the note's photos as a strip, each with a remove icon and the folder icon (see
-  [Open file location](#open-file-location))
+  [Open file location](#open-file-location)). Click a photo to see it large; the left and right
+  arrows (buttons or keys) move to the note's other photos without closing it and stop at the first
+  and last one. Esc, a click beside the photo or the X closes the photo and leaves the editor open.
 
 For a long note, press "+", type the first line, then expand it and keep writing.
 
 - Text saves the way cards do: when the text area loses focus and when the editor closes, and
   only if it changed. The card on the wall shows the change at once.
-- Esc closes it.
-- While the editor is open, a dropped or pasted image is attached to this note instead of
-  becoming a new one. The drop overlay shows a paperclip instead of the usual image icon to say
-  so. A file that already lives in a note is not attached twice. The editor quietly says which
-  note holds it.
+- Esc closes it (when a photo is open large, the first Esc closes only the photo).
+- While the editor is open, anything you drop or paste is attached to this note instead of
+  becoming a new one. Photos go to the photo strip. Any other file (PDF, spreadsheet, zip, …)
+  becomes a file chip under the text. The paperclip button in the editor's top bar opens a file
+  picker for the same thing. The drop overlay shows a paperclip instead of the usual image icon
+  to say so. A file that already lives in a note is not attached twice. The editor quietly says
+  which note holds it.
+- A file chip shows the file's name, size and type, with a download icon and its own "Show in
+  Explorer". Removing a chip is soft. You get the usual 6 s undo, and the file is removed for good
+  only when its note is purged from the bin. A file whose bytes are on the other laptop is dimmed
+  and cannot be downloaded from here. Cards show a paperclip and the number of files.
 - If you attach a photo to a text note while the wall is on "Notes.", the wall switches to
   "Everything." when you close the editor, so the note stays in sight.
 - Emptying the text does not delete the note while the editor is open. On close, a note with no
-  text and no photos goes to the recycle bin, the same rule as on the wall.
+  text, no photos and no files goes to the recycle bin, the same rule as on the wall.
 - Removing a photo from the strip is soft. The photo goes to the recycle bin's photo grid, and
   restoring it puts it back at the same place in the note.
 
@@ -244,11 +252,12 @@ The bin has no recording yet.
 
 ### Open file location
 
-Photo cards on the wall, the photo modal and the editor's photo strip have a folder icon ("Show
-in Explorer"). Gallery tiles don't; open the photo and use the modal's. Clicking it opens Windows
-Explorer on the folder that holds the original, with the file selected. `notesd` turns the stored
-path into a Windows path with `wslpath -w` and starts `explorer.exe /select,<path>`. It does not
-wait for Explorer, whose exit code means nothing.
+Wall cards and the editor's top bar have a note-level folder icon ("Show in Explorer"). For a
+note with files it opens the note's files folder. For a note with only photos it selects the
+first photo. The photo modal, each photo in the editor strip and each file chip have their own
+icon for that one photo or file. Gallery tiles don't; open the photo and use the modal's.
+Clicking one opens Windows Explorer. `notesd` turns the stored path into a Windows path with
+`wslpath -w` and starts `explorer.exe`. It does not wait for Explorer, whose exit code means nothing.
 
 The icon appears only when this can work: the original must be on this machine, and `notesd`
 must run under WSL with Windows interop available (`GET /api/capabilities` answers
@@ -282,6 +291,18 @@ folder into one new image note, tags it, checks the note holds them all, then de
 ```
 /migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
+
+`install.sh` also registers two Claude Code hooks in `~/.claude/settings.json` (every repo; pass
+`--skip-hooks` to leave the file alone):
+
+- **notes-capture** (Stop, runs in the background): after every `/n` turn it saves the prompt as
+  you typed it, Claude's final answer and any pasted images to the chat history, as a
+  single-turn thread badged "claude code". If the daemon is down the exchange waits in
+  `~/.local/state/notes-capture/outbox/` and goes in on a later turn. Saving twice is harmless.
+- **notes-paste** (before `similar_images`): paste an image and ask `/n find photos like this`.
+  Claude calls `similar_images` with `pasted_image: 1`; the hook uploads `[Image #1]` and the
+  search runs on it. `npm run verify:paste-hook` checks this against a running daemon (one
+  short, billed Claude call).
 
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
 edit is a blanked line where Claude Code printed account usage.
@@ -387,10 +408,27 @@ the web") shows what the agent is doing. Notes the answer mentions are outlined 
 the rest dim. Chips under the answer jump to each note, switching the view if that note is
 hidden.
 
+Note ids in an answer, and in every bubble on the history page, are links. A click opens the note
+in the big editor right where you are: the wall, the bin or the history page stay as they were
+when you close it. Ctrl/cmd-click or middle-click opens the wall on that note in a new tab. A note
+the wall has not loaded is fetched; a deleted one says "A-B32 is deleted. Restore it from the
+bin." and an unknown one "no note A-B32". Ids in code spans, inside URLs, paths and longer words
+are left alone, and links to the wall written as `[A-B32](http://localhost:7317/?note=A-B32)` open
+in place too. In the editor, the crosshair icon ("Show on wall") closes it, goes to
+`/?note=<id>` and outlines the card.
+
 The bar takes several lines. Shift+Enter starts a new line and Enter sends, but not while an
 input method is still composing. The bar grows upward one line at a time up to about six lines,
 then scrolls inside, and drops back to one line after sending. Newlines reach the agent as you
 typed them. The panel always sits above the bar, whatever its height.
+
+Paste a screenshot or photo while the bar has focus and it goes with your next question instead
+of becoming a note. A small thumbnail appears inside the pill: a spinner while it uploads, a
+warning mark if it failed, and an × to take it out. Up to four images go with one question, and
+a question may be images alone. The answer panel shows them above the answer, and the agent sees
+them, each named by an upload id (`upload:A-B32`). Pasted chat images are stored once by sha256
+under `~/mcp-notes-data/chat-images/` and never appear on the wall. Pasting anywhere else still
+makes a new photo note, and pasting into the open big editor still attaches to that note.
 
 The caret icon next to pin and dismiss collapses the panel to its header line. That line shows
 the question on one line (newlines become spaces, a long question is cut with an ellipsis, and
@@ -403,8 +441,11 @@ Behind it is the Claude Agent SDK: headless Claude Code on your existing login, 
 message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
 expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
 in october, and which week was the worst?" and it answers with the numbers and an opinion. A
-follow-up continues the same thread. Dismissing the panel starts a new one. Answers are not
-saved as notes.
+follow-up continues the same thread. Dismissing the panel starts a new one. Every question and
+answer is kept in notesd's own database (not as notes). Each turn rebuilds the conversation from
+there, so Claude and the GLM fallback see the same history and nothing depends on Claude Code's
+saved sessions. The agent may start an answer with `[msg:K7F2]` to reply to one earlier message;
+the page hides the label and keeps the link.
 
 The recordings below are real runs against the demo instance. The time spent waiting for the
 answer is sped up 1.8×. They were made before the bar took several lines and before the panel
@@ -428,6 +469,21 @@ your `#reading` note, and lists its sources as links.
 If Claude fails on a usage limit or a login problem, the same message is retried once on GLM
 (z.ai, configured through `.env.local`'s `LLM_*` keys), and the panel's header says which brain
 answered. `CHAT_BRAIN=glm` makes GLM the only brain.
+
+### The history page
+
+Every wall chat and every `/n` exchange from Claude Code is kept. The chat-history icon above the
+recycle bin (or the full-screen icon on the answer panel, which opens it on the conversation you
+are in) shows them all on one page at `/history`: oldest at the top, a divider where a new
+conversation starts, and a "claude code" badge on exchanges captured from the terminal. Every
+bubble carries its time in Jakarta (UTC+7); hover it for the full timestamp. Pasted images show as
+thumbnails; click one to view it large and use the arrow keys to move between that message's
+images. Scroll up for older messages. New ones, including a `/n` you just ran in another window,
+appear without a reload. The pill at the bottom works as on the wall and accepts pasted images. A
+message continues the newest conversation when that one came from the wall, and starts a new one
+otherwise. Back and forward move between the wall and this page.
+
+Hover or Tab onto a bubble for **Reply**, **Edit** (your own messages) and **Delete**. A reply shows a quote of the original; click it to jump there. Replying to a wall bubble continues that conversation; replying to a "claude code" bubble starts a new one. Edits only change what later turns see. Deletes can be undone for 6 seconds, and **Show deleted** lists them with a Restore button.
 
 ## Connectors: spending, runs, Seer
 
@@ -513,11 +569,14 @@ scripts/install.sh
 5. waits for `GET /health`,
 6. registers `notes` with `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`,
 7. symlinks the `/n` and `/migrate` skills into `~/.claude/skills`,
-8. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
+8. merges the notes-capture and notes-paste hooks into `~/.claude/settings.json`, keeping
+   everything else (a copy of the original is kept once as `settings.json.bak-notes-hooks`;
+   `--skip-hooks` or `NOTES_SKIP_HOOKS=1` skips this),
+9. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
    `notes` connected.
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
-Undo with `scripts/uninstall.sh` (it keeps your data).
+Undo with `scripts/uninstall.sh` (it keeps your data and removes only our two hook entries).
 
 ### Keep WSL running from Windows
 
@@ -564,6 +623,7 @@ npm test                       # unit tests, server and web (jsdom)
 npm run test:int               # integration tests against real Postgres in Docker
 npm run test:live:connectors   # opt-in: each *_schema tool against the real databases, read-only
 npm run test:live:embeddings   # opt-in: one real OpenRouter embeddings call over the labelled search set
+npm run verify:paste-hook      # opt-in: one real claude -p run checks the paste hook rewrite
 ```
 
 `test:int` starts or reuses two containers, both on `pgvector/pgvector:pg16` (one that runs another
@@ -629,6 +689,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `attach_image` | Add a local file to an existing note `id` as its next photo. Returns `{note, attached}`; `attached: false` when the file is already in a note, which is returned instead |
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
+| `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -655,6 +716,18 @@ each with a comment. If the query cannot be embedded, it returns today's full-te
 says so in `fallback`. `npm run embed:backfill` embeds everything pending in one go and prints
 progress (first run, or after a model change).
 
+### Similar photos
+
+Every note image is also embedded, by its pixels, with Gemini Embedding 2 (`google/gemini-embedding-2`
+over OpenRouter, the same key) into `note_image_embeddings` (1536 dimensions, HNSW cosine). The
+model puts words and pictures in one space, so `similar_images` answers both "photos like this
+one" and "photos of a red top in a car". What is sent is the photo's preview re-encoded as a PNG
+of at most 1024 px. The daemon embeds new images in the background; a photo whose file lives on
+the other laptop is skipped here and embedded by that laptop's daemon. `npm run
+embed:images:backfill -- --dry-run` counts what is pending and estimates the cost (about $0.45 per
+million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it embeds them
+(`--limit N` for a trial, `--retry-failed` to skip the backoff). It never runs by itself.
+
 ### HTTP API
 
 | Route | |
@@ -664,7 +737,7 @@ progress (first run, or after a model change).
 | `GET/PATCH/DELETE /api/notes/:id`, `POST /api/notes` | One note. `DELETE` is soft (to the recycle bin) |
 | `POST /api/notes/:id/restore` | Bring a deleted note back |
 | `GET /api/tags` | Tags with counts, live notes only |
-| `GET /api/events` | Server-sent events, `event: note` on every change |
+| `GET /api/events` | Server-sent events, `event: note` on every note change and `event: chat {op, thread_id, id}` on every chat change |
 | `POST /api/images` | Multipart upload (`file`, optional `body`), returns `{note, created}` |
 | `POST /api/notes/:id/images` | Multipart `file`, attached to that live note: 201 `{note, attached: true}`, or 200 with the note that already holds the file |
 | `GET /api/images/:imageId` | One photo's metadata and URLs, whatever its state |
@@ -672,11 +745,23 @@ progress (first run, or after a model change).
 | `GET /api/notes/:id/original` · `/display` · `/thumb` · `/preview` | The same for a live note's first photo, kept for older links |
 | `DELETE /api/images/:imageId` | Remove one photo from its note (soft), returns the note |
 | `POST /api/images/:imageId/restore` | Put a removed photo back; 409 `duplicate_image` with the holder's `note_id` when the file is in another note now |
+| `POST /api/notes/:id/files` | Multipart `file`, attached to that live note: 201 `{note, attached: true, kind}`, or 200 with the note that already holds the bytes. `kind` is `image` when the bytes are a picture (stored as a photo), else `file`. 413 `too_large` over 200 MB |
+| `GET /api/files/:fileId` | One file's metadata (`name`, `mime`, `bytes`, `host`, `available`, `extraction_status`), whatever its state |
+| `GET /api/files/:fileId/download` | The file, always as an attachment (`nosniff`, sandboxed); 404 `not_on_this_machine` when it lives elsewhere |
+| `DELETE /api/files/:fileId` · `POST /api/files/:fileId/restore` | Remove one file from its note (soft) / put it back at its old place; 409 `duplicate_file` with the holder's `note_id` |
 | `GET /api/bin?tag=` | The recycle bin, `{notes, images}`, newest deleted first |
 | `DELETE /api/bin/notes/:id` · `DELETE /api/bin/images/:imageId` | Delete forever: rows and files. 409 `not_deleted` for anything not in the bin; 403 `forbidden_origin` unless the request comes from the wall's own page |
 | `GET /api/capabilities` | `{"reveal": true}` when "open file location" can work on this machine |
 | `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
-| `POST /api/chat` | Streams `status` and `delta` events, then `done` with the `thread_id` and the brain that answered |
+| `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
+| `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
+| `POST /api/chat` | `{message, thread_id?, reply_to?, image_ids?}`. Streams `accepted {thread_id, user_message_id}`, then `status` and `delta` events, then `done {thread_id, user_message_id, assistant_message_id, reply_to, brain}`. The question is saved before the answer starts; the answer only when it finishes |
+| `POST /api/capture/claude-code` | One `/n` exchange from the notes-capture hook (JSON, header `X-Notes-Capture: 1`, loopback only). 201 with the thread and message ids, 200 `duplicate` when it was saved before |
+| `GET /api/chat/messages?before=&limit=&include_deleted=` | The chat timeline, all threads, `{messages, next_before}`, each page ascending |
+| `GET /api/chat/threads/:id` | One thread and its messages |
+| `PATCH /api/chat/messages/:id` | Edit your own message (`{text}`); the old text is kept. Same-origin only |
+| `DELETE /api/chat/messages/:id?with_answer=1` | Delete a message (soft), optionally with its answer. Same-origin only |
+| `POST /api/chat/messages/:id/restore` | Bring a deleted message back. Same-origin only |
 | `/full/:imageId` | The full-screen photo page |
 
 ### Where things are stored
@@ -686,14 +771,23 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
                  image_path, image_meta)        legacy: read only at start-up, dropped later
            note_images(id, note_id, path, sha256, mime, width, height, bytes, taken_at,
                        original_name, host, position, created_at, deleted_at)
+           note_files(id, note_id, path, sha256, mime, bytes, original_name, host, position,
+                      extracted_text, extraction_status, created_at, deleted_at)
            note_revisions(note_id, body, saved_at)
            note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
+           chat_threads(id, source, brain, external_key, created_at, updated_at)
+           chat_messages(id [msg:K7F2], thread_id, role, text, source, brain, reply_to, seq,
+                         created_at, edited_at, deleted_at)
+           chat_message_revisions(message_id, text, saved_at)
+           chat_message_attachments(message_id, position, kind, ref_id)
 ~/mcp-notes-data/
   images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
+  files/<noteId>/<name>            a note's other files, byte for byte, Windows-safe names
   cache/<imageId>/thumb.webp       480 px wide, for the wall and gallery
   cache/<imageId>/preview.jpg      long edge 1568 px, what Claude sees
   cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
   inbox/                           drop files here; failures go to inbox/failed/
+~/.local/state/notes-capture/      the Claude Code hooks: outbox/ (captures waiting for the daemon), capture.log, paste.log
 ```
 
 Each photo is one `note_images` row with its own id, in the same `A-B32` form as note ids. A
@@ -704,6 +798,13 @@ photo sets its `deleted_at` and keeps its position. Dedupe is by `sha256` among 
 not been removed. The two `notes` image columns are the iteration 6 layout. New code never
 writes them. At start-up `notesd` copies any photo an older daemon stored there into
 `note_images` (it does nothing when there is nothing new), and a later migration drops them.
+
+Any other file attached to a note is one `note_files` row with its own id from the same id
+space. It is stored under `files/<noteId>/` with a Windows-safe version of its name (`name (2).ext`
+when the name is taken), so one folder holds everything a note carries. Dedupe is by `sha256`
+among files that have not been removed. `extracted_text` and `extraction_status` are there for a
+later text extraction; nothing fills them yet. Delete forever on a note removes its files and
+then its folder.
 
 `cache/` can be deleted at any time. Everything in it is rebuilt on demand. Delete forever
 removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
@@ -761,6 +862,7 @@ web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
 claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
+claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive

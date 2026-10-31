@@ -1,4 +1,4 @@
-import type { Note, NoteImage } from '../types';
+import type { Note, NoteFile, NoteImage } from '../types';
 import { tagsOf } from '../lib/text';
 
 const ISO = '2026-10-30T01:00:00.000Z';
@@ -27,6 +27,23 @@ export function makeImage(id: string, over: Partial<NoteImage> = {}): NoteImage 
   return { ...base, ...over };
 }
 
+/** A wire `NoteFile` (2 KB PDF on 'lenovo', available). `note_id` defaults to `id`. Phase 5. */
+export function makeFile(id: string, over: Partial<NoteFile> = {}): NoteFile {
+  const base: NoteFile = {
+    id,
+    note_id: id,
+    position: 0,
+    name: 'report.pdf',
+    mime: 'application/pdf',
+    bytes: 2048,
+    host: 'lenovo',
+    available: true,
+    extraction_status: 'none',
+    urls: { download: `/api/files/${id}/download` },
+  };
+  return { ...base, ...over };
+}
+
 export type MakeNoteOpts = {
   /** Image ids (made with this note's id and positions 0..n-1) or ready images. */
   images?: Array<string | NoteImage>;
@@ -35,6 +52,8 @@ export type MakeNoteOpts = {
   created?: string;
   /** Defaults to `created`. */
   updated?: string;
+  /** Ready files (Phase 5). Defaults to none. */
+  files?: NoteFile[];
 };
 
 /** A wire `Note`. */
@@ -49,5 +68,6 @@ export function makeNote(id: string, body: string, opts: MakeNoteOpts = {}): Not
     updated_at: opts.updated ?? created,
     origin: null,
     images,
+    files: opts.files ?? [],
   };
 }

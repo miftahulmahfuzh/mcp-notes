@@ -200,28 +200,42 @@ describe('GET /api/tags', () => {
   });
 });
 
+const MSG_ID = /^[0-9A-Z]{4}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 describe('POST /api/chat', () => {
-  it('streams the stub reply as deltas then done with a new thread id', async () => {
+  it('accepts, streams the stub reply as deltas, then done with our thread and message ids', async () => {
     const res = await h.sendJson('POST', '/api/chat', { message: 'what did I save?' });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/text\/event-stream/);
     const messages = parseSse(await res.text());
+    const accepted = messages[0];
+    expect(accepted?.event).toBe('accepted');
+    const { thread_id, user_message_id } = accepted?.data as { thread_id: string; user_message_id: string };
+    expect(thread_id).toMatch(UUID);
+    expect(user_message_id).toMatch(MSG_ID);
     const deltas = messages.filter((m) => m.event === 'delta');
     expect(deltas.length).toBeGreaterThan(1);
     expect(deltas.map((m) => (m.data as { text: string }).text).join('')).toBe(STUB_REPLY);
-    const last = messages[messages.length - 1];
-    expect(last?.event).toBe('done');
-    expect((last?.data as { thread_id: string } | undefined)?.thread_id).toMatch(/^stub-/);
+    expect(messages.at(-1)).toEqual({
+      event: 'done',
+      data: { thread_id, user_message_id, assistant_message_id: expect.stringMatching(MSG_ID), reply_to: null },
+    });
   });
 
-  it('echoes a given thread_id in done', async () => {
-    const res = await h.sendJson('POST', '/api/chat', { message: 'again', thread_id: 'thread-42' });
-    const messages = parseSse(await res.text());
-    expect(messages[messages.length - 1]).toEqual({ event: 'done', data: { thread_id: 'thread-42' } });
+  it('continues a thread it created and starts a new one for an unknown thread_id', async () => {
+    const first = parseSse(await (await h.sendJson('POST', '/api/chat', { message: 'one' })).text());
+    const threadId = (first.at(-1)?.data as { thread_id: string }).thread_id;
+    const again = parseSse(await (await h.sendJson('POST', '/api/chat', { message: 'two', thread_id: threadId })).text());
+    expect((again.at(-1)?.data as { thread_id: string }).thread_id).toBe(threadId);
+    const legacy = parseSse(await (await h.sendJson('POST', '/api/chat', { message: 'old', thread_id: 'thread-42' })).text());
+    const legacyThread = (legacy.at(-1)?.data as { thread_id: string }).thread_id;
+    expect(legacyThread).not.toBe('thread-42');
+    expect(legacyThread).toMatch(UUID);
   });
 
   it('rejects an empty message with a JSON {error} before streaming', async () => {
-    for (const payload of [{}, { message: '   ' }, { message: 3 }]) {
+    for (const payload of [{}, { message: '   ' }, { message: 3 }, { message: '   ', image_ids: [] }]) {
       const res = await h.sendJson('POST', '/api/chat', payload);
       expect(res.status).toBe(400);
       expect(res.headers.get('content-type')).toMatch(/application\/json/);
@@ -249,7 +263,7 @@ describe('POST /api/chat with an injected backend', () => {
     return parseSse(await res.text());
   }
 
-  it('streams status and delta events in backend order, then done with thread_id and brain', async () => {
+  it('streams accepted, status and delta events in backend order, then done with ids and brain', async () => {
     fake.push({
       steps: [
         { type: 'status', text: 'searching notes' },
@@ -258,50 +272,56 @@ describe('POST /api/chat with an injected backend', () => {
         { type: 'delta', text: 'You saved ' },
         { type: 'delta', text: 'A-B32.' },
       ],
-      end: { threadId: 'sess-1', brain: 'claude' },
+      end: { brain: 'claude' },
     });
     const messages = await chat({ message: 'what did I save?' });
+    const accepted = messages[0]?.data as { thread_id: string; user_message_id: string };
     expect(messages).toEqual([
+      { event: 'accepted', data: { thread_id: expect.stringMatching(UUID), user_message_id: expect.stringMatching(MSG_ID) } },
       { event: 'status', data: { text: 'searching notes' } },
       { event: 'status', data: { text: 'reading 3 notes' } },
       { event: 'status', data: { text: '' } },
       { event: 'delta', data: { text: 'You saved ' } },
       { event: 'delta', data: { text: 'A-B32.' } },
-      { event: 'done', data: { thread_id: 'sess-1', brain: 'claude' } },
+      {
+        event: 'done',
+        data: {
+          thread_id: accepted.thread_id,
+          user_message_id: accepted.user_message_id,
+          assistant_message_id: expect.stringMatching(MSG_ID),
+          reply_to: null,
+          brain: 'claude',
+        },
+      },
     ]);
-    const req = fake.requests.at(-1);
-    expect(req?.message).toBe('what did I save?');
-    expect(req?.threadId).toBeNull();
-  });
-
-  it('passes thread_id to the backend and reports the thread and brain the backend ended with', async () => {
-    fake.push({ steps: [{ type: 'delta', text: 'ok' }], end: { threadId: 'sess-2', brain: 'glm' } });
-    const messages = await chat({ message: 'and last month?', thread_id: 'sess-1' });
-    expect(fake.requests.at(-1)?.threadId).toBe('sess-1');
-    expect(messages.at(-1)).toEqual({ event: 'done', data: { thread_id: 'sess-2', brain: 'glm' } });
+    const turn = fake.requests.at(-1)?.turn;
+    expect(turn?.text).toContain(`[msg:${accepted.user_message_id}] user (`);
+    expect(turn?.text).toContain('what did I save?');
+    expect(turn?.images).toEqual([]);
   });
 
   it('omits brain from done when the backend reports none', async () => {
-    fake.push({ steps: [{ type: 'delta', text: 'hi' }], end: { threadId: 'sess-3' } });
-    const messages = await chat({ message: 'hi' });
-    const done = messages.at(-1);
-    expect(done).toEqual({ event: 'done', data: { thread_id: 'sess-3' } });
+    fake.push({ steps: [{ type: 'delta', text: 'hi' }] });
+    const done = (await chat({ message: 'hi' })).at(-1);
+    expect(done?.event).toBe('done');
     expect(done?.data).not.toHaveProperty('brain');
   });
 
-  it('sends event: error and no done when the events stream throws mid-turn', async () => {
+  it('sends event: error and no done when the events stream throws mid-turn; the question is kept', async () => {
     fake.push({ steps: [{ type: 'delta', text: 'partial ' }, { type: 'throw', message: 'usage limit reached' }] });
     const messages = await chat({ message: 'x' });
-    expect(messages).toEqual([
-      { event: 'delta', data: { text: 'partial ' } },
-      { event: 'error', data: { error: 'usage limit reached' } },
-    ]);
+    expect(messages.map((m) => m.event)).toEqual(['accepted', 'delta', 'error']);
+    expect(messages[2]).toEqual({ event: 'error', data: { error: 'usage limit reached' } });
+    const { thread_id } = messages[0]?.data as { thread_id: string };
+    const thread = await f.chat.getThread(thread_id);
+    expect(thread?.messages.map((m) => m.role)).toEqual(['user']);
   });
 
   it('sends event: error when reply() itself rejects', async () => {
     fake.push({ steps: [], rejectWith: 'claude not found' });
     const messages = await chat({ message: 'x' });
-    expect(messages).toEqual([{ event: 'error', data: { error: 'claude not found' } }]);
+    expect(messages.map((m) => m.event)).toEqual(['accepted', 'error']);
+    expect(messages[1]).toEqual({ event: 'error', data: { error: 'claude not found' } });
   });
 
   it('aborts the backend request signal when the client disconnects', async () => {
@@ -314,9 +334,9 @@ describe('POST /api/chat with an injected backend', () => {
     expect(res.status).toBe(200);
     const reader = res.body!.getReader();
     const text = await readUntil(reader, (t) => t.includes('event: delta'));
-    expect(parseSse(text)[0]).toEqual({ event: 'delta', data: { text: 'first ' } });
+    expect(parseSse(text).find((m) => m.event === 'delta')).toEqual({ event: 'delta', data: { text: 'first ' } });
     const req = fake.requests.at(-1);
-    expect(req?.message).toBe('slow one');
+    expect(req?.turn.text).toContain('slow one');
     expect(req?.signal.aborted).toBe(false);
     await reader.cancel();
     await waitFor(() => req?.signal.aborted === true);

@@ -1,12 +1,16 @@
-import { Fragment } from 'react';
+import { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
-import { segmentLinks } from '../lib/links';
+import { ArrowsOut, CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
+import { Lightbox } from './Lightbox';
+import { ChatInline } from './ChatText';
+import { chatImageUrl } from '../api';
 import { oneLine } from '../lib/oneLine';
 
 export interface AnswerPanelProps {
   left: number;
   query: string;
+  /** Chat image ids sent with the query; shown as thumbnails above the answer. */
+  images?: readonly string[];
   text: string;
   done: boolean;
   /** Tool caption while streaming; '' for none. */
@@ -21,11 +25,23 @@ export interface AnswerPanelProps {
   onToggleCollapse: () => void;
   onClose: () => void;
   onJump: (id: string) => void;
+  /** Phase 9: open the history page on this conversation's thread. Absent = no button. */
+  onFullScreen?: () => void;
+}
+
+const NO_IMAGES: readonly string[] = [];
+
+/** The header's question line: the text, or for an image-only question its image count. */
+function questionLabel(query: string, imageCount: number): string {
+  if (query !== '') return query;
+  if (imageCount === 0) return '';
+  return imageCount === 1 ? '1 image' : `${imageCount} images`;
 }
 
 export function AnswerPanel({
   left,
   query,
+  images = NO_IMAGES,
   text,
   done,
   status,
@@ -37,9 +53,13 @@ export function AnswerPanel({
   onToggleCollapse,
   onClose,
   onJump,
+  onFullScreen,
 }: AnswerPanelProps) {
+  // Phase 3 left the sent thumbnails inert; they open the Phase 2 Lightbox over the panel.
+  const [viewing, setViewing] = useState<number | null>(null);
   const parts = text.split('\n\n');
   const caption = done ? (brain ?? '') : status;
+  const label = questionLabel(query, images.length);
 
   // Collapsed, the whole line expands the panel; the icon buttons keep their own meaning.
   const onHeadClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -51,11 +71,16 @@ export function AnswerPanel({
   return (
     <div className={collapsed ? 'answer collapsed' : 'answer'} style={{ left, width: `min(680px, calc(100vw - ${left}px - 16px))` }}>
       <div className="answer-head" onClick={onHeadClick}>
-        <span className="answer-q" data-tip={query}>
-          {oneLine(query)}
+        <span className="answer-q" data-tip={label}>
+          {oneLine(label)}
         </span>
         {caption && <span className="answer-status">{caption}</span>}
         <span className="spacer" />
+        {onFullScreen && (
+          <button type="button" className="pbtn hov" data-tip="Chat in full screen" aria-label="Chat in full screen" onClick={onFullScreen}>
+            <ArrowsOut weight="duotone" />
+          </button>
+        )}
         <button
           type="button"
           className="pbtn hov"
@@ -73,21 +98,30 @@ export function AnswerPanel({
           <X weight="duotone" />
         </button>
       </div>
+      {!collapsed && images.length > 0 && (
+        <div className="answer-images">
+          {images.map((id, i) => (
+            <button key={id} type="button" className="answer-image" aria-label={`View image upload:${id}`} onClick={() => setViewing(i)}>
+              <img src={chatImageUrl(id, 'thumb')} alt={`pasted image ${id}`} />
+            </button>
+          ))}
+        </div>
+      )}
+      {viewing !== null && viewing < images.length && (
+        <Lightbox
+          items={images.map((id) => ({ id, src: chatImageUrl(id, 'display'), label: `upload:${id}` }))}
+          index={viewing}
+          onIndex={setViewing}
+          onClose={() => setViewing(null)}
+        />
+      )}
       {!collapsed && (
         <div className="answer-body">
           {parts.map((t, i) => {
             const streaming = !done && i === parts.length - 1;
             return (
               <p key={i}>
-                {segmentLinks(t, { streaming }).map((s, j) =>
-                  s.kind === 'link' ? (
-                    <a key={j} className="answer-link" href={s.href} target="_blank" rel="noreferrer noopener">
-                      {s.text}
-                    </a>
-                  ) : (
-                    <Fragment key={j}>{s.text}</Fragment>
-                  ),
-                )}
+                <ChatInline text={t} streaming={streaming} />
                 {streaming ? ' ▍' : ''}
               </p>
             );

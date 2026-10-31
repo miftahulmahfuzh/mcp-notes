@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-10-31
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 35
+- Completed: 47
 
 ---
 
@@ -31,6 +31,202 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns note-id segmenting in chat text (`segmentChat`, `ChatInline`) in `Bubble` (as P10 leaves it) and `AnswerPanel` (as P9 leaves it); clicking opens the bigger-note-view modal in place (loaded or fetched note; deleted/unknown handled quietly); wall deep links in chat text become in-place links too, keeping `href="/?note=ID"` so modified/middle clicks and new tabs navigate normally; `NoteEditor` icon button (after P5's buttons in `.ed-top`) that goes to `/?note=ID` and flashes the note on the wall. Exit: ids inside code-ish tokens and longer words are not linked; opening from the history page does not navigate; ctrl/middle click keeps the real link; the modal button switches to the wall view and flashes the card.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 11 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A043 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A044.md`
+  - **Completed**: 2026-10-31 11:39
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, web/src/App.test.tsx, web/src/App.tsx, web/src/App.notelinks.test.tsx, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/Bubble.tsx, web/src/components/Bubble.notelinks.test.tsx, web/src/components/ChatText.tsx, web/src/components/ChatText.test.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/lib/chatSegments.ts, web/src/lib/chatSegments.test.tsx, web/src/lib/deepLink.ts, web/src/styles.css
+
+- [x] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns reply action → quote chip inside P9's `HistoryComposer` → `reply_to` in the request (`streamChat` `replyTo`, `send(text, imageIds, replyTo?)`; a reply to a wall bubble continues its thread, to a claude_code bubble starts a new one); `MessageItem` rendering P9's `Bubble` through new optional `slots` (one `li` per message, no wrapper); reply bubbles show a quoted header (`reply_to.text`, role or "message"), click scrolls to and highlights the target, deleted target reads "message deleted"; edit user bubbles in place with "edited" mark; delete any bubble with "delete the answer too?" prompt for questions; undo bar restores each id from `deleted[]`; "show deleted" toggle filtering client-side (App fetches with `includeDeleted: true`); `HistoryPage` `pushUndo?`. Exit: tests for each action against mocked API; keyboard accessible.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 10 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A042 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A043.md`
+  - **Completed**: 2026-10-31 11:30
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, web/src/App.tsx, web/src/api.chatActions.test.tsx, web/src/chatHistoryApi.ts, web/src/components/Bubble.tsx, web/src/components/BubbleActions.flow.test.tsx, web/src/components/HistoryTools.tsx, web/src/components/MessageItem.css, web/src/components/MessageItem.test.tsx, web/src/components/MessageItem.tsx, web/src/components/ReplyChip.tsx, web/src/hooks/useHistory.reply.test.tsx, web/src/hooks/useHistory.ts, web/src/hooks/useHistoryActions.ts, web/src/hooks/useJumpToMessage.test.tsx, web/src/hooks/useJumpToMessage.ts, web/src/hooks/useMessageActions.ts, web/src/hooks/useShowDeleted.ts, web/src/lib/chatReply.test.tsx, web/src/lib/chatReply.ts, web/src/lib/timeline.test.tsx, web/src/lib/timeline.ts, web/src/pages/HistoryPage.tsx
+  - **Drift**:
+    - Plan's HistoryComposer called store.send(draft, ids, replyTo ?? undefined), which broke P9's HistoryPage.test (expects send called with exactly 2 args); changed to call with 2 args when not replying.
+  - **Decided**:
+    - HistoryComposer send arity: P9 test asserts toHaveBeenCalledWith('and now?', []) vs plan code block passing undefined third arg → call send(draft, ids) when no reply target (rung 2: exit criteria 'P9 tests still pass' over rung 3 code block)
+
+- [x] **P1-NOTES-A041** Phase 8: Claude Code capture: hook, ingest endpoint, install, `/n` pasted images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `claude/hooks/notes-capture.mjs` (Stop, async, outbox retry, idempotent), `claude/hooks/notes-paste.mjs` (PreToolUse on `mcp__notes__similar_images`, uploads the pasted image with `source=claude_code` and rewrites `pasted_image` to `upload_id`; `updatedInput` default, `deny` fallback); `src/chat/capture.ts` + `POST /api/capture/claude-code` (loopback + custom-header guard, idempotent on external key through P7's `recordExchange`, images copied into P3's store with `ingestChatImage`); `scripts/install.sh`/`uninstall.sh` merge and remove the hooks in `~/.claude/settings.json` idempotently; final `pasted_image` text in `similar_images`; `/n` skill text; `npm run verify:paste-hook`. Exit: feeding a synthetic transcript (string-form and array-form user entries, image blocks, `imagePasteIds`) produces one single-turn `claude_code` thread with the images stored; replay is a no-op; daemon-down spools to the outbox and a later run delivers; install/uninstall tested against a temp `HOME`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 8 of 11)
+  - **Satisfies**: R1, R3 — Paste an image into the chat query bar (wall chat and `/n`); Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A039 (satisfied), P1-NOTES-A040 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A041.md`
+  - **Completed**: 2026-10-31 11:02
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, claude/skills/n/SKILL.md, package.json, scripts/install.sh, scripts/uninstall.sh, src/http/app.ts, src/mcp/similarTools.ts, tests/integration/similarImages.mcp.int.test.ts, claude/hooks/lib/transcript.mjs, claude/hooks/lib/transcript.d.mts, claude/hooks/lib/state.mjs, claude/hooks/lib/state.d.mts, claude/hooks/notes-capture.mjs, claude/hooks/notes-capture.d.mts, claude/hooks/notes-paste.mjs, claude/hooks/notes-paste.d.mts, scripts/claude-hooks.mjs, scripts/claude-hooks.d.mts, scripts/verify-paste-hook.mjs, src/chat/capture.ts, src/http/capture.ts, tests/unit/hooks/fixtures.ts, tests/unit/hooks/transcript.test.ts, tests/unit/hooks/notesCapture.test.ts, tests/unit/hooks/notesPaste.test.ts, tests/unit/scripts/claudeHooks.test.ts, tests/unit/captureGuard.test.ts, tests/integration/capture.int.test.ts, tests/integration/capture.hook.int.test.ts
+  - **Drift**:
+    - none; branch had no remote counterpart so nothing to rebase onto
+  - **Decided**:
+    - Completion bookkeeping: no task unblocked. Phases 9-11 do not depend on phase 8 (swarm coordinator owns ordering).
+
+- [x] **P1-NOTES-A042** Phase 9: History page, sidebar icon, full-screen button, timeline, thumbnails
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` gains `history` with `/history[?thread=ID]` URL sync (back/forward), including the pathname guard that keeps `/?note=ID` when switching to the wall; chat wire types mirroring P7 (`ChatMessage`, `ChatAttachment {kind,id,url,thumb_url}`, `ChatReplyPreview`, `ChatPage`, `ChatOp`); `chatHistoryApi.ts`; `useHistory(enabled, {includeDeleted})` (`messages`, `mutate`, `loadOlder`, `send`); `HistoryPage` timeline (unified, ascending, thread dividers, "claude code" badge, UTC+7 timestamps on every bubble, thumbnails opening the Lightbox) with its own `HistoryComposer` (`<ChatBar variant="page">` + its own `useChatImages()`); `Bubble`; live refresh from `event: chat` on one shared `/api/events` connection; chat-history icon above the recycle bin in `Rail` and `Sidebar`; "chat in full screen" button and Lightbox-opening thumbnails in `AnswerPanel`; `makeMessage` fixture (only creator). Exit: component and hook tests; new wall exchanges and captured `/n` exchanges appear without reload; navigation keeps the notes store; `/?note=ID` survives a switch to the wall.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
+  - **Completed**: 2026-10-31 10:55
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, tests/unit/static.test.ts, web/src/App.test.tsx, web/src/App.tsx, web/src/App.history.test.tsx, web/src/chatHistoryApi.ts, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/Bubble.tsx, web/src/components/ChatBar.css, web/src/components/Header.tsx, web/src/components/Rail.test.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/hooks/useChat.test.tsx, web/src/hooks/useChat.ts, web/src/hooks/useHistory.test.tsx, web/src/hooks/useHistory.ts, web/src/hooks/useNotes.ts, web/src/lib/chatTime.test.tsx, web/src/lib/chatTime.ts, web/src/lib/events.test.tsx, web/src/lib/events.ts, web/src/lib/route.test.tsx, web/src/lib/route.ts, web/src/lib/timeline.test.tsx, web/src/lib/timeline.ts, web/src/pages/HistoryPage.css, web/src/pages/HistoryPage.test.tsx, web/src/pages/HistoryPage.tsx, web/src/testing/chatFixtures.ts, web/src/types.ts
+  - **Decided**:
+    - Bubble.thumbWidth param type {width?,height?} → `object` with internal cast (TS weak-type check rejects ChatAttachment) (rung 1: invariant 1, typecheck green)
+    - App.test.tsx answer-head button count 3 → 4 (new Chat in full screen button is intended by the plan; plan's Impact omitted this existing assertion) (rung 2: exit criteria / plan code blocks)
+    - Completion bookkeeping: corrected the stale "(pending)" markers for P1-NOTES-A035 and P1-NOTES-A036 in this task's Depends on (both landed). Phase 8 (P1-NOTES-A041) is still open in this tree, so the plan index Status reads phases 1-7 and 9 complete.
+
+- [x] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0006 (`chat_threads`, `chat_messages`, `chat_message_revisions`, `chat_message_attachments`); `ChatService` (create thread/messages, short ids, edit with revision, soft delete/restore, timeline, `recordExchange` for P8); context builder (history + reply targets, char budget, `[msg:ID]` labels, image placeholders); `composeWallTurn` extending P3's `compose.ts` (`ChatTurnImage.messageId?`, `[image upload:ID] from [msg:ID]`); leading-`[msg:ID]` citation parser → `reply_to`; backend contract change (`ChatRequest {turn, signal}`, no `resume`, `persistSession` off; preview bytes still read by P3's `readPreview`); `POST /api/chat` persists the user row first, sends `event: accepted {thread_id, user_message_id}`, the assistant row on success, `done {thread_id, user_message_id, assistant_message_id, reply_to, brain?}`; `GET /api/chat/messages` (`{messages, next_before}`, `include_deleted`), `GET /api/chat/threads/:id`, `PATCH`, `DELETE` (`{deleted: [ids]}`), `restore` (one id, idempotent); `event: chat {op: created|updated|deleted|restored, thread_id, id}` on `/api/events`; system prompt teaches `[msg:ID]`. Exit: a two-turn wall conversation survives a daemon restart and brain fallback with identical context; reply_to to a bubble in another thread is injected; edit keeps a revision; deleted messages leave context; integration tests with the scripted backend.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 7 of 11)
+  - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A039 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A040.md`
+  - **Completed**: 2026-10-31 10:24
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, drizzle/0006_chat_history.sql, drizzle/meta/0006_snapshot.json, drizzle/meta/_journal.json, src/chat/agent.ts, src/chat/backend.ts, src/chat/citation.ts, src/chat/compose.ts, src/chat/context.ts, src/chat/events.ts, src/chat/ids.ts, src/chat/prompt.ts, src/chat/repo.ts, src/chat/service.ts, src/chat/stub.ts, src/chat/turn.ts, src/chat/types.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/http/api.ts, src/http/app.ts, src/http/chatApi.ts, tests/integration/api.int.test.ts, tests/integration/chat.api.int.test.ts, tests/integration/chat.images.int.test.ts, tests/integration/chat.service.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/helpers/scripted-chat.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/setup.ts, tests/live/chat.live.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-citation.test.ts, tests/unit/chat-compose.test.ts, tests/unit/chat-context.test.ts, tests/unit/chat-ids.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-stub.test.ts
+  - **Drift**:
+    - schema.ts header comment quoted by the plan differed slightly (P6 sentence was joined); merged the 0006 sentence into the existing text.
+    - api.ts chatSchema from P3 had image_ids optional; replaced with the plan's default([]).
+
+- [x] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns paperclip button + hidden picker in `NoteEditor`; `FileChips` (name, size, type, download, per-file reveal, remove with 6 s undo); ctrl-v and drop of non-image files into the open modal attach to that note (images keep the image path); `NoteRevealButton` (card footer slot from P1 and editor top bar) calling the note-level route, visible by the same rule as the route; empty-note rules count files (`hasAttachments`); card paperclip count; `web/src/api.ts` file calls with `DuplicateFileError`; `makeNote` always sets `files: []` (the only phase that touches that fixture). Exit: component tests for picker, paste, drop, chips, undo, dedupe notice, reveal calls; a text-only note holding only files is not auto-deleted on close.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 5 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
+  - **Completed**: 2026-10-31 10:06
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/components/FileChips.css, web/src/components/FileChips.test.tsx, web/src/components/FileChips.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteRevealButton.test.tsx, web/src/components/NoteRevealButton.tsx, web/src/components/RevealMounts.test.tsx, web/src/lib/files.test.tsx, web/src/lib/files.ts, web/src/styles.css, web/src/testing/fixtures.ts
+  - **Drift**:
+    - tests/integration/schema.int.test.ts 're-applying the migrations is a no-op' fails here (expects 6 applied rows vs journal 5): the shared test DB already holds a peer phase's migration 0005. Environmental, this phase changes no server/db code; all other test:int tests pass (340/342 on the last full run, the 2nd failure was a transient concurrent-run flake).
+  - **Decided**:
+    - Completion bookkeeping: P1-NOTES-A040 (phase 7, the plan's next task) stays blocked: it depends on P1-NOTES-A039 (phase 6), which is still pending in this tree, not on this phase. Only marked P1-NOTES-A038 satisfied in P1-NOTES-A042's Depends on.
+
+- [x] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `ImageEmbedder` (Gemini Embedding 2 over OpenRouter, 1536 dims, PNG data URL, client-side truncate + renormalise guard) and its fake; migration 0005 `note_image_embeddings`; repo (pending, save, failure, nearest); worker + backfill reusing `RateLimiter`/`Clock`; `npm run embed:images:backfill` with `--dry-run`/`--limit`/`--retry-failed`; MCP `similar_images` (`image_id` | `upload_id` (resolved through P3's `locateChatImage`) | `query`, `limit`; `pasted_image` accepted and answered with a provisional "needs the notes-paste hook" error until P8); `startHarness({chat, imageEmbedder})`; chat allowlist, captions, prompt, instructions, `/n` skill; opt-in live test. Exit: worker embeds new images and skips images whose file is not on this machine without recording failures; nearest search excludes the source image and deleted notes; text query works through the same space; live probe test documents the verified request shape.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 6 of 11)
+  - **Satisfies**: R5 — Image similarity search (Gemini Embedding 2 via OpenRouter, table, worker, backfill, `similar_images`, text→image)
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A039.md`
+  - **Completed**: 2026-10-31 10:05
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, claude/skills/n/SKILL.md, drizzle/0005_note_image_embeddings.sql, drizzle/meta/0005_snapshot.json, drizzle/meta/_journal.json, package.json, src/background.ts, src/chat/prompt.ts, src/chat/status.ts, src/cli/embedImagesBackfill.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/embeddings/chatUploads.ts, src/embeddings/imageBackfill.ts, src/embeddings/imageConstants.ts, src/embeddings/imageEmbedder.ts, src/embeddings/imageInput.ts, src/embeddings/imageRepo.ts, src/embeddings/imageWorker.ts, src/embeddings/openrouter.ts, src/embeddings/openrouterImage.ts, src/http/app.ts, src/mcp/instructions.ts, src/mcp/server.ts, src/mcp/similarTools.ts, src/mcp/tools.ts, tests/helpers/fakeImageEmbedder.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageEmbeddings.repo.int.test.ts, tests/integration/imageEmbeddings.worker.int.test.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/setup.ts, tests/integration/similarImages.mcp.int.test.ts, tests/live/chat.live.test.ts, tests/live/imageEmbeddings.live.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/chat-status.test.ts, tests/unit/embeddings/fakeImageEmbedder.test.ts, tests/unit/embeddings/imageBackfill.test.ts, tests/unit/embeddings/imageConstants.test.ts, tests/unit/embeddings/openrouterImage.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/similarTools.test.ts, vitest.config.ts
+  - **Decided**:
+    - Completion bookkeeping: unblocked P1-NOTES-A040 (phase 7; depends on phases 3 and 6, both satisfied). P1-NOTES-A041 (phase 8) stays blocked on phase 7.
+
+- [x] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0004 `note_files` (extracted_text + extraction_status, no extraction); `files/<noteId>/<safeName>` store with sha256 dedupe (stored name sanitised; `NoteFile.name` is the display name); `NotesService.attachFile/removeFile/restoreFile`; `Note.files` on the wire (required server-side, optional `files?` in `web/src/types.ts`); `POST /api/notes/:id/files` (`{note, attached, kind}`), `DELETE /api/files/:id`, `POST /api/files/:id/restore` (409 `duplicate_file`), `GET /api/files/:id`, `GET /api/files/:id/download`; reveal routes (`POST /api/files/:id/reveal` selects the file, `POST /api/notes/:id/reveal` opens the note's files folder, or selects the first image when the note has no files, 404 when it has neither); `purgeNote` removes the files folder; MCP `describeNote`/note JSON expose name, size, type; instructions, chat prompt sentence and `/n` skill text. Exit: attach/remove/restore/purge covered by integration tests; same bytes in two notes → holder returned; download is `attachment` with `nosniff`; `get`/`list` MCP results include `files`; migration chain intact.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 4 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A036 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A037.md`
+  - **Completed**: 2026-10-31 09:41
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, claude/skills/n/SKILL.md, drizzle/0004_note_files.sql, drizzle/meta/0004_snapshot.json, drizzle/meta/_journal.json, src/chat/prompt.ts, src/daemon.ts, src/db/schema.ts, src/files/ingest.ts, src/files/mime.ts, src/files/name.ts, src/files/records.ts, src/files/store.ts, src/http/app.ts, src/http/files.ts, src/http/reveal.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/notes/fileRepo.ts, src/notes/imageRepo.ts, src/notes/service.ts, src/notes/types.ts, tests/helpers/fakeNotes.ts, tests/integration/daemon.int.test.ts, tests/integration/files.int.test.ts, tests/integration/files.mcp.int.test.ts, tests/integration/files.reveal.int.test.ts, tests/integration/imageHarness.ts, tests/integration/migration0004.int.test.ts, tests/integration/setup.ts, tests/unit/chat-prompt.test.ts, tests/unit/files.name.test.ts, tests/unit/files.store.test.ts, tests/unit/mcp.describe.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/notes.helpers.test.ts, tests/unit/reveal.test.ts, web/src/types.ts
+  - **Drift**:
+    - None of substance; two plan test bugs fixed (not relaxed): files.reveal.int.test.ts helper post() used a default param so passing undefined still sent an Origin header (now null = no header); files.int.test.ts used '/api/files/nope' as a malformed id but normalizeId('nope') is the valid id N-OPE (now 'not-an-id'). Also added 'files' to the DATA_SUBDIRS assertion in tests/integration/daemon.int.test.ts.
+  - **Decided**:
+    - Plan test used malformed id 'nope' which is a valid dash-less id -> use 'not-an-id' (rung 2: exit criteria / test intent is a malformed id -> 400)
+    - Reveal test 'no Origin header' case never sent no header (default-param bug) -> null sentinel (rung 2)
+    - Completion bookkeeping: unblocked both P1-NOTES-A038 (phase 5) and P1-NOTES-A039 (phase 6); every dependency of each is now satisfied (wave W3 = {5, 6}).
+
+- [x] **P1-NOTES-A036** Phase 3: Chat image store, paste into the bar, wall chat sends images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0003 chat_images, src/chat/images.ts + compose.ts, POST/GET /api/chat/images, image_ids on POST /api/chat, agent sends images as SDK content blocks, useChatImages, ChatBar paste handling, DropOverlay chatBarHasFocus guard, AnswerPanel thumbnails. Exit: paste into focused bar uploads + removable thumbnail; send posts image_ids; SDK receives image blocks named [image upload:ID]; paste elsewhere still makes a note; typecheck/unit/integration/build green.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 3 of 11)
+  - **Satisfies**: R1 — Paste an image into the chat query bar (wall chat and /n)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A036.md`
+  - **Completed**: 2026-10-31 09:24
+  - **Method**: /do
+  - **Files**: .workflows/orchestration/chat-history-files-image-search/PLAN.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A036.md, CHANGELOG.md, README.md, drizzle/0003_chat_images.sql, drizzle/meta/0003_snapshot.json, drizzle/meta/_journal.json, src/chat/agent.ts, src/chat/backend.ts, src/chat/compose.ts, src/chat/images.ts, src/daemon.ts, src/db/schema.ts, src/http/api.ts, src/http/app.ts, src/http/chatImages.ts, src/images/store.ts, tests/integration/chat.images.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/imageHarness.ts, tests/integration/migration0002.int.test.ts, tests/integration/schema.int.test.ts, tests/integration/setup.ts, tests/live/chat.live.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-compose.test.ts, tests/unit/chat-images.test.ts, tests/unit/chat-stub.test.ts, tests/unit/images/store.test.ts, web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/ChatBar.css, web/src/components/ChatBar.test.tsx, web/src/components/ChatBar.tsx, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/hooks/useChat.test.tsx, web/src/hooks/useChat.ts, web/src/hooks/useChatImages.test.tsx, web/src/hooks/useChatImages.ts, web/src/types.ts
+  - **Drift**:
+    - Plan missed two integration tests that hard-code the migration count (tests/integration/schema.int.test.ts, migration0002.int.test.ts expected 3, now 4); changed both to derive the count from drizzle/meta/_journal.json so later migration phases need no edit.
+    - Live test (tests/live/chat.live.test.ts image case) not run: opt-in and billed; plan's pre-merge check still pending.
+  - **Decided**:
+    - Create tasks for all 11 phases vs phase 3 only -> phase 3 only (sibling worktrees p1/p2 run concurrently and would conflict on todos.md; narrowest blast radius, rung 6/tie-break)
+    - Migration-count assertions in two integration tests -> derive from journal length rather than hard-coding 4 (reversible, avoids per-phase churn; rung 3 exit criterion 'migration chain intact')
+    - Wave-0 integration: the phase-3 session reported this task as P1-NOTES-A034, which phase 1's session had already minted for phase 1; renumbered to P1-NOTES-A036 (phase 1 minted A036 for phase 3), plan file is `.workflows/plan/P1-NOTES-A036.md` (phase 3's copy differed only in the Adopted-from header line).
+
+- [x] **P1-NOTES-A035** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; component accepts a generic item list so chat can reuse it.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A035.md`
+  - **Completed**: 2026-10-31 09:20 (recorded under P2-NOTES-H202 by the phase-2 session; merged in wave-0 integration)
+  - **Done as**: P2-NOTES-H202 (see that entry for Files, Decided, Verified)
+
+- [x] **P1-NOTES-A034** Phase 1: Card footer: reveal button left
+  - **Difficulty**: EASY
+  - **Type**: Feature
+  - **Context**: Owns moving the card-footer "Show in Explorer" button so it sits immediately after the copy-ID button, left side; tests (`footerSequence` order tests in `NoteCard.test.tsx`, a position check in `RevealMounts.test.tsx`). Exit: footer order is id, copy, reveal, (copied label), date-right; `.copied` label no longer pushes the reveal button; existing `NoteCard`/`RevealButton` tests updated and a new test asserts DOM order.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 1 of 11)
+  - **Satisfies**: R6 — "Show in explorer" aligned left in the note card footer
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A034.md`
+  - **Completed**: 2026-10-31 09:22
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, web/src/components/NoteCard.tsx, web/src/components/NoteCard.test.tsx, web/src/components/RevealMounts.test.tsx
+  - **Drift**: plan's test used an unused `container` destructure in the 'keeps the reveal button in place' case; removed to satisfy tsc noUnusedLocals.
+  - **Decided**: test:int skipped -> coordinator instructed commit+DONE (shared test DB truncated concurrently by wave-0 phases: deadlocks/FK/404s; phase touches web/ only) (rung 2, exit criteria; coordinator re-runs full suite after wave merge)
+  - **Verified**: typecheck, build, npm test (852 pass), targeted vitest files; test:int not run to green (shared-DB contention)
+
+- [x] **P2-NOTES-H202** Phase 2: Shared Lightbox + note modal strip
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns a standalone `Lightbox` component (`LightboxItem {id, src, label?, width?, height?, film?}`, `isLightboxOpen()` Esc seam, prev/next buttons and ArrowLeft/ArrowRight, Esc closes only itself, no wrap at ends), its CSS and tests; wiring it into the note editor's thumbnail strip (`.ed-open` buttons, the editor's Esc listener yields while a lightbox is open). Not `PhotoModal`/`Gallery`, chat UI (P9 consumes it), file chips. Exit: clicking a strip thumbnail opens the lightbox on it; arrows/keys move between the note's available images without closing; Esc closes the lightbox but not the editor; generic item list so chat can reuse it.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search-p2/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 2 of 11)
+  - **Satisfies**: R4 — One shared image lightbox (chat + note modal strip)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P2-NOTES-H202.md`
+  - **Completed**: 2026-10-31 09:20
+  - **Method**: /do
+  - **Files**: web/src/components/Lightbox.tsx, web/src/components/Lightbox.css, web/src/components/Lightbox.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteEditor.css, web/src/components/NoteEditor.test.tsx, README.md, CHANGELOG.md, .workflows/todos.md, .workflows/plan/P2-NOTES-H202.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm → mint only phase 2's task, as P2-NOTES-H202 (non-sequential ID: phase 3's worktree already minted P1-NOTES-A034 from the shared counter, so the next sequential ID would collide with a peer), in root .workflows/todos.md (same convention as P2-NOTES-C506)
+    - test:int failed with Postgres deadlocks (40P01), FK violations and 404s from peer phase sessions running concurrent truncateAll against one shared test DB → treated as environmental; this phase changes no src/ or tests/ server code (verified: typecheck, build, npm test 874 passed)
+    - Same task as P1-NOTES-A035 (phase 2); the phase-2 session minted P2-NOTES-H202 instead. Both entries kept; P1-NOTES-A035 is marked completed by this entry (wave-0 integration).
 
 - [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL

@@ -5,19 +5,23 @@ import { serve, type ServerType } from '@hono/node-server';
 import { startBackground } from './background.js';
 import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
+import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
+import { ChatService } from './chat/service.js';
 import type { Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
+import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import { embedderFromConfig } from './embeddings/openrouter.js';
+import { imageEmbedderFromConfig } from './embeddings/openrouterImage.js';
 import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
 
-/** `<dataDir>/chat`: the fixed cwd of every chat brain run, so SDK sessions resume across restarts. */
+/** `<dataDir>/chat`: the fixed cwd of every chat brain run. Sessions are not persisted there (persistSession: false). */
 export const CHAT_SUBDIR = 'chat';
 
-export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR] as const;
+export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR, CHAT_IMAGES_SUBDIR, 'files'] as const;
 
 export interface RunningDaemon {
   deps: AppDeps;
@@ -35,6 +39,11 @@ export interface StartDaemonOptions {
    * to keep the daemon off the network.
    */
   embedder?: Embedder | null;
+  /**
+   * The image embedder for the image worker and `similar_images`. Omitted: built from
+   * config.embeddings (same key; null without it). Tests inject the fake, or null.
+   */
+  imageEmbedder?: ImageEmbedder | null;
 }
 
 export async function ensureDataDirs(dataDir: string): Promise<void> {
@@ -69,10 +78,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   await ensureDataDirs(config.dataDir);
   // Before createDb: a blank key throws EmbeddingError here, with no pool to leak.
   const embedder = options.embedder !== undefined ? options.embedder : embedderFromConfig(config.embeddings);
+  const imageEmbedder =
+    options.imageEmbedder !== undefined ? options.imageEmbedder : imageEmbedderFromConfig(config.embeddings);
   const db = createDb(config.databaseUrl);
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
-  const deps: AppDeps = { config, db, events, service, embedder };
+  const chatHistory = new ChatService({ db });
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;

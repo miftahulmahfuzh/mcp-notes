@@ -23,43 +23,28 @@ describe('chat stub', () => {
     expect(STUB_REPLY).toMatch(/iteration 4/);
   });
 
-  it('streams the fixed reply as delta events only and starts a new thread when none is given', async () => {
+  it('streams the fixed reply as delta events only', async () => {
     const backend = createStubChatBackend({ delayMs: 0 });
-    const turn = await backend.reply({
-      message: 'hello',
-      threadId: null,
-      signal: new AbortController().signal,
-    });
+    const turn = await backend.reply({ turn: { text: 'hello', images: [] }, signal: new AbortController().signal });
     const events = await collect(turn.events);
     expect(events.every((e) => e.type === 'delta')).toBe(true);
     expect(texts(events)).toBe(STUB_REPLY);
-    expect(turn.end().threadId).toMatch(/^stub-/);
+    expect(turn.end()).toEqual({});
   });
 
   it('reports no brain', async () => {
     const backend = createStubChatBackend({ delayMs: 0 });
-    const turn = await backend.reply({ message: 'hi', threadId: null, signal: new AbortController().signal });
+    const turn = await backend.reply({ turn: { text: 'hi', images: [] }, signal: new AbortController().signal });
     await collect(turn.events);
     const end = turn.end();
     expect(end.brain).toBeUndefined();
     expect('brain' in end).toBe(false);
   });
 
-  it('keeps a given thread id', async () => {
-    const backend = createStubChatBackend({ delayMs: 0 });
-    const turn = await backend.reply({
-      message: 'hello',
-      threadId: 'thread-1',
-      signal: new AbortController().signal,
-    });
-    await collect(turn.events);
-    expect(turn.end()).toEqual({ threadId: 'thread-1' });
-  });
-
   it('stops yielding after abort', async () => {
     const backend = createStubChatBackend({ delayMs: 5 });
     const controller = new AbortController();
-    const turn = await backend.reply({ message: 'x', threadId: null, signal: controller.signal });
+    const turn = await backend.reply({ turn: { text: 'x', images: [] }, signal: controller.signal });
     const out: ChatEvent[] = [];
     for await (const event of turn.events) {
       out.push(event);

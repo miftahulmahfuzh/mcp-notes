@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
 import { noteEmbeddings, noteImages, noteRevisions, notes, type ImageMeta } from '../../src/db/schema.js'
-import { closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js'
+import { MIGRATIONS_DIR, closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js'
 
 function imageMeta(sha256: string, takenAt: string | null = null): ImageMeta {
   return {
@@ -186,9 +188,11 @@ describe('schema (migrations 0000 + 0001 + 0002)', () => {
   it('re-applying the migrations is a no-op', async () => {
     const count = async () =>
       (await db.execute<{ n: number }>(sql`select count(*)::int as n from drizzle.__drizzle_migrations`)).rows[0]?.n
-    expect(await count()).toBe(3)
+    // One row per journal entry, so a new migration never needs this test touched.
+    const journal = JSON.parse(readFileSync(path.join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf8')) as { entries: unknown[] }
+    expect(await count()).toBe(journal.entries.length)
     await migrateTestDb()
-    expect(await count()).toBe(3)
+    expect(await count()).toBe(journal.entries.length)
   })
 
   it('applies note_embeddings defaults and enforces the vector width', async () => {

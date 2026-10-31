@@ -27,6 +27,9 @@ apps' tools are the source of truth.
   image has its own image id (the same `A-B32` form as note ids; a note's first image has the
   note's own id), a `position`, metadata (`mime`, size, `taken_at`, `original_name`, `host`) and
   `available`.
+- A note may also hold files that are not pictures (PDFs, documents, archives, anything), added
+  by the user on the wall. Every note in a result has a `files` list (empty when it has none);
+  each file has an id, `name`, `mime`, `bytes`, `host`, `available` and `extraction_status`.
 
 ## Tools
 
@@ -38,7 +41,8 @@ note id, with a similarity score), `tags` (every tag with count and last-used da
 `revisions` and `revert`. The image tools are `create_image` (a new note from a local file
 path), `attach_image` (add a local file to an existing note), `remove_image` and
 `restore_image` (take one image out of its note, softly, and put it back), `view_images` (see
-the images of notes, or single images), and the `has_image` / taken-date filters on `list` and
+the images of notes, or single images), `similar_images` (the pictures that look most like one
+picture, or that match a description), and the `has_image` / taken-date filters on `list` and
 `search`. Use them as described under Images. Always follow each tool's own schema and
 description for parameter names and formats; they win over anything written here.
 
@@ -184,9 +188,43 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
   list by position, and call `remove_image` with that image's id (not the note id). Removal is
   soft: the image goes to the recycle bin on the wall, and `restore_image` with the same image
   id puts it back at its old place. Reply with the note id and the image id.
+- "Find photos like this one" about a picture already in a note → `similar_images` with that
+  image's `image_id` (from the note's `images`; a note's first image has the note's id). Then
+  `view_images` on the top few `image_id`s and say which ones really match and why. The
+  similarity score only ranks; your own look decides.
+- "Photos of a red top in a car", "pictures of a whiteboard" → `similar_images` with `query`
+  in plain words. It looks at what is in the pictures; for words written in the notes use
+  `search`. Again `view_images` on the top hits before answering.
+- An image the user pasted into this conversation shows as `[Image #1]`, `[Image #2]`, … in
+  their message and has no file path. "Find photos like this", "do I have similar pictures" →
+  call `similar_images` with `pasted_image: 1` (the number in `[Image #N]`; 1 for the first or
+  only one). A hook uploads that image and the server searches with it. Then call
+  `view_images` on the top hits (their note ids or image ids) so you actually see them, and say
+  how each one matches. If `similar_images` answers that the pasted image could not be resolved,
+  tell the user in one line and ask them to paste the image again together with the request.
+  Never ask for a file path for a pasted image, and never save it as a note unless asked.
+- If `similar_images` says semantic image search is off, the daemon has no
+  `OPENROUTER_API_KEY`; say so and fall back to `list` with `has_image: true` or `search`.
 - An image whose file is not on this machine (`available: false`) still has its note and
   metadata. Say the file lives on the machine that saved it (`host`) instead of treating it as
   an error.
+
+## Files
+
+- You can see a note's files but not read them: their contents are not available through any
+  tool (`extraction_status` is `none` for now). When the user asks what a note holds, list each
+  file by name with its type and size, e.g. `report.pdf (application/pdf, 1.2 MB)`.
+- There is no tool to attach, remove or restore a file. If the user asks for that, tell them to
+  open the note on the wall and use the paperclip or the file's chip there.
+- `view_images` shows pictures only; files never come back from it.
+- A file with `available: false` lives on the machine that saved it (`host`).
+
+## Chat history
+
+Every `/n` exchange (the prompt as typed, your final answer and any pasted images) is saved to
+the wall's chat history by a Claude Code hook after you answer. You do not save it yourself and
+need not mention it, unless the user asks where their `/n` conversations go: the wall's chat
+history page, badged "claude code".
 
 ## Deleting
 

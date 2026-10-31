@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
-import { noteImages, notes, type NewNoteImageRow, type NoteImageRow } from '../db/schema.js';
+import { noteFiles, noteImages, notes, type NewNoteImageRow, type NoteImageRow } from '../db/schema.js';
 import type { Executor } from './repo.js';
 import { NoteError } from './types.js';
 
@@ -17,14 +17,14 @@ export interface LiveImageHit {
   noteDeletedAt: Date | null;
 }
 
-interface PgErrorInfo {
+export interface PgErrorInfo {
   code: string;
   constraint: string | undefined;
   message: string;
 }
 
 /** First object in the `cause` chain that carries a string `code` (pg DatabaseError, wrapped by Drizzle). */
-function pgErrorInfo(err: unknown): PgErrorInfo | undefined {
+export function pgErrorInfo(err: unknown): PgErrorInfo | undefined {
   let cur: unknown = err;
   for (let depth = 0; depth < 4 && cur !== null && typeof cur === 'object'; depth += 1) {
     const code = (cur as { code?: unknown }).code;
@@ -129,11 +129,15 @@ export async function nextPosition(db: Executor, noteId: string): Promise<number
   return Number(rows[0]?.next ?? 0);
 }
 
-/** True when `id` is already used as a note id or an image id (any state). */
+/**
+ * True when `id` is already used as a note id, an image id or a file id (any state). The three
+ * share the `A-B32` space, so newId() and every insert check all of them.
+ */
 export async function imageIdTaken(db: Executor, id: string): Promise<boolean> {
   const res = await db.execute<{ taken: boolean }>(
     sql`select (exists (select 1 from ${notes} where ${notes.id} = ${id})
-             or exists (select 1 from ${noteImages} where ${noteImages.id} = ${id})) as taken`,
+             or exists (select 1 from ${noteImages} where ${noteImages.id} = ${id})
+             or exists (select 1 from ${noteFiles} where ${noteFiles.id} = ${id})) as taken`,
   );
   return res.rows[0]?.taken === true;
 }

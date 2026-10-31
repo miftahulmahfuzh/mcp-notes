@@ -5,8 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { parseDateBound } from '../../src/notes/dates.js';
 import { NoteEvents, type NoteEvent } from '../../src/notes/events.js';
 import { clampLimit, decodeCursor, encodeCursor, MAX_LIMIT, normalizeTagInput } from '../../src/notes/repo.js';
-import { cleanOrigin, imageAvailable, NoteError, rowToNote, toNoteImage, type NoteRow } from '../../src/notes/types.js';
-import type { NoteImageRow } from '../../src/db/schema.js';
+import { cleanOrigin, imageAvailable, NoteError, rowToNote, toNoteFile, toNoteImage, type NoteRow } from '../../src/notes/types.js';
+import type { NoteFileRow, NoteImageRow } from '../../src/db/schema.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'notes-unit-'));
 afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -40,6 +40,25 @@ function imageRow(overrides: Partial<NoteImageRow> = {}): NoteImageRow {
     originalName: 'IMG_1.jpg',
     host: 'lenovo',
     position: 0,
+    createdAt: new Date('2026-10-30T01:02:03.004Z'),
+    deletedAt: null,
+    ...overrides,
+  };
+}
+
+function fileRow(overrides: Partial<NoteFileRow> = {}): NoteFileRow {
+  return {
+    id: 'F-1L3',
+    noteId: 'A-B32',
+    path: 'files/A-B32/report.pdf',
+    sha256: 'f',
+    mime: 'application/pdf',
+    bytes: 2048,
+    originalName: 'report.pdf',
+    host: 'lenovo',
+    position: 0,
+    extractedText: null,
+    extractionStatus: 'none',
     createdAt: new Date('2026-10-30T01:02:03.004Z'),
     deletedAt: null,
     ...overrides,
@@ -105,6 +124,7 @@ describe('wire mapping', () => {
       updated_at: '2026-10-30T02:00:00.000Z',
       origin: { repo: 'seer' },
       images: [],
+      files: [],
     });
   });
 
@@ -152,6 +172,34 @@ describe('wire mapping', () => {
     expect(imageAvailable(dataDir, '../../etc/passwd')).toBe(false);
     expect(imageAvailable(dataDir, '/etc/passwd')).toBe(false);
     expect(imageAvailable(dataDir, '')).toBe(false);
+  });
+
+  it('maps live files in position order and checks each file under dataDir', () => {
+    mkdirSync(join(dataDir, 'files/A-B32'), { recursive: true });
+    writeFileSync(join(dataDir, 'files/A-B32/report.pdf'), 'x');
+    const first = fileRow();
+    const away = fileRow({ id: 'G-2M4', path: 'files/A-B32/away.txt', position: 2, mime: 'text/plain', originalName: 'away.txt' });
+    const removed = fileRow({ id: 'H-3N5', path: 'files/A-B32/gone.txt', position: 1, deletedAt: new Date('2026-10-31T00:00:00Z') });
+    const n = rowToNote(row(), dataDir, [], [away, removed, first]);
+    expect(n.files.map((f) => f.id)).toEqual(['F-1L3', 'G-2M4']);
+    expect(n.files[0]).toEqual({
+      id: 'F-1L3',
+      note_id: 'A-B32',
+      position: 0,
+      name: 'report.pdf',
+      mime: 'application/pdf',
+      bytes: 2048,
+      host: 'lenovo',
+      available: true,
+      extraction_status: 'none',
+      urls: { download: '/api/files/F-1L3/download' },
+    });
+    expect(n.files[1]).toMatchObject({ available: false });
+  });
+
+  it('toNoteFile carries deleted_at only for removed files', () => {
+    expect(toNoteFile(fileRow(), dataDir).deleted_at).toBeUndefined();
+    expect(toNoteFile(fileRow({ deletedAt: new Date('2026-10-31T00:00:00Z') }), dataDir).deleted_at).toBe('2026-10-31T00:00:00.000Z');
   });
 });
 

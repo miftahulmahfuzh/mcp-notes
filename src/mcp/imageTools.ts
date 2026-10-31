@@ -51,13 +51,21 @@ function bodyLine(note: Note): string {
   return `body: ${note.body.trim() === '' ? '(empty)' : note.body}`;
 }
 
+/** `files: report.pdf (application/pdf, 1.2 MB); notes.txt (text/plain, 3 KB)`, or null when the note has none. */
+export function filesLine(note: Note): string | null {
+  if (note.files.length === 0) return null;
+  return `files: ${note.files.map((f) => `${f.name} (${f.mime}, ${formatBytes(f.bytes)})`).join('; ')}`;
+}
+
 /** The metadata block for a note without an image. */
 export function describeNote(note: Note): string {
-  return [`id: ${note.id}`, `saved: ${note.created_at}`, tagLine(note), bodyLine(note)].join('\n');
+  const files = filesLine(note);
+  return [`id: ${note.id}`, `saved: ${note.created_at}`, tagLine(note), ...(files !== null ? [files] : []), bodyLine(note)].join('\n');
 }
 
 /** The metadata text block that precedes every image view_images returns. */
 export function describeImage(note: Note, image: NoteImage, k: number, n: number): string {
+  const files = filesLine(note);
   return [
     `id: ${note.id}`,
     `image: ${image.id} (image ${k} of ${n})`,
@@ -66,6 +74,7 @@ export function describeImage(note: Note, image: NoteImage, k: number, n: number
     `size: ${image.width}x${image.height} ${image.mime}, ${formatBytes(image.bytes)}` +
       (image.original_name ? `, original name ${image.original_name}` : ''),
     tagLine(note),
+    ...(files !== null ? [files] : []),
     bodyLine(note),
   ].join('\n');
 }

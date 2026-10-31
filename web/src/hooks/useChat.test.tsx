@@ -10,6 +10,7 @@ interface Frame {
 interface Posted {
   message: string;
   thread_id?: string;
+  image_ids?: string[];
 }
 
 const enc = new TextEncoder();
@@ -243,5 +244,71 @@ describe('useChat', () => {
       await result.current.ask('  first line\nsecond line\n\n');
     });
     expect(posted[0].message).toBe('first line\nsecond line');
+  });
+
+  it('sends pasted image ids with the message and keeps them on the state', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('  what is this? ', ['U-PL1', 'V-QM2']);
+    });
+    expect(posted[0]).toEqual({ message: 'what is this?', image_ids: ['U-PL1', 'V-QM2'] });
+    expect(result.current.images).toEqual(['U-PL1', 'V-QM2']);
+    expect(result.current.query).toBe('what is this?');
+  });
+
+  it('sends an image-only message with empty text', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('   ', ['U-PL1']);
+    });
+    expect(posted[0]).toEqual({ message: '', image_ids: ['U-PL1'] });
+    expect(result.current.open).toBe(true);
+  });
+
+  it('sends nothing without text or images, and a text-only message carries no image_ids', async () => {
+    const posted = stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('  ', []);
+    });
+    expect(posted).toHaveLength(0);
+    await act(async () => {
+      await result.current.ask('hello');
+    });
+    expect(posted[0]).toEqual({ message: 'hello' });
+    expect(result.current.images).toEqual([]);
+  });
+
+  it('dismissing clears the images', async () => {
+    stubChat(sse([{ event: 'done', data: { thread_id: 't1' } }]));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await result.current.ask('x', ['U-PL1']);
+    });
+    act(() => result.current.close());
+    expect(result.current.images).toEqual([]);
+  });
+
+  it('exposes our thread id from accepted, keeps it on done, clears it on close', async () => {
+    const s = handStream();
+    stubChat(s.body);
+    const { result } = renderHook(() => useChat());
+    expect(result.current.threadId).toBeNull();
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.ask('hello');
+    });
+    s.send([{ event: 'accepted', data: { thread_id: 'T-7', user_message_id: 'U001' } }]);
+    await waitFor(() => expect(result.current.threadId).toBe('T-7'));
+    s.send([{ event: 'done', data: { thread_id: 'T-7', user_message_id: 'U001', assistant_message_id: 'A001', reply_to: null, brain: 'claude' } }]);
+    s.end();
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.threadId).toBe('T-7');
+    act(() => result.current.close());
+    expect(result.current.threadId).toBeNull();
   });
 });
