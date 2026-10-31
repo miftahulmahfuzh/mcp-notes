@@ -3,6 +3,12 @@
   "coordinator": "orch-chat-image-to-note",
   "coordinator_session_id": "4ebd4550-db1c-41b8-bbf3-5ccb70fb7b40",
   "created": "2026-10-31T12:57:28+07:00",
+  "landed": {
+    "at": "2026-10-31T13:14:01+07:00",
+    "base": "main",
+    "commit": "118c7f3a12b5bd60c952787ab3fc4bc538e5314f",
+    "machine": "GPD"
+  },
   "phases": [
     {
       "card": null,
@@ -65,7 +71,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "ddf3bc7",
       "depends_on": [
         1,
         2,
@@ -73,25 +79,25 @@
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "e2e hook->daemon->create_image(image_id) test (8), verify script, docs/CHANGELOG; live verify:prompt-hook not run (billed, opt-in)",
       "package": "tests`, `scripts`, docs",
       "plan": ".workflows/plan/chat-image-to-note/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T13:13:42+07:00",
       "satisfies": [
         "R2",
         "R4",
         "R5",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A048",
       "title": "End-to-end tests, live verify script, docs, CHANGELOG"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-image-to-note",
-  "updated": "2026-10-31T13:06:48+07:00",
+  "updated": "2026-10-31T13:14:01+07:00",
   "verified_at": "2026-10-31T13:02:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note"
 }
