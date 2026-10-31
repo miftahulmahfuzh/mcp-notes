@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 47
+- Completed: 48
 
 ---
 
@@ -31,6 +31,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A047** Phase 3: Claude Code `UserPromptSubmit` hook + registration + skill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (+ `.d.mts`), `claude/hooks/lib/transcript.mjs` (+ `.d.mts`: `listImagePrompts`), per-session memo, `scripts/claude-hooks.mjs` (+ `.d.mts`: third group, regex), `scripts/install.sh` / `uninstall.sh` file lists and messages, `claude/skills/n/SKILL.md` (use `create_image(image_id)` from the hook context), and `tests/unit/hooks/notesPrompt.test.ts`, `tests/unit/hooks/transcript.test.ts`, `tests/unit/scripts/claudeHooks.test.ts`. Exit: hook returns the C2 context for `/n` prompts with images in any session turn, nothing otherwise; uploads newest-first within a time budget; memo prevents re-upload; a failure that leaves no image stored returns null and logs, and a newest image that could not be stored is reported in the context (never replaced by an older one as "latest"); installer registers exactly three groups idempotently and uninstall removes them; unit tests green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R2 — `UserPromptSubmit` hook for `/n`: ingest pasted images into `chat_images` now, inject `additionalContext` with the ids; idempotent with the Stop capture; R3 — "That image" = this session's latest pasted image; explicit id overrides; R4 — Robustness: any earlier turn's images resolve; 8 images / 20 MB caps; never block the prompt; idempotency key unchanged; R5 — Tests (vitest unit + integration, hook tests) and risk analysis
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A047.md`
+  - **Completed**: 2026-10-31 12:59
+  - **Method**: /do
+  - **Files**: claude/hooks/notes-prompt.mjs, claude/hooks/notes-prompt.d.mts, claude/hooks/lib/transcript.mjs, claude/hooks/lib/transcript.d.mts, claude/skills/n/SKILL.md, scripts/claude-hooks.mjs, scripts/claude-hooks.d.mts, scripts/install.sh, scripts/uninstall.sh, tests/unit/hooks/notesPrompt.test.ts, tests/unit/hooks/transcript.test.ts, tests/unit/scripts/claudeHooks.test.ts
+  - **Drift**: SKILL.md pasted-image bullet text differed slightly from the plan's quoted original; replaced lines by intent with the plan's two bullets
 
 - [x] **P1-NOTES-A044** Phase 11: Note-id links open the note modal in place; "show on wall" button
   - **Difficulty**: NORMAL

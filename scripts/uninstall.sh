@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Undo scripts/install.sh on the WSL side: stop and remove the notesd user unit, unregister the
-# `notes` MCP server (user scope), remove the /n skill symlink, and remove the notes-capture and
-# notes-paste hook entries from ~/.claude/settings.json (every other setting and hook is kept).
-# Keeps the data dir (~/mcp-notes-data), linger, the hooks' outbox and logs
+# `notes` MCP server (user scope), remove the /n skill symlink, and remove the three hook entries
+# (notes-capture, notes-paste, notes-prompt) from ~/.claude/settings.json (every other setting and
+# hook is kept). Keeps the data dir (~/mcp-notes-data), linger, the hooks' outbox, pasted-image memos and logs
 # (~/.local/state/notes-capture) and settings.json.bak-notes-hooks. The Windows keepalive task is
 # removed by scripts/windows/install-wsl-keepalive.ps1 -Uninstall.
 set -euo pipefail
@@ -60,12 +60,12 @@ unregister_hooks() {
   local node_bin="${NODE_BIN:-$(command -v node || true)}"
   if [[ -z "$node_bin" && -x "$DEFAULT_NODE" ]]; then node_bin="$DEFAULT_NODE"; fi
   if [[ -z "$node_bin" ]]; then
-    warn "node not found; remove the notes-capture and notes-paste entries from $CLAUDE_SETTINGS by hand"
+    warn "node not found; remove the notes-capture, notes-paste and notes-prompt entries from $CLAUDE_SETTINGS by hand"
     return 0
   fi
-  log "removing the notes-capture and notes-paste hooks from $CLAUDE_SETTINGS"
+  log "removing the three Claude Code hooks (notes-capture, notes-paste, notes-prompt) from $CLAUDE_SETTINGS"
   "$node_bin" "$HOOKS_HELPER" uninstall --settings "$CLAUDE_SETTINGS" \
-    || warn "could not edit $CLAUDE_SETTINGS; remove the notes-capture and notes-paste entries by hand"
+    || warn "could not edit $CLAUDE_SETTINGS; remove the notes-capture, notes-paste and notes-prompt entries by hand"
 }
 
 main() {

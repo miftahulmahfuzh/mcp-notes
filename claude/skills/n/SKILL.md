@@ -39,7 +39,8 @@ newest first, limit + cursor), `search` (ranked by meaning and by words, with ta
 filters; `mode: "text"` for exact words only), `related` (the notes nearest in meaning to one
 note id, with a similarity score), `tags` (every tag with count and last-used date),
 `revisions` and `revert`. The image tools are `create_image` (a new note from a local file
-path), `attach_image` (add a local file to an existing note), `remove_image` and
+path, or from a pasted image's id), `attach_image` (add a local file or a pasted image to an
+existing note), `remove_image` and
 `restore_image` (take one image out of its note, softly, and put it back), `view_images` (see
 the images of notes, or single images), `similar_images` (the pictures that look most like one
 picture, or that match a description), and the `has_image` / taken-date filters on `list` and
@@ -195,14 +196,27 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
 - "Photos of a red top in a car", "pictures of a whiteboard" → `similar_images` with `query`
   in plain words. It looks at what is in the pictures; for words written in the notes use
   `search`. Again `view_images` on the top hits before answering.
+- Pasted images and `/n`: when your `/n` request comes with a note that starts "Pasted images
+  in this Claude Code session", a hook has already stored those pictures and lists each one as
+  `[Image #N] = <id>` (ids look like `G-0NC`), the newest marked "(latest)". "Make that image a
+  new note", "save this picture" → `create_image` with `image_id` set to the latest id (or the
+  one the user names: another `[Image #N]`, "the first image", or an explicit id), a short body
+  with hashtags, and `origin`. "Add it to A-B32" → `attach_image` with `id` and `image_id`.
+  `created: false` / `attached: false` mean that picture is already in a note: say which note.
+  Never ask for a file path for a pasted image and never pass one. If the note says the latest
+  image could not be stored, tell the user in one line and ask them to paste it again with the
+  request; do not use an older image instead. With no such note there is no id: ask the user to
+  paste the image again together with the `/n` request. Save a pasted image as a note only when
+  asked.
 - An image the user pasted into this conversation shows as `[Image #1]`, `[Image #2]`, … in
   their message and has no file path. "Find photos like this", "do I have similar pictures" →
   call `similar_images` with `pasted_image: 1` (the number in `[Image #N]`; 1 for the first or
-  only one). A hook uploads that image and the server searches with it. Then call
-  `view_images` on the top hits (their note ids or image ids) so you actually see them, and say
-  how each one matches. If `similar_images` answers that the pasted image could not be resolved,
-  tell the user in one line and ask them to paste the image again together with the request.
-  Never ask for a file path for a pasted image, and never save it as a note unless asked.
+  only one), or with `upload_id` set to its id when the pasted-images note gives one. A hook
+  uploads that image and the server searches with it. Then call `view_images` on the top hits
+  (their note ids or image ids) so you actually see them, and say how each one matches. If
+  `similar_images` answers that the pasted image could not be resolved, tell the user in one
+  line and ask them to paste the image again together with the request. Never ask for a file
+  path for a pasted image.
 - If `similar_images` says semantic image search is off, the daemon has no
   `OPENROUTER_API_KEY`; say so and fall back to `list` with `has_image: true` or `search`.
 - An image whose file is not on this machine (`available: false`) still has its note and

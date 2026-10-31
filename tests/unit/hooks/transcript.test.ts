@@ -5,6 +5,8 @@ import {
   findTurn,
   isHumanPrompt,
   isNotesPrompt,
+  isNotesPromptText,
+  listImagePrompts,
   parseTranscript,
   pickPastedImage,
   promptText,
@@ -159,5 +161,53 @@ describe('findLatestImagePrompt', () => {
     const newer = imagePromptEntry('/n like this [Image #1]', [{ media_type: 'image/png', data: RED_PNG_16 }]);
     const entries = parseTranscript(jsonl([older, assistantText('ok'), newer, assistantText('ok'), plainPromptEntry('and now?')]));
     expect(findLatestImagePrompt(entries)?.uuid).toBe(newer.uuid);
+  });
+});
+
+describe('isNotesPromptText', () => {
+  it('accepts /n typed or as command XML, nothing else', () => {
+    expect(isNotesPromptText('/n')).toBe(true);
+    expect(isNotesPromptText('/n make that image a note')).toBe(true);
+    expect(isNotesPromptText('  /n leading spaces')).toBe(true);
+    expect(isNotesPromptText('/n\n[Image #1]')).toBe(true);
+    expect(isNotesPromptText('<command-message>n</command-message>\n<command-name>/n</command-name>\n<command-args>save it</command-args>')).toBe(true);
+    expect(isNotesPromptText('/notes list')).toBe(false);
+    expect(isNotesPromptText('/new thing')).toBe(false);
+    expect(isNotesPromptText('please run /n later')).toBe(false);
+    expect(isNotesPromptText('')).toBe(false);
+    expect(isNotesPromptText(undefined)).toBe(false);
+    expect(isNotesPromptText(42)).toBe(false);
+  });
+});
+
+describe('listImagePrompts', () => {
+  it('lists every image-carrying human prompt oldest first, /n or not', () => {
+    const first = imagePromptEntry('look [Image #1] [Image #2]', [
+      { media_type: 'image/png', data: RED_PNG_16 },
+      { media_type: 'image/jpeg', data: BLUE_DATA },
+    ]);
+    const second = imagePromptEntry('/n and this [Image #3]', [{ media_type: 'image/png', data: BLUE_DATA }], [3]);
+    const entries = parseTranscript(
+      jsonl([
+        first,
+        assistantText('ok'),
+        plainPromptEntry('no picture here'),
+        toolResultEntry('t1', 'result'),
+        imagePromptEntry('sub [Image #9]', [{ media_type: 'image/png', data: RED_PNG_16 }], [9], { isSidechain: true }),
+        second,
+        attachmentEntry(),
+      ]),
+    );
+    const listed = listImagePrompts(entries);
+    expect(listed.map((p) => p.entry.uuid)).toEqual([first.uuid, second.uuid]);
+    expect(listed[0]!.images.map((i) => i.paste_id)).toEqual([1, 2]);
+    expect(listed[0]!.images[1]!.media_type).toBe('image/jpeg');
+    expect(listed[1]!.images).toEqual([{ media_type: 'image/png', data_base64: BLUE_DATA, paste_id: 3 }]);
+  });
+
+  it('lists a rewritten line (same uuid) once, and is empty without images', () => {
+    const entry = imagePromptEntry('x [Image #1]', [{ media_type: 'image/png', data: RED_PNG_16 }]);
+    expect(listImagePrompts(parseTranscript(jsonl([entry, entry])))).toHaveLength(1);
+    expect(listImagePrompts(parseTranscript(jsonl([commandEntry('hi'), assistantText('ok')])))).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-image-to-note`
 **Branch:** `feature/chat-image-to-note` (base: `main` @ `f899b85`)
 **Phases:** 4
-**Status:** planned (reconciled 2026-10-31, round 1)
+**Status:** phase 3/4 complete
 **Coordinator:** —
 
 ---
@@ -84,7 +84,7 @@ Header constant `CONTEXT_HEADER` = `Pasted images in this Claude Code session, o
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Daemon: `image_id` on create_image / attach_image | R1, R5 | `src/http`, `src/mcp` | 5 | — | NORMAL | `.workflows/plan/chat-image-to-note/phase-1.md` | — | — |
 | 2 | Agent-facing text: instructions, wall prompt, captions | R1, R3, R5 | `src/mcp`, `src/chat` | 6 | 1 | NORMAL | `.workflows/plan/chat-image-to-note/phase-2.md` | — | — |
-| 3 | Claude Code `UserPromptSubmit` hook + registration + skill | R2, R3, R4, R5 | `claude/hooks`, `scripts`, `claude/skills` | 12 | — | HARD | `.workflows/plan/chat-image-to-note/phase-3.md` | — | — |
+| 3 | Claude Code `UserPromptSubmit` hook + registration + skill | R2, R3, R4, R5 | `claude/hooks`, `scripts`, `claude/skills` | 12 | — | HARD | `.workflows/plan/chat-image-to-note/phase-3.md` | P1-NOTES-A047 | — |
 | 4 | End-to-end tests, live verify script, docs, CHANGELOG | R2, R4, R5, R6 | `tests`, `scripts`, docs | 6 | 1, 2, 3 | NORMAL | `.workflows/plan/chat-image-to-note/phase-4.md` | — | — |
 
 R2 is served by 3 (hook) and 4 (end-to-end proof); R1 by 1 (code) and 2 (words); phase 3 spans R2+R3+R4 because the hook's scan, caps, failure behaviour and context text are one module and cannot be split without a half-working hook.
