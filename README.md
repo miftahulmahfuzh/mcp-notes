@@ -461,6 +461,19 @@ If Claude fails on a usage limit or a login problem, the same message is retried
 (z.ai, configured through `.env.local`'s `LLM_*` keys), and the panel's header says which brain
 answered. `CHAT_BRAIN=glm` makes GLM the only brain.
 
+### The history page
+
+Every wall chat and every `/n` exchange from Claude Code is kept. The chat-history icon above the
+recycle bin (or the full-screen icon on the answer panel, which opens it on the conversation you
+are in) shows them all on one page at `/history`: oldest at the top, a divider where a new
+conversation starts, and a "claude code" badge on exchanges captured from the terminal. Every
+bubble carries its time in Jakarta (UTC+7); hover it for the full timestamp. Pasted images show as
+thumbnails; click one to view it large and use the arrow keys to move between that message's
+images. Scroll up for older messages. New ones, including a `/n` you just ran in another window,
+appear without a reload. The pill at the bottom works as on the wall and accepts pasted images. A
+message continues the newest conversation when that one came from the wall, and starts a new one
+otherwise. Back and forward move between the wall and this page.
+
 ## Connectors: spending, runs, Seer
 
 The same `notes` MCP server also reads three of your own apps, read-only, so `/n` and the chat bar

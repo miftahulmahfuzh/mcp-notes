@@ -49,6 +49,16 @@ describe('staticRoutes', () => {
     expect(await res.text()).toContain('<title>index</title>');
   });
 
+  it('serves index.html for the chat history page and its thread deep link', async () => {
+    const app = appFor(dist);
+    for (const url of ['/history', '/history/', '/history?thread=T-1']) {
+      const res = await app.request(url);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-cache');
+      expect(await res.text()).toContain('<title>index</title>');
+    }
+  });
+
   it('serves index.html for /full/:id until fullscreen.html exists, then fullscreen.html', async () => {
     const app = appFor(dist);
     expect(await (await app.request('/full/A-B32CD')).text()).toContain('<title>index</title>');

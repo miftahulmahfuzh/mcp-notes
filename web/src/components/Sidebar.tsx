@@ -1,7 +1,7 @@
-import { Trash } from '@phosphor-icons/react';
+import { ChatsCircle, Trash } from '@phosphor-icons/react';
 import type { Mode, TagCount, View } from '../types';
 import { MODE_ORDER, MODE_TIP } from '../lib/filter';
-import { BIN_TIP, MODE_ICON } from './Rail';
+import { BIN_TIP, HISTORY_TIP, MODE_ICON } from './Rail';
 
 export interface SidebarProps {
   mode: Mode;
@@ -10,11 +10,12 @@ export interface SidebarProps {
   tags: TagCount[];
   active: string[];
   onMode: (m: Mode) => void;
+  onToggleHistory: () => void;
   onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
 }
 
-export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggleBin, onToggleTag }: SidebarProps) {
+export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggleHistory, onToggleBin, onToggleTag }: SidebarProps) {
   const sorted = tags.slice().sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   return (
     <aside className="side">
@@ -34,6 +35,16 @@ export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggle
             </button>
           );
         })}
+        <button
+          type="button"
+          className={view === 'history' ? 'ibtn on' : 'ibtn'}
+          data-tip={HISTORY_TIP}
+          aria-label={HISTORY_TIP}
+          aria-pressed={view === 'history'}
+          onClick={onToggleHistory}
+        >
+          <ChatsCircle weight="duotone" />
+        </button>
         <button
           type="button"
           className={view === 'bin' ? 'ibtn on' : 'ibtn'}

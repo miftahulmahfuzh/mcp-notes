@@ -16,6 +16,8 @@ export interface ChatState {
   status: string;
   /** Which brain answered ('claude' | 'glm'), from `done.brain`; null when the server named none. */
   brain: string | null;
+  /** OUR thread id (phase 7: `accepted.thread_id`, then `done.thread_id`); null before the first answer starts and after dismiss. The answer panel's full-screen button opens `/history?thread=<it>`. */
+  threadId: string | null;
 }
 
 export interface Chat extends ChatState {
@@ -46,6 +48,7 @@ export function useChat(): Chat {
     done: false,
     status: '',
     brain: null,
+    threadId: null,
   });
   const threadId = useRef<string | undefined>(undefined);
   const ctrl = useRef<AbortController | null>(null);
@@ -86,9 +89,20 @@ export function useChat(): Chat {
         } else if (ev.event === 'status') {
           const t = parse(ev.data).text;
           if (typeof t === 'string') setSt((s) => ({ ...s, status: t }));
+        } else if (ev.event === 'accepted') {
+          const d = parse(ev.data);
+          if (typeof d.thread_id === 'string' && d.thread_id) {
+            const t = d.thread_id;
+            threadId.current = t;
+            setSt((s) => ({ ...s, threadId: t }));
+          }
         } else if (ev.event === 'done') {
           const d = parse(ev.data);
-          if (typeof d.thread_id === 'string' && d.thread_id) threadId.current = d.thread_id;
+          if (typeof d.thread_id === 'string' && d.thread_id) {
+            const t = d.thread_id;
+            threadId.current = t;
+            setSt((s) => ({ ...s, threadId: t }));
+          }
           ended = true;
           finish(undefined, typeof d.brain === 'string' && d.brain ? d.brain : null);
         } else if (ev.event === 'error') {
@@ -110,7 +124,7 @@ export function useChat(): Chat {
     ctrl.current = null;
     // Dismissing ends the conversation: the next message starts a new thread.
     threadId.current = undefined;
-    setSt((s) => ({ ...s, open: false, pinned: false, collapsed: false, images: [], text: '', done: false, status: '', brain: null }));
+    setSt((s) => ({ ...s, open: false, pinned: false, collapsed: false, images: [], text: '', done: false, status: '', brain: null, threadId: null }));
   }, []);
 
   const togglePin = useCallback(() => setSt((s) => ({ ...s, pinned: !s.pinned })), []);

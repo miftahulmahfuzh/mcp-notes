@@ -290,4 +290,25 @@ describe('useChat', () => {
     act(() => result.current.close());
     expect(result.current.images).toEqual([]);
   });
+
+  it('exposes our thread id from accepted, keeps it on done, clears it on close', async () => {
+    const s = handStream();
+    stubChat(s.body);
+    const { result } = renderHook(() => useChat());
+    expect(result.current.threadId).toBeNull();
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.ask('hello');
+    });
+    s.send([{ event: 'accepted', data: { thread_id: 'T-7', user_message_id: 'U001' } }]);
+    await waitFor(() => expect(result.current.threadId).toBe('T-7'));
+    s.send([{ event: 'done', data: { thread_id: 'T-7', user_message_id: 'U001', assistant_message_id: 'A001', reply_to: null, brain: 'claude' } }]);
+    s.end();
+    await act(async () => {
+      await pending;
+    });
+    expect(result.current.threadId).toBe('T-7');
+    act(() => result.current.close());
+    expect(result.current.threadId).toBeNull();
+  });
 });

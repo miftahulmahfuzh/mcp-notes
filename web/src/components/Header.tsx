@@ -1,5 +1,6 @@
 import { Plus } from '@phosphor-icons/react';
 import type { Note } from '../types';
+import { HISTORY_HINT } from '../lib/timeline';
 
 export interface HeaderProps {
   heading: string;
@@ -9,16 +10,22 @@ export interface HeaderProps {
   showSticker: boolean;
   /** The recycle bin is showing: no "Last edited" link, and the hint explains the bin. */
   bin?: boolean;
+  /** The chat history page is showing (phase 9): no "Last edited" link, and the hint explains the page. */
+  history?: boolean;
   onJumpLast: () => void;
   onAdd: () => void;
 }
 
-export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, onJumpLast, onAdd }: HeaderProps) {
+const WALL_HINT = 'Drop or paste an image anywhere to make a photo note.';
+const BIN_HINT = 'Restore brings a note or an image back. Delete forever removes it and its files.';
+
+export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, history = false, onJumpLast, onAdd }: HeaderProps) {
+  const hint = bin ? BIN_HINT : history ? HISTORY_HINT : WALL_HINT;
   return (
     <header className="hdr">
       <p className="hdr-p">
         {countLine}
-        {!bin && last && (
+        {!bin && !history && last && (
           <>
             {' '}Last edited{' '}
             <a
@@ -33,7 +40,7 @@ export function Header({ heading, countLine, last, lastWhen, showSticker, bin = 
             {lastWhen}.
           </>
         )}{' '}
-        {bin ? 'Restore brings a note or an image back. Delete forever removes it and its files.' : 'Drop or paste an image anywhere to make a photo note.'}
+        {hint}
       </p>
       <h1>{heading}</h1>
       {showSticker && (
