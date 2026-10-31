@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-10-31
+
+Chat history, note files, image similarity search, and Claude Code hooks that turn
+pasted pictures into notes.
+
 ### Added
 
 - **Same-prompt pasted image to note**: `create_image` and `attach_image` accept `pasted_image` (the N of `[Image #N]`); the `notes-paste` PreToolUse hook now also covers them, uploads that picture and hands the call on with `image_id`. Needed because Claude Code writes a prompt to the transcript only after UserPromptSubmit hooks finish (measured live), so the `notes-prompt` hook cannot name an image pasted in the same `/n` prompt; it now tells Claude to use `pasted_image N` for it. Without the hook the server refuses with `pasted_image_unresolved` and a pointer. Re-run `scripts/install.sh` to widen the installed matcher.
@@ -74,4 +79,5 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.2.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.1.0
