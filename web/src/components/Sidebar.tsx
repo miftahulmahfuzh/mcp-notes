@@ -28,6 +28,7 @@ export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggle
               type="button"
               className={view === 'wall' && m === mode ? 'ibtn on' : 'ibtn'}
               data-tip={MODE_TIP[m]}
+              data-tip-side="below"
               aria-label={MODE_TIP[m]}
               onClick={() => onMode(m)}
             >
@@ -39,6 +40,7 @@ export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggle
           type="button"
           className={view === 'history' ? 'ibtn on' : 'ibtn'}
           data-tip={HISTORY_TIP}
+          data-tip-side="below"
           aria-label={HISTORY_TIP}
           aria-pressed={view === 'history'}
           onClick={onToggleHistory}
@@ -49,6 +51,7 @@ export function Sidebar({ mode, view, photoCount, tags, active, onMode, onToggle
           type="button"
           className={view === 'bin' ? 'ibtn on' : 'ibtn'}
           data-tip={BIN_TIP[view]}
+          data-tip-side="below"
           aria-label={BIN_TIP[view]}
           aria-pressed={view === 'bin'}
           onClick={onToggleBin}
