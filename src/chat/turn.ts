@@ -11,6 +11,8 @@ export interface WallTurnInput {
   currentMessageId: string;
   /** That row's images, already resolved (and validated) by the route with phase 3's resolveTurnImages. */
   currentImages: readonly ChatTurnImage[];
+  /** Pictures attached from notes ("chat about this image"), resolved by the route; shown after the pasted ones. */
+  currentNoteImages?: readonly ChatTurnImage[];
 }
 
 /**
@@ -36,5 +38,6 @@ export async function composeWallTurn(chat: ChatService, source: ImageSource, in
     const loaded = byId.get(wanted.id);
     if (loaded !== undefined) images.push({ ...loaded, messageId: wanted.messageId });
   }
-  return { text: built.text, images };
+  const noteImages = (input.currentNoteImages ?? []).map((image) => ({ ...image, messageId: input.currentMessageId }));
+  return { text: built.text, images: [...images, ...noteImages] };
 }

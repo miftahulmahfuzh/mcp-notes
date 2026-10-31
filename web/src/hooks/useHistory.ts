@@ -43,7 +43,7 @@ export interface HistoryStore {
    * draft. `replyTo` (phase 10): the bubble this message answers; a wall bubble continues its thread,
    * a claude_code bubble starts a new one (Decision), and the POST carries `reply_to`.
    */
-  send: (text: string, imageIds: string[], replyTo?: ChatMessage) => boolean;
+  send: (text: string, imageIds: string[], replyTo?: ChatMessage, noteImageIds?: string[]) => boolean;
 }
 
 interface State {
@@ -216,10 +216,10 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
     });
   }, []);
 
-  const send = useCallback((text: string, imageIds: string[], replyTo?: ChatMessage): boolean => {
+  const send = useCallback((text: string, imageIds: string[], replyTo?: ChatMessage, noteImageIds: string[] = []): boolean => {
     const message = text.trim();
     if (sendingRef.current) return false;
-    if (!message && imageIds.length === 0) return false;
+    if (!message && imageIds.length === 0 && noteImageIds.length === 0) return false;
     const now = stRef.current;
     const threadId = replyTo
       ? (threadForReply(replyTo) ?? undefined)
@@ -235,12 +235,20 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
       threadId: threadId ?? null,
       text: message,
       createdAt,
-      attachments: imageIds.map((id) => ({
-        kind: 'chat_image' as const,
-        id,
-        url: chatImageSrc(id, 'display'),
-        thumb_url: chatImageSrc(id, 'thumb'),
-      })),
+      attachments: [
+        ...imageIds.map((id) => ({
+          kind: 'chat_image' as const,
+          id,
+          url: chatImageSrc(id, 'display'),
+          thumb_url: chatImageSrc(id, 'thumb'),
+        })),
+        ...noteImageIds.map((id) => ({
+          kind: 'note_image' as const,
+          id,
+          url: `/api/images/${id}/display`,
+          thumb_url: `/api/images/${id}/thumb`,
+        })),
+      ],
       streaming: false,
       status: '',
       brain: null,
@@ -270,7 +278,7 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
 
     void (async () => {
       try {
-        const res = await streamChat({ message, threadId, imageIds, replyTo: replyTo?.id, signal: c.signal });
+        const res = await streamChat({ message, threadId, imageIds, ...(noteImageIds.length > 0 ? { noteImageIds } : {}), replyTo: replyTo?.id, signal: c.signal });
         if (!res.ok || !res.body) {
           fail(`Chat failed: ${res.status} ${res.statusText}`.trim());
           return;

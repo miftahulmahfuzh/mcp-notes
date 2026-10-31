@@ -55,6 +55,8 @@ export interface StreamChatRequest {
   threadId?: string;
   /** Phase 3 chat image ids, already uploaded. */
   imageIds?: string[];
+  /** Ids of pictures that already live in notes ("chat about this image"): referenced, not uploaded. */
+  noteImageIds?: string[];
   /** Phase 10: the bubble this message replies to (a 4-char message id), sent as `reply_to`. */
   replyTo?: string;
   signal: AbortSignal;
@@ -62,10 +64,11 @@ export interface StreamChatRequest {
 
 /** `POST /api/chat` for the history composer; the caller reads the SSE body (lib/sse `readSSE`). */
 export function streamChat(r: StreamChatRequest): Promise<Response> {
-  const payload: { message: string; thread_id?: string; image_ids?: string[]; reply_to?: string } = { message: r.message };
+  const payload: { message: string; thread_id?: string; image_ids?: string[]; note_image_ids?: string[]; reply_to?: string } = { message: r.message };
   if (r.threadId) payload.thread_id = r.threadId;
   if (r.replyTo) payload.reply_to = r.replyTo;
   if (r.imageIds && r.imageIds.length > 0) payload.image_ids = r.imageIds;
+  if (r.noteImageIds && r.noteImageIds.length > 0) payload.note_image_ids = r.noteImageIds;
   return fetch('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },

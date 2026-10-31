@@ -166,3 +166,15 @@ export async function setImageDeleted(db: Executor, id: string, deleted: boolean
   if (!row) throw new NoteError('not_found', `Image ${id} does not exist.`);
   return row;
 }
+
+/**
+ * Re-parents one image: sets `note_id` and `position` and nothing else, so its id, file path and
+ * sha256 stay as they were (the live-sha256 index never sees a second copy). Unknown id ->
+ * NoteError('not_found').
+ */
+export async function moveImageRow(db: Executor, id: string, noteId: string, position: number): Promise<NoteImageRow> {
+  const rows = await db.update(noteImages).set({ noteId, position }).where(eq(noteImages.id, id)).returning();
+  const row = rows[0];
+  if (!row) throw new NoteError('not_found', `Image ${id} does not exist.`);
+  return row;
+}

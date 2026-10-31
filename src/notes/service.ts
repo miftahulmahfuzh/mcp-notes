@@ -88,6 +88,23 @@ export interface AttachFileInput {
   meta: FileMeta;
 }
 
+/** Where `moveImage` puts the image: an existing live note, or (no `toNoteId`) a new one. */
+export interface MoveImageInput {
+  /** Existing live note to receive the image. Omitted: a new note is created for it. */
+  toNoteId?: string;
+  /** Text of the new note (`#tags` parsed). Ignored with `toNoteId`. May be empty. */
+  body?: string;
+  /** Origin of the new note. Ignored with `toNoteId`. */
+  origin?: Origin | null;
+}
+
+/** `note` now holds the image; `from` is the note it left (still live, one image fewer). */
+export interface MoveImageResult {
+  note: Note;
+  from: Note;
+  created: boolean;
+}
+
 export interface UpdateOptions {
   /** Replaces the stored origin when given. */
   origin?: Origin | null;
@@ -476,6 +493,55 @@ export class NotesService {
       return { row: await repo.touchNote(tx, note.id), op: 'updated' };
     });
     return this.finish(result);
+  }
+
+  /**
+   * Moves one live image to another live note, or to a brand-new note. The image keeps its id,
+   * file and bytes; only `note_id` and `position` change (after every image the target ever
+   * had), so no copy is made and the live-sha256 index never fires. The source note stays, with
+   * one image fewer. A removed image, a deleted source or target, or a move into the image's own
+   * note is refused. Emits `created` (new note) and `updated` for the source (and the target).
+   */
+  async moveImage(imageIdInput: string, input: MoveImageInput = {}): Promise<MoveImageResult> {
+    const imageId = this.requireImageId(imageIdInput);
+    const toId = input.toNoteId !== undefined ? this.requireId(input.toNoteId) : null;
+    const result = await this.db.transaction(async (tx) => {
+      const { note: source, image } = await this.lockImage(tx, imageId);
+      if (source.deletedAt !== null) {
+        throw new NoteError('deleted', `Note ${source.id} is deleted. Call restore("${source.id}") first.`);
+      }
+      if (image.deletedAt !== null) {
+        throw new NoteError('invalid_input', `Image ${imageId} was removed from its note. Call restore_image("${imageId}") first.`);
+      }
+      if (toId === source.id) {
+        throw new NoteError('invalid_input', `Image ${imageId} is already in note ${source.id}.`);
+      }
+      let target: NoteRow;
+      let created = false;
+      if (toId !== null) {
+        target = await this.lockLive(tx, toId);
+      } else {
+        const body = input.body ?? '';
+        let inserted: NoteRow | null = null;
+        for (let attempt = 0; attempt < MAX_ID_ATTEMPTS && inserted === null; attempt += 1) {
+          const id = generateId();
+          if (await imageRepo.imageIdTaken(tx, id)) continue;
+          inserted = await repo.insertNote(tx, { id, body, tags: parseTags(body), origin: cleanOrigin(input.origin ?? null) });
+        }
+        if (inserted === null) throw new NoteError('conflict', 'Could not find a free note id.');
+        target = inserted;
+        created = true;
+      }
+      const position = await imageRepo.nextPosition(tx, target.id);
+      await imageRepo.moveImageRow(tx, imageId, target.id, position);
+      const from = await repo.touchNote(tx, source.id);
+      const note = created ? target : await repo.touchNote(tx, target.id);
+      return { note, from, created };
+    });
+    this.events.emit(result.created ? 'created' : 'updated', result.note.id);
+    this.events.emit('updated', result.from.id);
+    const [note, from] = await this.toNotes([result.note, result.from]);
+    return { note: note!, from: from!, created: result.created };
   }
 
   /**

@@ -14,7 +14,9 @@ import {
 } from '../chat/images.js';
 import type { UserTurnStart } from '../chat/service.js';
 import { createStubChatBackend } from '../chat/stub.js';
+import { resolveTurnNoteImages } from '../chat/noteImages.js';
 import { composeWallTurn } from '../chat/turn.js';
+import { imageDeps } from '../images/ingest.js';
 import type { AppDeps } from '../deps.js';
 import type { NoteEvent } from '../notes/events.js';
 import { normalizeId } from '../notes/ids.js';
@@ -53,10 +55,16 @@ const chatSchema = z
     reply_to: z.string().trim().min(1).max(32).optional(),
     /** Chat image ids from POST /api/chat/images, in paste order (phase 3). */
     image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).default([]),
+    /** Ids of pictures that already live in notes ("chat about this image"): referenced, never copied. */
+    note_image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).default([]),
   })
-  .refine((body) => body.message.length > 0 || body.image_ids.length > 0, {
+  .refine((body) => body.message.length > 0 || body.image_ids.length > 0 || body.note_image_ids.length > 0, {
     message: 'a message or at least one image is required',
     path: ['message'],
+  })
+  .refine((body) => body.image_ids.length + body.note_image_ids.length <= MAX_CHAT_IMAGES_PER_MESSAGE, {
+    message: `at most ${MAX_CHAT_IMAGES_PER_MESSAGE} images per message`,
+    path: ['note_image_ids'],
   });
 
 /** `event: done` of POST /api/chat. */
@@ -303,7 +311,7 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     if (!json.ok) return badRequest(c, 'invalid_json');
     const parsed = chatSchema.safeParse(json.value);
     if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
-    const { message, thread_id, reply_to, image_ids } = parsed.data;
+    const { message, thread_id, reply_to, image_ids, note_image_ids } = parsed.data;
 
     let replyTo: string | null = null;
     if (reply_to !== undefined) {
@@ -319,13 +327,25 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
         return c.json({ error: err.code, id: err.imageId, message: err.message }, chatImageErrorStatus(err.code));
       }
     }
+    let currentNoteImages: ChatTurnImage[] = [];
+    if (note_image_ids.length > 0) {
+      try {
+        currentNoteImages = await resolveTurnNoteImages(imageDeps(deps), note_image_ids);
+      } catch (err) {
+        if (!(err instanceof ChatImageLookupError)) throw err;
+        return c.json({ error: err.code, id: err.imageId, message: err.message }, chatImageErrorStatus(err.code));
+      }
+    }
     let start: UserTurnStart;
     try {
       start = await history.addUserMessage({
         threadId: thread_id ?? null,
         source: 'wall',
         text: message,
-        attachments: currentImages.map((image) => ({ kind: 'chat_image' as const, id: image.id })),
+        attachments: [
+          ...currentImages.map((image) => ({ kind: 'chat_image' as const, id: image.id })),
+          ...currentNoteImages.map((image) => ({ kind: 'note_image' as const, id: image.id })),
+        ],
         replyTo,
       });
     } catch (err) {
@@ -345,6 +365,7 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
           threadId,
           currentMessageId: userMessageId,
           currentImages,
+          currentNoteImages,
         });
         if (controller.signal.aborted) return;
         const turn = await backend.reply({ turn: composed, signal: controller.signal });

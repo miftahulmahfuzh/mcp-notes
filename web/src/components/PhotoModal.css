@@ -16,3 +16,26 @@
   scrollbar-width: thin;
   scrollbar-color: #3a3a36 transparent;
 }
+
+/* Click-to-edit note text: a quiet hover cue in read mode, a hairline box while editing. */
+.pm-text-editable {
+  cursor: text;
+  border-radius: 6px;
+  outline: none;
+}
+.pm-text-editable:hover,
+.pm-text-editable:focus-visible {
+  background: rgba(236, 235, 228, 0.06);
+}
+.pm-edit {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(236, 235, 228, 0.06);
+  color: #e4e3dc;
+  font-family: inherit;
+  outline: 1px solid rgba(236, 235, 228, 0.22);
+  outline-offset: 4px;
+}

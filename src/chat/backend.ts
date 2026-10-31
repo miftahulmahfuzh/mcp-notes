@@ -24,6 +24,12 @@ export interface ChatTurnImage {
   originalName: string | null;
   /** The chat message this image belongs to (phase 7). Set: its label reads `[image upload:ID] from [msg:K7F2]`. */
   messageId?: string;
+  /**
+   * Set for a picture that lives in a note (attached with "chat about this image") instead of a
+   * pasted upload: `id` is then `note_images.id`, and the model reads
+   * `[note image:ID in note NOTE, image k of n]`.
+   */
+  note?: { id: string; k: number; n: number };
 }
 
 /** Which model family answered. The stub reports none. */

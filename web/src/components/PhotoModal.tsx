@@ -1,5 +1,5 @@
-import { useEffect, type CSSProperties, type MouseEvent } from 'react';
-import { ArrowsOut, CaretLeft, CaretRight, Check, Copy, Trash, X } from '@phosphor-icons/react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { ArrowsOut, CaretLeft, CaretRight, ChatCircleDots, Check, Copy, Trash, X } from '@phosphor-icons/react';
 import type { Note, PhotoItem } from '../types';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
@@ -55,10 +55,126 @@ export interface PhotoModalProps {
   onCopy: (id: string) => void;
   /** Soft-delete the shown photo's note (R3), then close. Absent = no trash icon. */
   onDelete?: (note: Note) => void;
+  /**
+   * The note text is click-to-edit; blur saves the draft (the whole body, hashtags included) when
+   * it changed. App's `save`, the same writer the text editor uses. Absent = read-only text.
+   */
+  onSave?: (note: Note, draft: string) => void;
+  /** "Chat about this image": opens the chat history with this image attached by id (no copy). Absent = no icon. */
+  onChatAbout?: (imageId: string) => void;
 }
 
-export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, onDelete }: PhotoModalProps) {
+/**
+ * The note text of the photo modal. Read mode shows the body without its #hashtags (they appear as
+ * chips below); a click swaps in a textarea holding the RAW body, so saving never drops a tag.
+ * Blur saves when the draft changed, then returns to read mode. `exitRef` lets the modal's Esc
+ * handler leave edit mode without closing the modal; `editingRef` tells it (and the arrow keys)
+ * that a caret is in the text.
+ */
+function NoteText({
+  note,
+  onSave,
+  editingRef,
+  exitRef,
+}: {
+  note: Note;
+  onSave?: (note: Note, draft: string) => void;
+  editingRef: { current: boolean };
+  exitRef: { current: (() => void) | null };
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note.body);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const noteRef = useRef(note);
+  noteRef.current = note;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  const finish = () => {
+    if (!editingRef.current) return;
+    editingRef.current = false;
+    setEditing(false);
+    const text = draftRef.current;
+    if (text !== noteRef.current.body) onSave?.(noteRef.current, text);
+  };
+  exitRef.current = editing ? finish : null;
+
+  useEffect(
+    () => () => {
+      // Unmounted mid-edit (another photo, the modal closing): the blur never fires, so save here.
+      if (editingRef.current) {
+        editingRef.current = false;
+        if (draftRef.current !== noteRef.current.body) onSave?.(noteRef.current, draftRef.current);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (!editing || !el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editing, draft]);
+
+  useEffect(() => {
+    const el = taRef.current;
+    if (!editing || !el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
+
+  const begin = () => {
+    if (!onSave || editingRef.current) return;
+    setDraft(noteRef.current.body);
+    draftRef.current = noteRef.current.body;
+    editingRef.current = true;
+    setEditing(true);
+  };
+
+  const textStyle: CSSProperties = { margin: 0, fontSize: 15, lineHeight: 1.45, color: '#e4e3dc', textWrap: 'pretty' } as CSSProperties;
+
+  if (editing) {
+    return (
+      <textarea
+        ref={taRef}
+        data-pm-edit=""
+        aria-label="Note text"
+        className="pm-edit"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={finish}
+        style={{ ...textStyle, width: '100%', boxSizing: 'border-box', resize: 'none', overflow: 'hidden', font: 'inherit', fontSize: 15 }}
+      />
+    );
+  }
+  const shown = stripTags(note.body);
+  return (
+    <p
+      data-pm-text=""
+      className={onSave ? 'pm-text pm-text-editable' : 'pm-text'}
+      role={onSave ? 'button' : undefined}
+      tabIndex={onSave ? 0 : undefined}
+      aria-label={onSave ? 'Edit note text' : undefined}
+      onClick={begin}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && onSave) {
+          e.preventDefault();
+          begin();
+        }
+      }}
+      style={{ ...textStyle, ...(shown === '' ? { color: '#8a897f' } : {}) }}
+    >
+      {shown === '' ? (onSave ? 'Add a description…' : '') : shown}
+    </p>
+  );
+}
+
+export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, onDelete, onSave, onChatAbout }: PhotoModalProps) {
   const len = items.length;
+  const editingRef = useRef(false);
+  const exitEditRef = useRef<(() => void) | null>(null);
   const item = index >= 0 && index < len ? items[index] : undefined;
 
   useEffect(() => {
@@ -68,7 +184,12 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        // Editing the text: Esc saves and leaves the textarea; the modal stays.
+        if (editingRef.current) exitEditRef.current?.();
+        else onClose();
+      } else if (editingRef.current) {
+        // A caret is in the text: the arrows move it instead of changing photo.
+        return;
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         e.stopPropagation();
@@ -133,6 +254,18 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
 
       <div onClick={stop} style={{ alignSelf: 'stretch', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 4 }}>
         <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end', flexShrink: 0 }}>
+          {onChatAbout && (
+            <button
+              type="button"
+              className="pm-btn"
+              data-tip="Chat about this image"
+              aria-label="Chat about this image"
+              onClick={() => onChatAbout(image.id)}
+              style={toolBtn}
+            >
+              <ChatCircleDots weight="duotone" />
+            </button>
+          )}
           <button type="button" className="pm-btn" data-tip="Copy ID" aria-label="Copy ID" onClick={copy} style={toolBtn}>
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
@@ -160,9 +293,7 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
           </button>
         </div>
         <div className="pm-scroll" data-pm-scroll="">
-          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, color: '#e4e3dc', textWrap: 'pretty' } as CSSProperties}>
-            {stripTags(note.body)}
-          </p>
+          <NoteText key={note.id} note={note} onSave={onSave} editingRef={editingRef} exitRef={exitEditRef} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {note.tags.map((t) => (
               <span key={t} style={{ fontSize: 11, padding: '3px 8px 4px', borderRadius: 999, background: '#2a2a27', color: '#d6d5cd' }}>
@@ -173,6 +304,11 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
           <div style={{ height: 1, background: 'rgba(236,235,228,.1)' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Geist Mono',monospace", fontSize: 11, color: '#bdbcb4' }}>
             <span>{note.id}</span>
+            {image.id !== note.id && (
+              <span data-image-id="" style={{ color: '#8a897f' }}>
+                img {image.id}
+              </span>
+            )}
             <span style={{ opacity: copied ? 1 : 0, color: '#8a897f', transition: 'opacity .25s' }}>copied</span>
             <span data-meta="" style={{ marginLeft: 'auto', color: '#8a897f' }}>
               {meta}

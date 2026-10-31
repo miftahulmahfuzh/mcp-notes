@@ -8,18 +8,24 @@ export const MAX_CHAT_IMAGES = 4;
 const TOO_MANY = `at most ${MAX_CHAT_IMAGES} images per message`;
 
 export interface PendingChatImage extends ChatBarImage {
-  /** The chat image id once uploaded. */
+  /** The chat image id once uploaded; for a note image, the `note_images` id. */
   id: string | null;
+  /** 'note': a picture that already lives in a note (referenced, never uploaded). Absent: a pasted upload. */
+  source?: 'note';
 }
 
 export interface ChatImages {
   images: PendingChatImage[];
-  /** Ids of the uploaded images, in paste order, without repeats. */
+  /** Ids of the uploaded images, in paste order, without repeats. Pictures from notes are in `noteIds`. */
   readyIds: string[];
+  /** Ids of the note images attached with `addNote`, without repeats. */
+  noteIds: string[];
   /** True while any image is uploading or failed: the message waits (or the failed one is removed). */
   blocked: boolean;
   /** Upload each file at once; past MAX_CHAT_IMAGES a file shows as failed. */
   add: (files: File[]) => void;
+  /** Attach a picture that already lives in a note, by its image id: no upload, no copy. */
+  addNote: (imageId: string) => void;
   remove: (key: string) => void;
   /** After sending. */
   clear: () => void;
@@ -73,17 +79,39 @@ export function useChatImages(upload: (file: File) => Promise<ChatImageUpload> =
     [upload, patch, commit],
   );
 
+  const addNote = useCallback(
+    (imageId: string) => {
+      if (ref.current.some((i) => i.source === 'note' && i.id === imageId)) return;
+      const key = nextKey();
+      if (ref.current.length >= MAX_CHAT_IMAGES) {
+        commit([...ref.current, { key, label: 'image from a note', state: 'failed', id: null, thumbUrl: null, error: TOO_MANY, source: 'note' }]);
+        return;
+      }
+      commit([
+        ...ref.current,
+        { key, label: `image ${imageId} from a note`, state: 'ready', id: imageId, thumbUrl: `/api/images/${imageId}/thumb`, error: null, source: 'note' },
+      ]);
+    },
+    [commit],
+  );
+
   const remove = useCallback((key: string) => commit(ref.current.filter((i) => i.key !== key)), [commit]);
 
   const clear = useCallback(() => commit([]), [commit]);
 
   const readyIds = useMemo(() => {
     const ids: string[] = [];
-    for (const i of images) if (i.state === 'ready' && i.id !== null && !ids.includes(i.id)) ids.push(i.id);
+    for (const i of images) if (i.source !== 'note' && i.state === 'ready' && i.id !== null && !ids.includes(i.id)) ids.push(i.id);
+    return ids;
+  }, [images]);
+
+  const noteIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const i of images) if (i.source === 'note' && i.state === 'ready' && i.id !== null && !ids.includes(i.id)) ids.push(i.id);
     return ids;
   }, [images]);
 
   const blocked = images.some((i) => i.state !== 'ready');
 
-  return { images, readyIds, blocked, add, remove, clear };
+  return { images, readyIds, noteIds, blocked, add, addNote, remove, clear };
 }

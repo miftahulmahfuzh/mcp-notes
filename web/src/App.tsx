@@ -275,6 +275,18 @@ export function App() {
     setView((v) => (v === 'history' ? 'wall' : 'history'));
   }, []);
 
+  /** Photo modal "Chat about this image": the history page with that picture attached to the composer (a pointer, no upload). */
+  const [chatSeed, setChatSeed] = useState<{ imageId: string; nonce: number } | null>(null);
+  const chatAboutImage = useCallback((imageId: string) => {
+    setChatSeed((s) => ({ imageId, nonce: (s?.nonce ?? 0) + 1 }));
+    setHistoryThread(null);
+    setView('history');
+  }, []);
+  // The seed is spent once the page has taken it: leaving the page clears it, so a later visit starts clean.
+  useEffect(() => {
+    if (view !== 'history') setChatSeed(null);
+  }, [view]);
+
   /** Answer panel "Chat in full screen": the history page on this conversation's thread. */
   const openHistoryThread = useCallback(() => {
     setHistoryThread(chat.threadId);
@@ -684,11 +696,11 @@ export function App() {
             />
             <div className="rule" />
             {view === 'history' ? (
-              <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} />
+              <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} seedImage={chatSeed} />
             ) : view === 'bin' ? (
               <Bin store={binStore} now={now} onRestored={onRestored} />
             ) : mode === 'images' ? (
-              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} />
+              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} onSave={save} onChatAbout={chatAboutImage} />
             ) : (
               <Wall
                 notes={visible}

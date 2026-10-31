@@ -17,7 +17,7 @@ import {
 } from '../http/imageAccess.js';
 import type { ImageDeps } from '../images/ingest.js';
 import { normalizeId } from '../notes/ids.js';
-import type { Note, NoteImage } from '../notes/types.js';
+import type { Note, NoteImage, Origin } from '../notes/types.js';
 import { errorResult, run, type ToolDeps } from './tools.js';
 
 /** Most ids per call, and most images returned per call. */
@@ -339,6 +339,34 @@ export function registerImageTools(server: McpServer, deps: ToolDeps): void {
       },
     },
     async ({ image_id }): Promise<CallToolResult> => run(async () => ({ note: await deps.service.restoreImage(image_id) })),
+  );
+
+  server.registerTool(
+    'move_image',
+    {
+      title: 'Move image to another note',
+      description:
+        'Move one image out of the note that holds it, without copying anything: the image keeps its id and its file, only its note changes. ' +
+        'Without to_note_id a NEW note is created that holds only this image, with body as its text (#hashtags become tags); ' +
+        'with to_note_id the image goes to the end of that existing note. ' +
+        'Use it to split a picture out of a note with many pictures: look at the picture, write the text the new note should carry, then call move_image. ' +
+        'The old note stays, one image fewer. Refused for a removed image, a deleted note, or when the image is already in to_note_id. ' +
+        'Returns { note, from, created }: note is the note that now holds the image, from is the note it left.',
+      inputSchema: {
+        image_id: z.string().min(1).describe('Image id like A-B32 (from note.images[].id or [note image:ID]). Case-insensitive; the dash may be omitted.'),
+        to_note_id: z.string().min(1).optional().describe('Existing live note to move the image into. Omit to create a new note for it.'),
+        body: z.string().optional().describe('Text of the new note (only when to_note_id is omitted). #hashtags become tags.'),
+        origin: originShape,
+      },
+    },
+    async ({ image_id, to_note_id, body, origin }): Promise<CallToolResult> =>
+      run(async () => {
+        const input: { toNoteId?: string; body?: string; origin?: Origin } = {};
+        if (to_note_id !== undefined) input.toNoteId = to_note_id;
+        if (body !== undefined) input.body = body;
+        if (origin !== undefined) input.origin = { ...origin, source: 'mcp' };
+        return deps.service.moveImage(image_id, input);
+      }),
   );
 }
 

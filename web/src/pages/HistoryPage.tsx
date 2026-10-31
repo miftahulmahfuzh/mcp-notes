@@ -32,6 +32,11 @@ export interface HistoryPageProps {
    * always passes it; optional only so P9's `HistoryPage.test.tsx` renders keep compiling (no undo bar there).
    */
   pushUndo?: (entry: UndoEntry) => void;
+  /**
+   * A note image to attach to the composer ("chat about this image" in the photo modal): referenced
+   * by id, never uploaded. `nonce` makes attaching the same image twice a second event.
+   */
+  seedImage?: { imageId: string; nonce: number } | null;
 }
 
 const NO_UNDO = (): void => {};
@@ -46,22 +51,37 @@ function HistoryComposer({
   store,
   replyTo,
   onCancelReply,
+  seedImage = null,
 }: {
   store: HistoryStore;
+  seedImage?: { imageId: string; nonce: number } | null;
   /** Phase 10: the bubble being replied to (the chip above the bar), or null. */
   replyTo: ChatMessage | null;
   onCancelReply: () => void;
 }) {
   const images = useChatImages();
   const [draft, setDraft] = useState('');
+  const { addNote } = images;
+  const seedNonce = seedImage?.nonce;
+  const seedId = seedImage?.imageId;
+  useEffect(() => {
+    if (seedId !== undefined) addNote(seedId);
+  }, [seedId, seedNonce, addNote]);
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     // An image still uploading (or failed and not removed) holds the message back, as on the wall.
     if (images.blocked) return;
     const ids = images.readyIds;
-    if (!draft.trim() && ids.length === 0) return;
+    const noteIds = images.noteIds;
+    if (!draft.trim() && ids.length === 0 && noteIds.length === 0) return;
     // Two arguments when not replying: P9's callers and tests see the call they always saw.
-    if (replyTo ? store.send(draft, ids, replyTo) : store.send(draft, ids)) {
+    const sent =
+      noteIds.length > 0
+        ? store.send(draft, ids, replyTo ?? undefined, noteIds)
+        : replyTo
+          ? store.send(draft, ids, replyTo)
+          : store.send(draft, ids);
+    if (sent) {
       setDraft('');
       images.clear();
       onCancelReply();
@@ -104,7 +124,7 @@ const scrollToBottom = (): void => {
   window.scrollTo(0, document.documentElement.scrollHeight);
 };
 
-export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO }: HistoryPageProps) {
+export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO, seedImage = null }: HistoryPageProps) {
   const { items, loaded, error, hasMore, loadingOlder, loadOlder } = store;
   const ha = useHistoryActions({ history: store, pushUndo });
   // Deleted server rows are loaded (App fetches include_deleted=1) and shown only with "Show deleted".
@@ -213,7 +233,7 @@ export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO }: His
           );
         })}
       </ol>
-      <HistoryComposer store={store} replyTo={ha.replyTo} onCancelReply={ha.cancelReply} />
+      <HistoryComposer store={store} replyTo={ha.replyTo} onCancelReply={ha.cancelReply} seedImage={seedImage} />
       {box && (
         <Lightbox
           items={box.items}

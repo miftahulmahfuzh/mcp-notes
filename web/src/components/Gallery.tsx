@@ -23,9 +23,13 @@ export interface GalleryProps {
   onCopy: (id: string) => void;
   /** Passed to the photo modal's trash icon. */
   onDelete?: (note: Note) => void;
+  /** Passed to the photo modal: the note text is click-to-edit and saves on blur. Absent = read-only text. */
+  onSave?: (note: Note, draft: string) => void;
+  /** Passed to the photo modal's "Chat about this image" icon (the image id). Absent = no icon. */
+  onChatAbout?: (imageId: string) => void;
 }
 
-export function Gallery({ items: all, copiedId, onCopy, onDelete }: GalleryProps) {
+export function Gallery({ items: all, copiedId, onCopy, onDelete, onSave, onChatAbout }: GalleryProps) {
   /** Photos whose file is not on this machine are left out: a placeholder tile is a hole in the grid. */
   const items = useMemo(() => all.filter((it) => it.image.available), [all]);
   /** The open image's id; the modal hides itself when that image leaves `items`. */
@@ -63,7 +67,7 @@ export function Gallery({ items: all, copiedId, onCopy, onDelete }: GalleryProps
       </section>
       {index >= 0
         ? createPortal(
-            <PhotoModal items={items} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} onDelete={onDelete} />,
+            <PhotoModal items={items} index={index} onIndex={onIndex} onClose={onClose} copiedId={copiedId} onCopy={onCopy} onDelete={onDelete} onSave={onSave} onChatAbout={onChatAbout} />,
             document.body,
           )
         : null}

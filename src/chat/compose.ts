@@ -25,7 +25,7 @@ export interface UserTurn {
 export interface ComposeInput {
   message: string;
   /** `messageId` (phase 7): the chat message the image belongs to; it is then labelled `from [msg:ID]`. */
-  images: readonly Pick<ChatTurnImage, 'id' | 'previewMime' | 'messageId'>[];
+  images: readonly Pick<ChatTurnImage, 'id' | 'previewMime' | 'messageId' | 'note'>[];
 }
 
 /**
@@ -43,8 +43,9 @@ export function composePromptText(message: string, imageIds: readonly string[]):
 }
 
 /** `[image upload:ID]`, plus ` from [msg:K7F2]` when the image belongs to a known chat message (phase 7). */
-export function imageLabel(image: { id: string; messageId?: string }): string {
-  return image.messageId === undefined ? uploadTag(image.id) : `${uploadTag(image.id)} from [msg:${image.messageId}]`;
+export function imageLabel(image: { id: string; messageId?: string; note?: { id: string; k: number; n: number } }): string {
+  const tag = image.note === undefined ? uploadTag(image.id) : `[note image:${image.id} in note ${image.note.id}, image ${image.note.k} of ${image.note.n}]`;
+  return image.messageId === undefined ? tag : `${tag} from [msg:${image.messageId}]`;
 }
 
 /**
@@ -52,7 +53,7 @@ export function imageLabel(image: { id: string; messageId?: string }): string {
  * the order the image blocks are shown. The context lines already name every image; this tells the
  * model which picture above is which, including reply-target pictures from another message.
  */
-export function composeLabelledText(message: string, images: readonly { id: string; messageId?: string }[]): string {
+export function composeLabelledText(message: string, images: readonly { id: string; messageId?: string; note?: { id: string; k: number; n: number } }[]): string {
   if (images.length === 0) return message;
   const header =
     images.length === 1
@@ -67,7 +68,7 @@ export function composeUserTurn(input: ComposeInput, previews: readonly string[]
     throw new Error(`composeUserTurn: ${input.images.length} images but ${previews.length} previews`);
   }
   return {
-    text: input.images.some((image) => image.messageId !== undefined)
+    text: input.images.some((image) => image.messageId !== undefined || image.note !== undefined)
       ? composeLabelledText(input.message, input.images)
       : composePromptText(
           input.message,

@@ -5,11 +5,11 @@ import { NOTES_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 18 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
-    expect(NOTES_TOOL_NAMES).toHaveLength(18);
+    expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(18 + 15 + 2);
+    expect(tools).toHaveLength(19 + 15 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -61,6 +61,7 @@ describe('captionForToolUse', () => {
     [n('attach_image'), { id: 'A-B32', image_id: '   ' }, 'attaching a photo'],
     [n('remove_image'), { image_id: 'C-D54' }, 'removing a photo'],
     [n('restore_image'), { image_id: 'C-D54' }, 'restoring a photo'],
+    [n('move_image'), { image_id: 'C-D54' }, 'moving a photo to its own note'],
     ['WebSearch', { query: 'Verity' }, 'searching the web'],
     ['WebFetch', { url: 'https://example.com' }, 'reading a web page'],
   ])('%s %j -> %s', (name, input, caption) => {
