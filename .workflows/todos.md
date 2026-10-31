@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 5
-- Completed: 40
+- Completed: 41
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns paperclip button + hidden picker in `NoteEditor`; `FileChips` (name, size, type, download, per-file reveal, remove with 6 s undo); ctrl-v and drop of non-image files into the open modal attach to that note (images keep the image path); `NoteRevealButton` (card footer slot from P1 and editor top bar) calling the note-level route, visible by the same rule as the route; empty-note rules count files (`hasAttachments`); card paperclip count; `web/src/api.ts` file calls with `DuplicateFileError`; `makeNote` always sets `files: []` (the only phase that touches that fixture). Exit: component tests for picker, paste, drop, chips, undo, dedupe notice, reveal calls; a text-only note holding only files is not auto-deleted on close.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 5 of 11)
-  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
-  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
-  - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
 
 - [ ] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
   - **Difficulty**: HARD
@@ -69,7 +59,7 @@
   - **Status**: blocked
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 9 of 11)
   - **Satisfies**: R3 — Chat history: own DB, own page, reply_to, edit/delete, note-id links, thumbnails, Claude Code capture, sidebar icon, full-screen button
-  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (pending), P1-NOTES-A040 (pending)
+  - **Depends on**: P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A038 (satisfied), P1-NOTES-A040 (pending)
   - **Plan**: `.workflows/plan/P1-NOTES-A042.md`
 
 - [ ] **P1-NOTES-A043** Phase 10: Bubble actions: reply_to, edit, delete, restore
@@ -101,6 +91,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns paperclip button + hidden picker in `NoteEditor`; `FileChips` (name, size, type, download, per-file reveal, remove with 6 s undo); ctrl-v and drop of non-image files into the open modal attach to that note (images keep the image path); `NoteRevealButton` (card footer slot from P1 and editor top bar) calling the note-level route, visible by the same rule as the route; empty-note rules count files (`hasAttachments`); card paperclip count; `web/src/api.ts` file calls with `DuplicateFileError`; `makeNote` always sets `files: []` (the only phase that touches that fixture). Exit: component tests for picker, paste, drop, chips, undo, dedupe notice, reveal calls; a text-only note holding only files is not auto-deleted on close.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 5 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
+  - **Completed**: 2026-10-31 10:06
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/components/FileChips.css, web/src/components/FileChips.test.tsx, web/src/components/FileChips.tsx, web/src/components/NoteCard.test.tsx, web/src/components/NoteCard.tsx, web/src/components/NoteEditor.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/NoteRevealButton.test.tsx, web/src/components/NoteRevealButton.tsx, web/src/components/RevealMounts.test.tsx, web/src/lib/files.test.tsx, web/src/lib/files.ts, web/src/styles.css, web/src/testing/fixtures.ts
+  - **Drift**:
+    - tests/integration/schema.int.test.ts 're-applying the migrations is a no-op' fails here (expects 6 applied rows vs journal 5): the shared test DB already holds a peer phase's migration 0005. Environmental, this phase changes no server/db code; all other test:int tests pass (340/342 on the last full run, the 2nd failure was a transient concurrent-run flake).
+  - **Decided**:
+    - Completion bookkeeping: P1-NOTES-A040 (phase 7, the plan's next task) stays blocked: it depends on P1-NOTES-A039 (phase 6), which is still pending in this tree, not on this phase. Only marked P1-NOTES-A038 satisfied in P1-NOTES-A042's Depends on.
 
 - [x] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
   - **Difficulty**: HARD

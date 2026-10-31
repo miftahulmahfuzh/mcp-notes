@@ -156,14 +156,20 @@ For a long note, press "+", type the first line, then expand it and keep writing
 - Text saves the way cards do: when the text area loses focus and when the editor closes, and
   only if it changed. The card on the wall shows the change at once.
 - Esc closes it (when a photo is open large, the first Esc closes only the photo).
-- While the editor is open, a dropped or pasted image is attached to this note instead of
-  becoming a new one. The drop overlay shows a paperclip instead of the usual image icon to say
-  so. A file that already lives in a note is not attached twice. The editor quietly says which
-  note holds it.
+- While the editor is open, anything you drop or paste is attached to this note instead of
+  becoming a new one. Photos go to the photo strip. Any other file (PDF, spreadsheet, zip, …)
+  becomes a file chip under the text. The paperclip button in the editor's top bar opens a file
+  picker for the same thing. The drop overlay shows a paperclip instead of the usual image icon
+  to say so. A file that already lives in a note is not attached twice. The editor quietly says
+  which note holds it.
+- A file chip shows the file's name, size and type, with a download icon and its own "Show in
+  Explorer". Removing a chip is soft. You get the usual 6 s undo, and the file is removed for good
+  only when its note is purged from the bin. A file whose bytes are on the other laptop is dimmed
+  and cannot be downloaded from here. Cards show a paperclip and the number of files.
 - If you attach a photo to a text note while the wall is on "Notes.", the wall switches to
   "Everything." when you close the editor, so the note stays in sight.
 - Emptying the text does not delete the note while the editor is open. On close, a note with no
-  text and no photos goes to the recycle bin, the same rule as on the wall.
+  text, no photos and no files goes to the recycle bin, the same rule as on the wall.
 - Removing a photo from the strip is soft. The photo goes to the recycle bin's photo grid, and
   restoring it puts it back at the same place in the note.
 
@@ -246,11 +252,12 @@ The bin has no recording yet.
 
 ### Open file location
 
-Photo cards on the wall, the photo modal and the editor's photo strip have a folder icon ("Show
-in Explorer"). Gallery tiles don't; open the photo and use the modal's. Clicking it opens Windows
-Explorer on the folder that holds the original, with the file selected. `notesd` turns the stored
-path into a Windows path with `wslpath -w` and starts `explorer.exe /select,<path>`. It does not
-wait for Explorer, whose exit code means nothing.
+Wall cards and the editor's top bar have a note-level folder icon ("Show in Explorer"). For a
+note with files it opens the note's files folder. For a note with only photos it selects the
+first photo. The photo modal, each photo in the editor strip and each file chip have their own
+icon for that one photo or file. Gallery tiles don't; open the photo and use the modal's.
+Clicking one opens Windows Explorer. `notesd` turns the stored path into a Windows path with
+`wslpath -w` and starts `explorer.exe`. It does not wait for Explorer, whose exit code means nothing.
 
 The icon appears only when this can work: the original must be on this machine, and `notesd`
 must run under WSL with Windows interop available (`GET /api/capabilities` answers

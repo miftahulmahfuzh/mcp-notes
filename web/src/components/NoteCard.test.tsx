@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import type { Note } from '../types';
 import { NoteCard } from './NoteCard';
 import type { NoteCardProps } from './NoteCard';
-import { makeNote } from '../testing/fixtures';
+import { makeFile, makeNote } from '../testing/fixtures';
 import { resetCapabilitiesForTests } from '../hooks/useCapabilities';
 
 afterEach(cleanup);
@@ -181,5 +181,41 @@ describe('NoteCard footer order', () => {
     resetCapabilitiesForTests({ reveal: false });
     const { container } = renderCard(note('pic', ['A-B32']));
     expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'copied', 'card-date', 'Expand note']);
+  });
+});
+
+describe('NoteCard files (R2)', () => {
+  afterEach(() => resetCapabilitiesForTests());
+
+  const withFiles = (body: string, available = true) =>
+    makeNote('A-B32', body, {
+      tags: [],
+      created: now.toISOString(),
+      files: [
+        makeFile('F-IL1', { note_id: 'A-B32', available }),
+        makeFile('F-IL2', { note_id: 'A-B32', position: 1, available }),
+      ],
+    });
+
+  it('a note with files: note-level reveal right after Copy ID, paperclip count before the date', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderCard(withFiles('contract'));
+    expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'Show in Explorer', 'copied', 'card-files', 'card-date', 'Expand note']);
+    const count = container.querySelector('.card-files') as HTMLElement;
+    expect(count.textContent).toBe('2');
+    expect(count.dataset.files).toBe('2');
+    expect(count.getAttribute('data-tip')).toBe('2 files');
+    expect(container.querySelector('[data-reveal-note="A-B32"]')).not.toBeNull();
+  });
+
+  it('files all on another machine: the count stays, no reveal', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderCard(withFiles('far', false));
+    expect(footerSequence(container)).toEqual(['card-id', 'Copy ID', 'copied', 'card-files', 'card-date', 'Expand note']);
+  });
+
+  it('a text note has no paperclip count', () => {
+    const { container } = renderCard(note('plain'));
+    expect(container.querySelector('.card-files')).toBeNull();
   });
 });

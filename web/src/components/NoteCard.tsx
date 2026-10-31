@@ -1,10 +1,10 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { ArrowsOutSimple, Check, Copy, Trash } from '@phosphor-icons/react';
+import { ArrowsOutSimple, Check, Copy, Paperclip, Trash } from '@phosphor-icons/react';
 import type { Note } from '../types';
 import { fontSizeFor, letterSpacingFor, rowsFor, segmentBody } from '../lib/text';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
-import { RevealButton } from './RevealButton';
+import { NoteRevealButton } from './NoteRevealButton';
 
 export interface NoteCardProps {
   note: Note;
@@ -70,6 +70,8 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
   const fs = fontSizeFor(note.body, hasImg);
   const cls = ['card', hasImg ? 'img' : '', dim ? 'dim' : '', used ? 'used' : ''].filter(Boolean).join(' ');
   const draftRef = useRef(note.body);
+  // Phase 5: live files, local or not (a file on the other laptop still belongs to the note).
+  const fileCount = (note.files ?? []).length;
   return (
     <article className={cls} data-note={note.id}>
       {cover && (
@@ -120,8 +122,15 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
           {/* Reveal sits right after copy: the "copied" label reserves its width even while hidden, so it goes after. */}
-          {note.images.length > 0 && <RevealButton image={note.images[0]} />}
+          {/* Note-level (R2): the note's files folder, or its first image when it has no files. */}
+          <NoteRevealButton note={note} />
           <span className={copied ? 'copied on' : 'copied'}>copied</span>
+          {fileCount > 0 && (
+            <span className="card-files" data-files={fileCount} data-tip={fileCount === 1 ? '1 file' : `${fileCount} files`}>
+              <Paperclip weight="duotone" />
+              {fileCount}
+            </span>
+          )}
           <span className="card-date">{relativeDate(note.created_at, now)}</span>
           <button
             type="button"

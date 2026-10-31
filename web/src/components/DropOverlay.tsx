@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImageSquare, Paperclip } from '@phosphor-icons/react';
 import type { Note } from '../types';
-import { attachImage, type AttachResult } from '../api';
+import { attachRouted, type AttachResult } from '../api';
+import { pastedFiles, routeFiles, type RoutedFile } from '../lib/files';
 import { flashNote } from '../lib/flash';
 
 /** Moved to lib/flash (shared with the wall's deep link); re-exported for existing importers. */
@@ -52,39 +53,47 @@ export interface DropOverlayProps {
   onImageAdded: (note: Note) => void;
   /** The note open in the big editor, or null. When set, files attach to it instead of making new notes. */
   target?: string | null;
-  /** Called once per attach (target set) with the server's result and the note id it was sent to. */
+  /** Called once per attach (target set), image or file, with the server's result and the note id it was sent to. */
   onAttached?: (result: AttachResult, target: string) => void;
+  /** Phase 5: an attach (target set) failed, e.g. 413 too large. The file still is not attached. */
+  onAttachFailed?: (file: File, err: unknown) => void;
 }
 
-export function DropOverlay({ onImageAdded, target = null, onAttached }: DropOverlayProps) {
+export function DropOverlay({ onImageAdded, target = null, onAttached, onAttachFailed }: DropOverlayProps) {
   const [dragging, setDragging] = useState(false);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const addedRef = useRef(onImageAdded);
   const attachedRef = useRef(onAttached);
+  const failedRef = useRef(onAttachFailed);
   const targetRef = useRef<string | null>(target);
 
   useEffect(() => {
     addedRef.current = onImageAdded;
     attachedRef.current = onAttached;
+    failedRef.current = onAttachFailed;
     targetRef.current = target;
-  }, [onImageAdded, onAttached, target]);
+  }, [onImageAdded, onAttached, onAttachFailed, target]);
 
   useEffect(() => {
     const enqueue = (files: File[]) => {
       const to = targetRef.current;
-      for (const file of files) {
+      // Open note (R2): images keep the image path and every other file goes to /files, in order.
+      // No open note: only images, each a new photo note (non-images are ignored, as before).
+      const jobs: RoutedFile[] = to ? routeFiles(files) : imageFiles(files).map((file): RoutedFile => ({ kind: 'image', file }));
+      for (const job of jobs) {
         queue.current = queue.current.then(async () => {
           try {
             if (to) {
-              const result = await attachImage(to, file);
+              const result = await attachRouted(to, job);
               attachedRef.current?.(result, to);
             } else {
-              const result = await uploadImage(file);
+              const result = await uploadImage(job.file);
               addedRef.current(result.note);
               if (!result.created) flashNote(result.note.id);
             }
           } catch (err) {
-            console.error(to ? '[attach]' : '[upload]', file.name, err);
+            console.error(to ? '[attach]' : '[upload]', job.file.name, err);
+            if (to) failedRef.current?.(job.file, err);
           }
         });
       }
@@ -102,14 +111,16 @@ export function DropOverlay({ onImageAdded, target = null, onAttached }: DropOve
       if (!hasFiles(e.dataTransfer)) return;
       e.preventDefault();
       setDragging(false);
-      enqueue(imageFiles(e.dataTransfer?.files));
+      enqueue(Array.from(e.dataTransfer?.files ?? []));
     };
     const onPaste = (e: ClipboardEvent) => {
       if (chatBarHasFocus()) return;
-      const file = firstImageFile(e.clipboardData?.files);
-      if (!file) return;
+      // Open note: every pasted file attaches to it. Otherwise only the first image makes a new note.
+      // A text-only paste carries no files and falls through to the focused field untouched.
+      const files = pastedFiles(e.clipboardData?.files, targetRef.current !== null);
+      if (files.length === 0) return;
       e.preventDefault();
-      enqueue([file]);
+      enqueue(files);
     };
 
     document.addEventListener('dragover', onDragOver);

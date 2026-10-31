@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
-import { Check, Copy, Trash, X } from '@phosphor-icons/react';
-import type { Note, NoteImage as NoteImageData, TagCount } from '../types';
+import { Check, Copy, Paperclip, Trash, X } from '@phosphor-icons/react';
+import type { Note, NoteFile, NoteImage as NoteImageData, TagCount } from '../types';
 import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
 import { RevealButton } from './RevealButton';
 import { Lightbox, isLightboxOpen, noteImageItems } from './Lightbox';
+import { FileChips } from './FileChips';
+import { NoteRevealButton } from './NoteRevealButton';
 import './NoteEditor.css';
 
 export interface NoteEditorProps {
@@ -27,11 +29,15 @@ export interface NoteEditorProps {
   tags?: TagCount[];
   /** Bumped by App to close this editor the normal way (draft saved, empty rule), e.g. a deep link to another note. The value at mount never closes it. */
   closeSignal?: number;
+  /** Phase 5 (R2): files picked with the paperclip, in order. App routes images to `/images` and the rest to `/files`. Absent = no paperclip. */
+  onAttachFiles?: (files: File[]) => void;
+  /** Phase 5 (R2): a file chip's remove icon (soft remove; App offers a 6 s undo). Absent = no remove icon on chips. */
+  onRemoveFile?: (file: NoteFile) => void;
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
+export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);
   const savedRef = useRef(note.body);
@@ -46,6 +52,9 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   // Start index of the `#…` token whose popup Esc dismissed; a new token reopens it.
   const [dismissed, setDismissed] = useState<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
+  // Phase 5: the hidden multi-file input the paperclip clicks.
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const files = note.files ?? [];
   // Id of the strip image shown in the lightbox (R4), or null. An id, not an index: attaches and
   // removes while it is open must not shift it onto another image.
   const [viewing, setViewing] = useState<string | null>(null);
@@ -160,6 +169,30 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             {notice ?? ''}
           </span>
           <span className="ed-spacer" />
+          <NoteRevealButton note={note} className="ed-btn" />
+          {onAttachFiles && (
+            <>
+              <button type="button" className="ed-btn" data-tip="Attach files" aria-label="Attach files" onClick={() => pickerRef.current?.click()}>
+                <Paperclip weight="duotone" />
+              </button>
+              <input
+                ref={pickerRef}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                aria-hidden="true"
+                data-picker=""
+                onChange={(e) => {
+                  const input = e.currentTarget;
+                  // Copy first: clearing the value empties the live FileList. Clearing lets the same file be picked again.
+                  const picked = Array.from(input.files ?? []);
+                  input.value = '';
+                  if (picked.length > 0) onAttachFiles(picked);
+                }}
+              />
+            </>
+          )}
           {onDelete && (
             <button
               type="button"
@@ -229,6 +262,7 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             ))}
           </div>
         )}
+        <FileChips files={files} onRemove={onRemoveFile} />
         {available.length > 0 && (
           <div className="ed-strip" data-strip="">
             {available.map((img) => (

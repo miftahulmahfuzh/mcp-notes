@@ -162,8 +162,8 @@ describe('DropOverlay', () => {
     expect(onImageAdded).not.toHaveBeenCalled();
   });
 
-  it('with a target, dropped images attach one at a time and a dedupe result is passed through', async () => {
-    const dup = { note: { id: 'K-F07', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [] }, attached: false };
+  it('with a target, dropped files attach one at a time in order: images to /images, others to /files; a dedupe result is passed through', async () => {
+    const dup = { note: { id: 'K-F07', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [], files: [] }, attached: false };
     fetchMock.mockImplementation(async () => okResponse(dup));
     const onAttached = vi.fn();
     render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={onAttached} />);
@@ -171,9 +171,9 @@ describe('DropOverlay', () => {
       document.dispatchEvent(eventWith('drop', 'dataTransfer', { types: ['Files'], files: [png, txt, jpg] }));
     });
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/notes/A-B32/images', '/api/notes/A-B32/images']);
-    expect(onAttached).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/notes/A-B32/images', '/api/notes/A-B32/files', '/api/notes/A-B32/images']);
+    expect((((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as FormData).get('file') as File).name).toBe('a.txt');
+    expect(onAttached).toHaveBeenCalledTimes(3);
     expect(onAttached.mock.calls[0]![0]).toMatchObject({ attached: false, note: { id: 'K-F07' } });
   });
 
@@ -185,6 +185,63 @@ describe('DropOverlay', () => {
     expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('attach');
     act(() => root!.render(<DropOverlay onImageAdded={() => {}} target={null} />));
     expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('new');
+  });
+
+  it('with a target, a pasted non-image file attaches to that note as a file', async () => {
+    const attached = { note: { id: 'A-B32', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [], files: [] }, attached: true, kind: 'file' };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(attached), { status: 201, headers: { 'content-type': 'application/json' } }));
+    const onAttached = vi.fn();
+    render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={onAttached} />);
+    const e = eventWith('paste', 'clipboardData', { files: [txt] });
+    act(() => {
+      document.dispatchEvent(e);
+    });
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/notes/A-B32/files');
+    expect(init.method).toBe('POST');
+    expect(((init.body as FormData).get('file') as File).name).toBe('a.txt');
+    expect(onAttached).toHaveBeenCalledWith(attached, 'A-B32');
+  });
+
+  it('with a target, a text-only paste (no files) is left to the focused field', () => {
+    render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={() => {}} />);
+    const e = eventWith('paste', 'clipboardData', { files: [] });
+    act(() => {
+      document.dispatchEvent(e);
+    });
+    expect(e.defaultPrevented).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('without a target, a dropped non-image file is ignored', async () => {
+    render(<DropOverlay onImageAdded={() => {}} />);
+    act(() => {
+      document.dispatchEvent(eventWith('drop', 'dataTransfer', { types: ['Files'], files: [txt] }));
+    });
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a failed attach is reported through onAttachFailed and the queue keeps going', async () => {
+    const ok = { note: { id: 'A-B32', body: '', tags: [], created_at: '', updated_at: '', origin: null, images: [], files: [] }, attached: true };
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'too_large' }), { status: 413, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(ok), { status: 201, headers: { 'content-type': 'application/json' } }));
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onAttachFailed = vi.fn();
+    const onAttached = vi.fn();
+    render(<DropOverlay onImageAdded={() => {}} target="A-B32" onAttached={onAttached} onAttachFailed={onAttachFailed} />);
+    act(() => {
+      document.dispatchEvent(eventWith('drop', 'dataTransfer', { types: ['Files'], files: [txt, png] }));
+    });
+    await flush();
+    expect(onAttachFailed).toHaveBeenCalledTimes(1);
+    expect(onAttachFailed.mock.calls[0]![0]).toBe(txt);
+    expect((onAttachFailed.mock.calls[0]![1] as { status?: number }).status).toBe(413);
+    expect(onAttached).toHaveBeenCalledTimes(1);
+    err.mockRestore();
   });
 });
 

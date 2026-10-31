@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
-import { createNote, deleteNote, DuplicateImageError, fetchBin, fetchNote, removeImage, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
-import type { Mode, Note, NoteImage as NoteImageData, View } from './types';
+import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
+import type { Mode, Note, NoteFile, NoteImage as NoteImageData, View } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
 import { useChatImages } from './hooks/useChatImages';
@@ -19,6 +19,7 @@ import { relativeDate } from './lib/dates';
 import { tagsOf } from './lib/text';
 import { binNoteSelector, flashSelector, noteSelector, type FlashOptions } from './lib/flash';
 import { planReveal, tagsKeeping } from './lib/reveal';
+import { hasAttachments, routeFiles } from './lib/files';
 import { Rail } from './components/Rail';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -137,7 +138,8 @@ export function App() {
       setEditing((cur) => (cur === note.id ? null : cur));
       // The big editor owns this note now (expand unmounts the inline editor); it applies the rules on close.
       if (expandedRef.current === note.id) return;
-      if (!draft.trim() && note.images.length === 0) {
+      // Empty = no text, no images and no files (R2): a note holding only files is kept.
+      if (!draft.trim() && !hasAttachments(note)) {
         removeLocal(note.id);
         try {
           await deleteNote(note.id);
@@ -174,13 +176,13 @@ export function App() {
     [save],
   );
 
-  /** Big editor closed (X, backdrop, Esc). The empty rule applies only here; Notes. -> Everything. when it now has images. */
+  /** Big editor closed (X, backdrop, Esc). The empty rule (no text, images or files) applies only here; Notes. -> Everything. when it now has images. */
   const closeEditor = useCallback(
     async (note: Note, draft: string, dirty: boolean) => {
       expandedRef.current = null;
       setExpanded(null);
       const latest = notesRef.current.find((n) => n.id === note.id) ?? note;
-      if (!draft.trim() && latest.images.length === 0) {
+      if (!draft.trim() && !hasAttachments(latest)) {
         removeLocal(note.id);
         try {
           await deleteNote(note.id);
@@ -205,6 +207,39 @@ export function App() {
       refetch();
     },
     [upsertLocal, refetch, showNotice],
+  );
+
+  /** An attach to the open note failed (413, 415, 409 race, offline). Said quietly in the editor; nothing else changes. */
+  const onAttachFailed = useCallback(
+    (file: File, err: unknown) => {
+      if (err instanceof DuplicateFileError || err instanceof DuplicateImageError) {
+        showNotice(`already in ${err.noteId}`);
+        return;
+      }
+      const why = err instanceof ApiError && err.status === 413 ? ' (too large)' : '';
+      showNotice(`could not attach ${file.name || 'file'}${why}`);
+    },
+    [showNotice],
+  );
+
+  // The paperclip picker's own serial queue (DropOverlay keeps one for drop/paste): one upload at a time, in pick order.
+  const attachQueue = useRef<Promise<void>>(Promise.resolve());
+
+  /** Files picked in the big editor: images to /images, everything else to /files (lib/files routeFiles). */
+  const attachFiles = useCallback(
+    (noteId: string, files: File[]) => {
+      for (const job of routeFiles(files)) {
+        attachQueue.current = attachQueue.current.then(async () => {
+          try {
+            onAttached(await attachRouted(noteId, job));
+          } catch (err) {
+            console.error('[attach]', job.file.name, err);
+            onAttachFailed(job.file, err);
+          }
+        });
+      }
+    },
+    [onAttached, onAttachFailed],
   );
 
   const toggleBin = useCallback(() => setView((v) => (v === 'bin' ? 'wall' : 'bin')), []);
@@ -265,6 +300,38 @@ export function App() {
             upsertLocal(await restoreImage(image.id));
           } catch (e) {
             if (e instanceof DuplicateImageError) console.warn(`image already in ${e.noteId}`);
+            else throw e;
+          } finally {
+            refetch();
+          }
+        },
+      });
+    },
+    [upsertLocal, refetch, pushUndo],
+  );
+
+  /** A file chip's remove icon (R2): soft remove one file, 6 s undo puts it back. Mirrors removeImageWithUndo. */
+  const removeFileWithUndo = useCallback(
+    (file: NoteFile) => {
+      const owner = notesRef.current.find((n) => n.id === file.note_id);
+      if (owner) upsertLocal({ ...owner, files: (owner.files ?? []).filter((f) => f.id !== file.id) });
+      const done = (async () => {
+        try {
+          upsertLocal(await removeFile(file.id));
+        } catch (e) {
+          console.error('remove file failed', e);
+        } finally {
+          refetch();
+        }
+      })();
+      pushUndo({
+        label: 'removed file',
+        run: async () => {
+          await done;
+          try {
+            upsertLocal(await restoreFile(file.id));
+          } catch (e) {
+            if (e instanceof DuplicateFileError) console.warn(`file already in ${e.noteId}`);
             else throw e;
           } finally {
             refetch();
@@ -465,7 +532,7 @@ export function App() {
           onRemoveImage={chatImages.remove}
           sendBlocked={chatImages.blocked}
         />
-        <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} />
+        <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
         {expandedNote &&
           createPortal(
             <NoteEditor
@@ -477,6 +544,8 @@ export function App() {
               onSave={save}
               onClose={closeEditor}
               onRemoveImage={removeImageWithUndo}
+              onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
+              onRemoveFile={removeFileWithUndo}
               onDelete={removeNote}
               tags={tags}
               closeSignal={closeSignal}

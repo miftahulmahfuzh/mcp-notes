@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { Note } from './types';
+import type { Note, NoteFile } from './types';
 import { App } from './App';
-import { makeImage, makeNote } from './testing/fixtures';
+import { makeFile, makeImage, makeNote } from './testing/fixtures';
 
 const iso = new Date().toISOString();
 const notes: Note[] = [
@@ -462,5 +462,215 @@ describe('App chat images (R1)', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url === '/api/images')).toBe(true));
     expect(calls.some((c) => c.url === '/api/chat/images')).toBe(false);
     quiet.mockRestore();
+  });
+});
+
+describe('App note files (R2)', () => {
+  type Call = { method: string; url: string; file: string | null };
+  let calls: Call[];
+  let server: Note[];
+  let removed: Map<string, NoteFile>;
+  let fileReply: (noteId: string, name: string) => { status: number; body: unknown };
+
+  const reply = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+  const txt = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+  const png = new File(['png'], 'shot.png', { type: 'image/png' });
+  const paste = (files: File[]) => {
+    const e = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'clipboardData', { value: { files } });
+    document.dispatchEvent(e);
+  };
+  const card = (id: string) => document.querySelector(`[data-note="${id}"]`) as HTMLElement;
+  const editor = () => document.querySelector('[data-modal="editor"]') as HTMLElement | null;
+  const edText = () => within(editor()!).getByLabelText('Note text') as HTMLTextAreaElement;
+  const expandCard = (id: string) => {
+    const btn = within(card(id)).getByLabelText('Expand note');
+    fireEvent.mouseDown(btn);
+    fireEvent.click(btn);
+  };
+  const of = (method: string, url: string) => calls.filter((c) => c.method === method && c.url === url);
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    calls = [];
+    removed = new Map();
+    server = [
+      makeNote('A-B32', '#seer onboarding is long', { created: iso }),
+      makeNote('C-D45', 'buy fennel #kitchen', { created: iso, files: [makeFile('F-IL1', { note_id: 'C-D45', name: 'receipt.pdf' })] }),
+    ];
+    let seq = 0;
+    fileReply = (noteId, name) => {
+      const n = server.find((x) => x.id === noteId)!;
+      const files = n.files ?? [];
+      seq += 1;
+      const f = makeFile(`F-NW${seq}`, { note_id: noteId, name, mime: 'text/plain', bytes: 5, position: files.length });
+      return { status: 201, body: { note: { ...n, files: [...files, f] }, attached: true, kind: 'file' } };
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        const file = init?.body instanceof FormData ? ((init.body.get('file') as File | null)?.name ?? null) : null;
+        calls.push({ method, url, file });
+        if (method === 'GET' && url.startsWith('/api/notes')) return reply({ notes: server, next_cursor: null });
+        if (method === 'GET' && url.startsWith('/api/tags')) return reply([]);
+        const one = url.match(/^\/api\/notes\/([^/]+)$/);
+        if (one && method === 'PATCH') {
+          const body = (JSON.parse(String(init?.body)) as { body: string }).body;
+          server = server.map((n) => (n.id === one[1] ? { ...n, body } : n));
+          return reply(server.find((n) => n.id === one[1]));
+        }
+        if (one && method === 'DELETE') {
+          server = server.filter((n) => n.id !== one[1]);
+          return reply({ ok: true });
+        }
+        const files = url.match(/^\/api\/notes\/([^/]+)\/files$/);
+        if (files && method === 'POST') {
+          const r = fileReply(files[1]!, file ?? 'file');
+          if (r.status === 201) {
+            const next = (r.body as { note: Note }).note;
+            server = server.map((n) => (n.id === next.id ? next : n));
+          }
+          return reply(r.body, r.status);
+        }
+        const images = url.match(/^\/api\/notes\/([^/]+)\/images$/);
+        if (images && method === 'POST') {
+          const n = server.find((x) => x.id === images[1])!;
+          const next = { ...n, images: [...n.images, makeImage('P-IC1', { note_id: n.id, mime: 'image/png' })] };
+          server = server.map((x) => (x.id === n.id ? next : x));
+          return reply({ note: next, attached: true }, 201);
+        }
+        const rm = url.match(/^\/api\/files\/([^/]+)$/);
+        if (rm && method === 'DELETE') {
+          const owner = server.find((n) => (n.files ?? []).some((f) => f.id === rm[1]))!;
+          const gone = (owner.files ?? []).find((f) => f.id === rm[1])!;
+          removed.set(gone.id, gone);
+          const next = { ...owner, files: (owner.files ?? []).filter((f) => f.id !== rm[1]) };
+          server = server.map((n) => (n.id === owner.id ? next : n));
+          return reply(next);
+        }
+        const rs = url.match(/^\/api\/files\/([^/]+)\/restore$/);
+        if (rs && method === 'POST') {
+          const f = removed.get(rs[1]!)!;
+          const owner = server.find((n) => n.id === f.note_id)!;
+          const next = { ...owner, files: [...(owner.files ?? []), f].sort((a, b) => a.position - b.position) };
+          server = server.map((n) => (n.id === owner.id ? next : n));
+          return reply(next);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  it('pasting a non-image file while the editor is open attaches it to that note as a chip', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    paste([txt]);
+    await waitFor(() => expect(editor()!.querySelector('.fchip[data-file="F-NW1"]')).not.toBeNull());
+    expect(of('POST', '/api/notes/A-B32/files')).toHaveLength(1);
+    expect(of('POST', '/api/notes/A-B32/files')[0]!.file).toBe('notes.txt');
+    expect(calls.some((c) => c.url.endsWith('/images'))).toBe(false);
+  });
+
+  it('outside the editor a non-image paste is ignored', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    paste([txt]);
+    await tick();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  it('the paperclip picker routes files to /files and images to /images, in pick order', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    fireEvent.click(within(editor()!).getByLabelText('Attach files'));
+    const input = editor()!.querySelector('input[data-picker]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [txt, png], configurable: true });
+    fireEvent.change(input);
+    await waitFor(() => expect(of('POST', '/api/notes/A-B32/images')).toHaveLength(1));
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/notes/A-B32/files', '/api/notes/A-B32/images']);
+    await waitFor(() => expect(editor()!.querySelector('.fchip[data-file="F-NW1"]')).not.toBeNull());
+  });
+
+  it('a file dedupe hit says quietly which note holds it', async () => {
+    fileReply = () => ({ status: 200, body: { note: server.find((n) => n.id === 'C-D45')!, attached: false, kind: 'file' } });
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    paste([txt]);
+    await waitFor(() => expect(editor()!.querySelector('[data-notice]')?.textContent).toBe('already in C-D45'));
+    expect(editor()!.querySelector('.fchip')).toBeNull();
+  });
+
+  it('a failed attach says so in the editor', async () => {
+    fileReply = () => ({ status: 413, body: { error: 'too_large' } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    paste([txt]);
+    await waitFor(() => expect(editor()!.querySelector('[data-notice]')?.textContent).toBe('could not attach notes.txt (too large)'));
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('a 409 duplicate_file on attach says which note holds the bytes', async () => {
+    fileReply = () => ({ status: 409, body: { error: 'duplicate_file', note_id: 'C-D45', message: 'already attached' } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    expandCard('A-B32');
+    paste([txt]);
+    await waitFor(() => expect(editor()!.querySelector('[data-notice]')?.textContent).toBe('already in C-D45'));
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('a note holding only files is kept when emptied in the editor and closed', async () => {
+    render(<App />);
+    await screen.findByText('buy fennel');
+    expandCard('C-D45');
+    fireEvent.change(edText(), { target: { value: '' } });
+    fireEvent.keyDown(edText(), { key: 'Escape' });
+    await waitFor(() => expect(of('PATCH', '/api/notes/C-D45')).toHaveLength(1));
+    await tick();
+    expect(of('DELETE', '/api/notes/C-D45')).toHaveLength(0);
+    expect(card('C-D45')).not.toBeNull();
+  });
+
+  it('a note holding only files is kept when emptied inline on the card', async () => {
+    render(<App />);
+    await screen.findByText('buy fennel');
+    fireEvent.click(card('C-D45').querySelector('.card-text') as HTMLElement);
+    const ta = card('C-D45').querySelector('textarea') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: '' } });
+    fireEvent.blur(ta);
+    await waitFor(() => expect(of('PATCH', '/api/notes/C-D45')).toHaveLength(1));
+    await tick();
+    expect(of('DELETE', '/api/notes/C-D45')).toHaveLength(0);
+    expect(card('C-D45')).not.toBeNull();
+  });
+
+  it('the card shows a paperclip count for a note with files', async () => {
+    render(<App />);
+    await screen.findByText('buy fennel');
+    expect(card('C-D45').querySelector('.card-files')?.textContent).toBe('1');
+    expect(card('A-B32').querySelector('.card-files')).toBeNull();
+  });
+
+  it('removing a file chip soft-removes it; Undo restores it', async () => {
+    render(<App />);
+    await screen.findByText('buy fennel');
+    expandCard('C-D45');
+    const chip = () => editor()!.querySelector('.fchip[data-file="F-IL1"]') as HTMLElement | null;
+    expect(chip()).not.toBeNull();
+    fireEvent.click(within(chip()!).getByLabelText('Remove file'));
+    expect(chip()).toBeNull();
+    await waitFor(() => expect(of('DELETE', '/api/files/F-IL1')).toHaveLength(1));
+    expect(document.querySelector('[data-undo] .undo-label')?.textContent).toBe('removed file');
+    fireEvent.click(screen.getByLabelText('Undo'));
+    await waitFor(() => expect(of('POST', '/api/files/F-IL1/restore')).toHaveLength(1));
+    await waitFor(() => expect(chip()).not.toBeNull());
   });
 });
