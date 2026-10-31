@@ -1,0 +1,9 @@
+/* Phase 5 (R2): a note's files under the editor text. Idiom: the editor's tag chips + the card's icon buttons. */
+.fchips { flex: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 132px; overflow-y: auto; }
+.fchip { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 360px; padding: 3px 4px 3px 10px; border: 1px solid var(--line-14); border-radius: 999px; background: var(--chip-bg); color: var(--fg); font-family: var(--mono); font-size: 11px; }
+.fchip.away { opacity: .55; }
+.fchip-icon { flex: none; display: grid; place-items: center; font-size: 16px; color: var(--chip); }
+.fchip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.fchip-meta { flex: none; color: var(--dim); white-space: nowrap; }
+.fchip-btn { flex: none; width: 24px; height: 24px; border: 0; border-radius: 999px; background: transparent; color: var(--id); font-size: 13px; cursor: pointer; display: grid; place-items: center; text-decoration: none; }
+.fchip-btn:hover, .fchip-btn:focus-visible { background: var(--hover); color: var(--fg); }

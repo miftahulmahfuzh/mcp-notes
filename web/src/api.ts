@@ -1,4 +1,5 @@
 import type { Bin, ChatImage, Note, TagCount } from './types';
+import type { RoutedFile } from './lib/files';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -205,4 +206,77 @@ export async function fetchCapabilities(): Promise<Capabilities> {
 /** Phase 9: `POST /api/images/<imageId>/reveal` → 202. notesd spawns Explorer and does not wait for it. */
 export async function revealImage(imageId: string): Promise<void> {
   await check(await fetch(`/api/images/${enc(imageId)}/reveal`, { method: 'POST' }));
+}
+
+/** Phase 4's `POST /api/notes/:id/files` result. `kind: 'image'` when the server sniffed a supported image and stored it through the image path (it is then in `note.images`), else `'file'`. */
+export interface FileAttachResult extends AttachResult {
+  kind: 'image' | 'file';
+}
+
+/**
+ * Phase 5 (R2): `POST /api/notes/:id/files` (multipart `file`) → 201 `{ note, attached: true, kind }`,
+ * or 200 `{ note, attached: false, kind }` with the note that already holds these bytes (restored if it
+ * was deleted). A 409 `duplicate_file` / `duplicate_image` with `note_id` (a lost race on the same
+ * bytes) throws DuplicateFileError / DuplicateImageError; 413 throws ApiError `too_large`.
+ */
+export async function attachFile(noteId: string, file: File): Promise<FileAttachResult> {
+  const form = new FormData();
+  form.append('file', file, file.name || 'pasted-file');
+  const res = await fetch(`/api/notes/${enc(noteId)}/files`, { method: 'POST', body: form });
+  if (res.status === 409) {
+    const j = (await res.json().catch(() => null)) as { error?: string; note_id?: string } | null;
+    if (j?.error === 'duplicate_file' && typeof j.note_id === 'string') throw new DuplicateFileError(j.note_id);
+    if (j?.error === 'duplicate_image' && typeof j.note_id === 'string') throw new DuplicateImageError(j.note_id);
+    throw new ApiError(409, j?.error ?? 'conflict');
+  }
+  await check(res);
+  return (await res.json()) as FileAttachResult;
+}
+
+/** One routed file (lib/files `routeFiles`) to its upload path: images to `/images`, everything else to `/files`. */
+export function attachRouted(noteId: string, item: RoutedFile): Promise<AttachResult> {
+  return item.kind === 'image' ? attachImage(noteId, item.file) : attachFile(noteId, item.file);
+}
+
+/** `DELETE /api/files/:fileId`: soft-remove one file from its note. Returns the owner note without it. */
+export async function removeFile(fileId: string): Promise<Note> {
+  const res = await check(await fetch(`/api/files/${enc(fileId)}`, { method: 'DELETE' }));
+  return (await res.json()) as Note;
+}
+
+/** 409 `duplicate_file` (restore, or a lost attach race): the same bytes already live in note `noteId`. Mirrors DuplicateImageError. */
+export class DuplicateFileError extends ApiError {
+  readonly noteId: string;
+  constructor(noteId: string) {
+    super(409, 'duplicate_file');
+    this.name = 'DuplicateFileError';
+    this.noteId = noteId;
+  }
+}
+
+/** `POST /api/files/:fileId/restore` → the owning note. */
+export async function restoreFile(fileId: string): Promise<Note> {
+  const res = await fetch(`/api/files/${enc(fileId)}/restore`, { method: 'POST' });
+  if (res.status === 409) {
+    const j = (await res.json().catch(() => null)) as { error?: string; note_id?: string } | null;
+    if (j?.error === 'duplicate_file' && typeof j.note_id === 'string') throw new DuplicateFileError(j.note_id);
+    throw new ApiError(409, j?.error ?? 'conflict');
+  }
+  await check(res);
+  return (await res.json()) as Note;
+}
+
+/** `/api/files/<fileId>/download`: served as an attachment with its original name. Fallback for a wire file without `urls.download`. */
+export function fileDownloadUrl(fileId: string): string {
+  return `/api/files/${enc(fileId)}/download`;
+}
+
+/** `POST /api/files/<fileId>/reveal` → 202. Explorer opens with the file selected. */
+export async function revealFile(fileId: string): Promise<void> {
+  await check(await fetch(`/api/files/${enc(fileId)}/reveal`, { method: 'POST' }));
+}
+
+/** `POST /api/notes/<noteId>/reveal` → 202. Opens the note's files folder, or selects its first image when it has no files. */
+export async function revealNote(noteId: string): Promise<void> {
+  await check(await fetch(`/api/notes/${enc(noteId)}/reveal`, { method: 'POST' }));
 }

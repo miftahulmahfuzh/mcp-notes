@@ -98,6 +98,8 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .copied { opacity: 0; transition: opacity .25s; }
 .copied.on { opacity: 1; }
 .card-date { margin-left: auto; }
+/* Phase 5 (R2): paperclip + count for a note with files, left side of the footer. */
+.card-files { display: inline-flex; align-items: center; gap: 2px; margin-left: 2px; color: var(--dim); font-size: 10.5px; }
 
 /* answer panel */
 .answer { position: fixed; bottom: calc(var(--chatbar-h, 54px) + 32px); max-height: min(52vh, calc(100vh - var(--chatbar-h, 54px) - 48px)); overflow: auto; background: var(--panel); border: 1px solid var(--line-14); z-index: 40; padding: 16px 20px 20px; box-sizing: border-box; }

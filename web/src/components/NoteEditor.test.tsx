@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { Note, NoteImage as NoteImageData } from '../types';
-import { makeImage, makeNote } from '../testing/fixtures';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { Note, NoteFile, NoteImage as NoteImageData } from '../types';
+import { makeFile, makeImage, makeNote } from '../testing/fixtures';
 import { NoteEditor, type NoteEditorProps } from './NoteEditor';
+import { resetCapabilitiesForTests } from '../hooks/useCapabilities';
 
 afterEach(cleanup);
 
@@ -349,5 +350,71 @@ describe('NoteEditor lightbox', () => {
     fireEvent.click(getAllByLabelText('Remove image')[0]!);
     expect(props.onRemoveImage).toHaveBeenCalledTimes(1);
     expect(lightbox()).toBeNull();
+  });
+});
+
+describe('NoteEditor files (R2)', () => {
+  beforeEach(() => resetCapabilitiesForTests({ reveal: false }));
+  afterEach(() => resetCapabilitiesForTests());
+
+  const withFiles = (files: NoteFile[]): Note => makeNote('A-B32', 'with files', { files, tags: [], created: iso });
+
+  it('the paperclip opens a hidden multi-file picker and hands the picked files over once, in order', () => {
+    const onAttachFiles = vi.fn();
+    const { container, getByLabelText } = renderEditor(note('x'), { onAttachFiles });
+    const input = container.querySelector('input[data-picker]') as HTMLInputElement;
+    expect(input.type).toBe('file');
+    expect(input.multiple).toBe(true);
+    expect(input.hidden).toBe(true);
+    const click = vi.spyOn(input, 'click');
+    fireEvent.click(getByLabelText('Attach files'));
+    expect(click).toHaveBeenCalledTimes(1);
+    const a = new File(['a'], 'a.pdf', { type: 'application/pdf' });
+    const b = new File(['b'], 'b.png', { type: 'image/png' });
+    Object.defineProperty(input, 'files', { value: [a, b], configurable: true });
+    fireEvent.change(input);
+    expect(onAttachFiles).toHaveBeenCalledTimes(1);
+    expect(onAttachFiles).toHaveBeenCalledWith([a, b]);
+    expect(input.value).toBe('');
+  });
+
+  it('an empty pick (dialog cancelled) attaches nothing', () => {
+    const onAttachFiles = vi.fn();
+    const { container } = renderEditor(note('x'), { onAttachFiles });
+    const input = container.querySelector('input[data-picker]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [], configurable: true });
+    fireEvent.change(input);
+    expect(onAttachFiles).not.toHaveBeenCalled();
+  });
+
+  it('has no paperclip without onAttachFiles', () => {
+    const { container } = renderEditor(note('x'));
+    expect(container.querySelector('[aria-label="Attach files"]')).toBeNull();
+    expect(container.querySelector('input[data-picker]')).toBeNull();
+  });
+
+  it('shows the note files as chips under the text; the remove icon hands the file to onRemoveFile', () => {
+    const f1 = makeFile('F-IL1', { note_id: 'A-B32', name: 'contract.pdf' });
+    const f2 = makeFile('F-IL2', { note_id: 'A-B32', position: 1, name: 'notes.txt', mime: 'text/plain', bytes: 5 });
+    const onRemoveFile = vi.fn();
+    const { container, props } = renderEditor(withFiles([f1, f2]), { onRemoveFile });
+    const chips = Array.from(container.querySelectorAll('.ed-panel .fchips .fchip'));
+    expect(chips.map((c) => c.getAttribute('data-file'))).toEqual(['F-IL1', 'F-IL2']);
+    fireEvent.click(within(chips[1] as HTMLElement).getByLabelText('Remove file'));
+    expect(onRemoveFile).toHaveBeenCalledWith(f2);
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it('renders no chips for a note without files', () => {
+    const { container } = renderEditor(note('text only'));
+    expect(container.querySelector('.fchips')).toBeNull();
+  });
+
+  it('the top bar has a note-level reveal when a file is local and caps.reveal', () => {
+    resetCapabilitiesForTests({ reveal: true });
+    const { container } = renderEditor(withFiles([makeFile('F-IL1', { note_id: 'A-B32' })]));
+    const btn = container.querySelector('.ed-top [data-reveal-note="A-B32"]') as HTMLElement;
+    expect(btn).not.toBeNull();
+    expect(btn.className).toBe('ed-btn');
   });
 });
