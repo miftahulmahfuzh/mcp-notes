@@ -1,0 +1,97 @@
+{
+  "branch": "feature/chat-image-to-note",
+  "coordinator": "orch-chat-image-to-note",
+  "coordinator_session_id": "4ebd4550-db1c-41b8-bbf3-5ccb70fb7b40",
+  "created": "2026-10-31T12:57:28+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/http`, `src/mcp",
+      "plan": ".workflows/plan/chat-image-to-note/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Daemon: `image_id` on create_image / attach_image"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/mcp`, `src/chat",
+      "plan": ".workflows/plan/chat-image-to-note/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R3",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Agent-facing text: instructions, wall prompt, captions"
+    },
+    {
+      "card": null,
+      "commit": "2f894950afa23c79c2e6ea1c1c7735596b241ce1",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": "notes-prompt UserPromptSubmit hook + 3-hook registration + skill; typecheck and 1314 tests green; no decisions",
+      "package": "claude/hooks`, `scripts`, `claude/skills",
+      "plan": ".workflows/plan/chat-image-to-note/phase-3.md",
+      "reported_at": "2026-10-31T13:01:56+07:00",
+      "satisfies": [
+        "R2",
+        "R3",
+        "R4",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A047",
+      "title": "Claude Code `UserPromptSubmit` hook + registration + skill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2,
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "tests`, `scripts`, docs",
+      "plan": ".workflows/plan/chat-image-to-note/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R4",
+        "R5",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "End-to-end tests, live verify script, docs, CHANGELOG"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "chat-image-to-note",
+  "updated": "2026-10-31T13:02:04+07:00",
+  "verified_at": "2026-10-31T13:02:04+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/chat-image-to-note"
+}
