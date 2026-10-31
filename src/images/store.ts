@@ -8,6 +8,8 @@ export type DataDirs = {
   cache: string;
   inbox: string;
   failed: string;
+  /** Originals of images pasted into a chat (src/chat/images.ts CHAT_IMAGES_SUBDIR). */
+  chatImages: string;
 };
 
 export function dataDirs(dataDir: string): DataDirs {
@@ -18,13 +20,14 @@ export function dataDirs(dataDir: string): DataDirs {
     cache: path.join(root, 'cache'),
     inbox: path.join(root, 'inbox'),
     failed: path.join(root, 'inbox', 'failed'),
+    chatImages: path.join(root, 'chat-images'),
   };
 }
 
-/** Create images/, cache/, inbox/ and inbox/failed/ under the data dir if missing. */
+/** Create images/, cache/, inbox/, inbox/failed/ and chat-images/ under the data dir if missing. */
 export async function ensureDataDirs(dataDir: string): Promise<DataDirs> {
   const dirs = dataDirs(dataDir);
-  for (const d of [dirs.images, dirs.cache, dirs.failed]) await mkdir(d, { recursive: true });
+  for (const d of [dirs.images, dirs.cache, dirs.failed, dirs.chatImages]) await mkdir(d, { recursive: true });
   return dirs;
 }
 

@@ -36,9 +36,10 @@ describe('paths', () => {
   });
   it('ensureDataDirs creates the layout', async () => {
     const dirs = await ensureDataDirs(dir);
-    for (const d of [dirs.images, dirs.cache, dirs.inbox, dirs.failed]) {
+    for (const d of [dirs.images, dirs.cache, dirs.inbox, dirs.failed, dirs.chatImages]) {
       expect(statSync(d).isDirectory()).toBe(true);
     }
+    expect(dirs.chatImages).toBe(path.join(path.resolve(dir), 'chat-images'));
   });
 });
 

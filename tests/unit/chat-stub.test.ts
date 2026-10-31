@@ -27,6 +27,7 @@ describe('chat stub', () => {
     const backend = createStubChatBackend({ delayMs: 0 });
     const turn = await backend.reply({
       message: 'hello',
+      images: [],
       threadId: null,
       signal: new AbortController().signal,
     });
@@ -38,7 +39,7 @@ describe('chat stub', () => {
 
   it('reports no brain', async () => {
     const backend = createStubChatBackend({ delayMs: 0 });
-    const turn = await backend.reply({ message: 'hi', threadId: null, signal: new AbortController().signal });
+    const turn = await backend.reply({ message: 'hi', images: [], threadId: null, signal: new AbortController().signal });
     await collect(turn.events);
     const end = turn.end();
     expect(end.brain).toBeUndefined();
@@ -49,6 +50,7 @@ describe('chat stub', () => {
     const backend = createStubChatBackend({ delayMs: 0 });
     const turn = await backend.reply({
       message: 'hello',
+      images: [],
       threadId: 'thread-1',
       signal: new AbortController().signal,
     });
@@ -59,7 +61,7 @@ describe('chat stub', () => {
   it('stops yielding after abort', async () => {
     const backend = createStubChatBackend({ delayMs: 5 });
     const controller = new AbortController();
-    const turn = await backend.reply({ message: 'x', threadId: null, signal: controller.signal });
+    const turn = await backend.reply({ message: 'x', images: [], threadId: null, signal: controller.signal });
     const out: ChatEvent[] = [];
     for await (const event of turn.events) {
       out.push(event);

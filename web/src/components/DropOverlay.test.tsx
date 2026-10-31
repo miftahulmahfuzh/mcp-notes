@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { DropOverlay, firstImageFile, hasFiles, imageFiles } from './DropOverlay';
+import { DropOverlay, chatBarHasFocus, firstImageFile, hasFiles, imageFiles } from './DropOverlay';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -185,5 +185,70 @@ describe('DropOverlay', () => {
     expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('attach');
     act(() => root!.render(<DropOverlay onImageAdded={() => {}} target={null} />));
     expect(el.querySelector('[data-drop-overlay]')?.getAttribute('data-drop-overlay')).toBe('new');
+  });
+});
+
+function chatBarFixture(): { form: HTMLFormElement; ta: HTMLTextAreaElement } {
+  const form = document.createElement('form');
+  form.setAttribute('data-chatbar', 'wall');
+  const ta = document.createElement('textarea');
+  form.appendChild(ta);
+  document.body.appendChild(form);
+  return { form, ta };
+}
+
+describe('chatBarHasFocus', () => {
+  it('is true only for an element inside [data-chatbar]', () => {
+    const { form, ta } = chatBarFixture();
+    const other = document.createElement('textarea');
+    document.body.appendChild(other);
+    try {
+      expect(chatBarHasFocus(ta)).toBe(true);
+      expect(chatBarHasFocus(form)).toBe(true);
+      expect(chatBarHasFocus(other)).toBe(false);
+      expect(chatBarHasFocus(document.body)).toBe(false);
+      expect(chatBarHasFocus(null)).toBe(false);
+      ta.focus();
+      expect(chatBarHasFocus()).toBe(true);
+      other.focus();
+      expect(chatBarHasFocus()).toBe(false);
+    } finally {
+      form.remove();
+      other.remove();
+    }
+  });
+});
+
+describe('DropOverlay and the chat bar', () => {
+  it('a paste while the chat bar is focused is left to the chat bar', async () => {
+    const onImageAdded = vi.fn();
+    render(<DropOverlay onImageAdded={onImageAdded} />);
+    const { form, ta } = chatBarFixture();
+    try {
+      ta.focus();
+      const e = eventWith('paste', 'clipboardData', { files: [png] });
+      ta.dispatchEvent(e);
+      await flush();
+      expect(e.defaultPrevented).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(onImageAdded).not.toHaveBeenCalled();
+    } finally {
+      form.remove();
+    }
+  });
+
+  it('with an editor target, a paste in the focused chat bar does not attach either', async () => {
+    const onAttached = vi.fn();
+    render(<DropOverlay onImageAdded={vi.fn()} target="A-B32" onAttached={onAttached} />);
+    const { form, ta } = chatBarFixture();
+    try {
+      ta.focus();
+      ta.dispatchEvent(eventWith('paste', 'clipboardData', { files: [png] }));
+      await flush();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(onAttached).not.toHaveBeenCalled();
+    } finally {
+      form.remove();
+    }
   });
 });

@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-10-31
 **Total Active Tasks**: 0
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 35
+- Completed: 36
 
 ---
 
@@ -31,6 +31,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A034** Phase 3: Chat image store, paste into the bar, wall chat sends images
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0003 chat_images, src/chat/images.ts + compose.ts, POST/GET /api/chat/images, image_ids on POST /api/chat, agent sends images as SDK content blocks, useChatImages, ChatBar paste handling, DropOverlay chatBarHasFocus guard, AnswerPanel thumbnails. Exit: paste into focused bar uploads + removable thumbnail; send posts image_ids; SDK receives image blocks named [image upload:ID]; paste elsewhere still makes a note; typecheck/unit/integration/build green.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 3 of 11)
+  - **Satisfies**: R1 — Paste an image into the chat query bar (wall chat and /n)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A034.md`
+  - **Completed**: 2026-10-31 09:24
+  - **Method**: /do
+  - **Files**: .workflows/orchestration/chat-history-files-image-search/PLAN.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A034.md, CHANGELOG.md, README.md, drizzle/0003_chat_images.sql, drizzle/meta/0003_snapshot.json, drizzle/meta/_journal.json, src/chat/agent.ts, src/chat/backend.ts, src/chat/compose.ts, src/chat/images.ts, src/daemon.ts, src/db/schema.ts, src/http/api.ts, src/http/app.ts, src/http/chatImages.ts, src/images/store.ts, tests/integration/chat.images.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/imageHarness.ts, tests/integration/migration0002.int.test.ts, tests/integration/schema.int.test.ts, tests/integration/setup.ts, tests/live/chat.live.test.ts, tests/unit/chat-agent.test.ts, tests/unit/chat-compose.test.ts, tests/unit/chat-images.test.ts, tests/unit/chat-stub.test.ts, tests/unit/images/store.test.ts, web/src/App.test.tsx, web/src/App.tsx, web/src/api.ts, web/src/components/AnswerPanel.test.tsx, web/src/components/AnswerPanel.tsx, web/src/components/ChatBar.css, web/src/components/ChatBar.test.tsx, web/src/components/ChatBar.tsx, web/src/components/DropOverlay.test.tsx, web/src/components/DropOverlay.tsx, web/src/hooks/useChat.test.tsx, web/src/hooks/useChat.ts, web/src/hooks/useChatImages.test.tsx, web/src/hooks/useChatImages.ts, web/src/types.ts
+  - **Drift**:
+    - Plan missed two integration tests that hard-code the migration count (tests/integration/schema.int.test.ts, migration0002.int.test.ts expected 3, now 4); changed both to derive the count from drizzle/meta/_journal.json so later migration phases need no edit.
+    - Live test (tests/live/chat.live.test.ts image case) not run: opt-in and billed; plan's pre-merge check still pending.
+  - **Decided**:
+    - Create tasks for all 11 phases vs phase 3 only -> phase 3 only (sibling worktrees p1/p2 run concurrently and would conflict on todos.md; narrowest blast radius, rung 6/tie-break)
+    - Migration-count assertions in two integration tests -> derive from journal length rather than hard-coding 4 (reversible, avoids per-phase churn; rung 3 exit criterion 'migration chain intact')
 
 - [x] **P1-NOTES-A032** Phase 10: Docs, Neon migration 0002, full verification
   - **Difficulty**: NORMAL

@@ -1,12 +1,13 @@
 import { sql } from 'drizzle-orm'
-import { bigserial, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, vector } from 'drizzle-orm/pg-core'
+import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, vector } from 'drizzle-orm/pg-core'
 
 /**
  * The notes schema. Migration 0000 (drizzle/0000_init.sql, iterations 1-3) created `notes` and
  * `note_revisions`; migration 0001 (iteration 6, semantic search) adds the pgvector extension and
  * `note_embeddings`; migration 0002 (iteration 7, wall editing) adds `note_images` and copies every
  * legacy `notes.image_path` / `image_meta` image into it (hand-appended INSERT...SELECT, the same
- * SQL as src/images/legacy.ts `LEGACY_COPY_SQL`). Change a table here, then `npm run db:generate`;
+ * SQL as src/images/legacy.ts `LEGACY_COPY_SQL`); migration 0003 (chat images) adds
+ * `chat_images`, the images pasted into a chat. Change a table here, then `npm run db:generate`;
  * never edit an applied migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a
  * hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -172,9 +173,51 @@ export const noteEmbeddings = pgTable(
   ],
 )
 
+/** Where a chat image came from: pasted into the wall's chat bar, or captured from a Claude Code `/n` exchange. */
+export type ChatImageSource = 'wall' | 'claude_code'
+
+/**
+ * One row per image pasted into a chat (migration 0003). Not a note image: a query image never
+ * shows on the wall and never joins `note_images`. Stored once per byte content (sha256 unique,
+ * no soft delete), so the same screenshot pasted twice is one row. Ids have the `A-B32` shape but
+ * live in their own space and are always written `upload:ID`; their derivatives go to
+ * `cache/c_<id>/` (src/chat/images.ts `chatImageCacheId`) so they can never meet a note image's
+ * `cache/<id>/`.
+ */
+export const chatImages = pgTable(
+  'chat_images',
+  {
+    /** `A-B32`, unique within this table only. */
+    id: text('id').primaryKey(),
+    /** Relative to the data dir: `chat-images/YYYY/MM/<id>.<ext>`. */
+    path: text('path').notNull(),
+    /** Lower-case hex sha256 of the original bytes. Unique: an upload of known bytes returns the existing row. */
+    sha256: text('sha256').notNull(),
+    /** Sniffed from magic bytes. */
+    mime: text('mime').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    /** Original size in bytes (the 50 MB chat cap fits int4). */
+    bytes: integer('bytes').notNull(),
+    originalName: text('original_name'),
+    /** `os.hostname()` of the machine that first stored the file. */
+    host: text('host'),
+    source: text('source').$type<ChatImageSource>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('chat_images_sha256_uniq').on(t.sha256),
+    uniqueIndex('chat_images_path_uniq').on(t.path),
+    index('chat_images_created_at_idx').on(t.createdAt),
+    check('chat_images_source_check', sql`${t.source} in ('wall', 'claude_code')`),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
 export type NewNoteImageRow = typeof noteImages.$inferInsert
 export type NoteRevisionRow = typeof noteRevisions.$inferSelect
 export type NewNoteRevisionRow = typeof noteRevisions.$inferInsert
+export type ChatImageRow = typeof chatImages.$inferSelect
+export type NewChatImageRow = typeof chatImages.$inferInsert

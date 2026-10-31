@@ -1,12 +1,15 @@
+import { readFile } from 'node:fs/promises';
 import {
   query as sdkQuery,
   type Options,
   type SDKAssistantMessageError,
   type SDKMessage,
   type SDKResultMessage,
+  type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from '../config.js';
 import type { ChatBackend, ChatBrain, ChatEvent, ChatRequest, ChatTurn, ChatTurnEnd } from './backend.js';
+import { composeUserTurn, toSdkPrompt, type UserTurn } from './compose.js';
 import { claudeEnv, glmEnv, resolveExecutable } from './env.js';
 import { buildChatSystemPrompt } from './prompt.js';
 import { NOTES_MCP_SERVER, WEB_TOOL_NAMES, allowedChatTools, captionForToolUse } from './status.js';
@@ -14,8 +17,8 @@ import { NOTES_MCP_SERVER, WEB_TOOL_NAMES, allowedChatTools, captionForToolUse }
 /** `config.chat` from Phase 1's loadConfig. */
 export type AgentChatConfig = Config['chat'];
 
-/** The slice of the SDK's `query` the backend uses. Tests inject a fake. */
-export type QueryFn = (params: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
+/** The slice of the SDK's `query` the backend uses. Tests inject a fake. A turn with images passes a one-message stream. */
+export type QueryFn = (params: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => AsyncIterable<SDKMessage>;
 
 export interface AgentChatOptions {
   chat: AgentChatConfig;
@@ -31,6 +34,8 @@ export interface AgentChatOptions {
   baseEnv?: NodeJS.ProcessEnv;
   /** One-line operational log (fallbacks). Default: console.warn. */
   log?: (line: string) => void;
+  /** Reads a pasted image's preview file (sent base64 in the prompt). Default: fs.readFile. */
+  readPreview?: (absPath: string) => Promise<Uint8Array>;
 }
 
 export interface AgentChatBackend extends ChatBackend {
@@ -110,6 +115,7 @@ interface RunDeps {
   query: QueryFn;
   log: (line: string) => void;
   optionsFor: (brain: ChatBrain, resume: string | null, abortController: AbortController) => Options;
+  readPreview: (absPath: string) => Promise<Uint8Array>;
 }
 
 /** One `reply()`: up to two SDK attempts (claude, then glm) behind one event stream. */
@@ -126,6 +132,8 @@ class ChatRun {
   private toolSinceText = false;
   /** The caption currently shown by the panel ("" = none). */
   private caption = '';
+  /** The composed user turn, built once per run (the GLM retry reuses it). */
+  private turnLoad: Promise<UserTurn> | null = null;
 
   constructor(
     private readonly deps: RunDeps,
@@ -150,6 +158,24 @@ class ChatRun {
   end(): ChatTurnEnd {
     if (this.outcome === null) throw new Error('ChatTurn.end() called before events finished cleanly');
     return this.outcome;
+  }
+
+  /** Reads each pasted image's preview once and composes the turn. A missing file fails the turn without a fallback. */
+  private userTurn(): Promise<UserTurn> {
+    this.turnLoad ??= (async (): Promise<UserTurn> => {
+      const previews: string[] = [];
+      for (const image of this.request.images) {
+        let bytes: Uint8Array;
+        try {
+          bytes = await this.deps.readPreview(image.previewPath);
+        } catch (err) {
+          throw new AttemptError(`Could not read pasted image ${image.id}: ${errorText(err)}`, false);
+        }
+        previews.push(Buffer.from(bytes).toString('base64'));
+      }
+      return composeUserTurn(this.request, previews);
+    })();
+    return this.turnLoad;
   }
 
   async *events(): AsyncGenerator<ChatEvent> {
@@ -198,6 +224,9 @@ class ChatRun {
 
   private async *attempt(brain: ChatBrain): AsyncGenerator<ChatEvent> {
     if (this.reason !== null) throw new Error('stopped');
+    const turn = await this.userTurn();
+    // A stop during the preview read must not start a run: the relay below would never fire.
+    if (this.reason !== null) throw new Error('stopped');
     const controller = new AbortController();
     const relay = (): void => controller.abort(this.controller.signal.reason);
     this.controller.signal.addEventListener('abort', relay, { once: true });
@@ -208,7 +237,7 @@ class ChatRun {
     let drained = false;
     try {
       const messages = this.deps.query({
-        prompt: this.request.message,
+        prompt: toSdkPrompt(turn),
         options: this.deps.optionsFor(brain, this.request.threadId, controller),
       });
       for await (const message of messages) {
@@ -278,6 +307,7 @@ export function createAgentChatBackend(options: AgentChatOptions): AgentChatBack
   const now = options.now ?? (() => new Date());
   const baseEnv = options.baseEnv ?? process.env;
   const log = options.log ?? ((line: string) => console.warn(line));
+  const readPreview = options.readPreview ?? ((absPath: string): Promise<Uint8Array> => readFile(absPath));
   const claudeBin = resolveExecutable(chat.claudeBin, baseEnv.PATH);
   const allowedTools = allowedChatTools();
 
@@ -305,7 +335,7 @@ export function createAgentChatBackend(options: AgentChatOptions): AgentChatBack
     };
   }
 
-  const deps: RunDeps = { chat, query, log, optionsFor };
+  const deps: RunDeps = { chat, query, log, optionsFor, readPreview };
   let current: ChatRun | null = null;
 
   return {

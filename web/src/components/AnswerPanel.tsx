@@ -1,12 +1,15 @@
 import { Fragment } from 'react';
 import type { MouseEvent } from 'react';
 import { CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
+import { chatImageUrl } from '../api';
 import { segmentLinks } from '../lib/links';
 import { oneLine } from '../lib/oneLine';
 
 export interface AnswerPanelProps {
   left: number;
   query: string;
+  /** Chat image ids sent with the query; shown as thumbnails above the answer. */
+  images?: readonly string[];
   text: string;
   done: boolean;
   /** Tool caption while streaming; '' for none. */
@@ -23,9 +26,19 @@ export interface AnswerPanelProps {
   onJump: (id: string) => void;
 }
 
+const NO_IMAGES: readonly string[] = [];
+
+/** The header's question line: the text, or for an image-only question its image count. */
+function questionLabel(query: string, imageCount: number): string {
+  if (query !== '') return query;
+  if (imageCount === 0) return '';
+  return imageCount === 1 ? '1 image' : `${imageCount} images`;
+}
+
 export function AnswerPanel({
   left,
   query,
+  images = NO_IMAGES,
   text,
   done,
   status,
@@ -40,6 +53,7 @@ export function AnswerPanel({
 }: AnswerPanelProps) {
   const parts = text.split('\n\n');
   const caption = done ? (brain ?? '') : status;
+  const label = questionLabel(query, images.length);
 
   // Collapsed, the whole line expands the panel; the icon buttons keep their own meaning.
   const onHeadClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -51,8 +65,8 @@ export function AnswerPanel({
   return (
     <div className={collapsed ? 'answer collapsed' : 'answer'} style={{ left, width: `min(680px, calc(100vw - ${left}px - 16px))` }}>
       <div className="answer-head" onClick={onHeadClick}>
-        <span className="answer-q" data-tip={query}>
-          {oneLine(query)}
+        <span className="answer-q" data-tip={label}>
+          {oneLine(label)}
         </span>
         {caption && <span className="answer-status">{caption}</span>}
         <span className="spacer" />
@@ -73,6 +87,13 @@ export function AnswerPanel({
           <X weight="duotone" />
         </button>
       </div>
+      {!collapsed && images.length > 0 && (
+        <div className="answer-images">
+          {images.map((id) => (
+            <img key={id} src={chatImageUrl(id, 'thumb')} alt={`pasted image ${id}`} />
+          ))}
+        </div>
+      )}
       {!collapsed && (
         <div className="answer-body">
           {parts.map((t, i) => {

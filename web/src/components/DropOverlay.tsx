@@ -27,6 +27,14 @@ export function hasFiles(dt: Pick<DataTransfer, 'types'> | null | undefined): bo
   return !!dt && Array.from(dt.types ?? []).includes('Files');
 }
 
+/**
+ * True when the focused element sits inside a chat bar (`[data-chatbar]`). The bar's own paste
+ * handler owns the clipboard then: a pasted image goes with the next question, never into a note.
+ */
+export function chatBarHasFocus(active: Element | null = document.activeElement): boolean {
+  return active !== null && active.closest('[data-chatbar]') !== null;
+}
+
 /** POST /api/images (multipart `file`) → {note, created}. Throws on a non-2xx response. */
 export async function uploadImage(file: File, fetchImpl: typeof fetch = fetch): Promise<UploadResult> {
   const form = new FormData();
@@ -97,6 +105,7 @@ export function DropOverlay({ onImageAdded, target = null, onAttached }: DropOve
       enqueue(imageFiles(e.dataTransfer?.files));
     };
     const onPaste = (e: ClipboardEvent) => {
+      if (chatBarHasFocus()) return;
       const file = firstImageFile(e.clipboardData?.files);
       if (!file) return;
       e.preventDefault();

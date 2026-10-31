@@ -8,6 +8,8 @@ export interface ChatState {
   /** Panel folded to its header line (R6). Every new answer and every dismiss reset it to false. */
   collapsed: boolean;
   query: string;
+  /** Chat image ids sent with `query` (shown as thumbnails in the panel). */
+  images: string[];
   text: string;
   done: boolean;
   /** Terse tool caption while the brain works ("searching notes"); '' when there is none. */
@@ -17,7 +19,8 @@ export interface ChatState {
 }
 
 export interface Chat extends ChatState {
-  ask: (message: string) => Promise<void>;
+  /** Sends the message with any pasted image ids. Needs text or at least one image. */
+  ask: (message: string, imageIds?: readonly string[]) => Promise<void>;
   close: () => void;
   togglePin: () => void;
   toggleCollapsed: () => void;
@@ -38,6 +41,7 @@ export function useChat(): Chat {
     pinned: false,
     collapsed: false,
     query: '',
+    images: [],
     text: '',
     done: false,
     status: '',
@@ -46,14 +50,15 @@ export function useChat(): Chat {
   const threadId = useRef<string | undefined>(undefined);
   const ctrl = useRef<AbortController | null>(null);
 
-  const ask = useCallback(async (message: string) => {
+  const ask = useCallback(async (message: string, imageIds: readonly string[] = []) => {
     // Only the ends are trimmed: newlines inside a multi-line message (R7) reach /api/chat intact.
     const q = message.trim();
-    if (!q) return;
+    const ids = [...imageIds];
+    if (!q && ids.length === 0) return;
     ctrl.current?.abort();
     const c = new AbortController();
     ctrl.current = c;
-    setSt((s) => ({ ...s, open: true, collapsed: false, query: q, text: '', done: false, status: '', brain: null }));
+    setSt((s) => ({ ...s, open: true, collapsed: false, query: q, images: ids, text: '', done: false, status: '', brain: null }));
 
     const finish = (extra?: string, brain: string | null = null) => {
       if (ctrl.current !== c) return;
@@ -67,7 +72,7 @@ export function useChat(): Chat {
     };
 
     try {
-      const res = await postChat(q, threadId.current, c.signal);
+      const res = await postChat(q, threadId.current, c.signal, ids);
       if (!res.ok || !res.body) {
         finish(`Chat failed: ${res.status} ${res.statusText}`.trim());
         return;
@@ -105,7 +110,7 @@ export function useChat(): Chat {
     ctrl.current = null;
     // Dismissing ends the conversation: the next message starts a new thread.
     threadId.current = undefined;
-    setSt((s) => ({ ...s, open: false, pinned: false, collapsed: false, text: '', done: false, status: '', brain: null }));
+    setSt((s) => ({ ...s, open: false, pinned: false, collapsed: false, images: [], text: '', done: false, status: '', brain: null }));
   }, []);
 
   const togglePin = useCallback(() => setSt((s) => ({ ...s, pinned: !s.pinned })), []);

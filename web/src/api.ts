@@ -1,4 +1,4 @@
-import type { Bin, Note, TagCount } from './types';
+import type { Bin, ChatImage, Note, TagCount } from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -63,9 +63,15 @@ export async function deleteNote(id: string): Promise<void> {
   await check(res);
 }
 
-export function postChat(message: string, threadId: string | undefined, signal: AbortSignal): Promise<Response> {
-  const payload: { message: string; thread_id?: string } = { message };
+export function postChat(
+  message: string,
+  threadId: string | undefined,
+  signal: AbortSignal,
+  imageIds: readonly string[] = [],
+): Promise<Response> {
+  const payload: { message: string; thread_id?: string; image_ids?: string[] } = { message };
   if (threadId) payload.thread_id = threadId;
+  if (imageIds.length > 0) payload.image_ids = [...imageIds];
   return fetch('/api/chat', {
     method: 'POST',
     headers: { ...JSON_HEADERS, accept: 'text/event-stream' },
@@ -84,6 +90,25 @@ export function imageUrl(imageId: string, variant: ImageFileVariant): string {
 /** `GET /api/images/<imageId>` → the image's wire `NoteImage` JSON. */
 export function imageInfoUrl(imageId: string): string {
   return `/api/images/${enc(imageId)}`;
+}
+
+/** `/api/chat/images/<id>/<variant>`: a pasted chat image's file. */
+export function chatImageUrl(imageId: string, variant: ImageFileVariant): string {
+  return `/api/chat/images/${enc(imageId)}/${variant}`;
+}
+
+/** `POST /api/chat/images` → 201 `{ image, created: true }` or 200 `{ image, created: false }` (same bytes already stored). */
+export interface ChatImageUpload {
+  image: ChatImage;
+  created: boolean;
+}
+
+/** Upload one image pasted into the chat bar (multipart `file`). Throws ApiError (`too_large`, `not_an_image`, …). */
+export async function uploadChatImage(file: File): Promise<ChatImageUpload> {
+  const form = new FormData();
+  form.append('file', file, file.name || 'pasted-image');
+  const res = await check(await fetch('/api/chat/images', { method: 'POST', body: form }));
+  return (await res.json()) as ChatImageUpload;
 }
 
 /** Phase 3: `POST /api/notes/:id/images` → 201 `{ note, attached: true }` or 200 `{ note, attached: false }` (bytes already live in `note`). */
