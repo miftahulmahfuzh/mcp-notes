@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-image-to-note`
 **Branch:** `feature/chat-image-to-note` (base: `main` @ `f899b85`)
 **Phases:** 4
-**Status:** phases 1, 2, 3/4 complete
+**Status:** complete
 **Coordinator:** —
 
 ---

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 50
+- Completed: 51
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A048** Phase 4: End-to-end tests, live verify script, docs, CHANGELOG
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `tests/integration/prompt.hook.int.test.ts` (hook → real daemon → `chat_images`; then Stop capture of the same turn → same ids, no duplicate rows or threads; daemon down → `null`; then `create_image({image_id})` → note, again → `created:false`), `scripts/verify-prompt-hook.mjs` + `package.json` (`verify:prompt-hook` script), `README.md`, `docs/INSTALL.md`, `CHANGELOG.md`. Sole owner of README/INSTALL/CHANGELOG/`package.json` in this set. Exit: integration test green on Docker Postgres; docs say three hooks, `image_id`, the `/n`-only scope, the state files and the privacy/disk notes; CHANGELOG `[Unreleased]` entries (Added: `image_id`, prompt hook; Changed: hooks count).`prompt.hook.int.test.ts` green on Docker Postgres (8 tests); typecheck and `npm test` green; README says three hooks, `image_id`, the `/n`-only scope, `prompt.log` / `prompt-images/`, the privacy/disk note and `verify:prompt-hook`; INSTALL lists the hook step; CHANGELOG `[Unreleased]` has the two Added bullets and the Changed section.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 4 of 4)
-  - **Satisfies**: R2 — `UserPromptSubmit` hook for `/n`: ingest pasted images into `chat_images` now, inject `additionalContext` with the ids; idempotent with the Stop capture; R4 — Robustness: any earlier turn's images resolve; 8 images / 20 MB caps; never block the prompt; idempotency key unchanged; R5 — Tests (vitest unit + integration, hook tests) and risk analysis; R6 — Docs and CHANGELOG
-  - **Depends on**: P1-NOTES-A045, P1-NOTES-A046, P1-NOTES-A047
-  - **Plan**: `.workflows/plan/P1-NOTES-A048.md`
 
 ### [P2] Medium
 
@@ -41,6 +31,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A048** Phase 4: End-to-end tests, live verify script, docs, CHANGELOG
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `tests/integration/prompt.hook.int.test.ts` (hook → real daemon → `chat_images`; then Stop capture of the same turn → same ids, no duplicate rows or threads; daemon down → `null`; then `create_image({image_id})` → note, again → `created:false`), `scripts/verify-prompt-hook.mjs` + `package.json` (`verify:prompt-hook` script), `README.md`, `docs/INSTALL.md`, `CHANGELOG.md`. Sole owner of README/INSTALL/CHANGELOG/`package.json` in this set. Exit: integration test green on Docker Postgres; docs say three hooks, `image_id`, the `/n`-only scope, the state files and the privacy/disk notes; CHANGELOG `[Unreleased]` entries (Added: `image_id`, prompt hook; Changed: hooks count).`prompt.hook.int.test.ts` green on Docker Postgres (8 tests); typecheck and `npm test` green; README says three hooks, `image_id`, the `/n`-only scope, `prompt.log` / `prompt-images/`, the privacy/disk note and `verify:prompt-hook`; INSTALL lists the hook step; CHANGELOG `[Unreleased]` has the two Added bullets and the Changed section.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-image-to-note/.workflows/orchestration/chat-image-to-note/PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R2 — `UserPromptSubmit` hook for `/n`: ingest pasted images into `chat_images` now, inject `additionalContext` with the ids; idempotent with the Stop capture; R4 — Robustness: any earlier turn's images resolve; 8 images / 20 MB caps; never block the prompt; idempotency key unchanged; R5 — Tests (vitest unit + integration, hook tests) and risk analysis; R6 — Docs and CHANGELOG
+  - **Depends on**: P1-NOTES-A045, P1-NOTES-A046, P1-NOTES-A047
+  - **Plan**: `.workflows/plan/P1-NOTES-A048.md`
+  - **Completed**: 2026-10-31 15:00
+  - **Method**: /do
+  - **Files**: CHANGELOG.md, README.md, docs/INSTALL.md, package.json, scripts/verify-prompt-hook.mjs, tests/integration/prompt.hook.int.test.ts
+  - **Decided**: live verify:prompt-hook not run (billed claude call, needs demo daemon) → left as opt-in manual check (rung 6, narrower blast radius)
 
 - [x] **P1-NOTES-A046** Phase 2: Agent-facing text: instructions, wall prompt, captions
   - **Difficulty**: NORMAL

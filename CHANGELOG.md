@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pasted image to note**: `create_image` and `attach_image` take `image_id`, the id of an image pasted into the wall chat or a Claude Code `/n` prompt (like `G-0NC`, any case, dash optional), as an alternative to `path` (exactly one of the two). Same copy and sha256 dedupe (`created: false` / `attached: false` for a known picture); an unknown id is refused as "no pasted image". The wall agent and `/n` now use it for "make that image a note" instead of asking for a file path.
+- **Claude Code prompt hook** (`notes-prompt`, UserPromptSubmit, `/n` prompts only): stores the session's pasted images (newest 8, 20 MB each, every turn of the session) in the chat image store before Claude answers and tells it their ids, latest marked, so "that image" resolves. Other prompts are untouched. Logs to `~/.local/state/notes-capture/prompt.log`; `npm run verify:prompt-hook` checks it live.
 - **Note-id links in chat**: ids in answers and history bubbles open the big editor in place (fetched, deleted and unknown ids handled quietly); the editor's "Show on wall" icon goes to `/?note=<id>` and flashes the card.
 - **Chat history bubble actions**: reply to any bubble (quote chip above the composer, `reply_to` sent, quoted header jumps to the original), edit your questions in place (kept as a revision, marked "edited"; the answer is not regenerated), delete any bubble with a 6 s undo and an option to drop its answer, and a "Show deleted" toggle with restore.
 - **Claude Code capture**: a Stop hook saves every `/n` exchange (prompt, final answer, pasted images) to the chat history as a `claude_code` thread through `POST /api/capture/claude-code` (loopback, header-guarded, idempotent, with an outbox when the daemon is down); a PreToolUse hook lets `/n` search with a pasted image via `similar_images({pasted_image: 1})`; `install.sh` merges both hooks into `~/.claude/settings.json` (`--skip-hooks`), `uninstall.sh` removes them.
@@ -20,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat history (backend)**: wall chat turns are stored in our own tables (migration 0006) and each turn's context is rebuilt from them; Agent SDK `resume` and session files are gone, so Claude and GLM see the same prompt. `[msg:ID]` labels, a leading `[msg:ID]` in an answer becomes `reply_to`, edit/delete/restore and a paged timeline API, `event: chat` on `/api/events`.
 - **Image similarity search**: Gemini Embedding 2 image vectors in `note_image_embeddings`, a background worker, `npm run embed:images:backfill` (`--dry-run`, `--limit`, `--retry-failed`) and the `similar_images` MCP tool (by image id, wall-chat upload or text query), on the wall chat's allow list.
 - **Chat history page** (`/history`): every wall chat and captured `/n` exchange on one timeline in Jakarta time, with thread dividers, a "claude code" badge, image thumbnails that open the lightbox, live updates, and a pill at the bottom to keep chatting (paste images there too). It opens from a new sidebar icon above the recycle bin and from a "Chat in full screen" button on the answer panel.
+
+### Changed
+
+- `scripts/install.sh` registers three Claude Code hooks (notes-capture, notes-paste, notes-prompt) instead of two; `scripts/uninstall.sh` removes all three.
 
 ### Fixed
 
