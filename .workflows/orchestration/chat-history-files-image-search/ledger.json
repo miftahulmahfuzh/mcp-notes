@@ -181,21 +181,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "89a814e97094dabf951c7483839cdd72b0b6f41f",
       "depends_on": [
         9
       ],
       "difficulty": "NORMAL",
       "n": 10,
-      "note": null,
+      "note": "bubble actions landed; HistoryComposer calls send(draft, ids) with 2 args when not replying (P9 test asserts exactly 2 args) per exit criteria",
       "package": "web",
       "plan": ".workflows/plan/chat-history-files-image-search/phase-10.md",
-      "reported_at": null,
+      "reported_at": "2026-10-31T11:32:45+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A043",
       "title": "Bubble actions: reply_to, edit, delete, restore"
     },
     {
@@ -221,7 +221,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "chat-history-files-image-search",
-  "updated": "2026-10-31T11:05:55+07:00",
+  "updated": "2026-10-31T11:32:45+07:00",
   "verified_at": "2026-10-31T10:16:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search"
 }
