@@ -66,6 +66,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
     "embed:backfill": "tsx src/cli/embedBackfill.ts",
-    "embed:images:backfill": "tsx src/cli/embedImagesBackfill.ts"
+    "embed:images:backfill": "tsx src/cli/embedImagesBackfill.ts",
+    "verify:paste-hook": "node scripts/verify-paste-hook.mjs"
   }
 }

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dbImageEmbeddingStore, runImageBackfill } from '../../src/embeddings/imageBackfill.js';
 import { mcpToolDeps } from '../../src/http/app.js';
 import { createMcpServer } from '../../src/mcp/server.js';
-import type { SimilarImagesResult } from '../../src/mcp/similarTools.js';
+import { PASTED_IMAGE_NEEDS_HOOK, type SimilarImagesResult } from '../../src/mcp/similarTools.js';
 import type { ToolDeps } from '../../src/mcp/tools.js';
 import { normalizeId } from '../../src/notes/ids.js';
 import { setImageDeleted } from '../../src/notes/imageRepo.js';
@@ -163,9 +163,10 @@ describe('similar_images over MCP', () => {
     expect(text(two)).toMatch(/\(got 2\)/);
   });
 
-  it('pasted_image explains that the Claude Code hook is needed', async () => {
+  it('pasted_image that reached the server (the hook did not rewrite it) gets the final explanation', async () => {
     const r = await call({ pasted_image: 1 });
     expect(r.isError).toBe(true);
+    expect(text(r)).toBe(PASTED_IMAGE_NEEDS_HOOK);
     expect(text(r)).toMatch(/notes-paste hook/);
     expect(text(r)).toMatch(/scripts\/install\.sh/);
   });

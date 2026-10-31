@@ -195,10 +195,14 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
 - "Photos of a red top in a car", "pictures of a whiteboard" → `similar_images` with `query`
   in plain words. It looks at what is in the pictures; for words written in the notes use
   `search`. Again `view_images` on the top hits before answering.
-- An image the user pasted into this conversation plus "find similar" → `similar_images` with
-  `pasted_image: 1` (2 for the second image of that message). If it answers that the
-  notes-paste hook is not installed, tell the user to run `scripts/install.sh` in
-  `~/mcp-notes` and restart Claude Code. Do not try to save the pasted image yourself.
+- An image the user pasted into this conversation shows as `[Image #1]`, `[Image #2]`, … in
+  their message and has no file path. "Find photos like this", "do I have similar pictures" →
+  call `similar_images` with `pasted_image: 1` (the number in `[Image #N]`; 1 for the first or
+  only one). A hook uploads that image and the server searches with it. Then call
+  `view_images` on the top hits (their note ids or image ids) so you actually see them, and say
+  how each one matches. If `similar_images` answers that the pasted image could not be resolved,
+  tell the user in one line and ask them to paste the image again together with the request.
+  Never ask for a file path for a pasted image, and never save it as a note unless asked.
 - If `similar_images` says semantic image search is off, the daemon has no
   `OPENROUTER_API_KEY`; say so and fall back to `list` with `has_image: true` or `search`.
 - An image whose file is not on this machine (`available: false`) still has its note and
@@ -214,6 +218,13 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
   open the note on the wall and use the paperclip or the file's chip there.
 - `view_images` shows pictures only; files never come back from it.
 - A file with `available: false` lives on the machine that saved it (`host`).
+
+## Chat history
+
+Every `/n` exchange (the prompt as typed, your final answer and any pasted images) is saved to
+the wall's chat history by a Claude Code hook after you answer. You do not save it yourself and
+need not mention it, unless the user asks where their `/n` conversations go: the wall's chat
+history page, badged "claude code".
 
 ## Deleting
 

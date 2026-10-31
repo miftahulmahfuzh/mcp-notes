@@ -21,11 +21,18 @@ export const IMAGE_SEARCH_OFF =
   'semantic image search is off on this daemon (OPENROUTER_API_KEY is not set), so pictures cannot be compared. ' +
   'Use search, or list with has_image: true, to find photos by their note text instead.';
 
-/** Phase 8 replaces this answer with the real pasted_image -> upload_id path (PreToolUse hook). */
+/**
+ * Answer to a similar_images call that still carries pasted_image. With the notes-paste
+ * PreToolUse hook installed (phase 8) the daemon never sees pasted_image: the hook uploads the
+ * pasted image and rewrites the call to upload_id. Reaching this means the hook is missing, found
+ * no pasted image, or could not upload it.
+ */
 export const PASTED_IMAGE_NEEDS_HOOK =
-  'pasted_image works only when the notes-paste hook is installed in Claude Code: the hook uploads the image pasted into this conversation and turns pasted_image into an upload_id. ' +
-  'It is not installed here yet. Ask the user to run scripts/install.sh in ~/mcp-notes and restart Claude Code, ' +
-  'or call similar_images with image_id (a picture already in a note) or query (words describing the picture) instead.';
+  'pasted_image could not be resolved: the call reached the server without an upload_id, so the ' +
+  "Claude Code notes-paste hook did not upload a pasted image. Either the user's recent messages carry " +
+  'no pasted image, or the hook is not installed (run scripts/install.sh in ~/mcp-notes, then restart ' +
+  'Claude Code). Ask the user to paste the image again in the same message as the request, or call ' +
+  'similar_images with image_id (a picture already in a note) or query (words) instead.';
 
 /** A message for the model; the handler turns it into an isError result. */
 class SimilarError extends Error {
@@ -243,7 +250,11 @@ export function registerSimilarTools(server: McpServer, deps: ToolDeps): void {
           .min(1)
           .max(20)
           .optional()
-          .describe('Claude Code only: which image pasted into the latest user message, 1 for the first. Needs the notes-paste hook.'),
+          .describe(
+            'Claude Code only: N of "[Image #N]" for an image pasted into the conversation, 1 for the first. ' +
+              'A pasted image has no file path; the notes-paste hook uploads it and replaces this with upload_id ' +
+              'before the call arrives.',
+          ),
         limit: z
           .number()
           .int()
