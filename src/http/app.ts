@@ -6,6 +6,7 @@ import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
 import { apiRoutes } from './api.js';
 import { chatImageRoutes } from './chatImages.js';
+import { fileRoutes } from './files.js';
 import { imageRoutes } from './images.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
@@ -52,8 +53,9 @@ export function mcpToolDeps(deps: AppDeps): ToolDeps {
 /**
  * The whole HTTP surface, mounted in this order (later phases fill the routers, never this file):
  * /health, /mcp, apiRoutes (P6), imageRoutes (P5), chatImageRoutes (pasted chat images),
- * revealRoutes (iteration 7: capabilities + reveal), staticRoutes (P6, last: it owns the SPA
- * fallback; it reserves /api, so the order is for clarity).
+ * fileRoutes (note files), revealRoutes (iteration 7: capabilities + reveal; note files add file
+ * and note reveal), staticRoutes (P6, last: it owns the SPA fallback; it reserves /api, so the
+ * order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -71,6 +73,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', apiRoutes(deps, { chat: options.chat }));
   app.route('/', imageRoutes(deps));
   app.route('/', chatImageRoutes(deps));
+  app.route('/', fileRoutes(deps));
   app.route('/', revealRoutes(deps, { reveal: options.reveal }));
   app.route('/', staticRoutes(deps));
   return app;

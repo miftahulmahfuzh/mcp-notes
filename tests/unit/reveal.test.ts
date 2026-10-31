@@ -331,3 +331,23 @@ describe('performReveal', () => {
     expect(deps.spawn).not.toHaveBeenCalled();
   });
 });
+
+describe('reveal modes', () => {
+  it('selects by default and opens a folder in open mode', () => {
+    expect(explorerArgs('C:\\x\\a.txt')).toEqual(['/select,C:\\x\\a.txt']);
+    expect(explorerArgs('C:\\x\\a.txt', 'select')).toEqual(['/select,C:\\x\\a.txt']);
+    expect(explorerArgs('C:\\x', 'open')).toEqual(['C:\\x']);
+  });
+
+  it('performReveal in open mode spawns explorer with the folder and no /select', async () => {
+    const spawn = vi.fn(async (_cmd: string, _args: string[]): Promise<void> => undefined);
+    const deps: RevealDeps = {
+      detect: async () => ({ explorer: 'explorer.exe', wslpath: '/usr/bin/wslpath' }),
+      wslpath: async (abs) => `W:${abs}`,
+      spawn,
+    };
+    const target: RevealTarget = { originalPath: '/data/files/A-B32', available: true, host: 'h' };
+    expect(await performReveal(target, deps, 'open')).toEqual({ status: 202, body: { ok: true } });
+    expect(spawn).toHaveBeenCalledWith('explorer.exe', ['W:/data/files/A-B32']);
+  });
+});

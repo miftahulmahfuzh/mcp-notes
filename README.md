@@ -682,10 +682,16 @@ progress (first run, or after a model change).
 | `GET /api/notes/:id/original` · `/display` · `/thumb` · `/preview` | The same for a live note's first photo, kept for older links |
 | `DELETE /api/images/:imageId` | Remove one photo from its note (soft), returns the note |
 | `POST /api/images/:imageId/restore` | Put a removed photo back; 409 `duplicate_image` with the holder's `note_id` when the file is in another note now |
+| `POST /api/notes/:id/files` | Multipart `file`, attached to that live note: 201 `{note, attached: true, kind}`, or 200 with the note that already holds the bytes. `kind` is `image` when the bytes are a picture (stored as a photo), else `file`. 413 `too_large` over 200 MB |
+| `GET /api/files/:fileId` | One file's metadata (`name`, `mime`, `bytes`, `host`, `available`, `extraction_status`), whatever its state |
+| `GET /api/files/:fileId/download` | The file, always as an attachment (`nosniff`, sandboxed); 404 `not_on_this_machine` when it lives elsewhere |
+| `DELETE /api/files/:fileId` · `POST /api/files/:fileId/restore` | Remove one file from its note (soft) / put it back at its old place; 409 `duplicate_file` with the holder's `note_id` |
 | `GET /api/bin?tag=` | The recycle bin, `{notes, images}`, newest deleted first |
 | `DELETE /api/bin/notes/:id` · `DELETE /api/bin/images/:imageId` | Delete forever: rows and files. 409 `not_deleted` for anything not in the bin; 403 `forbidden_origin` unless the request comes from the wall's own page |
 | `GET /api/capabilities` | `{"reveal": true}` when "open file location" can work on this machine |
 | `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
+| `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
+| `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
 | `POST /api/chat` | Streams `status` and `delta` events, then `done` with the `thread_id` and the brain that answered |
 | `/full/:imageId` | The full-screen photo page |
 
@@ -696,10 +702,13 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
                  image_path, image_meta)        legacy: read only at start-up, dropped later
            note_images(id, note_id, path, sha256, mime, width, height, bytes, taken_at,
                        original_name, host, position, created_at, deleted_at)
+           note_files(id, note_id, path, sha256, mime, bytes, original_name, host, position,
+                      extracted_text, extraction_status, created_at, deleted_at)
            note_revisions(note_id, body, saved_at)
            note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
 ~/mcp-notes-data/
   images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
+  files/<noteId>/<name>            a note's other files, byte for byte, Windows-safe names
   cache/<imageId>/thumb.webp       480 px wide, for the wall and gallery
   cache/<imageId>/preview.jpg      long edge 1568 px, what Claude sees
   cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
@@ -714,6 +723,13 @@ photo sets its `deleted_at` and keeps its position. Dedupe is by `sha256` among 
 not been removed. The two `notes` image columns are the iteration 6 layout. New code never
 writes them. At start-up `notesd` copies any photo an older daemon stored there into
 `note_images` (it does nothing when there is nothing new), and a later migration drops them.
+
+Any other file attached to a note is one `note_files` row with its own id from the same id
+space. It is stored under `files/<noteId>/` with a Windows-safe version of its name (`name (2).ext`
+when the name is taken), so one folder holds everything a note carries. Dedupe is by `sha256`
+among files that have not been removed. `extracted_text` and `extraction_status` are there for a
+later text extraction; nothing fills them yet. Delete forever on a note removes its files and
+then its folder.
 
 `cache/` can be deleted at any time. Everything in it is rebuilt on demand. Delete forever
 removes a photo's original and its `cache/<imageId>/` folder, and nothing else.

@@ -33,7 +33,7 @@ export interface HarnessOptions {
 export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   const url = testDatabaseUrl();
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'mcp-notes-p5-'));
-  for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat-images']) {
+  for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat-images', 'files']) {
     await mkdir(path.join(dataDir, sub), { recursive: true });
   }
   const db = openTestDb();
@@ -65,7 +65,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     },
     async reset() {
       await truncateAll(db);
-      for (const sub of ['images', 'cache', 'chat-images']) {
+      for (const sub of ['images', 'cache', 'chat-images', 'files']) {
         await rm(path.join(dataDir, sub), { recursive: true, force: true });
         await mkdir(path.join(dataDir, sub), { recursive: true });
       }

@@ -72,4 +72,9 @@ describe('buildChatSystemPrompt', () => {
   it('leaves link formatting to the panel', () => {
     expect(prompt).not.toMatch(/markdown link|bare URL/i);
   });
+
+  it('says note files are visible by name, type and size but cannot be opened', () => {
+    expect(prompt).toMatch(/files that are not pictures/);
+    expect(prompt).toMatch(/cannot open them/);
+  });
 });

@@ -27,6 +27,9 @@ apps' tools are the source of truth.
   image has its own image id (the same `A-B32` form as note ids; a note's first image has the
   note's own id), a `position`, metadata (`mime`, size, `taken_at`, `original_name`, `host`) and
   `available`.
+- A note may also hold files that are not pictures (PDFs, documents, archives, anything), added
+  by the user on the wall. Every note in a result has a `files` list (empty when it has none);
+  each file has an id, `name`, `mime`, `bytes`, `host`, `available` and `extraction_status`.
 
 ## Tools
 
@@ -187,6 +190,16 @@ suggest re-running `scripts/install.sh` in `~/mcp-notes` instead of working arou
 - An image whose file is not on this machine (`available: false`) still has its note and
   metadata. Say the file lives on the machine that saved it (`host`) instead of treating it as
   an error.
+
+## Files
+
+- You can see a note's files but not read them: their contents are not available through any
+  tool (`extraction_status` is `none` for now). When the user asks what a note holds, list each
+  file by name with its type and size, e.g. `report.pdf (application/pdf, 1.2 MB)`.
+- There is no tool to attach, remove or restore a file. If the user asks for that, tell them to
+  open the note on the wall and use the paperclip or the file's chip there.
+- `view_images` shows pictures only; files never come back from it.
+- A file with `available: false` lives on the machine that saved it (`host`).
 
 ## Deleting
 

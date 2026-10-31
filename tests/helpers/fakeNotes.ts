@@ -65,6 +65,7 @@ export class FakeNotes implements ImageNotes, ImageRecords {
       updated_at: r.created_at,
       origin: r.origin,
       images: this.liveImagesOf(r.id).map((i) => this.toWire(i)),
+      files: [],
     };
     // As rowToNote: deleted_at is present only on deleted notes.
     if (r.deleted_at !== null) note.deleted_at = r.deleted_at;

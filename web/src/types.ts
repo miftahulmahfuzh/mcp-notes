@@ -18,6 +18,25 @@ export interface NoteImage {
   deleted_at?: string;
 }
 
+/** One non-image file of a note, as the server sends it (src/notes/types.ts NoteFile). */
+export interface NoteFile {
+  id: string;
+  note_id: string;
+  position: number;
+  /** The user's file name. */
+  name: string;
+  mime: string;
+  bytes: number;
+  host: string | null;
+  /** The file exists under this machine's data dir. */
+  available: boolean;
+  extraction_status: 'none' | 'pending' | 'done' | 'failed' | 'unsupported';
+  /** `/api/files/<id>/download`, always an attachment. */
+  urls: { download: string };
+  /** Present only on removed files. */
+  deleted_at?: string;
+}
+
 export interface Note {
   id: string;
   body: string;
@@ -28,6 +47,8 @@ export interface Note {
   origin: Record<string, unknown> | null;
   /** Live images, ascending `position`. Empty for a text note. */
   images: NoteImage[];
+  /** Live files, ascending `position`. The server always sends it; optional on the web type by plan decision (read `note.files ?? []`). */
+  files?: NoteFile[];
 }
 
 /** One image in the gallery / photo modal: `k` is 1-based within its note of `n` images. */

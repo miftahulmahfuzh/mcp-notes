@@ -5,8 +5,11 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { Hono } from 'hono';
 import type { AppDeps } from '../deps.js';
-import { imageDeps, locateImage } from '../images/ingest.js';
+import { fileDeps, locateFile } from '../files/ingest.js';
+import { filesDirFor } from '../files/store.js';
+import { imageDeps, locateImage, type ImageDeps } from '../images/ingest.js';
 import { normalizeId } from '../notes/ids.js';
+import type { Note } from '../notes/types.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 /** What a working reveal needs: the two binaries, resolved to runnable paths. */
@@ -173,9 +176,12 @@ export function spawnDetached(cmd: string, args: string[], spawnFn: SpawnFn = sp
   });
 }
 
-/** explorer.exe's select switch: one argument, no space after the comma. */
-export function explorerArgs(winPath: string): string[] {
-  return ['/select,' + winPath];
+/** 'select': Explorer opens the parent folder with the file selected. 'open': Explorer opens the folder itself. */
+export type RevealMode = 'select' | 'open';
+
+/** explorer.exe's arguments: one `/select,<path>` argument (no space after the comma), or the folder path alone. */
+export function explorerArgs(winPath: string, mode: RevealMode = 'select'): string[] {
+  return mode === 'select' ? ['/select,' + winPath] : [winPath];
 }
 
 let defaultDeps: RevealDeps | undefined;
@@ -196,9 +202,9 @@ export function defaultRevealDeps(): RevealDeps {
   return defaultDeps;
 }
 
-/** The part of a located image the reveal needs (phase 2's LocatedImage satisfies it). */
+/** What the reveal needs (LocatedImage, LocatedFile and a note's files folder satisfy it). */
 export interface RevealTarget {
-  /** Absolute path of the original under this machine's data dir. */
+  /** Absolute path under this machine's data dir: the file to select, or the folder to open. */
   originalPath: string;
   available: boolean;
   host: string | null;
@@ -216,7 +222,11 @@ function errorMessage(err: unknown): string {
 }
 
 /** 404s first (independent of the machine), then detect, wslpath, spawn. Success = spawned. */
-export async function performReveal(target: RevealTarget | null, reveal: RevealDeps): Promise<RevealOutcome> {
+export async function performReveal(
+  target: RevealTarget | null,
+  reveal: RevealDeps,
+  mode: RevealMode = 'select',
+): Promise<RevealOutcome> {
   if (target === null) return { status: 404, body: { error: 'not_found' } };
   if (!target.available) return { status: 404, body: { error: 'not_on_this_machine', host: target.host } };
   const env = await reveal.detect();
@@ -228,21 +238,58 @@ export async function performReveal(target: RevealTarget | null, reveal: RevealD
     return { status: 500, body: { error: 'spawn_failed', message: `wslpath failed: ${errorMessage(err)}` } };
   }
   try {
-    await reveal.spawn(env.explorer, explorerArgs(winPath));
+    await reveal.spawn(env.explorer, explorerArgs(winPath, mode));
   } catch (err) {
     return { status: 500, body: { error: 'spawn_failed', message: errorMessage(err) } };
   }
   return { status: 202, body: { ok: true } };
 }
 
+/** What a note-level reveal does: a target (null = 404 not_found) and how Explorer shows it. */
+export interface NoteRevealPlan {
+  target: RevealTarget | null;
+  mode: RevealMode;
+}
+
+/**
+ * Note-level "Show in Explorer". A missing or deleted note: not_found. A note with live files:
+ * open `files/<noteId>/` (available when at least one of its live files is on this machine;
+ * otherwise not_on_this_machine with the first file's host). No live files: select the first live
+ * image, as the card button always did. Neither: not_found.
+ */
+export async function noteRevealPlan(
+  dataDir: string,
+  img: Pick<ImageDeps, 'dataDir' | 'records'>,
+  note: Note | null,
+): Promise<NoteRevealPlan> {
+  if (note === null || note.deleted_at !== undefined) return { target: null, mode: 'select' };
+  const firstFile = note.files[0];
+  if (firstFile !== undefined) {
+    return {
+      mode: 'open',
+      target: {
+        originalPath: filesDirFor(dataDir, note.id),
+        available: note.files.some((f) => f.available),
+        host: firstFile.host,
+      },
+    };
+  }
+  const firstImage = note.images[0];
+  if (firstImage === undefined) return { target: null, mode: 'select' };
+  return { mode: 'select', target: await locateImage(img, firstImage.id) };
+}
+
 /**
  * GET /api/capabilities -> { reveal }.
- * POST /api/images/:imageId/reveal (own Origin only) -> opens Explorer with the original selected.
- * Takes an image id, never a path.
+ * POST /api/images/:imageId/reveal (own Origin only) -> Explorer with the image's original selected.
+ * POST /api/files/:fileId/reveal (own Origin only) -> Explorer with the file selected.
+ * POST /api/notes/:id/reveal (own Origin only) -> the note's files folder, or its first image (noteRevealPlan).
+ * Every route takes an id, never a path.
  */
 export function revealRoutes(deps: AppDeps, opts: RevealRoutesOptions = {}): Hono {
   const reveal = opts.reveal ?? defaultRevealDeps();
   const img = imageDeps(deps);
+  const files = fileDeps(deps);
   const r = new Hono();
 
   r.get('/api/capabilities', async (c) => c.json({ reveal: (await reveal.detect()) !== null }));
@@ -251,6 +298,21 @@ export function revealRoutes(deps: AppDeps, opts: RevealRoutesOptions = {}): Hon
     const id = normalizeId(c.req.param('imageId'));
     const target = id === null ? null : await locateImage(img, id);
     const out = await performReveal(target, reveal);
+    return c.json(out.body, out.status);
+  });
+
+  r.post('/api/files/:fileId/reveal', sameOriginOnly, async (c) => {
+    const id = normalizeId(c.req.param('fileId'));
+    const target = id === null ? null : await locateFile(files, id);
+    const out = await performReveal(target, reveal, 'select');
+    return c.json(out.body, out.status);
+  });
+
+  r.post('/api/notes/:id/reveal', sameOriginOnly, async (c) => {
+    const id = normalizeId(c.req.param('id'));
+    const note = id === null ? null : await deps.service.getOne(id);
+    const plan = await noteRevealPlan(deps.config.dataDir, img, note);
+    const out = await performReveal(plan.target, reveal, plan.mode);
     return c.json(out.body, out.status);
   });
 

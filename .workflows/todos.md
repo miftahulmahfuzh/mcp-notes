@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-10-31
-**Total Active Tasks**: 8
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 8
-- Completed: 39
+- Blocked: 5
+- Completed: 40
 
 ---
 
@@ -22,34 +22,24 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns migration 0004 `note_files` (extracted_text + extraction_status, no extraction); `files/<noteId>/<safeName>` store with sha256 dedupe (stored name sanitised; `NoteFile.name` is the display name); `NotesService.attachFile/removeFile/restoreFile`; `Note.files` on the wire (required server-side, optional `files?` in `web/src/types.ts`); `POST /api/notes/:id/files` (`{note, attached, kind}`), `DELETE /api/files/:id`, `POST /api/files/:id/restore` (409 `duplicate_file`), `GET /api/files/:id`, `GET /api/files/:id/download`; reveal routes (`POST /api/files/:id/reveal` selects the file, `POST /api/notes/:id/reveal` opens the note's files folder, or selects the first image when the note has no files, 404 when it has neither); `purgeNote` removes the files folder; MCP `describeNote`/note JSON expose name, size, type; instructions, chat prompt sentence and `/n` skill text. Exit: attach/remove/restore/purge covered by integration tests; same bytes in two notes → holder returned; download is `attachment` with `nosniff`; `get`/`list` MCP results include `files`; migration chain intact.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 4 of 11)
-  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
-  - **Depends on**: P1-NOTES-A036 (pending)
-  - **Plan**: `.workflows/plan/P1-NOTES-A037.md`
-
 - [ ] **P1-NOTES-A038** Phase 5: Note files UI: paperclip, chips, paste/drop routing, reveal
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns paperclip button + hidden picker in `NoteEditor`; `FileChips` (name, size, type, download, per-file reveal, remove with 6 s undo); ctrl-v and drop of non-image files into the open modal attach to that note (images keep the image path); `NoteRevealButton` (card footer slot from P1 and editor top bar) calling the note-level route, visible by the same rule as the route; empty-note rules count files (`hasAttachments`); card paperclip count; `web/src/api.ts` file calls with `DuplicateFileError`; `makeNote` always sets `files: []` (the only phase that touches that fixture). Exit: component tests for picker, paste, drop, chips, undo, dedupe notice, reveal calls; a text-only note holding only files is not auto-deleted on close.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 5 of 11)
   - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
-  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (pending), P1-NOTES-A036 (pending), P1-NOTES-A037 (pending)
+  - **Depends on**: P1-NOTES-A034 (satisfied), P1-NOTES-A035 (satisfied), P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A038.md`
 
 - [ ] **P1-NOTES-A039** Phase 6: Image embeddings and `similar_images`
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `ImageEmbedder` (Gemini Embedding 2 over OpenRouter, 1536 dims, PNG data URL, client-side truncate + renormalise guard) and its fake; migration 0005 `note_image_embeddings`; repo (pending, save, failure, nearest); worker + backfill reusing `RateLimiter`/`Clock`; `npm run embed:images:backfill` with `--dry-run`/`--limit`/`--retry-failed`; MCP `similar_images` (`image_id` | `upload_id` (resolved through P3's `locateChatImage`) | `query`, `limit`; `pasted_image` accepted and answered with a provisional "needs the notes-paste hook" error until P8); `startHarness({chat, imageEmbedder})`; chat allowlist, captions, prompt, instructions, `/n` skill; opt-in live test. Exit: worker embeds new images and skips images whose file is not on this machine without recording failures; nearest search excludes the source image and deleted notes; text query works through the same space; live probe test documents the verified request shape.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search/.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 6 of 11)
   - **Satisfies**: R5 — Image similarity search (Gemini Embedding 2 via OpenRouter, table, worker, backfill, `similar_images`, text→image)
-  - **Depends on**: P1-NOTES-A036 (pending), P1-NOTES-A037 (pending)
+  - **Depends on**: P1-NOTES-A036 (satisfied), P1-NOTES-A037 (satisfied)
   - **Plan**: `.workflows/plan/P1-NOTES-A039.md`
 
 - [ ] **P1-NOTES-A040** Phase 7: Chat persistence: schema, context rebuild, reply_to, edit/delete API
@@ -111,6 +101,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A037** Phase 4: Note files backend: schema, store, service, API, reveal, MCP visibility
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns migration 0004 `note_files` (extracted_text + extraction_status, no extraction); `files/<noteId>/<safeName>` store with sha256 dedupe (stored name sanitised; `NoteFile.name` is the display name); `NotesService.attachFile/removeFile/restoreFile`; `Note.files` on the wire (required server-side, optional `files?` in `web/src/types.ts`); `POST /api/notes/:id/files` (`{note, attached, kind}`), `DELETE /api/files/:id`, `POST /api/files/:id/restore` (409 `duplicate_file`), `GET /api/files/:id`, `GET /api/files/:id/download`; reveal routes (`POST /api/files/:id/reveal` selects the file, `POST /api/notes/:id/reveal` opens the note's files folder, or selects the first image when the note has no files, 404 when it has neither); `purgeNote` removes the files folder; MCP `describeNote`/note JSON expose name, size, type; instructions, chat prompt sentence and `/n` skill text. Exit: attach/remove/restore/purge covered by integration tests; same bytes in two notes → holder returned; download is `attachment` with `nosniff`; `get`/`list` MCP results include `files`; migration chain intact.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/chat-history-files-image-search/PLAN.md` (phase 4 of 11)
+  - **Satisfies**: R2 — Note files: attach any file from the note modal, sha256 store, extraction-ready schema, agent visibility, per-file and note-level reveal
+  - **Depends on**: P1-NOTES-A036 (satisfied)
+  - **Plan**: `.workflows/plan/P1-NOTES-A037.md`
+  - **Completed**: 2026-10-31 09:41
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/orchestration/chat-history-files-image-search/PLAN.md, CHANGELOG.md, README.md, claude/skills/n/SKILL.md, drizzle/0004_note_files.sql, drizzle/meta/0004_snapshot.json, drizzle/meta/_journal.json, src/chat/prompt.ts, src/daemon.ts, src/db/schema.ts, src/files/ingest.ts, src/files/mime.ts, src/files/name.ts, src/files/records.ts, src/files/store.ts, src/http/app.ts, src/http/files.ts, src/http/reveal.ts, src/mcp/imageTools.ts, src/mcp/instructions.ts, src/notes/fileRepo.ts, src/notes/imageRepo.ts, src/notes/service.ts, src/notes/types.ts, tests/helpers/fakeNotes.ts, tests/integration/daemon.int.test.ts, tests/integration/files.int.test.ts, tests/integration/files.mcp.int.test.ts, tests/integration/files.reveal.int.test.ts, tests/integration/imageHarness.ts, tests/integration/migration0004.int.test.ts, tests/integration/setup.ts, tests/unit/chat-prompt.test.ts, tests/unit/files.name.test.ts, tests/unit/files.store.test.ts, tests/unit/mcp.describe.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/notes.helpers.test.ts, tests/unit/reveal.test.ts, web/src/types.ts
+  - **Drift**:
+    - None of substance; two plan test bugs fixed (not relaxed): files.reveal.int.test.ts helper post() used a default param so passing undefined still sent an Origin header (now null = no header); files.int.test.ts used '/api/files/nope' as a malformed id but normalizeId('nope') is the valid id N-OPE (now 'not-an-id'). Also added 'files' to the DATA_SUBDIRS assertion in tests/integration/daemon.int.test.ts.
+  - **Decided**:
+    - Plan test used malformed id 'nope' which is a valid dash-less id -> use 'not-an-id' (rung 2: exit criteria / test intent is a malformed id -> 400)
+    - Reveal test 'no Origin header' case never sent no header (default-param bug) -> null sentinel (rung 2)
+    - Completion bookkeeping: unblocked both P1-NOTES-A038 (phase 5) and P1-NOTES-A039 (phase 6); every dependency of each is now satisfied (wave W3 = {5, 6}).
 
 - [x] **P1-NOTES-A036** Phase 3: Chat image store, paste into the bar, wall chat sends images
   - **Difficulty**: HARD

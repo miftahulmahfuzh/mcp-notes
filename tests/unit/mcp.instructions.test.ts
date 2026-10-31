@@ -71,6 +71,21 @@ describe('buildInstructions', () => {
     expect(p).toContain('copied, not moved');
     expect(p).toContain('Nothing you can call deletes a note or an image permanently');
   });
+
+  it('has one Files paragraph: files are visible by name, type and size but not readable, and no tool writes them', () => {
+    const text = buildInstructions('Asia/Jakarta');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Files.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    expect(p).toContain('files array');
+    expect(p).toContain('cannot open or read');
+    expect(p).toContain('extraction_status');
+    expect(p).toContain('No tool attaches, removes or restores files');
+    const notes = text.split('\n\n').find((s) => s.startsWith('Notes.'))!;
+    expect(notes).toContain('files (an array, empty when the note has none)');
+    const order = text.split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.indexOf('Files')).toBe(order.indexOf('Attaching') + 1);
+  });
 });
 
 function linksParagraphs(text: string): string[] {

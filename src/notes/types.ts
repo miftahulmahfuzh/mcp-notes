@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { NoteImageRow, notes } from '../db/schema.js';
+import type { ExtractionStatus, NoteFileRow, NoteImageRow, notes } from '../db/schema.js';
 
 /** Where a note was saved from. Every field is optional; unknown keys are dropped. */
 export interface Origin {
@@ -13,6 +13,9 @@ export interface Origin {
 
 /** Image metadata as ingest probes it (also the legacy `notes.image_meta` shape). */
 export type { ImageMeta } from '../db/schema.js';
+
+/** Where a file's text extraction stands. v1 only ever writes 'none'. */
+export type { ExtractionStatus } from '../db/schema.js';
 
 /** One image of a note, as MCP, HTTP and the UI see it (iteration 7: a note holds several). */
 export interface NoteImage {
@@ -37,6 +40,40 @@ export interface NoteImage {
   deleted_at?: string;
 }
 
+/** What ingest knows about one non-image file before it becomes a `note_files` row. */
+export interface FileMeta {
+  /** Lower-case hex sha256 of the bytes. */
+  sha256: string;
+  mime: string;
+  bytes: number;
+  /** The user's file name, control characters removed (src/files/name.ts displayFileName). */
+  original_name: string;
+  /** `os.hostname()` of the machine that stored it. */
+  host: string | null;
+}
+
+/** One non-image file of a note, as MCP, HTTP and the UI see it (plan phase 4). */
+export interface NoteFile {
+  /** File id, note-id format; never equal to any note or image id. */
+  id: string;
+  note_id: string;
+  /** Attach order within the note; never renumbered. */
+  position: number;
+  /** The user's file name. The stored name may differ (Windows-safe, collision-suffixed). */
+  name: string;
+  mime: string;
+  bytes: number;
+  host: string | null;
+  /** The file exists under this machine's data dir. */
+  available: boolean;
+  /** Always 'none' in v1: nobody has read the file's text. */
+  extraction_status: ExtractionStatus;
+  /** `/api/files/<id>/download`: always served as an attachment. */
+  urls: { download: string };
+  /** Present only on removed files. */
+  deleted_at?: string;
+}
+
 /** Wire shape shared by MCP, HTTP and the UI. */
 export interface Note {
   id: string;
@@ -48,6 +85,8 @@ export interface Note {
   origin: Origin | null;
   /** The note's live images (image deleted_at is null), ascending position. Empty for text notes. */
   images: NoteImage[];
+  /** The note's live files (file deleted_at is null), ascending position. Empty when it has none. */
+  files: NoteFile[];
 }
 
 export type NoteRow = typeof notes.$inferSelect;
@@ -118,7 +157,7 @@ export interface Bin {
 export interface PurgeResult {
   /** The purged note id or image id. */
   purged: string;
-  /** Files removed from disk: originals plus derived files under cache/<imageId>/. */
+  /** Files removed from disk: image originals, derived files under cache/<imageId>/, and the note's files under files/<noteId>/. */
   files: number;
 }
 
@@ -131,6 +170,7 @@ export type NoteErrorCode =
   | 'empty_body'
   | 'conflict'
   | 'duplicate_image'
+  | 'duplicate_file'
   | 'invalid_revision'
   | 'not_embedded';
 
@@ -155,6 +195,20 @@ export class DuplicateImageError extends NoteError {
   constructor(noteId: string, message: string) {
     super('duplicate_image', message);
     this.name = 'DuplicateImageError';
+    this.noteId = noteId;
+  }
+}
+
+/**
+ * restoreFile refused: the same bytes already live in another file. `noteId` is the note holding
+ * them (HTTP answers 409 { error: 'duplicate_file', note_id }).
+ */
+export class DuplicateFileError extends NoteError {
+  readonly noteId: string;
+
+  constructor(noteId: string, message: string) {
+    super('duplicate_file', message);
+    this.name = 'DuplicateFileError';
     this.noteId = noteId;
   }
 }
@@ -217,12 +271,41 @@ export function toNoteImage(row: NoteImageRow, dataDir: string): NoteImage {
   return image;
 }
 
+/** The served URL of one file, by file id. */
+export function fileUrls(fileId: string): NoteFile['urls'] {
+  return { download: `/api/files/${fileId}/download` };
+}
+
+/** `note_files` row -> wire NoteFile. `deleted_at` is present only on removed files. */
+export function toNoteFile(row: NoteFileRow, dataDir: string): NoteFile {
+  const file: NoteFile = {
+    id: row.id,
+    note_id: row.noteId,
+    position: row.position,
+    name: row.originalName,
+    mime: row.mime,
+    bytes: row.bytes,
+    host: row.host,
+    available: imageAvailable(dataDir, row.path),
+    extraction_status: row.extractionStatus,
+    urls: fileUrls(row.id),
+  };
+  if (row.deletedAt !== null) file.deleted_at = toIso(row.deletedAt);
+  return file;
+}
+
 /**
- * DB row + its image rows -> wire Note. Only live images (deleted_at null) are kept, in
- * position order. `deleted_at` is present only on deleted notes.
+ * DB row + its image and file rows -> wire Note. Only live images and files (deleted_at null)
+ * are kept, each in position order. `deleted_at` is present only on deleted notes.
  */
-export function rowToNote(row: NoteRow, dataDir: string, images: readonly NoteImageRow[]): Note {
+export function rowToNote(
+  row: NoteRow,
+  dataDir: string,
+  images: readonly NoteImageRow[],
+  files: readonly NoteFileRow[] = [],
+): Note {
   const live = images.filter((i) => i.deletedAt === null).sort((a, b) => a.position - b.position);
+  const liveFiles = files.filter((f) => f.deletedAt === null).sort((a, b) => a.position - b.position);
   const note: Note = {
     id: row.id,
     body: row.body,
@@ -231,6 +314,7 @@ export function rowToNote(row: NoteRow, dataDir: string, images: readonly NoteIm
     updated_at: toIso(row.updatedAt),
     origin: cleanOrigin(row.origin),
     images: live.map((i) => toNoteImage(i, dataDir)),
+    files: liveFiles.map((f) => toNoteFile(f, dataDir)),
   };
   if (row.deletedAt !== null) note.deleted_at = toIso(row.deletedAt);
   return note;

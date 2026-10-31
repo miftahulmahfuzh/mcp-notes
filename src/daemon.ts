@@ -18,7 +18,7 @@ import { NotesService } from './notes/service.js';
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run, so SDK sessions resume across restarts. */
 export const CHAT_SUBDIR = 'chat';
 
-export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR, CHAT_IMAGES_SUBDIR] as const;
+export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR, CHAT_IMAGES_SUBDIR, 'files'] as const;
 
 export interface RunningDaemon {
   deps: AppDeps;

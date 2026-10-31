@@ -7,9 +7,12 @@ import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniq
  * `note_embeddings`; migration 0002 (iteration 7, wall editing) adds `note_images` and copies every
  * legacy `notes.image_path` / `image_meta` image into it (hand-appended INSERT...SELECT, the same
  * SQL as src/images/legacy.ts `LEGACY_COPY_SQL`); migration 0003 (chat images) adds
- * `chat_images`, the images pasted into a chat. Change a table here, then `npm run db:generate`;
- * never edit an applied migration. drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a
- * hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
+ * `chat_images`, the images pasted into a chat; migration 0004 (note files) adds `note_files`:
+ * non-image files attached to a note, stored under `files/<noteId>/<safeName>`, with
+ * `extracted_text` / `extraction_status` ready for a later text extraction (v1 writes only
+ * 'none'). Change a table here, then `npm run db:generate`; never edit an applied migration.
+ * drizzle-kit does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended
+ * `CREATE EXTENSION IF NOT EXISTS vector`.
  */
 
 /** `notes.image_meta`. Written by the image ingest (iteration 2). */
@@ -121,6 +124,57 @@ export const noteImages = pgTable(
   ],
 )
 
+/** `note_files.extraction_status`. v1 writes only 'none'; a later text extraction moves rows through the others. */
+export const EXTRACTION_STATUSES = ['none', 'pending', 'done', 'failed', 'unsupported'] as const
+export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number]
+
+/**
+ * One row per non-image file of a note (migration 0004). Mirrors `note_images`: the id is in the
+ * note-id format and free in `notes`, `note_images` and `note_files` alike (src/notes/imageRepo.ts
+ * `imageIdTaken`); `position` is attach order, never renumbered; `deleted_at` is the file's own
+ * soft delete (removed from its note), independent of `notes.deleted_at`; sha256 is unique among
+ * rows with `deleted_at is null`. Files that sniff as a supported image are stored as images,
+ * never here. `path` is `files/<noteId>/<safeName>` (src/files/store.ts), so one folder holds
+ * all of a note's files. `extracted_text` stays null and `extraction_status` 'none' until text
+ * extraction exists.
+ */
+export const noteFiles = pgTable(
+  'note_files',
+  {
+    /** Note-id format (`A-B32`). */
+    id: text('id').primaryKey(),
+    noteId: text('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    /** Relative to the data dir: `files/<noteId>/<safeName>`. */
+    path: text('path').notNull(),
+    /** Lower-case hex sha256 of the bytes. */
+    sha256: text('sha256').notNull(),
+    /** Magic bytes first, then the extension, else application/octet-stream (src/files/mime.ts). */
+    mime: text('mime').notNull(),
+    /** Size in bytes; the 200 MB upload cap fits int4. */
+    bytes: integer('bytes').notNull(),
+    /** The name the user's file had (control characters removed). Shown in the UI and downloads. */
+    originalName: text('original_name').notNull(),
+    /** `os.hostname()` of the machine that holds the file. */
+    host: text('host'),
+    /** Attach order within the note; never renumbered (remove + restore keeps it). */
+    position: integer('position').notNull(),
+    /** Plain text pulled out of the file by a later extraction. Always null in v1. */
+    extractedText: text('extracted_text'),
+    extractionStatus: text('extraction_status').$type<ExtractionStatus>().notNull().default('none'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Removed from its note. Null means part of the note. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    uniqueIndex('note_files_path_uniq').on(t.path),
+    index('note_files_note_position_idx').on(t.noteId, t.position),
+    uniqueIndex('note_files_sha256_live_uniq').on(t.sha256).where(sql`${t.deletedAt} is null`),
+    check('note_files_extraction_status_check', sql`extraction_status in ('none', 'pending', 'done', 'failed', 'unsupported')`),
+  ],
+)
+
 export const noteRevisions = pgTable(
   'note_revisions',
   {
@@ -217,6 +271,8 @@ export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
 export type NewNoteImageRow = typeof noteImages.$inferInsert
+export type NoteFileRow = typeof noteFiles.$inferSelect
+export type NewNoteFileRow = typeof noteFiles.$inferInsert
 export type NoteRevisionRow = typeof noteRevisions.$inferSelect
 export type NewNoteRevisionRow = typeof noteRevisions.$inferInsert
 export type ChatImageRow = typeof chatImages.$inferSelect
