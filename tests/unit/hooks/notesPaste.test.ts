@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_STRATEGY, runPaste, uploadIdFrom, type FetchLike } from '../../../claude/hooks/notes-paste.mjs';
-import { BLUE_DATA, RED_PNG_16, SESSION, assistantText, imagePromptEntry, jsonl, plainPromptEntry } from './fixtures.js';
+import { BLUE_DATA, RED_PNG_16, SESSION, assistantText, commandEntry, imagePromptEntry, jsonl, plainPromptEntry, skillBodyWithImagesEntry } from './fixtures.js';
 
 let tmp: string;
 let transcript: string;
@@ -166,6 +166,17 @@ describe('runPaste', () => {
     expect(reason).toContain('image_id D-0Q1');
     expect(reason).toContain('Call mcp__notes__create_image again');
     expect(reason).toContain('{"image_id":"D-0Q1"}');
+  });
+
+  it('finds a picture that came with a /n slash command (it sits on the isMeta entry after it)', async () => {
+    await writeFile(transcript, jsonl([commandEntry('make a note [Image #1]'), skillBodyWithImagesEntry([{ media_type: 'image/png', data: RED_PNG_16 }]), assistantText('Saving.')]));
+    const { fetchImpl, uploads } = fakeUpload(() => ok('E-1AB'));
+    const out = await runPaste({ input: hookInput({ pasted_image: 1, body: 'x' }, 'mcp__notes__create_image'), env, fetchImpl, sleep: noSleep });
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]!.bytes.equals(Buffer.from(RED_PNG_16, 'base64'))).toBe(true);
+    expect(out).toEqual({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { body: 'x', image_id: 'E-1AB' } },
+    });
   });
 
   it('stays out of other tools and of calls without pasted_image', async () => {

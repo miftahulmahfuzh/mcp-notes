@@ -128,6 +128,31 @@ export function extractImages(entry) {
 }
 
 /**
+ * The pictures of the human prompt at `index`. For a typed slash command (`/n ...`, string content)
+ * Claude Code writes the pasted pictures NOT on that entry but on the `isMeta` user entries that
+ * follow it (the skill body), without `imagePasteIds`; those count as the command's own pictures,
+ * numbered after any it carries. Stops at the next assistant or non-meta user entry.
+ */
+export function promptImages(entries, index) {
+  const entry = entries[index];
+  const images = [...extractImages(entry)];
+  const content = isObject(entry) && isObject(entry.message) ? entry.message.content : undefined;
+  if (typeof content !== 'string' || !COMMAND_START.test(content)) return images;
+  for (let j = index + 1; j < entries.length; j += 1) {
+    const next = entries[j];
+    if (!isObject(next)) continue;
+    if (next.type === 'assistant') break;
+    if (next.type !== 'user') continue;
+    if (next.isMeta !== true) break;
+    const hasIds = Array.isArray(next.imagePasteIds);
+    extractImages(next).forEach((image, k) => {
+      images.push(hasIds ? image : { ...image, paste_id: images.length + 1 });
+    });
+  }
+  return images;
+}
+
+/**
  * The latest human prompt and what the assistant said after it. `answer` is the text after the
  * last tool_use that follows the prompt (the final message); `answeredAt` is the timestamp of the
  * last entry contributing to it. Null when the transcript has no human prompt.
@@ -164,14 +189,24 @@ export function findTurn(entries) {
       }
     }
   }
-  return { prompt: entries[promptIndex], promptIndex, answer: segment.join('\n\n').trim(), answeredAt };
+  return { prompt: entries[promptIndex], promptIndex, answer: segment.join('\n\n').trim(), answeredAt, images: promptImages(entries, promptIndex) };
 }
 
 /** The latest human prompt entry that carries at least one base64 image, or null. */
 export function findLatestImagePrompt(entries) {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
-    if (isHumanPrompt(entry) && extractImages(entry).length > 0) return entry;
+    if (isHumanPrompt(entry) && promptImages(entries, i).length > 0) return entry;
+  }
+  return null;
+}
+
+/** The latest human prompt that carries pictures, with them (`promptImages`), or null. */
+export function findLatestPromptImages(entries) {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    if (!isHumanPrompt(entries[i])) continue;
+    const images = promptImages(entries, i);
+    if (images.length > 0) return { entry: entries[i], images };
   }
   return null;
 }
@@ -184,13 +219,14 @@ export function listImagePrompts(entries) {
   const prompts = [];
   if (!Array.isArray(entries)) return prompts;
   const seen = new Set();
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
     if (!isHumanPrompt(entry)) continue;
     if (typeof entry.uuid === 'string' && entry.uuid !== '') {
       if (seen.has(entry.uuid)) continue;
       seen.add(entry.uuid);
     }
-    const images = extractImages(entry);
+    const images = promptImages(entries, i);
     if (images.length > 0) prompts.push({ entry, images });
   }
   return prompts;

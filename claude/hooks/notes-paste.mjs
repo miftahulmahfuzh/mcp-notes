@@ -26,7 +26,7 @@
 import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { daemonBaseUrl, errorText, isMainModule, readStdin, stateDir, writeLog } from './lib/state.mjs';
-import { extractImages, findLatestImagePrompt, parseTranscript, pickPastedImage } from './lib/transcript.mjs';
+import { findLatestPromptImages, parseTranscript, pickPastedImage } from './lib/transcript.mjs';
 
 export const TOOL_NAME = 'mcp__notes__similar_images';
 /** Every tool the hook rewrites, and the argument its `pasted_image` becomes. */
@@ -136,8 +136,8 @@ export async function findPastedImage(transcriptPath, n, { readText, sleep }) {
     } catch {
       continue;
     }
-    const entry = findLatestImagePrompt(parseTranscript(text));
-    if (entry !== null) return pickPastedImage(extractImages(entry), n);
+    const latest = findLatestPromptImages(parseTranscript(text));
+    if (latest !== null) return pickPastedImage(latest.images, n);
   }
   return null;
 }

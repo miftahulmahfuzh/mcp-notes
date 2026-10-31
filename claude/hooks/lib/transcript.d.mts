@@ -12,6 +12,7 @@ export interface Turn {
   promptIndex: number;
   answer: string;
   answeredAt: string | null;
+  images: PastedImage[];
 }
 
 export interface ImagePrompt {
@@ -28,5 +29,7 @@ export function isNotesPromptText(text: unknown): boolean;
 export function extractImages(entry: unknown): PastedImage[];
 export function findTurn(entries: TranscriptEntry[]): Turn | null;
 export function findLatestImagePrompt(entries: TranscriptEntry[]): TranscriptEntry | null;
+export function findLatestPromptImages(entries: TranscriptEntry[]): { entry: TranscriptEntry; images: PastedImage[] } | null;
+export function promptImages(entries: TranscriptEntry[], index: number): PastedImage[];
 export function listImagePrompts(entries: TranscriptEntry[]): ImagePrompt[];
 export function pickPastedImage(images: PastedImage[], n: number): PastedImage | null;
