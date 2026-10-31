@@ -54,6 +54,10 @@ describe('reveal mount points', () => {
     const { container } = renderCard(note('K-F07', [img('K-F07', 'K-F07', 0), img('M-Q11', 'K-F07', 1)]));
     const meta = container.querySelector('.card-meta') as HTMLElement;
     expect(reveals(meta)).toEqual(['K-F07']);
+    // Left-aligned: right after the copy-ID button, ahead of the (width-reserving) copied label.
+    const btn = meta.querySelector('[data-reveal]') as HTMLElement;
+    expect(btn.previousElementSibling?.getAttribute('aria-label')).toBe('Copy ID');
+    expect(btn.nextElementSibling?.classList.contains('copied')).toBe(true);
   });
 
   it('wall card: none for a text note, none when caps.reveal is false, none when the cover is elsewhere', () => {

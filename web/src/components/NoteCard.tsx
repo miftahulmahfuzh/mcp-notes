@@ -119,8 +119,9 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
           >
             {copied ? <Check weight="duotone" /> : <Copy weight="duotone" />}
           </button>
-          <span className={copied ? 'copied on' : 'copied'}>copied</span>
+          {/* Reveal sits right after copy: the "copied" label reserves its width even while hidden, so it goes after. */}
           {note.images.length > 0 && <RevealButton image={note.images[0]} />}
+          <span className={copied ? 'copied on' : 'copied'}>copied</span>
           <span className="card-date">{relativeDate(note.created_at, now)}</span>
           <button
             type="button"

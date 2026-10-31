@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/chat-history-files-image-search`
 **Branch:** `feature/chat-history-files-image-search` (base: `main` @ `d3ef659`)
 **Phases:** 11
-**Status:** planned (reconciled 2026-10-31)
+**Status:** phase 1/11 complete
 **Coordinator:** —
 
 ---
@@ -57,17 +57,17 @@ Couplings that are real facts about the work: P3 serves R1 only for the wall cha
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Card footer: reveal button left | R6 | `web` | 4 | — | EASY | `.workflows/plan/chat-history-files-image-search/phase-1.md` | — | — |
-| 2 | Shared Lightbox + note modal strip | R4 | `web` | 8 | — | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-2.md` | — | — |
-| 3 | Chat image store, paste into the bar, wall chat sends images | R1 | `src/chat`, `src/http`, `src/db`, `web` | 40 | — | HARD | `.workflows/plan/chat-history-files-image-search/phase-3.md` | — | — |
-| 4 | Note files backend: schema, store, service, API, reveal, MCP visibility | R2 | `src/notes`, `src/files`, `src/http`, `src/db`, `src/mcp` | 38 | 3 | HARD | `.workflows/plan/chat-history-files-image-search/phase-4.md` | — | — |
-| 5 | Note files UI: paperclip, chips, paste/drop routing, reveal | R2 | `web` | 21 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-5.md` | — | — |
-| 6 | Image embeddings and `similar_images` | R5 | `src/embeddings`, `src/mcp`, `src/db`, `src/cli`, `src/chat` | 52 | 3, 4 | HARD | `.workflows/plan/chat-history-files-image-search/phase-6.md` | — | — |
-| 7 | Chat persistence: schema, context rebuild, reply_to, edit/delete API | R3 | `src/chat`, `src/http`, `src/db` | 46 | 3, 6 | HARD | `.workflows/plan/chat-history-files-image-search/phase-7.md` | — | — |
-| 8 | Claude Code capture: hook, ingest endpoint, install, `/n` pasted images | R1, R3 | `claude/hooks`, `src/http`, `src/chat`, `scripts`, `src/mcp` | 30 | 6, 7 | HARD | `.workflows/plan/chat-history-files-image-search/phase-8.md` | — | — |
-| 9 | History page, sidebar icon, full-screen button, timeline, thumbnails | R3 | `web` | 32 | 2, 3, 5, 7 | HARD | `.workflows/plan/chat-history-files-image-search/phase-9.md` | — | — |
-| 10 | Bubble actions: reply_to, edit, delete, restore | R3 | `web` | 24 | 9 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-10.md` | — | — |
-| 11 | Note-id links open the note modal in place; "show on wall" button | R3 | `web` | 18 | 10 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-11.md` | — | — |
+| 1 | Card footer: reveal button left | R6 | `web` | 4 | — | EASY | `.workflows/plan/chat-history-files-image-search/phase-1.md` | P1-NOTES-A034 | — |
+| 2 | Shared Lightbox + note modal strip | R4 | `web` | 8 | — | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-2.md` | P1-NOTES-A035 | — |
+| 3 | Chat image store, paste into the bar, wall chat sends images | R1 | `src/chat`, `src/http`, `src/db`, `web` | 40 | — | HARD | `.workflows/plan/chat-history-files-image-search/phase-3.md` | P1-NOTES-A036 | — |
+| 4 | Note files backend: schema, store, service, API, reveal, MCP visibility | R2 | `src/notes`, `src/files`, `src/http`, `src/db`, `src/mcp` | 38 | 3 | HARD | `.workflows/plan/chat-history-files-image-search/phase-4.md` | P1-NOTES-A037 | — |
+| 5 | Note files UI: paperclip, chips, paste/drop routing, reveal | R2 | `web` | 21 | 1, 2, 3, 4 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-5.md` | P1-NOTES-A038 | — |
+| 6 | Image embeddings and `similar_images` | R5 | `src/embeddings`, `src/mcp`, `src/db`, `src/cli`, `src/chat` | 52 | 3, 4 | HARD | `.workflows/plan/chat-history-files-image-search/phase-6.md` | P1-NOTES-A039 | — |
+| 7 | Chat persistence: schema, context rebuild, reply_to, edit/delete API | R3 | `src/chat`, `src/http`, `src/db` | 46 | 3, 6 | HARD | `.workflows/plan/chat-history-files-image-search/phase-7.md` | P1-NOTES-A040 | — |
+| 8 | Claude Code capture: hook, ingest endpoint, install, `/n` pasted images | R1, R3 | `claude/hooks`, `src/http`, `src/chat`, `scripts`, `src/mcp` | 30 | 6, 7 | HARD | `.workflows/plan/chat-history-files-image-search/phase-8.md` | P1-NOTES-A041 | — |
+| 9 | History page, sidebar icon, full-screen button, timeline, thumbnails | R3 | `web` | 32 | 2, 3, 5, 7 | HARD | `.workflows/plan/chat-history-files-image-search/phase-9.md` | P1-NOTES-A042 | — |
+| 10 | Bubble actions: reply_to, edit, delete, restore | R3 | `web` | 24 | 9 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-10.md` | P1-NOTES-A043 | — |
+| 11 | Note-id links open the note modal in place; "show on wall" button | R3 | `web` | 18 | 10 | NORMAL | `.workflows/plan/chat-history-files-image-search/phase-11.md` | P1-NOTES-A044 | — |
 
 File counts are individual files from each plan's Files table after reconciliation (generated drizzle files included). Phase 9 moved from NORMAL to HARD: 32 files, a shared `/api/events` connection that `useNotes` now goes through, URL sync and streaming sends.
 
