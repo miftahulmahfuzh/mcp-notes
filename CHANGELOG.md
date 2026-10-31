@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Note modal off-screen for image-heavy notes**: the editor overlay's single grid column stretched to the thumbnail strip's width (a 58-image note), pushing the panel off the right edge; the column is now `minmax(0, 1fr)`.
-- **Image ids in chat open their note**: ids of images quoted in an answer ("image 5-RI4 in note B-SMK") were linked as notes and answered "no note"; they now open the note that holds the image.
+- **Image ids in chat open that image**: ids of images quoted in an answer ("image 5-RI4 in note B-SMK") were linked as notes and answered "no note"; clicking one now opens that image in the lightbox (arrows walk the other images of its note), without leaving the page.
 - Wall card footer: the "Show in Explorer" icon now sits right after the copy-ID icon instead of floating mid-footer.
 
 ## [v0.1.0] - 2026-10-30

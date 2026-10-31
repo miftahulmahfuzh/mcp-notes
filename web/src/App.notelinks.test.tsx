@@ -17,7 +17,7 @@ const far = makeNote('Q-R88', 'an old note past the first page', { created: olde
 const gone: Note = { ...makeNote('G-H19', 'a deleted draft', { created: older }), deleted_at: iso };
 const page = [textA, textC, photoK];
 
-const ANSWER = 'See a-b32, Q-R88, G-H19, Z-Z99, K-F07 and image W-X12.';
+const ANSWER = 'See a-b32, Q-R88, G-H19, Z-Z99, K-F07 and image M-N11.';
 
 // P7 wire for GET /api/chat/messages (`ChatPage`), built with P9's fixture. App asks with include_deleted=1 (P10).
 const HISTORY = {
@@ -62,7 +62,7 @@ beforeEach(() => {
         const base = [...page, far].find((n) => n.id === id) as Note;
         return json({ ...base, body });
       }
-      if (method === 'GET' && url === '/api/images/W-X12') return json({ id: 'W-X12', note_id: 'Q-R88' });
+      if (method === 'GET' && url === '/api/images/M-N11') return json(photoK.images.find((i) => i.id === 'M-N11'));
       if (url.startsWith('/api/tags')) return json([]);
       if (url.startsWith('/api/bin')) {
         const bin: Bin = { notes: [gone], images: [] };
@@ -202,12 +202,15 @@ describe('App: note ids in chat open the big editor in place', () => {
     expect(document.querySelector('[data-modal="editor"]')).toBeNull();
   });
 
-  it('an image id opens the note that holds it', async () => {
+  it('an image id opens that image in the lightbox, not its note', async () => {
     await loadedWall();
     await ask();
-    press(link('W-X12') as HTMLElement);
-    await waitFor(() => expect(dialog('Q-R88')).not.toBeNull());
-    expect(calls).toContain('GET /api/images/W-X12');
+    press(link('M-N11') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-lightbox]')).not.toBeNull());
+    expect(calls).toContain('GET /api/images/M-N11');
+    expect(document.querySelector('[data-lightbox] img')?.getAttribute('src')).toBe('/api/images/M-N11/display');
+    expect(dialog('K-F07')).toBeNull();
+    expect(document.querySelector('[data-modal="editor"]')).toBeNull();
     expect(notice()).toBeNull();
   });
 

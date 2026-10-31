@@ -1,4 +1,4 @@
-import type { Bin, ChatImage, Note, TagCount } from './types';
+import type { Bin, ChatImage, Note, NoteImage, TagCount } from './types';
 import type { RoutedFile } from './lib/files';
 
 export class ApiError extends Error {
@@ -42,12 +42,12 @@ export async function fetchNote(id: string): Promise<Note | null> {
   return (await res.json()) as Note;
 }
 
-/** `GET /api/images/:id` → the id of the note holding that image, or null when there is no such image. Image ids share the note-id shape, so chat text links them like notes. */
-export async function fetchImageOwner(id: string): Promise<string | null> {
+/** `GET /api/images/:id` → the image's wire JSON, or null when there is no such image. Image ids share the note-id shape, so chat text links them like notes. */
+export async function fetchImageInfo(id: string): Promise<NoteImage | null> {
   const res = await fetch(`/api/images/${enc(id)}`);
   if (res.status === 404) return null;
   await check(res);
-  return ((await res.json()) as { note_id?: string }).note_id ?? null;
+  return (await res.json()) as NoteImage;
 }
 
 /** Phase 6: `GET /api/tags` → `[{ tag, count, last_used }]`. */

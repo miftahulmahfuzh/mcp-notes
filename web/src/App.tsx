@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
-import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchImageOwner, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
+import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchImageInfo, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
 import type { Mode, Note, NoteFile, NoteImage as NoteImageData, View } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
@@ -36,6 +36,7 @@ import { NoteLinkContext, type NoteLinks } from './components/ChatText';
 import { Gallery } from './components/Gallery';
 import { DropOverlay } from './components/DropOverlay';
 import { NoteEditor } from './components/NoteEditor';
+import { Lightbox, noteImageItems, type LightboxItem } from './components/Lightbox';
 import { Bin } from './components/Bin';
 import { UndoBar } from './components/UndoBar';
 import { LinkNotice } from './components/LinkNotice';
@@ -76,6 +77,8 @@ export function App() {
   // editor), a way to close the big editor through its normal path, and the newest-link guard.
   const { notice: linkNotice, show: showLinkNotice } = useNotice(6000);
   const [closeSignal, setCloseSignal] = useState(0);
+  /** The lightbox opened by an image id in chat text (note ids open the editor instead). */
+  const [viewer, setViewer] = useState<{ items: LightboxItem[]; index: number } | null>(null);
   const linkSeq = useRef(0);
   const cancelFlash = useRef<() => void>(() => {});
 
@@ -481,7 +484,7 @@ export function App() {
 
   /**
    * A note id clicked in chat text. A loaded note opens at once (`expand`, no draft); else
-   * GET /api/notes/:id and upsert; an image id opens its note; a 404 the bin holds or an unknown id gets
+   * GET /api/notes/:id and upsert; an image id opens the lightbox on it; a 404 the bin holds or an unknown id gets
    * the deep link's quiet notice. Never changes the view, the URL or the scroll position. Only the newest click acts.
    */
   const openNoteModal = useCallback(
@@ -533,16 +536,30 @@ export function App() {
         return;
       }
       // Image ids look like note ids, and the model quotes them ("image 5-RI4 in note B-SMK"):
-      // an image id opens the note that holds it.
-      let owner: string | null = null;
+      // an image id opens that image in the lightbox, with the arrows walking its note's other images.
+      let info: NoteImageData | null = null;
       try {
-        owner = await fetchImageOwner(id);
+        info = await fetchImageInfo(id);
       } catch (e) {
         console.error('note link: image lookup failed', e);
       }
       if (stale()) return;
-      if (owner !== null && owner !== id) {
-        void openNoteModal(owner);
+      if (info) {
+        let images: NoteImageData[] = [info];
+        try {
+          const owner = await fetchNote(info.note_id);
+          if (owner?.images.some((img) => img.id === info.id)) images = owner.images;
+        } catch (e) {
+          console.error('note link: owner lookup failed', e);
+        }
+        if (stale()) return;
+        const items = noteImageItems(images);
+        const at = items.findIndex((it) => it.id === info.id);
+        if (at < 0) {
+          showLinkNotice(`image ${id} is not on this machine`);
+          return;
+        }
+        setViewer({ items, index: at });
         return;
       }
       showLinkNotice(`no note ${id}`);
@@ -740,6 +757,14 @@ export function App() {
               />,
               document.body,
             )}
+          {viewer && (
+            <Lightbox
+              items={viewer.items}
+              index={viewer.index}
+              onIndex={(index) => setViewer((v) => (v ? { ...v, index } : v))}
+              onClose={() => setViewer(null)}
+            />
+          )}
           <UndoBar entry={undoEntry} onUndo={runUndo} />
           <LinkNotice text={linkNotice} />
           <Tooltip />
