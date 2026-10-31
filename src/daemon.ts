@@ -5,6 +5,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import { startBackground } from './background.js';
 import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
+import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import type { Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
@@ -17,7 +18,7 @@ import { NotesService } from './notes/service.js';
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run, so SDK sessions resume across restarts. */
 export const CHAT_SUBDIR = 'chat';
 
-export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR] as const;
+export const DATA_SUBDIRS = ['images', 'cache', 'inbox', join('inbox', 'failed'), CHAT_SUBDIR, CHAT_IMAGES_SUBDIR] as const;
 
 export interface RunningDaemon {
   deps: AppDeps;

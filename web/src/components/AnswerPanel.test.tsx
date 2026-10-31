@@ -166,3 +166,24 @@ describe('AnswerPanel collapse', () => {
     expect(q?.getAttribute('data-tip')).toBe(query);
   });
 });
+
+describe('AnswerPanel pasted images', () => {
+  it('shows the thumbnails sent with the query', () => {
+    const { container } = renderPanel({ images: ['U-PL1', 'V-QM2'] });
+    const srcs = [...container.querySelectorAll('.answer-images img')].map((i) => i.getAttribute('src'));
+    expect(srcs).toEqual(['/api/chat/images/U-PL1/thumb', '/api/chat/images/V-QM2/thumb']);
+  });
+
+  it('labels an image-only question by its image count', () => {
+    const { container } = renderPanel({ query: '', images: ['U-PL1'] });
+    expect(container.querySelector('.answer-q')?.textContent).toBe('1 image');
+  });
+
+  it('hides the thumbnails when collapsed, and shows none without images', () => {
+    const collapsed = renderPanel({ images: ['U-PL1'], collapsed: true });
+    expect(collapsed.container.querySelector('.answer-images')).toBeNull();
+    collapsed.unmount();
+    const plain = renderPanel();
+    expect(plain.container.querySelector('.answer-images')).toBeNull();
+  });
+});

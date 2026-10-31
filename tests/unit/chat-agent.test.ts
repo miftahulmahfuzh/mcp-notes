@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
 import {
   createAgentChatBackend,
   type AgentChatConfig,
+  type AgentChatOptions,
   type QueryFn,
 } from '../../src/chat/agent.js';
-import type { ChatEvent, ChatRequest, ChatTurn } from '../../src/chat/backend.js';
+import type { ChatEvent, ChatRequest, ChatTurn, ChatTurnImage } from '../../src/chat/backend.js';
 import { allowedChatTools } from '../../src/chat/status.js';
 
 // ---------- fake SDK messages ----------
@@ -126,8 +127,10 @@ function throwsAfter(before: SDKMessage[], message: string): Script {
   };
 }
 
-function fakeQuery(...scripts: Script[]): { query: QueryFn; calls: { prompt: string; options: Options }[] } {
-  const calls: { prompt: string; options: Options }[] = [];
+type QueryCall = Parameters<QueryFn>[0];
+
+function fakeQuery(...scripts: Script[]): { query: QueryFn; calls: QueryCall[] } {
+  const calls: QueryCall[] = [];
   const query: QueryFn = (params) => {
     calls.push(params);
     const script = scripts[calls.length - 1];
@@ -149,7 +152,7 @@ const GLM = { baseUrl: 'https://api.z.ai/api/anthropic', apiKey: 'glm-key', mode
 const CHAT: AgentChatConfig = { brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: '/opt/claude/bin/claude', glm: GLM };
 const MCP_URL = 'http://127.0.0.1:7317/mcp';
 
-function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}) {
+function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}, extra: Partial<AgentChatOptions> = {}) {
   return createAgentChatBackend({
     chat: { ...CHAT, ...chat },
     cwd: '/data/chat',
@@ -158,11 +161,17 @@ function backend(query: QueryFn, chat: Partial<AgentChatConfig> = {}) {
     now: () => new Date('2026-10-30T03:00:00Z'),
     baseEnv: { PATH: '/usr/bin', HOME: '/home/owner', ANTHROPIC_API_KEY: 'sk-ant-should-not-leak' },
     log: () => {},
+    ...extra,
   });
 }
 
-function req(message: string, threadId: string | null = null, signal = new AbortController().signal): ChatRequest {
-  return { message, threadId, signal };
+function req(
+  message: string,
+  threadId: string | null = null,
+  signal = new AbortController().signal,
+  images: ChatTurnImage[] = [],
+): ChatRequest {
+  return { message, images, threadId, signal };
 }
 
 async function collect(turn: ChatTurn): Promise<ChatEvent[]> {
@@ -499,6 +508,101 @@ describe('agent chat backend: CHAT_BRAIN=glm', () => {
     const { query, calls } = fakeQuery(scripted([success()]));
     const { error } = await collectUntilError(await backend(query, { brain: 'glm', glm: null }).reply(req('x')));
     expect(error.message).toMatch(/LLM_BASE_URL/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// ---------- pasted images ----------
+
+const RED: ChatTurnImage = { id: 'U-PL1', previewPath: '/cache/c_U-PL1/preview.jpg', previewMime: 'image/jpeg', width: 40, height: 30, originalName: 'red.png' };
+const BLUE: ChatTurnImage = { id: 'V-QM2', previewPath: '/cache/c_V-QM2/preview.jpg', previewMime: 'image/jpeg', width: 8, height: 8, originalName: null };
+const PREVIEWS: Record<string, Uint8Array> = {
+  [RED.previewPath]: new Uint8Array([1, 2, 3]),
+  [BLUE.previewPath]: new Uint8Array([4, 5, 6, 7]),
+};
+
+async function readPreview(absPath: string): Promise<Uint8Array> {
+  const bytes = PREVIEWS[absPath];
+  if (bytes === undefined) throw new Error(`ENOENT: no such file, open '${absPath}'`);
+  return bytes;
+}
+
+async function sentMessages(prompt: QueryCall['prompt'] | undefined): Promise<SDKUserMessage[]> {
+  if (prompt === undefined || typeof prompt === 'string') throw new Error('expected a user-message stream');
+  const out: SDKUserMessage[] = [];
+  for await (const m of prompt) out.push(m);
+  return out;
+}
+
+const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64');
+
+describe('agent chat backend: pasted images', () => {
+  it('sends one user message: an image block per image in order, then the text naming each upload id', async () => {
+    const { query, calls } = fakeQuery(scripted([textDelta('Red and blue.'), success()]));
+    const turn = await backend(query, {}, { readPreview }).reply(req('what are these?', null, undefined, [RED, BLUE]));
+    expect(deltas(await collect(turn))).toBe('Red and blue.');
+    const sent = await sentMessages(calls[0]?.prompt);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.type).toBe('user');
+    expect(sent[0]?.parent_tool_use_id).toBeNull();
+    expect(sent[0]?.message.role).toBe('user');
+    expect(sent[0]?.message.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(PREVIEWS[RED.previewPath]!) } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(PREVIEWS[BLUE.previewPath]!) } },
+      {
+        type: 'text',
+        text:
+          'what are these?\n\nThe owner attached 2 images to this message. They are shown above in this order, with these upload ids:\n' +
+          '[image upload:U-PL1]\n[image upload:V-QM2]',
+      },
+    ]);
+  });
+
+  it('sends an image with no text', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    await collect(await backend(query, {}, { readPreview }).reply(req('', null, undefined, [RED])));
+    const sent = await sentMessages(calls[0]?.prompt);
+    const content = sent[0]?.message.content;
+    expect(Array.isArray(content) ? content.at(-1) : null).toEqual({
+      type: 'text',
+      text: 'The owner attached 1 image to this message. It is shown above, and its upload id is:\n[image upload:U-PL1]',
+    });
+  });
+
+  it('keeps a text-only message a plain string prompt', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    await collect(await backend(query, {}, { readPreview }).reply(req('hello')));
+    expect(calls[0]?.prompt).toBe('hello');
+  });
+
+  it('the GLM retry sends the same images again on a fresh stream, reading each preview once', async () => {
+    const reads: string[] = [];
+    const counting = async (p: string): Promise<Uint8Array> => {
+      reads.push(p);
+      return readPreview(p);
+    };
+    const { query, calls } = fakeQuery(
+      scripted([assistantError('rate_limit', 'You have hit your usage limit'), errorResult('usage limit reached')]),
+      scripted([textDelta('From GLM.'), success('sess-glm')]),
+    );
+    const turn = await backend(query, {}, { readPreview: counting }).reply(req('look', null, undefined, [RED]));
+    expect(deltas(await collect(turn))).toBe('From GLM.');
+    expect(calls).toHaveLength(2);
+    const first = await sentMessages(calls[0]?.prompt);
+    const second = await sentMessages(calls[1]?.prompt);
+    expect(second).toEqual(first);
+    expect(reads).toEqual([RED.previewPath]);
+    expect(turn.end()).toEqual({ threadId: 'sess-glm', brain: 'glm' });
+  });
+
+  it('fails the turn before any SDK call when a preview cannot be read, without a fallback', async () => {
+    const { query, calls } = fakeQuery(scripted([success()]));
+    const missing: ChatTurnImage = { ...RED, id: 'W-RN3', previewPath: '/cache/c_W-RN3/preview.jpg' };
+    const { events, error } = await collectUntilError(
+      await backend(query, {}, { readPreview }).reply(req('x', null, undefined, [missing])),
+    );
+    expect(events).toEqual([]);
+    expect(error.message).toMatch(/Could not read pasted image W-RN3/);
     expect(calls).toHaveLength(0);
   });
 });

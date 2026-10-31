@@ -21,9 +21,25 @@ export interface ChatTurnEnd {
   brain?: ChatBrain;
 }
 
+/** One pasted image of a turn, resolved by the HTTP layer from `image_ids` (src/chat/images.ts `resolveTurnImages`). */
+export interface ChatTurnImage {
+  /** `chat_images.id` (`A-B32`). The model sees it as `[image upload:ID]`. */
+  id: string;
+  /** Absolute path of the `preview` derivative (`cache/c_<id>/preview.jpg`: long edge <= 1568 px, under 3.75 MB). */
+  previewPath: string;
+  /** Mime of the preview file. */
+  previewMime: 'image/jpeg';
+  /** Size of the original, display-oriented. */
+  width: number;
+  height: number;
+  originalName: string | null;
+}
+
 export interface ChatRequest {
-  /** The user's message, already trimmed and non-empty. */
+  /** The user's message, trimmed. Empty only when `images` is non-empty. */
   message: string;
+  /** Images pasted with this message, in the order the user sent them. Empty for a text-only message. */
+  images: readonly ChatTurnImage[];
   /** The thread the client wants to continue, or null to start a new one. */
   threadId: string | null;
   /** Aborted when the HTTP client disconnects. Backends must stop yielding promptly. */

@@ -394,6 +394,14 @@ input method is still composing. The bar grows upward one line at a time up to a
 then scrolls inside, and drops back to one line after sending. Newlines reach the agent as you
 typed them. The panel always sits above the bar, whatever its height.
 
+Paste a screenshot or photo while the bar has focus and it goes with your next question instead
+of becoming a note. A small thumbnail appears inside the pill: a spinner while it uploads, a
+warning mark if it failed, and an × to take it out. Up to four images go with one question, and
+a question may be images alone. The answer panel shows them above the answer, and the agent sees
+them, each named by an upload id (`upload:A-B32`). Pasted chat images are stored once by sha256
+under `~/mcp-notes-data/chat-images/` and never appear on the wall. Pasting anywhere else still
+makes a new photo note, and pasting into the open big editor still attaches to that note.
+
 The caret icon next to pin and dismiss collapses the panel to its header line. That line shows
 the question on one line (newlines become spaces, a long question is cut with an ellipsis, and
 the full text is in the tooltip). After the question comes the status while it is still

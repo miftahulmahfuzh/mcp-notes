@@ -63,3 +63,19 @@ export interface Bin {
 
 /** What the main area shows: the wall (text / images / all modes) or the recycle bin. */
 export type View = 'wall' | 'bin';
+
+/** A pasted chat image as the server sends it (`POST /api/chat/images`; src/chat/images.ts `ChatImage`). */
+export interface ChatImage {
+  id: string;
+  mime: string;
+  width: number;
+  height: number;
+  bytes: number;
+  original_name: string | null;
+  host: string | null;
+  source: 'wall' | 'claude_code';
+  created_at: string;
+  available: boolean;
+  /** `/api/chat/images/<id>/<variant>`. */
+  urls: { thumb: string; display: string; original: string; preview: string };
+}

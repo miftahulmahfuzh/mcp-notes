@@ -1,7 +1,14 @@
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
-import type { ChatBackend, ChatBrain, ChatEvent } from '../chat/backend.js';
+import type { ChatBackend, ChatBrain, ChatEvent, ChatTurnImage } from '../chat/backend.js';
+import {
+  ChatImageLookupError,
+  chatImageStoreFor,
+  MAX_CHAT_IMAGES_PER_MESSAGE,
+  resolveTurnImages,
+  type ChatImageLookupErrorCode,
+} from '../chat/images.js';
 import { createStubChatBackend } from '../chat/stub.js';
 import type { AppDeps } from '../deps.js';
 import type { NoteEvent } from '../notes/events.js';
@@ -31,10 +38,29 @@ const noteBodySchema = z.object({
   body: z.string(),
 });
 
-const chatSchema = z.object({
-  message: z.string().trim().min(1),
-  thread_id: z.string().trim().min(1).max(200).optional(),
-});
+const chatSchema = z
+  .object({
+    message: z.string().trim().default(''),
+    thread_id: z.string().trim().min(1).max(200).optional(),
+    /** Chat image ids from POST /api/chat/images, in paste order. */
+    image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).optional(),
+  })
+  .refine((v) => v.message.length > 0 || (v.image_ids?.length ?? 0) > 0, {
+    message: 'a message or at least one image is required',
+    path: ['message'],
+  });
+
+/** ChatImageLookupError -> HTTP status, answered as JSON before any SSE. */
+function chatImageErrorStatus(code: ChatImageLookupErrorCode): 400 | 409 | 422 {
+  switch (code) {
+    case 'unknown_image':
+      return 400;
+    case 'not_on_this_machine':
+      return 409;
+    case 'unreadable_image':
+      return 422;
+  }
+}
 
 function describeIssues(error: z.ZodError): string {
   return error.issues
@@ -248,7 +274,19 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     if (!json.ok) return badRequest(c, 'invalid_json');
     const parsed = chatSchema.safeParse(json.value);
     if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
-    const { message, thread_id } = parsed.data;
+    const { message, thread_id, image_ids } = parsed.data;
+
+    // Resolve (and derive the preview of) every pasted image before the stream opens, so a bad id
+    // is a plain JSON error the client can show.
+    let images: ChatTurnImage[] = [];
+    if (image_ids !== undefined && image_ids.length > 0) {
+      try {
+        images = await resolveTurnImages(chatImageStoreFor(deps), image_ids);
+      } catch (err) {
+        if (!(err instanceof ChatImageLookupError)) throw err;
+        return c.json({ error: err.code, id: err.imageId, message: err.message }, chatImageErrorStatus(err.code));
+      }
+    }
 
     return streamSSE(c, async (stream) => {
       const controller = new AbortController();
@@ -256,6 +294,7 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
       try {
         const turn = await chat.reply({
           message,
+          images,
           threadId: thread_id ?? null,
           signal: controller.signal,
         });

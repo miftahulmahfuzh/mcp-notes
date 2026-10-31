@@ -15,9 +15,10 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAgentChatBackend } from '../../src/chat/agent.js';
-import type { ChatBrain, ChatTurnEnd } from '../../src/chat/backend.js';
+import type { ChatBrain, ChatTurnEnd, ChatTurnImage } from '../../src/chat/backend.js';
 import { createStubChatBackend } from '../../src/chat/stub.js';
 import { loadConfig, type Config } from '../../src/config.js';
 import { CHAT_SUBDIR, startDaemon, type RunningDaemon } from '../../src/daemon.js';
@@ -64,7 +65,7 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-async function ask(brain: ChatBrain, message: string): Promise<LiveAnswer> {
+async function ask(brain: ChatBrain, message: string, images: ChatTurnImage[] = []): Promise<LiveAnswer> {
   if (daemon === undefined) throw new Error('daemon did not start');
   const chat: Config['chat'] = { ...config.chat, brain };
   const mcpUrl = `http://127.0.0.1:${daemon.port}/mcp`;
@@ -76,7 +77,7 @@ async function ask(brain: ChatBrain, message: string): Promise<LiveAnswer> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
   try {
-    const turn = await backend.reply({ message, threadId: null, signal: controller.signal });
+    const turn = await backend.reply({ message, images, threadId: null, signal: controller.signal });
     let text = '';
     const statuses: string[] = [];
     for await (const event of turn.events) {
@@ -117,5 +118,20 @@ describe('chat brain, live', () => {
     }
     const answer = await ask('glm', codewordPrompt());
     expectNotesAnswer(answer, 'glm');
+  });
+
+  it('sees an image pasted into the chat bar and names its upload id (Claude)', async () => {
+    const previewPath = join(root, 'red-preview.jpg');
+    await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 220, g: 20, b: 20 } } })
+      .jpeg()
+      .toFile(previewPath);
+    const answer = await ask(
+      'claude',
+      'What single colour fills the image I attached? Answer in one short sentence and quote its upload id.',
+      [{ id: 'L-IV1', previewPath, previewMime: 'image/jpeg', width: 64, height: 64, originalName: 'red.jpg' }],
+    );
+    expect(answer.end.brain).toBe('claude');
+    expect(answer.text).toMatch(/red/i);
+    expect(answer.text.toUpperCase()).toContain('L-IV1');
   });
 });

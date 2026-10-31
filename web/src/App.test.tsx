@@ -381,3 +381,86 @@ describe('App big editor (R2)', () => {
     expect(document.querySelector('.answer')).not.toBeNull();
   });
 });
+
+describe('App chat images (R1)', () => {
+  type Call = { method: string; url: string; body?: unknown };
+  let calls: Call[];
+  const png = new File(['png'], 'shot.png', { type: 'image/png' });
+  const uploaded = {
+    created: true,
+    image: {
+      id: 'U-PL1',
+      mime: 'image/png',
+      width: 10,
+      height: 10,
+      bytes: 3,
+      original_name: 'shot.png',
+      host: 'lenovo',
+      source: 'wall',
+      created_at: iso,
+      available: true,
+      urls: {
+        thumb: '/api/chat/images/U-PL1/thumb',
+        display: '/api/chat/images/U-PL1/display',
+        original: '/api/chat/images/U-PL1/original',
+        preview: '/api/chat/images/U-PL1/preview',
+      },
+    },
+  };
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        calls.push({ method, url, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
+        if (url === '/api/chat/images') {
+          return new Response(JSON.stringify(uploaded), { status: 201, headers: { 'content-type': 'application/json' } });
+        }
+        if (url.startsWith('/api/chat')) {
+          return new Response('event: delta\ndata: {"text":"A red square."}\n\nevent: done\ndata: {"thread_id":"t1"}\n\n', {
+            headers: { 'content-type': 'text/event-stream' },
+          });
+        }
+        if (url.startsWith('/api/notes')) return json({ notes, next_cursor: null });
+        if (url.startsWith('/api/tags')) return json(tags);
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  it('a paste into the focused chat bar uploads a chat image, never a note, and sends its id', async () => {
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    const ta = screen.getByLabelText('Ask about your notes') as HTMLTextAreaElement;
+    ta.focus();
+    fireEvent.paste(ta, { clipboardData: { files: [png] } });
+    await waitFor(() =>
+      expect(document.querySelector('.chatbar-thumb img')?.getAttribute('src')).toBe('/api/chat/images/U-PL1/thumb'),
+    );
+    expect(calls.filter((c) => c.method === 'POST' && c.url === '/api/chat/images')).toHaveLength(1);
+    expect(calls.some((c) => c.url === '/api/images')).toBe(false);
+
+    fireEvent.submit(document.querySelector('form.chatbar') as HTMLFormElement);
+    await screen.findByText('A red square.');
+    expect(calls.find((c) => c.method === 'POST' && c.url === '/api/chat')?.body).toEqual({ message: '', image_ids: ['U-PL1'] });
+    expect(document.querySelector('.chatbar-thumb')).toBeNull();
+    expect(document.querySelector('.answer-images img')?.getAttribute('src')).toBe('/api/chat/images/U-PL1/thumb');
+    expect(document.querySelector('.answer-q')?.textContent).toBe('1 image');
+  });
+
+  it('a paste with the chat bar not focused still makes a new photo note', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<App />);
+    await screen.findByText('onboarding is long');
+    (document.activeElement as HTMLElement | null)?.blur();
+    const e = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'clipboardData', { value: { files: [png] } });
+    document.dispatchEvent(e);
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url === '/api/images')).toBe(true));
+    expect(calls.some((c) => c.url === '/api/chat/images')).toBe(false);
+    quiet.mockRestore();
+  });
+});

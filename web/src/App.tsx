@@ -6,6 +6,7 @@ import { createNote, deleteNote, DuplicateImageError, fetchBin, fetchNote, remov
 import type { Mode, Note, NoteImage as NoteImageData, View } from './types';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
+import { useChatImages } from './hooks/useChatImages';
 import { useNow } from './hooks/useNow';
 import { useCopied } from './hooks/useCopied';
 import { useNotice } from './hooks/useNotice';
@@ -46,6 +47,7 @@ export function App() {
   const { notes, tags, loaded, refetch, upsertLocal, removeLocal } = useNotes();
   const now = useNow();
   const chat = useChat();
+  const chatImages = useChatImages();
   const { copied, copy } = useCopied();
 
   const [side, setSide] = useState(false);
@@ -354,10 +356,14 @@ export function App() {
 
   const send = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!q.trim()) return;
+    // An image still uploading (or failed and not yet removed) holds the message back.
+    if (chatImages.blocked) return;
+    const imageIds = chatImages.readyIds;
+    if (!q.trim() && imageIds.length === 0) return;
     setMode((m) => (m === 'images' ? 'all' : m));
-    void chat.ask(q);
+    void chat.ask(q, imageIds);
     setQ('');
+    chatImages.clear();
   };
 
   const { open: chatOpen, pinned, close: closeChat } = chat;
@@ -435,6 +441,7 @@ export function App() {
           <AnswerPanel
             left={chatLeft}
             query={chat.query}
+            images={chat.images}
             text={chat.text}
             done={chat.done}
             status={chat.status}
@@ -448,7 +455,16 @@ export function App() {
             onJump={jump}
           />
         )}
-        <ChatBar left={chatLeft} value={q} onChange={setQ} onSubmit={send} />
+        <ChatBar
+          left={chatLeft}
+          value={q}
+          onChange={setQ}
+          onSubmit={send}
+          images={chatImages.images}
+          onPasteFiles={chatImages.add}
+          onRemoveImage={chatImages.remove}
+          sendBlocked={chatImages.blocked}
+        />
         <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} />
         {expandedNote &&
           createPortal(

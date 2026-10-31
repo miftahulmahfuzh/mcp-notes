@@ -42,7 +42,7 @@ afterAll(async () => {
 
 describe('startDaemon', () => {
   it('creates the data dirs, including the chat cwd', () => {
-    for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat']) expect(existsSync(join(dataDir, sub))).toBe(true);
+    for (const sub of ['images', 'cache', 'inbox', 'inbox/failed', 'chat', 'chat-images']) expect(existsSync(join(dataDir, sub))).toBe(true);
   });
 
   it('listens on 127.0.0.1 and answers /health', async () => {
