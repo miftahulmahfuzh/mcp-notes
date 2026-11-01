@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Note, PhotoItem } from '../types';
+import type { Note, NoteImage as NoteImageData, PhotoItem } from '../types';
 import { NoteImage, aspectOf, type ImageInfo } from './NoteImage';
 import { PhotoModal } from './PhotoModal';
 
@@ -21,8 +21,8 @@ export interface GalleryProps {
   items: PhotoItem[];
   copiedId: string | null;
   onCopy: (id: string) => void;
-  /** Passed to the photo modal's trash icon. */
-  onDelete?: (note: Note) => void;
+  /** Passed to the photo modal's trash icon: removes that one image, not its note. */
+  onDelete?: (image: NoteImageData) => void;
   /** Passed to the photo modal: the note text is click-to-edit and saves on blur. Absent = read-only text. */
   onSave?: (note: Note, draft: string) => void;
   /** Passed to the photo modal's "Chat about this image" icon (the image id). Absent = no icon. */

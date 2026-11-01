@@ -700,7 +700,7 @@ export function App() {
             ) : view === 'bin' ? (
               <Bin store={binStore} now={now} onRestored={onRestored} />
             ) : mode === 'images' ? (
-              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeNote} onSave={save} onChatAbout={chatAboutImage} />
+              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeImageWithUndo} onSave={save} onChatAbout={chatAboutImage} />
             ) : (
               <Wall
                 notes={visible}

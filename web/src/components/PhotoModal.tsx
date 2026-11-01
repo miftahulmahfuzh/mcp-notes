@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { ArrowsOut, CaretLeft, CaretRight, ChatCircleDots, Check, Copy, Trash, X } from '@phosphor-icons/react';
-import type { Note, PhotoItem } from '../types';
+import type { Note, NoteImage as NoteImageData, PhotoItem } from '../types';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
 import { RevealButton } from './RevealButton';
@@ -53,8 +53,8 @@ export interface PhotoModalProps {
   onClose: () => void;
   copiedId: string | null;
   onCopy: (id: string) => void;
-  /** Soft-delete the shown photo's note (R3), then close. Absent = no trash icon. */
-  onDelete?: (note: Note) => void;
+  /** Soft-remove only the shown image (its note, and the note's other images, stay), then close. Absent = no trash icon. */
+  onDelete?: (image: NoteImageData) => void;
   /**
    * The note text is click-to-edit; blur saves the draft (the whole body, hashtags included) when
    * it changed. App's `save`, the same writer the text editor uses. Absent = read-only text.
@@ -277,10 +277,10 @@ export function PhotoModal({ items, index, onIndex, onClose, copiedId, onCopy, o
             <button
               type="button"
               className="pm-btn"
-              data-tip="Delete note"
-              aria-label="Delete note"
+              data-tip="Delete image"
+              aria-label="Delete image"
               onClick={() => {
-                onDelete(note);
+                onDelete(image);
                 onClose();
               }}
               style={toolBtn}
