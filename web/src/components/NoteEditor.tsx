@@ -312,6 +312,14 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             index={viewIndex}
             onIndex={(i) => setViewing(lightboxItems[i].id)}
             onClose={() => setViewing(null)}
+            onDelete={(item) => {
+              const img = note.images.find((i) => i.id === item.id);
+              if (!img) return;
+              // Show the neighbour (or close when it was the only one), then remove just this image.
+              const j = viewIndex < lightboxItems.length - 1 ? viewIndex + 1 : viewIndex - 1;
+              setViewing(j >= 0 ? lightboxItems[j].id : null);
+              onRemoveImage(img);
+            }}
             onChatAbout={
               onChatAbout
                 ? (item) => {

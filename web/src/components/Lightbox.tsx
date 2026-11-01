@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { CaretLeft, CaretRight, ChatCircleDots, X } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, ChatCircleDots, Trash, X } from '@phosphor-icons/react';
 import { imageUrl } from '../api';
 import type { NoteImage as NoteImageData } from '../types';
 import { FILM_FILTER, ImagePlaceholder, aspectOf } from './NoteImage';
@@ -34,6 +34,8 @@ export interface LightboxProps {
   onClose: () => void;
   /** "Chat about this image": gets the shown item (its `id` is the note image id). Absent = no icon. */
   onChatAbout?: (item: LightboxItem) => void;
+  /** "Delete this image": removes only the shown image (never its note). Absent = no trash icon. */
+  onDelete?: (item: LightboxItem) => void;
 }
 
 /** The lightbox root carries `data-lightbox`; its presence in the DOM means "a lightbox is open". */
@@ -71,7 +73,7 @@ export function noteImageItems(images: NoteImageData[]): LightboxItem[] {
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-export function Lightbox({ items, index, onIndex, onClose, onChatAbout }: LightboxProps) {
+export function Lightbox({ items, index, onIndex, onClose, onChatAbout, onDelete }: LightboxProps) {
   const len = items.length;
   const item = index >= 0 && index < len ? items[index] : undefined;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -153,6 +155,21 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout }: Lightb
             }}
           >
             <ChatCircleDots weight="duotone" />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="lb-btn"
+            data-tip="Delete image"
+            data-tip-side="below"
+            aria-label="Delete image"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
+          >
+            <Trash weight="duotone" />
           </button>
         )}
         <button type="button" className="lb-btn" data-tip="Close" data-tip-side="below" aria-label="Close image viewer" onClick={close}>
