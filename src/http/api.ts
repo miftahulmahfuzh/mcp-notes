@@ -159,6 +159,8 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     try {
       const page = await service.list({
         limit,
+        // The wall shows the most recently edited note first.
+        dateField: 'updated',
         ...(cursor !== undefined ? { cursor } : {}),
         ...(tags.length > 0 ? { tagsAll: tags } : {}),
         ...(has_image !== undefined ? { hasImage: has_image === 'true' } : {}),

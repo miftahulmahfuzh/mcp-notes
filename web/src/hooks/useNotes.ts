@@ -92,6 +92,11 @@ export function useNotes(): NotesStore {
       const i = s.notes.findIndex((n) => n.id === note.id);
       if (i >= 0) {
         const notes = s.notes.slice();
+        // An edit (newer updated_at) moves the note to the top row; other replacements stay in place.
+        if (Date.parse(note.updated_at) > Date.parse(notes[i]!.updated_at)) {
+          notes.splice(i, 1);
+          return { ...s, notes: [note, ...notes] };
+        }
         notes[i] = note;
         return { ...s, notes };
       }
