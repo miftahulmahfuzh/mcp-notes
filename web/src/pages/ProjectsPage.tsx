@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowsInLineVertical, ArrowsOutLineVertical } from '@phosphor-icons/react';
+import { NodePanel } from '../components/graph/NodePanel';
 import { SessionGraph } from '../components/graph/SessionGraph';
 import { useSessionGraph } from '../hooks/useSessionGraph';
 import { ancestorsOf, buildForest, expandAll, layoutGraph } from '../lib/sessionGraph';
+import { toSubtreeNodes } from '../lib/subtree';
 import type { SessionNode } from '../types';
 import './ProjectsPage.css';
 
@@ -74,6 +76,12 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
   }, []);
   const select = useCallback((id: string) => onSelectNode(id === node ? null : id), [node, onSelectNode]);
   const close = useCallback(() => onSelectNode(null), [onSelectNode]);
+  const panelNodes = useMemo(() => toSubtreeNodes(graph.nodes), [graph.nodes]);
+  const panel =
+    renderPanel ??
+    ((n: SessionNode, closePanel: () => void) => (
+      <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} />
+    ));
 
   const selectedNode = node === null ? null : (graph.nodes.find((n) => n.node_id === node) ?? null);
   const branchy = forest.children.size > 0;
@@ -113,7 +121,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
       </div>
       <div className="proj-body">
         <div className="proj-graph">{content}</div>
-        {selectedNode !== null && renderPanel !== undefined && <aside className="proj-panel">{renderPanel(selectedNode, close)}</aside>}
+        {selectedNode !== null && <aside className="proj-panel">{panel(selectedNode, close)}</aside>}
       </div>
     </section>
   );

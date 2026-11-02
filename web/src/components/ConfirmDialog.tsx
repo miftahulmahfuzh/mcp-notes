@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent } from 'react';
+import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 import { Trash, X } from '@phosphor-icons/react';
 import './ConfirmDialog.css';
 
@@ -6,6 +6,10 @@ export interface ConfirmDialogProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** The confirm button's tooltip and accessible name. Default "Delete anyway" (every delete confirm). */
+  confirmLabel?: string;
+  /** The confirm button's icon. Default the duotone trash. */
+  confirmIcon?: ReactNode;
 }
 
 const SELECTOR = '[data-modal="confirm"]';
@@ -18,8 +22,8 @@ export function isConfirmOpen(doc: Document = document): boolean {
 // mousedown, not click, keeps focus where it is: an open editor must not blur-save mid-delete.
 const keepFocus = (e: MouseEvent) => e.preventDefault();
 
-/** A small question over everything: trash confirms (Enter), X or the backdrop cancels (Esc). */
-export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
+/** A small question over everything: the confirm icon (trash unless told otherwise) confirms (Enter), X or the backdrop cancels (Esc). */
+export function ConfirmDialog({ message, onConfirm, onCancel, confirmLabel = 'Delete anyway', confirmIcon }: ConfirmDialogProps) {
   const live = useRef({ onConfirm, onCancel });
   live.current = { onConfirm, onCancel };
 
@@ -44,8 +48,8 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogPro
           <button type="button" className="cf-btn" data-tip="Cancel" aria-label="Cancel" onMouseDown={keepFocus} onClick={onCancel}>
             <X weight="duotone" />
           </button>
-          <button type="button" className="cf-btn cf-yes" data-tip="Delete anyway" aria-label="Delete anyway" onMouseDown={keepFocus} onClick={onConfirm}>
-            <Trash weight="duotone" />
+          <button type="button" className="cf-btn cf-yes" data-tip={confirmLabel} aria-label={confirmLabel} onMouseDown={keepFocus} onClick={onConfirm}>
+            {confirmIcon ?? <Trash weight="duotone" />}
           </button>
         </div>
       </div>

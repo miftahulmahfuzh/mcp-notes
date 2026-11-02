@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 3
-- Completed: 60
+- Blocked: 2
+- Completed: 61
 
 ---
 
@@ -33,21 +33,11 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A059** Phase 11: Web: node detail panel, Tree/Timeline, resume action
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `web/src/sessionDetailApi.ts` (reads phase 7's detail shape), `NodePanel`, `SubtreeTree`, `SubtreeTimeline`, `lib/subtree.ts`, `lib/sessionFormat.ts`, `ConfirmDialog` optional props, the `renderPanel` default in `ProjectsPage`. Exit criteria: component tests for panel, toggle, resume with and without cross-host confirm; existing "Delete anyway" tests unchanged.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 11 of 14)
-  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat ; R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host
-  - **Depends on**: P1-NOTES-A057, P1-NOTES-A058
-  - **Plan**: `.workflows/plan/P1-NOTES-A059.md`
-
 - [ ] **P1-NOTES-A060** Phase 12: Per-project chat and project chat history
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `project` on chat threads through `ChatService`/`chatApi`/`POST /api/chat`, the `<project>` context block, `project-pill-query-input`, `project-chat-history`, the graph <-> history toggle in `.proj-bar`, `.graph-scroll` height in `SessionGraph.css`. Exit criteria: threads created from the project view carry `project`; the history view lists only that project's threads; wall chat unchanged.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 12 of 14)
   - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
   - **Depends on**: P1-NOTES-A059
@@ -82,6 +72,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A059** Phase 11: Web: node detail panel, Tree/Timeline, resume action
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/sessionDetailApi.ts` (reads phase 7's detail shape), `NodePanel`, `SubtreeTree`, `SubtreeTimeline`, `lib/subtree.ts`, `lib/sessionFormat.ts`, `ConfirmDialog` optional props, the `renderPanel` default in `ProjectsPage`. Exit criteria: component tests for panel, toggle, resume with and without cross-host confirm; existing "Delete anyway" tests unchanged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 11 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat ; R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host
+  - **Depends on**: P1-NOTES-A057, P1-NOTES-A058
+  - **Plan**: `.workflows/plan/P1-NOTES-A059.md`
+  - **Completed**: 2026-11-02 11:45
+  - **Method**: /do
+  - **Files**: web/src/components/ConfirmDialog.tsx, web/src/components/ConfirmDialog.test.tsx, web/src/lib/subtree.ts, web/src/lib/subtree.test.tsx, web/src/lib/sessionFormat.ts, web/src/lib/sessionFormat.test.tsx, web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/components/graph/SubtreeTree.tsx, web/src/components/graph/SubtreeTimeline.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, web/src/pages/ProjectsPage.tsx, web/src/App.projects.test.tsx
+  - **Drift**: None in the plan's own files. Phase 10's App.projects.test.tsx deep-link test waited with findByText('B1-00'), which became ambiguous once the panel mounted (the panel also shows the selected id); its wait now targets the graph node via [data-node]. The assertions are unchanged.
+  - **Decided**: Phase 10 test ambiguous after mount → disambiguate the wait to the graph node element instead of stubbing (Rung 3: phase 11 Step 8 explicitly allows adjusting phase 10's tests for the mount)
 
 - [x] **P1-NOTES-A058** Phase 10: Web: projects rail icon, repo sidebar, SVG graph
   - **Difficulty**: HARD

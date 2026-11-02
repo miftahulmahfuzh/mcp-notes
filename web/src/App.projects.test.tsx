@@ -101,7 +101,8 @@ describe('App: projects view', () => {
   it('a deep link to a child node expands its branch and selects it', async () => {
     at('/projects?repo=mcp-notes&node=b1-00');
     render(<App />);
-    await screen.findByText('B1-00');
+    // The graph node, not the text: phase 11's NodePanel also shows the selected id.
+    await waitFor(() => expect(node('B1-00')).not.toBeNull());
     await waitFor(() => expect(node('B1-00')?.getAttribute('aria-pressed')).toBe('true'));
     expect(where()).toBe('/projects?repo=mcp-notes&node=b1-00');
   });

@@ -1,0 +1,75 @@
+/* Node detail panel (phase 11). The wall's dark mono language: hairlines, Geist Mono meta, no
+   shadows, icon-only buttons. Phase 10's slot positions and sizes it; the panel fills the slot
+   and scrolls on its own. */
+.np { display: flex; flex-direction: column; gap: 18px; height: 100%; overflow: auto; padding: 14px 16px 32px; box-sizing: border-box; background: var(--bg); border-left: 1px solid var(--line); color: var(--text); font-family: var(--sans); }
+.np-head { display: flex; align-items: center; gap: 6px; }
+.np-id { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-25); border-radius: 999px; background: transparent; color: var(--fg); font-family: var(--mono); font-size: 13px; letter-spacing: .04em; padding: 5px 10px; cursor: pointer; }
+.np-id:hover, .np-id:focus-visible { background: var(--fg); color: var(--bg); }
+.np-actions { margin-left: auto; display: flex; gap: 2px; }
+.np-actions .ibtn { font-size: 19px; }
+.np-actions .ibtn:disabled { opacity: .4; cursor: default; }
+.np-actions .ibtn:disabled:hover { background: transparent; }
+.np-notice { margin: -10px 0 0; min-height: 14px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.np-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.np-meta time { cursor: default; }
+.np-live { color: var(--fg); }
+.np-live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 999px; background: var(--fg); vertical-align: 1px; animation: np-pulse 1.6s ease-in-out infinite; }
+.np-away { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+
+.np-title { margin: 0; font-size: 20px; font-weight: 500; line-height: 1.25; color: var(--fg); overflow-wrap: anywhere; }
+.np-sub { margin: -12px 0 0; font-size: 13px; color: var(--muted); }
+.np-parent { margin: -8px 0 0; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.np-link { border: 0; padding: 0; background: none; color: var(--fg); font: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; cursor: pointer; }
+.np-src { color: var(--dim); }
+
+.np-sec { display: flex; flex-direction: column; gap: 8px; }
+.np-sec h3 { margin: 0; font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.np-sec-head { display: flex; align-items: center; justify-content: space-between; }
+.np-summary { margin: 0; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; text-wrap: pretty; overflow-wrap: anywhere; }
+.np-dim { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+.np-prompts { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.45; }
+.np-prompts li::marker { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.np-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.np-commits, .np-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.4; }
+.np-commits code { font-family: var(--mono); font-size: 11.5px; color: var(--id); margin-right: 8px; }
+.np-notes a { font-family: var(--mono); font-size: 11.5px; margin-right: 8px; }
+.np-notes span { color: var(--muted); }
+
+.np-tokens { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.np-tokens div { display: flex; flex-direction: column; gap: 2px; }
+.np-tokens dt { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.np-tokens dd { margin: 0; font-family: var(--mono); font-size: 14px; color: var(--fg); }
+
+.np-toggle { display: flex; gap: 2px; }
+.np-toggle .ibtn { width: 32px; height: 32px; font-size: 17px; }
+
+.np-tree { list-style: none; margin: 0; padding: 0; }
+.np-tree-row { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--text); padding-top: 4px; padding-bottom: 4px; padding-right: 6px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.np-tree-row:hover, .np-tree-row:focus-visible { background: var(--hover); }
+.np-tree-row.cur { background: var(--chip-bg); }
+.np-tree-row.away { color: var(--dim); }
+.np-dot { flex: none; width: 7px; height: 7px; border-radius: 999px; border: 1px solid var(--line-25); box-sizing: border-box; }
+.np-tree-row.live .np-dot { background: var(--fg); border-color: var(--fg); animation: np-pulse 1.6s ease-in-out infinite; }
+.np-tree-row.away .np-dot { border-style: dashed; }
+.np-tree-id { flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--id); }
+.np-tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.np-gantt { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.np-gantt svg { display: block; }
+.np-gantt-grid { stroke: var(--line-12); stroke-width: 1; }
+.np-gantt-tick { fill: var(--dim); font-family: var(--mono); font-size: 9.5px; }
+.np-gantt-label { fill: var(--id); font-family: var(--mono); font-size: 10.5px; }
+.np-gantt-hit { fill: transparent; }
+.np-gantt-bar { fill: var(--muted); }
+.np-gantt-row { cursor: pointer; outline: none; }
+.np-gantt-row:hover .np-gantt-hit, .np-gantt-row:focus-visible .np-gantt-hit { fill: var(--hover); }
+.np-gantt-row.cur .np-gantt-bar { fill: var(--fg); }
+.np-gantt-row.live .np-gantt-bar { animation: np-pulse 1.6s ease-in-out infinite; }
+.np-gantt-row.away .np-gantt-bar { fill: none; stroke: var(--dim); stroke-dasharray: 3 2; }
+
+@keyframes np-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .np-live::before, .np-tree-row.live .np-dot, .np-gantt-row.live .np-gantt-bar { animation: none; }
+}
