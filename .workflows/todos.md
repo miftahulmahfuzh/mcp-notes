@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 8
-- Completed: 55
+- Blocked: 7
+- Completed: 56
 
 ---
 
@@ -32,21 +32,11 @@
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
-- [ ] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/{redact,summarize,summaryWorker,search}.ts`, the summary block in `startBackground` (`BackgroundOptions.sessionSummarizer`), the summarizer construction in `src/daemon.ts`, `tests/helpers/fakeSummarizer.ts`, tests. Exit criteria: fake summarizer + fake embedder: idle session gets summary + vector once (not again after restart); secrets redacted before the model sees them; search returns hybrid-ranked sessions (with `score`) and `fallback` without an embedder; tests never build a real summarizer.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 6 of 14)
-  - **Satisfies**: R4 — Haiku summaries of idle sessions, redacted, embedded, hybrid-searchable, backfilled
-  - **Depends on**: P1-NOTES-A052
-  - **Plan**: `.workflows/plan/P1-NOTES-A054.md`
-
 - [ ] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/sessions/{view,readModel,transcriptSearch}.ts`, `src/http/sessionsApi.ts` (all read endpoints incl. `/api/sessions/context`), mount in `app.ts`, `mcpToolDeps(deps, sessionOverrides?)`, `ToolDeps.sessions`, `src/mcp/sessionTools.ts` (four read tools), registration in `src/mcp/server.ts`, `SESSION_TOOL_NAMES` in `src/chat/status.ts`, MCP instructions paragraph, tests. Exit criteria: int tests per endpoint and tool; `session_transcript` returns `not_on_this_machine` for other-host rows; graph ETag/304 works; `allowedChatTools()` has 40 entries.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 7 of 14)
   - **Satisfies**: R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
   - **Depends on**: P1-NOTES-A053, P1-NOTES-A054
@@ -131,6 +121,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{redact,summarize,summaryWorker,search}.ts`, the summary block in `startBackground` (`BackgroundOptions.sessionSummarizer`), the summarizer construction in `src/daemon.ts`, `tests/helpers/fakeSummarizer.ts`, tests. Exit criteria: fake summarizer + fake embedder: idle session gets summary + vector once (not again after restart); secrets redacted before the model sees them; search returns hybrid-ranked sessions (with `score`) and `fallback` without an embedder; tests never build a real summarizer.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 6 of 14)
+  - **Satisfies**: R4 — Haiku summaries of idle sessions, redacted, embedded, hybrid-searchable, backfilled
+  - **Depends on**: P1-NOTES-A052
+  - **Plan**: `.workflows/plan/P1-NOTES-A054.md`
+  - **Completed**: 2026-11-02 11:04
+  - **Method**: /do
+  - **Files**: src/background.ts, src/daemon.ts, src/sessions/redact.ts, src/sessions/search.ts, src/sessions/summarize.ts, src/sessions/summaryWorker.ts, tests/helpers/fakeSummarizer.ts, tests/integration/sessions.search.int.test.ts, tests/integration/sessions.summaries.int.test.ts, tests/unit/sessions/redact.test.ts, tests/unit/sessions/summarize.test.ts, tests/unit/sessions/summaryWorker.test.ts
+  - **Drift**: src/background.ts closer carries a comment line ('The linker closes after the ingester...') the plan's quote omits; sessionSummaries?.close() added to the parallel list as planned.
+  - **Decided**: createAgentSummarizer.summarize missed an abort raised while the summaries cwd mkdir was pending (listener attached after the await), timing out the plan's own 'rejects when aborted' test -> added a signal.aborted re-check after `await cwdReady` in src/sessions/summarize.ts (fix the code, never relax the check; invariant 6: background work never blocks shutdown)
+
 
 - [x] **P1-NOTES-A052** Phase 4: Heuristic parent links from transcripts
   - **Difficulty**: NORMAL
