@@ -37,6 +37,7 @@ its own chat bar.
   - [Resume from the wall](#resume-from-the-wall)
   - [Asking about sessions](#asking-about-sessions)
   - [Chat about one project](#chat-about-one-project)
+  - [Running swarms with the graph](#running-swarms-with-the-graph)
 - [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
@@ -579,11 +580,17 @@ session from the other laptop is marked "on GPD" (or "on Lenovo"), like a photo 
 page draws only what is on screen, so a repo with a thousand sessions scrolls as smoothly as one
 with ten.
 
+![The session graph of mcp-notes with every branch open: two swarms fanned out in lanes, an "unfinished" orchestrator, a session on GPD, and the panel of orch-project-session-graph](docs/readme/sessions-graph.png)
+
+![Opening a swarm's +N chip, the orchestrator's panel, the Gantt timeline of its phases, then the unfinished recycle-bin swarm](docs/readme/sessions-tour.gif)
+
 Click a node to open its panel: the summary, your prompts in order, the commits it made, the
 notes it saved with `/n`, its token use and cost, and its node id with a copy button. **Tree** and
 **Timeline** switch the view of everything below it: the tree of who started whom, or a Gantt
 chart of when each one ran, which shows at a glance which phases overlapped and which one ran
 long.
+
+![The Timeline view of an orchestrator's subtree: eight phases in four waves. Below, the wall-editing swarm's links are dashed because they were guessed](docs/readme/sessions-timeline.png)
 
 An orchestrator node whose swarm still has phases to do, and no live session working on them,
 carries an "unfinished" badge. The daemon asks `swarm.py verify` for the answer
@@ -686,6 +693,63 @@ The pill at the bottom of the graph page is a chat bar for that repo alone. Its 
 are stored as threads of that project, and the agent starts from that repo's sessions. The icon in
 the project header ("Project chat history" / "Session graph") switches the page between the graph
 and the project's chat history. The wall's own chat bar and `/history` are unchanged.
+
+### Running swarms with the graph
+
+A swarm (`/analyze`, then `swarm.py` spawning one session per phase) leaves a dozen or more
+sessions in as many tmux windows, and once they close, the only record left is the git log and the
+ledger. The graph keeps the whole run as one branch you can open again, which helps at each stage.
+
+**While it runs.** Every phase session sits in its wave, side by side with the others, and the
+ones still working pulse. The orchestrator no longer needs to be asked "which phases are still
+going?"; one glance at the branch answers it. (Only sessions on the laptop you are looking from
+can pulse; the other laptop's show their host instead.)
+
+**When it stalls.** An orchestrator that stopped (closed window, crash, laptop asleep) with phases
+still to do gets the "unfinished" badge, so a set left half done a week ago is visible from the
+project page rather than found by chance. Resume it from its panel, with a first prompt like
+`resume the orchestration, wave 2 has not been spawned`, and it opens in a new tmux window at the
+main checkout, even when the phase worktrees are gone.
+
+**When a phase fails.** Open the failed phase's node: its prompts, the files it touched, its last
+answer and its commits are in the panel. Resume it to finish the job, or use "Spawn fresh with this
+context" to start a clean session that already knows what the failed one tried.
+
+**Handing context across sessions.** Phase sessions do not share memory, but node ids carry
+context for them. Put an id in any prompt and the session reads that node's summary, plan docs and
+commits before it answers:
+
+```
+phase 6 depends on 24-ZK's schema; read it before you change ingest.ts
+the lane layout was settled in 9E-E0, follow that and do not redesign it
+orch-recycle-bin (P3-C4) stopped after wave 1; pick up from its ledger
+```
+
+The hook reads only the prompt, not files. An id written into a phase plan ("see `24-ZK`") is
+still useful: the phase session can look it up with `session_get` to reach the session that wrote
+the code it builds on.
+
+**Planning the next swarm.** The Timeline view is the run's critical path. A wave held up by one
+long phase shows as one long bar beside short ones: split that phase next time, or move the work
+that does not depend on it into an earlier wave. If phases of one wave ran one after another
+instead of side by side, check why: it is often a dependency the plan never wrote down.
+`sessions_usage` gives the price of each node, so ask:
+
+```
+/n how much did the project-session-graph swarm cost, analyze vs orchestrator vs phases?
+/n which phases of wall-editing touched src/notes/service.ts?
+/n compare the summaries of the last two orchestrators: what went wrong in each?
+```
+
+In this repo, for example, the `/analyze` session of the project session graph cost more than
+all fourteen of its phase sessions together, which is a reason to keep analysis prompts tight
+before tuning the phases.
+
+**Keeping the links exact.** A phase started by `swarm.py` is linked through `CC_PARENT_SESSION`
+and shows as a solid edge. A dashed edge marked "(guessed)" means the link came from reading
+transcripts: the session was started some other way, or by an older `swarm.py`. Mostly-dashed
+swarms (like the oldest one in the timeline picture) are a sign to start phases through
+`swarm.py launch`, so that the tree, the cost roll-up and the unfinished badge all hold up.
 
 ## Connectors: spending, runs, Seer
 
@@ -1151,3 +1215,12 @@ data folder, and a different, smaller set of made-up notes. The `/n` exchanges o
 page were posted to the capture endpoint, not recorded from a live session, so their answers are
 written by hand. There is no recording yet of the Claude Code hooks (pasted image to note) or of
 `similar_images`.
+
+The session graph pictures (`sessions-graph.png`, `sessions-timeline.png`, `sessions-tour.gif`)
+come from a throwaway instance on port 7400 with its own Postgres container, an empty
+`CLAUDE_HOME` and summaries turned off. Its `cc_sessions` rows were written by a script instead of
+ingested from real transcripts, so the sessions, node ids, summaries and costs are made up. They
+follow the same naming as real swarms (`analyze-<slug>`, `orch-<slug>`, `impl-<slug>-pN`). The
+running session is a registry entry pointing at a live dummy process, and the "unfinished" badge
+comes from a stand-in `NOTESD_SWARM_SCRIPT` that reports the recycle-bin set as pending. The page,
+the graph layout and the panel are the real app.
