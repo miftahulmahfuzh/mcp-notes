@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-11-02
+
+The project session graph: every Claude Code session on both laptops, per repo, with
+exact parent links, Haiku summaries, search, cost, and resume into tmux.
+
 ### Added
 
 - **Project session graph** (`/projects`): every Claude Code session on both laptops, per repo, as a git-graph of lanes on a time axis, newest at the top. Hand-started sessions form the trunk; sessions they spawned branch off, folded into a `+N` chip. Running sessions pulse, the other laptop's are marked, and only visible nodes are drawn (smooth at ~1000). A rail icon opens the repo list in the sidebar; the picked repo is stored server-side (`app_settings`), so both laptops agree. The graph polls every 10 s with `If-None-Match` (`304` when unchanged).
@@ -19,11 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-project chat**: a chat pill under the graph keeps its threads to that repo (`project` on `POST /api/chat`, stored as `chat_threads.project`), and the project header toggles between the graph and that project's chat history (`GET /api/chat/messages?project=`).
 - **"unfinished" badge** on orchestrator nodes whose swarm still has pending phases and no live session, from `swarm.py verify` (`NOTESD_SWARM_SCRIPT`, cached 60 s).
 
+- **Focus mode** for the graph: a toolbar icon shows only the graph (or project chat) with its toolbar and pill, kept in the URL as `&focus=1`; Esc leaves it. `/projects?node=ID` with no repo resolves the node's repo.
+- **Clickable node ids**: ids like `BE-XU` in chat link to a node pop-up with "Show on graph" (only ids the server knows, via `GET /api/sessions/known`); the `note-links` mod links them in Claude Code replies, and `/open` accepts them.
+- **Subagent transcripts count**: the ingester also tails `<uuid>/subagents/agent-*.jsonl` with their own offsets (`cc_subagent_transcripts`, migration 0008) and folds their tokens, models and commits into the parent session.
+- **Cost on the node**: the subagent share is shown as part of the recorded total, and sessions without a recorded total get an estimate from per-model tokens (`src/sessions/pricing.ts`). The detail API adds `cost_estimated`, `subagent_count` and `subagent_cost_usd`.
+- **Commit links**: every commit on a node (detail API and `session_get`) carries a `url` to GitHub, Bitbucket or GitLab, built from the repo's origin remote; short shas are widened to full ones.
+- README: session graph screenshots, a GIF tour and a "Running swarms with the graph" guide.
+
 ### Changed
 
 - `scripts/install.sh` registers five Claude Code hooks instead of three and raises `cleanupPeriodDays` in `~/.claude/settings.json` (to `NOTES_CLAUDE_RETENTION_DAYS`, default 3650) so Claude Code keeps the transcripts the graph reads; `scripts/uninstall.sh` removes all five and leaves `cleanupPeriodDays` alone. Re-run `scripts/install.sh` after updating, and `npm run db:migrate` once.
 - `notes-prompt` now looks at every prompt for a node id, not only `/n` prompts. Without one it still does no I/O.
 - In `~/claude-commands`, `swarm.py`'s `spawn_argv` passes `-e CC_PARENT_SESSION=<CLAUDE_CODE_SESSION_ID>` to every session it spawns (a tmux child does not inherit its parent's environment). Pull that repo and run its `./sync.sh` to get exact links for swarm children.
+
+### Fixed
+
+- A session's commits now include the ranges of `git push` and fast-forward `git merge`, expanded with `git log`, not only the line `git commit` prints, so `git commit -q` and commits landed from other sessions show up.
+- Node panel: one line per commit, long subjects cut with an ellipsis (full subject on hover). Node ids in chat use the plain note-id pill; the graph is as wide as its longest title instead of a fixed column, graph and panel share one height, and focus mode drops the page's bottom padding.
 
 ## [v0.2.0] - 2026-10-31
 
@@ -97,5 +114,6 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.3.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.1.0
