@@ -9,6 +9,7 @@ import { startInboxWatcher } from './images/inbox.js';
 import { reconcileLegacyImages } from './images/legacy.js';
 import { ensureDataDirs } from './images/store.js';
 import { startSessionIngest, type SessionIngester } from './sessions/ingest.js';
+import { dbLinkStore, startLinkWorker, type LinkWorker } from './sessions/links.js';
 import { SessionsRepo } from './sessions/repo.js';
 
 export type StopBackground = () => Promise<void>;
@@ -68,16 +69,19 @@ export async function startBackground(deps: AppDeps): Promise<StopBackground> {
   // wait for it, and a failure is logged, never thrown. Later session work (phase 4 links, phase 6
   // summaries) hangs off `sessionIngest` / `sessionsRepo` / `sessionsHost` here.
   let sessionIngest: SessionIngester | null = null;
+  let sessionLinks: LinkWorker | null = null;
   if (!deps.config.sessions.enabled) {
     console.log('[notesd] session ingest off: NOTESD_SESSIONS=off');
   } else {
     const sessionsRepo = new SessionsRepo(deps.db);
     const sessionsHost = hostname();
+    sessionLinks = startLinkWorker({ store: dbLinkStore(deps.db, sessionsRepo), host: sessionsHost });
     sessionIngest = startSessionIngest({
       claudeHome: deps.config.sessions.claudeHome,
       worktreesDir: deps.config.sessions.worktreesDir,
       store: sessionsRepo,
       hostname: () => sessionsHost,
+      observers: [sessionLinks],
     });
     console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
   }
@@ -85,6 +89,14 @@ export async function startBackground(deps: AppDeps): Promise<StopBackground> {
   return async () => {
     await inbox.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
-    await Promise.all([embeddings?.close(), imageEmbeddings?.close(), sessionIngest?.close()]);
+    await Promise.all([
+      embeddings?.close(),
+      imageEmbeddings?.close(),
+      // The linker closes after the ingester, once no more batches can arrive.
+      (async () => {
+        await sessionIngest?.close();
+        await sessionLinks?.close();
+      })(),
+    ]);
   };
 }

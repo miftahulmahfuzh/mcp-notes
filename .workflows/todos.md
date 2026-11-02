@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 11
+**Total Active Tasks**: 10
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 9
-- Completed: 54
+- Blocked: 8
+- Completed: 55
 
 ---
 
@@ -32,21 +32,11 @@
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
-- [ ] **P1-NOTES-A052** Phase 4: Heuristic parent links from transcripts
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/links.ts` (intents from `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, matching by name + window + cwd/repo, once-per-host backfill marker via `SessionsRepo.getSetting/putSetting`), its observer registration and close in `startBackground`. Exit criteria: fixture where orch session launches a phase child links child -> orch as `heuristic`; an existing `env`/`hook` link is never replaced; backfill runs once per host.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 4 of 14)
-  - **Satisfies**: R3 — Heuristic parent-link backfill from parent transcripts, marked `heuristic`
-  - **Depends on**: P1-NOTES-A051
-  - **Plan**: `.workflows/plan/P1-NOTES-A052.md`
-
 - [ ] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/sessions/{redact,summarize,summaryWorker,search}.ts`, the summary block in `startBackground` (`BackgroundOptions.sessionSummarizer`), the summarizer construction in `src/daemon.ts`, `tests/helpers/fakeSummarizer.ts`, tests. Exit criteria: fake summarizer + fake embedder: idle session gets summary + vector once (not again after restart); secrets redacted before the model sees them; search returns hybrid-ranked sessions (with `score`) and `fallback` without an embedder; tests never build a real summarizer.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 6 of 14)
   - **Satisfies**: R4 — Haiku summaries of idle sessions, redacted, embedded, hybrid-searchable, backfilled
   - **Depends on**: P1-NOTES-A052
@@ -141,6 +131,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A052** Phase 4: Heuristic parent links from transcripts
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/links.ts` (intents from `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, matching by name + window + cwd/repo, once-per-host backfill marker via `SessionsRepo.getSetting/putSetting`), its observer registration and close in `startBackground`. Exit criteria: fixture where orch session launches a phase child links child -> orch as `heuristic`; an existing `env`/`hook` link is never replaced; backfill runs once per host.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 4 of 14)
+  - **Satisfies**: R3 — Heuristic parent-link backfill from parent transcripts, marked `heuristic`
+  - **Depends on**: P1-NOTES-A051
+  - **Plan**: `.workflows/plan/P1-NOTES-A052.md`
+  - **Completed**: 2026-11-02 10:57
+  - **Method**: /do
+  - **Files**: src/sessions/links.ts, src/background.ts, tests/unit/sessions/links.test.ts, tests/unit/sessions/linkWorker.test.ts, tests/integration/sessions.links.int.test.ts
+  - **Drift**: none — background.ts matched phase 3's quoted session block; closer comment wording adapted to existing file
 
 - [x] **P1-NOTES-A053** Phase 5: SessionStart + Bash spawn hooks, hook endpoints, install
   - **Difficulty**: HARD
