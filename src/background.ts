@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import type { AppDeps } from './deps.js';
 import { dbEmbeddingStore } from './embeddings/backfill.js';
 import { dbImageEmbeddingStore } from './embeddings/imageBackfill.js';
@@ -7,13 +8,16 @@ import { imageDeps, ingestImage } from './images/ingest.js';
 import { startInboxWatcher } from './images/inbox.js';
 import { reconcileLegacyImages } from './images/legacy.js';
 import { ensureDataDirs } from './images/store.js';
+import { startSessionIngest, type SessionIngester } from './sessions/ingest.js';
+import { SessionsRepo } from './sessions/repo.js';
 
 export type StopBackground = () => Promise<void>;
 
 /**
  * Long-running work beside the HTTP server: the inbox watcher (iteration 2) and, when
  * OPENROUTER_API_KEY is set, the note embedding worker (iteration 6) and the image embedding
- * worker (image similarity search).
+ * worker (image similarity search); with `config.sessions.enabled`, the Claude Code session
+ * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`).
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -60,9 +64,27 @@ export async function startBackground(deps: AppDeps): Promise<StopBackground> {
     console.log(`[notesd] embedding images with ${deps.imageEmbedder.model}`);
   }
 
+  // Session ingest (iteration 8). The backfill runs in the background: startBackground does not
+  // wait for it, and a failure is logged, never thrown. Later session work (phase 4 links, phase 6
+  // summaries) hangs off `sessionIngest` / `sessionsRepo` / `sessionsHost` here.
+  let sessionIngest: SessionIngester | null = null;
+  if (!deps.config.sessions.enabled) {
+    console.log('[notesd] session ingest off: NOTESD_SESSIONS=off');
+  } else {
+    const sessionsRepo = new SessionsRepo(deps.db);
+    const sessionsHost = hostname();
+    sessionIngest = startSessionIngest({
+      claudeHome: deps.config.sessions.claudeHome,
+      worktreesDir: deps.config.sessions.worktreesDir,
+      store: sessionsRepo,
+      hostname: () => sessionsHost,
+    });
+    console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
+  }
+
   return async () => {
     await inbox.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
-    await Promise.all([embeddings?.close(), imageEmbeddings?.close()]);
+    await Promise.all([embeddings?.close(), imageEmbeddings?.close(), sessionIngest?.close()]);
   };
 }

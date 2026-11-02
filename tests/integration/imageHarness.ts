@@ -5,7 +5,7 @@ import { serve, type ServerType } from '@hono/node-server';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import type { ChatBackend } from '../../src/chat/backend.js';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import type { ImageEmbedder } from '../../src/embeddings/imageEmbedder.js';
 import { createApp } from '../../src/http/app.js';
@@ -44,7 +44,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir, events });
   const deps: AppDeps = {
-    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
+    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG },
     db,
     events,
     service,

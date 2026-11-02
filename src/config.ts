@@ -62,6 +62,29 @@ export interface EmbeddingsConfig {
 /** What `loadConfig` returns for `embeddings` without OPENROUTER_API_KEY. Tests build `Config` literals with it. */
 export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = { apiKey: null }
 
+export const DEFAULT_CLAUDE_HOME = '~/.claude'
+export const DEFAULT_WORKTREES_DIR = '~/.worktrees'
+
+/** Claude Code session ingest (src/sessions/ingest.ts) and the live registry (src/sessions/registry.ts). */
+export interface SessionsConfig {
+  /** Absolute. `CLAUDE_HOME`, default ~/.claude: transcripts in `projects/`, live registry in `sessions/`. Read only. */
+  claudeHome: string
+  /** Absolute. `NOTES_WORKTREES_DIR`, default ~/.worktrees: `<dir>/<repo>/<slug>` maps a worktree session to `<repo>`. */
+  worktreesDir: string
+  /** `NOTESD_SESSIONS`, default on. `off` (or 0/false/no) starts no session ingest. */
+  enabled: boolean
+}
+
+/**
+ * Sessions off, default paths. Tests build `Config` literals with it, so no test that builds a
+ * Config by hand ever reads the real ~/.claude.
+ */
+export const DEFAULT_SESSIONS_CONFIG: SessionsConfig = {
+  claudeHome: path.join(homedir(), '.claude'),
+  worktreesDir: path.join(homedir(), '.worktrees'),
+  enabled: false,
+}
+
 export interface Config {
   /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
   databaseUrl: string
@@ -75,6 +98,8 @@ export interface Config {
   chat: ChatConfig
   /** Note embeddings via OpenRouter. `apiKey: null` turns semantic features off. */
   embeddings: EmbeddingsConfig
+  /** Claude Code session ingest. `enabled: false` starts nothing (DEFAULT_SESSIONS_CONFIG in tests). */
+  sessions: SessionsConfig
 }
 
 export interface LoadConfigOptions {
@@ -206,14 +231,30 @@ function parseEmbeddings(env: Record<string, string | undefined>): EmbeddingsCon
   return { apiKey: apiKey === '' ? null : apiKey }
 }
 
+function parseSwitch(name: string, raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase() ?? ''
+  if (value === '' || value === 'on' || value === '1' || value === 'true' || value === 'yes') return true
+  if (value === 'off' || value === '0' || value === 'false' || value === 'no') return false
+  throw new ConfigError(`${name} must be "on" or "off", got "${raw}"`)
+}
+
+export function parseSessions(env: Record<string, string | undefined>): SessionsConfig {
+  return {
+    claudeHome: path.resolve(expandHome(env.CLAUDE_HOME?.trim() || DEFAULT_CLAUDE_HOME)),
+    worktreesDir: path.resolve(expandHome(env.NOTES_WORKTREES_DIR?.trim() || DEFAULT_WORKTREES_DIR)),
+    enabled: parseSwitch('NOTESD_SESSIONS', env.NOTESD_SESSIONS),
+  }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
  * LLM_API_KEY, LLM_MODEL. Embeddings key: OPENROUTER_API_KEY (unset or blank: semantic search and
  * the embedding worker are off, `related` answers only from vectors already stored; note writes are
- * unaffected). Other keys are ignored.
+ * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS. Other keys are ignored.
  * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
- * on a bad port, on a non-loopback host, on a bad chat key, or on CHAT_BRAIN=glm without LLM_*.
+ * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
+ * or on a NOTESD_SESSIONS value other than on/off.
  */
 export function loadConfig(options: LoadConfigOptions = {}): Config {
   const fromFile = readEnvFile(options.envFile ?? path.join(REPO_ROOT, '.env.local'))
@@ -237,5 +278,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     dataDir: path.resolve(expandHome(dataDirRaw)),
     chat: parseChat(env),
     embeddings: parseEmbeddings(env),
+    sessions: parseSessions(env),
   }
 }

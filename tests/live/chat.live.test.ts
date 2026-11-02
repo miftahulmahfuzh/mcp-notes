@@ -51,6 +51,8 @@ beforeAll(async () => {
       NOTESD_PORT: '0',
       NOTES_DATA_DIR: dataDir,
       CHAT_BRAIN: 'claude',
+      // Never ingest the real ~/.claude into the test database.
+      NOTESD_SESSIONS: 'off',
     },
   });
   daemon = await startDaemon(config, { chat: createStubChatBackend({ delayMs: 0 }), embedder: null, imageEmbedder: null });

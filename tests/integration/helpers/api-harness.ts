@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import type { ChatBackend } from '../../../src/chat/backend.js';
 import { ChatService } from '../../../src/chat/service.js';
 import { createStubChatBackend } from '../../../src/chat/stub.js';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG } from '../../../src/config.js';
 import type { AppDeps } from '../../../src/deps.js';
 import { apiRoutes } from '../../../src/http/api.js';
 import { chatHistoryRoutes } from '../../../src/http/chatApi.js';
@@ -50,7 +50,7 @@ export async function createApiHarness(options: ApiHarnessOptions = {}): Promise
   const notes = new NotesService({ db, events, dataDir });
   const chat = new ChatService({ db });
   const deps: AppDeps = {
-    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
+    config: { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG },
     db,
     events,
     service: notes,

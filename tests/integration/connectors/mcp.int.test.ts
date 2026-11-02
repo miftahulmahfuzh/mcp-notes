@@ -5,7 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../../src/config.js';
 import type { AppDeps } from '../../../src/deps.js';
 import { createApp } from '../../../src/http/app.js';
 import { NoteEvents } from '../../../src/notes/events.js';
@@ -15,7 +15,7 @@ import { ChatService } from '../../../src/chat/service.js';
 
 const db = openTestDb();
 const dataDir = mkdtempSync(join(tmpdir(), 'notes-connectors-mcp-'));
-const config: Config = { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
+const config: Config = { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG };
 const events = new NoteEvents();
 const service = new NotesService({ db, dataDir, events });
 const deps: AppDeps = { config, db, events, service, embedder: null, imageEmbedder: null, chat: new ChatService({ db }) };
