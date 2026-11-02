@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Bin, Note } from './types';
-import { makeNote } from './testing/fixtures';
+import { makeFile, makeNote } from './testing/fixtures';
 import { App } from './App';
 
 const iso = new Date().toISOString();
@@ -12,16 +12,21 @@ const textA: Note = makeNote('A-B32', '#seer onboarding is long', { created: iso
 const textC: Note = makeNote('C-D45', 'buy fennel #kitchen', { created: iso });
 const photoK: Note = makeNote('K-F07', 'River #walks', { created: iso, images: ['K-F07', 'M-Q11'] });
 
+// A note whose only file lives on the other laptop.
+const remoteR: Note = { ...makeNote('R-E01', 'gpd report', { created: iso }), files: [makeFile('F-R01', { note_id: 'R-E01', host: 'GPD', available: false })] };
+
+let extra: Note[];
 let deleted: Set<string>;
 let removedImages: Set<string>;
 let calls: Array<{ url: string; method: string }>;
 
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 const withImages = (n: Note): Note => ({ ...n, images: n.images.filter((i) => !removedImages.has(i.id)) });
-const live = () => [textA, textC, photoK].filter((n) => !deleted.has(n.id)).map(withImages);
+const live = () => [textA, textC, photoK, ...extra].filter((n) => !deleted.has(n.id)).map(withImages);
 const sent = (method: string, url: string) => calls.some((c) => c.method === method && c.url === url);
 
 beforeEach(() => {
+  extra = [];
   deleted = new Set();
   removedImages = new Set();
   calls = [];
@@ -79,6 +84,23 @@ describe('App: delete, undo, bin', () => {
     await waitFor(() => expect(wallCard('A-B32')).not.toBeNull());
     expect(sent('POST', '/api/notes/A-B32/restore')).toBe(true);
     expect(document.querySelector('.undo')).toBeNull();
+  });
+
+  it('a note with files on another machine asks before deleting from its card', async () => {
+    extra = [remoteR];
+    render(<App />);
+    await screen.findByText('gpd report');
+    const trash = () => within(wallCard('R-E01') as HTMLElement).getByRole('button', { name: 'Delete note' });
+    fireEvent.click(trash());
+    expect(screen.getByRole('alertdialog').textContent).toContain('R-E01 has 1 file on GPD. Delete it anyway?');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(wallCard('R-E01')).not.toBeNull();
+    expect(sent('DELETE', '/api/notes/R-E01')).toBe(false);
+    fireEvent.click(trash());
+    fireEvent.click(screen.getByRole('button', { name: 'Delete anyway' }));
+    expect(wallCard('R-E01')).toBeNull();
+    await waitFor(() => expect(sent('DELETE', '/api/notes/R-E01')).toBe(true));
   });
 
   it('the rail trash opens "Deleted." with the deleted note; restore puts it back on the wall', async () => {

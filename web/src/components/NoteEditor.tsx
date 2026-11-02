@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
-import { Check, Copy, Crosshair, Paperclip, Trash, X } from '@phosphor-icons/react';
+import { Check, Copy, Crosshair, Devices, Paperclip, Trash, X } from '@phosphor-icons/react';
 import type { Note, NoteFile, NoteImage as NoteImageData, TagCount } from '../types';
 import { tagsOf, tagQueryAt, suggestTags } from '../lib/text';
 import { NoteImage, aspectOf } from './NoteImage';
@@ -7,6 +7,8 @@ import { RevealButton } from './RevealButton';
 import { Lightbox, isLightboxOpen, noteImageItems } from './Lightbox';
 import { FileChips } from './FileChips';
 import { NoteRevealButton } from './NoteRevealButton';
+import { ConfirmDialog, isConfirmOpen } from './ConfirmDialog';
+import { hostsLabel, remoteDeleteQuestion, remoteFilesOf } from '../lib/remote';
 import './NoteEditor.css';
 
 export interface NoteEditorProps {
@@ -62,6 +64,8 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   // Id of the strip image shown in the lightbox (R4), or null. An id, not an index: attaches and
   // removes while it is open must not shift it onto another image.
   const [viewing, setViewing] = useState<string | null>(null);
+  // The delete question shown because some files live on another machine, or null.
+  const [asking, setAsking] = useState<string | null>(null);
 
   useEffect(() => {
     const el = taRef.current;
@@ -88,6 +92,8 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
       // A lightbox over the editor owns Esc. It registers its own window capture listener after this
       // one, so its stopPropagation cannot keep this listener from running: yield while it is open.
       if (isLightboxOpen()) return;
+      // Same for the delete confirmation: it owns Esc while it is up.
+      if (isConfirmOpen()) return;
       if (popupRef.current !== null) {
         // Esc with the tag popup open closes the popup only.
         e.preventDefault();
@@ -124,6 +130,15 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
   popupRef.current = open && query ? query.start : null;
 
   const available = note.images.filter((img) => img.available);
+  const remote = remoteFilesOf(note);
+
+  const deleteNow = () => {
+    if (!onDelete) return;
+    // The editor is about to unmount without close(): mark it closed so a blur fired
+    // on unmount cannot onSave the note back into the store after it was deleted.
+    closedRef.current = true;
+    onDelete(noteRef.current, draftRef.current);
+  };
   const lightboxItems = noteImageItems(note.images);
   const viewIndex = viewing === null ? -1 : lightboxItems.findIndex((item) => item.id === viewing);
 
@@ -175,6 +190,16 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
             {notice ?? ''}
           </span>
           <span className="ed-spacer" />
+          {remote.count > 0 && (
+            <span
+              className="ed-remote"
+              data-remote={remote.count}
+              data-tip={`${remote.count === 1 ? '1 file' : `${remote.count} files`} saved on ${hostsLabel(remote.hosts)}`}
+            >
+              <Devices weight="duotone" />
+              {remote.count} on {hostsLabel(remote.hosts)}
+            </span>
+          )}
           <NoteRevealButton note={note} className="ed-btn" />
           {onAttachFiles && (
             <>
@@ -223,11 +248,11 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
               aria-label="Delete note"
               // No blur-save: App saves the draft (if changed) and deletes in one ordered sequence.
               onMouseDown={(e) => e.preventDefault()}
+              // Files on another machine: ask first, since deleting here removes them there too.
               onClick={() => {
-                // The editor is about to unmount without close(): mark it closed so a blur fired
-                // on unmount cannot onSave the note back into the store after it was deleted.
-                closedRef.current = true;
-                onDelete(noteRef.current, draftRef.current);
+                const q = remoteDeleteQuestion(noteRef.current);
+                if (q) setAsking(q);
+                else deleteNow();
               }}
             >
               <Trash weight="duotone" />
@@ -305,6 +330,16 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
               </div>
             ))}
           </div>
+        )}
+        {asking !== null && (
+          <ConfirmDialog
+            message={asking}
+            onCancel={() => setAsking(null)}
+            onConfirm={() => {
+              setAsking(null);
+              deleteNow();
+            }}
+          />
         )}
         {viewIndex >= 0 && (
           <Lightbox

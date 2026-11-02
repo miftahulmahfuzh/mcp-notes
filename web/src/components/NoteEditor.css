@@ -34,3 +34,7 @@
    remove icons stay above it (absolutely positioned siblings). */
 .ed-open { display: block; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .ed-open:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
+
+/* Some images or files live on another machine: a quiet mono flag left of the header icons. */
+.ed-remote { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; padding: 3px 8px 4px; border-radius: 999px; background: var(--chip-bg); color: var(--chip); white-space: nowrap; }
+.ed-remote svg { font-size: 14px; }

@@ -25,6 +25,7 @@ import { tagsOf } from './lib/text';
 import { binNoteSelector, flashSelector, noteSelector, type FlashOptions } from './lib/flash';
 import { planReveal, tagsKeeping } from './lib/reveal';
 import { hasAttachments, routeFiles } from './lib/files';
+import { remoteDeleteQuestion } from './lib/remote';
 import { Rail } from './components/Rail';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -38,6 +39,7 @@ import { DropOverlay } from './components/DropOverlay';
 import { NoteEditor } from './components/NoteEditor';
 import { Lightbox, noteImageItems, type LightboxItem } from './components/Lightbox';
 import { Bin } from './components/Bin';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { UndoBar } from './components/UndoBar';
 import { LinkNotice } from './components/LinkNotice';
 
@@ -346,6 +348,17 @@ export function App() {
       });
     },
     [removeLocal, upsertLocal, refetch, pushUndo],
+  );
+
+  /** A card's trash icon. A note with files on another machine asks first (deleting it removes them there too). */
+  const [confirmDelete, setConfirmDelete] = useState<{ note: Note; message: string } | null>(null);
+  const askRemoveNote = useCallback(
+    (note: Note) => {
+      const message = remoteDeleteQuestion(note);
+      if (message) setConfirmDelete({ note, message });
+      else removeNote(note);
+    },
+    [removeNote],
   );
 
   /** The editor strip's remove icon (phase 7): soft remove one image, 6 s undo puts it back at its old position. */
@@ -711,7 +724,7 @@ export function App() {
                 onCopy={copy}
                 onEdit={setEditing}
                 onCommit={commit}
-                onDelete={removeNote}
+                onDelete={askRemoveNote}
                 onToggleTag={toggleTag}
                 onExpand={expand}
               />
@@ -778,6 +791,18 @@ export function App() {
               onClose={() => setViewer(null)}
             />
           )}
+          {confirmDelete &&
+            createPortal(
+              <ConfirmDialog
+                message={confirmDelete.message}
+                onCancel={() => setConfirmDelete(null)}
+                onConfirm={() => {
+                  setConfirmDelete(null);
+                  removeNote(confirmDelete.note);
+                }}
+              />,
+              document.body,
+            )}
           <UndoBar entry={undoEntry} onUndo={runUndo} />
           <LinkNotice text={linkNotice} />
           <Tooltip />

@@ -1,0 +1,8 @@
+/* Above the editor / photo modal (60) and the undo bar (65), below the tooltip (200). */
+.cf { position: fixed; inset: 0; z-index: 80; background: rgba(10, 10, 9, .6); display: grid; place-items: center; padding: 16px; box-sizing: border-box; }
+.cf-box { width: min(420px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 12px; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line-25); color: var(--text); font-family: var(--sans); }
+.cf-msg { margin: 0; font-size: 17px; line-height: 1.4; }
+.cf-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.cf-btn { width: 40px; height: 40px; border: 0; border-radius: 999px; background: transparent; color: var(--fg); font-size: 19px; cursor: pointer; display: grid; place-items: center; }
+.cf-btn:hover, .cf-btn:focus-visible { background: var(--hover); outline: none; }
+.cf-yes:hover, .cf-yes:focus-visible { background: var(--fg); color: var(--bg); }

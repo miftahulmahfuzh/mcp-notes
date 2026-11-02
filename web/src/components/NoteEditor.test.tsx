@@ -151,6 +151,35 @@ describe('NoteEditor', () => {
     expect(onDelete).toHaveBeenCalledWith(props.note, 'three paragraphs later');
   });
 
+  describe('files on another machine', () => {
+    const remoteImg = (id: string, position: number) => ({ ...img(id, 'A-B32', position), host: 'GPD', available: false });
+
+    it('flags how many files live elsewhere and where; no flag when all are local', () => {
+      const { container } = renderEditor(note('pics', [remoteImg('P-IC1', 0), remoteImg('P-IC2', 1), img('P-IC3', 'A-B32', 2)]));
+      const flag = container.querySelector('.ed-remote') as HTMLElement;
+      expect(flag.textContent).toBe('2 on GPD');
+      expect(flag.getAttribute('data-tip')).toBe('2 files saved on GPD');
+      cleanup();
+      const local = renderEditor(note('pics', [img('P-IC3', 'A-B32')]));
+      expect(local.container.querySelector('.ed-remote')).toBeNull();
+    });
+
+    it('the trash icon asks first; cancel keeps the editor working, the trash in the dialog deletes', () => {
+      const onDelete = vi.fn();
+      const { props, ta, getByLabelText } = renderEditor(note('pics', [remoteImg('P-IC1', 0)]), { onDelete });
+      fireEvent.click(getByLabelText('Delete note'));
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(screen.getByRole('alertdialog').textContent).toContain('A-B32 has 1 file on GPD. Delete it anyway?');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(props.onClose).not.toHaveBeenCalled();
+      fireEvent.change(ta, { target: { value: 'pics, edited' } });
+      fireEvent.click(getByLabelText('Delete note'));
+      fireEvent.click(getByLabelText('Delete anyway'));
+      expect(onDelete).toHaveBeenCalledWith(props.note, 'pics, edited');
+    });
+  });
+
   it('has no trash icon without onDelete', () => {
     const { container } = renderEditor(note('first line'));
     expect(container.ownerDocument.querySelector('[aria-label="Delete note"]')).toBeNull();
