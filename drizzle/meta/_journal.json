@@ -50,6 +50,13 @@
       "when": 1793416724681,
       "tag": "0006_chat_history",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793590144516,
+      "tag": "0007_cc_sessions",
+      "breakpoints": true
     }
   ]
 }

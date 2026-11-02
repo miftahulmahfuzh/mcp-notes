@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-10-31
-**Total Active Tasks**: 0
+**Last Updated**: 2026-11-02
+**Total Active Tasks**: 13
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 0
+- P1 High: 13
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
-- Completed: 51
+- Blocked: 10
+- Completed: 52
 
 ---
 
@@ -21,6 +21,136 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [ ] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
+  - **Difficulty**: EASY
+  - **Type**: Feature
+  - **Context**: Owns: `~/claude-commands/skills/swarm/swarm.py` `parent_env` + `spawn_argv` + selftest assertions. Committed and pushed in `~/claude-commands`, deployed with `./sync.sh`. Exit criteria: `swarm.py selftest` passes; spawn_argv emits `-e CC_PARENT_SESSION=<id>` when `CLAUDE_CODE_SESSION_ID` is set, nothing when unset; pushed to `origin/main` of claude-commands. Note: code lives in ~/claude-commands (own commit and push there); tracked in this package.
+  - **Status**: in_progress
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 2 of 14)
+  - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
+
+- [ ] **P1-NOTES-A051** Phase 3: Transcript ingest, repo resolution, live registry, backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{transcript,repoResolve,registry,ingest}.ts`, `config.sessions` (`SessionsConfig`, `DEFAULT_SESSIONS_CONFIG` off, `parseSessions`), the session-ingest block of `startBackground`, `sessions: DEFAULT_SESSIONS_CONFIG` in every hand-built test `Config`, fixture Claude home and tests. Exit criteria: pointing the ingester at a fixture Claude home produces one row per `cli` session with repo resolved (incl. deleted worktree paths), sdk sessions skipped, appended bytes picked up incrementally, restart resumes from offsets; `IngestObserver` published.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 3 of 14)
+  - **Satisfies**: R1 — Ingest every Claude Code session into `cc_sessions` (incremental tail, backfill, both hosts)
+  - **Depends on**: P1-NOTES-A049
+  - **Plan**: `.workflows/plan/P1-NOTES-A051.md`
+
+- [ ] **P1-NOTES-A052** Phase 4: Heuristic parent links from transcripts
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/links.ts` (intents from `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, matching by name + window + cwd/repo, once-per-host backfill marker via `SessionsRepo.getSetting/putSetting`), its observer registration and close in `startBackground`. Exit criteria: fixture where orch session launches a phase child links child -> orch as `heuristic`; an existing `env`/`hook` link is never replaced; backfill runs once per host.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 4 of 14)
+  - **Satisfies**: R3 — Heuristic parent-link backfill from parent transcripts, marked `heuristic`
+  - **Depends on**: P1-NOTES-A051
+  - **Plan**: `.workflows/plan/P1-NOTES-A052.md`
+
+- [ ] **P1-NOTES-A053** Phase 5: SessionStart + Bash spawn hooks, hook endpoints, install
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-session.mjs` (cli sessions only), `claude/hooks/notes-spawn.mjs`, `src/http/sessionHooks.ts` + mount in `app.ts` (incl. pending-spawn pruning on the spawn route), `scripts/claude-hooks.mjs` groups + `OUR_SCRIPT`, `install.sh` (register + raise `cleanupPeriodDays` to `NOTES_CLAUDE_RETENTION_DAYS`, default 3650), `uninstall.sh`, `.d.mts` files, tests. Exit criteria: hook unit tests; endpoint int tests (env link, hook claim once within the window, no claim on resume/compact/clear, prune); `claude-hooks.mjs` merge test includes the new groups.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 5 of 14)
+  - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
+  - **Depends on**: P1-NOTES-A049
+  - **Plan**: `.workflows/plan/P1-NOTES-A053.md`
+
+- [ ] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{redact,summarize,summaryWorker,search}.ts`, the summary block in `startBackground` (`BackgroundOptions.sessionSummarizer`), the summarizer construction in `src/daemon.ts`, `tests/helpers/fakeSummarizer.ts`, tests. Exit criteria: fake summarizer + fake embedder: idle session gets summary + vector once (not again after restart); secrets redacted before the model sees them; search returns hybrid-ranked sessions (with `score`) and `fallback` without an embedder; tests never build a real summarizer.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 6 of 14)
+  - **Satisfies**: R4 — Haiku summaries of idle sessions, redacted, embedded, hybrid-searchable, backfilled
+  - **Depends on**: P1-NOTES-A052
+  - **Plan**: `.workflows/plan/P1-NOTES-A054.md`
+
+- [ ] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{view,readModel,transcriptSearch}.ts`, `src/http/sessionsApi.ts` (all read endpoints incl. `/api/sessions/context`), mount in `app.ts`, `mcpToolDeps(deps, sessionOverrides?)`, `ToolDeps.sessions`, `src/mcp/sessionTools.ts` (four read tools), registration in `src/mcp/server.ts`, `SESSION_TOOL_NAMES` in `src/chat/status.ts`, MCP instructions paragraph, tests. Exit criteria: int tests per endpoint and tool; `session_transcript` returns `not_on_this_machine` for other-host rows; graph ETag/304 works; `allowedChatTools()` has 40 entries.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 7 of 14)
+  - **Satisfies**: R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
+  - **Depends on**: P1-NOTES-A053, P1-NOTES-A054
+  - **Plan**: `.workflows/plan/P1-NOTES-A055.md`
+
+- [ ] **P1-NOTES-A056** Phase 8: Node ids in prompts resolve to context
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (regex fast path copied from `NODE_ID_CANDIDATE_SOURCE`; only on a candidate does it call `/api/sessions/context` and use its `context`), `.d.mts`, unit tests (incl. equality with `src/sessions/ids.ts`), one integration test. Exit criteria: a prompt with no candidate does no I/O (test asserts fetch/read not called); an existing node id adds context; a non-existent one adds nothing; `/n` behaviour unchanged.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 8 of 14)
+  - **Satisfies**: R5 — Node ids in any Claude Code prompt resolve to that node's context, near-zero cost otherwise
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A056.md`
+
+- [ ] **P1-NOTES-A057** Phase 9: Resume/spawn into tmux, `session_resume` tool
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/resume.ts`, `src/http/sessionResume.ts` (same-origin), mount + `sessionResume` wiring in `app.ts` (`mcpToolDeps` third parameter), `ToolDeps.sessionResume`, `session_resume` in `src/mcp/sessionTools.ts`, `'session_resume'` in `SESSION_TOOL_NAMES`, tests. Exit criteria: fake tmux runner tests for each branch; cross-host returns `not_on_this_machine`; the deleted-cwd measurement recorded in the plan/test comments; `allowedChatTools()` has 41 entries.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 9 of 14)
+  - **Satisfies**: R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host ; R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A057.md`
+
+- [ ] **P1-NOTES-A058** Phase 10: Web: projects rail icon, repo sidebar, SVG graph
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: Rail icon, `/projects` route, `ProjectsPage` with `renderPanel`/`renderBadge` slots, repo list in the expanded sidebar with server-persisted selection, `web/src/lib/sessionGraph.ts`, `web/src/components/graph/{SessionGraph,GraphNode,GraphEdges}`, `web/src/sessionsApi.ts` (ETag polling), wire types mirroring phase 7, fixtures. Exit criteria: layout unit tests (lanes, wave side-by-side, collapse); 1000-node render test mounts only visible nodes; a 304 keeps the nodes; typecheck web.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 10 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A058.md`
+
+- [ ] **P1-NOTES-A059** Phase 11: Web: node detail panel, Tree/Timeline, resume action
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/sessionDetailApi.ts` (reads phase 7's detail shape), `NodePanel`, `SubtreeTree`, `SubtreeTimeline`, `lib/subtree.ts`, `lib/sessionFormat.ts`, `ConfirmDialog` optional props, the `renderPanel` default in `ProjectsPage`. Exit criteria: component tests for panel, toggle, resume with and without cross-host confirm; existing "Delete anyway" tests unchanged.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 11 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat ; R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host
+  - **Depends on**: P1-NOTES-A057, P1-NOTES-A058
+  - **Plan**: `.workflows/plan/P1-NOTES-A059.md`
+
+- [ ] **P1-NOTES-A060** Phase 12: Per-project chat and project chat history
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `project` on chat threads through `ChatService`/`chatApi`/`POST /api/chat`, the `<project>` context block, `project-pill-query-input`, `project-chat-history`, the graph <-> history toggle in `.proj-bar`, `.graph-scroll` height in `SessionGraph.css`. Exit criteria: threads created from the project view carry `project`; the history view lists only that project's threads; wall chat unchanged.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 12 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
+  - **Depends on**: P1-NOTES-A059
+  - **Plan**: `.workflows/plan/P1-NOTES-A060.md`
+
+- [ ] **P1-NOTES-A061** Phase 13: "unfinished" badge for orch nodes
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/unfinished.ts`, `SessionsConfig.swarmScript`, `SessionsApiOptions.unfinished` + annotation in `sessionsApi.ts`, `CreateAppOptions.unfinished`, `UnfinishedBadge.tsx`, the `renderBadge` default in `ProjectsPage`, `SessionDetail.unfinished` + pill in `NodePanel`, and the `swarmScript` additions to phase 3's config tests and ingest int test literal. Exit criteria: fake swarm runner tests; badge renders only for orch + pending + not live; tests never read the real `~/.claude`.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 13 of 14)
+  - **Satisfies**: R9 — "unfinished" badge on orch nodes with pending ledger phases and no live session
+  - **Depends on**: P1-NOTES-A060
+  - **Plan**: `.workflows/plan/P1-NOTES-A061.md`
+
+- [ ] **P1-NOTES-A062** Phase 14: Docs: README, CHANGELOG, CLAUDE.md, ROADMAP
+  - **Difficulty**: EASY
+  - **Type**: Update
+  - **Context**: Owns: `README.md` (sessions section, HTTP API + MCP tool tables, env vars incl. `NOTESD_SWARM_SCRIPT`, `NOTESD_TMUX_SOCKET`, `NOTESD_TMUX_BIN`, `NOTES_CLAUDE_RETENTION_DAYS`), `CHANGELOG.md`, `CLAUDE.md` architecture bullet, `docs/ROADMAP.md`. Exit criteria: docs match the shipped endpoints, tools and env vars; no `«FILL` marker remains.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 14 of 14)
+  - **Satisfies**: R1-R9 — all nine requirements are documented (ingest, links, summaries, resolve, tools, web, resume, badge)
+  - **Depends on**: P1-NOTES-A050, P1-NOTES-A056, P1-NOTES-A061
+  - **Plan**: `.workflows/plan/P1-NOTES-A062.md`
 
 ### [P2] Medium
 
@@ -31,6 +161,24 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A049** Phase 1: Schema, node ids, SessionsRepo
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/db/schema.ts` additions, `drizzle/0007_cc_sessions.sql` + `drizzle/meta`, `src/sessions/{ids,types,merge,repo}.ts`, `tests/integration/setup.ts` `truncateAll`, unit tests for ids/merge/schema, integration tests for repo + migration. Exit criteria: migration applies on the test DB; repo upserts are idempotent (replay = `offset_mismatch`), assign node ids (never all digits) with redraw on clash, honour `env > hook > heuristic`, refuse self/cycle links, and claim a pending spawn at most once within the window; `findNodeIdCandidates` implements the shared candidate rule.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 1 of 14)
+  - **Satisfies**: R1 — Ingest every Claude Code session into `cc_sessions` (incremental tail, backfill, both hosts)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A049.md`
+  - **Completed**: 2026-11-02 10:33
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, drizzle/0007_cc_sessions.sql, drizzle/meta/0007_snapshot.json, drizzle/meta/_journal.json, src/sessions/ids.ts, src/sessions/types.ts, src/sessions/merge.ts, src/sessions/repo.ts, tests/integration/setup.ts, tests/unit/sessions/ids.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/schema.test.ts, tests/integration/sessions.schema.int.test.ts, tests/integration/sessions.repo.int.test.ts
+  - **Drift**:
+    - Plan Step 0 (npm ci) skipped: node_modules already hardlinked into the worktree per coordinator.
+    - drizzle-kit generated 0007 SQL identical (statement set) to the plan's expected text; prevId = 0006 id.
+  - **Decided**:
+    - ids.test.ts used parseNodeId('nope') as an invalid input, but 'nope' is a valid loose id (NO-PE) under the contract's case/dash-tolerant lookup; test input changed to 'not-an-id' with a comment; code unchanged (rung 1: interface contract normalizeNodeId semantics).
 
 - [x] **P1-NOTES-A048** Phase 4: End-to-end tests, live verify script, docs, CHANGELOG
   - **Difficulty**: NORMAL
