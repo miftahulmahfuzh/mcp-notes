@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type UIEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import type { SessionNode } from '../../types';
 import { GraphEdges } from './GraphEdges';
-import { GraphNode } from './GraphNode';
-import { OVERSCAN, ROW_H, graphWidth, labelX, laneX, rowY, visibleRange, type GraphLayout } from '../../lib/sessionGraph';
+import { GraphNode, filled } from './GraphNode';
+import { OVERSCAN, ROW_H, TITLE_PX, graphWidth, labelX, laneX, rowY, visibleRange, type GraphLayout } from '../../lib/sessionGraph';
+import { clearTextWidths, textWidth } from '../../lib/textWidth';
 import './SessionGraph.css';
 
 export interface SessionGraphProps {
@@ -28,6 +29,20 @@ export function SessionGraph({ layout, selected, onSelect, onToggle, focus = nul
   const [height, setHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const focused = useRef<string | null>(null);
+  // Bumped once the web fonts load, so titles are re-measured in the real font.
+  const [fonts, setFonts] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    void document.fonts?.ready.then(() => {
+      if (!live) return;
+      clearTextWidths();
+      setFonts((n) => n + 1);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -69,7 +84,11 @@ export function SessionGraph({ layout, selected, onSelect, onToggle, focus = nul
   const total = layout.rows.length;
   const { first, last } = visibleRange(scrollTop, height, total, overscan);
   const lx = labelX(layout.lanes);
-  const width = graphWidth(layout.lanes);
+  const width = useMemo(() => {
+    const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
+    return graphWidth(layout, (t) => textWidth(t, TITLE_PX, family), (n) => (renderBadge ? filled(renderBadge(n)) : false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `fonts` only forces a re-measure
+  }, [layout, renderBadge, fonts]);
   const svgH = Math.max(total * ROW_H, ROW_H);
   const rows = last >= first ? layout.rows.slice(first, last + 1) : [];
 

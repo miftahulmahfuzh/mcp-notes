@@ -1,6 +1,6 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Devices } from '@phosphor-icons/react';
-import { BADGE_W, CHIP_W, GUTTER_W, ID_W, REMOTE_W, ROW_H, fmtDay, fmtTime, nodeTitle, type LaidNode } from '../../lib/sessionGraph';
+import { CHIP_W, GUTTER_W, ID_W, ROW_H, fmtDay, fmtTime, nodeTitle, titleOffset, type LaidNode } from '../../lib/sessionGraph';
 
 export interface GraphNodeProps {
   laid: LaidNode;
@@ -21,6 +21,11 @@ export interface GraphNodeProps {
   badge?: ReactNode;
 }
 
+/** Whether a badge slot has anything to draw (an empty slot collapses). */
+export function filled(badge: ReactNode): boolean {
+  return badge !== undefined && badge !== null && badge !== false;
+}
+
 /** One graph row: gutter time, dot (halo when live), node id, +N chip, badge slot, other-host mark, title. */
 export const GraphNode = memo(function GraphNode({ laid, x, y, labelX, width, selected, onSelect, onToggle, badge }: GraphNodeProps) {
   const { node, root, childCount, descendants, expanded, firstOfDay } = laid;
@@ -30,10 +35,10 @@ export const GraphNode = memo(function GraphNode({ laid, x, y, labelX, width, se
   const cls = ['gnode', root ? 'root' : '', node.live ? 'live' : '', remote ? 'remote' : '', selected ? 'sel' : ''].filter(Boolean).join(' ');
   const title = nodeTitle(node);
   const chipX = labelX + ID_W;
-  const hasBadge = badge !== undefined && badge !== null && badge !== false;
+  const hasBadge = filled(badge);
   const badgeX = chipX + CHIP_W;
-  const remoteX = badgeX + (hasBadge ? BADGE_W : 0);
-  const titleX = remoteX + (remote ? REMOTE_W : 0);
+  const remoteX = labelX + titleOffset(hasBadge, false);
+  const titleX = labelX + titleOffset(hasBadge, remote);
   const label = `${node.node_id} ${title}${node.live ? ', running' : ''}${remote ? `, on ${node.host || 'another device'}` : ''}`;
 
   const select = () => onSelect(node.node_id);

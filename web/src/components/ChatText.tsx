@@ -110,7 +110,7 @@ function NodeLink({ id, text, repo, open }: { id: string; text: string; repo: st
   };
   return (
     <a
-      className="answer-link node-link"
+      className="answer-link note-link node-link"
       href={projectsHref({ repo, node: id, focus: false })}
       data-node-link={id}
       data-tip="Open session"

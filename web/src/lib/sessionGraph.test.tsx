@@ -6,10 +6,14 @@ import {
   edgePath,
   edgesInRange,
   expandAll,
+  graphWidth,
+  labelX,
   laneX,
   layoutGraph,
   nodeTitle,
   rowY,
+  TITLE_PAD,
+  titleOffset,
   visibleRange,
   type GraphLayout,
 } from './sessionGraph';
@@ -128,6 +132,21 @@ describe('virtualization helpers', () => {
     const d = edgePath(e);
     expect(d.startsWith(`M${laneX(0)} ${rowY(4)}`)).toBe(true);
     expect(d.endsWith(`L${laneX(1)} ${rowY(3)}`)).toBe(true);
+  });
+});
+
+describe('graphWidth', () => {
+  const len = (t: string) => t.length * 10;
+
+  it('ends at the longest title plus TITLE_PAD, not a fixed column', () => {
+    const l = layoutGraph(ALL, new Set());
+    const longest = Math.max(...l.rows.map((r) => len(nodeTitle(r.node))));
+    expect(graphWidth(l, len, () => false)).toBe(labelX(l.lanes) + titleOffset(false, false) + longest + TITLE_PAD);
+  });
+
+  it('pushes a row\'s title past its badge column', () => {
+    const l = layoutGraph([R2], new Set());
+    expect(graphWidth(l, len, () => true) - graphWidth(l, len, () => false)).toBe(titleOffset(true, false) - titleOffset(false, false));
   });
 });
 

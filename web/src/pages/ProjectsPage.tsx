@@ -106,8 +106,11 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
     ((n: SessionNode, closePanel: () => void) => (
       <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} />
     ));
-  const badge =
-    renderBadge ?? ((n: SessionNode) => (n.unfinished === true ? <UnfinishedBadgeSvg unfinished x={0} y={-7} /> : null));
+  // Stable, so the graph measures its titles only when the layout changes.
+  const badge = useMemo(
+    () => renderBadge ?? ((n: SessionNode) => (n.unfinished === true ? <UnfinishedBadgeSvg unfinished x={0} y={-7} /> : null)),
+    [renderBadge],
+  );
 
   const selectedNode = node === null ? null : (graph.nodes.find((n) => n.node_id === node) ?? null);
   const branchy = forest.children.size > 0;

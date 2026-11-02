@@ -17,7 +17,10 @@ export const ID_W = 54;
 export const CHIP_W = 40;
 export const BADGE_W = 92;
 export const REMOTE_W = 84;
-export const TITLE_W = 560;
+/** Room after the longest title (about two characters), so the graph ends where its text does. */
+export const TITLE_PAD = 16;
+/** `.gnode-title`: 13px in the page's sans. */
+export const TITLE_PX = 13;
 export const TITLE_MAX = 96;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -334,8 +337,19 @@ export function labelX(lanes: number): number {
   return GUTTER_W + lanes * LANE_W + LABEL_GAP;
 }
 
-export function graphWidth(lanes: number): number {
-  return labelX(lanes) + ID_W + CHIP_W + BADGE_W + REMOTE_W + TITLE_W;
+/** Where a row's title starts, from the label column: id, chip, then badge and other-host columns when present. */
+export function titleOffset(badge: boolean, remote: boolean): number {
+  return ID_W + CHIP_W + (badge ? BADGE_W : 0) + (remote ? REMOTE_W : 0);
+}
+
+/**
+ * SVG width: the end of the longest title in the layout plus TITLE_PAD, not a fixed title column, so a
+ * graph of short titles needs no sideways scroll. `measure` is a title's rendered width in px.
+ */
+export function graphWidth(layout: GraphLayout, measure: (title: string) => number, hasBadge: (n: SessionNode) => boolean): number {
+  let end = 0;
+  for (const { node } of layout.rows) end = Math.max(end, titleOffset(hasBadge(node), !node.available) + measure(nodeTitle(node)));
+  return Math.ceil(labelX(layout.lanes) + end + TITLE_PAD);
 }
 
 /** Branch from the parent's dot into the child's lane, then straight along the lane to the child. */
