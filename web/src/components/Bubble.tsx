@@ -1,10 +1,12 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { LightboxItem } from './Lightbox';
 import { ChatInline, ImageLinkContext, type ImageLinks } from './ChatText';
 import { chatImageSrc } from '../chatHistoryApi';
 import { chatTime, chatTimeTitle } from '../lib/chatTime';
 import type { TimelineItem } from '../lib/timeline';
 import type { ChatAttachment } from '../types';
+import { ImagePlaceholder } from './NoteImage';
+import { missingReason, remoteCaption, type MissingReason } from '../lib/missing';
 
 /** Thumbnail box in px: square, the image is `object-fit: cover` inside it (P7's wire carries no dimensions, so nothing can jump on load). */
 export const THUMB_H = 96;
@@ -49,6 +51,44 @@ export interface BubbleProps {
   onOpenImages: (items: LightboxItem[], index: number) => void;
   /** Phase 10: actions, reply quote and editor (server rows on the history page only). */
   slots?: BubbleSlots;
+}
+
+/** One picture thumbnail. A load error asks the route why: stored on the other laptop reads "uploaded on GPD", anything else "unavailable". */
+function BubbleThumb({ a, onOpen }: { a: ChatAttachment; onOpen: () => void }) {
+  const [why, setWhy] = useState<MissingReason | 'asking' | null>(null);
+  const w = thumbWidth(a);
+  const src = a.thumb_url ?? chatImageSrc(a.id, 'thumb');
+  const ref = a.kind === 'note_image' ? `img:${a.id}` : `upload:${a.id}`;
+  const remote = why !== null && why !== 'asking' && why.kind === 'remote' ? why : null;
+  const caption = remote ? remoteCaption(remote.host) : 'unavailable';
+  return (
+    <button
+      type="button"
+      className="bubble-thumb"
+      data-tip={why === null ? ref : `${ref} · ${caption}`}
+      aria-label={`View image ${ref}`}
+      onClick={onOpen}
+    >
+      {why === null ? (
+        <img
+          src={src}
+          alt=""
+          width={w}
+          height={THUMB_H}
+          style={{ width: w, height: THUMB_H, objectFit: 'cover' }}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => {
+            setWhy('asking');
+            void missingReason(src).then(setWhy);
+          }}
+        />
+      ) : (
+        <ImagePlaceholder aspect={`${w} / ${THUMB_H}`} caption={why === 'asking' ? '' : caption} remote={remote !== null} width={`${w}px`} />
+      )}
+    </button>
+  );
 }
 
 const CHIP_KIND: Record<ChatAttachment['kind'], string> = { chat_image: 'upload', note_image: 'img', note_file: 'file' };
@@ -96,21 +136,9 @@ export function Bubble({ item, now, focused, onOpenImages, slots }: BubbleProps)
         {msg.source === 'claude_code' && <span className="bubble-badge">claude code</span>}
         {images.length > 0 && (
           <div className="bubble-thumbs">
-            {images.map((a, i) => {
-              const w = thumbWidth(a);
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  className="bubble-thumb"
-                  data-tip={a.kind === 'note_image' ? `img:${a.id}` : `upload:${a.id}`}
-                  aria-label={a.kind === 'note_image' ? `View image img:${a.id}` : `View image upload:${a.id}`}
-                  onClick={() => onOpenImages(lightboxItemsOf(images), i)}
-                >
-                  <img src={a.thumb_url ?? chatImageSrc(a.id, 'thumb')} alt="" width={w} height={THUMB_H} style={{ width: w, height: THUMB_H, objectFit: 'cover' }} loading="lazy" decoding="async" draggable={false} />
-                </button>
-              );
-            })}
+            {images.map((a, i) => (
+              <BubbleThumb key={a.id} a={a} onOpen={() => onOpenImages(lightboxItemsOf(images), i)} />
+            ))}
           </div>
         )}
         {parts.map((t, i) => {

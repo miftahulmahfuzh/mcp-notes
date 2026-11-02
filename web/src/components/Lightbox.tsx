@@ -4,6 +4,7 @@ import { CaretLeft, CaretRight, ChatCircleDots, Trash, X } from '@phosphor-icons
 import { imageUrl } from '../api';
 import type { NoteImage as NoteImageData } from '../types';
 import { FILM_FILTER, ImagePlaceholder, aspectOf } from './NoteImage';
+import { missingReason, remoteCaption, type MissingReason } from '../lib/missing';
 import './Lightbox.css';
 
 /**
@@ -78,6 +79,8 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout, onDelete
   const item = index >= 0 && index < len ? items[index] : undefined;
   const rootRef = useRef<HTMLDivElement>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  // Why `failedSrc` failed, once the route has said; null while asking.
+  const [reason, setReason] = useState<{ src: string; why: MissingReason } | null>(null);
 
   // The one window listener reads the latest props through this ref, so it is registered once and
   // keeps its place in the listener order for the lightbox's whole life.
@@ -120,6 +123,7 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout, onDelete
 
   if (!item) return null;
 
+  const why = reason !== null && reason.src === item.src ? reason.why : null;
   const { css } = aspectOf({ width: item.width ?? 0, height: item.height ?? 0 });
   const prev = adjacentIndex(index, -1, len);
   const next = adjacentIndex(index, 1, len);
@@ -194,7 +198,13 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout, onDelete
 
       <div className="lb-stage">
         {failedSrc === item.src ? (
-          <ImagePlaceholder aspect={css} caption="unavailable" width="min(100%, 480px)" onClick={stop} />
+          <ImagePlaceholder
+            aspect={css}
+            caption={why?.kind === 'remote' ? remoteCaption(why.host) : 'unavailable'}
+            remote={why?.kind === 'remote'}
+            width="min(100%, 480px)"
+            onClick={stop}
+          />
         ) : (
           <img
             key={item.id}
@@ -204,7 +214,11 @@ export function Lightbox({ items, index, onIndex, onClose, onChatAbout, onDelete
             draggable={false}
             decoding="async"
             onClick={stop}
-            onError={() => setFailedSrc(item.src)}
+            onError={() => {
+              const src = item.src;
+              setFailedSrc(src);
+              void missingReason(src).then((why) => setReason({ src, why }));
+            }}
             style={{ aspectRatio: css, filter: item.film ? FILM_FILTER : undefined }}
           />
         )}

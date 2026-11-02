@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react';
-import { ImageBroken } from '@phosphor-icons/react';
+import { Devices, ImageBroken } from '@phosphor-icons/react';
 import { imageUrl } from '../api';
 import type { NoteImage as NoteImageData } from '../types';
 
@@ -28,6 +28,8 @@ type PlaceholderProps = {
   caption: string;
   host?: string | null;
   width?: string;
+  /** The original lives on another machine: a devices icon instead of the broken image, so it never reads as an error. */
+  remote?: boolean;
   onClick?: (e: MouseEvent<HTMLElement>) => void;
 };
 
@@ -35,7 +37,7 @@ type PlaceholderProps = {
  * A box at the image's aspect ratio: a duotone icon and a tiny Geist Mono status caption.
  * The caption is a status label, not a control.
  */
-export function ImagePlaceholder({ aspect, caption, host, width, onClick }: PlaceholderProps) {
+export function ImagePlaceholder({ aspect, caption, host, width, remote = false, onClick }: PlaceholderProps) {
   return (
     <div
       role="img"
@@ -54,7 +56,7 @@ export function ImagePlaceholder({ aspect, caption, host, width, onClick }: Plac
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center' }}>
-        <ImageBroken weight="duotone" size={28} color="#bdbcb4" />
+        {remote ? <Devices weight="duotone" size={28} color="#bdbcb4" /> : <ImageBroken weight="duotone" size={28} color="#bdbcb4" />}
         <span style={{ fontFamily: "'Geist Mono',monospace", fontSize: 10.5, letterSpacing: '.03em', lineHeight: 1.3 }}>
           {caption}
         </span>
@@ -91,7 +93,7 @@ export function NoteImage({ image, variant = 'thumb', className = variant === 't
 
   if (!image.available) {
     return (
-      <ImagePlaceholder aspect={css} caption="not on this machine" host={image.host ?? null} width={placeholderWidth} onClick={onClick} />
+      <ImagePlaceholder aspect={css} caption="not on this machine" host={image.host ?? null} width={placeholderWidth} remote onClick={onClick} />
     );
   }
   if (failedKey === key) {

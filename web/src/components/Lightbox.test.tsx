@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { makeImage } from '../testing/fixtures';
 import { FILM_FILTER } from './NoteImage';
 import { Lightbox, adjacentIndex, isLightboxOpen, noteImageItems, type LightboxItem } from './Lightbox';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const items: LightboxItem[] = [
   { id: 'A-B32', src: '/x/A-B32.png', label: 'first.png', width: 600, height: 400, film: true },
@@ -207,6 +210,14 @@ describe('Lightbox', () => {
     expect(screen.getByRole('img', { name: 'unavailable' })).toBeTruthy();
     key('ArrowRight');
     expect(shown()?.getAttribute('src')).toBe('/x/Q-RS1.png');
+  });
+
+  it('an image stored on the other laptop says "uploaded on GPD" instead of "unavailable"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not_on_this_machine', host: 'GPD' }), { status: 404 })));
+    render(<Host />);
+    fireEvent.error(shown() as HTMLImageElement);
+    expect(await screen.findByRole('img', { name: 'uploaded on GPD' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'unavailable' })).toBeNull());
   });
 
   it('renders nothing for an out-of-range index', () => {
