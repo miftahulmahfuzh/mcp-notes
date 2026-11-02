@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Install or refresh notesd as a systemd user service, register it with Claude Code as the
 # `notes` MCP server (user scope), link the /n skill into ~/.claude/skills/n, and register the
-# three mcp-notes Claude Code hooks (notes-capture: Stop, saves /n exchanges to the chat history;
-# notes-paste: PreToolUse on similar_images, uploads a pasted image; notes-prompt:
-# UserPromptSubmit on /n prompts, stores the session's pasted images and names their ids) in
-# ~/.claude/settings.json.
+# five mcp-notes Claude Code hooks in ~/.claude/settings.json: notes-capture (Stop, saves /n
+# exchanges to the chat history), notes-paste (PreToolUse on similar_images, uploads a pasted
+# image), notes-prompt (UserPromptSubmit on /n prompts, stores the session's pasted images and
+# names their ids), notes-session (SessionStart, reports the session to the session graph and
+# tells it its node id) and notes-spawn (PreToolUse on Bash, records a hand-rolled tmux `claude`
+# launch so the child links to its parent). It also raises Claude Code's cleanupPeriodDays so
+# the transcripts the session graph ingests are not deleted after 30 days.
 #
 # Idempotent: run it again after every pull. The unit runs code from the checkout this script
 # lives in, so run it from the checkout you want the daemon to use (normally ~/mcp-notes).
@@ -22,6 +25,8 @@
 #   NOTES_SKIP_HOOKS set to 1 to leave ~/.claude/settings.json alone
 #   NOTES_PASTE_STRATEGY  `deny` registers the paste hook in its fallback mode (see
 #                   claude/hooks/notes-paste.mjs); default `updatedInput`
+#   NOTES_CLAUDE_RETENTION_DAYS  minimum cleanupPeriodDays (default 3650, ten years); a higher
+#                   value already in settings.json is kept
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -48,6 +53,7 @@ HOOKS_HELPER="$REPO_DIR/scripts/claude-hooks.mjs"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 SKIP_HOOKS="${NOTES_SKIP_HOOKS:-0}"
 PASTE_STRATEGY="${NOTES_PASTE_STRATEGY:-updatedInput}"
+RETENTION_DAYS="${NOTES_CLAUDE_RETENTION_DAYS:-3650}"
 
 log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -59,7 +65,7 @@ parse_args() {
     case "$arg" in
       --skip-hooks) SKIP_HOOKS=1 ;;
       -h|--help)
-        sed -n '2,26p' "${BASH_SOURCE[0]}"
+        sed -n '2,29p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
       *) die "unknown argument: $arg (try --help)" ;;
@@ -109,7 +115,8 @@ check_preconditions() {
   done
   [[ -f "$REPO_DIR/package-lock.json" ]] || die "missing $REPO_DIR/package-lock.json."
   local hk
-  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_DIR/notes-prompt.mjs" "$HOOKS_HELPER"; do
+  for hk in "$HOOKS_DIR/notes-capture.mjs" "$HOOKS_DIR/notes-paste.mjs" "$HOOKS_DIR/notes-prompt.mjs" \
+            "$HOOKS_DIR/notes-session.mjs" "$HOOKS_DIR/notes-spawn.mjs" "$HOOKS_HELPER"; do
     [[ -f "$hk" ]] || die "missing $hk."
   done
   [[ "$PASTE_STRATEGY" == "updatedInput" || "$PASTE_STRATEGY" == "deny" ]] \
@@ -246,7 +253,7 @@ link_skill() {
   done
 }
 
-# Merge the three hook entries into ~/.claude/settings.json (user scope: every repo). Everything
+# Merge the five hook entries into ~/.claude/settings.json (user scope: every repo). Everything
 # else in the file is kept; a copy of the original is kept once at settings.json.bak-notes-hooks.
 # A failure here warns and leaves the file alone: the daemon install is not undone for it.
 register_hooks() {
@@ -254,13 +261,31 @@ register_hooks() {
     log "skipping Claude Code hooks (--skip-hooks / NOTES_SKIP_HOOKS=1)"
     return 0
   fi
-  log "registering the three Claude Code hooks (notes-capture, notes-paste, notes-prompt) in $CLAUDE_SETTINGS"
+  log "registering the five Claude Code hooks (notes-capture, notes-paste, notes-prompt, notes-session, notes-spawn) in $CLAUDE_SETTINGS"
   "$NODE_BIN" "$HOOKS_HELPER" install \
     --settings "$CLAUDE_SETTINGS" \
     --node "$NODE_BIN" \
     --hooks-dir "$HOOKS_DIR" \
     --paste-strategy "$PASTE_STRATEGY" \
-    || warn "could not update $CLAUDE_SETTINGS; /n exchanges will not be captured. Fix the file and re-run, or pass --skip-hooks."
+    || warn "could not update $CLAUDE_SETTINGS; /n exchanges will not be captured and sessions will not be linked. Fix the file and re-run, or pass --skip-hooks."
+}
+
+# Claude Code deletes transcripts older than cleanupPeriodDays (default 30) at startup. The session
+# graph ingests them into Postgres, but a session that was never ingested (daemon down for a month,
+# the other laptop) would be lost, so keep them for at least RETENTION_DAYS. A higher value is kept;
+# uninstall does not lower it. Same backup and atomic write as register_hooks; --skip-hooks skips it.
+raise_retention() {
+  if [[ "$SKIP_HOOKS" == 1 ]]; then
+    log "skipping cleanupPeriodDays (--skip-hooks / NOTES_SKIP_HOOKS=1)"
+    return 0
+  fi
+  if [[ ! "$RETENTION_DAYS" =~ ^[1-9][0-9]{0,5}$ ]]; then
+    warn "NOTES_CLAUDE_RETENTION_DAYS must be a positive integer (got $RETENTION_DAYS); cleanupPeriodDays left alone."
+    return 0
+  fi
+  log "keeping Claude Code transcripts for at least $RETENTION_DAYS days (cleanupPeriodDays in $CLAUDE_SETTINGS)"
+  "$NODE_BIN" "$HOOKS_HELPER" retention --settings "$CLAUDE_SETTINGS" --min-days "$RETENTION_DAYS" \
+    || warn "could not update cleanupPeriodDays in $CLAUDE_SETTINGS; Claude Code keeps transcripts for its default 30 days."
 }
 
 
@@ -344,6 +369,7 @@ main() {
   register_mcp
   link_skill
   register_hooks
+  raise_retention
   verify
 }
 

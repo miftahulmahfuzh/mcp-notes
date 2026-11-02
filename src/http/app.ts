@@ -10,6 +10,7 @@ import { chatHistoryRoutes } from './chatApi.js';
 import { chatImageRoutes } from './chatImages.js';
 import { fileRoutes } from './files.js';
 import { captureRoutes } from './capture.js';
+import { sessionHookRoutes } from './sessionHooks.js';
 import { imageRoutes } from './images.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
@@ -60,8 +61,9 @@ export function mcpToolDeps(deps: AppDeps): ToolDeps {
  * /health, /mcp, apiRoutes (P6), chatHistoryRoutes (chat history phase 7), imageRoutes (P5),
  * chatImageRoutes (pasted chat images), fileRoutes (note files), revealRoutes (iteration 7:
  * capabilities + reveal; note files add file and note reveal), captureRoutes (Claude Code `/n`
- * capture, loopback + X-Notes-Capture only), staticRoutes (P6, last: it owns the SPA fallback; it
- * reserves /api, so the order is for clarity).
+ * capture, loopback + X-Notes-Capture only), sessionHookRoutes (session graph: SessionStart and
+ * Bash spawn hooks, same guard), staticRoutes (P6, last: it owns the SPA fallback; it reserves
+ * /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -83,6 +85,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', fileRoutes(deps));
   app.route('/', revealRoutes(deps, { reveal: options.reveal }));
   app.route('/', captureRoutes(deps));
+  app.route('/', sessionHookRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

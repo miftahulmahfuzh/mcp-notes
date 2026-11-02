@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { hookCommand, mergeHooks, ourGroups, removeHooks, shQuote } from '../../../scripts/claude-hooks.mjs';
+import { hookCommand, mergeHooks, ourGroups, ourHandlers, raiseCleanupPeriod, removeHooks, shQuote } from '../../../scripts/claude-hooks.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const HELPER = path.join(REPO, 'scripts', 'claude-hooks.mjs');
@@ -21,6 +21,8 @@ const EXISTING = {
     PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: '/home/u/guard.sh' }] }],
   },
 };
+
+const EVENTS = ['Stop', 'PreToolUse', 'UserPromptSubmit', 'SessionStart'];
 
 let home: string;
 let settings: string;
@@ -54,29 +56,34 @@ function sourced(script: 'install.sh' | 'uninstall.sh', body: string, extraEnv: 
 
 describe('mergeHooks / removeHooks', () => {
   const opts = { nodeBin: '/opt/node/bin/node', hooksDir: '/home/u/mcp-notes/claude/hooks' };
+  const cmd = (script: string): string => `'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/${script}'`;
 
-  it('adds our three groups and keeps everything else', () => {
-    const merged = mergeHooks(EXISTING, opts) as typeof EXISTING & { hooks: { UserPromptSubmit: unknown[] } };
+  it('adds our five handlers in four events and keeps everything else', () => {
+    const merged = mergeHooks(EXISTING, opts) as typeof EXISTING & { hooks: Record<string, unknown[]> };
     expect(merged.env).toEqual(EXISTING.env);
     expect(merged.enabledPlugins).toEqual(EXISTING.enabledPlugins);
     expect(merged.hooks.Stop).toHaveLength(2);
-    expect(merged.hooks.Stop[0]).toEqual(EXISTING.hooks.Stop[0]);
-    expect(merged.hooks.Stop[1]).toEqual({
-      hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-capture.mjs'", async: true, timeout: 60 }],
+    expect(merged.hooks.Stop![0]).toEqual(EXISTING.hooks.Stop[0]);
+    expect(merged.hooks.Stop![1]).toEqual({
+      hooks: [{ type: 'command', command: cmd('notes-capture.mjs'), async: true, timeout: 60 }],
     });
-    expect(merged.hooks.PreToolUse[1]).toEqual({
-      matcher: 'mcp__notes__(similar_images|create_image|attach_image)',
-      hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-paste.mjs'", timeout: 30 }],
-    });
-    expect(merged.hooks.UserPromptSubmit).toEqual([
-      { hooks: [{ type: 'command', command: "'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/notes-prompt.mjs'", timeout: 20 }] },
+    expect(merged.hooks.PreToolUse).toEqual([
+      EXISTING.hooks.PreToolUse[0],
+      {
+        matcher: 'mcp__notes__(similar_images|create_image|attach_image)',
+        hooks: [{ type: 'command', command: cmd('notes-paste.mjs'), timeout: 30 }],
+      },
+      { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('notes-spawn.mjs'), timeout: 5 }] },
     ]);
-    expect(Object.keys(ourGroups(opts))).toEqual(['Stop', 'PreToolUse', 'UserPromptSubmit']);
+    expect(merged.hooks.UserPromptSubmit).toEqual([{ hooks: [{ type: 'command', command: cmd('notes-prompt.mjs'), timeout: 20 }] }]);
+    expect(merged.hooks.SessionStart).toEqual([{ hooks: [{ type: 'command', command: cmd('notes-session.mjs'), timeout: 10 }] }]);
+    expect(Object.keys(ourGroups(opts))).toEqual(EVENTS);
   });
 
-  it('keeps a user UserPromptSubmit hook and upgrades a two-hook install in place', () => {
-    const userHook = { hooks: [{ type: 'command', command: '/home/u/prompt-guard.sh' }] };
-    const twoHookInstall = {
+  it('upgrades a three-hook install in place and keeps user hooks of the same events', () => {
+    const userPrompt = { hooks: [{ type: 'command', command: '/home/u/prompt-guard.sh' }] };
+    const userStart = { hooks: [{ type: 'command', command: '/home/u/hello.sh' }] };
+    const threeHookInstall = {
       ...EXISTING,
       hooks: {
         Stop: [...EXISTING.hooks.Stop, { hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-capture.mjs'", async: true, timeout: 60 }] }],
@@ -84,18 +91,23 @@ describe('mergeHooks / removeHooks', () => {
           ...EXISTING.hooks.PreToolUse,
           { matcher: 'mcp__notes__(similar_images|create_image|attach_image)', hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-paste.mjs'", timeout: 30 }] },
         ],
-        UserPromptSubmit: [userHook],
+        UserPromptSubmit: [userPrompt, { hooks: [{ type: 'command', command: "'/old/node' '/old/claude/hooks/notes-prompt.mjs'", timeout: 20 }] }],
+        SessionStart: [userStart],
       },
     };
-    const merged = mergeHooks(twoHookInstall, opts) as { hooks: Record<string, unknown[]> };
+    const merged = mergeHooks(threeHookInstall, opts) as { hooks: Record<string, unknown[]> };
     expect(merged.hooks.Stop).toHaveLength(2);
-    expect(merged.hooks.PreToolUse).toHaveLength(2);
+    expect(merged.hooks.PreToolUse).toHaveLength(3);
     expect(merged.hooks.UserPromptSubmit).toHaveLength(2);
-    expect(merged.hooks.UserPromptSubmit![0]).toEqual(userHook);
+    expect(merged.hooks.UserPromptSubmit![0]).toEqual(userPrompt);
+    expect(merged.hooks.SessionStart).toHaveLength(2);
+    expect(merged.hooks.SessionStart![0]).toEqual(userStart);
     expect(JSON.stringify(merged)).not.toContain('/old/');
     expect(mergeHooks(merged, opts)).toEqual(merged);
     const removed = removeHooks(merged) as { hooks: Record<string, unknown[]> };
-    expect(removed.hooks.UserPromptSubmit).toEqual([userHook]);
+    expect(removed.hooks.UserPromptSubmit).toEqual([userPrompt]);
+    expect(removed.hooks.SessionStart).toEqual([userStart]);
+    expect(removed.hooks.PreToolUse).toEqual(EXISTING.hooks.PreToolUse);
     expect(removed.hooks.Stop).toEqual(EXISTING.hooks.Stop);
   });
 
@@ -105,6 +117,7 @@ describe('mergeHooks / removeHooks', () => {
     expect(mergeHooks(twice, opts)).toEqual(twice);
     expect(JSON.stringify(twice)).not.toContain('/old/checkout');
     expect((twice as typeof EXISTING).hooks.Stop).toHaveLength(2);
+    expect((twice as typeof EXISTING).hooks.PreToolUse).toHaveLength(3);
   });
 
   it('works without a hooks key and removeHooks restores the original exactly', () => {
@@ -119,12 +132,34 @@ describe('mergeHooks / removeHooks', () => {
   it('the deny strategy bakes the env prefix into the paste command only', () => {
     const merged = mergeHooks({}, { ...opts, pasteStrategy: 'deny' }) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     expect(merged.hooks.PreToolUse![0]!.hooks[0]!.command.startsWith("NOTES_PASTE_STRATEGY='deny' ")).toBe(true);
+    expect(merged.hooks.PreToolUse![1]!.hooks[0]!.command.startsWith("'/opt/node")).toBe(true);
     expect(merged.hooks.Stop![0]!.hooks[0]!.command.startsWith("'/opt/node")).toBe(true);
+  });
+
+  it('ourHandlers keys each handler by event and script', () => {
+    expect(Object.keys(ourHandlers(mergeHooks(EXISTING, opts))).sort()).toEqual([
+      'PreToolUse notes-paste',
+      'PreToolUse notes-spawn',
+      'SessionStart notes-session',
+      'Stop notes-capture',
+      'UserPromptSubmit notes-prompt',
+    ]);
   });
 
   it('quotes paths with single quotes safely', () => {
     expect(shQuote("/a b/it's")).toBe(`'/a b/it'\\''s'`);
-    expect(hookCommand('/n', "/x y/notes-capture.mjs")).toBe(`'/n' '/x y/notes-capture.mjs'`);
+    expect(hookCommand('/n', '/x y/notes-capture.mjs')).toBe(`'/n' '/x y/notes-capture.mjs'`);
+  });
+});
+
+describe('raiseCleanupPeriod', () => {
+  it('sets a missing, lower or non-number value and keeps a higher one (same object)', () => {
+    expect(raiseCleanupPeriod({ model: 'opus' }, 3650)).toEqual({ model: 'opus', cleanupPeriodDays: 3650 });
+    expect(raiseCleanupPeriod({ cleanupPeriodDays: 30 }, 3650)).toEqual({ cleanupPeriodDays: 3650 });
+    expect(raiseCleanupPeriod({ cleanupPeriodDays: 0 }, 3650)).toEqual({ cleanupPeriodDays: 3650 });
+    expect(raiseCleanupPeriod({ cleanupPeriodDays: '99' }, 3650)).toEqual({ cleanupPeriodDays: 3650 });
+    const high = { cleanupPeriodDays: 9999 };
+    expect(raiseCleanupPeriod(high, 3650)).toBe(high);
   });
 });
 
@@ -132,7 +167,7 @@ describe('scripts/claude-hooks.mjs against a temp HOME', () => {
   it('creates the file (0600) when there is none, without a backup', async () => {
     cli('install', '--settings', settings, '--node', NODE, '--hooks-dir', HOOKS_DIR);
     const value = JSON.parse(await readFile(settings, 'utf8'));
-    expect(Object.keys(value.hooks)).toEqual(['Stop', 'PreToolUse', 'UserPromptSubmit']);
+    expect(Object.keys(value.hooks)).toEqual(EVENTS);
     expect((await stat(settings)).mode & 0o777).toBe(0o600);
     expect(existsSync(`${settings}.bak-notes-hooks`)).toBe(false);
   });
@@ -159,14 +194,31 @@ describe('scripts/claude-hooks.mjs against a temp HOME', () => {
     expect(await readFile(settings, 'utf8')).toBe('{ not json');
   });
 
-  it('status reports all three hooks', async () => {
+  it('status reports all five hooks and cleanupPeriodDays', async () => {
     cli('install', '--settings', settings, '--node', NODE, '--hooks-dir', HOOKS_DIR);
     const out = cli('status', '--settings', settings);
     expect(out).toMatch(/Stop notes-capture: .*notes-capture\.mjs/);
     expect(out).toMatch(/PreToolUse notes-paste: .*notes-paste\.mjs/);
+    expect(out).toMatch(/PreToolUse notes-spawn: .*notes-spawn\.mjs/);
     expect(out).toMatch(/UserPromptSubmit notes-prompt: .*notes-prompt\.mjs/);
+    expect(out).toMatch(/SessionStart notes-session: .*notes-session\.mjs/);
+    expect(out).toMatch(/cleanupPeriodDays: unset/);
     cli('uninstall', '--settings', settings);
-    expect(cli('status', '--settings', settings)).toMatch(/UserPromptSubmit notes-prompt: not registered/);
+    const after = cli('status', '--settings', settings);
+    expect(after).toMatch(/SessionStart notes-session: not registered/);
+    expect(after).toMatch(/PreToolUse notes-spawn: not registered/);
+  });
+
+  it('retention raises cleanupPeriodDays once, keeps a higher value and the first backup', async () => {
+    const original = await writeSettings({ ...EXISTING, cleanupPeriodDays: 30 });
+    expect(cli('retention', '--settings', settings, '--min-days', '3650')).toMatch(/^written: .*30 -> 3650/);
+    expect(JSON.parse(await readFile(settings, 'utf8')).cleanupPeriodDays).toBe(3650);
+    expect(cli('retention', '--settings', settings)).toMatch(/^unchanged/);
+    expect(await readFile(`${settings}.bak-notes-hooks`, 'utf8')).toBe(original);
+    await writeSettings({ cleanupPeriodDays: 9999 });
+    expect(cli('retention', '--settings', settings, '--min-days', '3650')).toMatch(/^unchanged/);
+    const bad = spawnSync(NODE, [HELPER, 'retention', '--settings', settings, '--min-days', 'ten'], { encoding: 'utf8' });
+    expect(bad.status).toBe(1);
   });
 });
 
@@ -177,6 +229,8 @@ describe('install.sh / uninstall.sh (sourced, temp HOME)', () => {
     const first = await readFile(settings, 'utf8');
     expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-capture.mjs'));
     expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-prompt.mjs'));
+    expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-session.mjs'));
+    expect(first).toContain(path.join(REPO, 'claude', 'hooks', 'notes-spawn.mjs'));
     expect(first).toContain(NODE);
     sourced('install.sh', 'register_hooks');
     expect(await readFile(settings, 'utf8')).toBe(first);
@@ -184,10 +238,27 @@ describe('install.sh / uninstall.sh (sourced, temp HOME)', () => {
     expect(await readFile(settings, 'utf8')).toBe(original);
   });
 
+  it('raise_retention sets cleanupPeriodDays, is idempotent, honours the env override, and uninstall keeps it', async () => {
+    await writeSettings(EXISTING);
+    sourced('install.sh', 'register_hooks; raise_retention');
+    const first = await readFile(settings, 'utf8');
+    expect(JSON.parse(first).cleanupPeriodDays).toBe(3650);
+    sourced('install.sh', 'register_hooks; raise_retention');
+    expect(await readFile(settings, 'utf8')).toBe(first);
+    sourced('install.sh', 'raise_retention', { NOTES_CLAUDE_RETENTION_DAYS: '5000' });
+    expect(JSON.parse(await readFile(settings, 'utf8')).cleanupPeriodDays).toBe(5000);
+    sourced('install.sh', 'raise_retention', { NOTES_CLAUDE_RETENTION_DAYS: 'nope' });
+    expect(JSON.parse(await readFile(settings, 'utf8')).cleanupPeriodDays).toBe(5000);
+    sourced('uninstall.sh', 'unregister_hooks');
+    const after = JSON.parse(await readFile(settings, 'utf8'));
+    expect(after.cleanupPeriodDays).toBe(5000);
+    expect(after.hooks).toEqual(EXISTING.hooks);
+  });
+
   it('--skip-hooks and NOTES_SKIP_HOOKS=1 leave settings.json alone', async () => {
-    sourced('install.sh', 'parse_args --skip-hooks; register_hooks');
+    sourced('install.sh', 'parse_args --skip-hooks; register_hooks; raise_retention');
     expect(existsSync(settings)).toBe(false);
-    sourced('install.sh', 'register_hooks', { NOTES_SKIP_HOOKS: '1' });
+    sourced('install.sh', 'register_hooks; raise_retention', { NOTES_SKIP_HOOKS: '1' });
     expect(existsSync(settings)).toBe(false);
   });
 

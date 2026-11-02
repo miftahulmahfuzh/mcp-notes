@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 /**
- * Adds, removes or reports the three mcp-notes Claude Code hooks in a settings.json
- * (normally ~/.claude/settings.json), leaving every other key and every other hook as it was.
+ * Adds, removes or reports the five mcp-notes Claude Code hooks in a settings.json (normally
+ * ~/.claude/settings.json), leaving every other key and every other hook as it was, and raises
+ * `cleanupPeriodDays` so Claude Code keeps the transcripts the session graph ingests.
  *
  *   node scripts/claude-hooks.mjs install   --settings FILE --node /abs/node --hooks-dir /abs/repo/claude/hooks [--paste-strategy updatedInput|deny]
  *   node scripts/claude-hooks.mjs uninstall --settings FILE
  *   node scripts/claude-hooks.mjs status    --settings FILE
+ *   node scripts/claude-hooks.mjs retention --settings FILE [--min-days N]
  *
- * Our handlers are recognised by the script name in their command (notes-capture.mjs,
- * notes-paste.mjs, notes-prompt.mjs), so an entry left by another checkout is replaced, never duplicated. install is
- * idempotent: a second run leaves the file byte-identical. Before the first change to an existing
- * file a copy is kept at FILE.bak-notes-hooks (once; never overwritten). Writes are atomic
- * (temp file + rename) on the symlink target, keeping the file's mode.
+ * The hooks: Stop -> notes-capture.mjs (async), PreToolUse mcp__notes__(...) -> notes-paste.mjs,
+ * PreToolUse Bash -> notes-spawn.mjs, UserPromptSubmit -> notes-prompt.mjs, SessionStart ->
+ * notes-session.mjs. Our handlers are recognised by the script name in their command, so an entry
+ * left by another checkout is replaced, never duplicated. install is idempotent: a second run leaves
+ * the file byte-identical. `retention` sets cleanupPeriodDays to N (default 3650) when it is missing
+ * or lower, and leaves a higher value alone; uninstall does not lower it again (that would let
+ * Claude Code delete the history). Before the first change to an existing file a copy is kept at
+ * FILE.bak-notes-hooks (once; never overwritten). Writes are atomic (temp file + rename) on the
+ * symlink target, keeping the file's mode.
  */
 import { existsSync, realpathSync } from 'node:fs';
 import { copyFile, mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
@@ -19,13 +25,27 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
-export const OUR_SCRIPT = /notes-(?:capture|paste|prompt)\.mjs(?=['"\s]|$)/;
+export const OUR_SCRIPT = /notes-(?:capture|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
+const OUR_SCRIPT_NAME = /notes-(capture|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
+export const HOOK_SCRIPTS = ['notes-capture.mjs', 'notes-paste.mjs', 'notes-prompt.mjs', 'notes-session.mjs', 'notes-spawn.mjs'];
 export const PASTE_MATCHER = 'mcp__notes__(similar_images|create_image|attach_image)';
+export const SPAWN_MATCHER = 'Bash';
 export const BACKUP_SUFFIX = '.bak-notes-hooks';
 export const STOP_TIMEOUT_S = 60;
 export const PASTE_TIMEOUT_S = 30;
 export const PROMPT_TIMEOUT_S = 20;
+export const SESSION_TIMEOUT_S = 10;
+export const SPAWN_TIMEOUT_S = 5;
+export const DEFAULT_RETENTION_DAYS = 3650;
 export const PASTE_STRATEGIES = ['updatedInput', 'deny'];
+/** What `status` reports, in order: [event, script without .mjs]. */
+export const STATUS_ROWS = [
+  ['Stop', 'notes-capture'],
+  ['PreToolUse', 'notes-paste'],
+  ['PreToolUse', 'notes-spawn'],
+  ['UserPromptSubmit', 'notes-prompt'],
+  ['SessionStart', 'notes-session'],
+];
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -63,39 +83,66 @@ function stripOurs(groups) {
   return { groups: kept, removed };
 }
 
-/** The three matcher groups this repo installs. */
+/** The matcher groups this repo installs, per event, in the order they are appended. */
 export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' }) {
   const pasteEnv = pasteStrategy === 'deny' ? { NOTES_PASTE_STRATEGY: 'deny' } : {};
   return {
-    Stop: {
-      hooks: [
-        {
-          type: 'command',
-          command: hookCommand(nodeBin, path.join(hooksDir, 'notes-capture.mjs')),
-          async: true,
-          timeout: STOP_TIMEOUT_S,
-        },
-      ],
-    },
-    PreToolUse: {
-      matcher: PASTE_MATCHER,
-      hooks: [
-        {
-          type: 'command',
-          command: hookCommand(nodeBin, path.join(hooksDir, 'notes-paste.mjs'), pasteEnv),
-          timeout: PASTE_TIMEOUT_S,
-        },
-      ],
-    },
-    UserPromptSubmit: {
-      hooks: [
-        {
-          type: 'command',
-          command: hookCommand(nodeBin, path.join(hooksDir, 'notes-prompt.mjs')),
-          timeout: PROMPT_TIMEOUT_S,
-        },
-      ],
-    },
+    Stop: [
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-capture.mjs')),
+            async: true,
+            timeout: STOP_TIMEOUT_S,
+          },
+        ],
+      },
+    ],
+    PreToolUse: [
+      {
+        matcher: PASTE_MATCHER,
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-paste.mjs'), pasteEnv),
+            timeout: PASTE_TIMEOUT_S,
+          },
+        ],
+      },
+      {
+        matcher: SPAWN_MATCHER,
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-spawn.mjs')),
+            timeout: SPAWN_TIMEOUT_S,
+          },
+        ],
+      },
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-prompt.mjs')),
+            timeout: PROMPT_TIMEOUT_S,
+          },
+        ],
+      },
+    ],
+    SessionStart: [
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-session.mjs')),
+            timeout: SESSION_TIMEOUT_S,
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -103,9 +150,9 @@ export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' })
 export function mergeHooks(settings, options) {
   const base = isPlainObject(settings) ? settings : {};
   const hooks = isPlainObject(base.hooks) ? { ...base.hooks } : {};
-  for (const [event, group] of Object.entries(ourGroups(options))) {
+  for (const [event, groups] of Object.entries(ourGroups(options))) {
     const existing = Array.isArray(hooks[event]) ? hooks[event] : [];
-    hooks[event] = [...stripOurs(existing).groups, group];
+    hooks[event] = [...stripOurs(existing).groups, ...groups];
   }
   return { ...base, hooks };
 }
@@ -130,7 +177,7 @@ export function removeHooks(settings) {
   return out;
 }
 
-/** `{event: command}` for each of our handlers present. */
+/** `{"<event> <script>": command}` for each of our handlers present, e.g. `{"PreToolUse notes-spawn": "..."}`. */
 export function ourHandlers(settings) {
   const found = {};
   if (!isPlainObject(settings) || !isPlainObject(settings.hooks)) return found;
@@ -139,11 +186,24 @@ export function ourHandlers(settings) {
     for (const group of groups) {
       if (!isPlainObject(group) || !Array.isArray(group.hooks)) continue;
       for (const handler of group.hooks) {
-        if (isOurHandler(handler)) found[event] = handler.command;
+        if (!isOurHandler(handler)) continue;
+        const match = OUR_SCRIPT_NAME.exec(handler.command);
+        if (match !== null) found[`${event} notes-${match[1]}`] = handler.command;
       }
     }
   }
   return found;
+}
+
+/**
+ * `settings` with cleanupPeriodDays raised to `minDays` when it is missing, not a number, or lower.
+ * Same object when it already is at least `minDays`.
+ */
+export function raiseCleanupPeriod(settings, minDays) {
+  const base = isPlainObject(settings) ? settings : {};
+  const current = base.cleanupPeriodDays;
+  if (typeof current === 'number' && Number.isFinite(current) && current >= minDays) return settings;
+  return { ...base, cleanupPeriodDays: minDays };
 }
 
 export async function readSettings(file) {
@@ -195,6 +255,7 @@ async function main(argv) {
       node: { type: 'string' },
       'hooks-dir': { type: 'string' },
       'paste-strategy': { type: 'string' },
+      'min-days': { type: 'string' },
     },
   });
   const command = positionals[0];
@@ -213,7 +274,7 @@ async function main(argv) {
     if (nodeBin === undefined || !path.isAbsolute(nodeBin)) fail('--node must be an absolute path');
     if (hooksDir === undefined || !path.isAbsolute(hooksDir)) fail('--hooks-dir must be an absolute path');
     if (!PASTE_STRATEGIES.includes(pasteStrategy)) fail(`--paste-strategy must be one of ${PASTE_STRATEGIES.join(', ')}`);
-    for (const script of ['notes-capture.mjs', 'notes-paste.mjs', 'notes-prompt.mjs']) {
+    for (const script of HOOK_SCRIPTS) {
       if (!existsSync(path.join(hooksDir, script))) fail(`missing ${path.join(hooksDir, script)}`);
     }
     const result = await writeSettings(file, current, mergeHooks(current.value, { nodeBin, hooksDir, pasteStrategy }));
@@ -231,12 +292,27 @@ async function main(argv) {
   }
   if (command === 'status') {
     const found = ourHandlers(current.value);
-    process.stdout.write(`Stop notes-capture: ${found.Stop ?? 'not registered'}\n`);
-    process.stdout.write(`PreToolUse notes-paste: ${found.PreToolUse ?? 'not registered'}\n`);
-    process.stdout.write(`UserPromptSubmit notes-prompt: ${found.UserPromptSubmit ?? 'not registered'}\n`);
+    for (const [event, script] of STATUS_ROWS) {
+      process.stdout.write(`${event} ${script}: ${found[`${event} ${script}`] ?? 'not registered'}\n`);
+    }
+    const days = current.value.cleanupPeriodDays;
+    process.stdout.write(`cleanupPeriodDays: ${days === undefined ? 'unset (Claude Code default 30)' : JSON.stringify(days)}\n`);
     return;
   }
-  fail('usage: claude-hooks.mjs install|uninstall|status --settings FILE [--node ABS --hooks-dir ABS --paste-strategy updatedInput|deny]');
+  if (command === 'retention') {
+    const raw = values['min-days'] ?? String(DEFAULT_RETENTION_DAYS);
+    if (!/^[1-9]\d{0,5}$/.test(raw)) fail('--min-days must be a positive integer');
+    const minDays = Number(raw);
+    const before = current.value.cleanupPeriodDays;
+    const result = await writeSettings(file, current, raiseCleanupPeriod(current.value, minDays));
+    const shown = before === undefined ? 'unset' : JSON.stringify(before);
+    process.stdout.write(`${result}: ${file} (cleanupPeriodDays ${shown}${result === 'written' ? ` -> ${minDays}` : ''})\n`);
+    return;
+  }
+  fail(
+    'usage: claude-hooks.mjs install|uninstall|status|retention --settings FILE ' +
+      '[--node ABS --hooks-dir ABS --paste-strategy updatedInput|deny] [--min-days N]',
+  );
 }
 
 function invokedDirectly() {
