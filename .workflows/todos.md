@@ -22,11 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
+- [x] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
   - **Difficulty**: EASY
   - **Type**: Feature
   - **Context**: Owns: `~/claude-commands/skills/swarm/swarm.py` `parent_env` + `spawn_argv` + selftest assertions. Committed and pushed in `~/claude-commands`, deployed with `./sync.sh`. Exit criteria: `swarm.py selftest` passes; spawn_argv emits `-e CC_PARENT_SESSION=<id>` when `CLAUDE_CODE_SESSION_ID` is set, nothing when unset; pushed to `origin/main` of claude-commands. Note: code lives in ~/claude-commands (own commit and push there); tracked in this package.
-  - **Status**: in_progress
+  - **Status**: completed (landed in ~/claude-commands bd59a65)
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 2 of 14)
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
