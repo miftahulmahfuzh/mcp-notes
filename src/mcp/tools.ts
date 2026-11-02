@@ -9,6 +9,7 @@ import type { NotesService } from '../notes/service.js';
 import { NoteError } from '../notes/types.js';
 import { ConnectorError, type Connectors } from '../connectors/types.js';
 import type { SessionsReadDeps } from '../sessions/readModel.js';
+import type { SessionResumer } from '../sessions/resume.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -28,6 +29,8 @@ export interface ToolDeps {
   chatUploads?: ChatUploadSource;
   /** Session read model behind sessions_search / session_get / session_transcript / sessions_usage (iteration 8). Omitted: those tools answer SESSIONS_OFF. */
   sessions?: SessionsReadDeps;
+  /** Phase 9: resume / spawn a session into tmux (`session_resume`). Omitted: the tool answers that it is unavailable. */
+  sessionResume?: SessionResumer;
 }
 
 /** Appended to the `list` and `search` descriptions. */

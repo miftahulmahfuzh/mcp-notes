@@ -59,12 +59,13 @@ beforeEach(async () => {
 });
 
 describe('session MCP tools', () => {
-  it('registers exactly the read-only session tools, and the instructions explain them', async () => {
+  it('registers the session tools (read-only except session_resume), and the instructions explain them', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     for (const name of SESSION_TOOL_NAMES) expect(names).toContain(name);
     for (const t of tools.filter((x) => (SESSION_TOOL_NAMES as readonly string[]).includes(x.name))) {
-      expect(t.annotations?.readOnlyHint).toBe(true);
+      // phase 9's session_resume opens tmux windows, so it is the one session tool that is not read-only
+      expect(t.annotations?.readOnlyHint).toBe(t.name !== 'session_resume');
       expect(t.description?.length ?? 0).toBeGreaterThan(40);
     }
     expect(client.getInstructions() ?? '').toContain('Sessions.');

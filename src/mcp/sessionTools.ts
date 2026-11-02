@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { normalizeNodeId } from '../sessions/ids.js';
+import { RESUME_PROMPT_MAX_CHARS, type ResumeOutcome } from '../sessions/resume.js';
 import { readTranscript, searchNodes, sessionDetail, usage, type SessionsReadDeps } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
 import { nodeUrl, type NodeRef } from '../sessions/view.js';
@@ -210,6 +211,58 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
         });
         if (res.by === 'node') return jsonResult({ ...res, rows: res.rows.map((r) => withUrl(rd, r)) });
         return jsonResult(res);
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+  registerSessionResumeTool(server, deps);
+}
+
+/** ResumeOutcome -> the tool's answer: the JSON result on success, a "<code>: <what to do>" error otherwise. */
+export function resumeToolResult(out: ResumeOutcome, nodeId: string): CallToolResult {
+  if (out.status === 200) return jsonResult(out.body);
+  const body = out.body;
+  switch (body.error) {
+    case 'not_found':
+      return fail(`not_found: no session with node id ${nodeId}`);
+    case 'not_on_this_machine':
+      return fail(`not_on_this_machine: session ${nodeId} ran on ${body.host}; resume it on that machine`);
+    case 'no_tmux':
+      return fail('no_tmux: no tmux server is running on this machine, so there is nowhere to open the session');
+    case 'live_outside_tmux':
+      return fail(`live_outside_tmux: session ${nodeId} is already running (pid ${body.pid}) outside tmux; switch to its terminal`);
+    case 'spawn_failed':
+      return fail(`spawn_failed: ${body.message}`);
+  }
+}
+
+export function registerSessionResumeTool(server: McpServer, deps: Pick<ToolDeps, 'sessionResume'>): void {
+  server.registerTool(
+    'session_resume',
+    {
+      title: 'Resume a Claude Code session',
+      description:
+        "Open a Claude Code session from the session graph in the user's tmux, on this machine. node_id is a session node id like A0-3G (two characters, a dash, two characters; not a note id). If that session is already running, its tmux window is focused and prompt (if given) is typed into it; it is never resumed twice. Otherwise a new window in the most recently attached tmux session runs `claude --resume <session> [prompt]` in the session's directory; if that directory is gone (a removed worktree) it runs from the repository checkout and returns original_cwd. fresh=true starts a new session whose first prompt is this node's summary, commits and plan docs (plus prompt) instead of resuming. A session whose transcript lives on the other machine answers not_on_this_machine. Returns { action: focused | messaged | resumed | spawned, window }.",
+      inputSchema: {
+        node_id: z.string().min(1).describe('Session node id like A0-3G. Case-insensitive; the dash may be omitted.'),
+        prompt: z
+          .string()
+          .max(RESUME_PROMPT_MAX_CHARS)
+          .optional()
+          .describe('Optional message: typed into the running session, or sent as the first turn after resuming.'),
+        fresh: z
+          .boolean()
+          .optional()
+          .describe("true: start a new session seeded with this node's context instead of resuming it. Default false."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ node_id, prompt, fresh }) => {
+      const resumer = deps.sessionResume;
+      if (resumer === undefined) return fail('session_resume is not available in this server');
+      try {
+        return resumeToolResult(await resumer.resume(node_id, { prompt, fresh }), node_id);
       } catch (err) {
         return errorResult(err);
       }
