@@ -116,6 +116,23 @@ describe('NodePanel', () => {
     expect(screen.getByText('(guessed)')).toBeTruthy();
   });
 
+  it('shows a recorded cost as is, and the subagent share as an estimate', async () => {
+    stubFetch({ ...WIRE, subagent_count: 3, subagent_cost_usd: 0.42 });
+    renderPanel();
+    expect(await screen.findByText('$1.23')).toBeTruthy();
+    expect(screen.getByText('cost')).toBeTruthy();
+    expect(screen.getByText('subagents (3)')).toBeTruthy();
+    expect(screen.getByText('~$0.42')).toBeTruthy();
+  });
+
+  it('marks an estimated cost, and shows no subagent row without subagents', async () => {
+    stubFetch({ ...WIRE, cost_usd: 2.5, cost_estimated: true, subagent_count: 0, subagent_cost_usd: null });
+    renderPanel();
+    expect(await screen.findByText('~$2.50')).toBeTruthy();
+    expect(screen.getByText('cost (est.)')).toBeTruthy();
+    expect(screen.queryByText(/^subagents/)).toBeNull();
+  });
+
   it('opens the parent and closes', async () => {
     stubFetch(WIRE);
     const { props } = renderPanel();

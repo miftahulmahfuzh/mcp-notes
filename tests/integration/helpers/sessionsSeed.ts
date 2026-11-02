@@ -40,6 +40,7 @@ export interface SeedSession {
 const json = (v: unknown): string => JSON.stringify(v ?? []);
 
 export async function clearSessions(db: Db): Promise<void> {
+  await db.execute(sql`delete from cc_subagent_transcripts`);
   await db.execute(sql`delete from cc_sessions`);
   await db.execute(sql`delete from app_settings where key = 'projects.selected'`);
 }

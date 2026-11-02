@@ -48,6 +48,11 @@ export interface SessionDetail {
   notes: SessionNoteRef[];
   tokens: SessionTokens;
   cost_usd: number | null;
+  /** `cost_usd` is the server's estimate from token counts (no recorded total in the transcript). */
+  cost_estimated: boolean;
+  /** Subagent transcripts folded into this session, and their estimated cost (part of `cost_usd`). */
+  subagent_count: number;
+  subagent_cost_usd: number | null;
   parent: { node_id: string; name: string | null } | null;
   parent_link_source: ParentLinkSource | null;
   transcript_path: string | null;
@@ -178,6 +183,9 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
       cache_write: num(t ? t.cache_write : w.cache_write_tokens),
     },
     cost_usd: numOrNull(w.cost_usd),
+    cost_estimated: w.cost_estimated === true,
+    subagent_count: num(w.subagent_count),
+    subagent_cost_usd: numOrNull(w.subagent_cost_usd),
     parent: parentId === null ? null : { node_id: parentId, name: str(parentObj?.title) ?? str(parentObj?.name) },
     parent_link_source: src === 'env' || src === 'hook' || src === 'heuristic' ? src : null,
     transcript_path: str(w.transcript_path),

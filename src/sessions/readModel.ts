@@ -2,10 +2,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import type { ModelUsage } from '../db/schema.js';
 import type { AppDeps } from '../deps.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import { DEFAULT_WALL_URL, localTimeZone, wallUrlForPort } from '../mcp/instructions.js';
 import { normalizeNodeId } from './ids.js';
+import { mergeModels } from './merge.js';
+import { estimateCostUsd } from './pricing.js';
 import { readLiveSessions } from './registry.js';
 import { SessionsRepo } from './repo.js';
 import { searchSessions } from './search.js';
@@ -306,7 +309,7 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
   const row = res.rows[0];
   if (row === undefined) return null;
   const ctx = await nodeContext(rd);
-  const [children, parent, notes] = await Promise.all([
+  const [children, parent, notes, subagents] = await Promise.all([
     rd.db.execute<NodeRow>(sql`
       select ${NODE_SELECT} from ${NODE_FROM}
       where s.parent_session_id = ${row.session_id}
@@ -320,10 +323,15 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
       where deleted_at is null and origin ->> 'claude_session' = ${row.session_id}
       order by created_at desc
       limit ${DETAIL_MAX_NOTES}`),
+    rd.db.execute<{ models: unknown }>(sql`select models from cc_subagent_transcripts where session_id = ${row.session_id}`),
   ]);
   const parentRow = parent?.rows[0];
+  const subModels = subagents.rows.reduce<Record<string, ModelUsage>>(
+    (acc, r) => mergeModels(acc, isRecord(r.models) ? (r.models as Record<string, ModelUsage>) : {}, false),
+    {},
+  );
   return {
-    session: toSessionInfo(row, ctx),
+    session: toSessionInfo(row, ctx, { count: subagents.rows.length, costUsd: estimateCostUsd(subModels) }),
     prompts: normalizePrompts(row.prompts),
     commits: normalizeCommits(row.commits),
     files_edited: normalizePaths(row.files_edited),

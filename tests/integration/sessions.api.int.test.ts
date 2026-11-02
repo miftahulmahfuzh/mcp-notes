@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/http/app.js';
@@ -202,6 +203,25 @@ describe('GET /api/sessions/:nodeId', () => {
     expect(body.parent).toBeNull();
     expect(body.children.map((c) => c.node_id)).toEqual(['B1-22', 'C2-33']);
     expect(body.children[0]).toMatchObject({ live: true, parent_link_source: 'env' });
+  });
+
+  it('a recorded cost stays; without one the cost is estimated; the subagent share is estimated', async () => {
+    const opus = { inputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const haiku = { inputTokens: 0, outputTokens: 2_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    // B1-22 has no recorded cost: its models (session + subagent) are priced.
+    await h.deps.db.execute(
+      sql`update cc_sessions set models = ${JSON.stringify({ 'claude-opus-5-5': opus, 'claude-haiku-5-5': haiku })}::jsonb where session_id = 'sess-b1'`,
+    );
+    await h.deps.db.execute(sql`
+      insert into cc_subagent_transcripts (transcript_path, session_id, agent_id, host, models)
+      values ('/t/sess-b1/subagents/agent-a1.jsonl', 'sess-b1', 'a1', ${THIS_HOST}, ${JSON.stringify({ 'claude-haiku-5-5': haiku })}::jsonb)`);
+    const child = (await get<SessionDetail>('/api/sessions/B1-22')).body.session;
+    expect(child).toMatchObject({ cost_estimated: true, subagent_count: 1 });
+    expect(child.cost_usd).toBeCloseTo(20 + 1, 6);
+    expect(child.subagent_cost_usd).toBeCloseTo(1, 6);
+    // A0-3G carries a recorded total and no subagents.
+    const root = (await get<SessionDetail>('/api/sessions/A0-3G')).body.session;
+    expect(root).toMatchObject({ cost_usd: 1.25, cost_estimated: false, subagent_count: 0, subagent_cost_usd: null });
   });
 
   it('a child names its parent', async () => {

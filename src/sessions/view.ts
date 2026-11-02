@@ -1,9 +1,12 @@
 /**
  * Pure shaping of cc_sessions rows into the JSON the sessions read API, the MCP session tools
  * and the prompt hook's context endpoint return (iteration 8, phase 7). No I/O here: the SQL is in
- * readModel.ts, the transcript scan in transcriptSearch.ts. These types are the published
+ * readModel.ts, the transcript scan in transcriptSearch.ts, prices in pricing.ts. These types are the published
  * contract the web (phases 10-13) and the prompt hook (phase 8) plan against.
  */
+
+import type { ModelUsage } from '../db/schema.js';
+import { estimateCostUsd } from './pricing.js';
 
 export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
 
@@ -124,6 +127,15 @@ export interface NodeRef {
 }
 
 export interface SessionInfo extends GraphNode {
+  /**
+   * True when `cost_usd` is estimated from token counts and model prices (src/sessions/pricing.ts)
+   * because the transcript carried no `cost-state` total. A recorded total already includes subagents.
+   */
+  cost_estimated: boolean;
+  /** Subagent transcripts folded into this session (`cc_subagent_transcripts`). */
+  subagent_count: number;
+  /** Estimated cost of those subagents, part of `cost_usd`; null without subagent usage. */
+  subagent_cost_usd: number | null;
   entrypoint: string | null;
   version: string | null;
   models: unknown;
@@ -425,9 +437,21 @@ export function toNodeRef(node: GraphNode): NodeRef {
   };
 }
 
-export function toSessionInfo(row: DetailRow, ctx: NodeContext): SessionInfo {
+/** The subagent share of one session, for `toSessionInfo`. */
+export interface SubagentShare {
+  count: number;
+  costUsd: number | null;
+}
+
+export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: SubagentShare = { count: 0, costUsd: null }): SessionInfo {
+  const node = toGraphNode(row, ctx);
+  const estimate = node.cost_usd === null ? estimateCostUsd(isRecord(row.models) ? (row.models as Record<string, Partial<ModelUsage>>) : null) : null;
   return {
-    ...toGraphNode(row, ctx),
+    ...node,
+    cost_usd: node.cost_usd ?? estimate,
+    cost_estimated: estimate !== null,
+    subagent_count: subagents.count,
+    subagent_cost_usd: subagents.costUsd,
     first_prompt: clip(row.first_prompt_full, DETAIL_TEXT_CHARS),
     entrypoint: nonEmpty(row.entrypoint),
     version: nonEmpty(row.version),

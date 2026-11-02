@@ -299,8 +299,19 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
               </div>
               {formatCost(detail.cost_usd) !== null && (
                 <div>
-                  <dt>cost</dt>
-                  <dd>{formatCost(detail.cost_usd)}</dd>
+                  <dt>{detail.cost_estimated ? 'cost (est.)' : 'cost'}</dt>
+                  <dd
+                    data-tip={detail.cost_estimated ? 'Estimated from tokens and model prices' : 'Recorded by Claude Code, subagents included'}
+                  >
+                    {detail.cost_estimated ? '~' : ''}
+                    {formatCost(detail.cost_usd)}
+                  </dd>
+                </div>
+              )}
+              {detail.subagent_count > 0 && formatCost(detail.subagent_cost_usd) !== null && (
+                <div>
+                  <dt>subagents ({detail.subagent_count})</dt>
+                  <dd data-tip="Estimated from the subagents' tokens; part of the cost">~{formatCost(detail.subagent_cost_usd)}</dd>
                 </div>
               )}
             </dl>
