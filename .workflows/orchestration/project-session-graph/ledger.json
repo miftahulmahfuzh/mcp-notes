@@ -194,23 +194,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "ffdc248",
       "depends_on": [
         9,
         10
       ],
       "difficulty": "NORMAL",
       "n": 11,
-      "note": null,
+      "note": "NodePanel default in renderPanel; phase 10 deep-link test wait disambiguated to [data-node] per Step 8; commit trailer says Haiku 5.5 (pusher), not amended",
       "package": "web/",
       "plan": ".workflows/plan/project-session-graph/phase-11.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:47:44+07:00",
       "satisfies": [
         "R7",
         "R8"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A059",
       "title": "Web: node detail panel, Tree/Timeline, resume action"
     },
     {
@@ -228,7 +228,7 @@
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Per-project chat and project chat history"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T11:39:41+07:00",
+  "updated": "2026-11-02T11:48:00+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
