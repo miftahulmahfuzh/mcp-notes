@@ -132,6 +132,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
               type="button"
               className="ibtn hov"
               data-tip="Expand all"
+              data-tip-side="below"
               aria-label="Expand all"
               disabled={!branchy}
               onClick={() => setExpanded(expandAll(forest))}
@@ -142,6 +143,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
               type="button"
               className="ibtn hov"
               data-tip="Collapse all"
+              data-tip-side="below"
               aria-label="Collapse all"
               disabled={!branchy}
               onClick={() => setExpanded(new Set())}
@@ -155,6 +157,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
             type="button"
             className="ibtn hov proj-focus"
             data-tip={focus ? 'Exit focus' : 'Focus on graph'}
+            data-tip-side="below"
             aria-label={focus ? 'Exit focus' : 'Focus on graph'}
             aria-pressed={focus}
             onClick={onToggleFocus}

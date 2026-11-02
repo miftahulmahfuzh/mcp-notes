@@ -21,6 +21,7 @@ export function ProjectViewToggle({ view, onToggle }: ProjectViewToggleProps) {
       data-view={view}
       aria-label={label}
       data-tip={label}
+      data-tip-side="below"
       onClick={() => onToggle(toChat ? 'chat' : 'graph')}
     >
       {toChat ? <ChatsCircle weight="duotone" /> : <Graph weight="duotone" />}
