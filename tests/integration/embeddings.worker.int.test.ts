@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startBackground } from '../../src/background.js';
 import { embedBackfill } from '../../src/cli/embedBackfill.js';
-import { DEFAULT_CHAT_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../src/config.js';
 import type { Db } from '../../src/db/client.js';
 import type { AppDeps } from '../../src/deps.js';
 import { dbEmbeddingStore, runBackfill } from '../../src/embeddings/backfill.js';
@@ -100,6 +100,7 @@ function config(apiKey: string | null): Config {
     dataDir,
     chat: DEFAULT_CHAT_CONFIG,
     embeddings: { apiKey },
+    sessions: DEFAULT_SESSIONS_CONFIG,
   };
 }
 

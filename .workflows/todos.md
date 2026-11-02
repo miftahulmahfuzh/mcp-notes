@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 13
+**Total Active Tasks**: 12
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 13
+- P1 High: 12
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 10
-- Completed: 52
+- Blocked: 9
+- Completed: 53
 
 ---
 
@@ -32,21 +32,11 @@
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
-- [ ] **P1-NOTES-A051** Phase 3: Transcript ingest, repo resolution, live registry, backfill
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/{transcript,repoResolve,registry,ingest}.ts`, `config.sessions` (`SessionsConfig`, `DEFAULT_SESSIONS_CONFIG` off, `parseSessions`), the session-ingest block of `startBackground`, `sessions: DEFAULT_SESSIONS_CONFIG` in every hand-built test `Config`, fixture Claude home and tests. Exit criteria: pointing the ingester at a fixture Claude home produces one row per `cli` session with repo resolved (incl. deleted worktree paths), sdk sessions skipped, appended bytes picked up incrementally, restart resumes from offsets; `IngestObserver` published.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 3 of 14)
-  - **Satisfies**: R1 — Ingest every Claude Code session into `cc_sessions` (incremental tail, backfill, both hosts)
-  - **Depends on**: P1-NOTES-A049
-  - **Plan**: `.workflows/plan/P1-NOTES-A051.md`
-
 - [ ] **P1-NOTES-A052** Phase 4: Heuristic parent links from transcripts
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/sessions/links.ts` (intents from `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, matching by name + window + cwd/repo, once-per-host backfill marker via `SessionsRepo.getSetting/putSetting`), its observer registration and close in `startBackground`. Exit criteria: fixture where orch session launches a phase child links child -> orch as `heuristic`; an existing `env`/`hook` link is never replaced; backfill runs once per host.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 4 of 14)
   - **Satisfies**: R3 — Heuristic parent-link backfill from parent transcripts, marked `heuristic`
   - **Depends on**: P1-NOTES-A051
@@ -161,6 +151,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A051** Phase 3: Transcript ingest, repo resolution, live registry, backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{transcript,repoResolve,registry,ingest}.ts`, `config.sessions` (`SessionsConfig`, `DEFAULT_SESSIONS_CONFIG` off, `parseSessions`), the session-ingest block of `startBackground`, `sessions: DEFAULT_SESSIONS_CONFIG` in every hand-built test `Config`, fixture Claude home and tests. Exit criteria: pointing the ingester at a fixture Claude home produces one row per `cli` session with repo resolved (incl. deleted worktree paths), sdk sessions skipped, appended bytes picked up incrementally, restart resumes from offsets; `IngestObserver` published.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 3 of 14)
+  - **Satisfies**: R1 — Ingest every Claude Code session into `cc_sessions` (incremental tail, backfill, both hosts)
+  - **Depends on**: P1-NOTES-A049
+  - **Plan**: `.workflows/plan/P1-NOTES-A051.md`
+  - **Completed**: 2026-11-02 10:45
+  - **Method**: /do
+  - **Files**: src/config.ts, src/background.ts, src/sessions/transcript.ts, src/sessions/repoResolve.ts, src/sessions/registry.ts, src/sessions/ingest.ts, tests/fixtures/claude-home/ (9 files), tests/helpers/claudeHome.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/transcript.test.ts, tests/unit/sessions/repoResolve.test.ts, tests/unit/sessions/registry.test.ts, tests/unit/sessions/ingest.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/unit/config.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts, tests/integration/daemon.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/related.int.test.ts, tests/integration/images.int.test.ts, tests/integration/imageHarness.ts, tests/integration/helpers/api-harness.ts, tests/integration/embeddings.worker.int.test.ts, tests/live/chat.live.test.ts
+  - **Decided**:
+    - tests/unit/images/inbox.test.ts failed once under full-suite load (timing), untouched by this phase; passed 3/3 alone and on full-suite re-run, so treated as a pre-existing flake and not fixed (rung 6 / narrow blast radius).
+    - Plan's manual daemon check against the real ~/.claude skipped: the running daemon is built from main, not this phase branch; exit criteria covered by fixture unit + int tests.
 
 - [x] **P1-NOTES-A049** Phase 1: Schema, node ids, SessionsRepo
   - **Difficulty**: NORMAL

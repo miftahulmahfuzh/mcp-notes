@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import { EMBEDDING_MODEL } from '../../src/embeddings/constants.js';
 import { saveEmbedding } from '../../src/embeddings/repo.js';
@@ -41,6 +41,7 @@ const config: Config = {
   dataDir,
   chat: DEFAULT_CHAT_CONFIG,
   embeddings: DEFAULT_EMBEDDINGS_CONFIG,
+  sessions: DEFAULT_SESSIONS_CONFIG,
 };
 const deps: AppDeps = { config, db, events, service, embedder: fake, imageEmbedder: null, chat: new ChatService({ db }) };
 const app = createApp(deps);

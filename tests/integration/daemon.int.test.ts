@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../src/config.js';
 import { createStubChatBackend } from '../../src/chat/stub.js';
 import { startDaemon, type RunningDaemon } from '../../src/daemon.js';
 import { createFakeEmbedder } from '../helpers/fakeEmbedder.js';
@@ -17,7 +17,7 @@ const dataDir = join(mkdtempSync(join(tmpdir(), 'notesd-')), 'data');
 let daemon: RunningDaemon;
 
 function config(dir: string): Config {
-  return { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG };
+  return { databaseUrl: url, port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG };
 }
 
 async function postChat(port: number, message: string) {

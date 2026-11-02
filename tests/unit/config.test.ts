@@ -3,7 +3,15 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_PORT, loadConfig, REPO_ROOT } from '../../src/config.js'
+import {
+  ConfigError,
+  DEFAULT_CHAT_CONFIG,
+  DEFAULT_EMBEDDINGS_CONFIG,
+  DEFAULT_PORT,
+  DEFAULT_SESSIONS_CONFIG,
+  loadConfig,
+  REPO_ROOT,
+} from '../../src/config.js'
 
 const URL_A = 'postgres://u:p@127.0.0.1:5432/a'
 
@@ -34,6 +42,7 @@ describe('loadConfig', () => {
       dataDir: path.join(homedir(), 'mcp-notes-data'),
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
+      sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -193,5 +202,34 @@ describe('loadConfig embeddings', () => {
 
   it('keeps DEFAULT_EMBEDDINGS_CONFIG off', () => {
     expect(DEFAULT_EMBEDDINGS_CONFIG).toEqual({ apiKey: null })
+  })
+})
+
+describe('loadConfig sessions', () => {
+  const sessions = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).sessions
+
+  it('defaults to ~/.claude and ~/.worktrees, on', () => {
+    expect(sessions({})).toEqual({
+      claudeHome: path.join(homedir(), '.claude'),
+      worktreesDir: path.join(homedir(), '.worktrees'),
+      enabled: true,
+    })
+  })
+
+  it('expands ~ and resolves CLAUDE_HOME and NOTES_WORKTREES_DIR', () => {
+    expect(sessions({ CLAUDE_HOME: '~/alt-claude', NOTES_WORKTREES_DIR: '/srv/wt/' })).toMatchObject({
+      claudeHome: path.join(homedir(), 'alt-claude'),
+      worktreesDir: '/srv/wt',
+    })
+  })
+
+  it('turns ingest off with NOTESD_SESSIONS=off and rejects other words', () => {
+    for (const off of ['off', 'OFF', '0', 'false', 'no']) expect(sessions({ NOTESD_SESSIONS: off }).enabled).toBe(false)
+    for (const on of ['', 'on', '1', 'true', 'yes']) expect(sessions({ NOTESD_SESSIONS: on }).enabled).toBe(true)
+    expect(() => sessions({ NOTESD_SESSIONS: 'maybe' })).toThrow(ConfigError)
+  })
+
+  it('keeps DEFAULT_SESSIONS_CONFIG off so hand-built test configs never read ~/.claude', () => {
+    expect(DEFAULT_SESSIONS_CONFIG.enabled).toBe(false)
   })
 })
