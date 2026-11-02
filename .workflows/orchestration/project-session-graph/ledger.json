@@ -59,21 +59,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "1b69699",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "links.ts heuristic linker + background observer wiring; no ladder decisions",
       "package": "src/sessions",
       "plan": ".workflows/plan/project-session-graph/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T10:59:34+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A052",
       "title": "Heuristic parent links from transcripts"
     },
     {
@@ -110,7 +110,7 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Summaries (Haiku), redaction, embeddings, session search"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T10:53:22+07:00",
+  "updated": "2026-11-02T10:59:49+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
