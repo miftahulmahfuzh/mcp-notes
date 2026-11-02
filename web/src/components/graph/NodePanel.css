@@ -33,6 +33,8 @@
 .np-prompts li::marker { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
 .np-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .np-commits, .np-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.4; }
+/* One line per commit: a long subject is cut with an ellipsis (full text in the row's title). */
+.np-commits li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-commits code { font-family: var(--mono); font-size: 11.5px; color: var(--id); margin-right: 8px; }
 .np-commit { color: inherit; text-decoration: none; }
 .np-commit code { text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }

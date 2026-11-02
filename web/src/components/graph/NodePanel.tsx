@@ -253,7 +253,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
             ) : (
               <ul className="np-commits">
                 {detail.commits.map((c) => (
-                  <li key={c.sha}>
+                  <li key={c.sha} title={c.subject}>
                     {c.url !== null ? (
                       <a className="np-commit" href={c.url} target="_blank" rel="noreferrer noopener" data-tip="Open commit">
                         <code>{c.sha.slice(0, 7)}</code>
