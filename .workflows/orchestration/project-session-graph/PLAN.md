@@ -7,7 +7,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/project-session-graph`
 **Branch:** `feature/project-session-graph` (base: `origin/main` @ `8c259df`)
 **Phases:** 14
-**Status:** phase 12/14 complete (1, 6, 7, 10, 11, 12)
+**Status:** phase 13/14 complete (1, 6, 7, 10, 11, 12, 13)
 **Coordinator:** orch-project-session-graph
 
 ---
@@ -174,7 +174,7 @@ belong to that session.
 | 10 ✓ | Web: projects rail icon, repo sidebar, SVG graph | R7 | `web/` | 26 | 7 | HARD | `.workflows/plan/project-session-graph/phase-10.md` | P1-NOTES-A058 | — |
 | 11 ✓ | Web: node detail panel, Tree/Timeline, resume action | R7, R8 | `web/` | 14 | 9, 10 | NORMAL | `.workflows/plan/project-session-graph/phase-11.md` | P1-NOTES-A059 | — |
 | 12 ✓ | Per-project chat and project chat history | R7 | `src/chat`, `src/http`, `web/` | 23 | 11 | NORMAL | `.workflows/plan/project-session-graph/phase-12.md` | P1-NOTES-A060 | — |
-| 13 | "unfinished" badge for orch nodes | R9 | `src/sessions`, `src/http`, `src/config.ts`, `web/` | 14 | 12 | NORMAL | `.workflows/plan/project-session-graph/phase-13.md` | P1-NOTES-A061 | — |
+| 13 ✓ | "unfinished" badge for orch nodes | R9 | `src/sessions`, `src/http`, `src/config.ts`, `web/` | 14 | 12 | NORMAL | `.workflows/plan/project-session-graph/phase-13.md` | P1-NOTES-A061 | — |
 | 14 | Docs: README, CHANGELOG, CLAUDE.md, ROADMAP | R1-R9 | docs | 4 | 2, 8, 13 | EASY | `.workflows/plan/project-session-graph/phase-14.md` | P1-NOTES-A062 | — |
 
 Edges beyond pure code dependency, stated so nobody removes them: 4 -> 6 (both edit

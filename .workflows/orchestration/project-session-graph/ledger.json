@@ -234,21 +234,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "0bd3165",
       "depends_on": [
         12
       ],
       "difficulty": "NORMAL",
       "n": 13,
-      "note": null,
+      "note": "unfinished badge live; checker snapshots cached values at call start so stale SWR entries answer at once (plan test failed otherwise; rung 3)",
       "package": "src/sessions`, `src/http`, `src/config.ts`, `web/",
       "plan": ".workflows/plan/project-session-graph/phase-13.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T12:06:23+07:00",
       "satisfies": [
         "R9"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A061",
       "title": "\"unfinished\" badge for orch nodes"
     },
     {
@@ -269,7 +269,7 @@
         "R1",
         "R9"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Docs: README, CHANGELOG, CLAUDE.md, ROADMAP"
     }
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T11:57:57+07:00",
+  "updated": "2026-11-02T12:06:41+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
