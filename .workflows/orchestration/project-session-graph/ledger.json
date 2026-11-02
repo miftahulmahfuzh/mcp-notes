@@ -17,7 +17,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Schema, node ids, SessionsRepo"
     },
@@ -34,7 +34,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "swarm.py passes CC_PARENT_SESSION (~/claude-commands)"
     },
@@ -277,6 +277,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T10:27:11+07:00",
+  "updated": "2026-11-02T10:27:50+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
