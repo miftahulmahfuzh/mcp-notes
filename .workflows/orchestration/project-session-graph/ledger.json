@@ -40,21 +40,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6fc69fb",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "integrated wave 1 -> 3d9cd09",
       "package": "src/sessions`, `src/background.ts`, `src/config.ts",
       "plan": ".workflows/plan/project-session-graph/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T10:53:11+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A051",
       "title": "Transcript ingest, repo resolution, live registry, backfill"
     },
     {
@@ -72,27 +72,27 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Heuristic parent links from transcripts"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "55dafbb",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "integrated wave 1 -> 3d9cd09",
       "package": "claude/hooks`, `src/http`, `scripts",
       "plan": ".workflows/plan/project-session-graph/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T10:53:11+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A053",
       "title": "SessionStart + Bash spawn hooks, hook endpoints, install"
     },
     {
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T10:37:10+07:00",
+  "updated": "2026-11-02T10:53:22+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
