@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project session graph** (`/projects`): every Claude Code session on both laptops, per repo, as a git-graph of lanes on a time axis, newest at the top. Hand-started sessions form the trunk; sessions they spawned branch off, folded into a `+N` chip. Running sessions pulse, the other laptop's are marked, and only visible nodes are drawn (smooth at ~1000). A rail icon opens the repo list in the sidebar; the picked repo is stored server-side (`app_settings`), so both laptops agree. The graph polls every 10 s with `If-None-Match` (`304` when unchanged).
+- **Session ingest**: a background job reads `~/.claude/projects/**/*.jsonl` into `cc_sessions` (migration 0007): repo (worktree paths resolved even after the worktree is gone), branch, name, titles, prompts, times, tokens and cost, commits, files and plan docs. It backfills everything on disk on first start and then reads only appended bytes. `sdk-ts` / `sdk-cli` sessions are skipped. `CLAUDE_HOME`, `NOTES_WORKTREES_DIR`, `NOTESD_SESSIONS=off`.
+- **Node ids** like `A0-3G` for every session, generated server-side. Typing one (upper case, with the dash) into any Claude Code prompt makes the `notes-prompt` hook add that session's summary, plan docs, commits and transcript path via `GET /api/sessions/context`; a prompt with no id still costs one regex test.
+- **Exact parent links**: new `notes-session` (SessionStart) and `notes-spawn` (Bash PreToolUse) hooks and `POST /api/sessions/hook/start|spawn`. A session reports its parent from `CC_PARENT_SESSION` and learns its own and its parent's node id; a `claude` launched by hand in a tmux window claims the pending spawn its parent left (30 s window). Older sessions get `heuristic` links from their parents' transcripts (`swarm.py launch|spawn --name`, `SendMessage {to}`).
+- **Session summaries and search**: sessions idle for 15 minutes are summarized once with Claude Haiku (secrets redacted first), embedded, and searched with the same hybrid blend as notes; the backlog is summarized in the background.
+- **Session tools** for MCP and the chat bar: `sessions_search`, `session_get`, `session_transcript` (owning machine only, else `not_on_this_machine`), `sessions_usage` (tokens and cost per session or month) and `session_resume`. Read API under `/api/projects` and `/api/sessions`.
+- **Node panel**: summary, prompts, commits, notes made, tokens; Tree / Timeline (Gantt) toggle for the subtree; resume (or spawn fresh) into a new tmux window with no confirm, except for a session on the other laptop. A live session is focused or messaged instead of resumed twice. A deleted worktree falls back to the repo's main checkout, then `~/<repo>`, then `$HOME`, and the answer carries `original_cwd`. `POST /api/sessions/:nodeId/resume`, same-origin only; `NOTESD_TMUX_SOCKET`, `NOTESD_TMUX_BIN`.
+- **Per-project chat**: a chat pill under the graph keeps its threads to that repo (`project` on `POST /api/chat`, stored as `chat_threads.project`), and the project header toggles between the graph and that project's chat history (`GET /api/chat/messages?project=`).
+- **"unfinished" badge** on orchestrator nodes whose swarm still has pending phases and no live session, from `swarm.py verify` (`NOTESD_SWARM_SCRIPT`, cached 60 s).
+
+### Changed
+
+- `scripts/install.sh` registers five Claude Code hooks instead of three and raises `cleanupPeriodDays` in `~/.claude/settings.json` (to `NOTES_CLAUDE_RETENTION_DAYS`, default 3650) so Claude Code keeps the transcripts the graph reads; `scripts/uninstall.sh` removes all five and leaves `cleanupPeriodDays` alone. Re-run `scripts/install.sh` after updating, and `npm run db:migrate` once.
+- `notes-prompt` now looks at every prompt for a node id, not only `/n` prompts. Without one it still does no I/O.
+- In `~/claude-commands`, `swarm.py`'s `spawn_argv` passes `-e CC_PARENT_SESSION=<CLAUDE_CODE_SESSION_ID>` to every session it spawns (a tmux child does not inherit its parent's environment). Pull that repo and run its `./sync.sh` to get exact links for swarm children.
+
 ## [v0.2.0] - 2026-10-31
 
 Chat history, note files, image similarity search, and Claude Code hooks that turn

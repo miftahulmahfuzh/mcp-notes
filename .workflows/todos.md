@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 63
+- Completed: 64
 
 ---
 
@@ -33,16 +33,6 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A062** Phase 14: Docs: README, CHANGELOG, CLAUDE.md, ROADMAP
-  - **Difficulty**: EASY
-  - **Type**: Update
-  - **Context**: Owns: `README.md` (sessions section, HTTP API + MCP tool tables, env vars incl. `NOTESD_SWARM_SCRIPT`, `NOTESD_TMUX_SOCKET`, `NOTESD_TMUX_BIN`, `NOTES_CLAUDE_RETENTION_DAYS`), `CHANGELOG.md`, `CLAUDE.md` architecture bullet, `docs/ROADMAP.md`. Exit criteria: docs match the shipped endpoints, tools and env vars; no `«FILL` marker remains.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 14 of 14)
-  - **Satisfies**: R1-R9 — all nine requirements are documented (ingest, links, summaries, resolve, tools, web, resume, badge)
-  - **Depends on**: P1-NOTES-A050, P1-NOTES-A056, P1-NOTES-A061
-  - **Plan**: `.workflows/plan/P1-NOTES-A062.md`
-
 ### [P2] Medium
 
 ### [P3] Low
@@ -52,6 +42,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A062** Phase 14: Docs: README, CHANGELOG, CLAUDE.md, ROADMAP
+  - **Difficulty**: EASY
+  - **Type**: Update
+  - **Context**: Owns: `README.md` (sessions section, HTTP API + MCP tool tables, env vars incl. `NOTESD_SWARM_SCRIPT`, `NOTESD_TMUX_SOCKET`, `NOTESD_TMUX_BIN`, `NOTES_CLAUDE_RETENTION_DAYS`), `CHANGELOG.md`, `CLAUDE.md` architecture bullet, `docs/ROADMAP.md`. Exit criteria: docs match the shipped endpoints, tools and env vars; no `«FILL` marker remains.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 14 of 14)
+  - **Satisfies**: R1-R9 — all nine requirements are documented (ingest, links, summaries, resolve, tools, web, resume, badge)
+  - **Depends on**: P1-NOTES-A050, P1-NOTES-A056, P1-NOTES-A061
+  - **Plan**: `.workflows/plan/P1-NOTES-A062.md`
+  - **Completed**: 2026-11-02 12:30
+  - **Method**: /do
+  - **Files**: README.md, CHANGELOG.md, CLAUDE.md, docs/ROADMAP.md
+  - **Drift**: Names checked against landed code. Corrections vs plan text: rail icon is 'Projects' (TreeStructure); fresh button is 'Spawn fresh with this context' (icon-only, no 'Fresh' label); heuristic links show '(guessed)'; GET /api/sessions/context is loopback-only; PUT /api/projects/selected is same-origin; GET /api/chat/messages takes ?project=; resume reports original_cwd (deleted-cwd fallback: node cwd, newest repo cwd outside ~/.worktrees, ~/<repo>, $HOME); NOTESD_SWARM_SCRIPT answers cached 60 s; pending-spawn claim only on fresh startup within 30 s; cc_sessions/cc_pending_spawns column lists taken from src/db/schema.ts.
+    Known gap left alone on purpose: src/mcp/instructions.ts does not mention session_resume (not in phase 14's files); README MCP table lists it.
+  - **Decided**: Plan prose 'Claude is told where the session used to run' vs code (resume answer carries original_cwd) → documented original_cwd (rung 6/plan Step 0 rule: code wins).
 
 - [x] **P1-NOTES-A061** Phase 13: "unfinished" badge for orch nodes
   - **Difficulty**: NORMAL

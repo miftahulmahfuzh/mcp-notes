@@ -30,6 +30,13 @@ its own chat bar.
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
   - [The history page](#the-history-page)
+- [The project session graph](#the-project-session-graph)
+  - [Node ids](#node-ids)
+  - [Who started whom](#who-started-whom)
+  - [Summaries and search](#summaries-and-search)
+  - [Resume from the wall](#resume-from-the-wall)
+  - [Asking about sessions](#asking-about-sessions)
+  - [Chat about one project](#chat-about-one-project)
 - [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
@@ -93,6 +100,10 @@ The wall is for browsing, writing quickly, and dropping in photos.
   second over server-sent events. No reload.
 - **Notes remember where they came from.** A note saved from a repo records the working directory,
   the repo and the Claude session it came from.
+- **Every Claude Code session is on a map.** The daemon reads the transcripts Claude Code
+  already writes and draws each repo's sessions as a graph: the ones you started by hand on a
+  thick trunk, the ones they spawned on branches beside them. Every session gets a short id like
+  `A0-3G` that you can type into any prompt, a summary you can search, and a resume button.
 - **Local first, two machines.** Text lives in a Postgres database (Neon) that more than one machine can
   share. Photos live on the disk of the machine that took them in. Another machine sees the note
   and a "not on this machine" placeholder.
@@ -309,7 +320,7 @@ folder into one new image note, tags it, checks the note holds them all, then de
 /migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
 
-`install.sh` also registers three Claude Code hooks in `~/.claude/settings.json` (every repo; pass
+`install.sh` also registers five Claude Code hooks in `~/.claude/settings.json` (every repo; pass
 `--skip-hooks` to leave the file alone):
 
 - **notes-capture** (Stop, runs in the background): after every `/n` turn it saves the prompt as
@@ -328,8 +339,10 @@ folder into one new image note, tags it, checks the note holds them all, then de
   answers, the hook stores the session's pasted images (the newest 8, up to 20 MB each) in the
   chat image store and tells Claude their ids, oldest first, with the latest marked. "That image"
   is the latest one; `[Image #1]` or an id like `G-0NC` picks another. Claude then calls
-  `create_image` (or `attach_image`) with `image_id`. Every other prompt passes straight through:
-  the hook reads nothing and sends nothing, so a session that never uses `/n` stores no images.
+  `create_image` (or `attach_image`) with `image_id`. The same hook also resolves session node
+  ids in any prompt, `/n` or not (see [Node ids](#node-ids)). Every other prompt passes straight
+  through: the hook runs one regular expression over it and reads and sends nothing else, so a
+  session that never uses `/n` stores no images.
   Each image is uploaded once per session, the uploads stop after 8 s, and a failure never holds
   the prompt; problems go to `~/.local/state/notes-capture/prompt.log`. A picture pasted in the
   `/n` prompt itself has no id yet: Claude Code writes the prompt to the transcript only after the
@@ -339,6 +352,22 @@ folder into one new image note, tags it, checks the note holds them all, then de
   given an older image as "that image" in its place. `npm run verify:prompt-hook` checks the
   hook live (one short, billed Claude call; headless paste ids are unpredictable, so it needs a
   matching `[Image #N]`).
+- **notes-session** (SessionStart): tells the daemon a session has started: its id, its parent
+  (from `CC_PARENT_SESSION`, which `swarm.py` sets on the sessions it spawns), the working
+  directory, the session name, the tmux pane and the host. It then tells Claude its own node id
+  and its parent's, so "I am `A0-3G`, spawned by `7K-2Q`" is in the session from the first turn.
+  If the daemon is down the session starts as usual and the link is recovered later from the
+  transcripts. Logs to `~/.local/state/notes-capture/session.log`.
+- **notes-spawn** (before every Bash command): when a command starts `claude` in a new tmux
+  window without going through `swarm.py`, the hook records "this session is starting a child
+  here". The child's notes-session hook claims that record if it starts within 30 seconds,
+  which links it to its parent exactly. Any other command passes through untouched, and the hook
+  never blocks or changes a command. Logs to `~/.local/state/notes-capture/spawn.log`.
+
+`install.sh` also raises Claude Code's `cleanupPeriodDays` in `~/.claude/settings.json` to 3650
+days (ten years; `NOTES_CLAUDE_RETENTION_DAYS` changes it), only when it is lower, so Claude Code
+stops deleting the transcripts the session graph reads. The daemon keeps what it has already read
+either way.
 
 The recordings below are real Claude Code sessions (Opus 5.5) against a demo instance. The only
 edit is a blanked line where Claude Code printed account usage.
@@ -533,6 +562,131 @@ A note id in a bubble opens that note in the big editor without leaving the page
 
 ![History page: clicking a note id opens the editor in place](docs/readme/history-link.gif)
 
+## The project session graph
+
+Every Claude Code session you have run on this machine, grouped by repo, on one page. Open the
+Projects icon on the rail (the tree diagram, or go to `/projects`); the sidebar opens with the list
+of repos, newest activity first. Pick one and its sessions fill the page. The repo you picked is
+stored in the database, so both laptops open on the same one.
+
+Each node is one Claude Code session, not one prompt. Time runs upward: the newest session is at
+the top. The sessions you started yourself sit on a thick trunk on the left. Sessions they started
+(an `/analyze` that spawned an orchestrator, an orchestrator that spawned one session per phase,
+or any `claude` you launched in a new tmux window from inside a session) branch off to the right
+in lanes, git-graph style; phases of one wave stand side by side. A parent's children start
+folded into a `+N` chip; click it to open them. A session that is running right now pulses. A
+session from the other laptop is marked "on GPD" (or "on Lenovo"), like a photo stored there. The
+page draws only what is on screen, so a repo with a thousand sessions scrolls as smoothly as one
+with ten.
+
+Click a node to open its panel: the summary, your prompts in order, the commits it made, the
+notes it saved with `/n`, its token use and cost, and its node id with a copy button. **Tree** and
+**Timeline** switch the view of everything below it: the tree of who started whom, or a Gantt
+chart of when each one ran, which shows at a glance which phases overlapped and which one ran
+long.
+
+An orchestrator node whose swarm still has phases to do, and no live session working on them,
+carries an "unfinished" badge. The daemon asks `swarm.py verify` for the answer
+(`NOTESD_SWARM_SCRIPT` points at the script) and keeps it for 60 seconds, so the badge costs
+nothing per redraw.
+
+When the daemon first starts with this feature it reads every transcript still under
+`~/.claude/projects`, so the page is full from the first visit. After that it reads only the bytes
+Claude Code appended since the last pass. Each laptop reads its own transcripts into the shared
+database and records its host. The wall's own chat agent and the `/n` helper runs are Claude Code
+sessions too, but they are left out.
+
+### Node ids
+
+A node id is two characters, a dash and two characters, like `A0-3G`: a different shape from a
+note id (`A-B32`), so the two never get confused. The daemon makes them, the same way it makes note
+ids. Type one into any Claude Code prompt, in any repo, and the notes-prompt hook adds that
+session's summary, plan docs, commits and transcript path to what Claude sees before it answers:
+
+```
+what did A0-3G decide about the lane layout? keep going from there
+compare 7K-2Q and A0-3G, which approach held up?
+```
+
+An id that does not belong to a session adds nothing, and so does a prompt with no id in it: the
+hook checks the prompt with one regular expression and goes no further, so the cost to every other
+prompt is close to nothing. In a prompt, write the id the way the wall shows it: upper case, with
+the dash (so `to-do` or a page range like `10-15` never sets anything off). The MCP tools and the
+HTTP routes also accept lower case and a missing dash (`a03g`).
+
+### Who started whom
+
+Links between sessions come from three places, best first, and a better one always wins:
+
+1. **env:** `swarm.py` (in `~/claude-commands`) starts each child with
+   `CC_PARENT_SESSION=<its own session id>` in the child's environment, and the notes-session hook
+   reports it. A tmux child does not inherit its parent's environment, which is why this has to
+   be passed by hand.
+2. **hook:** a child started by a Bash command that runs `claude` in a new tmux window, without
+   `swarm.py`, claims the record the notes-spawn hook left when its parent ran that command
+   (within 30 seconds, same directory, on a fresh start only: a resumed or cleared session claims
+   nothing).
+3. **heuristic:** sessions from before these hooks existed are linked by reading the parent's
+   transcript for `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, and matching a
+   child by name, time and directory. These links are marked "(guessed)" in the panel.
+
+Sessions in a git worktree (`~/.worktrees/<repo>/<slug>`, `NOTES_WORKTREES_DIR`) are filed under
+their repo, even after the worktree has been deleted, from the path alone.
+
+### Summaries and search
+
+When a session has been idle for 15 minutes (and is not running), the daemon writes it a short
+summary with Claude Haiku, through the same `claude` login the chat bar uses; no new key. Haiku
+sees your prompts, the commits made, the files edited, the plan docs touched and the final answer,
+with secrets (keys, tokens, passwords, connection strings) blanked out first. A summary is written
+once per state of the session: a session that has not changed is never summarized again. Sessions
+on disk when the feature lands get theirs in the background, a few at a time.
+
+Summaries are embedded like notes and searched the same way: words, meaning and recency blended
+with the weights in `src/search/blend.ts`. Without `OPENROUTER_API_KEY` session search is words
+only and says so.
+
+### Resume from the wall
+
+The panel's resume button opens a new tmux window, in the tmux session you used most recently, at
+the session's directory, running `claude --resume <session>`. Type a prompt first and it goes in
+as the first message. The button beside it ("Spawn fresh with this context") starts a new session
+instead, with the old one's summary as its context. If the session is still running, the button
+switches to its window (or sends it the prompt) rather than opening it a second time. A session
+whose transcript is on the other laptop asks before doing anything, and usually can only say it
+is not on this machine; nothing else asks for a confirm click.
+
+`claude --resume` finds a transcript by its session id, not by its directory, so a session whose
+worktree has been deleted still resumes (measured, not assumed). The daemon opens it in the
+session's own directory if that still exists, otherwise in the repo's main checkout (the newest
+directory another session of that repo used on this laptop outside `~/.worktrees`), then
+`~/<repo>`, then your home folder. It never recreates the deleted directory, and the answer
+reports where the session used to run as `original_cwd`.
+
+The route answers only requests from the wall's own page, like "open file location".
+
+### Asking about sessions
+
+The MCP server and the chat bar have the same five tools for sessions (listed under
+[MCP tools](#mcp-tools)), so from Claude Code or the wall:
+
+```
+/n which session added the recycle bin, and what did it change?
+/n how many tokens did I spend on mcp-notes sessions in October?
+/n show me the transcript of A0-3G around the migration error
+/n resume A0-3G and ask it to rerun the integration tests
+```
+
+`session_transcript` reads the transcript file, so it works only on the laptop that holds it and
+answers `not_on_this_machine` on the other.
+
+### Chat about one project
+
+The pill at the bottom of the graph page is a chat bar for that repo alone. Its conversations
+are stored as threads of that project, and the agent starts from that repo's sessions. The icon in
+the project header ("Project chat history" / "Session graph") switches the page between the graph
+and the project's chat history. The wall's own chat bar and `/history` are unchanged.
+
 ## Connectors: spending, runs, Seer
 
 The same `notes` MCP server also reads three of your own apps, read-only, so `/n` and the chat bar
@@ -617,14 +771,15 @@ scripts/install.sh
 5. waits for `GET /health`,
 6. registers `notes` with `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`,
 7. symlinks the `/n` and `/migrate` skills into `~/.claude/skills`,
-8. merges the notes-capture, notes-paste and notes-prompt hooks into `~/.claude/settings.json`, keeping
-   everything else (a copy of the original is kept once as `settings.json.bak-notes-hooks`;
-   `--skip-hooks` or `NOTES_SKIP_HOOKS=1` skips this),
+8. merges the notes-capture, notes-paste, notes-prompt, notes-session and notes-spawn hooks into
+   `~/.claude/settings.json`, keeping everything else, and raises `cleanupPeriodDays` so Claude
+   Code keeps its transcripts for the session graph (a copy of the original is kept once as
+   `settings.json.bak-notes-hooks`; `--skip-hooks` or `NOTES_SKIP_HOOKS=1` skips this),
 9. exits non-zero unless the unit is active, `/health` answers and `claude mcp list` shows
    `notes` connected.
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
-Undo with `scripts/uninstall.sh` (it keeps your data and removes only our three hook entries).
+Undo with `scripts/uninstall.sh` (it keeps your data and removes only our five hook entries; it leaves `cleanupPeriodDays` as it is).
 
 ### Keep WSL running from Windows
 
@@ -701,6 +856,13 @@ part of `npm test` or `test:int`.
 | `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer` | Where the connectors find each repo and its `.env.local`. Read on every call. |
 | `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query. |
 | `TEST_CONNECTORS_URL` | set by `test:int` | Connector test container (admin URL). |
+| `NOTESD_SESSIONS` | on | `off` stops the daemon reading Claude Code transcripts. The session graph then shows only what is already in the database. |
+| `CLAUDE_HOME` | `~/.claude` | Where Claude Code keeps `projects/` (transcripts) and `sessions/` (which sessions are running). |
+| `NOTES_WORKTREES_DIR` | `~/.worktrees` | Root of the `<repo>/<slug>` worktrees; sessions run in one are filed under its repo, even after it is deleted. |
+| `NOTESD_SWARM_SCRIPT` | `skills/swarm/swarm.py` under `CLAUDE_HOME` | The swarm script asked whether an orchestrator still has phases to do (the "unfinished" badge); answers are kept 60 seconds. Missing: no badge. |
+| `NOTESD_TMUX_SOCKET` | unset | A tmux socket path for resume from the wall (`tmux -S`). Unset: the default socket, which the systemd user unit reaches. |
+| `NOTESD_TMUX_BIN` | `tmux` | The tmux binary resume from the wall runs. |
+| `NOTES_CLAUDE_RETENTION_DAYS` | 3650 | Read by `scripts/install.sh`, not the daemon: the minimum `cleanupPeriodDays` it writes to `~/.claude/settings.json`. |
 
 ## How it works
 
@@ -739,6 +901,11 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
 | `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
+| `sessions_search` | Claude Code sessions by meaning and by words over their summaries, names and prompts, blended like `search`; filter by `repo`. Each hit has its node id, repo, times and summary. Says `fallback` when only words were used |
+| `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, notes saved from it, tokens and cost, parent and children, `host` and `available` |
+| `session_transcript` | Passages of a session's transcript matching `query`. Only on the laptop that holds the transcript; elsewhere `not_on_this_machine` |
+| `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
+| `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. Same machine only |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -747,8 +914,9 @@ Delete forever exists only in the wall's recycle bin.
 
 The 15 connector tools are listed under [Connectors](#connectors-spending-runs-seer).
 
-The server also sends Claude short instructions: what mcp-notes is, how ids look, that
-comparisons are Claude's job, and that the connectors are read-only and the curated tools come first.
+The server also sends Claude short instructions: what mcp-notes is, how note and session ids look,
+that comparisons are Claude's job, and that the connectors are read-only and the curated tools
+come first. The chat bar can use the five session tools too.
 
 ### Search by meaning
 
@@ -804,14 +972,25 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
 | `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
 | `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
-| `POST /api/chat` | `{message, thread_id?, reply_to?, image_ids?}`. Streams `accepted {thread_id, user_message_id}`, then `status` and `delta` events, then `done {thread_id, user_message_id, assistant_message_id, reply_to, brain}`. The question is saved before the answer starts; the answer only when it finishes |
+| `POST /api/chat` | `{message, thread_id?, reply_to?, image_ids?, project?}`; `project` (a repo) keeps a new thread to that project for good. Streams `accepted {thread_id, user_message_id}`, then `status` and `delta` events, then `done {thread_id, user_message_id, assistant_message_id, reply_to, brain}`. The question is saved before the answer starts; the answer only when it finishes |
 | `POST /api/capture/claude-code` | One `/n` exchange from the notes-capture hook (JSON, header `X-Notes-Capture: 1`, loopback only). 201 with the thread and message ids, 200 `duplicate` when it was saved before |
-| `GET /api/chat/messages?before=&limit=&include_deleted=` | The chat timeline, all threads, `{messages, next_before}`, each page ascending |
+| `GET /api/chat/messages?before=&limit=&include_deleted=&project=` | The chat timeline, all threads (or only that project's with `project=`), `{messages, next_before}`, each page ascending |
 | `GET /api/chat/threads/:id` | One thread and its messages |
 | `PATCH /api/chat/messages/:id` | Edit your own message (`{text}`); the old text is kept. Same-origin only |
 | `DELETE /api/chat/messages/:id?with_answer=1` | Delete a message (soft), optionally with its answer. Same-origin only |
 | `POST /api/chat/messages/:id/restore` | Bring a deleted message back. Same-origin only |
+| `GET /api/projects` | Repos that have Claude Code sessions, with session counts and last activity |
+| `GET/PUT /api/projects/selected` | The repo picked in the sidebar, stored in the database so both machines agree. `PUT` is same-origin only |
+| `GET /api/projects/:repo/sessions?before=&limit=` | That repo's sessions for the graph: node id, parent and link source (`env`, `hook`, `heuristic`), times, name, `live`, `host`, `available`, `unfinished`. Sends a weak `ETag`; answers `304` to a matching `If-None-Match` (the wall polls it; there is no SSE event for sessions) |
+| `GET /api/sessions/:nodeId` | One session in full: summary, prompts, commits, plan docs, files, notes saved from it, tokens, children |
+| `GET /api/sessions/:nodeId/transcript?query=` | Matching passages of the transcript; 404 `not_on_this_machine` when it lives on the other machine |
+| `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
+| `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback` |
+| `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
+| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
+| `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
 | `/full/:imageId` | The full-screen photo page |
+| `/projects?repo=&node=` | The project session graph, opened on that repo and node |
 
 ### Where things are stored
 
@@ -824,11 +1003,18 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
                       extracted_text, extraction_status, created_at, deleted_at)
            note_revisions(note_id, body, saved_at)
            note_embeddings(note_id, embedding vector(1536), body_sha256, model, attempts, next_attempt_at, …)
-           chat_threads(id, source, brain, external_key, created_at, updated_at)
+           chat_threads(id, source, brain, external_key, project, created_at, updated_at)
            chat_messages(id [msg:K7F2], thread_id, role, text, source, brain, reply_to, seq,
                          created_at, edited_at, deleted_at)
            chat_message_revisions(message_id, text, saved_at)
            chat_message_attachments(message_id, position, kind, ref_id)
+           cc_sessions(session_id, node_id [A0-3G], host, repo, cwd, branch, name, custom_title,
+                       ai_title, started_at, last_active_at, input/output/cache_*_tokens, cost_usd, parent_session_id,
+                       parent_link_source, tmux, transcript_path, transcript_offset, prompts,
+                       commits, files_edited, plan_docs, summary, summary_sha, …)
+           cc_session_embeddings(session_id, embedding vector(1536), sha, model)
+           cc_pending_spawns(id, parent_session_id, cwd, name, host, created_at, claimed_by, claimed_at)
+           app_settings(key, value)                    projects.selected: the repo picked on the wall
 ~/mcp-notes-data/
   images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
   files/<noteId>/<name>            a note's other files, byte for byte, Windows-safe names
@@ -837,7 +1023,8 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
   cache/<imageId>/display.jpg      full resolution, only for HEIC/HEIF/TIFF
   inbox/                           drop files here; failures go to inbox/failed/
 ~/.local/state/notes-capture/      the Claude Code hooks: outbox/ (captures waiting for the daemon), capture.log, paste.log,
-                                   prompt.log, prompt-images/ (per session, which pasted images are already uploaded)
+                                   prompt.log, session.log, spawn.log, prompt-images/ (per session, which pasted images are already uploaded)
+~/.claude/projects/*/<id>.jsonl    Claude Code's own transcripts, read (never written) by the session graph
 ```
 
 Each photo is one `note_images` row with its own id, in the same `A-B32` form as note ids. A
@@ -858,6 +1045,11 @@ then its folder.
 
 `cache/` can be deleted at any time. Everything in it is rebuilt on demand. Delete forever
 removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
+
+The session tables hold only what the daemon read from transcripts and hooks. Dropping them
+loses summaries already paid for, nothing else: the next start reads the transcripts still on
+disk again. Transcripts Claude Code has since deleted are gone from disk but kept in
+`cc_sessions`.
 
 ## Limitations
 
@@ -894,6 +1086,17 @@ removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
   look a little flat in the browser. The original is untouched.
 - **Tag syntax is loose.** Any `#word`, including `#123`, becomes a tag.
 - **Edits from another machine** reach the wall within 60 seconds, not instantly.
+- **Sessions are as good as the transcripts.** A session Claude Code deleted before the daemon
+  read it is not on the graph. Links between old sessions are guesses from what the parent
+  wrote (marked as such); only sessions started after install are linked for certain.
+- **Summaries cost Claude usage.** Each idle session gets one Haiku call on your `claude` login,
+  and the first start summarizes the whole backlog in the background. `NOTESD_SESSIONS=off`
+  turns ingest off.
+- **Resume needs tmux on the same machine.** The transcript of a session from the other laptop
+  stays there; its node shows, but it cannot be resumed or read here.
+- **The graph refreshes by polling.** Every 10 seconds while the page is open (a `304` when
+  nothing changed), and the repo list every 60 seconds, not live: session rows change on every
+  transcript append, and the other laptop's writes never reach this daemon's event stream anyway.
 
 ## Roadmap
 
@@ -908,19 +1111,20 @@ removes a photo's original and its `cache/<imageId>/` folder, and nothing else.
 | 7 | Wall editing: big editor, several photos per note, recycle bin, open file location, collapsible answer, multi-line chat bar | done |
 | 8 | Chat history, note files, image similarity search (v0.2.0) | done |
 | 9 | Claude Code hooks: `/n` capture, pasted image to note, clickable note ids (v0.2.0) | done |
-| 10 | A second machine (the GPD), weekly digest, … | later |
+| 10 | Project session graph: every Claude Code session per repo, node ids, summaries, resume from the wall | done |
+| 11 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Repository layout
 
 ```
-src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat agent, connectors
+src/            notesd: config, db (Drizzle), notes service, MCP server, HTTP routes, images, chat agent, connectors, Claude Code sessions
 web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
 claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
-claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images; notes-prompt: /n prompt -> pasted image ids)
+claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images; notes-prompt: /n prompt -> pasted image ids, node ids -> session context; notes-session: session start and parent link; notes-spawn: tmux child launched by hand)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
 scripts/        install, uninstall, integration test runner, Windows keepalive
