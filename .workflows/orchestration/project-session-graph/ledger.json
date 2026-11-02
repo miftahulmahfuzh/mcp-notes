@@ -3,6 +3,12 @@
   "coordinator": "orch-project-session-graph",
   "coordinator_session_id": "2c063731-8870-48ed-bb11-5c109defb22e",
   "created": "2026-11-02T10:26:28+07:00",
+  "landed": {
+    "at": "2026-11-02T12:12:30+07:00",
+    "base": "main",
+    "commit": "cd70bb24c85a735b1e4e78d4be9ceb7314cfd690",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -253,7 +259,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "eb67f03",
       "depends_on": [
         2,
         8,
@@ -261,23 +267,23 @@
       ],
       "difficulty": "EASY",
       "n": 14,
-      "note": null,
+      "note": "docs landed; resume documents original_cwd (code wins over plan prose); instructions.ts session_resume gap left alone",
       "package": "docs",
       "plan": ".workflows/plan/project-session-graph/phase-14.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T12:11:11+07:00",
       "satisfies": [
         "R1",
         "R9"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A062",
       "title": "Docs: README, CHANGELOG, CLAUDE.md, ROADMAP"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T12:06:41+07:00",
+  "updated": "2026-11-02T12:12:30+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
