@@ -76,7 +76,8 @@ afterEach(async () => {
 describe('session ingest into cc_sessions', () => {
   it('backfills one row per cli session with a node id and a resolved repo', async () => {
     const report = await start().ready;
-    expect(report).toMatchObject({ upserted: 2, failed: 0 });
+    // Two cli sessions, plus the main session's subagent transcript (folded into its row).
+    expect(report).toMatchObject({ upserted: 3, failed: 0 });
 
     const main = await repo.getBySessionId(FIXTURE.main);
     expect(main?.nodeId).toMatch(NODE_ID);

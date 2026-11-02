@@ -8,6 +8,7 @@ import {
   MAX_PROMPTS,
   MAX_TITLE_CHARS,
   type SessionRow,
+  type SubagentTotals,
   type TranscriptPatch,
   type TranscriptSet,
 } from './types.js';
@@ -47,7 +48,7 @@ function count(n: number | undefined): number {
   return n !== undefined && Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
-function mergeModels(
+export function mergeModels(
   prev: Record<string, ModelUsage>,
   delta: Record<string, Partial<ModelUsage>> | undefined,
   reset: boolean,
@@ -65,6 +66,24 @@ function mergeModels(
   return out;
 }
 
+/** `prev` minus `take`, per model and counter, never below zero; models left at all zeros are dropped. */
+export function subtractModels(prev: Record<string, ModelUsage>, take: Record<string, ModelUsage>): Record<string, ModelUsage> {
+  const out: Record<string, ModelUsage> = { ...prev };
+  for (const [model, t] of Object.entries(take)) {
+    const base = out[model];
+    if (base === undefined) continue;
+    const left = {
+      inputTokens: Math.max(0, base.inputTokens - count(t.inputTokens)),
+      outputTokens: Math.max(0, base.outputTokens - count(t.outputTokens)),
+      cacheReadTokens: Math.max(0, base.cacheReadTokens - count(t.cacheReadTokens)),
+      cacheWriteTokens: Math.max(0, base.cacheWriteTokens - count(t.cacheWriteTokens)),
+    };
+    if (left.inputTokens + left.outputTokens + left.cacheReadTokens + left.cacheWriteTokens === 0) delete out[model];
+    else out[model] = left;
+  }
+  return out;
+}
+
 function mergePrompts(prev: SessionPrompt[], next: SessionPrompt[] | undefined, reset: boolean): SessionPrompt[] {
   const incoming = (next ?? [])
     .filter((p) => p.text.trim().length > 0)
@@ -73,13 +92,18 @@ function mergePrompts(prev: SessionPrompt[], next: SessionPrompt[] | undefined, 
   return all.length > MAX_PROMPTS ? all.slice(all.length - MAX_PROMPTS) : all;
 }
 
-function mergeCommits(prev: SessionCommit[], next: SessionCommit[] | undefined, reset: boolean): SessionCommit[] {
+/**
+ * Union by sha, capped to the newest MAX_COMMITS. When every commit has a time they are put in time
+ * order (a session's and its subagents' commits interleave); otherwise first-seen order stays.
+ */
+export function mergeCommits(prev: SessionCommit[], next: SessionCommit[] | undefined, reset: boolean): SessionCommit[] {
   const bySha = new Map<string, SessionCommit>();
   for (const c of [...(reset ? [] : prev), ...(next ?? [])]) {
     if (c.sha.length === 0 || bySha.has(c.sha)) continue;
     bySha.set(c.sha, { sha: c.sha, subject: clip(c.subject, MAX_TITLE_CHARS), at: c.at ?? null });
   }
   const all = [...bySha.values()];
+  if (all.every((c) => c.at !== null)) all.sort((a, b) => Date.parse(a.at ?? '') - Date.parse(b.at ?? ''));
   return all.length > MAX_COMMITS ? all.slice(all.length - MAX_COMMITS) : all;
 }
 
@@ -94,10 +118,25 @@ function unionStrings(prev: string[], next: string[] | undefined, reset: boolean
 
 /**
  * The column values `row` takes after applying `patch`. Pure; the caller (SessionsRepo) has
- * already checked the offset precondition. See TranscriptPatch for the rules.
+ * already checked the offset precondition. See TranscriptPatch for the rules. A re-read from byte 0
+ * replaces tokens, models and commits, starting from `subagents` (the session's subagent share,
+ * which lives in other files) instead of from zero.
  */
-export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch): TranscriptSet {
+export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, subagents: SubagentTotals | null = null): TranscriptSet {
   const reset = patch.fromOffset === 0;
+  if (reset && subagents !== null) {
+    const t = subagents.tokens;
+    row = {
+      ...row,
+      inputTokens: t.inputTokens,
+      outputTokens: t.outputTokens,
+      cacheReadTokens: t.cacheReadTokens,
+      cacheWriteTokens: t.cacheWriteTokens,
+      models: subagents.models,
+      commits: subagents.commits,
+    };
+  }
+  const keep = reset && subagents !== null;
   const tokens = patch.tokens ?? {};
   const firstPrompt = clipOrKeep(patch.firstPrompt, MAX_PROMPT_CHARS);
   return {
@@ -114,17 +153,17 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch): T
     finalMessage: clipOrKeep(patch.finalMessage, MAX_FINAL_MESSAGE_CHARS) ?? row.finalMessage,
     startedAt: earliest(row.startedAt, patch.startedAt),
     lastActiveAt: latest(row.lastActiveAt, patch.lastActiveAt),
-    inputTokens: (reset ? 0 : row.inputTokens) + count(tokens.inputTokens),
-    outputTokens: (reset ? 0 : row.outputTokens) + count(tokens.outputTokens),
-    cacheReadTokens: (reset ? 0 : row.cacheReadTokens) + count(tokens.cacheReadTokens),
-    cacheWriteTokens: (reset ? 0 : row.cacheWriteTokens) + count(tokens.cacheWriteTokens),
+    inputTokens: (reset && !keep ? 0 : row.inputTokens) + count(tokens.inputTokens),
+    outputTokens: (reset && !keep ? 0 : row.outputTokens) + count(tokens.outputTokens),
+    cacheReadTokens: (reset && !keep ? 0 : row.cacheReadTokens) + count(tokens.cacheReadTokens),
+    cacheWriteTokens: (reset && !keep ? 0 : row.cacheWriteTokens) + count(tokens.cacheWriteTokens),
     costUsd:
       patch.costUsd !== undefined && patch.costUsd !== null && Number.isFinite(patch.costUsd)
         ? patch.costUsd
         : row.costUsd,
-    models: mergeModels(row.models, patch.models, reset),
+    models: mergeModels(row.models, patch.models, reset && !keep),
     prompts: mergePrompts(row.prompts, patch.prompts, reset),
-    commits: mergeCommits(row.commits, patch.commits, reset),
+    commits: mergeCommits(row.commits, patch.commits, reset && !keep),
     filesEdited: unionStrings(row.filesEdited, patch.filesEdited, reset, MAX_FILES_EDITED),
     planDocs: unionStrings(row.planDocs, patch.planDocs, reset, MAX_PLAN_DOCS),
     transcriptPath: patch.transcriptPath,

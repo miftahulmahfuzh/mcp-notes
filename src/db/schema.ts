@@ -550,6 +550,37 @@ export const ccSessions = pgTable(
 )
 
 /**
+ * One row per subagent transcript (`<claudeHome>/projects/<dir>/<session uuid>/subagents/agent-<id>.jsonl`,
+ * migration 0008): what the Agent tool's subagents of a session used and committed. Written only by
+ * src/sessions/repo.ts, in the same transaction that folds the change into the parent `cc_sessions`
+ * row, whose token, model and commit columns are the session's totals including its subagents.
+ * `transcript_offset` is this file's own resume point (same rules as `cc_sessions`).
+ */
+export const ccSubagentTranscripts = pgTable(
+  'cc_subagent_transcripts',
+  {
+    transcriptPath: text('transcript_path').primaryKey(),
+    /** The parent session (the folder the file sits in). No foreign key, like parent_session_id. */
+    sessionId: text('session_id').notNull(),
+    /** `agent-<id>` without the prefix. */
+    agentId: text('agent_id').notNull(),
+    host: text('host').notNull(),
+    transcriptOffset: bigint('transcript_offset', { mode: 'number' }).notNull().default(0),
+    transcriptSize: bigint('transcript_size', { mode: 'number' }),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    models: jsonb('models').$type<Record<string, ModelUsage>>().notNull().default(sql`'{}'::jsonb`),
+    commits: jsonb('commits').$type<SessionCommit[]>().notNull().default(sql`'[]'::jsonb`),
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [index('cc_subagent_transcripts_session_idx').on(t.sessionId), index('cc_subagent_transcripts_host_idx').on(t.host)],
+)
+
+/**
  * One row per session that has (or had) a summary to embed (migration 0007). Mirrors
  * `note_embeddings`: the vector is current iff `embedding is not null`, `sha` equals the hash
  * Phase 6 computes from the session's current summary, and `model` equals EMBEDDING_MODEL.

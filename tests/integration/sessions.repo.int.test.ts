@@ -5,7 +5,7 @@ import type { Db } from '../../src/db/client.js'
 import { EMBEDDING_DIMENSIONS } from '../../src/embeddings/constants.js'
 import { NODE_ID_PATTERN } from '../../src/sessions/ids.js'
 import { SessionsRepo } from '../../src/sessions/repo.js'
-import { SELECTED_PROJECT_KEY, type TranscriptPatch } from '../../src/sessions/types.js'
+import { SELECTED_PROJECT_KEY, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
 import { closeTestDb, openTestDb, truncateAll } from './setup.js'
 
 const HOST = 'host-a'
@@ -28,6 +28,19 @@ function patch(sessionId: string, over: Partial<TranscriptPatch> = {}): Transcri
     fromOffset: 0,
     toOffset: 100,
     size: 100,
+    ...over,
+  }
+}
+
+function subPatch(over: Partial<SubagentTranscriptPatch> = {}): SubagentTranscriptPatch {
+  return {
+    sessionId: 's-1',
+    agentId: 'a1',
+    host: HOST,
+    transcriptPath: '/home/u/.claude/projects/p/s-1/subagents/agent-a1.jsonl',
+    fromOffset: 0,
+    toOffset: 50,
+    size: 50,
     ...over,
   }
 }
@@ -176,6 +189,58 @@ describe('SessionsRepo', () => {
       const offsets = await repo.offsets(HOST)
       expect([...offsets.keys()]).toEqual(['s-1'])
       expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl' })
+    })
+  })
+
+  describe('subagent transcripts', () => {
+    const commit = (sha: string, minute: number) => ({ sha, subject: `c ${sha}`, at: at(minute).toISOString() })
+
+    it('adds a subagent read to its parent, with its own offset and compare-and-set', async () => {
+      expect(await repo.upsertFromSubagentTranscript(subPatch())).toMatchObject({ applied: false, reason: 'no_session' })
+      await repo.upsertFromTranscript(patch('s-1', { tokens: { inputTokens: 10, outputTokens: 20 }, commits: [commit('aaa1111', 0)] }))
+      const r = await repo.upsertFromSubagentTranscript(
+        subPatch({
+          tokens: { outputTokens: 5, cacheReadTokens: 100 },
+          models: { 'claude-haiku-5-5': { outputTokens: 5, cacheReadTokens: 100 } },
+          commits: [commit('bbb2222', 3)],
+          lastActiveAt: at(30),
+        }),
+      )
+      expect(r).toEqual({ applied: true })
+      const row = await repo.getBySessionId('s-1')
+      expect(row).toMatchObject({ inputTokens: 10, outputTokens: 25, cacheReadTokens: 100 })
+      expect(row?.commits.map((c) => c.sha)).toEqual(['aaa1111', 'bbb2222'])
+      expect(row?.models['claude-haiku-5-5']).toEqual({ inputTokens: 0, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0 })
+      expect(row?.lastActiveAt?.toISOString()).toBe(at(30).toISOString())
+      expect(await repo.subagentOffsets(HOST)).toEqual(new Map([[subPatch().transcriptPath, 50]]))
+
+      // A stale replay changes nothing; the right offset applies.
+      expect(await repo.upsertFromSubagentTranscript(subPatch({ fromOffset: 10, toOffset: 60 }))).toMatchObject({ reason: 'offset_mismatch', storedOffset: 50 })
+      await repo.upsertFromSubagentTranscript(subPatch({ fromOffset: 50, toOffset: 80, size: 80, tokens: { outputTokens: 1 } }))
+      expect((await repo.getBySessionId('s-1'))?.outputTokens).toBe(26)
+    })
+
+    it('a subagent re-read from 0 takes its old share out of the parent first', async () => {
+      await repo.upsertFromTranscript(patch('s-1', { tokens: { outputTokens: 20 } }))
+      await repo.upsertFromSubagentTranscript(subPatch({ tokens: { outputTokens: 5 }, models: { m: { outputTokens: 5 } } }))
+      await repo.upsertFromSubagentTranscript(subPatch({ toOffset: 30, size: 30, tokens: { outputTokens: 2 }, models: { m: { outputTokens: 2 } } }))
+      const row = await repo.getBySessionId('s-1')
+      expect(row?.outputTokens).toBe(22)
+      expect(row?.models.m?.outputTokens).toBe(2)
+    })
+
+    it("the main transcript re-read from 0 keeps the subagents' share", async () => {
+      await repo.upsertFromTranscript(patch('s-1', { tokens: { outputTokens: 20 }, commits: [commit('aaa1111', 0)] }))
+      await repo.upsertFromSubagentTranscript(subPatch({ tokens: { outputTokens: 5 }, commits: [commit('bbb2222', 3)] }))
+      await repo.upsertFromTranscript(patch('s-1', { tokens: { outputTokens: 21 }, commits: [commit('aaa1111', 0)] }))
+      const row = await repo.getBySessionId('s-1')
+      expect(row?.outputTokens).toBe(26)
+      expect(row?.commits.map((c) => c.sha)).toEqual(['aaa1111', 'bbb2222'])
+    })
+
+    it("refuses another host's session", async () => {
+      await repo.upsertFromTranscript(patch('s-1', { host: 'host-b' }))
+      expect(await repo.upsertFromSubagentTranscript(subPatch())).toMatchObject({ applied: false, reason: 'other_host' })
     })
   })
 

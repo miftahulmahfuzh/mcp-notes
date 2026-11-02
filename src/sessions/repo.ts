@@ -2,13 +2,13 @@ import { randomInt } from 'node:crypto';
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
-import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessions } from '../db/schema.js';
+import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../embeddings/constants.js';
 import { toVectorLiteral } from '../embeddings/repo.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
 import { pgErrorInfo } from '../notes/imageRepo.js';
 import { generateNodeId, normalizeNodeId } from './ids.js';
-import { clip, earliest, mergeTranscriptPatch, normalizeCwd } from './merge.js';
+import { clip, earliest, latest, mergeCommits, mergeModels, mergeTranscriptPatch, normalizeCwd, subtractModels } from './merge.js';
 import {
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
@@ -34,6 +34,9 @@ import {
   type SetParentResult,
   type SpawnClaim,
   type SpawnClaimResult,
+  type SubagentTotals,
+  type SubagentTranscriptPatch,
+  type SubagentUpsertResult,
   type SummaryInput,
   type TranscriptOffset,
   type TranscriptPatch,
@@ -90,6 +93,11 @@ const ORDER_AT: SQL = sql`coalesce(${ccSessions.startedAt}, ${ccSessions.created
 const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} when 'env' then 3 when 'hook' then 2 when 'heuristic' then 1 else 0 end)`;
 
 const MAX_SESSION_ID_CHARS = 128;
+
+/** A token delta as stored: a non-negative integer. */
+function tokenCount(n: number | undefined): number {
+  return n !== undefined && Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
 
 function assertSessionId(id: string, what = 'session id'): void {
   if (id.length === 0 || id.length > MAX_SESSION_ID_CHARS || /\s/.test(id)) {
@@ -218,7 +226,7 @@ export class SessionsRepo {
       if (patch.fromOffset !== 0 && row.transcriptOffset !== patch.fromOffset) {
         return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row } as const;
       }
-      const set = mergeTranscriptPatch(row, patch);
+      const set = mergeTranscriptPatch(row, patch, patch.fromOffset === 0 ? await this.subagentTotals(tx, patch.sessionId) : null);
       const updated = await tx
         .update(ccSessions)
         .set({ ...set, updatedAt: this.now() })
@@ -242,6 +250,122 @@ export class SessionsRepo {
       .from(ccSessions)
       .where(eq(ccSessions.host, host));
     return new Map(rows.map((r) => [r.sessionId, { offset: r.offset, size: r.size, path: r.path }]));
+  }
+
+  /** What the session's subagent transcripts add up to (zeros and no commits when it has none). */
+  private async subagentTotals(tx: Tx, sessionId: string): Promise<SubagentTotals> {
+    const rows = await tx
+      .select({
+        inputTokens: ccSubagentTranscripts.inputTokens,
+        outputTokens: ccSubagentTranscripts.outputTokens,
+        cacheReadTokens: ccSubagentTranscripts.cacheReadTokens,
+        cacheWriteTokens: ccSubagentTranscripts.cacheWriteTokens,
+        models: ccSubagentTranscripts.models,
+        commits: ccSubagentTranscripts.commits,
+      })
+      .from(ccSubagentTranscripts)
+      .where(eq(ccSubagentTranscripts.sessionId, sessionId));
+    const totals: SubagentTotals = {
+      tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      models: {},
+      commits: [],
+    };
+    for (const r of rows) {
+      totals.tokens.inputTokens += r.inputTokens;
+      totals.tokens.outputTokens += r.outputTokens;
+      totals.tokens.cacheReadTokens += r.cacheReadTokens;
+      totals.tokens.cacheWriteTokens += r.cacheWriteTokens;
+      totals.models = mergeModels(totals.models, r.models, false);
+      totals.commits = mergeCommits(totals.commits, r.commits, false);
+    }
+    return totals;
+  }
+
+  /**
+   * Applies one read of a subagent transcript: compare-and-set on the subagent row's offset, then
+   * the delta goes onto the subagent row and onto the parent session's totals, in one transaction
+   * under the parent's row lock (the same lock the main transcript's writes take). A read from byte
+   * 0 first takes the subagent row's old values back out of the parent. Commits are only ever added.
+   */
+  async upsertFromSubagentTranscript(patch: SubagentTranscriptPatch): Promise<SubagentUpsertResult> {
+    assertSessionId(patch.sessionId);
+    assertSessionId(patch.agentId, 'agent id');
+    assertHost(patch.host);
+    assertOffset(patch.fromOffset, 'fromOffset');
+    assertOffset(patch.toOffset, 'toOffset');
+    assertOffset(patch.size, 'size');
+    if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
+    return this.db.transaction(async (tx) => {
+      const parents = await tx.select(SESSION_COLUMNS).from(ccSessions).where(eq(ccSessions.sessionId, patch.sessionId)).for('update');
+      const parent = parents[0];
+      const subs = await tx
+        .select()
+        .from(ccSubagentTranscripts)
+        .where(eq(ccSubagentTranscripts.transcriptPath, patch.transcriptPath))
+        .for('update');
+      const prev = subs[0] ?? null;
+      const storedOffset = prev?.transcriptOffset ?? 0;
+      if (!parent) return { applied: false, reason: 'no_session', storedOffset } as const;
+      if (parent.host !== patch.host || (prev !== null && prev.host !== patch.host)) {
+        return { applied: false, reason: 'other_host', storedOffset } as const;
+      }
+      if (patch.fromOffset !== 0 && storedOffset !== patch.fromOffset) {
+        return { applied: false, reason: 'offset_mismatch', storedOffset } as const;
+      }
+      // On a re-read from 0 the subagent row starts over, and its old share leaves the parent.
+      const old = patch.fromOffset === 0 ? prev : null;
+      const t = patch.tokens ?? {};
+      const delta = {
+        inputTokens: tokenCount(t.inputTokens),
+        outputTokens: tokenCount(t.outputTokens),
+        cacheReadTokens: tokenCount(t.cacheReadTokens),
+        cacheWriteTokens: tokenCount(t.cacheWriteTokens),
+      };
+      const base = old === null && prev !== null ? prev : null;
+      const now = this.now();
+      const sub = {
+        sessionId: patch.sessionId,
+        agentId: patch.agentId,
+        host: patch.host,
+        transcriptOffset: patch.toOffset,
+        transcriptSize: patch.size,
+        inputTokens: (base?.inputTokens ?? 0) + delta.inputTokens,
+        outputTokens: (base?.outputTokens ?? 0) + delta.outputTokens,
+        cacheReadTokens: (base?.cacheReadTokens ?? 0) + delta.cacheReadTokens,
+        cacheWriteTokens: (base?.cacheWriteTokens ?? 0) + delta.cacheWriteTokens,
+        models: mergeModels(base?.models ?? {}, patch.models, false),
+        commits: mergeCommits(base?.commits ?? [], patch.commits, false),
+        lastActiveAt: latest(base?.lastActiveAt ?? null, patch.lastActiveAt),
+        updatedAt: now,
+      };
+      await tx
+        .insert(ccSubagentTranscripts)
+        .values({ transcriptPath: patch.transcriptPath, ...sub })
+        .onConflictDoUpdate({ target: ccSubagentTranscripts.transcriptPath, set: sub });
+      await tx
+        .update(ccSessions)
+        .set({
+          inputTokens: Math.max(0, parent.inputTokens - (old?.inputTokens ?? 0)) + delta.inputTokens,
+          outputTokens: Math.max(0, parent.outputTokens - (old?.outputTokens ?? 0)) + delta.outputTokens,
+          cacheReadTokens: Math.max(0, parent.cacheReadTokens - (old?.cacheReadTokens ?? 0)) + delta.cacheReadTokens,
+          cacheWriteTokens: Math.max(0, parent.cacheWriteTokens - (old?.cacheWriteTokens ?? 0)) + delta.cacheWriteTokens,
+          models: mergeModels(old === null ? parent.models : subtractModels(parent.models, old.models), patch.models, false),
+          commits: mergeCommits(parent.commits, patch.commits, false),
+          lastActiveAt: latest(parent.lastActiveAt, patch.lastActiveAt),
+          updatedAt: now,
+        })
+        .where(eq(ccSessions.sessionId, patch.sessionId));
+      return { applied: true } as const;
+    });
+  }
+
+  /** transcript path -> stored offset, for every subagent transcript of `host`. The ingester's resume point. */
+  async subagentOffsets(host: string): Promise<Map<string, number>> {
+    const rows = await this.db
+      .select({ path: ccSubagentTranscripts.transcriptPath, offset: ccSubagentTranscripts.transcriptOffset })
+      .from(ccSubagentTranscripts)
+      .where(eq(ccSubagentTranscripts.host, host));
+    return new Map(rows.map((r) => [r.path, r.offset]));
   }
 
   // ---------- hooks (Phase 5) ----------

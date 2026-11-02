@@ -5,6 +5,7 @@ import {
   isIgnoredWatchPath,
   listTranscripts,
   sessionIdFromPath,
+  subagentFromPath,
   startSessionIngest,
   type IngestBatch,
   type IngestPass,
@@ -45,6 +46,32 @@ function start(over: Partial<SessionIngestOptions> = {}): SessionIngester {
 
 const line = (record: Record<string, unknown>): string => `${JSON.stringify(record)}\n`;
 const mainPath = (): string => path.join(home, FIXTURE.mainFile);
+const SUBAGENT_FILE = `projects/-home-u-mcp-notes/${FIXTURE.main}/subagents/agent-a1.jsonl`;
+const subPath = (name = 'agent-a1.jsonl'): string => path.join(home, `projects/-home-u-mcp-notes/${FIXTURE.main}/subagents/${name}`);
+
+/** A subagent's assistant reply with usage, and its `git commit` tool call + result. */
+function subagentWork(n: number, sha: string, at: string): string {
+  const base = { isSidechain: true, sessionId: FIXTURE.main, timestamp: at };
+  return (
+    line({
+      ...base,
+      type: 'assistant',
+      message: {
+        id: `msg_sub_${n}`,
+        model: 'claude-haiku-5-5',
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: `tu_${n}`, name: 'Bash', input: { command: 'git commit -m "x"' } }],
+        usage: { input_tokens: 1, output_tokens: 100, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10 },
+      },
+    }) +
+    line({
+      ...base,
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `tu_${n}`, content: `[main ${sha}] feat: subagent work ${n}` }] },
+      toolUseResult: { stdout: `[main ${sha}] feat: subagent work ${n}` },
+    })
+  );
+}
 
 async function until(check: () => boolean, ms = 5_000): Promise<void> {
   const deadline = Date.now() + ms;
@@ -65,21 +92,31 @@ afterEach(async () => {
 });
 
 describe('helpers', () => {
-  it('recognises top-level session transcripts only', async () => {
+  it('recognises top-level session transcripts and their subagent transcripts', async () => {
     expect(sessionIdFromPath('/x/-home-u/5E55A001-0000-4000-8000-000000000001.jsonl')).toBe(FIXTURE.main);
     expect(sessionIdFromPath('/x/-home-u/agent-a1.jsonl')).toBeNull();
-    const files = (await listTranscripts(path.join(home, 'projects'))).map((f) => path.relative(home, f.path)).sort();
-    expect(files).toEqual([FIXTURE.worktreeFile, FIXTURE.mainFile, `projects/-home-u-mcp-notes/${FIXTURE.sdkCli}.jsonl`].sort());
+    expect(subagentFromPath(`/x/-home-u/${FIXTURE.main}/subagents/agent-a1.jsonl`)).toEqual({ sessionId: FIXTURE.main, agentId: 'a1' });
+    expect(subagentFromPath('/x/-home-u/agent-a1.jsonl')).toBeNull();
+    expect(subagentFromPath(`/x/-home-u/${FIXTURE.main}/other/agent-a1.jsonl`)).toBeNull();
+    const files = (await listTranscripts(path.join(home, 'projects'))).map((f) => path.relative(home, f.path));
+    // Sessions first, subagents after them.
+    expect(files.slice(0, 3).sort()).toEqual([FIXTURE.worktreeFile, FIXTURE.mainFile, `projects/-home-u-mcp-notes/${FIXTURE.sdkCli}.jsonl`].sort());
+    expect(files.slice(3)).toEqual([SUBAGENT_FILE]);
   });
 
-  it('watches project dirs and their transcripts, nothing deeper', () => {
+  it('watches project dirs, their transcripts and subagent transcripts, nothing else', () => {
     const root = path.join(home, 'projects');
     expect(isIgnoredWatchPath(root, root)).toBe(false);
     expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes'))).toBe(false);
     expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes-data-chat'))).toBe(true);
     expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', `${FIXTURE.main}.jsonl`))).toBe(false);
     expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', 'memory'))).toBe(true);
-    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main, 'subagents', 'agent-a1.jsonl'))).toBe(true);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main))).toBe(false);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main, 'subagents'))).toBe(false);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main, 'subagents', 'agent-a1.jsonl'))).toBe(false);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main, 'subagents', 'agent-a1.meta.json'))).toBe(true);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', FIXTURE.main, 'tool-results'))).toBe(true);
+    expect(isIgnoredWatchPath(root, path.join(root, '-home-u-mcp-notes', 'not-a-session', 'subagents', 'agent-a1.jsonl'))).toBe(true);
   });
 });
 
@@ -98,7 +135,8 @@ describe('startSessionIngest', () => {
       ],
     });
     const report = await ingester.ready;
-    expect(report).toMatchObject({ reason: 'backfill', files: 3, upserted: 2, failed: 0 });
+    // 3 sessions (one sdk, skipped) and the main session's one subagent.
+    expect(report).toMatchObject({ reason: 'backfill', files: 4, upserted: 3, failed: 0 });
     expect([...store.rows.keys()].sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild].sort());
 
     const main = store.rows.get(FIXTURE.main);
@@ -290,5 +328,79 @@ describe('startSessionIngest', () => {
     const t0 = Date.now();
     await ingester.close();
     expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+});
+
+describe('startSessionIngest: subagents', () => {
+  it("adds a subagent's tokens, models and commits to its parent session", async () => {
+    await appendFile(subPath(), subagentWork(1, 'def5678', '2026-11-02T05:00:00.000Z'));
+    await start().ready;
+    const main = store.rows.get(FIXTURE.main);
+    expect(main).toMatchObject({ inputTokens: 5 + 1, outputTokens: 914 + 100 });
+    expect(main?.commits.map((c) => c.sha)).toEqual(['abc1234', 'def5678']);
+    expect(main?.models['claude-haiku-5-5']).toEqual({ inputTokens: 1, outputTokens: 100, cacheReadTokens: 1000, cacheWriteTokens: 10 });
+    expect(main?.lastActiveAt?.toISOString()).toBe('2026-11-02T05:00:00.000Z');
+    expect(store.subagents.get(subPath())).toMatchObject({ sessionId: FIXTURE.main, offset: (await stat(subPath())).size });
+  });
+
+  it('tails appended subagent bytes, and a restart resumes from the stored offset', async () => {
+    const ingester = start();
+    await ingester.ready;
+    await appendFile(subPath(), subagentWork(2, 'aaa1111', '2026-11-02T02:24:00.000Z'));
+    await ingester.sweep();
+    await appendFile(subPath(), subagentWork(3, 'bbb2222', '2026-11-02T02:25:00.000Z'));
+    await ingester.sweep();
+    await start().ready; // a restart: nothing read twice
+    const main = store.rows.get(FIXTURE.main);
+    expect(main).toMatchObject({ outputTokens: 914 + 200 });
+    expect(main?.commits.map((c) => c.sha)).toEqual(['abc1234', 'aaa1111', 'bbb2222']);
+  });
+
+  it('waits for the parent row before reading a subagent', async () => {
+    const orphan = `projects/-home-u-mcp-notes/5e55a001-0000-4000-8000-0000000000ff/subagents/agent-z9.jsonl`;
+    await mkdir(path.dirname(path.join(home, orphan)), { recursive: true });
+    await writeFile(path.join(home, orphan), subagentWork(4, 'ccc3333', '2026-11-02T02:26:00.000Z'));
+    await start().ready;
+    expect(store.subagents.has(path.join(home, orphan))).toBe(false);
+    expect(store.rows.has('5e55a001-0000-4000-8000-0000000000ff')).toBe(false);
+  });
+
+  it("a main transcript re-read from byte 0 keeps the subagents' share", async () => {
+    await appendFile(subPath(), subagentWork(5, 'ddd4444', '2026-11-02T02:27:00.000Z'));
+    const ingester = start();
+    await ingester.ready;
+    const before = store.rows.get(FIXTURE.main);
+    // Shrink the main transcript: it is read again from 0 and its own values replaced.
+    const size = (await stat(mainPath())).size;
+    await truncate(mainPath(), size - 1);
+    await appendFile(mainPath(), '\n');
+    await ingester.sweep();
+    const after = store.rows.get(FIXTURE.main);
+    expect(after).toMatchObject({ inputTokens: before?.inputTokens, outputTokens: before?.outputTokens });
+    expect(after?.commits.map((c) => c.sha).sort()).toEqual(['abc1234', 'ddd4444']);
+  });
+
+  it('a subagent transcript that shrank is re-read, its old share taken out of the parent first', async () => {
+    await appendFile(subPath(), subagentWork(6, 'eee5555', '2026-11-02T02:28:00.000Z'));
+    const ingester = start();
+    await ingester.ready;
+    expect(store.rows.get(FIXTURE.main)?.outputTokens).toBe(914 + 100);
+    // Rewritten shorter: one reply of 7 output tokens, no commit.
+    await writeFile(
+      subPath(),
+      line({
+        isSidechain: true,
+        sessionId: FIXTURE.main,
+        timestamp: '2026-11-02T02:29:00.000Z',
+        type: 'assistant',
+        message: { id: 'msg_sub_7', model: 'claude-haiku-5-5', role: 'assistant', content: [], usage: { output_tokens: 7 } },
+      }),
+    );
+    await ingester.sweep();
+    const main = store.rows.get(FIXTURE.main);
+    expect(main?.outputTokens).toBe(914 + 7);
+    expect(main?.models['claude-haiku-5-5']).toEqual({ inputTokens: 0, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    // Commits are only ever added.
+    expect(main?.commits.map((c) => c.sha)).toContain('eee5555');
   });
 });

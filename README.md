@@ -600,7 +600,9 @@ nothing per redraw.
 When the daemon first starts with this feature it reads every transcript still under
 `~/.claude/projects`, so the page is full from the first visit. After that it reads only the bytes
 Claude Code appended since the last pass. Each laptop reads its own transcripts into the shared
-database and records its host. The wall's own chat agent and the `/n` helper runs are Claude Code
+database and records its host. Subagents a session starts (the Agent tool, such as the `p` commit
+helper) write their own transcripts next to it; their tokens and commits count toward that
+session's node. The wall's own chat agent and the `/n` helper runs are Claude Code
 sessions too, but they are left out.
 
 ### Node ids

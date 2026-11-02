@@ -29,9 +29,13 @@ import {
  *   or stale read changes nothing; ingest then resumes from the offset the repo reports.
  * - Change detection: a chokidar watcher on the project dirs (debounced per burst) plus a full
  *   sweep every `sweepMs` that stats every file and catches anything the watcher missed.
+ * - Subagents: `<dir>/<uuid>/subagents/agent-<id>.jsonl` (the Agent tool's subagents of session
+ *   `<uuid>`) are tailed the same way, with their own offsets, through
+ *   `SessionsRepo.upsertFromSubagentTranscript`: their tokens, models and commits count toward the
+ *   parent session (a `p` commit runs in a subagent). Read only once the parent has a row of this
+ *   host, so an excluded (sdk) session's subagents are never read. Observers do not see them.
  * - Excluded: project dirs ending `-data-chat` (the wall chat agent's cwd), files whose
- *   entrypoint is `sdk-ts`/`sdk-cli`, subagent transcripts (`<dir>/<uuid>/subagents/*.jsonl`),
- *   and anything that is not `<uuid>.jsonl` directly inside a project dir.
+ *   entrypoint is `sdk-ts`/`sdk-cli`, and anything else.
  * - Rows are written only through `SessionsRepo.upsertFromTranscript` (phase 1), with
  *   `host = os.hostname()`. Ingest never writes parent links, tmux or summaries.
  *
@@ -51,10 +55,17 @@ export const DEFAULT_CLOSE_GRACE_MS = 5_000;
 const LOG_ERROR_CHARS = 200;
 
 const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i;
+const SESSION_DIR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SUBAGENTS_DIR = 'subagents';
+const SUBAGENT_FILE = /^agent-([0-9A-Za-z_-]{1,128})\.jsonl$/;
 const CHAT_PROJECT_DIR = /-data-chat$/;
 
-/** The two `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation. */
-export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'>;
+/**
+ * The `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation; one without
+ * the subagent methods leaves subagent transcripts unread.
+ */
+export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'> &
+  Partial<Pick<SessionsRepo, 'subagentOffsets' | 'upsertFromSubagentTranscript'>>;
 
 export type IngestReason = 'backfill' | 'sweep' | 'watch';
 
@@ -151,6 +162,15 @@ export function sessionIdFromPath(file: string): string | null {
   return SESSION_FILE.test(base) ? base.slice(0, -'.jsonl'.length).toLowerCase() : null;
 }
 
+/** `{ sessionId, agentId }` of `<dir>/<uuid>/subagents/agent-<id>.jsonl`, or null for anything else. */
+export function subagentFromPath(file: string): { sessionId: string; agentId: string } | null {
+  const m = SUBAGENT_FILE.exec(path.basename(file));
+  const subagents = path.dirname(file);
+  const sessionDir = path.basename(path.dirname(subagents));
+  if (m === null || m[1] === undefined || path.basename(subagents) !== SUBAGENTS_DIR || !SESSION_DIR.test(sessionDir)) return null;
+  return { sessionId: sessionDir.toLowerCase(), agentId: m[1] };
+}
+
 /** Project dirs never ingested: the wall chat agent's sessions. */
 export function isExcludedProjectDir(name: string): boolean {
   return CHAT_PROJECT_DIR.test(name);
@@ -161,7 +181,11 @@ export interface TranscriptFile {
   mtimeMs: number;
 }
 
-/** Every `<projectsDir>/<dir>/<uuid>.jsonl`, newest first. A missing projects dir is an empty list. */
+/**
+ * Every `<projectsDir>/<dir>/<uuid>.jsonl`, newest first, then every subagent transcript
+ * `<dir>/<uuid>/subagents/agent-<id>.jsonl`, newest first (after the sessions, so a parent's row
+ * is usually written before its subagents are read). A missing projects dir is an empty list.
+ */
 export async function listTranscripts(projectsDir: string): Promise<TranscriptFile[]> {
   let dirs;
   try {
@@ -170,6 +194,7 @@ export async function listTranscripts(projectsDir: string): Promise<TranscriptFi
     return [];
   }
   const files: TranscriptFile[] = [];
+  const subagents: TranscriptFile[] = [];
   for (const dir of dirs) {
     if (!dir.isDirectory() || isExcludedProjectDir(dir.name)) continue;
     const dirPath = path.join(projectsDir, dir.name);
@@ -180,6 +205,10 @@ export async function listTranscripts(projectsDir: string): Promise<TranscriptFi
       continue;
     }
     for (const entry of entries) {
+      if (entry.isDirectory() && SESSION_DIR.test(entry.name)) {
+        await listSubagents(path.join(dirPath, entry.name, SUBAGENTS_DIR), subagents);
+        continue;
+      }
       if (!entry.isFile() || !SESSION_FILE.test(entry.name)) continue;
       const file = path.join(dirPath, entry.name);
       try {
@@ -189,18 +218,43 @@ export async function listTranscripts(projectsDir: string): Promise<TranscriptFi
       }
     }
   }
-  return files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const newest = (a: TranscriptFile, b: TranscriptFile) => b.mtimeMs - a.mtimeMs;
+  return [...files.sort(newest), ...subagents.sort(newest)];
 }
 
-/** chokidar `ignored`: keep the projects dir, its project dirs, and `<uuid>.jsonl` directly inside them. */
+async function listSubagents(dir: string, out: TranscriptFile[]): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return; // most sessions never ran a subagent
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !SUBAGENT_FILE.test(entry.name)) continue;
+    const file = path.join(dir, entry.name);
+    try {
+      out.push({ path: file, mtimeMs: (await stat(file)).mtimeMs });
+    } catch {
+      // Removed between readdir and stat.
+    }
+  }
+}
+
+/**
+ * chokidar `ignored`: keep the projects dir, its project dirs, `<uuid>.jsonl` directly inside them,
+ * and the `<uuid>/subagents/agent-<id>.jsonl` path (its two folders and the file).
+ */
 export function isIgnoredWatchPath(projectsDir: string, p: string): boolean {
   const rel = path.relative(projectsDir, path.resolve(p));
   if (rel === '') return false;
   if (rel.startsWith('..') || path.isAbsolute(rel)) return true;
   const parts = rel.split(path.sep);
   if (parts.length === 1) return isExcludedProjectDir(parts[0] ?? '');
-  if (parts.length === 2) return !SESSION_FILE.test(parts[1] ?? '');
-  return true;
+  const name = parts[1] ?? '';
+  if (parts.length === 2) return !SESSION_FILE.test(name) && !SESSION_DIR.test(name);
+  if (!SESSION_DIR.test(name) || parts[2] !== SUBAGENTS_DIR) return true;
+  if (parts.length === 3) return false;
+  return parts.length !== 4 || !SUBAGENT_FILE.test(parts[3] ?? '');
 }
 
 async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -234,6 +288,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const carries = new Map<string, TranscriptCarry>();
   /** Files of excluded entry points or of another host's row: never read again in this process. */
   const excluded = new Set<string>();
+  /** Stored subagent offsets by transcript path, and their read-to-read carry. */
+  const subOffsets = new Map<string, number>();
+  const subCarries = new Map<string, TranscriptCarry>();
   /** Files with no entry point yet and no row: size at the last look, re-read only when it changes. */
   const deferred = new Map<string, number>();
   /** Per-file serialization: the running read, and whether another was asked for meanwhile. */
@@ -272,9 +329,10 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   };
 
   const seed = (): Promise<void> => {
-    seeded ??= options.store.offsets(host).then(
-      (stored) => {
+    seeded ??= Promise.all([options.store.offsets(host), options.store.subagentOffsets?.(host)]).then(
+      ([stored, storedSubs]) => {
         for (const [sessionId, entry] of stored) offsets.set(sessionId, entry.offset);
+        for (const [file, offset] of storedSubs ?? []) subOffsets.set(file, offset);
       },
       (err: unknown) => {
         seeded = null; // retry on the next pass
@@ -285,10 +343,74 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   };
 
   /**
+   * Reads what is new in one subagent transcript and folds it into its parent session. Waits (reads
+   * nothing) until the parent has a row of this host. Same offset and retry rules as `readFile`.
+   */
+  const readSubagentFile = async (file: string, sessionId: string, agentId: string): Promise<number> => {
+    const upsert = options.store.upsertFromSubagentTranscript?.bind(options.store);
+    if (upsert === undefined) return 0;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (excluded.has(file) || closed || !offsets.has(sessionId)) return 0;
+      let size: number;
+      try {
+        size = (await stat(file)).size;
+      } catch {
+        return 0;
+      }
+      const known = subOffsets.get(file) ?? 0;
+      if (size === known) return 0;
+      const fromOffset = size < known ? 0 : known;
+      const acc = new TranscriptAccumulator(sessionId, fromOffset === 0 ? undefined : subCarries.get(file), { sidechain: true });
+      const read = await readJsonlFrom(
+        file,
+        fromOffset,
+        (line) => {
+          const record = parseRecord(line);
+          if (record !== null) acc.add(record);
+        },
+        { shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
+      );
+      if (read.endOffset <= fromOffset) {
+        if (size < known) subOffsets.set(file, read.endOffset);
+        return 0;
+      }
+      const delta = acc.delta();
+      const result = await upsert({
+        sessionId,
+        agentId,
+        host,
+        transcriptPath: file,
+        fromOffset,
+        toOffset: read.endOffset,
+        size: read.size,
+        lastActiveAt: delta.lastAt,
+        tokens: delta.tokens,
+        models: delta.models,
+        commits: delta.commits,
+      });
+      if (result.applied) {
+        subOffsets.set(file, read.endOffset);
+        subCarries.set(file, acc.carry());
+        return Math.max(1, read.endOffset - fromOffset);
+      }
+      if (result.reason === 'other_host') {
+        excluded.add(file);
+        return 0;
+      }
+      if (result.reason === 'no_session') return 0;
+      subOffsets.set(file, result.storedOffset);
+      subCarries.delete(file);
+    }
+    return 0;
+  };
+
+  /**
    * Reads what is new in one file and writes the row. Returns the bytes consumed (0: nothing
    * written). A compare-and-set miss (`offset_mismatch`) adopts the repo's offset and reads once more.
    */
   const readFile = async (file: string): Promise<number> => {
+    const subagent = subagentFromPath(file);
+    if (subagent !== null) return readSubagentFile(file, subagent.sessionId, subagent.agentId);
     const sessionId = sessionIdFromPath(file);
     if (sessionId === null) return 0;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -384,7 +506,10 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       log(`[notesd] sessions: could not load offsets: ${errorMessage(err)}`);
       return null;
     }
-    await forEachLimit(files, concurrency, async (file) => {
+    // Sessions first, then subagents: a subagent is read only once its parent has a row.
+    const isSub = (file: string) => subagentFromPath(file) !== null;
+    const ordered = [files.filter((f) => !isSub(f)), files.filter(isSub)];
+    const one = async (file: string): Promise<void> => {
       if (closed) return;
       try {
         const bytes = await runFile(file);
@@ -398,7 +523,8 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
         report.failed += 1;
         log(`[notesd] sessions: ${path.basename(file)}: ${errorMessage(err)}`);
       }
-    });
+    };
+    for (const wave of ordered) await forEachLimit(wave, concurrency, one);
     report.ms = Date.now() - started;
     return { report, written };
   };
@@ -441,7 +567,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const queueWatch = (p: string): void => {
     if (closed) return;
     const file = path.resolve(p);
-    if (sessionIdFromPath(file) === null) return;
+    if (sessionIdFromPath(file) === null && subagentFromPath(file) === null) return;
     watchQueue.add(file);
     watchTimer ??= setTimeout(drainWatch, debounceMs);
   };
@@ -451,7 +577,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     watcher = watch(projectsDir, {
       ignoreInitial: true,
       persistent: true,
-      depth: 1,
+      depth: 3,
       ignored: (p: string) => isIgnoredWatchPath(projectsDir, p),
     });
     watcher.on('add', queueWatch);

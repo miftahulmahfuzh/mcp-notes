@@ -155,6 +155,41 @@ export type TranscriptUpsertResult =
   | { applied: true; row: SessionRow }
   | { applied: false; reason: 'offset_mismatch' | 'other_host'; storedOffset: number; row: SessionRow };
 
+/**
+ * One read of a subagent transcript (`<dir>/<session uuid>/subagents/agent-<id>.jsonl`). Same
+ * offset rules as TranscriptPatch, against the subagent row's own offset. The deltas are added to
+ * the subagent row and to its parent session's totals; `fromOffset === 0` replaces the subagent
+ * row's values and takes its old ones back out of the parent first.
+ */
+export interface SubagentTranscriptPatch {
+  /** The parent session. */
+  sessionId: string;
+  agentId: string;
+  host: string;
+  transcriptPath: string;
+  fromOffset: number;
+  toOffset: number;
+  size: number;
+  /** Merged as the maximum with the parent's last_active_at. */
+  lastActiveAt?: Date | null;
+  tokens?: Partial<TokenCounts>;
+  models?: Record<string, Partial<ModelUsage>>;
+  /** Merged into the subagent row and the parent, deduped by sha. */
+  commits?: SessionCommit[];
+}
+
+/** `no_session`: the parent has no row yet (or is not ingested at all); try again on a later pass. */
+export type SubagentUpsertResult =
+  | { applied: true }
+  | { applied: false; reason: 'offset_mismatch' | 'other_host' | 'no_session'; storedOffset: number };
+
+/** The subagent share of one session: what a re-read of its own transcript from byte 0 starts from. */
+export interface SubagentTotals {
+  tokens: TokenCounts;
+  models: Record<string, ModelUsage>;
+  commits: SessionCommit[];
+}
+
 /** What the SessionStart hook reports (Phase 5). */
 export interface HookStart {
   sessionId: string;

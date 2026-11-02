@@ -351,9 +351,15 @@ export class TranscriptAccumulator {
   private readonly toolIdsThisRead = new Set<string>();
   private readonly recentMessageIds: string[];
   private readonly pendingCommitIds: string[];
+  private readonly sidechain: boolean;
 
-  constructor(sessionId: string, carry: TranscriptCarry = emptyCarry()) {
+  /**
+   * `opts.sidechain`: the file is a subagent transcript (`<uuid>/subagents/agent-*.jsonl`), where
+   * every record is `isSidechain: true`; read them instead of skipping them.
+   */
+  constructor(sessionId: string, carry: TranscriptCarry = emptyCarry(), opts: { sidechain?: boolean } = {}) {
     this.sessionId = sessionId;
+    this.sidechain = opts.sidechain === true;
     this.recentMessageIds = [...carry.recentMessageIds];
     this.pendingCommitIds = [...carry.pendingCommitIds];
   }
@@ -368,7 +374,7 @@ export class TranscriptAccumulator {
 
   add(record: TranscriptRecord): void {
     this.records += 1;
-    if (record.isSidechain === true) return;
+    if (record.isSidechain === true && !this.sidechain) return;
     this.observeEnvelope(record);
     switch (record.type) {
       case 'custom-title':
