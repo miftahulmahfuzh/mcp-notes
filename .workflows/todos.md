@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 61
+- Blocked: 1
+- Completed: 62
 
 ---
 
@@ -33,21 +33,11 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A060** Phase 12: Per-project chat and project chat history
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `project` on chat threads through `ChatService`/`chatApi`/`POST /api/chat`, the `<project>` context block, `project-pill-query-input`, `project-chat-history`, the graph <-> history toggle in `.proj-bar`, `.graph-scroll` height in `SessionGraph.css`. Exit criteria: threads created from the project view carry `project`; the history view lists only that project's threads; wall chat unchanged.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 12 of 14)
-  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
-  - **Depends on**: P1-NOTES-A059
-  - **Plan**: `.workflows/plan/P1-NOTES-A060.md`
-
 - [ ] **P1-NOTES-A061** Phase 13: "unfinished" badge for orch nodes
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/sessions/unfinished.ts`, `SessionsConfig.swarmScript`, `SessionsApiOptions.unfinished` + annotation in `sessionsApi.ts`, `CreateAppOptions.unfinished`, `UnfinishedBadge.tsx`, the `renderBadge` default in `ProjectsPage`, `SessionDetail.unfinished` + pill in `NodePanel`, and the `swarmScript` additions to phase 3's config tests and ingest int test literal. Exit criteria: fake swarm runner tests; badge renders only for orch + pending + not live; tests never read the real `~/.claude`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 13 of 14)
   - **Satisfies**: R9 — "unfinished" badge on orch nodes with pending ledger phases and no live session
   - **Depends on**: P1-NOTES-A060
@@ -72,6 +62,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A060** Phase 12: Per-project chat and project chat history
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `project` on chat threads through `ChatService`/`chatApi`/`POST /api/chat`, the `<project>` context block, `project-pill-query-input`, `project-chat-history`, the graph <-> history toggle in `.proj-bar`, `.graph-scroll` height in `SessionGraph.css`. Exit criteria: threads created from the project view carry `project`; the history view lists only that project's threads; wall chat unchanged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 12 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
+  - **Depends on**: P1-NOTES-A059
+  - **Plan**: `.workflows/plan/P1-NOTES-A060.md`
+  - **Completed**: 2026-11-02 11:55
+  - **Method**: /do
+  - **Files**: src/chat/project.ts, src/chat/repo.ts, src/chat/types.ts, src/chat/service.ts, src/chat/context.ts, src/chat/prompt.ts, src/http/api.ts, src/http/chatApi.ts, web/src/chatHistoryApi.ts, web/src/hooks/useHistory.ts, web/src/components/ChatBar.tsx, web/src/pages/HistoryPage.tsx, web/src/pages/ProjectsPage.tsx, web/src/components/graph/SessionGraph.css, web/src/components/projectChat/ProjectPillQueryInput.tsx, web/src/components/projectChat/ProjectChatHistory.tsx, web/src/components/projectChat/ProjectViewToggle.tsx, web/src/components/projectChat/ProjectChat.tsx, web/src/components/projectChat/ProjectChat.css, web/src/components/projectChat/ProjectPillQueryInput.test.tsx, web/src/components/projectChat/ProjectChat.test.tsx, tests/unit/chat-project.test.ts, tests/integration/chat.project.int.test.ts
+  - **Drift**: None. Code matched the plan's quotes; phase 7's sessions_search already takes `repo`, so the <project> block wording stands unchanged.
 
 - [x] **P1-NOTES-A059** Phase 11: Web: node detail panel, Tree/Timeline, resume action
   - **Difficulty**: NORMAL

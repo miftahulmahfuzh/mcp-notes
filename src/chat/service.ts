@@ -31,7 +31,7 @@ export interface ChatServiceDeps {
 }
 
 export interface AddUserMessageInput {
-  /** The thread to continue. Null, unknown, or a thread of another source: a new thread is created. */
+  /** The thread to continue. Null, unknown, of another source or of another project: a new thread is created. */
   threadId: string | null;
   source: ChatSource;
   /** Trimmed by the caller. May be '' only when attachments are given. */
@@ -39,6 +39,8 @@ export interface AddUserMessageInput {
   attachments?: readonly AttachmentRef[];
   /** Canonical message id of a live message (any thread), or null. */
   replyTo?: string | null;
+  /** Repo key from the Projects page (phase 12). Absent or null: wall chat. A thread never changes project. */
+  project?: string | null;
   createdAt?: Date;
 }
 
@@ -128,9 +130,10 @@ export class ChatService {
     }
     const at = input.createdAt ?? this.now();
     const replyTo = input.replyTo ?? null;
+    const project = input.project ?? null;
     const result = await this.db.transaction(async (tx) => {
       let thread: ChatThreadRow | null = input.threadId === null ? null : await repo.lockThread(tx, input.threadId);
-      if (thread !== null && thread.source !== input.source) thread = null;
+      if (thread !== null && (thread.source !== input.source || (thread.project ?? null) !== project)) thread = null;
       let threadCreated = false;
       if (thread === null) {
         thread = await repo.insertThread(tx, {
@@ -138,6 +141,7 @@ export class ChatService {
           source: input.source,
           brain: null,
           externalKey: null,
+          project,
           createdAt: at,
         });
         if (thread === null) throw new ChatError('conflict', 'Could not create a chat thread.');
@@ -254,11 +258,12 @@ export class ChatService {
   }
 
   /**
-   * One page of the unified timeline (every thread, every source). The page holds the newest
-   * `limit` messages older than `before`, returned ascending; `next_before` fetches the page before it.
+   * One page of the unified timeline (every thread, every source), or of one project's threads when
+   * `project` is given (phase 12). The page holds the newest `limit` messages older than `before`,
+   * returned ascending; `next_before` fetches the page before it.
    */
   async listTimeline(
-    options: { before?: string | null; limit?: number; includeDeleted?: boolean } = {},
+    options: { before?: string | null; limit?: number; includeDeleted?: boolean; project?: string | null } = {},
   ): Promise<ChatTimelinePage> {
     const limit = Math.min(Math.max(Math.trunc(options.limit ?? DEFAULT_TIMELINE_LIMIT), 1), MAX_TIMELINE_LIMIT);
     let before: repo.TimelineCursor | null = null;
@@ -270,6 +275,7 @@ export class ChatService {
       before,
       limit: limit + 1,
       includeDeleted: options.includeDeleted ?? false,
+      project: options.project ?? null,
     });
     const page = rows.slice(0, limit);
     const oldest = page[page.length - 1];
@@ -311,9 +317,11 @@ export class ChatService {
 
   /**
    * The rows behind one wall turn: the thread's live messages before `currentMessageId` (edited
-   * text, deleted ones left out), the current message, and its live reply target from any thread.
+   * text, deleted ones left out), the current message, its live reply target from any thread, and
+   * the thread's project (phase 12; null for wall chat).
    */
   async loadTurnContext(threadId: string, currentMessageId: string): Promise<TurnContextInput> {
+    const thread = await repo.findThread(this.db, threadId);
     const rows = await repo.listThreadMessages(this.db, threadId, false);
     const index = rows.findIndex((row) => row.id === currentMessageId);
     const current = rows[index];
@@ -338,6 +346,7 @@ export class ChatService {
       history: before.map(toContext),
       current: toContext(current),
       replyTarget: liveTarget !== null ? toContext(liveTarget) : null,
+      project: thread?.project ?? null,
     };
   }
 

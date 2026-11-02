@@ -1,5 +1,5 @@
 /* Session graph (project-session-graph phase 10): monochrome on the wall's dark ground, mono ids. */
-.graph-scroll { position: relative; height: max(360px, calc(100vh - 140px)); overflow: auto; overscroll-behavior: contain; }
+.graph-scroll { position: relative; height: max(360px, calc(100vh - 196px)); overflow: auto; overscroll-behavior: contain; }
 .graph-svg { display: block; font-family: var(--sans); }
 
 .gtrunk { stroke: var(--fg); stroke-width: 6; stroke-linecap: round; opacity: .85; }

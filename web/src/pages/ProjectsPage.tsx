@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ArrowsInLineVertical, ArrowsOutLineVertical } from '@phosphor-icons/react';
 import { NodePanel } from '../components/graph/NodePanel';
 import { SessionGraph } from '../components/graph/SessionGraph';
+import { ProjectChat } from '../components/projectChat/ProjectChat';
+import { ProjectViewToggle, type ProjectView } from '../components/projectChat/ProjectViewToggle';
 import { useSessionGraph } from '../hooks/useSessionGraph';
 import { ancestorsOf, buildForest, expandAll, layoutGraph } from '../lib/sessionGraph';
 import { toSubtreeNodes } from '../lib/subtree';
@@ -24,12 +26,18 @@ export interface ProjectsPageProps {
 
 /**
  * The projects view's main area. Layout (later phases add to it, nothing here moves):
- *   .proj-bar   toolbar, icon-only (expand all / collapse all); phase 12 adds its graph <-> chat toggle here
- *   .proj-body  .proj-graph (SessionGraph) + .proj-panel (phase 11's renderPanel)
- *   phase 12 mounts `project-pill-query-input` after .proj-body
+ *   .proj-bar   toolbar, icon-only: phase 12's graph <-> chat toggle, then (graph view) expand all / collapse all
+ *   .proj-body  .proj-graph (SessionGraph) + .proj-panel (phase 11's renderPanel); graph view only
+ *   ProjectChat (phase 12): `project-pill-query-input` in graph view, `project-chat-history` in chat view
  */
 export function ProjectsPage({ repo, resolving = false, node, onSelectNode, renderPanel, renderBadge }: ProjectsPageProps) {
   const graph = useSessionGraph(repo);
+  const [view, setView] = useState<ProjectView>('graph');
+  const showChat = useCallback(() => setView('chat'), []);
+  // Opening a node (click or ?node= deep link) always shows the graph it lives in.
+  useEffect(() => {
+    if (node !== null) setView('graph');
+  }, [node]);
   const forest = useMemo(() => buildForest(graph.nodes), [graph.nodes]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -96,33 +104,39 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
   return (
     <section className="proj" aria-label="Project sessions">
       <div className="proj-bar">
-        <div className="proj-tools">
-          <button
-            type="button"
-            className="ibtn hov"
-            data-tip="Expand all"
-            aria-label="Expand all"
-            disabled={!branchy}
-            onClick={() => setExpanded(expandAll(forest))}
-          >
-            <ArrowsOutLineVertical weight="duotone" />
-          </button>
-          <button
-            type="button"
-            className="ibtn hov"
-            data-tip="Collapse all"
-            aria-label="Collapse all"
-            disabled={!branchy}
-            onClick={() => setExpanded(new Set())}
-          >
-            <ArrowsInLineVertical weight="duotone" />
-          </button>
+        {repo !== null && <ProjectViewToggle view={view} onToggle={setView} />}
+        {view === 'graph' && (
+          <div className="proj-tools">
+            <button
+              type="button"
+              className="ibtn hov"
+              data-tip="Expand all"
+              aria-label="Expand all"
+              disabled={!branchy}
+              onClick={() => setExpanded(expandAll(forest))}
+            >
+              <ArrowsOutLineVertical weight="duotone" />
+            </button>
+            <button
+              type="button"
+              className="ibtn hov"
+              data-tip="Collapse all"
+              aria-label="Collapse all"
+              disabled={!branchy}
+              onClick={() => setExpanded(new Set())}
+            >
+              <ArrowsInLineVertical weight="duotone" />
+            </button>
+          </div>
+        )}
+      </div>
+      {view === 'graph' && (
+        <div className="proj-body">
+          <div className="proj-graph">{content}</div>
+          {selectedNode !== null && <aside className="proj-panel">{panel(selectedNode, close)}</aside>}
         </div>
-      </div>
-      <div className="proj-body">
-        <div className="proj-graph">{content}</div>
-        {selectedNode !== null && <aside className="proj-panel">{panel(selectedNode, close)}</aside>}
-      </div>
+      )}
+      {repo !== null && <ProjectChat key={repo} repo={repo} view={view} onAsked={showChat} />}
     </section>
   );
 }

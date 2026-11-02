@@ -16,6 +16,11 @@ export interface HistoryOptions {
    * `op: 'deleted'`. Phase 9 never sets it; it is the seam for phase 10's "show deleted" toggle.
    */
   includeDeleted?: boolean;
+  /**
+   * Phase 12: scope the store to one project (repo key): pages come from `?project=` and every send
+   * carries `project`. Fixed for the hook's life; mount a new store (a `key`) per project.
+   */
+  project?: string | null;
 }
 
 export interface HistoryStore {
@@ -86,6 +91,8 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
   stRef.current = st;
   const deletedRef = useRef(includeDeleted);
   deletedRef.current = includeDeleted;
+  const projectRef = useRef<string | null>(options.project ?? null);
+  projectRef.current = options.project ?? null;
   const alive = useRef(true);
   const seq = useRef(0);
   const sendingRef = useRef(false);
@@ -113,7 +120,7 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
       }
       inFlight = true;
       try {
-        const page = await fetchChatMessages({ limit: HISTORY_PAGE, includeDeleted: deletedRef.current });
+        const page = await fetchChatMessages({ limit: HISTORY_PAGE, includeDeleted: deletedRef.current, project: projectRef.current });
         if (!alive.current) return;
         setSt((s) => {
           const from = page.next_before === null ? Number.NEGATIVE_INFINITY : oldestMs(page.messages);
@@ -192,7 +199,7 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
     setSt((x) => ({ ...x, loadingOlder: true }));
     const run = (async (): Promise<ChatMessage[]> => {
       try {
-        const page = await fetchChatMessages({ before: cursor, limit: HISTORY_PAGE, includeDeleted: deletedRef.current });
+        const page = await fetchChatMessages({ before: cursor, limit: HISTORY_PAGE, includeDeleted: deletedRef.current, project: projectRef.current });
         if (!alive.current) return [];
         setSt((x) => ({ ...x, server: mergeMessages(x.server, page.messages, null), cursor: page.next_before, loadingOlder: false }));
         return page.messages;
@@ -278,7 +285,16 @@ export function useHistory(enabled: boolean, options: HistoryOptions = {}): Hist
 
     void (async () => {
       try {
-        const res = await streamChat({ message, threadId, imageIds, ...(noteImageIds.length > 0 ? { noteImageIds } : {}), replyTo: replyTo?.id, signal: c.signal });
+        const project = projectRef.current;
+        const res = await streamChat({
+          message,
+          threadId,
+          imageIds,
+          ...(noteImageIds.length > 0 ? { noteImageIds } : {}),
+          replyTo: replyTo?.id,
+          ...(project ? { project } : {}),
+          signal: c.signal,
+        });
         if (!res.ok || !res.body) {
           fail(`Chat failed: ${res.status} ${res.statusText}`.trim());
           return;

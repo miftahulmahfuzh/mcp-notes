@@ -20,6 +20,8 @@ export interface ChatPageQuery {
   limit?: number;
   /** Phase 10's "show deleted" toggle. */
   includeDeleted?: boolean;
+  /** Project chat history (phase 12): only this repo's threads. Absent/null: every thread. */
+  project?: string | null;
 }
 
 function normalize(m: ChatMessage): ChatMessage {
@@ -34,12 +36,13 @@ function normalize(m: ChatMessage): ChatMessage {
   };
 }
 
-/** Phase 7: `GET /api/chat/messages?before&limit&include_deleted=1` → one page of the unified timeline (ascending; the hook re-sorts anyway). */
+/** Phase 7: `GET /api/chat/messages?before&limit&include_deleted=1&project=` → one page of the timeline (ascending; the hook re-sorts anyway). */
 export async function fetchChatMessages(q: ChatPageQuery = {}): Promise<ChatPage> {
   const p = new URLSearchParams();
   if (q.before) p.set('before', q.before);
   if (q.limit) p.set('limit', String(q.limit));
   if (q.includeDeleted) p.set('include_deleted', '1');
+  if (q.project) p.set('project', q.project);
   const qs = p.toString();
   const res = await fetch(`/api/chat/messages${qs ? `?${qs}` : ''}`);
   if (!res.ok) throw await failure(res);
@@ -59,16 +62,26 @@ export interface StreamChatRequest {
   noteImageIds?: string[];
   /** Phase 10: the bubble this message replies to (a 4-char message id), sent as `reply_to`. */
   replyTo?: string;
+  /** Phase 12: the repo key of the Projects page this was asked from, sent as `project`. */
+  project?: string;
   signal: AbortSignal;
 }
 
 /** `POST /api/chat` for the history composer; the caller reads the SSE body (lib/sse `readSSE`). */
 export function streamChat(r: StreamChatRequest): Promise<Response> {
-  const payload: { message: string; thread_id?: string; image_ids?: string[]; note_image_ids?: string[]; reply_to?: string } = { message: r.message };
+  const payload: {
+    message: string;
+    thread_id?: string;
+    image_ids?: string[];
+    note_image_ids?: string[];
+    reply_to?: string;
+    project?: string;
+  } = { message: r.message };
   if (r.threadId) payload.thread_id = r.threadId;
   if (r.replyTo) payload.reply_to = r.replyTo;
   if (r.imageIds && r.imageIds.length > 0) payload.image_ids = r.imageIds;
   if (r.noteImageIds && r.noteImageIds.length > 0) payload.note_image_ids = r.noteImageIds;
+  if (r.project) payload.project = r.project;
   return fetch('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },

@@ -7,6 +7,11 @@ import type { AttachmentRef } from './types.js';
  *
  * Layout (the system prompt in src/chat/prompt.ts explains it to the model):
  *
+ *   <project>                       (phase 12: only for a thread started on the Projects page)
+ *   repo: mcp-notes
+ *   The owner is asking from the page of the repository "mcp-notes" ...
+ *   </project>
+ *
  *   <chat_history>
  *   [earlier messages omitted]
  *   [msg:K7F2] user (2026-10-31 09:12 WIB): what did I save? [image upload:C-AB12]
@@ -46,6 +51,8 @@ export interface TurnContextInput {
   current: ContextMessage;
   /** The live message the current one replies to (any thread), or null. */
   replyTarget: ContextMessage | null;
+  /** Repo key of a project-scoped thread (phase 12). Null or absent: wall chat, no <project> block. */
+  project?: string | null;
   /** Default CONTEXT_CHAR_BUDGET. */
   budgetChars?: number;
 }
@@ -86,11 +93,25 @@ export function attachmentLabel(ref: AttachmentRef): string {
   }
 }
 
-const BLOCK_TAG = /<(\/?)(chat_history|reply_to|message)>/gi;
+const BLOCK_TAG = /<(\/?)(chat_history|reply_to|message|project)>/gi;
 
 /** A message cannot close or open one of our blocks: `<message>` in text becomes `‹message›`. */
 function neutralize(text: string): string {
   return text.replace(BLOCK_TAG, (_match, slash: string, name: string) => `‹${slash}${name}›`);
+}
+
+/**
+ * Phase 12: the first block of a project-scoped turn. It names the repo and says how to reach its
+ * sessions (phase 7's tools). The key is validated at the route; it is neutralized here as well.
+ */
+export function renderProjectBlock(project: string): string {
+  const repo = neutralize(project);
+  return [
+    '<project>',
+    `repo: ${repo}`,
+    `The owner is asking from the page of the repository "${repo}" in the wall's Projects view. Their questions are about the Claude Code sessions run in that repository: find them with sessions_search restricted to repo "${repo}", read one with session_get before you describe it, and quote each session by its node id (like A0-3G).`,
+    '</project>',
+  ].join('\n');
 }
 
 function clip(text: string, cap: number): string {
@@ -127,6 +148,8 @@ export function buildTurnContext(input: TurnContextInput): TurnContext {
   const omitted = lines.length - kept.length;
 
   const sections: string[] = [];
+  const project = input.project ?? null;
+  if (project !== null && project !== '') sections.push(renderProjectBlock(project));
   if (lines.length > 0) {
     sections.push(['<chat_history>', ...(omitted > 0 ? [OMITTED_LINE] : []), ...kept, '</chat_history>'].join('\n'));
   }
