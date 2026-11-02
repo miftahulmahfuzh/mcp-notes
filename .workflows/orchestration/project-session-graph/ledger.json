@@ -116,22 +116,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2a6abbf",
       "depends_on": [
         5,
         6
       ],
       "difficulty": "NORMAL",
       "n": 7,
-      "note": null,
+      "note": "read API + 4 MCP session tools; allowedChatTools=40; sessionsSeed.ts seeds omitted jsonb lists as [] (not-null schema, rung 1)",
       "package": "src/http`, `src/mcp`, `src/chat`, `src/sessions",
       "plan": ".workflows/plan/project-session-graph/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:19:28+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A055",
       "title": "Sessions read API, selected project, MCP + chat tools, usage"
     },
     {
@@ -149,7 +149,7 @@
       "satisfies": [
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Node ids in prompts resolve to context"
     },
@@ -169,7 +169,7 @@
         "R8",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Resume/spawn into tmux, `session_resume` tool"
     },
@@ -188,7 +188,7 @@
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web: projects rail icon, repo sidebar, SVG graph"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T11:07:30+07:00",
+  "updated": "2026-11-02T11:19:50+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
