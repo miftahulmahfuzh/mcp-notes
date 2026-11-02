@@ -136,60 +136,60 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e1ebddf",
       "depends_on": [
         7
       ],
       "difficulty": "NORMAL",
       "n": 8,
-      "note": null,
+      "note": "notes-prompt resolves node ids via /api/sessions/context; no ladder decisions",
       "package": "claude/hooks",
       "plan": ".workflows/plan/project-session-graph/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:26:59+07:00",
       "satisfies": [
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A056",
       "title": "Node ids in prompts resolve to context"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "50f0c10d77c11bd0f498d59a3813ecf1665bea56",
       "depends_on": [
         7
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": null,
+      "note": "resume/spawn into tmux + session_resume (41 chat tools); deleted cwd -> newest non-worktree repo cwd > ~/<repo> > $HOME, never recreated, original_cwd reported (M1: --resume finds by sid); phase7 int test readOnly assertion now excludes session_resume; reused fail() for toolError",
       "package": "src/sessions`, `src/http`, `src/mcp",
       "plan": ".workflows/plan/project-session-graph/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:33:58+07:00",
       "satisfies": [
         "R8",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A057",
       "title": "Resume/spawn into tmux, `session_resume` tool"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "cf39e25",
       "depends_on": [
         7
       ],
       "difficulty": "HARD",
       "n": 10,
-      "note": null,
+      "note": "web projects view, repo sidebar, SVG graph; trunk drawn to the top row (settled 'trunk growing upward' + phase test), layout.trunk unchanged",
       "package": "web/",
       "plan": ".workflows/plan/project-session-graph/phase-10.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:32:10+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A058",
       "title": "Web: projects rail icon, repo sidebar, SVG graph"
     },
     {
@@ -209,7 +209,7 @@
         "R7",
         "R8"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web: node detail panel, Tree/Timeline, resume action"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T11:19:50+07:00",
+  "updated": "2026-11-02T11:39:41+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
