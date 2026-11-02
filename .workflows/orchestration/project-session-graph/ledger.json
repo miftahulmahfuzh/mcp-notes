@@ -1,0 +1,282 @@
+{
+  "branch": "feature/project-session-graph",
+  "coordinator": "orch-project-session-graph",
+  "coordinator_session_id": "2c063731-8870-48ed-bb11-5c109defb22e",
+  "created": "2026-11-02T10:26:28+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `src/sessions",
+      "plan": ".workflows/plan/project-session-graph/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Schema, node ids, SessionsRepo"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "EASY",
+      "n": 2,
+      "note": null,
+      "package": "~/claude-commands/skills/swarm",
+      "plan": ".workflows/plan/project-session-graph/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "swarm.py passes CC_PARENT_SESSION (~/claude-commands)"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions`, `src/background.ts`, `src/config.ts",
+      "plan": ".workflows/plan/project-session-graph/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Transcript ingest, repo resolution, live registry, backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/project-session-graph/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Heuristic parent links from transcripts"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "claude/hooks`, `src/http`, `scripts",
+      "plan": ".workflows/plan/project-session-graph/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "SessionStart + Bash spawn hooks, hook endpoints, install"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "src/sessions`, `src/background.ts`, `src/daemon.ts",
+      "plan": ".workflows/plan/project-session-graph/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Summaries (Haiku), redaction, embeddings, session search"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        5,
+        6
+      ],
+      "difficulty": "NORMAL",
+      "n": 7,
+      "note": null,
+      "package": "src/http`, `src/mcp`, `src/chat`, `src/sessions",
+      "plan": ".workflows/plan/project-session-graph/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Sessions read API, selected project, MCP + chat tools, usage"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        7
+      ],
+      "difficulty": "NORMAL",
+      "n": 8,
+      "note": null,
+      "package": "claude/hooks",
+      "plan": ".workflows/plan/project-session-graph/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Node ids in prompts resolve to context"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 9,
+      "note": null,
+      "package": "src/sessions`, `src/http`, `src/mcp",
+      "plan": ".workflows/plan/project-session-graph/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R8",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Resume/spawn into tmux, `session_resume` tool"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 10,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/project-session-graph/phase-10.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web: projects rail icon, repo sidebar, SVG graph"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        9,
+        10
+      ],
+      "difficulty": "NORMAL",
+      "n": 11,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/project-session-graph/phase-11.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7",
+        "R8"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web: node detail panel, Tree/Timeline, resume action"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        11
+      ],
+      "difficulty": "NORMAL",
+      "n": 12,
+      "note": null,
+      "package": "src/chat`, `src/http`, `web/",
+      "plan": ".workflows/plan/project-session-graph/phase-12.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Per-project chat and project chat history"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        12
+      ],
+      "difficulty": "NORMAL",
+      "n": 13,
+      "note": null,
+      "package": "src/sessions`, `src/http`, `src/config.ts`, `web/",
+      "plan": ".workflows/plan/project-session-graph/phase-13.md",
+      "reported_at": null,
+      "satisfies": [
+        "R9"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "\"unfinished\" badge for orch nodes"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        8,
+        13
+      ],
+      "difficulty": "EASY",
+      "n": 14,
+      "note": null,
+      "package": "docs",
+      "plan": ".workflows/plan/project-session-graph/phase-14.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R9"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Docs: README, CHANGELOG, CLAUDE.md, ROADMAP"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "project-session-graph",
+  "updated": "2026-11-02T10:27:11+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
+}
