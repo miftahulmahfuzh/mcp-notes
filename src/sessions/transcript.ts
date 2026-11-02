@@ -34,6 +34,9 @@ import {
  *   message repeats the same `message.id` and the same `message.usage` (35 438 of 71 873 records
  *   are such repeats), so usage is counted once per message id.
  * - `git commit` output arrives as a tool_result whose text has a `[branch sha] subject` line.
+ *   `git commit -q` prints none, so `git push` (`   a1b2c3d..e4f5a6b  main -> main`) and a
+ *   fast-forward `git merge` (`Updating a1b2c3d..e4f5a6b`) ranges are kept too; ingest expands
+ *   them into commits with `git log` (`gitRange.ts`).
  * - Peer messages (`origin.kind: 'peer'`, from SendMessage), task notifications and sdk turns are
  *   `type: 'user'` records too; only `origin.kind` `human` or absent counts as a prompt.
  * - `api-request*`, `file-history-*` and a few bookkeeping types are most of the bytes and carry
@@ -71,7 +74,7 @@ export const PLAN_DOC_PATH = /(?:^|\/)(?:docs\/plans|\.workflows\/plan|docs\/ana
 export const DEFAULT_READ_CHUNK_BYTES = 1 << 20;
 /** Message ids remembered across reads, to count a message's usage once when its records straddle a read. */
 const RECENT_MESSAGE_IDS = 16;
-/** `git commit` tool_use ids remembered across reads, waiting for their result. */
+/** `git commit` / `push` / `merge` tool_use ids remembered across reads, waiting for their result. */
 const PENDING_COMMIT_IDS = 32;
 
 const LEADING_TYPE = /^\{"type":"([^"]{1,64})"/;
@@ -89,8 +92,13 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
 const INTERRUPTED = /^\[Request interrupted by user/;
 /** `/model`, `/clear`, `/exit`: a slash command with no arguments says nothing about the work. */
 const BARE_COMMAND = /^\/[\w:.-]+$/;
-const GIT_COMMIT_COMMAND = /\bgit\b[^\n]*\bcommit\b/;
+const GIT_COMMIT_COMMAND = /\bgit\b[^\n]*\b(?:commit|push|merge)\b/;
 const COMMIT_LINE = /^\[(.+?)(?: \(root-commit\))? ([0-9a-f]{7,40})\] (.+)$/gm;
+/** A ref update (`+ a...b` when forced). `git push` prints it under `To <remote>`, `git fetch` under `From <remote>`. */
+const REF_RANGE_LINE = /^\s*\+?\s*([0-9a-f]{7,40})\.\.\.?([0-9a-f]{7,40})\s+\S+\s+->\s+\S+/;
+const PUSH_HEADER = /^To \S/;
+const FETCH_HEADER = /^From \S/;
+const MERGE_RANGE_LINE = /^Updating ([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})\s*$/;
 
 export type TranscriptRecord = Record<string, unknown>;
 
@@ -129,10 +137,20 @@ export interface TranscriptDelta {
   /** `totalCostUSD` of the latest cost-state of this read (an absolute session total), or null. */
   costUsd: number | null;
   commits: SessionCommit[];
+  /** `git push` / fast-forward `git merge` ranges of this read, for ingest to expand with `git log`. */
+  commitRanges: CommitRange[];
   filesEdited: string[];
   planDocs: string[];
   /** Assistant text after the last tool_use / human prompt of this read; null when there is none. */
   finalMessage: string | null;
+}
+
+/** `from..to` from push or merge output, with the cwd of the tool result that printed it. */
+export interface CommitRange {
+  from: string;
+  to: string;
+  cwd: string | null;
+  at: string | null;
 }
 
 /** Where a read sits in its file, and the repo key resolved for it (read from byte 0 only). */
@@ -317,6 +335,21 @@ export function parseCommitLines(text: string, at: string | null): SessionCommit
   return commits;
 }
 
+/** Every push or fast-forward merge range in `text`, in order. Fetched ranges (under `From`) are not this session's. */
+export function parseCommitRanges(text: string, cwd: string | null, at: string | null): CommitRange[] {
+  const ranges: CommitRange[] = [];
+  let pushing = false;
+  for (const line of text.split('\n')) {
+    if (PUSH_HEADER.test(line)) pushing = true;
+    else if (FETCH_HEADER.test(line)) pushing = false;
+    const match = MERGE_RANGE_LINE.exec(line) ?? (pushing ? REF_RANGE_LINE.exec(line) : null);
+    const from = match?.[1];
+    const to = match?.[2];
+    if (from !== undefined && to !== undefined) ranges.push({ from, to, cwd, at });
+  }
+  return ranges;
+}
+
 export function emptyCarry(): TranscriptCarry {
   return { recentMessageIds: [], pendingCommitIds: [] };
 }
@@ -345,6 +378,7 @@ export class TranscriptAccumulator {
   private readonly models = new Map<string, TokenCounts>();
   private costUsd: number | null = null;
   private readonly commits = new Map<string, SessionCommit>();
+  private readonly commitRanges = new Map<string, CommitRange>();
   private readonly filesEdited = new Set<string>();
   private readonly planDocs = new Set<string>();
   private segment: string[] = [];
@@ -427,6 +461,7 @@ export class TranscriptAccumulator {
       models,
       costUsd: this.costUsd,
       commits: [...this.commits.values()].slice(-MAX_COMMITS),
+      commitRanges: [...this.commitRanges.values()],
       filesEdited: [...this.filesEdited],
       planDocs: [...this.planDocs],
       finalMessage: this.segment.length > 0 ? cut(this.segment.join('\n\n').trim(), MAX_FINAL_MESSAGE_CHARS) : null,
@@ -488,14 +523,15 @@ export class TranscriptAccumulator {
     for (const block of content) {
       if (!isObject(block) || block.type !== 'tool_result') continue;
       const id = typeof block.tool_use_id === 'string' ? block.tool_use_id : null;
-      this.scanCommit(id, toolResultText(block.content), record.toolUseResult, at);
+      this.scanCommit(id, toolResultText(block.content), record.toolUseResult, at, nonEmpty(record.cwd));
     }
   }
 
-  private scanCommit(id: string | null, text: string, toolUseResult: unknown, at: string | null): void {
-    if (!text.includes('] ')) return;
+  private scanCommit(id: string | null, text: string, toolUseResult: unknown, at: string | null, cwd: string | null): void {
+    if (!text.includes('] ') && !text.includes('..')) return;
     const pendingIndex = id === null ? -1 : this.pendingCommitIds.indexOf(id);
-    if (pendingIndex >= 0) {
+    const matched = pendingIndex >= 0;
+    if (matched) {
       this.pendingCommitIds.splice(pendingIndex, 1);
     } else {
       // A tool_use seen in this read that was not a `git commit`: its output is not a commit.
@@ -505,6 +541,12 @@ export class TranscriptAccumulator {
     }
     for (const commit of parseCommitLines(text, at)) {
       if (!this.commits.has(commit.sha)) this.commits.set(commit.sha, commit);
+    }
+    // Ranges only from a known git command: unmatched output is too easy to mistake.
+    if (!matched) return;
+    for (const range of parseCommitRanges(text, cwd, at)) {
+      const key = `${range.from}..${range.to}`;
+      if (!this.commitRanges.has(key)) this.commitRanges.set(key, range);
     }
   }
 

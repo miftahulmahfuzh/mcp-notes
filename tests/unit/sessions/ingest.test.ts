@@ -38,6 +38,7 @@ function start(over: Partial<SessionIngestOptions> = {}): SessionIngester {
     watch: false,
     sweepMs: 0,
     log: quiet,
+    gitLog: async () => [],
     ...over,
   });
   running.push(ingester);
@@ -198,6 +199,38 @@ describe('startSessionIngest', () => {
     expect(store.patches.at(-1)).toMatchObject({ fromOffset: offset, cwd: null, repo: null });
     expect(after?.lastActiveAt?.toISOString()).toBe('2026-10-30T09:00:00.000Z');
     expect(after?.startedAt?.toISOString()).toBe('2026-10-30T08:00:00.000Z');
+  });
+
+  it('expands a push range into its commits with git log, in the cwd that printed it', async () => {
+    const asked: unknown[] = [];
+    const ingester = start({
+      gitLog: async (range) => {
+        asked.push(range);
+        return [
+          { sha: 'abc1234', subject: 'already seen as a commit line', at: '2026-10-30T09:00:00.000Z' },
+          { sha: '81c7f3d', subject: 'fix(web): quiet commit', at: '2026-10-30T09:00:01.000Z' },
+        ];
+      },
+    });
+    await ingester.ready;
+    const base = { sessionId: FIXTURE.main, timestamp: '2026-10-30T09:00:02.000Z', cwd: '/home/u/mcp-notes' };
+    await appendFile(
+      mainPath(),
+      line({
+        ...base,
+        type: 'assistant',
+        message: { id: 'msg_push', model: 'claude-opus-5-5', role: 'assistant', content: [{ type: 'tool_use', id: 'tu_push', name: 'Bash', input: { command: 'git commit -q -m x && git push' } }] },
+      }) +
+        line({
+          ...base,
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_push', content: 'To github.com:u/mcp-notes\n   427cb61..81c7f3d  main -> main' }] },
+          toolUseResult: { stdout: '' },
+        }),
+    );
+    await ingester.sweep();
+    expect(asked).toEqual([{ from: '427cb61', to: '81c7f3d', cwd: '/home/u/mcp-notes', at: '2026-10-30T09:00:02.000Z' }]);
+    expect(store.rows.get(FIXTURE.main)?.commits.map((c) => c.sha).sort()).toEqual(['81c7f3d', 'abc1234']);
   });
 
   it('resumes from stored offsets after a restart without re-reading', async () => {

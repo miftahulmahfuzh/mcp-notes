@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { SessionsRepo } from './repo.js';
+import { createGitRangeLog, withRangeCommits, type GitRangeLog } from './gitRange.js';
 import { createRepoResolver, type RepoResolver } from './repoResolve.js';
 import {
   buildTranscriptPatch,
@@ -32,7 +33,10 @@ import {
  * - Subagents: `<dir>/<uuid>/subagents/agent-<id>.jsonl` (the Agent tool's subagents of session
  *   `<uuid>`) are tailed the same way, with their own offsets, through
  *   `SessionsRepo.upsertFromSubagentTranscript`: their tokens, models and commits count toward the
- *   parent session (a `p` commit runs in a subagent). Read only once the parent has a row of this
+ *   parent session (a `p` commit runs in a subagent).
+ * - Commits: `[branch sha] subject` lines of `git commit`, plus the commits of every `git push` /
+ *   fast-forward `git merge` range, listed with `git log` in the range's cwd (`gitRange.ts`), so a
+ *   `git commit -q` still shows once it is merged or pushed. Read only once the parent has a row of this
  *   host, so an excluded (sdk) session's subagents are never read. Observers do not see them.
  * - Excluded: project dirs ending `-data-chat` (the wall chat agent's cwd), files whose
  *   entrypoint is `sdk-ts`/`sdk-cli`, and anything else.
@@ -123,6 +127,8 @@ export interface SessionIngestOptions {
   hostname?: () => string;
   /** Default `createRepoResolver({ homeDir, worktreesDir })`. */
   resolver?: RepoResolver;
+  /** Expands push / merge ranges into commits. Default `createGitRangeLog()` (`git log` in the range's cwd). */
+  gitLog?: GitRangeLog;
   /** Watch the project dirs with chokidar. Default true. Tests that drive `sweep()` turn it off. */
   watch?: boolean;
   /** Default DEFAULT_SWEEP_MS. 0 disables the periodic sweep (the backfill still runs). */
@@ -274,6 +280,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const homeDir = options.homeDir ?? os.homedir();
   const host = (options.hostname ?? os.hostname)();
   const resolver = options.resolver ?? createRepoResolver({ homeDir, worktreesDir: options.worktreesDir });
+  const gitLog = options.gitLog ?? createGitRangeLog();
   const log = options.log ?? ((line: string) => console.log(line));
   const concurrency = options.concurrency ?? DEFAULT_INGEST_CONCURRENCY;
   const debounceMs = options.debounceMs ?? DEFAULT_WATCH_DEBOUNCE_MS;
@@ -386,7 +393,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
         lastActiveAt: delta.lastAt,
         tokens: delta.tokens,
         models: delta.models,
-        commits: delta.commits,
+        commits: await withRangeCommits(delta.commits, delta.commitRanges, gitLog),
       });
       if (result.applied) {
         subOffsets.set(file, read.endOffset);
@@ -456,9 +463,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
         }
         repo = await resolver.resolve(delta.cwd, path.basename(path.dirname(file)));
       }
-      const result = await options.store.upsertFromTranscript(
-        buildTranscriptPatch(delta, { host, transcriptPath: file, fromOffset, toOffset: read.endOffset, size: read.size, repo }),
-      );
+      const patch = buildTranscriptPatch(delta, { host, transcriptPath: file, fromOffset, toOffset: read.endOffset, size: read.size, repo });
+      patch.commits = await withRangeCommits(delta.commits, delta.commitRanges, gitLog);
+      const result = await options.store.upsertFromTranscript(patch);
       if (result.applied) {
         offsets.set(sessionId, read.endOffset);
         carries.set(sessionId, acc.carry());

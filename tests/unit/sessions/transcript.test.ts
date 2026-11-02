@@ -6,6 +6,7 @@ import {
   accumulateText,
   buildTranscriptPatch,
   parseCommitLines,
+  parseCommitRanges,
   parseRecord,
   readJsonlFrom,
   TranscriptAccumulator,
@@ -128,6 +129,33 @@ describe('TranscriptAccumulator on the fixture', () => {
       toolUseResult: { stdout: '...' },
     });
     expect(next.delta().commits).toEqual([{ sha: '1a2b3c4d', subject: 'first commit', at: '2026-11-02T00:00:02Z' }]);
+  });
+
+  it('keeps push and fast-forward merge ranges of a git command, not fetched ones or other output', () => {
+    const run = (id: string, command: string, output: string): string =>
+      [
+        assistant(`m_${id}`, {}, { type: 'tool_use', id, name: 'Bash', input: { command } }),
+        user('', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] }, toolUseResult: { stdout: output } }),
+      ].join('\n');
+    const d = accumulateText(
+      's',
+      [
+        run('t1', 'git commit -q -F - && git push origin main', 'To github.com:u/r\n   427cb61..81c7f3d  main -> main'),
+        run('t2', 'git fetch && git merge --ff-only origin/main', 'From github.com:u/r\n   1111111..2222222  main -> origin/main\nUpdating 3333333..4444444\nFast-forward'),
+        run('t3', 'cat notes.txt', 'To github.com:u/r\n   5555555..6666666  main -> main'),
+        run('t4', 'git push -f', 'To github.com:u/r\n + 7777777...8888888 feat -> feat (forced update)'),
+      ].join('\n'),
+    ).delta();
+    expect(d.commits).toEqual([]);
+    expect(d.commitRanges.map((r) => `${r.from}..${r.to}`)).toEqual(['427cb61..81c7f3d', '3333333..4444444', '7777777..8888888']);
+    expect(d.commitRanges[0]).toMatchObject({ cwd: '/c', at: '2026-11-02T00:00:00Z' });
+  });
+
+  it('parses a push range only under its To header', () => {
+    expect(parseCommitRanges('   aaaaaaa..bbbbbbb  main -> main', null, null)).toEqual([]);
+    expect(parseCommitRanges('To x\n   aaaaaaa..bbbbbbb  main -> main\n * [new branch]      f -> f', '/r', null)).toEqual([
+      { from: 'aaaaaaa', to: 'bbbbbbb', cwd: '/r', at: null },
+    ]);
   });
 
   it('ignores sidechain records and resets the final message on a tool_use', () => {
