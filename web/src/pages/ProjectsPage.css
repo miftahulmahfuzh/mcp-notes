@@ -1,5 +1,9 @@
 .proj { padding-top: 10px; }
-.proj-bar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 44px; }
+/* The bar floats at the top right while the page scrolls (a long project chat); only its buttons
+   take clicks and get the page background, so text scrolling under the empty part stays readable. */
+.proj-bar { position: sticky; top: 0; z-index: 42; display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 44px; pointer-events: none; }
+.proj-bar > * { pointer-events: auto; }
+.proj-bar :is(.ibtn, .project-view-toggle):not(:hover):not(.on) { background: var(--bg); }
 .proj-tools { display: flex; gap: 4px; }
 .proj-tools .ibtn, .proj-focus.ibtn { font-size: 19px; }
 .proj-tools .ibtn:disabled { opacity: .35; cursor: default; }

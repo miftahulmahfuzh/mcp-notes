@@ -154,6 +154,18 @@ export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO, seedI
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Bubbles keep growing after the first render (pictures load, the list column settles): stay at
+  // the bottom while pinned, so the page opens with the composer at the bottom and the last bubble above it.
+  useEffect(() => {
+    const list = listRef.current;
+    if (list === null || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (ready.current && focus.current.done && stick.current) scrollToBottom();
+    });
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, []);
+
   // A new ?thread= target (declared before the scroll effect so it is in place when that runs).
   useLayoutEffect(() => {
     focus.current = { thread: focusThread, tries: 0, done: focusThread === null };

@@ -1,13 +1,17 @@
 /* Chat history page (phase 9). The wall's dark mono language: hairlines, Geist Mono meta, no
    shadows. Bubbles are the one rounded thing, echoing the chat pill. Chat uploads carry no film tone
-   (the lightbox shows them untoned too). The page scrolls with the window like the wall; .main's
-   150px bottom padding keeps the last bubble above the pill. */
-.history { max-width: 760px; margin: 0 auto; padding-top: 30px; }
+   (the lightbox shows them untoned too). The page scrolls with the window like the wall. It fills
+   the window from the header down, without the wall's 150px bottom padding: scrolled to the end, the
+   composer rests 16px off the bottom with the last bubble right above it, and a short history sits
+   at the bottom too. The project chat (inside .proj) passes the column height down the same way. */
+.main:has(.history) { display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box; padding-bottom: 0; }
+.main:has(.history) > .proj, .project-chat-history, .history { flex: 1 0 auto; display: flex; flex-direction: column; }
+.history { width: 100%; max-width: 760px; margin: 0 auto; padding-top: 30px; }
 .hist-older { display: block; margin: 0 auto 18px; border: 1px solid var(--line-25); background: transparent; color: var(--fg); font-family: var(--mono); font-size: 10.5px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
 .hist-older:hover:not(:disabled) { background: var(--fg); color: var(--bg); }
 .hist-older:disabled { opacity: .5; cursor: default; }
 .hist-note { margin: 30px 0 0; font-family: var(--mono); font-size: 11px; color: var(--dim); text-align: center; }
-.hist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.hist-list { flex: 1 0 auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
 .hist-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
 .hist-divider::before, .hist-divider::after { content: ""; flex: 1; height: 1px; background: var(--line-12); }
 
@@ -37,8 +41,8 @@
 
 /* The page composer: Phase 3's ChatBar with variant="page" (class .chatbar-page, no inline left,
    does not publish --chatbar-h). It sticks to the bottom of the column instead of the wall's
-   fixed pill; .main's 150px bottom padding leaves room under the last bubble. */
-.hist-composer { position: sticky; bottom: 16px; margin-top: 24px; z-index: 41; }
+   fixed pill; its 16px bottom margin matches the sticky offset, so it never jumps at the end. */
+.hist-composer { position: sticky; bottom: 16px; margin: 24px 0 16px; z-index: 41; }
 .chatbar.chatbar-page { position: relative; left: auto; right: auto; bottom: auto; width: 100%; }
 /* `img:ID` / `upload:ID` written in a message: a quiet mono token that opens the picture. */
 .img-token { font: inherit; font-family: var(--mono); font-size: 0.92em; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line-25); background: transparent; color: var(--chip); cursor: zoom-in; }
