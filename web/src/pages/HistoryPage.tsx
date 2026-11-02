@@ -37,6 +37,8 @@ export interface HistoryPageProps {
    * by id, never uploaded. `nonce` makes attaching the same image twice a second event.
    */
   seedImage?: { imageId: string; nonce: number } | null;
+  /** The composer's placeholder (phase 12's project chat names the repo). Default: ChatBar's. */
+  placeholder?: string;
 }
 
 const NO_UNDO = (): void => {};
@@ -52,12 +54,14 @@ function HistoryComposer({
   replyTo,
   onCancelReply,
   seedImage = null,
+  placeholder,
 }: {
   store: HistoryStore;
   seedImage?: { imageId: string; nonce: number } | null;
   /** Phase 10: the bubble being replied to (the chip above the bar), or null. */
   replyTo: ChatMessage | null;
   onCancelReply: () => void;
+  placeholder?: string;
 }) {
   const images = useChatImages();
   const [draft, setDraft] = useState('');
@@ -99,6 +103,7 @@ function HistoryComposer({
         onPasteFiles={images.add}
         onRemoveImage={images.remove}
         sendBlocked={images.blocked}
+        placeholder={placeholder}
       />
     </div>
   );
@@ -124,7 +129,7 @@ const scrollToBottom = (): void => {
   window.scrollTo(0, document.documentElement.scrollHeight);
 };
 
-export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO, seedImage = null }: HistoryPageProps) {
+export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO, seedImage = null, placeholder }: HistoryPageProps) {
   const { items, loaded, error, hasMore, loadingOlder, loadOlder } = store;
   const ha = useHistoryActions({ history: store, pushUndo });
   // Deleted server rows are loaded (App fetches include_deleted=1) and shown only with "Show deleted".
@@ -233,7 +238,7 @@ export function HistoryPage({ store, focusThread, now, pushUndo = NO_UNDO, seedI
           );
         })}
       </ol>
-      <HistoryComposer store={store} replyTo={ha.replyTo} onCancelReply={ha.cancelReply} seedImage={seedImage} />
+      <HistoryComposer store={store} replyTo={ha.replyTo} onCancelReply={ha.cancelReply} seedImage={seedImage} placeholder={placeholder} />
       {box && (
         <Lightbox
           items={box.items}

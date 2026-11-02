@@ -51,6 +51,8 @@ export interface InsertThread {
   source: ChatSource;
   brain: string | null;
   externalKey: string | null;
+  /** Repo key of a project-scoped thread (phase 12). Absent or null: not a project thread. */
+  project?: string | null;
   createdAt: Date;
 }
 
@@ -63,6 +65,7 @@ export async function insertThread(ex: Executor, values: InsertThread): Promise<
       source: values.source,
       brain: values.brain,
       externalKey: values.externalKey,
+      project: values.project ?? null,
       createdAt: values.createdAt,
       updatedAt: values.createdAt,
     })
@@ -172,13 +175,18 @@ export interface TimelineRow {
   cursorTs: string;
 }
 
-/** Newest first, strictly older than `before` when given. */
+/** Newest first, strictly older than `before` when given; only threads of `project` when given (phase 12). */
 export async function listTimelineRows(
   ex: Executor,
-  options: { before: TimelineCursor | null; limit: number; includeDeleted: boolean },
+  options: { before: TimelineCursor | null; limit: number; includeDeleted: boolean; project?: string | null },
 ): Promise<TimelineRow[]> {
   const conds: SQL[] = [];
   if (!options.includeDeleted) conds.push(isNull(chatMessages.deletedAt));
+  if (options.project !== undefined && options.project !== null) {
+    conds.push(
+      sql`${chatMessages.threadId} in (select ${chatThreads.id} from ${chatThreads} where ${chatThreads.project} = ${options.project})`,
+    );
+  }
   if (options.before !== null) {
     conds.push(
       sql`(${chatMessages.createdAt}, ${chatMessages.seq}) < (${options.before.ts}::timestamptz, ${options.before.seq}::bigint)`,

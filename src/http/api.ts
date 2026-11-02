@@ -5,6 +5,7 @@ import type { ChatBackend, ChatBrain, ChatTurnImage } from '../chat/backend.js';
 import { CitationFilter } from '../chat/citation.js';
 import type { ChatChange } from '../chat/events.js';
 import { normalizeMessageId } from '../chat/ids.js';
+import { projectKeySchema } from '../chat/project.js';
 import {
   ChatImageLookupError,
   chatImageStoreFor,
@@ -57,6 +58,8 @@ const chatSchema = z
     image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).default([]),
     /** Ids of pictures that already live in notes ("chat about this image"): referenced, never copied. */
     note_image_ids: z.array(z.string().trim().min(1).max(16)).max(MAX_CHAT_IMAGES_PER_MESSAGE).default([]),
+    /** Repo key from the Projects page (phase 12). Absent: wall chat. A thread never changes project. */
+    project: projectKeySchema.optional(),
   })
   .refine((body) => body.message.length > 0 || body.image_ids.length > 0 || body.note_image_ids.length > 0, {
     message: 'a message or at least one image is required',
@@ -306,14 +309,15 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
    * `event: accepted` -> rebuild context from our rows -> stream (a leading `[msg:ID]` is held back
    * and stripped) -> on a clean finish only, write the assistant row -> `event: done`. A client
    * abort persists nothing for the answer. An unknown thread_id (e.g. an Agent SDK session id from
-   * before phase 7) starts a new thread.
+   * before phase 7) starts a new thread. A `project` (repo key) scopes the thread to that project
+   * and puts a <project> block first in the prompt (phase 12).
    */
   api.post('/api/chat', async (c) => {
     const json = await readJson(c);
     if (!json.ok) return badRequest(c, 'invalid_json');
     const parsed = chatSchema.safeParse(json.value);
     if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
-    const { message, thread_id, reply_to, image_ids, note_image_ids } = parsed.data;
+    const { message, thread_id, reply_to, image_ids, note_image_ids, project } = parsed.data;
 
     let replyTo: string | null = null;
     if (reply_to !== undefined) {
@@ -349,6 +353,7 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
           ...currentNoteImages.map((image) => ({ kind: 'note_image' as const, id: image.id })),
         ],
         replyTo,
+        project: project ?? null,
       });
     } catch (err) {
       return chatErrorResponse(c, err);

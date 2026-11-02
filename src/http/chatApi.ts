@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { projectKeySchema } from '../chat/project.js';
 import { DEFAULT_TIMELINE_LIMIT, MAX_TIMELINE_LIMIT } from '../chat/service.js';
 import { ChatError } from '../chat/types.js';
 import type { AppDeps } from '../deps.js';
@@ -46,6 +47,8 @@ const timelineQuery = z.object({
   before: z.string().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_TIMELINE_LIMIT).default(DEFAULT_TIMELINE_LIMIT),
   include_deleted: flag,
+  /** Phase 12: only threads of this project. Absent: every thread (the unified timeline, unchanged). */
+  project: projectKeySchema.optional(),
 });
 
 const editBody = z.object({ text: z.string() });
@@ -58,12 +61,16 @@ export function chatHistoryRoutes(deps: AppDeps): Hono {
   const api = new Hono();
   const chat = deps.chat;
 
-  /** The unified timeline: `{messages (ascending), next_before}`; follow next_before for older pages. */
+  /**
+   * The unified timeline: `{messages (ascending), next_before}`; follow next_before for older pages.
+   * `?project=<repo>` keeps only that project's threads (phase 12's project chat history).
+   */
   api.get('/api/chat/messages', async (c) => {
     const parsed = timelineQuery.safeParse({
       before: c.req.query('before'),
       limit: c.req.query('limit'),
       include_deleted: c.req.query('include_deleted'),
+      project: c.req.query('project'),
     });
     if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
     try {
@@ -72,6 +79,7 @@ export function chatHistoryRoutes(deps: AppDeps): Hono {
           before: parsed.data.before ?? null,
           limit: parsed.data.limit,
           includeDeleted: parsed.data.include_deleted,
+          project: parsed.data.project ?? null,
         }),
       );
     } catch (err) {

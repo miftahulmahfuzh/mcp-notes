@@ -1,0 +1,19 @@
+/* The orch "unfinished" badge (phase 13). Uses the wall's tokens; amber is the one accent,
+   so a finished graph stays monochrome and an open set is visible from across the page. */
+.gnode-unfinished { pointer-events: auto; }
+.gnode-unfinished-bg { fill: rgba(232, 176, 74, .16); stroke: rgba(232, 176, 74, .55); stroke-width: 1; }
+.gnode-unfinished svg { color: #e8b04a; }
+.gnode-unfinished-text { fill: #e8b04a; font: 500 9px/1 var(--mono); letter-spacing: .02em; }
+
+.unfinished-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid rgba(232, 176, 74, .55);
+  border-radius: 999px;
+  background: rgba(232, 176, 74, .12);
+  color: #e8b04a;
+  font: 500 11px/1.4 var(--mono);
+  white-space: nowrap;
+}

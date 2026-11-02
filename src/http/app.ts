@@ -5,6 +5,8 @@ import { dbChatUploadSource } from '../embeddings/chatUploads.js';
 import { wallUrlForPort } from '../mcp/instructions.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
+import { sessionsReadDeps, type SessionsReadOverrides } from '../sessions/readModel.js';
+import type { SessionResumer } from '../sessions/resume.js';
 import { apiRoutes } from './api.js';
 import { chatHistoryRoutes } from './chatApi.js';
 import { chatImageRoutes } from './chatImages.js';
@@ -13,6 +15,10 @@ import { captureRoutes } from './capture.js';
 import { imageRoutes } from './images.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
+import { sessionHookRoutes } from './sessionHooks.js';
+import { defaultSessionResumer, sessionResumeRoutes } from './sessionResume.js';
+import { sessionsApiRoutes } from './sessionsApi.js';
+import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
 
 /**
@@ -36,14 +42,26 @@ export interface CreateAppOptions {
   chat?: ChatBackend;
   /** OS hooks behind /api/capabilities and the reveal route. Omitted: the real WSL detection and spawn. */
   reveal?: RevealDeps;
+  /** Session read model seams (host, live registry, settings, search) for /api/projects*, /api/sessions/* and the MCP session tools. Omitted: the real ones. */
+  sessions?: SessionsReadOverrides;
+  /** Resume/spawn into tmux, shared by POST /api/sessions/:nodeId/resume and the session_resume tool. Omitted: the real one. */
+  sessionResume?: SessionResumer;
+  /** The orch "unfinished" check behind the sessions read API. Omitted: swarm.py from config. */
+  unfinished?: UnfinishedChecker;
 }
 
 /**
  * What POST /mcp hands the MCP server. `wallUrl` comes from `Config.port` (`NOTESD_PORT`), so the
  * instructions' Links paragraph names the port this daemon is configured for. Port 0 (tests: "any
  * free port", only known after listen) leaves it unset and the instructions fall back to 7317.
+ * `sessions` is always set (building it does no I/O); `sessionOverrides` are test seams.
+ * `extra.sessionResume` is passed in by createApp (shared with the resume route); mcpToolDeps never builds one.
  */
-export function mcpToolDeps(deps: AppDeps): ToolDeps {
+export function mcpToolDeps(
+  deps: AppDeps,
+  sessionOverrides?: SessionsReadOverrides,
+  extra: { sessionResume?: SessionResumer } = {},
+): ToolDeps {
   const wallUrl = wallUrlForPort(deps.config.port);
   return {
     service: deps.service,
@@ -51,7 +69,9 @@ export function mcpToolDeps(deps: AppDeps): ToolDeps {
     db: deps.db,
     imageEmbedder: deps.imageEmbedder ?? null,
     chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
+    sessions: sessionsReadDeps(deps, sessionOverrides),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
+    ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };
 }
 
@@ -60,12 +80,16 @@ export function mcpToolDeps(deps: AppDeps): ToolDeps {
  * /health, /mcp, apiRoutes (P6), chatHistoryRoutes (chat history phase 7), imageRoutes (P5),
  * chatImageRoutes (pasted chat images), fileRoutes (note files), revealRoutes (iteration 7:
  * capabilities + reveal; note files add file and note reveal), captureRoutes (Claude Code `/n`
- * capture, loopback + X-Notes-Capture only), staticRoutes (P6, last: it owns the SPA fallback; it
+ * capture, loopback + X-Notes-Capture only), sessionHookRoutes (iteration 8 phase 5: SessionStart
+ * and spawn hooks), sessionsApiRoutes (iteration 8 phase 7: projects, session graph, detail,
+ * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
+ * resume/spawn into tmux, own Origin only), staticRoutes (P6, last: it owns the SPA fallback; it
  * reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
-  const toolDeps = mcpToolDeps(deps);
+  const sessionResume = options.sessionResume ?? defaultSessionResumer(deps);
+  const toolDeps = mcpToolDeps(deps, options.sessions, { sessionResume });
 
   app.get('/health', (c) => c.json({ ok: true, service: 'notesd' }));
 
@@ -83,6 +107,9 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', fileRoutes(deps));
   app.route('/', revealRoutes(deps, { reveal: options.reveal }));
   app.route('/', captureRoutes(deps));
+  app.route('/', sessionHookRoutes(deps));
+  app.route('/', sessionsApiRoutes(deps, { ...options.sessions, unfinished: options.unfinished }));
+  app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', staticRoutes(deps));
   return app;
 }

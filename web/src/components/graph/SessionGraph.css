@@ -1,0 +1,36 @@
+/* Session graph (project-session-graph phase 10): monochrome on the wall's dark ground, mono ids. */
+.graph-scroll { position: relative; height: max(360px, calc(100vh - 196px)); overflow: auto; overscroll-behavior: contain; }
+.graph-svg { display: block; font-family: var(--sans); }
+
+.gtrunk { stroke: var(--fg); stroke-width: 6; stroke-linecap: round; opacity: .85; }
+.gedge { fill: none; stroke: var(--line-25); stroke-width: 2; }
+.gedge.heur { stroke-dasharray: 3 4; }
+
+.gnode { cursor: pointer; outline: none; }
+.gnode-hit { fill: transparent; }
+.gnode:hover .gnode-hit, .gnode:focus-visible .gnode-hit { fill: var(--hover); }
+.gnode.sel .gnode-hit { fill: var(--chip-bg); }
+.gnode-dayrule { stroke: var(--line); }
+.gnode-day { fill: var(--fg); font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; }
+.gnode-time { fill: var(--dim); font-family: var(--mono); font-size: 10.5px; }
+
+.gnode-dot { fill: var(--fg); stroke: var(--bg); stroke-width: 2; }
+.gnode.root .gnode-dot { stroke-width: 2.5; }
+.gnode.remote .gnode-dot { fill: var(--bg); stroke: var(--id); stroke-width: 1.5; }
+.gnode.sel .gnode-dot { fill: var(--bg); stroke: var(--fg); stroke-width: 3; }
+.gnode-halo { fill: none; stroke: var(--fg); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: gpulse 1.6s ease-out infinite; pointer-events: none; }
+@keyframes gpulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.9); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .gnode-halo { animation: none; opacity: .6; } }
+
+.gnode-id { fill: var(--id); font-family: var(--mono); font-size: 12px; letter-spacing: .02em; }
+.gnode.sel .gnode-id { fill: var(--fg); }
+.gnode-title { fill: var(--text); font-size: 13px; }
+.gnode.remote .gnode-title { fill: var(--dim); }
+.gnode-remote text { fill: var(--dim); font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; }
+
+.gchip { cursor: pointer; outline: none; }
+.gchip rect { fill: var(--chip-bg); stroke: var(--line-14); }
+.gchip text { fill: var(--chip); font-family: var(--mono); font-size: 11px; }
+.gchip.open rect { fill: transparent; }
+.gchip:hover rect, .gchip:focus-visible rect { fill: var(--fg); }
+.gchip:hover text, .gchip:focus-visible text { fill: var(--bg); }

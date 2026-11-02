@@ -1,11 +1,14 @@
 import { sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
+  bigint,
   bigserial,
   check,
+  customType,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -26,9 +29,12 @@ import {
  * 'none'); migration 0005 (image similarity search) adds `note_image_embeddings`. Migration 0006
  * (chat history) adds `chat_threads`, `chat_messages`, `chat_message_revisions` and
  * `chat_message_attachments`: our own record of every wall chat turn and every captured Claude
- * Code `/n` exchange (src/chat/service.ts is the only writer). Change a table
- * here, then `npm run db:generate`; never edit an applied migration. drizzle-kit does not emit
- * `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
+ * Code `/n` exchange (src/chat/service.ts is the only writer).
+ * Migration 0007 (project session graph) adds `cc_sessions`, `cc_session_embeddings`,
+ * `cc_pending_spawns` and `app_settings`, and `chat_threads.project`; src/sessions/repo.ts is the
+ * only writer of the three `cc_*` tables and of `app_settings`.
+ * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
+ * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
 
 /** `notes.image_meta`. Written by the image ingest (iteration 2). */
@@ -346,6 +352,11 @@ export const chatThreads = pgTable(
     brain: text('brain'),
     /** Idempotency key for captured exchanges (phase 8). Null for wall threads. */
     externalKey: text('external_key'),
+    /**
+     * Repo key (`cc_sessions.repo`, e.g. `mcp-notes`) of the project page the thread was started
+     * from (migration 0007). Null for wall and captured threads.
+     */
+    project: text('project'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     /** Bumped (never lowered) by every message written to the thread. */
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -353,6 +364,7 @@ export const chatThreads = pgTable(
   (t) => [
     uniqueIndex('chat_threads_external_key_uniq').on(t.externalKey),
     index('chat_threads_updated_at_idx').on(t.updatedAt),
+    index('chat_threads_project_updated_idx').on(t.project, t.updatedAt),
     check('chat_threads_source_check', sql`${t.source} in ('wall', 'claude_code')`),
   ],
 )
@@ -430,6 +442,177 @@ export const chatMessageAttachments = pgTable(
   ],
 )
 
+/** How a session's parent link was learned, best first. src/sessions/repo.ts enforces the order. */
+export const PARENT_LINK_SOURCES = ['env', 'hook', 'heuristic'] as const
+export type ParentLinkSource = (typeof PARENT_LINK_SOURCES)[number]
+
+/** One human prompt of a Claude Code session (`cc_sessions.prompts`). `at` is the record's ISO timestamp. */
+export interface SessionPrompt {
+  text: string
+  at: string | null
+}
+
+/** One commit a session made (`cc_sessions.commits`). */
+export interface SessionCommit {
+  sha: string
+  subject: string
+  at: string | null
+}
+
+/** Token totals of one model within a session (`cc_sessions.models[<model>]`). */
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+/** Postgres `tsvector`; only ever written by a generated column, never selected by the app. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector'
+  },
+})
+
+/**
+ * One row per Claude Code session (migration 0007), keyed by Claude Code's session UUID. Written
+ * only by src/sessions/repo.ts: the transcript ingester fills most columns, the SessionStart hook
+ * fills `name`/`tmux`/parent early, the summarizer fills `summary*`. `node_id` (`A0-3G`, see
+ * src/sessions/ids.ts) is assigned on first insert and never changes. `host` is the machine that
+ * holds the transcript (`os.hostname()`); transcript reads and resume work only there.
+ * `parent_session_id` has no foreign key: the parent may not be ingested yet.
+ * `transcript_offset` is the byte offset just after the last complete JSONL line consumed.
+ */
+export const ccSessions = pgTable(
+  'cc_sessions',
+  {
+    sessionId: text('session_id').primaryKey(),
+    nodeId: text('node_id').notNull(),
+    host: text('host').notNull(),
+    /** Resolved repo key, e.g. `mcp-notes` (worktree sessions map to their repo). */
+    repo: text('repo'),
+    cwd: text('cwd'),
+    branch: text('branch'),
+    /** `agent-name` record or the hook-reported name, e.g. `impl-project-session-graph-p3`. */
+    name: text('name'),
+    customTitle: text('custom_title'),
+    aiTitle: text('ai_title'),
+    firstPrompt: text('first_prompt'),
+    lastPrompt: text('last_prompt'),
+    /** `cli` for terminal sessions; `sdk-ts` / `sdk-cli` are never ingested. */
+    entrypoint: text('entrypoint'),
+    version: text('version'),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true, mode: 'date' }),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    /** Latest `cost-state.totalCostUSD` seen (an absolute total, not a sum of deltas). */
+    costUsd: numeric('cost_usd', { mode: 'number' }),
+    models: jsonb('models').$type<Record<string, ModelUsage>>().notNull().default(sql`'{}'::jsonb`),
+    parentSessionId: text('parent_session_id'),
+    parentLinkSource: text('parent_link_source').$type<ParentLinkSource>(),
+    /** tmux target reported by the live registry / SessionStart hook, e.g. `note:@0.%7`. */
+    tmux: text('tmux'),
+    transcriptPath: text('transcript_path'),
+    transcriptOffset: bigint('transcript_offset', { mode: 'number' }).notNull().default(0),
+    transcriptSize: bigint('transcript_size', { mode: 'number' }),
+    /** Human prompts, oldest first, capped (src/sessions/types.ts MAX_PROMPTS / MAX_PROMPT_CHARS). */
+    prompts: jsonb('prompts').$type<SessionPrompt[]>().notNull().default(sql`'[]'::jsonb`),
+    commits: jsonb('commits').$type<SessionCommit[]>().notNull().default(sql`'[]'::jsonb`),
+    filesEdited: jsonb('files_edited').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    planDocs: jsonb('plan_docs').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    finalMessage: text('final_message'),
+    summary: text('summary'),
+    /** Opaque hash of the summarizer input the summary came from (Phase 6 decides what it hashes). */
+    summarySha: text('summary_sha'),
+    summarizedAt: timestamp('summarized_at', { withTimezone: true, mode: 'date' }),
+    /** Full text (`simple`) over ids, names, titles, prompts and summary. Never selected by the app. */
+    searchTsv: tsvector('search_tsv').generatedAlwaysAs(
+      sql`to_tsvector('simple', coalesce("node_id", '') || ' ' || coalesce("repo", '') || ' ' || coalesce("name", '') || ' ' || coalesce("custom_title", '') || ' ' || coalesce("ai_title", '') || ' ' || coalesce("first_prompt", '') || ' ' || coalesce("last_prompt", '') || ' ' || coalesce(jsonb_path_query_array("prompts", '$[*].text')::text, '') || ' ' || coalesce("summary", ''))`,
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('cc_sessions_node_id_uniq').on(t.nodeId),
+    index('cc_sessions_repo_started_idx').on(t.repo, t.startedAt.desc()),
+    index('cc_sessions_parent_idx').on(t.parentSessionId),
+    index('cc_sessions_host_idx').on(t.host),
+    index('cc_sessions_name_idx').on(t.name),
+    index('cc_sessions_last_active_idx').on(t.lastActiveAt),
+    index('cc_sessions_search_gin').using('gin', t.searchTsv),
+    check('cc_sessions_node_id_check', sql`${t.nodeId} ~ '^[0-9A-Z]{2}-[0-9A-Z]{2}$'`),
+    check('cc_sessions_parent_link_source_check', sql`${t.parentLinkSource} in ('env', 'hook', 'heuristic')`),
+    check('cc_sessions_parent_pair_check', sql`(${t.parentSessionId} is null) = (${t.parentLinkSource} is null)`),
+  ],
+)
+
+/**
+ * One row per session that has (or had) a summary to embed (migration 0007). Mirrors
+ * `note_embeddings`: the vector is current iff `embedding is not null`, `sha` equals the hash
+ * Phase 6 computes from the session's current summary, and `model` equals EMBEDDING_MODEL.
+ * Width = EMBEDDING_DIMENSIONS (a unit test asserts it).
+ */
+export const ccSessionEmbeddings = pgTable(
+  'cc_session_embeddings',
+  {
+    sessionId: text('session_id')
+      .primaryKey()
+      .references(() => ccSessions.sessionId, { onDelete: 'cascade' }),
+    /** Null while the latest attempt for `sha` failed. */
+    embedding: vector('embedding', { dimensions: 1536 }),
+    sha: text('sha').notNull(),
+    model: text('model').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    /** At most 500 chars, keys redacted (src/embeddings/state.ts `clampError`). */
+    lastError: text('last_error'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' }),
+    embeddedAt: timestamp('embedded_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('cc_session_embeddings_embedding_hnsw_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+    index('cc_session_embeddings_next_attempt_idx').on(t.nextAttemptAt),
+  ],
+)
+
+/**
+ * A `claude` launch inside tmux seen by the Bash PreToolUse hook (migration 0007): the parent is
+ * the session that ran the command. The child's SessionStart claims it within
+ * PENDING_SPAWN_WINDOW_MS by host + cwd (+ name). `cwd` is stored without trailing slashes.
+ */
+export const ccPendingSpawns = pgTable(
+  'cc_pending_spawns',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    parentSessionId: text('parent_session_id').notNull(),
+    cwd: text('cwd').notNull(),
+    name: text('name'),
+    host: text('host').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Session id of the child that claimed this spawn. */
+    claimedBy: text('claimed_by'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    index('cc_pending_spawns_open_idx').on(t.host, t.cwd, t.createdAt).where(sql`${t.claimedBy} is null`),
+    index('cc_pending_spawns_created_idx').on(t.createdAt),
+  ],
+)
+
+/**
+ * Small key/value settings shared by both machines (migration 0007), e.g. `projects.selected`
+ * (src/sessions/types.ts SELECTED_PROJECT_KEY). Written only through src/sessions/repo.ts.
+ */
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').$type<unknown>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+})
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -445,3 +628,8 @@ export type ChatThreadRow = typeof chatThreads.$inferSelect
 export type ChatMessageRow = typeof chatMessages.$inferSelect
 export type ChatMessageRevisionRow = typeof chatMessageRevisions.$inferSelect
 export type ChatMessageAttachmentRow = typeof chatMessageAttachments.$inferSelect
+export type CcSessionRow = typeof ccSessions.$inferSelect
+export type NewCcSessionRow = typeof ccSessions.$inferInsert
+export type CcSessionEmbeddingRow = typeof ccSessionEmbeddings.$inferSelect
+export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
+export type AppSettingRow = typeof appSettings.$inferSelect

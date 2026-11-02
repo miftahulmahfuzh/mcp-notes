@@ -1,0 +1,9 @@
+/* Phase 12: the project's chat. The pill is ChatBar's page variant (the wall's dark pill), pinned to
+   the bottom of the Projects column instead of the wall's fixed position; it publishes no
+   --chatbar-h. The toggle is a hairline circle like the rest of the wall's icon buttons. */
+.project-pill-query-input { position: sticky; bottom: 16px; z-index: 41; max-width: 760px; margin: 24px auto 0; }
+.project-pill-query-input .chatbar.chatbar-page { position: relative; left: auto; right: auto; bottom: auto; width: 100%; }
+.project-chat-history { min-width: 0; }
+.project-view-toggle { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 1px solid var(--line-25); border-radius: 999px; background: transparent; color: var(--fg); font-size: 17px; cursor: pointer; }
+.project-view-toggle:hover { background: var(--fg); color: var(--bg); }
+.project-view-toggle:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }

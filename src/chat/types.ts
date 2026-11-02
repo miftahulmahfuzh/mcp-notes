@@ -41,6 +41,8 @@ export interface ChatThreadView {
   id: string;
   source: ChatSource;
   brain: string | null;
+  /** Repo key of a thread started from the Projects page (phase 12); null for wall chat and captures. */
+  project: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +104,7 @@ export function toThreadView(row: ChatThreadRow): ChatThreadView {
     id: row.id,
     source: row.source,
     brain: row.brain,
+    project: row.project ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

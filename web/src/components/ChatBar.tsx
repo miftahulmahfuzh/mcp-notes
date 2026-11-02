@@ -46,7 +46,11 @@ export interface ChatBarProps {
   sendBlocked?: boolean;
   /** 'wall' (default): the fixed pill that publishes --chatbar-h. 'page': laid out by its parent. */
   variant?: 'wall' | 'page';
+  /** Placeholder and accessible name of the textarea. Default 'Ask about your notes'. */
+  placeholder?: string;
 }
+
+export const CHAT_PLACEHOLDER = 'Ask about your notes';
 
 const NO_IMAGES: readonly ChatBarImage[] = [];
 
@@ -60,6 +64,7 @@ export function ChatBar({
   onRemoveImage,
   sendBlocked = false,
   variant = 'wall',
+  placeholder = CHAT_PLACEHOLDER,
 }: ChatBarProps) {
   const ta = useRef<HTMLTextAreaElement>(null);
   // Read by the stable `fit` so the resize listener is never re-subscribed (its cleanup clears --chatbar-h).
@@ -162,8 +167,8 @@ export function ChatBar({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder="Ask about your notes"
-          aria-label="Ask about your notes"
+          placeholder={placeholder}
+          aria-label={placeholder}
         />
       </div>
       <button type="submit" className="sendbtn" data-tip="Send" aria-label="Send" disabled={sendBlocked}>

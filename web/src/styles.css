@@ -64,6 +64,12 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .tagrow.on { background: var(--fg); color: var(--bg); }
 .tagrow:not(.on):hover { background: var(--hover); }
 .tagrow .n { font-family: var(--mono); font-size: 11px; opacity: .7; }
+.side-repos { display: flex; flex-direction: column; gap: 2px; }
+.side-note { font-family: var(--mono); font-size: 11px; color: var(--dim); padding: 7px 10px; letter-spacing: .03em; }
+.repo-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-live { width: 6px; height: 6px; border-radius: 999px; background: currentColor; flex: none; animation: repo-pulse 1.6s ease-in-out infinite; }
+@keyframes repo-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .repo-live { animation: none; } }
 
 /* main + header */
 .main { padding: 0 20px 150px; transition: margin-left .2s; }

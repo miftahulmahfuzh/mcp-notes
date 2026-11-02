@@ -1,22 +1,31 @@
 #!/usr/bin/env node
 /**
- * notes-prompt: Claude Code UserPromptSubmit hook for mcp-notes.
+ * notes-prompt: Claude Code UserPromptSubmit hook for mcp-notes. It does two jobs, and on a prompt
+ * that needs neither it returns at once: no transcript read, no network, no log, no output.
  *
- * A picture pasted into Claude Code has no file path, and the Stop hook stores it only after the
- * turn. On a `/n` prompt this hook stores the session's pasted pictures now and tells the model
- * their ids, so "make that image a note" becomes create_image({image_id}) in the same turn:
+ * A. Node ids (any prompt). A prompt that quotes a Claude Code session node id such as A0-3G
+ *    (see the "Node ids" section below for what counts as one) gets that node's summary, plan
+ *    docs, commits and transcript path from GET /api/sessions/context?ids=... (CONTEXT_TIMEOUT_MS,
+ *    fail soft). Ids the daemon does not know add nothing. Finding candidates is one regex test on
+ *    the prompt, so a prompt without one costs nothing.
  *
- * 1. Any prompt that is not `/n` returns at once: no transcript read, no network, no log, no
- *    output.
- * 2. On `/n` it reads the transcript once (the current prompt is not in it yet; a picture pasted in
- *    this very prompt is handed to the notes-paste PreToolUse hook via `pasted_image N`), and gathers the pictures of EVERY human prompt of the
- *    session (not only `/n` ones), newest MAX_IMAGES, with the Stop hook's caps.
- * 3. Pictures not uploaded before (per-session memo, prompt-images/<session>.json) are uploaded
- *    newest first to POST /api/chat/images (source claude_code, sha-deduped by the daemon, so the
- *    Stop hook's later capture of the same bytes gets the same ids) within UPLOAD_BUDGET_MS.
- * 4. It prints {hookSpecificOutput:{hookEventName:'UserPromptSubmit', additionalContext}} naming
- *    "[Image #N] = <id>" oldest first, the newest marked "(latest)". When the newest picture could
- *    not be stored the context says so and marks no older picture as latest.
+ * B. Pasted images (`/n` prompts only). A picture pasted into Claude Code has no file path, and the
+ *    Stop hook stores it only after the turn. On a `/n` prompt this hook stores the session's pasted
+ *    pictures now and tells the model their ids, so "make that image a note" becomes
+ *    create_image({image_id}) in the same turn:
+ *    1. It reads the transcript once (the current prompt is not in it yet; a picture pasted in this
+ *       very prompt is handed to the notes-paste PreToolUse hook via `pasted_image N`), and gathers
+ *       the pictures of EVERY human prompt of the session (not only `/n` ones), newest MAX_IMAGES,
+ *       with the Stop hook's caps.
+ *    2. Pictures not uploaded before (per-session memo, prompt-images/<session>.json) are uploaded
+ *       newest first to POST /api/chat/images (source claude_code, sha-deduped by the daemon, so the
+ *       Stop hook's later capture of the same bytes gets the same ids) within UPLOAD_BUDGET_MS.
+ *    3. It names "[Image #N] = <id>" oldest first, the newest marked "(latest)". When the newest
+ *       picture could not be stored the context says so and marks no older picture as latest.
+ *
+ * Both run in parallel and their texts go out as ONE
+ * {hookSpecificOutput:{hookEventName:'UserPromptSubmit', additionalContext}}, image text first,
+ * then a blank line, then the node text.
  *
  * Always exits 0; stdout carries only the hook JSON (or nothing). Problems go to
  * ${XDG_STATE_HOME:-~/.local/state}/notes-capture/prompt.log. Node >= 22 built-ins only.
@@ -274,20 +283,126 @@ export function buildContext(images, missing) {
   return lines.join('\n');
 }
 
-function pendingOutput(n) {
-  return { hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: buildPendingContext(n) } };
+// ---------------------------------------------------------------------------------------------
+// Node ids (R5). Any prompt, not only `/n`, may quote Claude Code session node ids such as A0-3G.
+// The rule is src/sessions/ids.ts NODE_ID_CANDIDATE_SOURCE + findNodeIdCandidates; hooks are plain
+// .mjs and cannot import TypeScript, so the regex is duplicated here verbatim. A unit test asserts
+// NODE_ID_CANDIDATE.source === NODE_ID_CANDIDATE_SOURCE; change both together.
+//
+// Prompts are full of 2-2 dashed tokens that are not ids, so a candidate must be:
+//  - upper case as typed, with the dash: ids are shown upper case everywhere, and lower-case prose
+//    ("to-do", "co-op") would otherwise reach the daemon and could hit a real id by chance;
+//  - a whole token: no letter, digit, _, -, /, \, . or : before it; no letter, digit, _, -, / or \
+//    after it, and no "." or ":" followed by a letter or digit. Dates 2026-11-02, times
+//    10:30-11:00, versions 1.12-RC1, paths a/A0-3G, files A0-3G.md and keys UATP-2960 never match;
+//    "A0-3G." ending a sentence does;
+//  - carrying at least one letter: all-digit pairs are ranges and scores ("10-15"); generated ids
+//    are never all digits.
+// A candidate is only a question for the daemon: ids that do not exist resolve to nothing.
+// ---------------------------------------------------------------------------------------------
+
+export const NODE_ID_CANDIDATE = /(?<![0-9A-Za-z_.\/:\\-])([0-9A-Z]{2}-[0-9A-Z]{2})(?![0-9A-Za-z_\/\\-]|[.:][0-9A-Za-z])/g;
+const HAS_LETTER = /[A-Z]/;
+export const MAX_NODE_IDS = 5;
+export const CONTEXT_TIMEOUT_MS = 1500;
+export const MAX_NODE_CONTEXT_CHARS = 9000;
+/** Same text as src/sessions/view.ts CONTEXT_HEADER (Phase 7), used when the hook rebuilds the context. */
+export const NODE_CONTEXT_HEADER =
+  'Claude Code session nodes mentioned in this prompt (from mcp-notes; node ids look like A0-3G):';
+export const NODE_TOOLS_HINT =
+  'For more about one of them call session_get with node_id, or session_transcript with node_id and a query ' +
+  '(only on the machine that holds its transcript).';
+
+/** The distinct node-id candidates in a prompt, in order of first appearance, at most MAX_NODE_IDS. Pure: no I/O. */
+export function nodeIdCandidates(prompt) {
+  if (typeof prompt !== 'string' || prompt.length < 5 || !prompt.includes('-')) return [];
+  const found = [];
+  for (const match of prompt.matchAll(NODE_ID_CANDIDATE)) {
+    const id = match[1];
+    if (!HAS_LETTER.test(id) || found.includes(id)) continue;
+    found.push(id);
+    if (found.length === MAX_NODE_IDS) break;
+  }
+  return found;
 }
 
-/** The hook output for one UserPromptSubmit input, or null to add nothing. Never throws. */
-export async function runPrompt({
-  input,
-  env,
-  fetchImpl = globalThis.fetch,
-  readText = (file) => readFile(file, 'utf8'),
-  sleep = delay,
-  now = Date.now,
-}) {
-  if (!isNotesPromptInput(input)) return null;
+/** `<base>/api/sessions/context?ids=A0-3G,B1-2C`. */
+export function contextUrl(baseUrl, ids) {
+  return `${baseUrl}/api/sessions/context?ids=${ids.map((id) => encodeURIComponent(id)).join(',')}`;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function nonEmpty(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function clip(value, max) {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/**
+ * The asked-for nodes of a /api/sessions/context answer ({nodes, missing, context}), in the order
+ * of `asked`, plus the server's `context` text. Rows for ids not asked for, rows without node_id or
+ * text, and repeats are dropped, so only ids that were asked for AND exist come back. When a row
+ * was dropped, `context` is '' so the caller rebuilds the text from the kept rows.
+ */
+export function parseNodeContext(body, asked) {
+  const rows = isRecord(body) && Array.isArray(body.nodes) ? body.nodes : [];
+  const serverContext = isRecord(body) && typeof body.context === 'string' ? body.context : '';
+  const wanted = new Set(asked);
+  const byId = new Map();
+  let returned = 0;
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const raw = nonEmpty(row.node_id);
+    const text = nonEmpty(row.text);
+    if (raw === null || text === null) continue;
+    returned += 1;
+    const id = raw.toUpperCase();
+    if (!wanted.has(id) || byId.has(id)) continue;
+    byId.set(id, { node_id: id, text });
+  }
+  const nodes = asked.filter((id) => byId.has(id)).map((id) => byId.get(id));
+  return { nodes, context: nodes.length === returned ? serverContext.trim() : '' };
+}
+
+/** The additionalContext text for resolved nodes, or null when there are none. */
+export function buildNodeContext({ nodes, context }) {
+  if (nodes.length === 0) return null;
+  const text = context !== '' ? context : [NODE_CONTEXT_HEADER, ...nodes.map((node) => node.text)].join('\n\n');
+  return `${clip(text, MAX_NODE_CONTEXT_CHARS)}\n${NODE_TOOLS_HINT}`;
+}
+
+/** GET /api/sessions/context for `ids`; throws on a network error, timeout, non-2xx or bad JSON. */
+export async function fetchNodeContext(ids, { fetchImpl, baseUrl, timeoutMs = CONTEXT_TIMEOUT_MS }) {
+  const res = await fetchImpl(contextUrl(baseUrl, ids), {
+    method: 'GET',
+    headers: { accept: 'application/json', 'x-notes-capture': '1' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`context failed: HTTP ${res.status}`);
+  return parseNodeContext(await res.json(), ids);
+}
+
+/** The node context text for `ids`, or null (none exist, or the daemon failed: logged). Never throws. */
+export async function resolveNodeIds(ids, { env, fetchImpl, timeoutMs = CONTEXT_TIMEOUT_MS }) {
+  if (ids.length === 0) return null;
+  try {
+    return buildNodeContext(await fetchNodeContext(ids, { fetchImpl, baseUrl: daemonBaseUrl(env), timeoutMs }));
+  } catch (err) {
+    await writeLog(stateDir(env), LOG_FILE, `node ids ${ids.join(',')}: ${errorText(err)}`);
+    return null;
+  }
+}
+
+/**
+ * The pasted-image context for a `/n` prompt (job B), or null to add none. Never throws. The caller
+ * has checked isNotesPromptInput(input).
+ */
+export async function imageContext({ input, env, fetchImpl, readText, sleep, now }) {
   const dir = stateDir(env);
   const log = (message) => writeLog(dir, LOG_FILE, message);
   try {
@@ -300,13 +415,13 @@ export async function runPrompt({
     if (read === null) {
       await log(`transcript unreadable: ${input.transcript_path}`);
       // A session's first prompt: Claude Code creates the file only after the hooks finish.
-      return wanted.length === 0 ? null : pendingOutput(wanted[wanted.length - 1]);
+      return wanted.length === 0 ? null : buildPendingContext(wanted[wanted.length - 1]);
     }
     const { entries, settled } = read;
     if (!settled) await log(`[Image #${wanted[wanted.length - 1]}] not in the transcript yet; the context points the model at pasted_image`);
     const candidates = collectImages(entries);
     if (candidates.length === 0) {
-      return wanted.length === 0 ? null : pendingOutput(wanted[wanted.length - 1]);
+      return wanted.length === 0 ? null : buildPendingContext(wanted[wanted.length - 1]);
     }
 
     await pruneMemos(path.join(dir, MEMO_DIR), now());
@@ -335,16 +450,40 @@ export async function runPrompt({
     const missing = newestStored
       ? null
       : { paste_id: settled ? candidates[newestOrder].paste_id : (wanted[wanted.length - 1] ?? null), pending: !settled };
-    const context = buildContext(
+    return buildContext(
       stored.map((image) => ({ paste_id: image.paste_id, id: image.id })),
       missing,
     );
-    if (context === null) return null;
-    return { hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: context } };
   } catch (err) {
     await log(`hook: ${errorText(err)}`);
     return null;
   }
+}
+
+/**
+ * The hook output for one UserPromptSubmit input, or null to add nothing. Never throws.
+ * Neither `/n` nor a node-id candidate: null before any I/O (no read, no fetch, no clock, no log).
+ */
+export async function runPrompt({
+  input,
+  env,
+  fetchImpl = globalThis.fetch,
+  readText = (file) => readFile(file, 'utf8'),
+  sleep = delay,
+  now = Date.now,
+  contextTimeoutMs = CONTEXT_TIMEOUT_MS,
+}) {
+  const prompt = input !== null && typeof input === 'object' && typeof input.prompt === 'string' ? input.prompt : '';
+  const nodeIds = nodeIdCandidates(prompt);
+  const notes = isNotesPromptInput(input);
+  if (!notes && nodeIds.length === 0) return null;
+  const [images, nodes] = await Promise.all([
+    notes ? imageContext({ input, env, fetchImpl, readText, sleep, now }) : Promise.resolve(null),
+    resolveNodeIds(nodeIds, { env, fetchImpl, timeoutMs: contextTimeoutMs }),
+  ]);
+  const parts = [images, nodes].filter((part) => part !== null);
+  if (parts.length === 0) return null;
+  return { hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: parts.join('\n\n') } };
 }
 
 async function main() {

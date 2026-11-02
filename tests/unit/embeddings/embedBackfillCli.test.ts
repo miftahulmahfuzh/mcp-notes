@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { embedBackfill, type EmbedBackfillIo } from '../../../src/cli/embedBackfill.js';
-import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../../src/config.js';
+import { ConfigError, DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG, type Config } from '../../../src/config.js';
 
 interface Captured {
   io: EmbedBackfillIo;
@@ -36,6 +36,7 @@ const noKey = (): Config => ({
   dataDir: '/tmp/mcp-notes-unused',
   chat: DEFAULT_CHAT_CONFIG,
   embeddings: DEFAULT_EMBEDDINGS_CONFIG,
+  sessions: DEFAULT_SESSIONS_CONFIG,
 });
 
 describe('embedBackfill CLI', () => {

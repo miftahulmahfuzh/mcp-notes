@@ -17,6 +17,7 @@ import { imageEmbedderFromConfig } from './embeddings/openrouterImage.js';
 import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
+import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run. Sessions are not persisted there (persistSession: false). */
 export const CHAT_SUBDIR = 'chat';
@@ -114,7 +115,17 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     throw err;
   }
   boundPort = port;
-  const stopBackground = await startBackground(deps);
+  let sessionSummarizer: Summarizer | null = null;
+  if (config.sessions.enabled) {
+    sessionSummarizer = createAgentSummarizer({
+      claudeBin: config.chat.claudeBin,
+      cwd: join(config.dataDir, SUMMARIES_SUBDIR),
+    });
+    if (sessionSummarizer === null) {
+      console.log(`[notesd] session summaries off: claude binary "${config.chat.claudeBin}" not found (set NOTESD_CLAUDE_BIN)`);
+    }
+  }
+  const stopBackground = await startBackground(deps, { sessionSummarizer });
 
   let stopping: Promise<void> | null = null;
   const stop = (): Promise<void> => {

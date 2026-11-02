@@ -6,7 +6,7 @@ import sharp from 'sharp';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startBackground, type StopBackground } from '../../src/background.js';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG } from '../../src/config.js';
+import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, DEFAULT_SESSIONS_CONFIG } from '../../src/config.js';
 import type { AppDeps } from '../../src/deps.js';
 import { derivativePaths, getDisplay, getPreview, getThumb } from '../../src/images/derive.js';
 import { ingestImage, locateImage, type ImageDeps } from '../../src/images/ingest.js';
@@ -136,7 +136,7 @@ describe('image ingest against Postgres', () => {
 describe('inbox via startBackground', () => {
   it('a file dropped in <dataDir>/inbox becomes an image note', async () => {
     const app: AppDeps = {
-      config: { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
+      config: { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG },
       db,
       events: new NoteEvents(),
       service: notes,
@@ -167,7 +167,7 @@ describe('inbox via startBackground', () => {
     `);
     expect((await notes.getOne('L-EG1'))!.images).toEqual([]);
     const app: AppDeps = {
-      config: { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG },
+      config: { databaseUrl: testDatabaseUrl(), port: 0, host: '127.0.0.1', dataDir: dir, chat: DEFAULT_CHAT_CONFIG, embeddings: DEFAULT_EMBEDDINGS_CONFIG, sessions: DEFAULT_SESSIONS_CONFIG },
       db,
       events: new NoteEvents(),
       service: notes,

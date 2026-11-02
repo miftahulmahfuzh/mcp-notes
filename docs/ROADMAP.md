@@ -37,7 +37,8 @@ Claude Code is open all working day; `/n <anything>` from any repo talks to mcp-
 | 7 | Wall editing | Big editor modal, several images per note, delete + recycle bin, open file location in Explorer | – |
 | 8 | Chat history, files, image search | Chat history on its own tables, `/history`, note files, Gemini image embeddings and `similar_images` (v0.2.0) | – |
 | 9 | Claude Code hooks | `/n` capture, pasted image to note (`image_id`, `pasted_image`), clickable note ids (v0.2.0) | – |
-| 10+ | Later | GPD install, weekly digest, … | – |
+| 10 | Project session graph | Every Claude Code session per repo as a graph on the wall, node ids resolvable from any prompt, exact and heuristic parent links, Haiku summaries and session search, session MCP/chat tools, resume into tmux, per-project chat, "unfinished" orch badge. Brief: `iterations/08-project-session-graph.md` | – |
+| 11+ | Later | GPD install, weekly digest, daily session digest note, fork-session UI, … | – |
 
 5 and 6 depend only on 1, so they can run in parallel with 3 and 4.
 
