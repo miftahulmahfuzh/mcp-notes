@@ -105,6 +105,11 @@ export interface SessionCommit {
   subject: string | null;
 }
 
+/** A commit in session detail: `url` is its page on the forge (GitHub, GitLab), null when unknown. */
+export interface LinkedCommit extends SessionCommit {
+  url: string | null;
+}
+
 export interface NoteRef {
   id: string;
   excerpt: string;
@@ -149,7 +154,7 @@ export interface SessionInfo extends GraphNode {
 export interface SessionDetail {
   session: SessionInfo;
   prompts: SessionPrompt[];
-  commits: SessionCommit[];
+  commits: LinkedCommit[];
   files_edited: string[];
   plan_docs: string[];
   notes: NoteRef[];

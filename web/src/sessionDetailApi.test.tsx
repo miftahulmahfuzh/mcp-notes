@@ -42,7 +42,7 @@ describe('normalizeSessionDetail', () => {
         parent_link_source: 'env',
       },
       prompts: [{ text: 'first', at: null }],
-      commits: [{ sha: 'abcdef1', subject: 'feat: x' }],
+      commits: [{ sha: 'abcdef1', subject: 'feat: x', url: 'https://github.com/o/r/commit/abcdef1' }],
       files_edited: [],
       plan_docs: [],
       notes: [{ id: 'K-F07', excerpt: 'saved note', tags: [], created_at: null }],
@@ -50,7 +50,7 @@ describe('normalizeSessionDetail', () => {
       children: [],
     });
     expect(d.prompts).toEqual(['first']);
-    expect(d.commits).toEqual([{ sha: 'abcdef1', subject: 'feat: x' }]);
+    expect(d.commits).toEqual([{ sha: 'abcdef1', subject: 'feat: x', url: 'https://github.com/o/r/commit/abcdef1' }]);
     expect(d.notes).toEqual([{ id: 'K-F07', preview: 'saved note' }]);
     expect(d.parent).toEqual({ node_id: 'B1-11', name: 'orch-x' });
     expect(d.tokens).toEqual({ input: 1, output: 2, cache_read: 3, cache_write: 4 });
@@ -79,8 +79,8 @@ describe('normalizeSessionDetail', () => {
     expect(d.title).toBe('Wall editing');
     expect(d.prompts).toEqual(['first', 'second']);
     expect(d.commits).toEqual([
-      { sha: 'abcdef1', subject: 'feat: x' },
-      { sha: '1234567', subject: 'fix: y' },
+      { sha: 'abcdef1', subject: 'feat: x', url: null },
+      { sha: '1234567', subject: 'fix: y', url: null },
     ]);
     expect(d.notes).toEqual([
       { id: 'K-F07', preview: '' },

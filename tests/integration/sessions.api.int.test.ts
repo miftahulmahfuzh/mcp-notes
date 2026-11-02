@@ -19,6 +19,8 @@ import { clearSessions, OTHER_HOST, seedGraph, seedSession, THIS_HOST, writeTran
 const overrides: SessionsReadOverrides = {
   host: THIS_HOST,
   timeZone: 'Asia/Jakarta',
+  // Never the real clones: every known sha links to a fake forge.
+  commitLinks: async ({ shas }) => new Map(shas.map((sha) => [sha.toLowerCase(), `https://forge.test/r/-/commit/${sha}`])),
   // sess-c2 is "live" in the registry but on the other host: it must not show as live.
   live: async () => [
     { sessionId: 'sess-b1', status: 'busy', tmux: 'note:@0.%7' },
@@ -196,7 +198,9 @@ describe('GET /api/sessions/:nodeId', () => {
       final_message: 'Done.',
     });
     expect(body.prompts).toEqual([{ text: 'Plan the wall photo delete flow', at: '2026-10-31T18:00:00.000Z' }]);
-    expect(body.commits).toEqual([{ sha: 'abc1234def', subject: 'feat(web): photo delete' }]);
+    expect(body.commits).toEqual([
+      { sha: 'abc1234def', subject: 'feat(web): photo delete', url: 'https://forge.test/r/-/commit/abc1234def' },
+    ]);
     expect(body.files_edited).toEqual(['web/src/components/NoteEditor.tsx']);
     expect(body.plan_docs).toEqual(['docs/plans/WALL_EDITING_PLAN.md']);
     expect(body.notes.map((n) => n.id)).toEqual([note.id]);

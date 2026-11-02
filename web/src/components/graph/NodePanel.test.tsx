@@ -116,6 +116,17 @@ describe('NodePanel', () => {
     expect(screen.getByText('(guessed)')).toBeTruthy();
   });
 
+  it('links a commit to its forge page in a new tab, and leaves one without a url as text', async () => {
+    const url = 'https://github.com/o/mcp-notes/commit/abcdef1234567';
+    stubFetch({ ...WIRE, commits: [{ sha: 'abcdef1234567', subject: 'feat(web): edit in place', url }, { sha: '1234567aaaa', subject: 'chore: local' }] });
+    renderPanel();
+    const link = (await screen.findByText('feat(web): edit in place')).closest('a');
+    expect(link?.getAttribute('href')).toBe(url);
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toContain('noopener');
+    expect(screen.getByText('chore: local').closest('a')).toBeNull();
+  });
+
   it('shows a recorded cost as is, and the subagent share as an estimate', async () => {
     stubFetch({ ...WIRE, subagent_count: 3, subagent_cost_usd: 0.42 });
     renderPanel();

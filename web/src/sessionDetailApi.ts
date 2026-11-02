@@ -8,6 +8,8 @@ export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
 export interface SessionCommit {
   sha: string;
   subject: string;
+  /** The commit's page on GitHub / GitLab, when the server could tell the repo's forge. */
+  url: string | null;
 }
 
 /** A note this session saved (its `origin.claude_session` is this session). */
@@ -126,12 +128,13 @@ function commit(v: unknown): SessionCommit | null {
     const t = v.trim();
     if (t === '') return null;
     const sp = t.indexOf(' ');
-    return sp < 0 ? { sha: t, subject: '' } : { sha: t.slice(0, sp), subject: t.slice(sp + 1).trim() };
+    return sp < 0 ? { sha: t, subject: '', url: null } : { sha: t.slice(0, sp), subject: t.slice(sp + 1).trim(), url: null };
   }
   if (isObj(v)) {
     const sha = str(v.sha) ?? str(v.hash);
     if (sha === null) return null;
-    return { sha, subject: str(v.subject) ?? str(v.message) ?? '' };
+    const url = str(v.url);
+    return { sha, subject: str(v.subject) ?? str(v.message) ?? '', url: url !== null && /^https?:\/\//i.test(url) ? url : null };
   }
   return null;
 }

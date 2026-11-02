@@ -6,6 +6,7 @@ import type { ModelUsage } from '../db/schema.js';
 import type { AppDeps } from '../deps.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import { DEFAULT_WALL_URL, localTimeZone, wallUrlForPort } from '../mcp/instructions.js';
+import { createCommitLinker, type CommitLinker } from './commitLinks.js';
 import { normalizeNodeId } from './ids.js';
 import { mergeModels } from './merge.js';
 import { estimateCostUsd } from './pricing.js';
@@ -86,6 +87,8 @@ export interface SessionsReadDeps {
   live: LiveSource;
   settings: SettingsStore;
   search: SessionSearchFn;
+  /** Forge links for a session's commits (src/sessions/commitLinks.ts). */
+  commitLinks: CommitLinker;
 }
 
 /** Test seams; production passes none. */
@@ -95,6 +98,7 @@ export interface SessionsReadOverrides {
   live?: LiveSource;
   settings?: SettingsStore;
   search?: SessionSearchFn;
+  commitLinks?: CommitLinker;
 }
 
 // ---- Cross-phase seams: the only places this phase calls phase 1/3/6 runtime code. ----
@@ -143,6 +147,7 @@ export function sessionsReadDeps(deps: AppDeps, over: SessionsReadOverrides = {}
     wallUrl: wallUrlForPort(deps.config.port) ?? DEFAULT_WALL_URL,
     live: over.live ?? (() => liveFromRegistry(claudeHome)),
     settings: over.settings ?? repoSettings(deps.db),
+    commitLinks: over.commitLinks ?? createCommitLinker({ homeDir: os.homedir() }),
     search: over.search ?? phase6Search(deps.db, embedder),
   };
 }
@@ -330,10 +335,16 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     (acc, r) => mergeModels(acc, isRecord(r.models) ? (r.models as Record<string, ModelUsage>) : {}, false),
     {},
   );
+  const commits = normalizeCommits(row.commits);
+  const links = await rd.commitLinks({
+    repo: row.repo,
+    cwd: row.cwd,
+    shas: commits.flatMap((c) => (c.sha === null ? [] : [c.sha])),
+  });
   return {
     session: toSessionInfo(row, ctx, { count: subagents.rows.length, costUsd: estimateCostUsd(subModels) }),
     prompts: normalizePrompts(row.prompts),
-    commits: normalizeCommits(row.commits),
+    commits: commits.map((c) => ({ ...c, url: c.sha === null ? null : (links.get(c.sha.toLowerCase()) ?? null) })),
     files_edited: normalizePaths(row.files_edited),
     plan_docs: normalizePaths(row.plan_docs),
     notes: notes.rows.map((n) => ({
