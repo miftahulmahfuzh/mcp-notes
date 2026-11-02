@@ -82,8 +82,8 @@ export interface Bin {
   images: BinImage[];
 }
 
-/** What the main area shows: the wall (text / images / all modes), the recycle bin, or the chat history page (phase 9). */
-export type View = 'wall' | 'bin' | 'history';
+/** What the main area shows: the wall (text / images / all modes), the recycle bin, the chat history page (phase 9), or the projects session graph (project-session-graph phase 10). */
+export type View = 'wall' | 'bin' | 'history' | 'projects';
 
 /** A pasted chat image as the server sends it (`POST /api/chat/images`; src/chat/images.ts `ChatImage`). */
 export interface ChatImage {
@@ -163,4 +163,90 @@ export interface ChatChange {
   op: ChatOp;
   thread_id: string;
   id: string;
+}
+
+/** project-session-graph phase 7 wire (`GET /api/projects`): one repo that has Claude Code sessions. */
+export interface ProjectSummary {
+  /** Resolved repo key, e.g. `mcp-notes`. */
+  repo: string;
+  /** All sessions of the repo, both hosts. */
+  sessions: number;
+  /** Sessions of this repo running right now on THIS daemon's machine (its live registry). */
+  live: number;
+  last_active_at: string | null;
+  first_started_at: string | null;
+  /** Distinct hosts holding the repo's transcripts, sorted. */
+  hosts: string[];
+}
+
+/** Phase 7 wire: `GET /api/projects`. */
+export interface ProjectsPayload {
+  /** os.hostname() of the daemon that answered. */
+  host: string;
+  /** Same value as `GET /api/projects/selected`. */
+  selected: string | null;
+  projects: ProjectSummary[];
+}
+
+/** How a parent link was found: swarm env var, SessionStart/Bash hook, or transcript heuristic. */
+export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
+
+export interface SessionTokens {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  total: number;
+}
+
+/** Phase 7 wire (`GraphNode` in `GET /api/projects/:repo/sessions`): one Claude Code session, one graph node. Times are UTC ISO. */
+export interface SessionNode {
+  /** Claude Code session UUID. */
+  session_id: string;
+  /** `A0-3G`: the id the user quotes. Generated server-side. */
+  node_id: string;
+  repo: string | null;
+  parent_session_id: string | null;
+  /** Null when there is no parent or the parent is not ingested yet. */
+  parent_node_id: string | null;
+  parent_link_source: ParentLinkSource | null;
+  /** Server-picked label: custom_title ?? name ?? ai_title ?? first prompt (80 chars) ?? node_id. */
+  title: string;
+  name: string | null;
+  custom_title: string | null;
+  ai_title: string | null;
+  /** Excerpt, at most 200 chars (the full text is in the phase 7 detail). */
+  first_prompt: string | null;
+  branch: string | null;
+  cwd: string | null;
+  started_at: string | null;
+  last_active_at: string | null;
+  /** Machine whose `~/.claude` holds the transcript. */
+  host: string;
+  /** The transcript is on this machine. False: marked like "uploaded on GPD". */
+  available: boolean;
+  /** In this machine's live registry right now: the node pulses. */
+  live: boolean;
+  /** Registry status (`busy` | `idle` | ...) when live. */
+  status: string | null;
+  tmux: string | null;
+  tokens: SessionTokens;
+  cost_usd: number | null;
+  summary_excerpt: string | null;
+  /** Rows whose parent is this session (any repo). */
+  child_count: number;
+  /** Phase 13: orch node with pending ledger phases and no live session. Null until phase 13. */
+  unfinished: boolean | null;
+}
+
+/** Phase 7 wire: `GET /api/projects/:repo/sessions` (`GraphPayload`). */
+export interface SessionGraphPayload {
+  repo: string;
+  host: string;
+  generated_at: string;
+  /** Rows for the repo over all pages. */
+  total: number;
+  truncated: boolean;
+  next_before: string | null;
+  nodes: SessionNode[];
 }

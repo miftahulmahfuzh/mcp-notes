@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 7
+**Total Active Tasks**: 5
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 5
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 58
+- Blocked: 3
+- Completed: 60
 
 ---
 
@@ -33,21 +33,11 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A058** Phase 10: Web: projects rail icon, repo sidebar, SVG graph
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: Rail icon, `/projects` route, `ProjectsPage` with `renderPanel`/`renderBadge` slots, repo list in the expanded sidebar with server-persisted selection, `web/src/lib/sessionGraph.ts`, `web/src/components/graph/{SessionGraph,GraphNode,GraphEdges}`, `web/src/sessionsApi.ts` (ETag polling), wire types mirroring phase 7, fixtures. Exit criteria: layout unit tests (lanes, wave side-by-side, collapse); 1000-node render test mounts only visible nodes; a 304 keeps the nodes; typecheck web.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 10 of 14)
-  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
-  - **Depends on**: P1-NOTES-A055
-  - **Plan**: `.workflows/plan/P1-NOTES-A058.md`
-
 - [ ] **P1-NOTES-A059** Phase 11: Web: node detail panel, Tree/Timeline, resume action
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `web/src/sessionDetailApi.ts` (reads phase 7's detail shape), `NodePanel`, `SubtreeTree`, `SubtreeTimeline`, `lib/subtree.ts`, `lib/sessionFormat.ts`, `ConfirmDialog` optional props, the `renderPanel` default in `ProjectsPage`. Exit criteria: component tests for panel, toggle, resume with and without cross-host confirm; existing "Delete anyway" tests unchanged.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 11 of 14)
   - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat ; R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host
   - **Depends on**: P1-NOTES-A057, P1-NOTES-A058
@@ -93,6 +83,19 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A058** Phase 10: Web: projects rail icon, repo sidebar, SVG graph
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: Rail icon, `/projects` route, `ProjectsPage` with `renderPanel`/`renderBadge` slots, repo list in the expanded sidebar with server-persisted selection, `web/src/lib/sessionGraph.ts`, `web/src/components/graph/{SessionGraph,GraphNode,GraphEdges}`, `web/src/sessionsApi.ts` (ETag polling), wire types mirroring phase 7, fixtures. Exit criteria: layout unit tests (lanes, wave side-by-side, collapse); 1000-node render test mounts only visible nodes; a 304 keeps the nodes; typecheck web.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 10 of 14)
+  - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A058.md`
+  - **Completed**: 2026-11-02 11:31
+  - **Method**: /do
+  - **Files**: web/src/App.tsx, web/src/App.projects.test.tsx, web/src/components/Header.tsx, web/src/components/Rail.tsx, web/src/components/Rail.test.tsx, web/src/components/Sidebar.tsx, web/src/components/graph/GraphEdges.tsx, web/src/components/graph/GraphNode.tsx, web/src/components/graph/SessionGraph.tsx, web/src/components/graph/SessionGraph.css, web/src/components/graph/SessionGraph.test.tsx, web/src/hooks/useProjects.ts, web/src/hooks/useSessionGraph.ts, web/src/lib/projects.ts, web/src/lib/projects.test.tsx, web/src/lib/route.ts, web/src/lib/route.test.tsx, web/src/lib/sessionGraph.ts, web/src/lib/sessionGraph.test.tsx, web/src/pages/ProjectsPage.tsx, web/src/pages/ProjectsPage.css, web/src/sessionsApi.ts, web/src/sessionsApi.test.tsx, web/src/styles.css, web/src/testing/sessionFixtures.ts, web/src/types.ts
+  - **Decided**: Trunk drawn only to the newest root (plan GraphEdges code) vs the plan's 1000-node test expecting a trunk in the top window above it -> GraphEdges draws the trunk up to the top row of the graph; layout.trunk semantics unchanged (rung 1: settled decision 'newest at the top, thick trunk growing upward'; rung 3: the phase's own test)
 - [x] **P1-NOTES-A057** Phase 9: Resume/spawn into tmux, `session_resume` tool
   - **Difficulty**: HARD
   - **Type**: Feature

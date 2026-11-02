@@ -15,9 +15,12 @@ import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
 import { useHistory } from './hooks/useHistory';
 import { normalizeNoteId, noteHref } from './lib/deepLink';
-import { hrefForView, routeFromLocation } from './lib/route';
+import { hrefForView, NO_PROJECT_ROUTE, projectsRouteFromLocation, routeFromLocation, type ProjectsRoute } from './lib/route';
 import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
 import { HistoryPage } from './pages/HistoryPage';
+import { ProjectsPage } from './pages/ProjectsPage';
+import { useProjects } from './hooks/useProjects';
+import { projectHeading, projectsCountLine, sortProjects } from './lib/projects';
 import { BIN_HEADING, binCountLine, countLineFor, headingFor, imageCount, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
@@ -60,16 +63,30 @@ export function App() {
   const chatImages = useChatImages();
   const { copied, copy } = useCopied();
 
-  const [side, setSide] = useState(false);
+  // Opening the projects view expands the sidebar with the repo list; a /projects deep link starts that way.
+  const [side, setSide] = useState(() => projectsRouteFromLocation(window.location) !== null);
   const [mode, setMode] = useState<Mode>('text');
   const [active, setActive] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const { notice, show: showNotice } = useNotice();
-  // `/history[?thread=ID]` opens straight into the chat history page (served by the SPA fallback).
-  const [view, setView] = useState<View>(() => (routeFromLocation(window.location).history ? 'history' : 'wall'));
+  // `/history[?thread=ID]` opens straight into the chat history page, `/projects[?repo=&node=]`
+  // into the session graph (both served by the SPA fallback).
+  const [view, setView] = useState<View>(() => {
+    if (routeFromLocation(window.location).history) return 'history';
+    return projectsRouteFromLocation(window.location) !== null ? 'projects' : 'wall';
+  });
   const [historyThread, setHistoryThread] = useState<string | null>(() => routeFromLocation(window.location).thread);
+  const [projectsRoute, setProjectsRoute] = useState<ProjectsRoute>(() => projectsRouteFromLocation(window.location) ?? NO_PROJECT_ROUTE);
+  // Fetches only while the projects view is shown; every visit re-reads the server-side selection.
+  const projectsStore = useProjects(view === 'projects');
+  const { pick: pickProject } = projectsStore;
+  // Shown repo: the URL's, else the one both laptops last picked, else the most recently active.
+  // The fallback uses the sidebar's sort, so it matches the sidebar's top row whatever order the server sends.
+  const mostRecentRepo = projectsStore.projects ? (sortProjects(projectsStore.projects)[0]?.repo ?? null) : null;
+  const projectRepo = projectsRoute.repo ?? (projectsStore.selectedLoaded ? (projectsStore.selected ?? mostRecentRepo) : null);
+  const resolvingRepo = projectsRoute.repo === null && (!projectsStore.selectedLoaded || projectsStore.projects === null);
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
   // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
   const history = useHistory(view === 'history', { includeDeleted: true });
@@ -277,6 +294,25 @@ export function App() {
     setView((v) => (v === 'history' ? 'wall' : 'history'));
   }, []);
 
+  /** Rail / sidebar projects icon: open the graph and expand the sidebar with the repo list; a second press returns to the wall. */
+  const toggleProjects = useCallback(() => {
+    const opening = wallRef.current.view !== 'projects';
+    setView(opening ? 'projects' : 'wall');
+    if (opening) setSide(true);
+  }, []);
+
+  /** Sidebar repo row: show it, store it server-side (both laptops), drop any node selection. */
+  const pickRepo = useCallback(
+    (repo: string) => {
+      pickProject(repo);
+      setProjectsRoute({ repo, node: null });
+    },
+    [pickProject],
+  );
+
+  /** Graph click: `?node=`. Pins the shown repo into the URL too, so the link is complete. */
+  const selectNode = useCallback((node: string | null) => setProjectsRoute({ repo: projectRepo, node }), [projectRepo]);
+
   /** Photo modal "Chat about this image": the history page with that picture attached to the composer (a pointer, no upload). */
   const [chatSeed, setChatSeed] = useState<{ imageId: string; nonce: number } | null>(null);
   const chatAboutImage = useCallback((imageId: string) => {
@@ -296,21 +332,24 @@ export function App() {
   }, [chat.threadId]);
 
   // The address bar follows the view (pathname guard, lib/route.ts hrefForView): entering the
-  // history page pushes /history[?thread=]; leaving it pushes / only when the path is /history.
-  // Wall and bin never rewrite a non-history URL, so /?note=ID survives a switch to the wall
-  // (Phase 11's show-on-wall relies on this). This is the one URL-sync owner; no other phase adds one.
+  // history page pushes /history[?thread=], the projects view /projects[?repo=&node=]; leaving
+  // either pushes / only when the path is theirs. Wall and bin never rewrite another URL, so
+  // /?note=ID survives a switch to the wall (Phase 11's show-on-wall relies on this). This is the
+  // one URL-sync owner; no other phase adds one.
   useEffect(() => {
-    const href = hrefForView(view, historyThread, window.location);
+    const href = hrefForView(view, historyThread, window.location, projectsRoute);
     if (href !== null) window.history.pushState(null, '', href);
-  }, [view, historyThread]);
+  }, [view, historyThread, projectsRoute]);
 
-  // Back / forward between /history and the wall. A /?note= target is handled by useDeepLink's own
-  // popstate listener (planReveal moves the view to the wall).
+  // Back / forward between /history, /projects and the wall. A /?note= target is handled by
+  // useDeepLink's own popstate listener (planReveal moves the view to the wall).
   useEffect(() => {
     const onPop = () => {
       const r = routeFromLocation(window.location);
+      const p = projectsRouteFromLocation(window.location);
       setHistoryThread(r.thread);
-      setView((v) => (r.history ? 'history' : v === 'history' ? 'wall' : v));
+      if (p !== null) setProjectsRoute(p);
+      setView((v) => (r.history ? 'history' : p !== null ? 'projects' : v === 'history' || v === 'projects' ? 'wall' : v));
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -650,8 +689,8 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      // The answer panel is hidden on the history page; Esc there must not end the wall conversation.
-      if (e.key === 'Escape' && chatOpen && !pinned && view !== 'history') closeChat();
+      // The answer panel is hidden on the history and projects pages; Esc there must not end the wall conversation.
+      if (e.key === 'Escape' && chatOpen && !pinned && view !== 'history' && view !== 'projects') closeChat();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -671,6 +710,7 @@ export function App() {
               setMode(nextMode);
               setView('wall');
             }}
+            onToggleProjects={toggleProjects}
             onToggleHistory={toggleHistory}
             onToggleBin={toggleBin}
             onToggleTag={toggleTag}
@@ -684,31 +724,48 @@ export function App() {
               tags={tags}
               active={active}
               onMode={pickMode}
+              onToggleProjects={toggleProjects}
               onToggleHistory={toggleHistory}
               onToggleBin={toggleBin}
               onToggleTag={toggleTag}
+              projects={projectsStore.projects}
+              repo={projectRepo}
+              onPickRepo={pickRepo}
             />
           )}
           <main className="main" style={{ marginLeft: mainLeft }}>
             <Header
-              heading={view === 'history' ? HISTORY_HEADING : view === 'bin' ? BIN_HEADING : headingFor(mode, active)}
+              heading={
+                view === 'projects'
+                  ? projectHeading(projectRepo)
+                  : view === 'history'
+                    ? HISTORY_HEADING
+                    : view === 'bin'
+                      ? BIN_HEADING
+                      : headingFor(mode, active)
+              }
               countLine={
-                view === 'history'
-                  ? historyCountLine(history.items, history.hasMore)
-                  : view === 'bin'
-                    ? binCountLine(binStore.bin, active)
-                    : countLineFor(mode, active, notes, visible, photos)
+                view === 'projects'
+                  ? projectsCountLine(projectsStore.projects, projectRepo)
+                  : view === 'history'
+                    ? historyCountLine(history.items, history.hasMore)
+                    : view === 'bin'
+                      ? binCountLine(binStore.bin, active)
+                      : countLineFor(mode, active, notes, visible, photos)
               }
               last={last}
               lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
               showSticker={view === 'wall' && mode !== 'images'}
               bin={view === 'bin'}
               history={view === 'history'}
+              projects={view === 'projects'}
               onJumpLast={() => last && jump(last.id)}
               onAdd={() => void addNote()}
             />
             <div className="rule" />
-            {view === 'history' ? (
+            {view === 'projects' ? (
+              <ProjectsPage key={projectRepo ?? ''} repo={projectRepo} resolving={resolvingRepo} node={projectsRoute.node} onSelectNode={selectNode} />
+            ) : view === 'history' ? (
               <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} seedImage={chatSeed} />
             ) : view === 'bin' ? (
               <Bin store={binStore} now={now} onRestored={onRestored} />
@@ -730,7 +787,7 @@ export function App() {
               />
             )}
           </main>
-          {chat.open && view !== 'history' && (
+          {chat.open && view !== 'history' && view !== 'projects' && (
             <AnswerPanel
               left={chatLeft}
               query={chat.query}
@@ -749,7 +806,7 @@ export function App() {
               onFullScreen={openHistoryThread}
             />
           )}
-          {view !== 'history' && (
+          {view !== 'history' && view !== 'projects' && (
             <ChatBar
               left={chatLeft}
               value={q}

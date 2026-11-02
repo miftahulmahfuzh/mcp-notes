@@ -1,0 +1,9 @@
+.proj { padding-top: 10px; }
+.proj-bar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 44px; }
+.proj-tools { display: flex; gap: 4px; }
+.proj-tools .ibtn { font-size: 19px; }
+.proj-tools .ibtn:disabled { opacity: .35; cursor: default; }
+.proj-body { display: flex; align-items: stretch; gap: 16px; min-width: 0; }
+.proj-graph { flex: 1 1 auto; min-width: 0; }
+.proj-panel { flex: 0 0 min(440px, 40vw); max-height: max(360px, calc(100vh - 140px)); overflow: auto; border-left: 1px solid var(--line); padding-left: 16px; box-sizing: border-box; }
+.proj-empty { margin: 48px 0; font-family: var(--mono); font-size: 12px; color: var(--dim); letter-spacing: .03em; }
