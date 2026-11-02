@@ -40,7 +40,13 @@ export const NOTES_TOOL_NAMES = [
 export type NotesToolName = (typeof NOTES_TOOL_NAMES)[number];
 
 /** Read-only Claude Code session tools (PROJECT_SESSION_GRAPH_PLAN phase 7; phase 9 appends session_resume). */
-export const SESSION_TOOL_NAMES = ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage'] as const;
+export const SESSION_TOOL_NAMES = [
+  'sessions_search',
+  'session_get',
+  'session_transcript',
+  'sessions_usage',
+  'session_resume',
+] as const;
 
 export type SessionToolName = (typeof SESSION_TOOL_NAMES)[number];
 
@@ -54,11 +60,12 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 4 session tools, the 15 connector tools and WebSearch +
+ * Exactly the 19 notes tools, the 5 session tools, the 15 connector tools and WebSearch +
  * WebFetch (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
  * SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN phase 3 adds
  * `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
- * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools).
+ * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
+ * PROJECT_SESSION_GRAPH_PLAN phase 9 adds `session_resume`).
  */
 export function allowedChatTools(): string[] {
   return [
@@ -150,6 +157,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'reading a session transcript';
     case 'sessions_usage':
       return 'counting session tokens';
+    case 'session_resume':
+      return 'opening a session in tmux';
     default:
       return connectorCaption(tool);
   }

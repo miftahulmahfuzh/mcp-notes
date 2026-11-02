@@ -5,12 +5,12 @@ import { NOTES_TOOL_NAMES, SESSION_TOOL_NAMES, allowedChatTools, captionForToolU
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 4 session tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
-    expect(SESSION_TOOL_NAMES).toHaveLength(4);
+    expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(19 + 4 + 15 + 2);
+    expect(tools).toHaveLength(19 + 5 + 15 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -19,6 +19,7 @@ describe('allowedChatTools', () => {
     expect(tools).toContain('mcp__notes__remove_image');
     expect(tools).toContain('mcp__notes__restore_image');
     expect(tools).toContain('mcp__notes__similar_images');
+    expect(tools).toContain('mcp__notes__session_resume');
     for (const name of SESSION_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
@@ -68,6 +69,7 @@ describe('captionForToolUse', () => {
     [n('session_get'), { node_id: 'A0-3G' }, 'reading a session'],
     [n('session_transcript'), { node_id: 'A0-3G', query: 'x' }, 'reading a session transcript'],
     [n('sessions_usage'), { by: 'month' }, 'counting session tokens'],
+    [n('session_resume'), { node_id: 'A0-3G' }, 'opening a session in tmux'],
     ['WebSearch', { query: 'Verity' }, 'searching the web'],
     ['WebFetch', { url: 'https://example.com' }, 'reading a web page'],
   ])('%s %j -> %s', (name, input, caption) => {

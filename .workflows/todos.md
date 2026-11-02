@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 8
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 4
-- Completed: 57
+- Completed: 58
 
 ---
 
@@ -41,16 +41,6 @@
   - **Satisfies**: R5 — Node ids in any Claude Code prompt resolve to that node's context, near-zero cost otherwise
   - **Depends on**: P1-NOTES-A055
   - **Plan**: `.workflows/plan/P1-NOTES-A056.md`
-
-- [ ] **P1-NOTES-A057** Phase 9: Resume/spawn into tmux, `session_resume` tool
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/resume.ts`, `src/http/sessionResume.ts` (same-origin), mount + `sessionResume` wiring in `app.ts` (`mcpToolDeps` third parameter), `ToolDeps.sessionResume`, `session_resume` in `src/mcp/sessionTools.ts`, `'session_resume'` in `SESSION_TOOL_NAMES`, tests. Exit criteria: fake tmux runner tests for each branch; cross-host returns `not_on_this_machine`; the deleted-cwd measurement recorded in the plan/test comments; `allowedChatTools()` has 41 entries.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 9 of 14)
-  - **Satisfies**: R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host ; R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
-  - **Depends on**: P1-NOTES-A055
-  - **Plan**: `.workflows/plan/P1-NOTES-A057.md`
 
 - [ ] **P1-NOTES-A058** Phase 10: Web: projects rail icon, repo sidebar, SVG graph
   - **Difficulty**: HARD
@@ -111,6 +101,26 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A057** Phase 9: Resume/spawn into tmux, `session_resume` tool
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/resume.ts`, `src/http/sessionResume.ts` (same-origin), mount + `sessionResume` wiring in `app.ts` (`mcpToolDeps` third parameter), `ToolDeps.sessionResume`, `session_resume` in `src/mcp/sessionTools.ts`, `'session_resume'` in `SESSION_TOOL_NAMES`, tests. Exit criteria: fake tmux runner tests for each branch; cross-host returns `not_on_this_machine`; the deleted-cwd measurement recorded in the plan/test comments; `allowedChatTools()` has 41 entries.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 9 of 14)
+  - **Satisfies**: R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host ; R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A057.md`
+  - **Completed**: 2026-11-02 11:31
+  - **Method**: /do
+  - **Files**: src/sessions/resume.ts, src/http/sessionResume.ts, src/http/app.ts, src/mcp/tools.ts, src/mcp/sessionTools.ts, src/chat/status.ts, tests/unit/sessions/resume.test.ts, tests/unit/sessions/sessionResumeRoute.test.ts, tests/unit/sessions/sessionResumeTool.test.ts, tests/unit/chat-status.test.ts, tests/integration/sessions.resume.int.test.ts, tests/integration/sessions.mcp.int.test.ts
+  - **Drift**: Phase 7's sessionTools.ts already had fail(text) with the same body as the plan's toolError; reused fail instead of adding a duplicate helper.
+    Plan's route test passed `undefined` for a missing Origin, which JS default params turn into the own Origin; helper now takes `null` for no Origin (same assertions).
+    tests/integration/sessions.mcp.int.test.ts (phase 7) asserted every SESSION_TOOL_NAMES tool is readOnlyHint=true; session_resume is not read-only, so the assertion is now readOnlyHint === (name !== 'session_resume').
+  - **Decided**: toolError vs existing fail() → reuse fail (rung 6, surrounding convention)
+    phase 7 int test read-only assertion vs phase 9 adding a write tool to SESSION_TOOL_NAMES → read tools still asserted read-only, session_resume asserted not read-only (rung 1, invariant 1: suite green)
+    Deleted-cwd handling per the plan's measurements M1-M2 (claude --resume finds transcripts by session id, not cwd): fall back to node cwd → newest existing non-worktree cwd of same repo on this host → ~/<repo> → $HOME, never recreate the dir, report original_cwd; recorded in src/sessions/resume.ts header
+
 
 - [x] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
   - **Difficulty**: NORMAL
