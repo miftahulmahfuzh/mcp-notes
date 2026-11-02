@@ -46,3 +46,7 @@ scripts/install.sh           # idempotent: build, systemd user unit, MCP registr
 
 - Note ids look like `A-B32`; lookup is case-insensitive and tolerates a missing dash. Ids are generated server-side (`src/notes/ids.ts`). Never invent one.
 - `.workflows/` holds task/plan/orchestration records from the planning tooling, and `docs/` holds roadmap and design briefs. Check them for the intent behind a feature before changing it.
+
+> [!IMPORTANT]
+
+> when user type in "p" : you must commit and push your work in a new subagent. you also need to rebuild and restart daemon. USE haiku model for this task.
