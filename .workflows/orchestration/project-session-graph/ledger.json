@@ -215,21 +215,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "3fda527",
       "depends_on": [
         11
       ],
       "difficulty": "NORMAL",
       "n": 12,
-      "note": null,
+      "note": "per-project chat: chat_threads.project via POST /api/chat, ?project= timeline filter, <project> prompt block, toggle+pill+project-chat-history on ProjectsPage; no drift, no decisions",
       "package": "src/chat`, `src/http`, `web/",
       "plan": ".workflows/plan/project-session-graph/phase-12.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:57:40+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A060",
       "title": "Per-project chat and project chat history"
     },
     {
@@ -247,7 +247,7 @@
       "satisfies": [
         "R9"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "\"unfinished\" badge for orch nodes"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T11:48:00+07:00",
+  "updated": "2026-11-02T11:57:57+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
