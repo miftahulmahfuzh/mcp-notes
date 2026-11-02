@@ -6,6 +6,7 @@ import { normalizeNodeId } from '../sessions/ids.js';
 import {
   contextFor,
   graphForRepo,
+  knownNodes,
   listProjects,
   readSelected,
   readTranscript,
@@ -31,6 +32,7 @@ export const USAGE_MAX_LIMIT = 200;
 export const MAX_REPO_CHARS = 200;
 export const MAX_QUERY_CHARS = 500;
 export const MAX_CONTEXT_IDS_CHARS = 2000;
+export const MAX_KNOWN_IDS_CHARS = 1000;
 
 export interface SessionsApiOptions extends SessionsReadOverrides {
   /** The orch "unfinished" check (phase 13). Omitted: built from config.sessions.swarmScript. */
@@ -115,6 +117,7 @@ export function parseIdList(raw: string): string[] {
  * PUT  /api/projects/selected              { repo | null }   same-origin only
  * GET  /api/projects/:repo/sessions        graph payload
  * GET  /api/sessions/context?ids=          prompt-hook context   loopback only
+ * GET  /api/sessions/known?ids=            which ids exist, with their repo (chat node links)
  * GET  /api/sessions/search?q=&repo=&limit=
  * GET  /api/sessions/usage?by=&repo=&month=&limit=
  * GET  /api/sessions/:nodeId/transcript?query=&limit=   owning host only
@@ -167,6 +170,12 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     const raw = c.req.query('ids') ?? '';
     if (raw.length > MAX_CONTEXT_IDS_CHARS) return c.json({ error: 'ids: too long' }, 400);
     return c.json(await contextFor(rd, parseIdList(raw)));
+  });
+
+  r.get('/api/sessions/known', async (c) => {
+    const raw = c.req.query('ids') ?? '';
+    if (raw.length > MAX_KNOWN_IDS_CHARS) return c.json({ error: 'ids: too long' }, 400);
+    return c.json({ nodes: await knownNodes(rd, parseIdList(raw)) });
   });
 
   r.get('/api/sessions/search', async (c) => {

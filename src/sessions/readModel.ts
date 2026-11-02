@@ -47,6 +47,8 @@ import { SELECTED_PROJECT_KEY } from './types.js';
 
 export { SELECTED_PROJECT_KEY };
 export const CONTEXT_MAX_IDS = 10;
+/** Ids checked per `knownNodes` call (the wall's chat linkifier batches what one render shows). */
+export const KNOWN_MAX_IDS = 100;
 const USAGE_MAX_MONTHS = 120;
 
 export type LiveSource = () => Promise<LiveEntry[]>;
@@ -335,6 +337,21 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     parent: parentRow === undefined ? null : toNodeRef(toGraphNode(parentRow, ctx)),
     children: children.rows.map((c) => toNodeRef(toGraphNode(c, ctx))),
   };
+}
+
+/** A node id that exists, with its repo: the wall links it in chat and opens its graph. */
+export type KnownNode = {
+  node_id: string;
+  repo: string | null;
+};
+
+/** Which of up to KNOWN_MAX_IDS node ids exist (any case, dash optional). One indexed query; unknown and invalid ids are dropped. */
+export async function knownNodes(rd: SessionsReadDeps, rawIds: readonly string[]): Promise<KnownNode[]> {
+  const wanted = [...new Set(rawIds.slice(0, KNOWN_MAX_IDS).map(normalizeNodeId).filter((id): id is string => id !== null))];
+  if (wanted.length === 0) return [];
+  const res = await rd.db.execute<KnownNode>(sql`
+    select node_id, repo from cc_sessions where node_id = any(${textArray(wanted)}) order by node_id`);
+  return res.rows.map((r) => ({ node_id: r.node_id, repo: r.repo ?? null }));
 }
 
 /**

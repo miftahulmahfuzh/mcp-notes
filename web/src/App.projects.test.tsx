@@ -38,6 +38,7 @@ beforeEach(() => {
         if (method === 'PUT') stored = (JSON.parse(String(init?.body)) as { repo: string | null }).repo;
         return json({ repo: stored });
       }
+      if (url.startsWith('/api/sessions/known?')) return json({ nodes: url.includes('B1-00') ? [{ node_id: 'B1-00', repo: 'mcp-notes' }] : [] });
       const m = /^\/api\/projects\/([^/]+)\/sessions/.exec(url);
       if (m) return json(graphs[decodeURIComponent(m[1]!)] ?? { repo: m[1], nodes: [] });
       return new Response('not found', { status: 404 });
@@ -117,5 +118,49 @@ describe('App: projects view', () => {
     pop('/');
     await waitFor(() => expect(within(rail()).getByRole('button', { name: 'Projects' }).getAttribute('aria-pressed')).toBe('false'));
     expect(h1()).not.toBe('mcp-notes.');
+  });
+
+  it('focus mode hides rail, sidebar and header, survives the chat toggle, and Esc leaves it', async () => {
+    at('/projects?repo=mcp-notes');
+    render(<App />);
+    await screen.findByText('A0-3G');
+    fireEvent.click(screen.getByRole('button', { name: 'Focus on graph' }));
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes&focus=1'));
+    expect(document.querySelector('.rail')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Projects' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.getByText('A0-3G')).toBeTruthy();
+    // Project chat history keeps focus; the toggle back to the graph too.
+    fireEvent.click(screen.getByRole('button', { name: 'Project chat history' }));
+    await screen.findByTestId('project-chat-history');
+    expect(document.querySelector('.rail')).toBeNull();
+    expect(where()).toBe('/projects?repo=mcp-notes&focus=1');
+    fireEvent.click(screen.getByRole('button', { name: 'Session graph' }));
+    await screen.findByText('A0-3G');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes'));
+    expect(document.querySelector('.rail')).not.toBeNull();
+    expect(h1()).toBe('mcp-notes.');
+  });
+
+  it('a focus deep link opens in focus mode; with a node selected, Esc clears the node first', async () => {
+    at('/projects?repo=mcp-notes&node=A0-3G&focus=1');
+    render(<App />);
+    await waitFor(() => expect(node('A0-3G')?.getAttribute('aria-pressed')).toBe('true'));
+    expect(document.querySelector('.rail')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes&focus=1'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes'));
+  });
+
+  it('a repo-less ?node= link (from Claude Code) opens the node on its own repo, replacing the URL', async () => {
+    stored = 'seer';
+    at('/projects?node=b1-00');
+    render(<App />);
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes&node=B1-00'));
+    await waitFor(() => expect(node('B1-00')?.getAttribute('aria-pressed')).toBe('true'));
+    expect(calls).toContain('GET /api/sessions/known?ids=B1-00');
+    expect(calls.some((c) => c.startsWith('GET /api/projects/seer/sessions'))).toBe(false);
   });
 });

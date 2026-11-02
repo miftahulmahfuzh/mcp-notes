@@ -3,7 +3,9 @@ import type { View } from '../types';
 /**
  * The history page's URL (phase 9): `/history`, or `/history?thread=<id>` to open it on one thread.
  * The projects view (project-session-graph phase 10): `/projects`, `/projects?repo=<repo>`, and
- * `/projects?repo=<repo>&node=<NODE-ID>` with one graph node selected.
+ * `/projects?repo=<repo>&node=<NODE-ID>` with one graph node selected. `&focus=1` is graph focus
+ * mode: the page alone, without rail, sidebar and header. `/projects?node=<NODE-ID>` (no repo) is how
+ * Claude Code links a node: the app looks up the node's repo.
  * The wall and the bin have no path of their own: they live at `/` (and `/?note=<id>` deep links,
  * lib/deepLink.ts), so leaving the history or projects page pushes `/` and nothing else is touched.
  */
@@ -19,9 +21,11 @@ export interface Route {
 export interface ProjectsRoute {
   repo: string | null;
   node: string | null;
+  /** Graph focus mode: only the page (graph or project chat, toolbar, pill) is shown. */
+  focus: boolean;
 }
 
-export const NO_PROJECT_ROUTE: ProjectsRoute = { repo: null, node: null };
+export const NO_PROJECT_ROUTE: ProjectsRoute = { repo: null, node: null, focus: false };
 
 type Loc = Pick<Location, 'pathname' | 'search'>;
 
@@ -58,13 +62,14 @@ export function canonicalNodeId(input: string): string | null {
 export function projectsRouteFromLocation(loc: Loc): ProjectsRoute | null {
   if (pathOf(loc) !== PROJECTS_PATH) return null;
   const node = param(loc.search, 'node');
-  return { repo: param(loc.search, 'repo'), node: node === null ? null : canonicalNodeId(node) };
+  return { repo: param(loc.search, 'repo'), node: node === null ? null : canonicalNodeId(node), focus: param(loc.search, 'focus') === '1' };
 }
 
 export function projectsHref(r: ProjectsRoute): string {
   const p = new URLSearchParams();
   if (r.repo) p.set('repo', r.repo);
   if (r.node) p.set('node', r.node);
+  if (r.focus) p.set('focus', '1');
   const q = p.toString();
   return q ? `${PROJECTS_PATH}?${q}` : PROJECTS_PATH;
 }
@@ -78,6 +83,6 @@ export function hrefForView(view: View, thread: string | null, loc: Loc, project
   const r = routeFromLocation(loc);
   const p = projectsRouteFromLocation(loc);
   if (view === 'history') return r.history && r.thread === thread ? null : historyHref(thread);
-  if (view === 'projects') return p !== null && p.repo === projects.repo && p.node === projects.node ? null : projectsHref(projects);
+  if (view === 'projects') return p !== null && p.repo === projects.repo && p.node === projects.node && p.focus === projects.focus ? null : projectsHref(projects);
   return r.history || p !== null ? '/' : null;
 }

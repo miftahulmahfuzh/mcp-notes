@@ -1,7 +1,7 @@
 .proj { padding-top: 10px; }
 .proj-bar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 44px; }
 .proj-tools { display: flex; gap: 4px; }
-.proj-tools .ibtn { font-size: 19px; }
+.proj-tools .ibtn, .proj-focus.ibtn { font-size: 19px; }
 .proj-tools .ibtn:disabled { opacity: .35; cursor: default; }
 .proj-body { display: flex; align-items: stretch; gap: 16px; min-width: 0; }
 .proj-graph { flex: 1 1 auto; min-width: 0; }

@@ -8,6 +8,11 @@
  * where it stands alone: not inside a fenced code block, an inline code span, a markdown link,
  * an autolink, a bare URL, a path, a file name, a hash, a UUID or a longer dashed word.
  * `normalizeId` (used by `/open`) is looser: any case, dash optional.
+ *
+ * Session node ids (`BE-XU`: two characters, a dash, two characters, `src/sessions/ids.ts`) follow
+ * the same boundary rules but are linked only when the caller says the id exists (upper-case words
+ * such as CI-CD share the shape): `nodeCandidates` lists what to ask the daemon about, and
+ * `linkify(markdown, wall, known)` links the known ones to `<wall>/projects?node=ID`.
  */
 
 /** The wall the daemon serves when nothing else is known. */
@@ -18,8 +23,15 @@ export const ID_PATTERN = /^[0-9A-Z]-[0-9A-Z]{3}$/
 
 const LOOSE_ID = /^([0-9A-Z])-?([0-9A-Z]{3})$/
 
-/** A candidate anywhere in a text: the fast path skips texts without one. */
-const ANY_CANDIDATE = /[0-9A-Z]-[0-9A-Z]{3}/
+/** Canonical node id. The daemon never hands out an all-digit one. */
+export const NODE_ID_PATTERN = /^[0-9A-Z]{2}-[0-9A-Z]{2}$/
+
+const LOOSE_NODE_ID = /^([0-9A-Z]{2})-?([0-9A-Z]{2})$/
+
+const HAS_LETTER = /[A-Z]/
+
+/** A note or node candidate anywhere in a text: the fast path skips texts without one. */
+const ANY_CANDIDATE = /[0-9A-Z]-[0-9A-Z]{3}|[0-9A-Z]{2}-[0-9A-Z]{2}/
 
 /** True when `text` holds something id-shaped, before any boundary rule. */
 export function hasCandidate(text: string): boolean {
@@ -58,6 +70,13 @@ export function normalizeId(input: string): string | null {
   return `${m[1]}-${m[2]}`
 }
 
+/** Node ids, case-insensitive and dash-tolerant: `be-xu`, `BEXU` -> `BE-XU`; null for anything else. */
+export function normalizeNodeId(input: string): string | null {
+  const m = LOOSE_NODE_ID.exec(input.trim().toUpperCase())
+  if (m === null) return null
+  return `${m[1]}-${m[2]}`
+}
+
 /**
  * The wall's base URL from a setting or from the MCP URL: trimmed, `/mcp` and trailing slashes
  * dropped. Null unless it is http(s) with a host and no query, fragment, space, parenthesis
@@ -75,6 +94,11 @@ export function normalizeWallUrl(raw: string): string | null {
 /** `<wall>/?note=<ID>`. `wall` is already normalised; `id` is canonical. */
 export function noteUrl(wall: string, id: string): string {
   return `${wall}/?note=${id}`
+}
+
+/** `<wall>/projects?node=<ID>`: the wall looks up the node's repo and opens it on that graph. */
+export function nodeUrl(wall: string, id: string): string {
+  return `${wall}/projects?node=${id}`
 }
 
 /** `[<ID>](<wall>/?note=<ID>)`, the link form every phase writes. */
@@ -147,8 +171,15 @@ export function splitFences(text: string): Segment[] {
   return out
 }
 
-function startsCandidate(text: string, i: number): boolean {
-  if (!ID_PATTERN.test(text.slice(i, i + 5))) return false
+/** Which id kind starts at i, by shape and boundary; null for neither. */
+function candidateAt(text: string, i: number): 'note' | 'node' | null {
+  const word = text.slice(i, i + 5)
+  const kind = ID_PATTERN.test(word) ? 'note' : NODE_ID_PATTERN.test(word) && HAS_LETTER.test(word) ? 'node' : null
+  return kind !== null && isWhole(text, i) ? kind : null
+}
+
+/** The 5 characters at i stand alone: nothing before or after makes them part of something longer. */
+function isWhole(text: string, i: number): boolean {
   const before = i > 0 ? text[i - 1]! : ''
   if (before !== '' && BAD_BEFORE.test(before)) return false
   const after = text[i + 5]
@@ -188,8 +219,13 @@ function codeSpanEnd(text: string, i: number): number {
   return -1
 }
 
+/** Which node ids count as existing. */
+export type KnownNodes = { has: (id: string) => boolean }
+
+const NO_NODES: KnownNodes = { has: () => false }
+
 /** Linkify one stretch of markdown that holds no fenced code block. */
-function linkifyProse(text: string, wall: string): string {
+function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
   let out = ''
   let plainFrom = 0
   let i = 0
@@ -232,12 +268,15 @@ function linkifyProse(text: string, wall: string): string {
         continue
       }
     }
-    if (startsCandidate(text, i)) {
+    const kind = candidateAt(text, i)
+    if (kind !== null) {
       const id = text.slice(i, i + 5)
-      out += text.slice(plainFrom, i) + noteLink(wall, id)
-      i += 5
-      plainFrom = i
-      continue
+      if (kind === 'note' || nodes.has(id)) {
+        out += text.slice(plainFrom, i) + (kind === 'note' ? noteLink(wall, id) : `[${id}](${nodeUrl(wall, id)})`)
+        i += 5
+        plainFrom = i
+        continue
+      }
     }
     i++
   }
@@ -245,12 +284,25 @@ function linkifyProse(text: string, wall: string): string {
 }
 
 /**
- * Every free-standing upper-case note id in `markdown` becomes `[ID](<wall>/?note=ID)`.
+ * Every free-standing upper-case note id in `markdown` becomes `[ID](<wall>/?note=ID)`, and every
+ * free-standing node id in `nodes` becomes `[ID](<wall>/projects?node=ID)`.
  * Idempotent: an id already inside a link is left alone, so linkify(linkify(x)) === linkify(x).
  */
-export function linkify(markdown: string, wall: string): string {
+export function linkify(markdown: string, wall: string, nodes: KnownNodes = NO_NODES): string {
   if (!hasCandidate(markdown)) return markdown
   return splitFences(markdown)
-    .map(seg => (seg.isCode ? seg.text : linkifyProse(seg.text, wall)))
+    .map(seg => (seg.isCode ? seg.text : linkifyProse(seg.text, wall, nodes)))
     .join('')
+}
+
+/** The node ids `linkify` would link if they existed, deduped, in order: what to ask the daemon. */
+export function nodeCandidates(markdown: string): string[] {
+  const seen: string[] = []
+  linkify(markdown, DEFAULT_WALL, {
+    has: id => {
+      if (!seen.includes(id)) seen.push(id)
+      return false
+    },
+  })
+  return seen
 }

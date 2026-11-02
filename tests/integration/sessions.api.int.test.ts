@@ -280,6 +280,21 @@ describe('GET /api/sessions/context', () => {
   });
 });
 
+describe('GET /api/sessions/known', () => {
+  it('returns the ids that exist with their repo, dropping unknown and invalid ones', async () => {
+    const { status, body } = await get<{ nodes: Array<{ node_id: string; repo: string | null }> }>(
+      '/api/sessions/known?ids=b1-22,ZZ-ZZ,%20bad!,A0-3G,a03g',
+    );
+    expect(status).toBe(200);
+    expect(body.nodes.map((n) => n.node_id)).toEqual(['A0-3G', 'B1-22']);
+    expect(body.nodes.every((n) => typeof n.repo === 'string')).toBe(true);
+  });
+
+  it('is empty for no ids', async () => {
+    expect((await get<{ nodes: unknown[] }>('/api/sessions/known')).body).toEqual({ nodes: [] });
+  });
+});
+
 describe('GET /api/sessions/search', () => {
   it('hydrates the search hits in rank order (injected search)', async () => {
     const searchApp = new Hono();

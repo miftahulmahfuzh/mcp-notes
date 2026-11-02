@@ -15,7 +15,7 @@ import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
 import { useHistory } from './hooks/useHistory';
 import { normalizeNoteId, noteHref } from './lib/deepLink';
-import { hrefForView, NO_PROJECT_ROUTE, projectsRouteFromLocation, routeFromLocation, type ProjectsRoute } from './lib/route';
+import { hrefForView, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, type ProjectsRoute } from './lib/route';
 import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
 import { HistoryPage } from './pages/HistoryPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -36,7 +36,10 @@ import { Wall } from './components/Wall';
 import { AnswerPanel } from './components/AnswerPanel';
 import { ChatBar } from './components/ChatBar';
 import { Tooltip } from './components/Tooltip';
-import { NoteLinkContext, type NoteLinks } from './components/ChatText';
+import { NodeLinkContext, NoteLinkContext, type NodeLinks, type NoteLinks } from './components/ChatText';
+import { NodeModal } from './components/graph/NodeModal';
+import { useKnownNodes } from './hooks/useKnownNodes';
+import { fetchKnownNodes } from './sessionsApi';
 import { Gallery } from './components/Gallery';
 import { DropOverlay } from './components/DropOverlay';
 import { NoteEditor } from './components/NoteEditor';
@@ -85,8 +88,15 @@ export function App() {
   // Shown repo: the URL's, else the one both laptops last picked, else the most recently active.
   // The fallback uses the sidebar's sort, so it matches the sidebar's top row whatever order the server sends.
   const mostRecentRepo = projectsStore.projects ? (sortProjects(projectsStore.projects)[0]?.repo ?? null) : null;
-  const projectRepo = projectsRoute.repo ?? (projectsStore.selectedLoaded ? (projectsStore.selected ?? mostRecentRepo) : null);
-  const resolvingRepo = projectsRoute.repo === null && (!projectsStore.selectedLoaded || projectsStore.projects === null);
+  // `/projects?node=BE-XU` (how Claude Code links a node) names no repo: the node's own repo is looked
+  // up first, and only an unknown node falls back to the selection. `nodeLookedUp` is the node whose lookup failed.
+  const [nodeLookedUp, setNodeLookedUp] = useState<string | null>(null);
+  const awaitingNodeRepo = projectsRoute.repo === null && projectsRoute.node !== null && nodeLookedUp !== projectsRoute.node;
+  const projectRepo =
+    projectsRoute.repo ?? (!awaitingNodeRepo && projectsStore.selectedLoaded ? (projectsStore.selected ?? mostRecentRepo) : null);
+  const resolvingRepo = projectsRoute.repo === null && (awaitingNodeRepo || !projectsStore.selectedLoaded || projectsStore.projects === null);
+  // Graph focus mode: the projects page alone, no rail, sidebar or header.
+  const focus = view === 'projects' && projectsRoute.focus;
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
   // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
   const history = useHistory(view === 'history', { includeDeleted: true });
@@ -128,7 +138,7 @@ export function App() {
   const highlight = chat.open && chat.text.length > 0 && used.length > 0;
   const usedSet = useMemo(() => (highlight ? new Set(used) : null), [highlight, used]);
 
-  const mainLeft = side ? 296 : 56;
+  const mainLeft = focus ? 0 : side ? 296 : 56;
   const chatLeft = mainLeft + 16;
 
   const toggleTag = useCallback((t: string) => {
@@ -298,20 +308,56 @@ export function App() {
   const toggleProjects = useCallback(() => {
     const opening = wallRef.current.view !== 'projects';
     setView(opening ? 'projects' : 'wall');
-    if (opening) setSide(true);
+    if (opening) {
+      setSide(true);
+      setProjectsRoute((r) => (r.focus ? { ...r, focus: false } : r));
+    }
   }, []);
 
   /** Sidebar repo row: show it, store it server-side (both laptops), drop any node selection. */
   const pickRepo = useCallback(
     (repo: string) => {
       pickProject(repo);
-      setProjectsRoute({ repo, node: null });
+      setProjectsRoute((r) => ({ repo, node: null, focus: r.focus }));
     },
     [pickProject],
   );
 
   /** Graph click: `?node=`. Pins the shown repo into the URL too, so the link is complete. */
-  const selectNode = useCallback((node: string | null) => setProjectsRoute({ repo: projectRepo, node }), [projectRepo]);
+  const selectNode = useCallback((node: string | null) => setProjectsRoute((r) => ({ repo: projectRepo, node, focus: r.focus })), [projectRepo]);
+
+  /** The projects toolbar's focus icon (and Esc in focus mode). Pins the shown repo, like a node click. */
+  const toggleFocus = useCallback(() => setProjectsRoute((r) => ({ ...r, repo: projectRepo, focus: !r.focus })), [projectRepo]);
+
+  // Resolve a repo-less `/projects?node=` to the node's repo. The address bar is replaced (not pushed)
+  // before the state changes, so Back skips the repo-less URL instead of resolving it again.
+  const routeNode = view === 'projects' && projectsRoute.repo === null ? projectsRoute.node : null;
+  useEffect(() => {
+    if (routeNode === null) return;
+    const ac = new AbortController();
+    fetchKnownNodes([routeNode], ac.signal).then(
+      (found) => {
+        if (ac.signal.aborted) return;
+        const repo = found[0]?.repo ?? null;
+        if (repo === null) {
+          setNodeLookedUp(routeNode);
+          return;
+        }
+        setProjectsRoute((r) => {
+          if (r.repo !== null || r.node !== routeNode) return r;
+          const next = { ...r, repo };
+          window.history.replaceState(null, '', projectsHref(next));
+          return next;
+        });
+      },
+      (e: unknown) => {
+        if (ac.signal.aborted) return;
+        console.error('node link: repo lookup failed', e);
+        setNodeLookedUp(routeNode);
+      },
+    );
+    return () => ac.abort();
+  }, [routeNode]);
 
   /** Photo modal "Chat about this image": the history page with that picture attached to the composer (a pointer, no upload). */
   const [chatSeed, setChatSeed] = useState<{ imageId: string; nonce: number } | null>(null);
@@ -671,6 +717,21 @@ export function App() {
     [knownIds, openNoteModal],
   );
 
+  // Node ids in chat (`BE-XU`): linked once the server knows them, opened in the node pop-up.
+  const knownNodes = useKnownNodes();
+  const [nodeModal, setNodeModal] = useState<string | null>(null);
+  const nodeLinks = useMemo<NodeLinks>(
+    () => ({ lookup: knownNodes.lookup, request: knownNodes.request, open: setNodeModal }),
+    [knownNodes.lookup, knownNodes.request],
+  );
+  const closeNodeModal = useCallback(() => setNodeModal(null), []);
+  /** The pop-up's "Show on graph": the projects page on that node, keeping focus mode when already in it. */
+  const showNodeOnGraph = useCallback((node: string, repo: string) => {
+    setNodeModal(null);
+    setProjectsRoute((r) => ({ repo, node, focus: wallRef.current.view === 'projects' && r.focus }));
+    setView('projects');
+  }, []);
+
   useEffect(() => () => cancelFlash.current(), []);
 
   const send = (e: FormEvent<HTMLFormElement>) => {
@@ -699,171 +760,195 @@ export function App() {
   return (
     <IconContext.Provider value={ICONS}>
       <NoteLinkContext.Provider value={noteLinks}>
-        <div className="app">
-          <Rail
-            mode={mode}
-            view={view}
-            active={active}
-            onToggleSide={() => setSide((s) => !s)}
-            onAdd={() => void addNote()}
-            onCycleMode={() => {
-              setMode(nextMode);
-              setView('wall');
-            }}
-            onToggleProjects={toggleProjects}
-            onToggleHistory={toggleHistory}
-            onToggleBin={toggleBin}
-            onToggleTag={toggleTag}
-            onClear={() => setActive([])}
-          />
-          {side && (
-            <Sidebar
-              mode={mode}
-              view={view}
-              photoCount={photoCount}
-              tags={tags}
-              active={active}
-              onMode={pickMode}
-              onToggleProjects={toggleProjects}
-              onToggleHistory={toggleHistory}
-              onToggleBin={toggleBin}
-              onToggleTag={toggleTag}
-              projects={projectsStore.projects}
-              repo={projectRepo}
-              onPickRepo={pickRepo}
-            />
-          )}
-          <main className="main" style={{ marginLeft: mainLeft }}>
-            <Header
-              heading={
-                view === 'projects'
-                  ? projectHeading(projectRepo)
-                  : view === 'history'
-                    ? HISTORY_HEADING
-                    : view === 'bin'
-                      ? BIN_HEADING
-                      : headingFor(mode, active)
-              }
-              countLine={
-                view === 'projects'
-                  ? projectsCountLine(projectsStore.projects, projectRepo)
-                  : view === 'history'
-                    ? historyCountLine(history.items, history.hasMore)
-                    : view === 'bin'
-                      ? binCountLine(binStore.bin, active)
-                      : countLineFor(mode, active, notes, visible, photos)
-              }
-              last={last}
-              lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
-              showSticker={view === 'wall' && mode !== 'images'}
-              bin={view === 'bin'}
-              history={view === 'history'}
-              projects={view === 'projects'}
-              onJumpLast={() => last && jump(last.id)}
-              onAdd={() => void addNote()}
-            />
-            <div className="rule" />
-            {view === 'projects' ? (
-              <ProjectsPage key={projectRepo ?? ''} repo={projectRepo} resolving={resolvingRepo} node={projectsRoute.node} onSelectNode={selectNode} />
-            ) : view === 'history' ? (
-              <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} seedImage={chatSeed} />
-            ) : view === 'bin' ? (
-              <Bin store={binStore} now={now} onRestored={onRestored} />
-            ) : mode === 'images' ? (
-              <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeImageWithUndo} onSave={save} onChatAbout={chatAboutImage} />
-            ) : (
-              <Wall
-                notes={visible}
-                now={now}
-                editingId={editing}
-                usedIds={usedSet}
-                copiedId={copied}
-                onCopy={copy}
-                onEdit={setEditing}
-                onCommit={commit}
-                onDelete={askRemoveNote}
+        <NodeLinkContext.Provider value={nodeLinks}>
+          <div className={focus ? 'app app-focus' : 'app'}>
+            {!focus && (
+              <Rail
+                mode={mode}
+                view={view}
+                active={active}
+                onToggleSide={() => setSide((s) => !s)}
+                onAdd={() => void addNote()}
+                onCycleMode={() => {
+                  setMode(nextMode);
+                  setView('wall');
+                }}
+                onToggleProjects={toggleProjects}
+                onToggleHistory={toggleHistory}
+                onToggleBin={toggleBin}
                 onToggleTag={toggleTag}
-                onExpand={expand}
+                onClear={() => setActive([])}
               />
             )}
-          </main>
-          {chat.open && view !== 'history' && view !== 'projects' && (
-            <AnswerPanel
-              left={chatLeft}
-              query={chat.query}
-              images={chat.images}
-              text={chat.text}
-              done={chat.done}
-              status={chat.status}
-              brain={chat.brain}
-              pinned={chat.pinned}
-              collapsed={chat.collapsed}
-              usedIds={used}
-              onTogglePin={chat.togglePin}
-              onToggleCollapse={chat.toggleCollapsed}
-              onClose={chat.close}
-              onJump={jump}
-              onFullScreen={openHistoryThread}
-            />
-          )}
-          {view !== 'history' && view !== 'projects' && (
-            <ChatBar
-              left={chatLeft}
-              value={q}
-              onChange={setQ}
-              onSubmit={send}
-              images={chatImages.images}
-              onPasteFiles={chatImages.add}
-              onRemoveImage={chatImages.remove}
-              sendBlocked={chatImages.blocked}
-            />
-          )}
-          <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
-          {expandedNote &&
-            createPortal(
-              <NoteEditor
-                key={expandedNote.id}
-                note={expandedNote}
-                copied={copied === expandedNote.id}
-                notice={notice}
-                onCopy={copy}
-                onSave={save}
-                onClose={closeEditor}
-                onRemoveImage={removeImageWithUndo}
-                onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
-                onRemoveFile={removeFileWithUndo}
-                onShowOnWall={showOnWall}
-                onChatAbout={chatAboutImage}
-                onDelete={removeNote}
+            {side && !focus && (
+              <Sidebar
+                mode={mode}
+                view={view}
+                photoCount={photoCount}
                 tags={tags}
-                closeSignal={closeSignal}
-              />,
-              document.body,
+                active={active}
+                onMode={pickMode}
+                onToggleProjects={toggleProjects}
+                onToggleHistory={toggleHistory}
+                onToggleBin={toggleBin}
+                onToggleTag={toggleTag}
+                projects={projectsStore.projects}
+                repo={projectRepo}
+                onPickRepo={pickRepo}
+              />
             )}
-          {viewer && (
-            <Lightbox
-              items={viewer.items}
-              index={viewer.index}
-              onIndex={(index) => setViewer((v) => (v ? { ...v, index } : v))}
-              onClose={() => setViewer(null)}
-            />
-          )}
-          {confirmDelete &&
-            createPortal(
-              <ConfirmDialog
-                message={confirmDelete.message}
-                onCancel={() => setConfirmDelete(null)}
-                onConfirm={() => {
-                  setConfirmDelete(null);
-                  removeNote(confirmDelete.note);
-                }}
-              />,
-              document.body,
+            <main className="main" style={{ marginLeft: mainLeft }}>
+              {!focus && (
+                <>
+                  <Header
+                    heading={
+                      view === 'projects'
+                        ? projectHeading(projectRepo)
+                        : view === 'history'
+                          ? HISTORY_HEADING
+                          : view === 'bin'
+                            ? BIN_HEADING
+                            : headingFor(mode, active)
+                    }
+                    countLine={
+                      view === 'projects'
+                        ? projectsCountLine(projectsStore.projects, projectRepo)
+                        : view === 'history'
+                          ? historyCountLine(history.items, history.hasMore)
+                          : view === 'bin'
+                            ? binCountLine(binStore.bin, active)
+                            : countLineFor(mode, active, notes, visible, photos)
+                    }
+                    last={last}
+                    lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
+                    showSticker={view === 'wall' && mode !== 'images'}
+                    bin={view === 'bin'}
+                    history={view === 'history'}
+                    projects={view === 'projects'}
+                    onJumpLast={() => last && jump(last.id)}
+                    onAdd={() => void addNote()}
+                  />
+                  <div className="rule" />
+                </>
+              )}
+              {view === 'projects' ? (
+                <ProjectsPage
+                  key={projectRepo ?? ''}
+                  repo={projectRepo}
+                  resolving={resolvingRepo}
+                  node={projectsRoute.node}
+                  onSelectNode={selectNode}
+                  focus={focus}
+                  onToggleFocus={toggleFocus}
+                />
+              ) : view === 'history' ? (
+                <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} seedImage={chatSeed} />
+              ) : view === 'bin' ? (
+                <Bin store={binStore} now={now} onRestored={onRestored} />
+              ) : mode === 'images' ? (
+                <Gallery items={photos} copiedId={copied} onCopy={copy} onDelete={removeImageWithUndo} onSave={save} onChatAbout={chatAboutImage} />
+              ) : (
+                <Wall
+                  notes={visible}
+                  now={now}
+                  editingId={editing}
+                  usedIds={usedSet}
+                  copiedId={copied}
+                  onCopy={copy}
+                  onEdit={setEditing}
+                  onCommit={commit}
+                  onDelete={askRemoveNote}
+                  onToggleTag={toggleTag}
+                  onExpand={expand}
+                />
+              )}
+            </main>
+            {chat.open && view !== 'history' && view !== 'projects' && (
+              <AnswerPanel
+                left={chatLeft}
+                query={chat.query}
+                images={chat.images}
+                text={chat.text}
+                done={chat.done}
+                status={chat.status}
+                brain={chat.brain}
+                pinned={chat.pinned}
+                collapsed={chat.collapsed}
+                usedIds={used}
+                onTogglePin={chat.togglePin}
+                onToggleCollapse={chat.toggleCollapsed}
+                onClose={chat.close}
+                onJump={jump}
+                onFullScreen={openHistoryThread}
+              />
             )}
-          <UndoBar entry={undoEntry} onUndo={runUndo} />
-          <LinkNotice text={linkNotice} />
-          <Tooltip />
-        </div>
+            {view !== 'history' && view !== 'projects' && (
+              <ChatBar
+                left={chatLeft}
+                value={q}
+                onChange={setQ}
+                onSubmit={send}
+                images={chatImages.images}
+                onPasteFiles={chatImages.add}
+                onRemoveImage={chatImages.remove}
+                sendBlocked={chatImages.blocked}
+              />
+            )}
+            <DropOverlay onImageAdded={onImageAdded} target={expandedNote ? expandedNote.id : null} onAttached={onAttached} onAttachFailed={onAttachFailed} />
+            {expandedNote &&
+              createPortal(
+                <NoteEditor
+                  key={expandedNote.id}
+                  note={expandedNote}
+                  copied={copied === expandedNote.id}
+                  notice={notice}
+                  onCopy={copy}
+                  onSave={save}
+                  onClose={closeEditor}
+                  onRemoveImage={removeImageWithUndo}
+                  onAttachFiles={(files) => attachFiles(expandedNote.id, files)}
+                  onRemoveFile={removeFileWithUndo}
+                  onShowOnWall={showOnWall}
+                  onChatAbout={chatAboutImage}
+                  onDelete={removeNote}
+                  tags={tags}
+                  closeSignal={closeSignal}
+                />,
+                document.body,
+              )}
+            {viewer && (
+              <Lightbox
+                items={viewer.items}
+                index={viewer.index}
+                onIndex={(index) => setViewer((v) => (v ? { ...v, index } : v))}
+                onClose={() => setViewer(null)}
+              />
+            )}
+            {confirmDelete &&
+              createPortal(
+                <ConfirmDialog
+                  message={confirmDelete.message}
+                  onCancel={() => setConfirmDelete(null)}
+                  onConfirm={() => {
+                    setConfirmDelete(null);
+                    removeNote(confirmDelete.note);
+                  }}
+                />,
+                document.body,
+              )}
+            {nodeModal !== null && (
+              <NodeModal
+                nodeId={nodeModal}
+                repo={knownNodes.lookup(nodeModal)?.repo ?? null}
+                onClose={closeNodeModal}
+                onShowOnGraph={showNodeOnGraph}
+              />
+            )}
+            <UndoBar entry={undoEntry} onUndo={runUndo} />
+            <LinkNotice text={linkNotice} />
+            <Tooltip />
+          </div>
+        </NodeLinkContext.Provider>
       </NoteLinkContext.Provider>
     </IconContext.Provider>
   );

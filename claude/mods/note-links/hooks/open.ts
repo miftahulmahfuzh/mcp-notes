@@ -7,7 +7,7 @@
  * success, so its exit code is never read (the same rule as `src/http/reveal.ts`); only a
  * failure to start moves on to the next opener.
  */
-import { normalizeId, noteUrl } from './linkify'
+import { normalizeId, normalizeNodeId, nodeUrl, noteUrl } from './linkify'
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string }
 export type RunInit = { cwd?: string; timeoutMs?: number }
@@ -63,7 +63,7 @@ export async function openUrl(run: Run, url: string, openers: readonly Opener[] 
   return { isOpened: false, failures }
 }
 
-export const USAGE = 'Usage: /open <note id>, for example /open A-B32 (case and the dash do not matter).'
+export const USAGE = 'Usage: /open <note id | node id>, for example /open A-B32 or /open BE-XU (case and the dash do not matter).'
 
 /** The id-ish word of the arguments: the first word, without a leading `#` or wrapping `` ` ``, `[ ]`. */
 export function idArgument(args: string): string {
@@ -71,15 +71,20 @@ export function idArgument(args: string): string {
   return first.replace(/^[#`[]+/, '').replace(/[`\]]+$/, '')
 }
 
-/** The text `/open` answers with; opens the browser when the argument is a note id. */
+/**
+ * The text `/open` answers with; opens the browser when the argument is a note or node id. Without
+ * a dash `ab32` reads as both, and stays a note (as before node ids); `ab-32` is the node.
+ */
 export async function openCommand(args: string, wall: string, run: Run): Promise<string> {
   const word = idArgument(args)
   if (word === '') return USAGE
-  const id = normalizeId(word)
+  const note = normalizeId(word)
+  const node = note === null ? normalizeNodeId(word) : null
+  const id = note ?? node
   if (id === null) {
-    return `"${word}" is not a note id. Ids look like A-B32: one letter or digit, a dash, three letters or digits (the dash is optional, case does not matter).`
+    return `"${word}" is not a note or node id. Note ids look like A-B32 and session node ids like BE-XU (the dash is optional, case does not matter).`
   }
-  const url = noteUrl(wall, id)
+  const url = node !== null ? nodeUrl(wall, node) : noteUrl(wall, id)
   const outcome = await openUrl(run, url)
   if (outcome.isOpened) return `Opened ${id} on the wall: ${url}`
   return `Could not open a browser from here (${outcome.failures.join('; ')}). Open ${url} yourself.`

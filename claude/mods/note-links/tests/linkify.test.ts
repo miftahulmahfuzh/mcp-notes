@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { linkify, normalizeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
+import { linkify, nodeCandidates, normalizeId, normalizeNodeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
 
 // Made-up ids only. No real note's id or body belongs in this file.
 const WALL = 'http://localhost:7317'
@@ -98,6 +98,36 @@ describe('linkify', () => {
 
   test('uses the wall it is given', () => {
     expect(linkify('A-B32', 'http://127.0.0.1:9000')).toBe('[A-B32](http://127.0.0.1:9000/?note=A-B32)')
+  })
+})
+
+describe('node ids', () => {
+  const N = (id: string) => `[${id}](${WALL}/projects?node=${id})`
+  const known = { has: (id: string) => id === 'BE-XU' || id === '8C-OJ' }
+
+  test('links only the node ids it is told exist', () => {
+    expect(linkify('BE-XU spawned 8C-OJ, see CI-CD', WALL, known)).toBe(`${N('BE-XU')} spawned ${N('8C-OJ')}, see CI-CD`)
+  })
+
+  test('leaves node ids alone without a known set, and in code, links and paths', () => {
+    expect(linkify('BE-XU', WALL)).toBe('BE-XU')
+    expect(linkify('`BE-XU` and ./BE-XU.md and [BE-XU](x)', WALL, known)).toBe('`BE-XU` and ./BE-XU.md and [BE-XU](x)')
+  })
+
+  test('notes and nodes in one reply, idempotent', () => {
+    const once = linkify('A-B32 came from BE-XU.', WALL, known)
+    expect(once).toBe(`${L('A-B32')} came from ${N('BE-XU')}.`)
+    expect(linkify(once, WALL, known)).toBe(once)
+  })
+
+  test('nodeCandidates lists what to ask about: whole, upper case, outside code, not all digits', () => {
+    expect(nodeCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, 12-34, be-xu, AB-CDE, A-B32')).toEqual(['BE-XU', 'CI-CD'])
+  })
+
+  test('normalizeNodeId', () => {
+    expect(normalizeNodeId(' be-xu ')).toBe('BE-XU')
+    expect(normalizeNodeId('BEXU')).toBe('BE-XU')
+    expect(normalizeNodeId('A-B32')).toBeNull()
   })
 })
 

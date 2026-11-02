@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartBarHorizontal, Check, CloudSlash, Copy, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
 import { useNow } from '../../hooks/useNow';
@@ -27,6 +27,8 @@ export interface NodePanelProps {
   /** Select another node (pushes `?node=`). */
   onSelectNode: (nodeId: string) => void;
   onClose: () => void;
+  /** The chat pop-up's "Show on graph": open this node on its project's graph. Absent on the graph page itself. */
+  onShowOnGraph?: (detail: SessionDetail) => void;
   /** Tests pin the clock; the page uses a minute tick. */
   now?: Date;
 }
@@ -44,7 +46,7 @@ function placeLabel(host: string): string {
   return hostsLabel(host ? [host] : []);
 }
 
-export function NodePanel({ nodeId, nodes, onSelectNode, onClose, now: nowProp }: NodePanelProps) {
+export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph, now: nowProp }: NodePanelProps) {
   const clock = useNow();
   const now = nowProp ?? clock;
   const { copied, copy } = useCopied();
@@ -160,6 +162,19 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, now: nowProp }
           >
             <Sparkle weight="duotone" />
           </button>
+          {onShowOnGraph && (
+            <button
+              type="button"
+              className="ibtn hov"
+              data-tip="Show on graph"
+              data-tip-side="below"
+              aria-label="Show on graph"
+              disabled={!detail || detail.repo === null}
+              onClick={() => detail && onShowOnGraph(detail)}
+            >
+              <Graph weight="duotone" />
+            </button>
+          )}
           <button type="button" className="ibtn hov" data-tip="Close" data-tip-side="below" aria-label="Close" onClick={onClose}>
             <X weight="duotone" />
           </button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowsInLineVertical, ArrowsOutLineVertical } from '@phosphor-icons/react';
+import { ArrowsInLineVertical, ArrowsOutLineVertical, CornersIn, CornersOut } from '@phosphor-icons/react';
 import { NodePanel } from '../components/graph/NodePanel';
 import { SessionGraph } from '../components/graph/SessionGraph';
 import { UnfinishedBadgeSvg } from '../components/graph/UnfinishedBadge';
@@ -19,6 +19,10 @@ export interface ProjectsPageProps {
   /** `?node=`: the selected node id, canonical. */
   node: string | null;
   onSelectNode: (nodeId: string | null) => void;
+  /** Graph focus mode (`&focus=1`): App hides the rail, sidebar and header; the page itself is unchanged. */
+  focus?: boolean;
+  /** The toolbar's focus icon, and Esc in focus mode with no node selected. Absent: no focus icon. */
+  onToggleFocus?: () => void;
   /** Phase 11 slot: the node detail panel, beside the graph while a node is selected. */
   renderPanel?: (node: SessionNode, close: () => void) => ReactNode;
   /** Phase 13 slot: forwarded to each GraphNode's `badge`. */
@@ -27,11 +31,12 @@ export interface ProjectsPageProps {
 
 /**
  * The projects view's main area. Layout (later phases add to it, nothing here moves):
- *   .proj-bar   toolbar, icon-only: phase 12's graph <-> chat toggle, then (graph view) expand all / collapse all
+ *   .proj-bar   toolbar, icon-only: phase 12's graph <-> chat toggle, then (graph view) expand all / collapse all,
+ *               then focus mode (both views, so the chat view can leave it too)
  *   .proj-body  .proj-graph (SessionGraph) + .proj-panel (phase 11's renderPanel); graph view only
  *   ProjectChat (phase 12): `project-pill-query-input` in graph view, `project-chat-history` in chat view
  */
-export function ProjectsPage({ repo, resolving = false, node, onSelectNode, renderPanel, renderBadge }: ProjectsPageProps) {
+export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focus = false, onToggleFocus, renderPanel, renderBadge }: ProjectsPageProps) {
   const graph = useSessionGraph(repo);
   const [view, setView] = useState<ProjectView>('graph');
   const showChat = useCallback(() => setView('chat'), []);
@@ -72,6 +77,16 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [node, onSelectNode]);
+
+  // In focus mode, Esc with no node selected leaves it (with a node selected, Esc clears that first).
+  useEffect(() => {
+    if (!focus || node !== null || !onToggleFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.defaultPrevented && e.key === 'Escape') onToggleFocus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [focus, node, onToggleFocus]);
 
   const layout = useMemo(() => layoutGraph(graph.nodes, expanded, forest), [graph.nodes, expanded, forest]);
 
@@ -131,6 +146,18 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
               <ArrowsInLineVertical weight="duotone" />
             </button>
           </div>
+        )}
+        {onToggleFocus && (
+          <button
+            type="button"
+            className="ibtn hov proj-focus"
+            data-tip={focus ? 'Exit focus' : 'Focus on graph'}
+            aria-label={focus ? 'Exit focus' : 'Focus on graph'}
+            aria-pressed={focus}
+            onClick={onToggleFocus}
+          >
+            {focus ? <CornersIn weight="duotone" /> : <CornersOut weight="duotone" />}
+          </button>
         )}
       </div>
       {view === 'graph' && (

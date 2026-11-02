@@ -112,3 +112,18 @@ export async function fetchSessionGraph(
     etag: res.headers.get('etag'),
   };
 }
+
+/** A node id the server knows, with its repo (`GET /api/sessions/known`). */
+export interface KnownNode {
+  node_id: string;
+  repo: string | null;
+}
+
+/** `GET /api/sessions/known?ids=` -> the ids that exist; unknown ones are left out. */
+export async function fetchKnownNodes(ids: readonly string[], signal?: AbortSignal): Promise<KnownNode[]> {
+  const res = await fetch(`/api/sessions/known?ids=${enc(ids.join(','))}`, signal ? { signal } : undefined);
+  if (!res.ok) throw await failure(res);
+  const j = (await res.json()) as { nodes?: unknown };
+  if (!Array.isArray(j.nodes)) return [];
+  return (j.nodes as Array<Partial<KnownNode>>).flatMap((n) => (typeof n.node_id === 'string' ? [{ node_id: n.node_id, repo: str(n.repo) }] : []));
+}

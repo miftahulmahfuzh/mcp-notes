@@ -1,6 +1,8 @@
-import { createContext, useContext, useMemo, type MouseEvent, type ReactNode } from 'react';
-import { segmentChat } from '../lib/chatSegments';
+import { createContext, useContext, useEffect, useMemo, type MouseEvent, type ReactNode } from 'react';
+import { nodeIdCandidates, segmentChat } from '../lib/chatSegments';
 import { noteHref } from '../lib/deepLink';
+import { projectsHref } from '../lib/route';
+import type { KnownNodes } from '../hooks/useKnownNodes';
 
 /** What chat text needs from the page to link note ids (App provides it, phase 11). */
 export interface NoteLinks {
@@ -11,6 +13,14 @@ export interface NoteLinks {
 }
 
 export const NoteLinkContext = createContext<NoteLinks | null>(null);
+
+/** What chat text needs to link session node ids (`BE-XU`): which exist, and the node pop-up. */
+export interface NodeLinks extends Pick<KnownNodes, 'lookup' | 'request'> {
+  /** Open the node pop-up over the current page, without navigating. */
+  open: (id: string) => void;
+}
+
+export const NodeLinkContext = createContext<NodeLinks | null>(null);
 
 /** Opens the picture named by an `img:ID` (a note image) or `upload:ID` (a pasted image) written in chat text. */
 export interface ImageLinks {
@@ -31,11 +41,20 @@ export interface ChatInlineProps {
   streaming?: boolean;
 }
 
-/** One paragraph of chat text: plain text, http(s) links (new tab) and note links (open in place). */
+/** One paragraph of chat text: plain text, http(s) links (new tab), note and node links (open in place). */
 export function ChatInline({ text, streaming = false }: ChatInlineProps) {
   const links = useContext(NoteLinkContext);
+  const nodes = useContext(NodeLinkContext);
   const isKnown = links?.isKnown ?? NOBODY;
-  const segs = useMemo(() => segmentChat(text, { streaming, isKnown }), [text, streaming, isKnown]);
+  const lookup = nodes?.lookup;
+  const isKnownNode = useMemo(() => (lookup ? (id: string) => Boolean(lookup(id)) : NOBODY), [lookup]);
+  const request = nodes?.request;
+  useEffect(() => {
+    if (!request) return;
+    const ids = nodeIdCandidates(text);
+    if (ids.length > 0) request(ids);
+  }, [text, request]);
+  const segs = useMemo(() => segmentChat(text, { streaming, isKnown, isKnownNode }), [text, streaming, isKnown, isKnownNode]);
   return (
     <>
       {segs.map((s, j) => {
@@ -47,6 +66,7 @@ export function ChatInline({ text, streaming = false }: ChatInlineProps) {
           );
         }
         if (s.kind === 'note') return <NoteLink key={j} id={s.id} text={s.text} open={links?.open ?? null} />;
+        if (s.kind === 'node') return <NodeLink key={j} id={s.id} text={s.text} repo={lookup?.(s.id)?.repo ?? null} open={nodes?.open ?? null} />;
         return <PlainText key={j} text={s.text} streaming={streaming && j === segs.length - 1} />;
       })}
     </>
@@ -74,6 +94,28 @@ function NoteLink({ id, text, open }: NoteLinkProps) {
   };
   return (
     <a className="answer-link note-link" href={noteHref(id)} data-note-link={id} data-tip="Open note" onClick={onClick}>
+      {text}
+    </a>
+  );
+}
+
+/** A real link to the node on the graph (`/projects?repo=&node=`); a plain primary click opens the pop-up in place. */
+function NodeLink({ id, text, repo, open }: { id: string; text: string; repo: string | null; open: ((id: string) => void) | null }) {
+  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (open === null) return;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    open(id);
+  };
+  return (
+    <a
+      className="answer-link node-link"
+      href={projectsHref({ repo, node: id, focus: false })}
+      data-node-link={id}
+      data-tip="Open session"
+      onClick={onClick}
+    >
       {text}
     </a>
   );

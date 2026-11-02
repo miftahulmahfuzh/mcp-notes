@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { segmentLinks } from './links';
-import { segmentChat, wallNoteId, type ChatSegmentOptions } from './chatSegments';
+import { nodeIdCandidates, segmentChat, wallNoteId, type ChatSegmentOptions } from './chatSegments';
 
 const known =
   (...list: string[]) =>
@@ -121,5 +121,36 @@ describe('segmentChat: streaming', () => {
   it('an unfinished wall link shows its label only, unlinked, until it completes', () => {
     expect(segmentChat('[A-B32](http://localhost:7317/?no', { streaming: true })).toEqual([{ kind: 'text', text: 'A-B32' }]);
     expect(segmentChat('[A-B32](http://localhost:7317/?note=A-B32)', { streaming: true })).toEqual([{ kind: 'note', text: 'A-B32', id: 'A-B32' }]);
+  });
+});
+
+describe('segmentChat: node ids', () => {
+  const nodes = (text: string, opts: ChatSegmentOptions = {}) =>
+    segmentChat(text, opts).flatMap((s) => (s.kind === 'node' ? [`${s.id}:${s.text}`] : []));
+
+  it('links only node ids the page knows exist', () => {
+    const isKnownNode = known('BE-XU', '8C-OJ');
+    expect(nodes('BE-XU spawned 8C-OJ; CI-CD is not one', { isKnownNode })).toEqual(['BE-XU:BE-XU', '8C-OJ:8C-OJ']);
+    expect(nodes('BE-XU')).toEqual([]);
+  });
+
+  it('keeps notes and nodes apart in one paragraph, in order', () => {
+    const segs = segmentChat('A-B32 came from BE-XU.', { isKnownNode: known('BE-XU') });
+    expect(segs.map((s) => s.kind)).toEqual(['note', 'text', 'node', 'text']);
+  });
+
+  it('skips code spans, paths, lower case and the streaming tail', () => {
+    const isKnownNode = known('BE-XU');
+    expect(nodes('`BE-XU` ./BE-XU.md be-xu', { isKnownNode })).toEqual([]);
+    expect(nodes('see BE-XU', { isKnownNode, streaming: true })).toEqual([]);
+  });
+
+  it('a wall projects link names its node without asking', () => {
+    expect(nodes('[BE-XU](http://localhost:7317/projects?repo=mcp-notes&node=BE-XU)')).toEqual(['BE-XU:BE-XU']);
+    expect(nodes('[orch](http://localhost:7317/projects?node=be-xu)')).toEqual(['BE-XU:orch']);
+  });
+
+  it('nodeIdCandidates: whole upper-case ids outside code, with a letter, deduped', () => {
+    expect(nodeIdCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, 12-34, be-xu, AB-CDE, A-B32, 2026-11-02')).toEqual(['BE-XU', 'CI-CD']);
   });
 });

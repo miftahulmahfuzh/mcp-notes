@@ -41,11 +41,11 @@ describe('route', () => {
   });
 
   it('reads /projects with repo and node, canonicalising the node id', () => {
-    expect(projectsRouteFromLocation(loc('/projects'))).toEqual({ repo: null, node: null });
-    expect(projectsRouteFromLocation(loc('/projects/'))).toEqual({ repo: null, node: null });
-    expect(projectsRouteFromLocation(loc('/projects?repo=mcp-notes'))).toEqual({ repo: 'mcp-notes', node: null });
-    expect(projectsRouteFromLocation(loc('/projects?repo=mcp-notes&node=a03g'))).toEqual({ repo: 'mcp-notes', node: 'A0-3G' });
-    expect(projectsRouteFromLocation(loc('/projects?node=not-an-id'))).toEqual({ repo: null, node: null });
+    expect(projectsRouteFromLocation(loc('/projects'))).toEqual({ repo: null, node: null, focus: false });
+    expect(projectsRouteFromLocation(loc('/projects/'))).toEqual({ repo: null, node: null, focus: false });
+    expect(projectsRouteFromLocation(loc('/projects?repo=mcp-notes'))).toEqual({ repo: 'mcp-notes', node: null, focus: false });
+    expect(projectsRouteFromLocation(loc('/projects?repo=mcp-notes&node=a03g'))).toEqual({ repo: 'mcp-notes', node: 'A0-3G', focus: false });
+    expect(projectsRouteFromLocation(loc('/projects?node=not-an-id'))).toEqual({ repo: null, node: null, focus: false });
     expect(projectsRouteFromLocation(loc('/'))).toBeNull();
     expect(projectsRouteFromLocation(loc('/history'))).toBeNull();
     expect(projectsRouteFromLocation(loc('/projectsx'))).toBeNull();
@@ -59,19 +59,28 @@ describe('route', () => {
   });
 
   it('builds the projects href', () => {
-    expect(projectsHref({ repo: null, node: null })).toBe('/projects');
-    expect(projectsHref({ repo: 'mcp-notes', node: null })).toBe('/projects?repo=mcp-notes');
-    expect(projectsHref({ repo: 'mcp-notes', node: 'A0-3G' })).toBe('/projects?repo=mcp-notes&node=A0-3G');
+    expect(projectsHref({ repo: null, node: null, focus: false })).toBe('/projects');
+    expect(projectsHref({ repo: 'mcp-notes', node: null, focus: false })).toBe('/projects?repo=mcp-notes');
+    expect(projectsHref({ repo: 'mcp-notes', node: 'A0-3G', focus: false })).toBe('/projects?repo=mcp-notes&node=A0-3G');
+    expect(projectsHref({ repo: 'mcp-notes', node: null, focus: true })).toBe('/projects?repo=mcp-notes&focus=1');
+  });
+
+  it('reads focus mode, and a node with no repo', () => {
+    expect(projectsRouteFromLocation(loc('/projects?repo=a&focus=1'))).toEqual({ repo: 'a', node: null, focus: true });
+    expect(projectsRouteFromLocation(loc('/projects?focus=0'))).toEqual({ repo: null, node: null, focus: false });
+    expect(projectsRouteFromLocation(loc('/projects?node=be-xu'))).toEqual({ repo: null, node: 'BE-XU', focus: false });
+    expect(hrefForView('projects', null, loc('/projects?repo=a'), { repo: 'a', node: null, focus: true })).toBe('/projects?repo=a&focus=1');
+    expect(hrefForView('projects', null, loc('/projects?repo=a&focus=1'), { repo: 'a', node: null, focus: true })).toBeNull();
   });
 
   it('syncs the projects view and leaves it for /', () => {
-    expect(hrefForView('projects', null, loc('/'), { repo: null, node: null })).toBe('/projects');
-    expect(hrefForView('projects', null, loc('/projects'), { repo: null, node: null })).toBeNull();
-    expect(hrefForView('projects', null, loc('/projects?repo=a'), { repo: 'a', node: 'A0-3G' })).toBe('/projects?repo=a&node=A0-3G');
-    expect(hrefForView('projects', null, loc('/projects?repo=a&node=a03g'), { repo: 'a', node: 'A0-3G' })).toBeNull();
+    expect(hrefForView('projects', null, loc('/'), { repo: null, node: null, focus: false })).toBe('/projects');
+    expect(hrefForView('projects', null, loc('/projects'), { repo: null, node: null, focus: false })).toBeNull();
+    expect(hrefForView('projects', null, loc('/projects?repo=a'), { repo: 'a', node: 'A0-3G', focus: false })).toBe('/projects?repo=a&node=A0-3G');
+    expect(hrefForView('projects', null, loc('/projects?repo=a&node=a03g'), { repo: 'a', node: 'A0-3G', focus: false })).toBeNull();
     expect(hrefForView('wall', null, loc('/projects?repo=a'))).toBe('/');
     expect(hrefForView('bin', null, loc('/projects'))).toBe('/');
     expect(hrefForView('history', null, loc('/projects'))).toBe('/history');
-    expect(hrefForView('projects', null, loc('/history'), { repo: 'a', node: null })).toBe('/projects?repo=a');
+    expect(hrefForView('projects', null, loc('/history'), { repo: 'a', node: null, focus: false })).toBe('/projects?repo=a');
   });
 });

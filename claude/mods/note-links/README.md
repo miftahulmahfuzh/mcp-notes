@@ -6,7 +6,12 @@ A Claude Code mod for mcp-notes. It does two things:
   is drawn as `Saved as [A-B32](http://localhost:7317/?note=A-B32).`, which the terminal shows
   as a Ctrl-click hyperlink (OSC 8). Only the drawing changes: the stored message and what the
   model reads stay as they were.
-- **`/open <id>` opens a note on the wall in the browser.** Case and the dash do not matter
+- **Session node ids the daemon knows become links to their project graph.** `BE-XU` becomes
+  `[BE-XU](http://localhost:7317/projects?node=BE-XU)`; the wall finds the node's repo and opens
+  the graph on it. Upper-case look-alikes (`CI-CD`) share the shape, so each candidate is checked
+  once against `GET /api/sessions/known` and only real ids are linked. With the daemon down,
+  node ids stay plain text.
+- **`/open <id>` opens a note (or, for `BE-XU`, a session on its graph) on the wall in the browser.** Case and the dash do not matter
   (`/open ab32`, `/open a-b32`, `/open A-B32`). From WSL it runs `explorer.exe <url>`, falling
   back to `/mnt/c/WINDOWS/explorer.exe`, then `powershell.exe Start-Process`, then
   `cmd.exe /c start`. When none of them starts, it prints the URL to open yourself.

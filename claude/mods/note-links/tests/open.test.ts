@@ -82,7 +82,7 @@ describe('openCommand', () => {
   test('not an id: says what an id looks like, nothing run', async () => {
     const { run, calls } = fakeRun({ 'explorer.exe': 1 })
     const text = await openCommand('hello', WALL, run)
-    expect(text).toContain('"hello" is not a note id')
+    expect(text).toContain('"hello" is not a note or node id')
     expect(text).toContain('A-B32')
     expect(calls).toEqual([])
   })
