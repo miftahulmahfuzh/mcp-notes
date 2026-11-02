@@ -97,21 +97,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "f57803ef5cb9668018c778389a54511a68b1c48a",
       "depends_on": [
         4
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "summarizer abort race fixed: re-check signal after cwd mkdir (invariant 6); commit trailer says Haiku 5.5 not Opus 5.5",
       "package": "src/sessions`, `src/background.ts`, `src/daemon.ts",
       "plan": ".workflows/plan/project-session-graph/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T11:07:08+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A054",
       "title": "Summaries (Haiku), redaction, embeddings, session search"
     },
     {
@@ -130,7 +130,7 @@
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Sessions read API, selected project, MCP + chat tools, usage"
     },
@@ -277,7 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T10:59:49+07:00",
+  "updated": "2026-11-02T11:07:30+07:00",
   "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }

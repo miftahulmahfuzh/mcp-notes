@@ -7,7 +7,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/project-session-graph`
 **Branch:** `feature/project-session-graph` (base: `origin/main` @ `8c259df`)
 **Phases:** 14
-**Status:** phase 1/14 complete (1)
+**Status:** phase 6/14 complete (1, 6)
 **Coordinator:** —
 
 ---
@@ -163,11 +163,11 @@ belong to that session.
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 ✓ | Schema, node ids, SessionsRepo | R1 | `src/db`, `src/sessions` | 14 | — | NORMAL | `.workflows/plan/project-session-graph/phase-1.md` | P1-NOTES-A049 | — |
-| 2 | swarm.py passes CC_PARENT_SESSION (~/claude-commands) | R2 | `~/claude-commands/skills/swarm` | 1 | — | EASY | `.workflows/plan/project-session-graph/phase-2.md` | P1-NOTES-A050 | — |
-| 3 | Transcript ingest, repo resolution, live registry, backfill | R1 | `src/sessions`, `src/background.ts`, `src/config.ts` | 25 | 1 | HARD | `.workflows/plan/project-session-graph/phase-3.md` | P1-NOTES-A051 | — |
-| 4 | Heuristic parent links from transcripts | R3 | `src/sessions` | 5 | 3 | NORMAL | `.workflows/plan/project-session-graph/phase-4.md` | P1-NOTES-A052 | — |
-| 5 | SessionStart + Bash spawn hooks, hook endpoints, install | R2 | `claude/hooks`, `src/http`, `scripts` | 14 | 1 | HARD | `.workflows/plan/project-session-graph/phase-5.md` | P1-NOTES-A053 | — |
-| 6 | Summaries (Haiku), redaction, embeddings, session search | R4 | `src/sessions`, `src/background.ts`, `src/daemon.ts` | 12 | 4 | HARD | `.workflows/plan/project-session-graph/phase-6.md` | P1-NOTES-A054 | — |
+| 2 ✓ | swarm.py passes CC_PARENT_SESSION (~/claude-commands) | R2 | `~/claude-commands/skills/swarm` | 1 | — | EASY | `.workflows/plan/project-session-graph/phase-2.md` | P1-NOTES-A050 | — |
+| 3 ✓ | Transcript ingest, repo resolution, live registry, backfill | R1 | `src/sessions`, `src/background.ts`, `src/config.ts` | 25 | 1 | HARD | `.workflows/plan/project-session-graph/phase-3.md` | P1-NOTES-A051 | — |
+| 4 ✓ | Heuristic parent links from transcripts | R3 | `src/sessions` | 5 | 3 | NORMAL | `.workflows/plan/project-session-graph/phase-4.md` | P1-NOTES-A052 | — |
+| 5 ✓ | SessionStart + Bash spawn hooks, hook endpoints, install | R2 | `claude/hooks`, `src/http`, `scripts` | 14 | 1 | HARD | `.workflows/plan/project-session-graph/phase-5.md` | P1-NOTES-A053 | — |
+| 6 ✓ | Summaries (Haiku), redaction, embeddings, session search | R4 | `src/sessions`, `src/background.ts`, `src/daemon.ts` | 12 | 4 | HARD | `.workflows/plan/project-session-graph/phase-6.md` | P1-NOTES-A054 | — |
 | 7 | Sessions read API, selected project, MCP + chat tools, usage | R6 | `src/http`, `src/mcp`, `src/chat`, `src/sessions` | 17 | 5, 6 | NORMAL | `.workflows/plan/project-session-graph/phase-7.md` | P1-NOTES-A055 | — |
 | 8 | Node ids in prompts resolve to context | R5 | `claude/hooks` | 4 | 7 | NORMAL | `.workflows/plan/project-session-graph/phase-8.md` | P1-NOTES-A056 | — |
 | 9 | Resume/spawn into tmux, `session_resume` tool | R8, R6 | `src/sessions`, `src/http`, `src/mcp` | 11 | 7 | HARD | `.workflows/plan/project-session-graph/phase-9.md` | P1-NOTES-A057 | — |
