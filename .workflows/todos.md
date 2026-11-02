@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 12
+**Total Active Tasks**: 11
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 12
+- P1 High: 11
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 9
-- Completed: 53
+- Completed: 54
 
 ---
 
@@ -41,16 +41,6 @@
   - **Satisfies**: R3 — Heuristic parent-link backfill from parent transcripts, marked `heuristic`
   - **Depends on**: P1-NOTES-A051
   - **Plan**: `.workflows/plan/P1-NOTES-A052.md`
-
-- [ ] **P1-NOTES-A053** Phase 5: SessionStart + Bash spawn hooks, hook endpoints, install
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `claude/hooks/notes-session.mjs` (cli sessions only), `claude/hooks/notes-spawn.mjs`, `src/http/sessionHooks.ts` + mount in `app.ts` (incl. pending-spawn pruning on the spawn route), `scripts/claude-hooks.mjs` groups + `OUR_SCRIPT`, `install.sh` (register + raise `cleanupPeriodDays` to `NOTES_CLAUDE_RETENTION_DAYS`, default 3650), `uninstall.sh`, `.d.mts` files, tests. Exit criteria: hook unit tests; endpoint int tests (env link, hook claim once within the window, no claim on resume/compact/clear, prune); `claude-hooks.mjs` merge test includes the new groups.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 5 of 14)
-  - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
-  - **Depends on**: P1-NOTES-A049
-  - **Plan**: `.workflows/plan/P1-NOTES-A053.md`
 
 - [ ] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
   - **Difficulty**: HARD
@@ -151,6 +141,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A053** Phase 5: SessionStart + Bash spawn hooks, hook endpoints, install
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-session.mjs` (cli sessions only), `claude/hooks/notes-spawn.mjs`, `src/http/sessionHooks.ts` + mount in `app.ts` (incl. pending-spawn pruning on the spawn route), `scripts/claude-hooks.mjs` groups + `OUR_SCRIPT`, `install.sh` (register + raise `cleanupPeriodDays` to `NOTES_CLAUDE_RETENTION_DAYS`, default 3650), `uninstall.sh`, `.d.mts` files, tests. Exit criteria: hook unit tests; endpoint int tests (env link, hook claim once within the window, no claim on resume/compact/clear, prune); `claude-hooks.mjs` merge test includes the new groups.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 5 of 14)
+  - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
+  - **Depends on**: P1-NOTES-A049
+  - **Plan**: `.workflows/plan/P1-NOTES-A053.md`
+  - **Completed**: 2026-11-02 10:41
+  - **Method**: /do
+  - **Files**: claude/hooks/notes-session.mjs, claude/hooks/notes-session.d.mts, claude/hooks/notes-spawn.mjs, claude/hooks/notes-spawn.d.mts, src/http/sessionHooks.ts, tests/unit/hooks/notesSession.test.ts, tests/unit/hooks/notesSpawn.test.ts, tests/integration/sessionHooks.int.test.ts, src/http/app.ts, scripts/claude-hooks.mjs, scripts/claude-hooks.d.mts, scripts/install.sh, scripts/uninstall.sh, tests/unit/scripts/claudeHooks.test.ts
+  - **Verified**: npm run typecheck, npm run build, npm test (126 files / 1428 tests), flock'd npm run test:int (41 files / 483 tests) all pass; claude-hooks status lists five hooks; retention raises cleanupPeriodDays to 3650; notes-spawn prints nothing and exits 0.
+  - **Drift**: install.sh header after step 9a ends at line 29, not 30 as the plan guessed; --help range set to sed -n '2,29p' (plan told the implementer to confirm and adjust).
 
 - [x] **P1-NOTES-A051** Phase 3: Transcript ingest, repo resolution, live registry, backfill
   - **Difficulty**: HARD
