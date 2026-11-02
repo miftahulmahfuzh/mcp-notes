@@ -29,7 +29,6 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
     <Sidebar
       mode="text"
       view={view}
-      photoCount={0}
       tags={[]}
       active={[]}
       onMode={vi.fn()}

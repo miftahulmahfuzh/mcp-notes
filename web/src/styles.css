@@ -57,7 +57,6 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .side { position: fixed; left: 56px; top: 0; bottom: 0; width: 240px; border-right: 1px solid var(--line); background: var(--bg); z-index: 29; padding: 14px 12px 100px; box-sizing: border-box; overflow: auto; display: flex; flex-direction: column; gap: 18px; }
 .side-modes { display: flex; align-items: center; gap: 4px; height: 40px; }
 .side-modes .ibtn { font-size: 20px; }
-.side-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .side-sep { height: 1px; background: var(--line); }
 .side-tags { display: flex; flex-direction: column; gap: 2px; }
 .tagrow { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 10px; border-radius: 999px; cursor: pointer; background: transparent; color: var(--chip); font-size: 13px; }

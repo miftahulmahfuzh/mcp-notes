@@ -7,7 +7,6 @@ import { BIN_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
 export interface SidebarProps {
   mode: Mode;
   view: View;
-  photoCount: number;
   tags: TagCount[];
   active: string[];
   onMode: (m: Mode) => void;
@@ -25,7 +24,6 @@ export interface SidebarProps {
 export function Sidebar({
   mode,
   view,
-  photoCount,
   tags,
   active,
   onMode,
@@ -91,7 +89,6 @@ export function Sidebar({
         >
           <Trash weight="duotone" />
         </button>
-        {!inProjects && <span className="side-count">{photoCount} photos</span>}
       </div>
       <div className="side-sep" />
       {inProjects ? (

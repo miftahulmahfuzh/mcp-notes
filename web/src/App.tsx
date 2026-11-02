@@ -21,7 +21,7 @@ import { HistoryPage } from './pages/HistoryPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { useProjects } from './hooks/useProjects';
 import { projectHeading, projectsCountLine, sortProjects } from './lib/projects';
-import { BIN_HEADING, binCountLine, countLineFor, headingFor, imageCount, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
+import { BIN_HEADING, binCountLine, countLineFor, headingFor, lastEdited, nextMode, photosOf, visibleOnWall } from './lib/filter';
 import { extractUsedIds } from './lib/usedIds';
 import { relativeDate } from './lib/dates';
 import { tagsOf } from './lib/text';
@@ -132,7 +132,6 @@ export function App() {
   }, [notes, expanded]);
   lastExpanded.current = expandedNote;
   const photos = useMemo(() => photosOf(notes, active), [notes, active]);
-  const photoCount = useMemo(() => imageCount(notes), [notes]);
   const last = useMemo(() => lastEdited(notes), [notes]);
   const used = useMemo(() => extractUsedIds(chat.text, notes.map((n) => n.id)), [chat.text, notes]);
   const highlight = chat.open && chat.text.length > 0 && used.length > 0;
@@ -784,7 +783,6 @@ export function App() {
               <Sidebar
                 mode={mode}
                 view={view}
-                photoCount={photoCount}
                 tags={tags}
                 active={active}
                 onMode={pickMode}
