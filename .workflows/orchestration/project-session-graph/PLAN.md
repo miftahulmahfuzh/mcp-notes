@@ -7,7 +7,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/project-session-graph`
 **Branch:** `feature/project-session-graph` (base: `origin/main` @ `8c259df`)
 **Phases:** 14
-**Status:** planned
+**Status:** phase 1/14 complete (1)
 **Coordinator:** —
 
 ---
@@ -162,7 +162,7 @@ belong to that session.
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Schema, node ids, SessionsRepo | R1 | `src/db`, `src/sessions` | 14 | — | NORMAL | `.workflows/plan/project-session-graph/phase-1.md` | P1-NOTES-A049 | — |
+| 1 ✓ | Schema, node ids, SessionsRepo | R1 | `src/db`, `src/sessions` | 14 | — | NORMAL | `.workflows/plan/project-session-graph/phase-1.md` | P1-NOTES-A049 | — |
 | 2 | swarm.py passes CC_PARENT_SESSION (~/claude-commands) | R2 | `~/claude-commands/skills/swarm` | 1 | — | EASY | `.workflows/plan/project-session-graph/phase-2.md` | P1-NOTES-A050 | — |
 | 3 | Transcript ingest, repo resolution, live registry, backfill | R1 | `src/sessions`, `src/background.ts`, `src/config.ts` | 25 | 1 | HARD | `.workflows/plan/project-session-graph/phase-3.md` | P1-NOTES-A051 | — |
 | 4 | Heuristic parent links from transcripts | R3 | `src/sessions` | 5 | 3 | NORMAL | `.workflows/plan/project-session-graph/phase-4.md` | P1-NOTES-A052 | — |

@@ -6,31 +6,31 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "d3b6025",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "schema 0007 + node ids + SessionsRepo; ids.test 'nope'\u2192'not-an-id' (valid loose id NO-PE) per contract rung 1",
       "package": "src/db`, `src/sessions",
       "plan": ".workflows/plan/project-session-graph/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-02T10:36:25+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A049",
       "title": "Schema, node ids, SessionsRepo"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "bd59a65",
       "depends_on": [],
       "difficulty": "EASY",
       "n": 2,
-      "note": "landed in ~/claude-commands: bd59a65 on origin/main, deployed via sync.sh; verified by coordinator",
+      "note": "landed in ~/claude-commands: bd59a65 on origin/main (not an mcp-notes commit; verify reads it as unknown and keeps done). Coordinator-verified.",
       "package": "~/claude-commands/skills/swarm",
       "plan": ".workflows/plan/project-session-graph/phase-2.md",
-      "reported_at": "2026-11-02T10:29:15+07:00",
+      "reported_at": "2026-11-02T10:37:00+07:00",
       "satisfies": [
         "R2"
       ],
@@ -53,7 +53,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Transcript ingest, repo resolution, live registry, backfill"
     },
@@ -91,7 +91,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "SessionStart + Bash spawn hooks, hook endpoints, install"
     },
@@ -277,6 +277,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "project-session-graph",
-  "updated": "2026-11-02T10:29:15+07:00",
+  "updated": "2026-11-02T10:37:10+07:00",
+  "verified_at": "2026-11-02T10:36:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/project-session-graph"
 }
