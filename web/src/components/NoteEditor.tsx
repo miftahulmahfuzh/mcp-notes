@@ -300,7 +300,7 @@ export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRe
                 </button>
                 <RevealButton image={img} className="ed-rm ed-reveal" />
                 <button type="button" className="ed-rm" data-tip="Remove image" aria-label="Remove image" onClick={() => onRemoveImage(img)}>
-                  <X weight="duotone" />
+                  <Trash weight="duotone" />
                 </button>
               </div>
             ))}

@@ -88,7 +88,12 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
         {editing ? (
           <CardEditor note={note} draftRef={draftRef} onCommit={onCommit} />
         ) : (
-          <p className="card-text" style={{ fontSize: fs, letterSpacing: letterSpacingFor(fs) }} onClick={() => onEdit(note.id)}>
+          <p
+            className="card-text"
+            style={{ fontSize: fs, letterSpacing: letterSpacingFor(fs) }}
+            // Ctrl/Cmd+click opens the big editor instead of editing inline.
+            onClick={(e) => (e.ctrlKey || e.metaKey ? onExpand(note, null) : onEdit(note.id))}
+          >
             {segmentBody(note.body).map((s, i) =>
               s.kind === 'tag' ? (
                 <span

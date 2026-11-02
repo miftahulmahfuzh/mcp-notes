@@ -17,10 +17,10 @@ export function hasImages(n: Note): boolean {
   return n.images.length > 0;
 }
 
-/** Number of images across `notes` (the sidebar's "N photos"). */
+/** Number of images across `notes` whose file is on this machine (the sidebar's "N photos"): each laptop counts its own. */
 export function imageCount(notes: Note[]): number {
   let total = 0;
-  for (const n of notes) total += n.images.length;
+  for (const n of notes) for (const img of n.images) if (img.available) total++;
   return total;
 }
 
@@ -62,7 +62,7 @@ export function headingFor(mode: Mode, active: string[]): string {
 }
 
 export function countLineFor(mode: Mode, active: string[], all: Note[], visible: Note[], photos: PhotoItem[]): string {
-  if (mode === 'images') return `${photos.length} photos.`;
+  if (mode === 'images') return `${photos.filter((p) => p.image.available).length} photos.`;
   if (active.length) return `${visible.length} of ${all.length} notes.`;
   if (mode === 'text') return `${visible.length} notes, ${all.length - visible.length} photo notes hidden.`;
   return `${all.length} notes, ${all.filter(hasImages).length} with photos.`;

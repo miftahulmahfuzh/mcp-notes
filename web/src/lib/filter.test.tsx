@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { countLineFor, hasImages, headingFor, imageCount, isHiddenByMode, lastEdited, nextMode, photosOf, visibleOnWall } from './filter';
-import { makeNote } from '../testing/fixtures';
+import { makeImage, makeNote } from '../testing/fixtures';
 
 const notes = [
   makeNote('A-AAA', '#seer #ux both'),
@@ -73,6 +73,14 @@ describe('modes and header', () => {
     expect(countLineFor('images', [], notes, [], photosOf(notes, []))).toBe('4 photos.');
     const tagged = visibleOnWall(notes, 'all', ['ux']);
     expect(countLineFor('all', ['ux'], notes, tagged, [])).toBe('4 of 5 notes.');
+  });
+  it('counts only the photos on this machine', () => {
+    const mixed = [
+      makeNote('H-HHH', 'pics', { images: ['H-HH1', 'H-HH2'] }),
+      { ...makeNote('J-JJJ', 'gpd pic'), images: [makeImage('J-JJ1', { note_id: 'J-JJJ', host: 'gpd', available: false })] },
+    ];
+    expect(imageCount(mixed)).toBe(2);
+    expect(countLineFor('images', [], mixed, [], photosOf(mixed, []))).toBe('2 photos.');
   });
   it('knows which notes a mode hides', () => {
     expect(isHiddenByMode(notes[0], 'images')).toBe(true);

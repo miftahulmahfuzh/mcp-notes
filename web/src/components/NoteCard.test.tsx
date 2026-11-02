@@ -59,6 +59,16 @@ describe('NoteCard', () => {
     expect(props.onEdit).toHaveBeenCalledWith('A-B32');
   });
 
+  it('ctrl/cmd+click on the text opens the big editor instead of editing inline', () => {
+    const { container, props } = renderCard(note('hello'));
+    const text = container.querySelector('.card-text') as HTMLElement;
+    fireEvent.click(text, { ctrlKey: true });
+    fireEvent.click(text, { metaKey: true });
+    expect(props.onExpand).toHaveBeenCalledTimes(2);
+    expect(props.onExpand).toHaveBeenCalledWith(props.note, null);
+    expect(props.onEdit).not.toHaveBeenCalled();
+  });
+
   it('shows id, copy button, relative date; marks copied', () => {
     const { container, getByLabelText, props } = renderCard(note('x'), { copied: true });
     expect(container.querySelector('.card-id')?.textContent).toBe('A-B32');
