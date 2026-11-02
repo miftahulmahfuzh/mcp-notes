@@ -38,6 +38,19 @@ export interface PromptIo {
   now: () => number;
 }
 
+/** One resolved Claude Code session node: Phase 7's `nodes[]` row, reduced to what the hook uses. */
+export interface NodeContext {
+  node_id: string;
+  /** Phase 7's per-node context text (summary, plan docs, commits, transcript path). */
+  text: string;
+}
+
+/** The asked-for nodes plus the server's `context` ('' when the hook must rebuild it). */
+export interface ParsedNodeContext {
+  nodes: NodeContext[];
+  context: string;
+}
+
 export const HOOK_EVENT: 'UserPromptSubmit';
 export function pastedCall(n: number): string;
 export function buildPendingContext(n: number): string;
@@ -76,6 +89,33 @@ export function uploadMissing(
   },
 ): Promise<SelectedImage[]>;
 export function buildContext(images: ContextImage[], missing: MissingLatest | null): string | null;
+export const NODE_ID_CANDIDATE: RegExp;
+export const MAX_NODE_IDS: number;
+export const CONTEXT_TIMEOUT_MS: number;
+export const MAX_NODE_CONTEXT_CHARS: number;
+export const NODE_CONTEXT_HEADER: string;
+export const NODE_TOOLS_HINT: string;
+
+export function nodeIdCandidates(prompt: unknown): string[];
+export function contextUrl(baseUrl: string, ids: string[]): string;
+export function parseNodeContext(body: unknown, asked: string[]): ParsedNodeContext;
+export function buildNodeContext(parsed: ParsedNodeContext): string | null;
+export function fetchNodeContext(
+  ids: string[],
+  opts: { fetchImpl: FetchLike; baseUrl: string; timeoutMs?: number },
+): Promise<ParsedNodeContext>;
+export function resolveNodeIds(
+  ids: string[],
+  opts: { env: Env; fetchImpl: FetchLike; timeoutMs?: number },
+): Promise<string | null>;
+export function imageContext(opts: {
+  input: { prompt: string; transcript_path?: unknown; session_id?: unknown };
+  env: Env;
+  fetchImpl: FetchLike;
+  readText: (file: string) => Promise<string>;
+  sleep: (ms: number) => Promise<unknown>;
+  now: () => number;
+}): Promise<string | null>;
 export function runPrompt(opts: {
   input: unknown;
   env: Env;
@@ -83,4 +123,5 @@ export function runPrompt(opts: {
   readText?: (file: string) => Promise<string>;
   sleep?: (ms: number) => Promise<unknown>;
   now?: () => number;
+  contextTimeoutMs?: number;
 }): Promise<UserPromptSubmitOutput | null>;

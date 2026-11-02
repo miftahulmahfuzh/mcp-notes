@@ -7,7 +7,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/project-session-graph`
 **Branch:** `feature/project-session-graph` (base: `origin/main` @ `8c259df`)
 **Phases:** 14
-**Status:** phase 7/14 complete (1, 7)
+**Status:** phase 8/14 complete (1, 7, 8)
 **Coordinator:** —
 
 ---
@@ -169,7 +169,7 @@ belong to that session.
 | 5 | SessionStart + Bash spawn hooks, hook endpoints, install | R2 | `claude/hooks`, `src/http`, `scripts` | 14 | 1 | HARD | `.workflows/plan/project-session-graph/phase-5.md` | P1-NOTES-A053 | — |
 | 6 | Summaries (Haiku), redaction, embeddings, session search | R4 | `src/sessions`, `src/background.ts`, `src/daemon.ts` | 12 | 4 | HARD | `.workflows/plan/project-session-graph/phase-6.md` | P1-NOTES-A054 | — |
 | 7 ✓ | Sessions read API, selected project, MCP + chat tools, usage | R6 | `src/http`, `src/mcp`, `src/chat`, `src/sessions` | 17 | 5, 6 | NORMAL | `.workflows/plan/project-session-graph/phase-7.md` | P1-NOTES-A055 | — |
-| 8 | Node ids in prompts resolve to context | R5 | `claude/hooks` | 4 | 7 | NORMAL | `.workflows/plan/project-session-graph/phase-8.md` | P1-NOTES-A056 | — |
+| 8 ✓ | Node ids in prompts resolve to context | R5 | `claude/hooks` | 4 | 7 | NORMAL | `.workflows/plan/project-session-graph/phase-8.md` | P1-NOTES-A056 | — |
 | 9 | Resume/spawn into tmux, `session_resume` tool | R8, R6 | `src/sessions`, `src/http`, `src/mcp` | 11 | 7 | HARD | `.workflows/plan/project-session-graph/phase-9.md` | P1-NOTES-A057 | — |
 | 10 | Web: projects rail icon, repo sidebar, SVG graph | R7 | `web/` | 26 | 7 | HARD | `.workflows/plan/project-session-graph/phase-10.md` | P1-NOTES-A058 | — |
 | 11 | Web: node detail panel, Tree/Timeline, resume action | R7, R8 | `web/` | 14 | 9, 10 | NORMAL | `.workflows/plan/project-session-graph/phase-11.md` | P1-NOTES-A059 | — |

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 8
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 4
-- Completed: 57
+- Completed: 58
 
 ---
 
@@ -31,16 +31,6 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-
-- [ ] **P1-NOTES-A056** Phase 8: Node ids in prompts resolve to context
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (regex fast path copied from `NODE_ID_CANDIDATE_SOURCE`; only on a candidate does it call `/api/sessions/context` and use its `context`), `.d.mts`, unit tests (incl. equality with `src/sessions/ids.ts`), one integration test. Exit criteria: a prompt with no candidate does no I/O (test asserts fetch/read not called); an existing node id adds context; a non-existent one adds nothing; `/n` behaviour unchanged.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 8 of 14)
-  - **Satisfies**: R5 — Node ids in any Claude Code prompt resolve to that node's context, near-zero cost otherwise
-  - **Depends on**: P1-NOTES-A055
-  - **Plan**: `.workflows/plan/P1-NOTES-A056.md`
 
 - [ ] **P1-NOTES-A057** Phase 9: Resume/spawn into tmux, `session_resume` tool
   - **Difficulty**: HARD
@@ -111,6 +101,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A056** Phase 8: Node ids in prompts resolve to context
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (regex fast path copied from `NODE_ID_CANDIDATE_SOURCE`; only on a candidate does it call `/api/sessions/context` and use its `context`), `.d.mts`, unit tests (incl. equality with `src/sessions/ids.ts`), one integration test. Exit criteria: a prompt with no candidate does no I/O (test asserts fetch/read not called); an existing node id adds context; a non-existent one adds nothing; `/n` behaviour unchanged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 8 of 14)
+  - **Satisfies**: R5 — Node ids in any Claude Code prompt resolve to that node's context, near-zero cost otherwise
+  - **Depends on**: P1-NOTES-A055
+  - **Plan**: `.workflows/plan/P1-NOTES-A056.md`
+  - **Completed**: 2026-11-02 11:25
+  - **Method**: /do
+  - **Files**: claude/hooks/notes-prompt.mjs, claude/hooks/notes-prompt.d.mts, tests/unit/hooks/notesPrompt.test.ts, tests/integration/prompt.hook.int.test.ts
+  - **Drift**: None material: plan line refs were off by a line or two in the unit test file; edits placed by anchor.
+
 
 - [x] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
   - **Difficulty**: NORMAL

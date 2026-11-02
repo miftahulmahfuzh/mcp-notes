@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
@@ -8,7 +9,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runCapture } from '../../claude/hooks/notes-capture.mjs';
 import { runPaste } from '../../claude/hooks/notes-paste.mjs';
-import { runPrompt } from '../../claude/hooks/notes-prompt.mjs';
+import { NODE_CONTEXT_HEADER, runPrompt } from '../../claude/hooks/notes-prompt.mjs';
 import { sha256Hex } from '../../src/images/probe.js';
 import { CWD, RED_PNG_16, SESSION, assistantText, commandEntry, imagePromptEntry, jsonl } from '../unit/hooks/fixtures.js';
 import { insertTextNote, makeImage, originalPathOf, startHarness, type Harness } from './imageHarness.js';
@@ -276,6 +277,24 @@ describe('notes-prompt hook against the real daemon', () => {
     }
     expect(await count('chat_images')).toBe(0);
   });
+
+  it('a node id that does not exist adds nothing: one GET to the real /api/sessions/context, no failure, /n unchanged', async () => {
+    const plain = await writeTranscript([assistantText('hi')]);
+    const net = countingFetch();
+    const disk = countingRead();
+    const out = await submit(plain, 'what did ZZ-9Q decide?', { fetchImpl: net.fetchImpl, readText: disk.readText });
+    expect(out).toBeNull();
+    expect(net.calls()).toBe(1);
+    expect(disk.reads()).toBe(0);
+    // The route answered 2xx with a parseable body: the hook logged no failure.
+    expect(existsSync(path.join(tmp, 'state', 'notes-capture', 'prompt.log'))).toBe(false);
+
+    const transcript = await writeTranscript(twoTurnSession());
+    const ctx = contextOf(await submit(transcript, `${N_PROMPT} ZZ-9Q`));
+    expect(ctx).toContain('(latest)');
+    expect(ctx).not.toContain(NODE_CONTEXT_HEADER);
+  });
+
 
   it('daemon down: null, a log line, nothing remembered; the next /n prompt stores the images', async () => {
     const transcript = await writeTranscript(twoTurnSession());
