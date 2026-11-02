@@ -8,9 +8,10 @@ import {
 
 /**
  * The chat agent's tool surface and the terse captions the answer panel shows while a tool runs.
- * Notes tool names match src/mcp/tools.ts and src/mcp/imageTools.ts; connector tool names come
- * from src/connectors/names.ts. Claude Code exposes all of them as `mcp__notes__<name>` because
- * the daemon registers its one MCP server under the name `notes`.
+ * Notes tool names match src/mcp/tools.ts and src/mcp/imageTools.ts; session tool names match
+ * src/mcp/sessionTools.ts; connector tool names come from src/connectors/names.ts. Claude Code
+ * exposes all of them as `mcp__notes__<name>` because the daemon registers its one MCP server
+ * under the name `notes`.
  */
 export const NOTES_MCP_SERVER = 'notes';
 
@@ -38,6 +39,11 @@ export const NOTES_TOOL_NAMES = [
 
 export type NotesToolName = (typeof NOTES_TOOL_NAMES)[number];
 
+/** Read-only Claude Code session tools (PROJECT_SESSION_GRAPH_PLAN phase 7; phase 9 appends session_resume). */
+export const SESSION_TOOL_NAMES = ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage'] as const;
+
+export type SessionToolName = (typeof SESSION_TOOL_NAMES)[number];
+
 export const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
 
 /** Status-line caption for every tool of one read-only system ('reading expenses' / 'reading runs' / 'reading seer'). */
@@ -48,15 +54,16 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 15 connector tools and WebSearch + WebFetch
- * (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
+ * Exactly the 19 notes tools, the 4 session tools, the 15 connector tools and WebSearch +
+ * WebFetch (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
  * SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN phase 3 adds
  * `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
- * phase 6 adds `similar_images`).
+ * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools).
  */
 export function allowedChatTools(): string[] {
   return [
     ...NOTES_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    ...SESSION_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...WEB_TOOL_NAMES,
   ];
@@ -135,6 +142,14 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'restoring a photo';
     case 'move_image':
       return 'moving a photo to its own note';
+    case 'sessions_search':
+      return 'searching sessions';
+    case 'session_get':
+      return 'reading a session';
+    case 'session_transcript':
+      return 'reading a session transcript';
+    case 'sessions_usage':
+      return 'counting session tokens';
     default:
       return connectorCaption(tool);
   }

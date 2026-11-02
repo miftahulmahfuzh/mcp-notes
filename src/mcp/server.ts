@@ -3,6 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { defaultConnectors, registerConnectorTools } from '../connectors/register.js';
 import { registerImageTools } from './imageTools.js';
 import { buildInstructions } from './instructions.js';
+import { registerSessionTools } from './sessionTools.js';
 import { registerSimilarTools } from './similarTools.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
 
@@ -17,6 +18,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerNoteTools(server, deps);
   registerImageTools(server, deps);
   registerSimilarTools(server, deps);
+  // Iteration 8: read-only Claude Code session tools. Answer SESSIONS_OFF when deps.sessions is unset.
+  registerSessionTools(server, deps);
   // Lazy: nothing is read or connected until a connector tool is called.
   registerConnectorTools(server, deps.connectors ?? defaultConnectors());
   return server;

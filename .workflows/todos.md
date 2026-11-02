@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 9
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 9
+- P1 High: 8
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 7
-- Completed: 56
+- Blocked: 4
+- Completed: 57
 
 ---
 
@@ -32,21 +32,11 @@
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
-- [ ] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/{view,readModel,transcriptSearch}.ts`, `src/http/sessionsApi.ts` (all read endpoints incl. `/api/sessions/context`), mount in `app.ts`, `mcpToolDeps(deps, sessionOverrides?)`, `ToolDeps.sessions`, `src/mcp/sessionTools.ts` (four read tools), registration in `src/mcp/server.ts`, `SESSION_TOOL_NAMES` in `src/chat/status.ts`, MCP instructions paragraph, tests. Exit criteria: int tests per endpoint and tool; `session_transcript` returns `not_on_this_machine` for other-host rows; graph ETag/304 works; `allowedChatTools()` has 40 entries.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 7 of 14)
-  - **Satisfies**: R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
-  - **Depends on**: P1-NOTES-A053, P1-NOTES-A054
-  - **Plan**: `.workflows/plan/P1-NOTES-A055.md`
-
 - [ ] **P1-NOTES-A056** Phase 8: Node ids in prompts resolve to context
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `claude/hooks/notes-prompt.mjs` (regex fast path copied from `NODE_ID_CANDIDATE_SOURCE`; only on a candidate does it call `/api/sessions/context` and use its `context`), `.d.mts`, unit tests (incl. equality with `src/sessions/ids.ts`), one integration test. Exit criteria: a prompt with no candidate does no I/O (test asserts fetch/read not called); an existing node id adds context; a non-existent one adds nothing; `/n` behaviour unchanged.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 8 of 14)
   - **Satisfies**: R5 — Node ids in any Claude Code prompt resolve to that node's context, near-zero cost otherwise
   - **Depends on**: P1-NOTES-A055
@@ -56,7 +46,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/sessions/resume.ts`, `src/http/sessionResume.ts` (same-origin), mount + `sessionResume` wiring in `app.ts` (`mcpToolDeps` third parameter), `ToolDeps.sessionResume`, `session_resume` in `src/mcp/sessionTools.ts`, `'session_resume'` in `SESSION_TOOL_NAMES`, tests. Exit criteria: fake tmux runner tests for each branch; cross-host returns `not_on_this_machine`; the deleted-cwd measurement recorded in the plan/test comments; `allowedChatTools()` has 41 entries.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 9 of 14)
   - **Satisfies**: R8 — Resume/spawn from the wall into tmux; focus/message a live node; deleted-cwd handling measured; confirm only cross-host ; R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
   - **Depends on**: P1-NOTES-A055
@@ -66,7 +56,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: Rail icon, `/projects` route, `ProjectsPage` with `renderPanel`/`renderBadge` slots, repo list in the expanded sidebar with server-persisted selection, `web/src/lib/sessionGraph.ts`, `web/src/components/graph/{SessionGraph,GraphNode,GraphEdges}`, `web/src/sessionsApi.ts` (ETag polling), wire types mirroring phase 7, fixtures. Exit criteria: layout unit tests (lanes, wave side-by-side, collapse); 1000-node render test mounts only visible nodes; a 304 keeps the nodes; typecheck web.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 10 of 14)
   - **Satisfies**: R7 — Web: repo sidebar (selection persisted server-side), graph view, node detail panel with Tree/Timeline, per-project chat
   - **Depends on**: P1-NOTES-A055
@@ -121,6 +111,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A055** Phase 7: Sessions read API, selected project, MCP + chat tools, usage
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/{view,readModel,transcriptSearch}.ts`, `src/http/sessionsApi.ts` (all read endpoints incl. `/api/sessions/context`), mount in `app.ts`, `mcpToolDeps(deps, sessionOverrides?)`, `ToolDeps.sessions`, `src/mcp/sessionTools.ts` (four read tools), registration in `src/mcp/server.ts`, `SESSION_TOOL_NAMES` in `src/chat/status.ts`, MCP instructions paragraph, tests. Exit criteria: int tests per endpoint and tool; `session_transcript` returns `not_on_this_machine` for other-host rows; graph ETag/304 works; `allowedChatTools()` has 40 entries.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 7 of 14)
+  - **Satisfies**: R6 — MCP + chat agent tools: `sessions_search`, `session_get`, `session_transcript`, `session_resume`, usage
+  - **Depends on**: P1-NOTES-A053, P1-NOTES-A054
+  - **Plan**: `.workflows/plan/P1-NOTES-A055.md`
+  - **Completed**: 2026-11-02 11:15
+  - **Method**: /do
+  - **Files**: src/sessions/view.ts, src/sessions/transcriptSearch.ts, src/sessions/readModel.ts, src/http/sessionsApi.ts, src/http/app.ts, src/mcp/tools.ts, src/mcp/sessionTools.ts, src/mcp/server.ts, src/mcp/instructions.ts, src/chat/status.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions.transcriptSearch.test.ts, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/helpers/sessionsSeed.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.mcp.int.test.ts
+  - **Drift**: src/http/app.ts: phase 5 imported sessionHookRoutes after captureRoutes rather than in the plan's spot; the plan's full-file code block was applied (same imports, ordering only).
+  - **Decided**: Plan's sessionsSeed.ts passed SQL null for omitted jsonb lists, violating cc_sessions' `not null default '[]'` (all 31 session int tests failed) → helper now seeds omitted lists as [] (rung 1: invariant 1 suite must pass; schema contract in the index; test-only file owned by this phase)
+
 
 - [x] **P1-NOTES-A054** Phase 6: Summaries (Haiku), redaction, embeddings, session search
   - **Difficulty**: HARD

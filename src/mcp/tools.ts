@@ -8,6 +8,7 @@ import type { NoteFilter } from '../notes/repo.js';
 import type { NotesService } from '../notes/service.js';
 import { NoteError } from '../notes/types.js';
 import { ConnectorError, type Connectors } from '../connectors/types.js';
+import type { SessionsReadDeps } from '../sessions/readModel.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -25,6 +26,8 @@ export interface ToolDeps {
   imageEmbedder?: ImageEmbedder | null;
   /** Reads a wall-chat upload for `similar_images` upload_id. Omitted: upload_id answers that uploads are unavailable. */
   chatUploads?: ChatUploadSource;
+  /** Session read model behind sessions_search / session_get / session_transcript / sessions_usage (iteration 8). Omitted: those tools answer SESSIONS_OFF. */
+  sessions?: SessionsReadDeps;
 }
 
 /** Appended to the `list` and `search` descriptions. */

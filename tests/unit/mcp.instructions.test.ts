@@ -120,6 +120,20 @@ describe('buildInstructions', () => {
     const order = buildInstructions('Asia/Jakarta').split('\n\n').map((s) => s.split('.')[0]);
     expect(order.indexOf('Similar images')).toBe(order.indexOf('Files') + 1);
   });
+
+  it('ends with one Sessions paragraph: the four tools, node ids vs note ids, the wall link form', () => {
+    const text = buildInstructions('Asia/Jakarta');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Sessions.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage', 'not_on_this_machine', 'A0-3G', 'A-B32']) {
+      expect(p).toContain(word);
+    }
+    expect(p).toContain('[A0-3G](http://localhost:7317/projects?repo=REPO&node=A0-3G)');
+    const order = text.split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.at(-1)).toBe('Sessions');
+    expect(buildInstructions('Asia/Jakarta', 'http://localhost:4321')).toContain('[A0-3G](http://localhost:4321/projects?repo=REPO&node=A0-3G)');
+  });
 });
 
 function linksParagraphs(text: string): string[] {
