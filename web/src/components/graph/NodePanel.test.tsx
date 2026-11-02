@@ -159,6 +159,17 @@ describe('NodePanel', () => {
     expect(screen.getByText('running')).toBeTruthy();
   });
 
+  it('shows the unfinished pill only when the API marks the orch node unfinished', async () => {
+    stubFetch({ ...WIRE, unfinished: true });
+    renderPanel();
+    expect(await screen.findByTestId('unfinished-pill')).toBeTruthy();
+    cleanup();
+    stubFetch({ ...WIRE, unfinished: null });
+    renderPanel();
+    expect(await screen.findByLabelText('Summary')).toBeTruthy();
+    expect(screen.queryByTestId('unfinished-pill')).toBeNull();
+  });
+
   it('asks first for a node on the other machine, then reports not_on_this_machine', async () => {
     const calls = stubFetch({ ...WIRE, available: false, host: 'GPD' }, { status: 404, body: { error: 'not_on_this_machine' } });
     renderPanel();

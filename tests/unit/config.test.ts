@@ -42,7 +42,7 @@ describe('loadConfig', () => {
       dataDir: path.join(homedir(), 'mcp-notes-data'),
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
-      sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true },
+      sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true, swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py') },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -208,11 +208,28 @@ describe('loadConfig embeddings', () => {
 describe('loadConfig sessions', () => {
   const sessions = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).sessions
 
+  it('reads NOTESD_SWARM_SCRIPT, defaulting under CLAUDE_HOME', () => {
+    const home = loadConfig({ env: { DATABASE_URL: URL_A, CLAUDE_HOME: '/tmp/cc-home' }, envFile: false })
+    expect(home.sessions.swarmScript).toBe('/tmp/cc-home/skills/swarm/swarm.py')
+
+    const custom = loadConfig({ env: { DATABASE_URL: URL_A, NOTESD_SWARM_SCRIPT: '~/bin/swarm.py' }, envFile: false })
+    expect(custom.sessions.swarmScript).toBe(path.join(homedir(), 'bin', 'swarm.py'))
+
+    const blank = loadConfig({ env: { DATABASE_URL: URL_A, NOTESD_SWARM_SCRIPT: '  ' }, envFile: false })
+    expect(blank.sessions.swarmScript).toBe(path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py'))
+  })
+
+  it('does not require the swarm script to exist', () => {
+    const cfg = loadConfig({ env: { DATABASE_URL: URL_A, NOTESD_SWARM_SCRIPT: '/nope/swarm.py' }, envFile: false })
+    expect(cfg.sessions.swarmScript).toBe('/nope/swarm.py')
+  })
+
   it('defaults to ~/.claude and ~/.worktrees, on', () => {
     expect(sessions({})).toEqual({
       claudeHome: path.join(homedir(), '.claude'),
       worktreesDir: path.join(homedir(), '.worktrees'),
       enabled: true,
+      swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py'),
     })
   })
 

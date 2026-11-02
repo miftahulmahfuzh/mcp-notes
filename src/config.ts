@@ -64,6 +64,8 @@ export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = { apiKey: null }
 
 export const DEFAULT_CLAUDE_HOME = '~/.claude'
 export const DEFAULT_WORKTREES_DIR = '~/.worktrees'
+/** Relative to `claudeHome`: where the swarm skill installs its script (`install.sh` in ~/claude-commands). */
+export const DEFAULT_SWARM_SCRIPT_REL = path.join('skills', 'swarm', 'swarm.py')
 
 /** Claude Code session ingest (src/sessions/ingest.ts) and the live registry (src/sessions/registry.ts). */
 export interface SessionsConfig {
@@ -73,6 +75,12 @@ export interface SessionsConfig {
   worktreesDir: string
   /** `NOTESD_SESSIONS`, default on. `off` (or 0/false/no) starts no session ingest. */
   enabled: boolean
+  /**
+   * `NOTESD_SWARM_SCRIPT`, default `<claudeHome>/skills/swarm/swarm.py`. Absolute. Not checked here:
+   * a missing file makes every orch node's `unfinished` null, never an error. Null turns the
+   * check off (the test literal `DEFAULT_SESSIONS_CONFIG` uses null).
+   */
+  swarmScript: string | null
 }
 
 /**
@@ -83,6 +91,7 @@ export const DEFAULT_SESSIONS_CONFIG: SessionsConfig = {
   claudeHome: path.join(homedir(), '.claude'),
   worktreesDir: path.join(homedir(), '.worktrees'),
   enabled: false,
+  swarmScript: null,
 }
 
 export interface Config {
@@ -238,11 +247,19 @@ function parseSwitch(name: string, raw: string | undefined): boolean {
   throw new ConfigError(`${name} must be "on" or "off", got "${raw}"`)
 }
 
+function parseSwarmScript(raw: string | undefined, claudeHome: string): string {
+  const value = raw?.trim() ?? ''
+  if (value === '') return path.join(claudeHome, DEFAULT_SWARM_SCRIPT_REL)
+  return path.resolve(expandHome(value))
+}
+
 export function parseSessions(env: Record<string, string | undefined>): SessionsConfig {
+  const claudeHome = path.resolve(expandHome(env.CLAUDE_HOME?.trim() || DEFAULT_CLAUDE_HOME))
   return {
-    claudeHome: path.resolve(expandHome(env.CLAUDE_HOME?.trim() || DEFAULT_CLAUDE_HOME)),
+    claudeHome,
     worktreesDir: path.resolve(expandHome(env.NOTES_WORKTREES_DIR?.trim() || DEFAULT_WORKTREES_DIR)),
     enabled: parseSwitch('NOTESD_SESSIONS', env.NOTESD_SESSIONS),
+    swarmScript: parseSwarmScript(env.NOTESD_SWARM_SCRIPT, claudeHome),
   }
 }
 
@@ -251,7 +268,8 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
  * LLM_API_KEY, LLM_MODEL. Embeddings key: OPENROUTER_API_KEY (unset or blank: semantic search and
  * the embedding worker are off, `related` answers only from vectors already stored; note writes are
- * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS. Other keys are ignored.
+ * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS,
+ * NOTESD_SWARM_SCRIPT. Other keys are ignored.
  * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.

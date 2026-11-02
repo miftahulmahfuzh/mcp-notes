@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-02
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 62
+- Blocked: 0
+- Completed: 63
 
 ---
 
@@ -33,21 +33,11 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A061** Phase 13: "unfinished" badge for orch nodes
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/sessions/unfinished.ts`, `SessionsConfig.swarmScript`, `SessionsApiOptions.unfinished` + annotation in `sessionsApi.ts`, `CreateAppOptions.unfinished`, `UnfinishedBadge.tsx`, the `renderBadge` default in `ProjectsPage`, `SessionDetail.unfinished` + pill in `NodePanel`, and the `swarmScript` additions to phase 3's config tests and ingest int test literal. Exit criteria: fake swarm runner tests; badge renders only for orch + pending + not live; tests never read the real `~/.claude`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 13 of 14)
-  - **Satisfies**: R9 — "unfinished" badge on orch nodes with pending ledger phases and no live session
-  - **Depends on**: P1-NOTES-A060
-  - **Plan**: `.workflows/plan/P1-NOTES-A061.md`
-
 - [ ] **P1-NOTES-A062** Phase 14: Docs: README, CHANGELOG, CLAUDE.md, ROADMAP
   - **Difficulty**: EASY
   - **Type**: Update
   - **Context**: Owns: `README.md` (sessions section, HTTP API + MCP tool tables, env vars incl. `NOTESD_SWARM_SCRIPT`, `NOTESD_TMUX_SOCKET`, `NOTESD_TMUX_BIN`, `NOTES_CLAUDE_RETENTION_DAYS`), `CHANGELOG.md`, `CLAUDE.md` architecture bullet, `docs/ROADMAP.md`. Exit criteria: docs match the shipped endpoints, tools and env vars; no `«FILL` marker remains.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 14 of 14)
   - **Satisfies**: R1-R9 — all nine requirements are documented (ingest, links, summaries, resolve, tools, web, resume, badge)
   - **Depends on**: P1-NOTES-A050, P1-NOTES-A056, P1-NOTES-A061
@@ -62,6 +52,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A061** Phase 13: "unfinished" badge for orch nodes
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/unfinished.ts`, `SessionsConfig.swarmScript`, `SessionsApiOptions.unfinished` + annotation in `sessionsApi.ts`, `CreateAppOptions.unfinished`, `UnfinishedBadge.tsx`, the `renderBadge` default in `ProjectsPage`, `SessionDetail.unfinished` + pill in `NodePanel`, and the `swarmScript` additions to phase 3's config tests and ingest int test literal. Exit criteria: fake swarm runner tests; badge renders only for orch + pending + not live; tests never read the real `~/.claude`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/project-session-graph/PLAN.md` (phase 13 of 14)
+  - **Satisfies**: R9 — "unfinished" badge on orch nodes with pending ledger phases and no live session
+  - **Depends on**: P1-NOTES-A060
+  - **Plan**: `.workflows/plan/P1-NOTES-A061.md`
+  - **Completed**: 2026-11-02 12:04
+  - **Method**: /do
+  - **Files**: src/config.ts, src/http/app.ts, src/http/sessionsApi.ts, src/sessions/unfinished.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.unfinished.int.test.ts, tests/unit/config.test.ts, tests/unit/sessions/unfinished.test.ts, web/src/components/graph/NodePanel.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/UnfinishedBadge.css, web/src/components/graph/UnfinishedBadge.test.tsx, web/src/components/graph/UnfinishedBadge.tsx, web/src/pages/ProjectsPage.tsx, web/src/sessionDetailApi.ts
+  - **Drift**:
+    - parseSessions already inlined claudeHome; refactored to a local const so swarmScript can derive from it
+    - New config tests placed in describe('loadConfig sessions') instead of describe('loadConfig') (same helpers in scope)
+    - No GraphNode test file exists (only SessionGraph.test.tsx), so only the NodePanel unfinished-pill case was added
+  - **Decided**:
+    - Plan's SWR unit test failed: a fake runner resolving in microtasks let the background refresh land before annotate read the cache → createUnfinishedChecker snapshots cached values at call start, so a stale entry is served at once as the plan's doc comment and test state (rung 3: phase code blocks; tie-break: never loosen an assertion)
 
 - [x] **P1-NOTES-A060** Phase 12: Per-project chat and project chat history
   - **Difficulty**: NORMAL

@@ -147,7 +147,7 @@ describe('startBackground with sessions enabled', () => {
       dataDir,
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
-      sessions: { claudeHome: home, worktreesDir: FIXTURE.worktreesDir, enabled: true },
+      sessions: { claudeHome: home, worktreesDir: FIXTURE.worktreesDir, enabled: true, swarmScript: null },
     };
     const events = new NoteEvents();
     const deps: AppDeps = {

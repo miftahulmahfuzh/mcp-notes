@@ -33,6 +33,8 @@ export interface SessionDetail {
   /** False: the transcript lives on another machine (resume there, not here). */
   available: boolean;
   live: boolean;
+  /** Phase 13: orch node with pending ledger phases and no live session; null = unknown / not orch. */
+  unfinished: boolean | null;
   cwd: string | null;
   branch: string | null;
   name: string | null;
@@ -158,6 +160,7 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     host: str(w.host) ?? '',
     available: w.available !== false,
     live: w.live === true,
+    unfinished: typeof w.unfinished === 'boolean' ? w.unfinished : null,
     cwd: str(w.cwd),
     branch: str(w.branch),
     name: str(w.name),

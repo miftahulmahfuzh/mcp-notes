@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ArrowsInLineVertical, ArrowsOutLineVertical } from '@phosphor-icons/react';
 import { NodePanel } from '../components/graph/NodePanel';
 import { SessionGraph } from '../components/graph/SessionGraph';
+import { UnfinishedBadgeSvg } from '../components/graph/UnfinishedBadge';
 import { ProjectChat } from '../components/projectChat/ProjectChat';
 import { ProjectViewToggle, type ProjectView } from '../components/projectChat/ProjectViewToggle';
 import { useSessionGraph } from '../hooks/useSessionGraph';
@@ -90,6 +91,8 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
     ((n: SessionNode, closePanel: () => void) => (
       <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} />
     ));
+  const badge =
+    renderBadge ?? ((n: SessionNode) => (n.unfinished === true ? <UnfinishedBadgeSvg unfinished x={0} y={-7} /> : null));
 
   const selectedNode = node === null ? null : (graph.nodes.find((n) => n.node_id === node) ?? null);
   const branchy = forest.children.size > 0;
@@ -99,7 +102,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, rend
   else if (!graph.loaded) content = <p className="proj-empty">loading sessions</p>;
   else if (graph.error !== null && graph.nodes.length === 0) content = <p className="proj-empty">could not load sessions: {graph.error}</p>;
   else if (graph.nodes.length === 0) content = <p className="proj-empty">no sessions recorded for {repo} yet</p>;
-  else content = <SessionGraph layout={layout} selected={node} focus={node} onSelect={select} onToggle={toggle} renderBadge={renderBadge} />;
+  else content = <SessionGraph layout={layout} selected={node} focus={node} onSelect={select} onToggle={toggle} renderBadge={badge} />;
 
   return (
     <section className="proj" aria-label="Project sessions">

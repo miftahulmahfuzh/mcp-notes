@@ -18,6 +18,7 @@ import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
 import { defaultSessionResumer, sessionResumeRoutes } from './sessionResume.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
+import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
 
 /**
@@ -45,6 +46,8 @@ export interface CreateAppOptions {
   sessions?: SessionsReadOverrides;
   /** Resume/spawn into tmux, shared by POST /api/sessions/:nodeId/resume and the session_resume tool. Omitted: the real one. */
   sessionResume?: SessionResumer;
+  /** The orch "unfinished" check behind the sessions read API. Omitted: swarm.py from config. */
+  unfinished?: UnfinishedChecker;
 }
 
 /**
@@ -105,7 +108,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', revealRoutes(deps, { reveal: options.reveal }));
   app.route('/', captureRoutes(deps));
   app.route('/', sessionHookRoutes(deps));
-  app.route('/', sessionsApiRoutes(deps, options.sessions));
+  app.route('/', sessionsApiRoutes(deps, { ...options.sessions, unfinished: options.unfinished }));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', staticRoutes(deps));
   return app;

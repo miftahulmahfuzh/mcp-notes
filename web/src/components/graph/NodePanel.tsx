@@ -11,6 +11,7 @@ import { subtreeRows, type SubtreeNode, type SubtreeRow } from '../../lib/subtre
 import { fetchSessionDetail, resumeErrorNotice, resumeNotice, resumeSession, type SessionDetail } from '../../sessionDetailApi';
 import { SubtreeTimeline } from './SubtreeTimeline';
 import { SubtreeTree } from './SubtreeTree';
+import { UnfinishedPill } from './UnfinishedBadge';
 import './NodePanel.css';
 
 export type SubtreeView = 'tree' | 'timeline';
@@ -176,6 +177,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, now: nowProp }
       {detail && (
         <>
           <div className="np-meta">
+            <UnfinishedPill unfinished={detail.unfinished} />
             {detail.live && <span className="np-live">running</span>}
             {detail.available ? (
               detail.host && <span>{detail.host}</span>

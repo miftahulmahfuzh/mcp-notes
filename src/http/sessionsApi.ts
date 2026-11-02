@@ -18,6 +18,7 @@ import {
   type SessionsReadOverrides,
 } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
+import { createUnfinishedChecker, type UnfinishedChecker } from '../sessions/unfinished.js';
 import type { GraphPayload, SelectedProject } from '../sessions/view.js';
 import { isLoopbackUrl, sameOriginOnly } from './sameOrigin.js';
 
@@ -31,7 +32,10 @@ export const MAX_REPO_CHARS = 200;
 export const MAX_QUERY_CHARS = 500;
 export const MAX_CONTEXT_IDS_CHARS = 2000;
 
-export type SessionsApiOptions = SessionsReadOverrides;
+export interface SessionsApiOptions extends SessionsReadOverrides {
+  /** The orch "unfinished" check (phase 13). Omitted: built from config.sessions.swarmScript. */
+  unfinished?: UnfinishedChecker;
+}
 
 const repoField = z.string().trim().min(1).max(MAX_REPO_CHARS);
 
@@ -118,6 +122,8 @@ export function parseIdList(raw: string): string[] {
  */
 export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {}): Hono {
   const rd = sessionsReadDeps(deps, options);
+  const unfinished =
+    options.unfinished ?? createUnfinishedChecker({ swarmScript: deps.config.sessions?.swarmScript ?? null, host: rd.host });
   const r = new Hono();
 
   r.get('/api/projects', async (c) => c.json(await listProjects(rd)));
@@ -149,6 +155,7 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
     const payload = await graphForRepo(rd, repo, { before: parsed.data.before ?? null, limit: parsed.data.limit });
     if (payload.total === 0) return c.json({ error: 'unknown_repo', repo }, 404);
+    await unfinished.annotate(payload.nodes);
     const etag = graphEtag(payload);
     c.header('ETag', etag);
     c.header('Cache-Control', 'no-cache');
@@ -191,7 +198,9 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     const nodeId = normalizeNodeId(c.req.param('nodeId'));
     if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
     const detail = await sessionDetail(rd, nodeId);
-    return detail === null ? c.json({ error: 'not_found', node_id: nodeId }, 404) : c.json(detail);
+    if (detail === null) return c.json({ error: 'not_found', node_id: nodeId }, 404);
+    await unfinished.annotate([detail.session]);
+    return c.json(detail);
   });
 
   return r;
