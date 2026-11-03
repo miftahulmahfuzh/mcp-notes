@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "351ee86",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "migration 0010 (summary_requested_at, prompts_version, cc_session_prompts) + SessionsRepo requestSummary/clearSummaryRequest; setSummary clears request; no decisions",
       "package": "src/db`, `src/sessions/repo.ts",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T15:39:15+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A065",
       "title": "Schema 0010 + SessionsRepo summary-request writer"
     },
     {
@@ -37,7 +37,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Summary requests: worker priority, POST route, summary state in detail"
     },
@@ -56,7 +56,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill"
     },
@@ -104,6 +104,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/.workflows/orchestration/node-panel-summarize-prompts/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "node-panel-summarize-prompts",
-  "updated": "2026-11-03T15:30:14+07:00",
+  "updated": "2026-11-03T15:39:36+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts"
 }
