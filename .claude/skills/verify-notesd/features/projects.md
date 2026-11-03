@@ -13,13 +13,20 @@
   note id opens it in the big editor (bigger-view-on-note) over `/projects`, or over the chat node
   pop-up; Esc / X / backdrop closes only the editor and the node panel stays. Ctrl/middle click still
   opens the wall on that note in a new tab.
-- Summary on demand (R1). Session detail carries `summary_state` (`ready` | `empty` | `requested` |
-  `idle_wait` | `other_host`) and `summary_requested_at`. Same-origin
-  `POST /api/sessions/:nodeId/summarize` records a request: 200 `{ node_id, summary_state, summary_requested_at }`,
-  idempotent; 409 `empty_session` for a 0-token session; 403 `forbidden_origin` without the page's Origin;
-  a summarized node answers `ready` and records nothing. It never calls the model: the summary worker on the
-  host that owns the session serves requests first on its next sweep (within 60 s), live sessions included,
-  and the request clears when the summary is saved.
+- Summary on demand (R1, node panel section "Summary"). With no summary the section says why:
+  "Empty session" (0 tokens), "Summarizes once idle" (this machine, waiting for 15 min idle),
+  "Summary requested", "Will be summarized on <host>" (another machine), or "No summary yet"
+  (older daemon). Where a summary can still be made (not empty, not already requested) an
+  icon-only button "Summarize" records a request; the label flips to "Summary requested" at once
+  and survives a reload (`cc_sessions.summary_requested_at`). API: session detail carries
+  `summary_state` (`ready` | `empty` | `requested` | `idle_wait` | `other_host`) and
+  `summary_requested_at`; same-origin `POST /api/sessions/:nodeId/summarize` answers 200
+  `{ node_id, summary_state, summary_requested_at }`, idempotent; 409 `empty_session` for a
+  0-token session; 403 `forbidden_origin` without the page's Origin; a summarized node answers
+  `ready` and records nothing. It never calls the model: the summary worker on the host that owns
+  the session serves requests first on its next sweep (within 60 s), live sessions included, and
+  the request clears when the summary is saved; the panel shows the summary when the graph poll
+  sees it.
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
@@ -73,6 +80,23 @@ $V sql RUN "select node_id, summary_requested_at from cc_sessions where summary_
 No fixture node has 0 tokens (fixture `…0003` is an `sdk-cli` session, which ingest skips), so the
 409 `empty_session` answer is proven by `tests/integration/sessions.api.int.test.ts`, not on a run.
 
+Summarize in the wall. Start the run with the summarizer off, so nothing summarizes the fixtures
+behind the check (and nothing bills): `NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions --web`
+(real env wins over `.env.local`; `daemon.log` then says `session summaries off`). Pick a node
+with tokens and no summary, read its state, drive the click, read the row back:
+```sh
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r '[.nodes[] | select(.summary_excerpt == null and (.tokens.input + .tokens.output + .tokens.cache_read + .tokens.cache_write) > 0)][0].node_id' <<<"$S")
+curl -sf "$URL/api/sessions/$NODE" | jq -r '.session.summary_state'        # idle_wait
+NODE=$NODE $V ui RUN summarize-steps.mjs
+curl -sf "$URL/api/sessions/$NODE" | jq -r '.session.summary_state'        # requested
+$V sql RUN "select node_id, summary_requested_at from cc_sessions where node_id = '$NODE'"   # timestamp, not null
+```
+UI selectors: panel `page.locator('aside.np[data-node="' + NODE + '"]')`; section
+`.getByRole('region', { name: 'Summary' })`; button `.getByRole('button', { name: 'Summarize' })`;
+labels by text (`'Summarizes once idle'`, `'Summary requested'`, `'Empty session'`,
+`'Will be summarized on GPD'`).
+
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`
   above waits for it; `/api/projects/<repo>/sessions` is 404 until the repo has a session).
@@ -83,5 +107,10 @@ No fixture node has 0 tokens (fixture `…0003` is an `sdk-cli` session, which i
 - A note's row: `notes.locator('li').filter({ has: page.getByRole('link', { name: ID, exact: true }) })`. A `has`
   locator chained from `notes` never matches: Playwright resolves `has` inside each `li`.
 - `$V mcp` prints a `> tool args` line first; strip it (`sed 1d`) before `jq`.
-- Do not prove "the worker serves a request" on a run with a real `claude` binary: it bills Haiku. That
-  half is proven by `tests/unit/sessions/summaryWorker.test.ts` and `tests/integration/sessions.summaries.int.test.ts`.
+- The verify daemon finds the real `claude` binary unless `NOTESD_CLAUDE_BIN` points nowhere; then
+  its summary worker runs Haiku on the fixtures (billed, nondeterministic). Assert the request
+  (label, `summary_state`, `summary_requested_at`), never the Haiku output. "The worker serves a
+  request" is proven by `tests/unit/sessions/summaryWorker.test.ts` and
+  `tests/integration/sessions.summaries.int.test.ts`; "Empty session" and "Will be summarized on
+  <host>" need a 0-token row and a row of another host, which the fixtures do not have: cover them
+  in `tests/integration/sessions.api.int.test.ts` and the jsdom tests, not on a run.

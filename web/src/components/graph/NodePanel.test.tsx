@@ -44,6 +44,7 @@ const n = (node_id: string, parent: string | null, over: Partial<SubtreeNode> = 
   live: false,
   available: true,
   host: 'lenovo',
+  summarized: false,
   ...over,
 });
 
@@ -63,14 +64,25 @@ interface Call {
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-function stubFetch(detail: unknown, resume: { status: number; body: unknown } = { status: 200, body: { action: 'resumed', window: 'note:4' } }): Call[] {
+interface Reply {
+  status: number;
+  body: unknown;
+}
+
+const REQUESTED: Reply = { status: 200, body: { node_id: 'A0-3G', summary_state: 'requested', summary_requested_at: '2026-11-01T04:00:00.000Z' } };
+
+function stubFetch(detail: unknown, resume: Reply = { status: 200, body: { action: 'resumed', window: 'note:4' } }, summarize: Reply = REQUESTED): Call[] {
   const calls: Call[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
-      calls.push({ url: String(input), method, body: init?.body ? JSON.parse(String(init.body)) : null });
-      if (method === 'POST') return json(resume.status, resume.body);
+      const url = String(input);
+      calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : null });
+      if (method === 'POST') {
+        const r = url.endsWith('/summarize') ? summarize : resume;
+        return json(r.status, r.body);
+      }
       return detail === null ? json(404, { error: 'not_found' }) : json(200, detail);
     }),
   );
@@ -78,6 +90,10 @@ function stubFetch(detail: unknown, resume: { status: number; body: unknown } = 
 }
 
 const posts = (calls: Call[]) => calls.filter((c) => c.method === 'POST');
+
+const UNSUMMARIZED = { ...WIRE, summary: null };
+
+const summarySection = () => screen.getByRole('region', { name: 'Summary' });
 
 function renderPanel(over: Partial<Parameters<typeof NodePanel>[0]> = {}) {
   const props = { nodeId: 'A0-3G', nodes: NODES, onSelectNode: vi.fn(), onClose: vi.fn(), now: NOW, ...over };
@@ -319,5 +335,91 @@ describe('NodePanel', () => {
     expect(within(linked).getByRole('img', { name: 'Linked note' })).toBeTruthy();
     expect(within(made).queryByRole('img', { name: 'Linked note' })).toBeNull();
     expect(screen.getAllByRole('img', { name: 'Linked note' })).toHaveLength(1);
+  });
+});
+
+describe('NodePanel summary', () => {
+  it.each([
+    ['empty', 'lenovo', true, 'Empty session'],
+    ['idle_wait', 'lenovo', true, 'Summarizes once idle'],
+    ['requested', 'lenovo', true, 'Summary requested'],
+    ['other_host', 'GPD', false, 'Will be summarized on GPD'],
+    [undefined, 'lenovo', true, 'No summary yet'],
+  ])('says why there is no summary (state %s)', async (summary_state, host, available, label) => {
+    stubFetch({ ...UNSUMMARIZED, summary_state, host, available });
+    renderPanel();
+    await screen.findByRole('region', { name: 'Summary' });
+    expect(within(summarySection()).getByText(label)).toBeTruthy();
+    if (label !== 'No summary yet') expect(within(summarySection()).queryByText('No summary yet')).toBeNull();
+  });
+
+  it.each([
+    ['idle_wait', true],
+    ['other_host', true],
+    [undefined, true],
+    ['empty', false],
+    ['requested', false],
+  ])('offers Summarize only where a summary can still be made (state %s)', async (summary_state, shown) => {
+    stubFetch({ ...UNSUMMARIZED, summary_state });
+    renderPanel();
+    await screen.findByRole('region', { name: 'Summary' });
+    expect(within(summarySection()).queryByRole('button', { name: 'Summarize' }) !== null).toBe(shown);
+  });
+
+  it('offers no Summarize when there is a summary', async () => {
+    stubFetch({ ...WIRE, summary_state: 'ready' });
+    renderPanel();
+    await screen.findByText('Orchestrated the wall editing phases.');
+    expect(screen.queryByRole('button', { name: 'Summarize' })).toBeNull();
+  });
+
+  it('names the host in the tooltip of a request for another machine', async () => {
+    stubFetch({ ...UNSUMMARIZED, summary_state: 'requested', host: 'GPD', available: false });
+    renderPanel();
+    const line = await screen.findByText('Summary requested');
+    expect(line.getAttribute('data-tip')).toContain('GPD');
+  });
+
+  it('posts once on click and flips the label to Summary requested', async () => {
+    const calls = stubFetch({ ...UNSUMMARIZED, summary_state: 'idle_wait' });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Summarize' }));
+    expect(within(summarySection()).getByText('Summary requested')).toBeTruthy();
+    expect(within(summarySection()).queryByRole('button', { name: 'Summarize' })).toBeNull();
+    await waitFor(() => expect(posts(calls)).toEqual([{ url: '/api/sessions/A0-3G/summarize', method: 'POST', body: null }]));
+    expect(within(summarySection()).getByText('Summary requested')).toBeTruthy();
+  });
+
+  it('puts the label back and reports a failed request on the notice line', async () => {
+    stubFetch({ ...UNSUMMARIZED, summary_state: 'idle_wait' }, undefined, { status: 500, body: { error: 'boom' } });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Summarize' }));
+    expect(await screen.findByText('Could not request a summary of A0-3G: boom')).toBeTruthy();
+    expect(within(summarySection()).getByText('Summarizes once idle')).toBeTruthy();
+    expect(within(summarySection()).getByRole('button', { name: 'Summarize' })).toBeTruthy();
+  });
+
+  it('turns an empty_session answer into Empty session, without the button', async () => {
+    stubFetch({ ...UNSUMMARIZED, summary_state: 'idle_wait' }, undefined, { status: 409, body: { error: 'empty_session' } });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Summarize' }));
+    expect(await screen.findByText('A0-3G is an empty session, nothing to summarize')).toBeTruthy();
+    expect(within(summarySection()).getByText('Empty session')).toBeTruthy();
+    expect(within(summarySection()).queryByRole('button', { name: 'Summarize' })).toBeNull();
+  });
+
+  it('refetches and shows the summary when the graph reports one for the node', async () => {
+    const first = stubFetch({ ...UNSUMMARIZED, summary_state: 'requested' });
+    const { rerender, props } = renderPanel();
+    expect(await screen.findByText('Summary requested')).toBeTruthy();
+    expect(first.filter((c) => c.method === 'GET')).toHaveLength(1);
+    const second = stubFetch({ ...WIRE, summary_state: 'ready' });
+    rerender(<NodePanel {...props} nodes={NODES.map((x) => ({ ...x }))} />);
+    expect(second).toHaveLength(0);
+    const summarized = NODES.map((x) => (x.node_id === 'A0-3G' ? { ...x, summarized: true } : x));
+    rerender(<NodePanel {...props} nodes={summarized} />);
+    expect(await screen.findByText('Orchestrated the wall editing phases.')).toBeTruthy();
+    expect(second.filter((c) => c.method === 'GET')).toHaveLength(1);
+    expect(screen.queryByText('Summary requested')).toBeNull();
   });
 });

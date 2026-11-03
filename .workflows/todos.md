@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 68
+- Completed: 69
 
 ---
 
@@ -43,16 +43,6 @@
   - **Depends on**: P1-NOTES-A065
   - **Plan**: `.workflows/plan/P1-NOTES-A067.md`
 
-- [ ] **P1-NOTES-A068** Phase 4: Node panel Summary: reason labels + Summarize button
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns web sessionDetailApi.ts, subtree.ts, NodePanel.tsx + css, jsdom tests, features/projects.md merged Summary entry. Exit: four reason strings render per state; button posts once and flips to 'Summary requested'; no button for empty/requested/has-summary; a graph node gaining a summary triggers one detail refetch; jsdom green.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 4 of 5)
-  - **Satisfies**: R1 — Reason labels replace 'No summary yet' in the node panel, plus an icon-only Summarize button
-  - **Depends on**: P1-NOTES-A066
-  - **Plan**: `.workflows/plan/P1-NOTES-A068.md`
-
 - [ ] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -72,6 +62,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A068** Phase 4: Node panel Summary: reason labels + Summarize button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns web sessionDetailApi.ts, subtree.ts, NodePanel.tsx + css, jsdom tests, features/projects.md merged Summary entry. Exit: four reason strings render per state; button posts once and flips to 'Summary requested'; no button for empty/requested/has-summary; a graph node gaining a summary triggers one detail refetch; jsdom green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R1 — Reason labels replace 'No summary yet' in the node panel, plus an icon-only Summarize button
+  - **Depends on**: P1-NOTES-A066
+  - **Plan**: `.workflows/plan/P1-NOTES-A068.md`
+  - **Completed**: 2026-11-03 16:10
+  - **Method**: /do
+  - **Files**: web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/lib/subtree.ts, web/src/lib/subtree.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, .claude/skills/verify-notesd/features/projects.md
 
 - [x] **P1-NOTES-A066** Phase 2: Summary requests: worker priority, POST route, summary state in detail
   - **Difficulty**: NORMAL

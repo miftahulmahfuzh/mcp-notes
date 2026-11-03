@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './api';
-import { fetchSessionDetail, normalizeSessionDetail, resumeErrorNotice, resumeNotice, resumeSession } from './sessionDetailApi';
+import {
+  fetchSessionDetail,
+  normalizeSessionDetail,
+  requestSummary,
+  resumeErrorNotice,
+  resumeNotice,
+  resumeSession,
+  summarizeErrorNotice,
+} from './sessionDetailApi';
 
 interface Seen {
   url: string;
@@ -188,5 +196,62 @@ describe('notices', () => {
     expect(resumeErrorNotice(new ApiError(403, 'forbidden'), d)).toBe('Resume only works from the wall on this machine');
     expect(resumeErrorNotice(new ApiError(500, 'tmux_failed'), d)).toBe('Could not resume A0-3G: tmux_failed');
     expect(resumeErrorNotice(new Error('x'), d)).toBe('Could not resume A0-3G');
+  });
+});
+
+describe('summary state', () => {
+  it('reads summary_state and summary_requested_at from the session object', () => {
+    const d = normalizeSessionDetail({
+      session: { node_id: 'A0-3G', host: 'GPD', summary: null, summary_state: 'requested', summary_requested_at: '2026-11-03T08:00:00.000Z' },
+    });
+    expect(d.summary_state).toBe('requested');
+    expect(d.summary_requested_at).toBe('2026-11-03T08:00:00.000Z');
+  });
+
+  it('is ready whenever there is a summary, and never ready without one', () => {
+    expect(normalizeSessionDetail({ node_id: 'A0-3G', summary: 'Did it.', summary_state: 'idle_wait' }).summary_state).toBe('ready');
+    expect(normalizeSessionDetail({ node_id: 'A0-3G', summary: 'Did it.' }).summary_state).toBe('ready');
+    expect(normalizeSessionDetail({ node_id: 'A0-3G', summary: null, summary_state: 'ready' }).summary_state).toBeNull();
+  });
+
+  it('is null for a missing or unknown state (older daemon)', () => {
+    const old = normalizeSessionDetail({ node_id: 'A0-3G' });
+    expect(old.summary_state).toBeNull();
+    expect(old.summary_requested_at).toBeNull();
+    expect(normalizeSessionDetail({ node_id: 'A0-3G', summary_state: 'queued' }).summary_state).toBeNull();
+    for (const s of ['empty', 'requested', 'idle_wait', 'other_host'] as const) {
+      expect(normalizeSessionDetail({ node_id: 'A0-3G', summary_state: s }).summary_state).toBe(s);
+    }
+  });
+});
+
+describe('requestSummary', () => {
+  it('POSTs to the node and returns the recorded state', async () => {
+    const seen = stub(200, { node_id: 'A0-3G', summary_state: 'requested', summary_requested_at: '2026-11-03T08:00:00.000Z' });
+    expect(await requestSummary('A0-3G')).toEqual({ summary_state: 'requested', summary_requested_at: '2026-11-03T08:00:00.000Z' });
+    expect(seen).toEqual([{ url: '/api/sessions/A0-3G/summarize', method: 'POST', body: null }]);
+  });
+
+  it('reads an unknown state in a 200 as requested', async () => {
+    stub(200, { node_id: 'A0-3G' });
+    expect(await requestSummary('A0-3G')).toEqual({ summary_state: 'requested', summary_requested_at: null });
+  });
+
+  it('throws the error code as an ApiError', async () => {
+    stub(409, { error: 'empty_session' });
+    const err = await requestSummary('A0-3G').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 409, message: 'empty_session' });
+  });
+});
+
+describe('summarizeErrorNotice', () => {
+  it('explains failures', () => {
+    const d = { node_id: 'A0-3G' };
+    expect(summarizeErrorNotice(new ApiError(409, 'empty_session'), d)).toBe('A0-3G is an empty session, nothing to summarize');
+    expect(summarizeErrorNotice(new ApiError(403, 'forbidden'), d)).toBe('Summarize only works from the wall on this machine');
+    expect(summarizeErrorNotice(new ApiError(404, 'not_found'), d)).toBe('No session A0-3G');
+    expect(summarizeErrorNotice(new ApiError(500, 'boom'), d)).toBe('Could not request a summary of A0-3G: boom');
+    expect(summarizeErrorNotice(new Error('x'), d)).toBe('Could not request a summary of A0-3G');
   });
 });

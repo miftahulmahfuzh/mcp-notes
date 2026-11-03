@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
 import { useNow } from '../../hooks/useNow';
@@ -8,7 +8,17 @@ import { chatTime, chatTimeTitle } from '../../lib/chatTime';
 import { hostsLabel } from '../../lib/remote';
 import { formatCost, formatCount } from '../../lib/sessionFormat';
 import { subtreeRows, type SubtreeNode, type SubtreeRow } from '../../lib/subtree';
-import { fetchSessionDetail, resumeErrorNotice, resumeNotice, resumeSession, type SessionDetail } from '../../sessionDetailApi';
+import { ApiError } from '../../api';
+import {
+  fetchSessionDetail,
+  requestSummary,
+  resumeErrorNotice,
+  resumeNotice,
+  resumeSession,
+  summarizeErrorNotice,
+  type SessionDetail,
+  type SummaryRequest,
+} from '../../sessionDetailApi';
 import { SubtreeTimeline } from './SubtreeTimeline';
 import { SubtreeTree } from './SubtreeTree';
 import { UnfinishedPill } from './UnfinishedBadge';
@@ -70,7 +80,8 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
 
   const stamp = useMemo(() => {
     const k = idKey(nodeId);
-    return nodes.find((n) => idKey(n.node_id) === k)?.last_active_at ?? '';
+    const n = nodes.find((x) => idKey(x.node_id) === k);
+    return n ? `${n.last_active_at ?? ''}|${n.summarized ? 'summarized' : ''}` : '';
   }, [nodes, nodeId]);
 
   useEffect(() => {
@@ -108,6 +119,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
         live: detail.live,
         available: detail.available,
         host: detail.host || null,
+        summarized: detail.summary !== null,
         depth: 0,
       },
     ];
@@ -124,6 +136,26 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
     }
     setBusy(null);
     if (currentKey.current === idKey(d.node_id)) setNotice(text);
+  };
+
+  /** Apply a summary-state change to the loaded detail, if that node is still the one shown. */
+  const patchDetail = (key: string, patch: SummaryRequest | Pick<SessionDetail, 'summary_state' | 'summary_requested_at'>): void => {
+    setLoad((prev) => (prev.state === 'ready' && idKey(prev.detail.node_id) === key ? { state: 'ready', detail: { ...prev.detail, ...patch } } : prev));
+  };
+
+  // Optimistic: the label flips to "Summary requested" (and the button goes) before the POST answers.
+  const summarize = async (d: SessionDetail): Promise<void> => {
+    const key = idKey(d.node_id);
+    const before = { summary_state: d.summary_state, summary_requested_at: d.summary_requested_at };
+    setNotice(null);
+    patchDetail(key, { summary_state: 'requested', summary_requested_at: new Date().toISOString() });
+    try {
+      patchDetail(key, await requestSummary(d.node_id));
+    } catch (e) {
+      const empty = e instanceof ApiError && e.message === 'empty_session';
+      patchDetail(key, empty ? { summary_state: 'empty', summary_requested_at: null } : before);
+      if (currentKey.current === key) setNotice(summarizeErrorNotice(e, d));
+    }
   };
 
   // No confirm click (settled), except a node whose transcript is on the other machine.
@@ -236,8 +268,21 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
           )}
 
           <section className="np-sec" aria-label="Summary">
-            <h3>Summary</h3>
-            {detail.summary ? <p className="np-summary">{detail.summary}</p> : <p className="np-dim">No summary yet</p>}
+            <div className="np-sec-head">
+              <h3>Summary</h3>
+              {detail.summary === null && detail.summary_state !== 'empty' && detail.summary_state !== 'requested' && (
+                <button
+                  type="button"
+                  className="ibtn hov"
+                  data-tip="Summarize"
+                  aria-label="Summarize"
+                  onClick={() => void summarize(detail)}
+                >
+                  <MagicWand weight="duotone" />
+                </button>
+              )}
+            </div>
+            {detail.summary ? <p className="np-summary">{detail.summary}</p> : <SummaryLine detail={detail} />}
           </section>
 
           <section className="np-sec" aria-label="Prompts">
@@ -429,4 +474,25 @@ function ParentLine({
       {source === 'heuristic' && <span className="np-src" data-tip="Linked by matching names in the parent's transcript"> (guessed)</span>}
     </p>
   );
+}
+
+/** The Summary section's line when there is no summary: the reason, from phase 2's `summary_state`. */
+function SummaryLine({ detail }: { detail: SessionDetail }) {
+  const where = placeLabel(detail.host);
+  switch (detail.summary_state) {
+    case 'empty':
+      return <p className="np-dim">Empty session</p>;
+    case 'requested':
+      return (
+        <p className="np-dim" data-tip={detail.available ? undefined : `${where} summarizes it the next time its daemon runs`}>
+          Summary requested
+        </p>
+      );
+    case 'other_host':
+      return <p className="np-dim">{`Will be summarized on ${where}`}</p>;
+    case 'idle_wait':
+      return <p className="np-dim">Summarizes once idle</p>;
+    default:
+      return <p className="np-dim">No summary yet</p>;
+  }
 }

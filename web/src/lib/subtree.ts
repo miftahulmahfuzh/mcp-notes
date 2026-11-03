@@ -10,6 +10,8 @@ export interface SubtreeNode {
   live: boolean;
   available: boolean;
   host: string | null;
+  /** The graph has a summary for it. The node panel refetches its detail when this flips. */
+  summarized: boolean;
 }
 
 export interface SubtreeRow extends SubtreeNode {
@@ -35,6 +37,7 @@ export interface GraphLikeNode {
   live?: boolean | null;
   available?: boolean | null;
   host?: string | null;
+  summary_excerpt?: string | null;
 }
 
 export function toSubtreeNodes(nodes: readonly GraphLikeNode[]): SubtreeNode[] {
@@ -49,6 +52,7 @@ export function toSubtreeNodes(nodes: readonly GraphLikeNode[]): SubtreeNode[] {
     live: n.live === true,
     available: n.available !== false,
     host: n.host ?? null,
+    summarized: typeof n.summary_excerpt === 'string' && n.summary_excerpt.trim() !== '',
   }));
 }
 
