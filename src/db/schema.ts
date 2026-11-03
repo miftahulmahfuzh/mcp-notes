@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  boolean,
   check,
   customType,
   index,
@@ -35,6 +36,9 @@ import {
  * only writer of the three `cc_*` tables and of `app_settings`.
  * Migration 0009 (session note links) adds `note_session_links`; src/notes/sessionLinks.ts,
  * called only by NotesService, is its only writer.
+ * Migration 0010 (node panel: summarize on demand, full prompts) adds
+ * `cc_sessions.summary_requested_at`, `cc_sessions.prompts_version` and `cc_session_prompts`;
+ * src/sessions/repo.ts is their only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -479,7 +483,8 @@ const tsvector = customType<{ data: string }>({
 /**
  * One row per Claude Code session (migration 0007), keyed by Claude Code's session UUID. Written
  * only by src/sessions/repo.ts: the transcript ingester fills most columns, the SessionStart hook
- * fills `name`/`tmux`/parent early, the summarizer fills `summary*`. `node_id` (`A0-3G`, see
+ * fills `name`/`tmux`/parent early, the summarizer fills `summary*`, the node panel's Summarize
+ * button sets `summary_requested_at` (migration 0010). `node_id` (`A0-3G`, see
  * src/sessions/ids.ts) is assigned on first insert and never changes. `host` is the machine that
  * holds the transcript (`os.hostname()`); transcript reads and resume work only there.
  * `parent_session_id` has no foreign key: the parent may not be ingested yet.
@@ -520,7 +525,10 @@ export const ccSessions = pgTable(
     transcriptPath: text('transcript_path'),
     transcriptOffset: bigint('transcript_offset', { mode: 'number' }).notNull().default(0),
     transcriptSize: bigint('transcript_size', { mode: 'number' }),
-    /** Human prompts, oldest first, capped (src/sessions/types.ts MAX_PROMPTS / MAX_PROMPT_CHARS). */
+    /**
+     * Human prompts, oldest first: the excerpt list, capped and redacted (src/sessions/types.ts
+     * MAX_PROMPTS / MAX_PROMPT_CHARS). The full list is `cc_session_prompts`.
+     */
     prompts: jsonb('prompts').$type<SessionPrompt[]>().notNull().default(sql`'[]'::jsonb`),
     commits: jsonb('commits').$type<SessionCommit[]>().notNull().default(sql`'[]'::jsonb`),
     filesEdited: jsonb('files_edited').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
@@ -530,6 +538,19 @@ export const ccSessions = pgTable(
     /** Opaque hash of the summarizer input the summary came from (Phase 6 decides what it hashes). */
     summarySha: text('summary_sha'),
     summarizedAt: timestamp('summarized_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * When someone asked for a summary of this session (the node panel's Summarize button,
+     * migration 0010). Set once and kept on repeat requests; cleared when a summary is stored
+     * (`SessionsRepo.setSummary`) or the request is dropped (`clearSummaryRequest`). Only the
+     * owning host's summary worker serves it.
+     */
+    summaryRequestedAt: timestamp('summary_requested_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Which prompt storage this row's prompts follow (migration 0010). 0 = legacy: `prompts`
+     * holds truncated, unredacted excerpts and `cc_session_prompts` is empty. Higher versions are
+     * defined by src/sessions/types.ts; the owning host's backfill raises it once.
+     */
+    promptsVersion: integer('prompts_version').notNull().default(0),
     /** Full text (`simple`) over ids, names, titles, prompts and summary. Never selected by the app. */
     searchTsv: tsvector('search_tsv').generatedAlwaysAs(
       sql`to_tsvector('simple', coalesce("node_id", '') || ' ' || coalesce("repo", '') || ' ' || coalesce("name", '') || ' ' || coalesce("custom_title", '') || ' ' || coalesce("ai_title", '') || ' ' || coalesce("first_prompt", '') || ' ' || coalesce("last_prompt", '') || ' ' || coalesce(jsonb_path_query_array("prompts", '$[*].text')::text, '') || ' ' || coalesce("summary", ''))`,
@@ -580,6 +601,28 @@ export const ccSubagentTranscripts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [index('cc_subagent_transcripts_session_idx').on(t.sessionId), index('cc_subagent_transcripts_host_idx').on(t.host)],
+)
+
+/**
+ * Every typed prompt of a session in full, redacted (migration 0010), one row per prompt in
+ * transcript order (`seq` from 1, no gaps). `cc_sessions.prompts` stays the bounded excerpt list that
+ * feeds full text, the summarizer and the embed text; this table is read only where the full
+ * list is shown, never by the graph or the summary worker. `text` is stored only after
+ * src/sessions/redact.ts `redactSecrets`; `truncated` marks a prompt cut at the sanity ceiling.
+ * Written only by src/sessions/repo.ts. Removing the session drops its prompts.
+ */
+export const ccSessionPrompts = pgTable(
+  'cc_session_prompts',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => ccSessions.sessionId, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    at: timestamp('at', { withTimezone: true, mode: 'date' }),
+    text: text('text').notNull(),
+    truncated: boolean('truncated').notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.seq] })],
 )
 
 /**
@@ -685,5 +728,7 @@ export type ChatMessageAttachmentRow = typeof chatMessageAttachments.$inferSelec
 export type CcSessionRow = typeof ccSessions.$inferSelect
 export type NewCcSessionRow = typeof ccSessions.$inferInsert
 export type CcSessionEmbeddingRow = typeof ccSessionEmbeddings.$inferSelect
+export type CcSessionPromptRow = typeof ccSessionPrompts.$inferSelect
+export type NewCcSessionPromptRow = typeof ccSessionPrompts.$inferInsert
 export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
 export type AppSettingRow = typeof appSettings.$inferSelect

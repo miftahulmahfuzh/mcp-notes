@@ -38,6 +38,7 @@ import {
   type SubagentTranscriptPatch,
   type SubagentUpsertResult,
   type SummaryInput,
+  type SummaryRequest,
   type TranscriptOffset,
   type TranscriptPatch,
   type TranscriptUpsertResult,
@@ -126,9 +127,10 @@ function clampLimit(limit: number | undefined): number {
 }
 
 /**
- * The only writer of `cc_sessions`, `cc_session_embeddings`, `cc_pending_spawns` and
- * `app_settings`. Ingest (Phase 3), the heuristic linker (Phase 4), the hook endpoints
- * (Phase 5), the summarizer (Phase 6) and the read API (Phase 7) all go through it.
+ * The only writer of `cc_sessions`, `cc_session_prompts`, `cc_subagent_transcripts`,
+ * `cc_session_embeddings`, `cc_pending_spawns` and `app_settings`. Ingest, the heuristic linker,
+ * the hook endpoints, the summary worker, the Summarize request route and the read API all go
+ * through it; nothing else writes these tables.
  */
 export class SessionsRepo {
   private readonly random: (max: number) => number;
@@ -594,13 +596,51 @@ export class SessionsRepo {
 
   // ---------- summaries and embeddings (Phase 6) ----------
 
-  /** False when the session has no row. */
+  /**
+   * Stores a summary and clears any pending summary request (`summary_requested_at`): the
+   * request is served. False when the session has no row.
+   */
   async setSummary(sessionId: string, input: SummaryInput): Promise<boolean> {
     const at = input.at ?? this.now();
     const rows = await this.db
       .update(ccSessions)
-      .set({ summary: input.summary, summarySha: input.sha, summarizedAt: at, updatedAt: this.now() })
+      .set({ summary: input.summary, summarySha: input.sha, summarizedAt: at, summaryRequestedAt: null, updatedAt: this.now() })
       .where(eq(ccSessions.sessionId, sessionId))
+      .returning({ id: ccSessions.sessionId });
+    return rows.length > 0;
+  }
+
+  /**
+   * Records that someone wants this session summarized. Idempotent: the first request time is
+   * kept, and only that first call bumps `updated_at`. Never calls a summarizer; the owning
+   * host's summary worker serves the request. Null when the session has no row. Whether a
+   * request makes sense (an empty session, one already summarized) is the caller's decision.
+   */
+  async requestSummary(sessionId: string): Promise<SummaryRequest | null> {
+    const now = this.now().toISOString();
+    const rows = await this.db
+      .update(ccSessions)
+      .set({
+        summaryRequestedAt: sql`coalesce(${ccSessions.summaryRequestedAt}, ${now}::timestamptz)`,
+        updatedAt: sql`case when ${ccSessions.summaryRequestedAt} is null then ${now}::timestamptz else ${ccSessions.updatedAt} end`,
+      })
+      .where(eq(ccSessions.sessionId, sessionId))
+      .returning({ requestedAt: ccSessions.summaryRequestedAt });
+    const row = rows[0];
+    if (!row) return null;
+    if (row.requestedAt === null) throw new Error(`summary request on ${sessionId} was not stored`);
+    return { requestedAt: row.requestedAt };
+  }
+
+  /**
+   * Drops a pending summary request without storing a summary (e.g. the session has nothing to
+   * summarize). True when a pending request was cleared; false when there was none or no row.
+   */
+  async clearSummaryRequest(sessionId: string): Promise<boolean> {
+    const rows = await this.db
+      .update(ccSessions)
+      .set({ summaryRequestedAt: null, updatedAt: this.now() })
+      .where(and(eq(ccSessions.sessionId, sessionId), isNotNull(ccSessions.summaryRequestedAt)))
       .returning({ id: ccSessions.sessionId });
     return rows.length > 0;
   }

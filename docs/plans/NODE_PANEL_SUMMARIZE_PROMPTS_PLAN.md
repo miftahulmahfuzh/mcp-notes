@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts`
 **Branch:** `feature/node-panel-summarize-prompts` (base: `origin/main` @ `5c21bad`)
 **Phases:** 5
-**Status:** planned
+**Status:** phase 1/5 complete
 **Coordinator:** —
 
 ---
@@ -53,11 +53,11 @@ The decided design (do not re-litigate) is quoted in full in the analysis docume
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Schema 0010 + SessionsRepo summary-request writer | R1, R2 | `src/db`, `src/sessions/repo.ts` | 11 | — | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-1.md` | — | — |
-| 2 | Summary requests: worker priority, POST route, summary state in detail | R1 | `src/sessions`, `src/http` | 10 | 1 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-2.md` | — | — |
-| 3 | Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill | R2 | `src/sessions`, `tests/fixtures` | 14 | 1 | HARD | `.workflows/plan/node-panel-summarize-prompts/phase-3.md` | — | — |
-| 4 | Node panel Summary: reason labels + Summarize button | R1 | `web/` | 8 | 2 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-4.md` | — | — |
-| 5 | Prompts read API + Expand prompts modal with copy | R2 | `src/sessions`, `src/http`, `web/` | 16 | 2, 3, 4 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-5.md` | — | — |
+| 1 | Schema 0010 + SessionsRepo summary-request writer | R1, R2 | `src/db`, `src/sessions/repo.ts` | 11 | — | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-1.md` | P1-NOTES-A065 | — |
+| 2 | Summary requests: worker priority, POST route, summary state in detail | R1 | `src/sessions`, `src/http` | 10 | 1 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-2.md` | P1-NOTES-A066 | — |
+| 3 | Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill | R2 | `src/sessions`, `tests/fixtures` | 14 | 1 | HARD | `.workflows/plan/node-panel-summarize-prompts/phase-3.md` | P1-NOTES-A067 | — |
+| 4 | Node panel Summary: reason labels + Summarize button | R1 | `web/` | 8 | 2 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-4.md` | P1-NOTES-A068 | — |
+| 5 | Prompts read API + Expand prompts modal with copy | R2 | `src/sessions`, `src/http`, `web/` | 16 | 2, 3, 4 | NORMAL | `.workflows/plan/node-panel-summarize-prompts/phase-5.md` | P1-NOTES-A069 | — |
 
 Plan: 5 phases, 59 file touches (some files touched by two sequential phases) across db, sessions, http, web and fixtures; one shared migration both features need. R1 -> 1,2,4 · R2 -> 1,3,5. Phases 2 and 3 run in parallel and share no file (checked: 2 owns summaryWorker/readModel/view/sessionsApi, their tests and `features/projects.md`; 3 owns types/transcript/merge/repo/ingest, fixtures, `claudeHome.ts`, `memoryIngestStore.ts` and their tests). 4 can run beside 3. Sequential shared files: `src/sessions/types.ts`, `src/sessions/repo.ts`, `tests/helpers/memoryIngestStore.ts`, `tests/unit/sessions/merge.test.ts` (1 then 3); `src/sessions/readModel.ts`, `view.ts`, `src/http/sessionsApi.ts`, `tests/integration/sessions.api.int.test.ts` (2 then 5); `web/src/sessionDetailApi.ts` (+ test), `NodePanel.tsx`, `NodePanel.test.tsx` (4 then 5); `.claude/skills/verify-notesd/features/projects.md` (2, then 4, then 5). Each later plan quotes these files as the earlier phase leaves them.
 

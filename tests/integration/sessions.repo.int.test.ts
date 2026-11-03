@@ -392,6 +392,76 @@ describe('SessionsRepo', () => {
     })
   })
 
+  describe('summary requests', () => {
+    function clockedRepo(start: Date): { repo: SessionsRepo; set: (d: Date) => void } {
+      let clock = start
+      return { repo: new SessionsRepo(db, { now: () => clock }), set: (d) => { clock = d } }
+    }
+
+    it('records the first request time and keeps it on repeat requests', async () => {
+      const c = clockedRepo(at(0))
+      await c.repo.ensureSession('s-1', HOST)
+      c.set(at(5))
+      expect(await c.repo.requestSummary('s-1')).toEqual({ requestedAt: at(5) })
+      c.set(at(9))
+      expect(await c.repo.requestSummary('s-1')).toEqual({ requestedAt: at(5) })
+      const row = await c.repo.getBySessionId('s-1')
+      expect(row?.summaryRequestedAt).toEqual(at(5))
+      expect(row?.updatedAt).toEqual(at(5))
+    })
+
+    it('returns null for a session with no row and creates none', async () => {
+      expect(await repo.requestSummary('missing')).toBeNull()
+      expect(await repo.getBySessionId('missing')).toBeNull()
+    })
+
+    it('changes nothing but the request columns', async () => {
+      const c = clockedRepo(at(0))
+      await c.repo.upsertFromTranscript(
+        patch('s-1', { repo: 'mcp-notes', entrypoint: 'cli', firstPrompt: 'why does resume break', tokens: { inputTokens: 40 }, lastActiveAt: at(1) }),
+      )
+      await c.repo.setSummary('s-1', { summary: 'Fixed resume', sha: 'h1', at: at(2) })
+      const before = await c.repo.getBySessionId('s-1')
+      c.set(at(7))
+      await c.repo.requestSummary('s-1')
+      const after = await c.repo.getBySessionId('s-1')
+      expect(after).toEqual({ ...before, summaryRequestedAt: at(7), updatedAt: at(7) })
+      expect(after?.promptsVersion).toBe(0)
+    })
+
+    it('setSummary clears a pending request', async () => {
+      const c = clockedRepo(at(0))
+      await c.repo.ensureSession('s-1', HOST)
+      await c.repo.requestSummary('s-1')
+      c.set(at(3))
+      expect(await c.repo.setSummary('s-1', { summary: 'Summary so far', sha: 'h2' })).toBe(true)
+      expect(await c.repo.getBySessionId('s-1')).toMatchObject({ summary: 'Summary so far', summarizedAt: at(3), summaryRequestedAt: null })
+    })
+
+    it('clearSummaryRequest drops a pending request and reports whether there was one', async () => {
+      const c = clockedRepo(at(0))
+      await c.repo.ensureSession('s-1', HOST)
+      expect(await c.repo.clearSummaryRequest('s-1')).toBe(false)
+      await c.repo.requestSummary('s-1')
+      c.set(at(4))
+      expect(await c.repo.clearSummaryRequest('s-1')).toBe(true)
+      const row = await c.repo.getBySessionId('s-1')
+      expect(row?.summaryRequestedAt).toBeNull()
+      expect(row?.updatedAt).toEqual(at(4))
+      expect(await c.repo.clearSummaryRequest('s-1')).toBe(false)
+      expect(await c.repo.clearSummaryRequest('missing')).toBe(false)
+      c.set(at(6))
+      expect(await c.repo.requestSummary('s-1')).toEqual({ requestedAt: at(6) })
+    })
+
+    it('a request on another host\'s session is stored as is (the owning host serves it)', async () => {
+      await repo.ensureSession('s-gpd', 'GPD')
+      const req = await repo.requestSummary('s-gpd')
+      expect(req?.requestedAt).toBeInstanceOf(Date)
+      expect((await repo.getBySessionId('s-gpd'))?.host).toBe('GPD')
+    })
+  })
+
   describe('settings', () => {
     it('stores, reads and clears values', async () => {
       expect(await repo.getSelectedProject()).toBeNull()

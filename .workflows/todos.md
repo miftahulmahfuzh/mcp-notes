@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 1
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 66
+- Completed: 67
 
 ---
 
@@ -33,6 +33,46 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
+- [ ] **P1-NOTES-A066** Phase 2: Summary requests: worker priority, POST route, summary state in detail
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns summaryWorker.ts (requested sessions first, same limiter and pause), view.ts summary_state, readModel.ts requestSummaryFor, POST /api/sessions/:nodeId/summarize (same-origin), tests, features/projects.md API half. Exit: requested live session summarized on next drain and request cleared; other hosts' requests never summarized here; POST never calls the summarizer; 409 empty_session int-tested; typecheck + unit + int green.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — Summarize button records a request; the owning host's worker summarizes requested sessions first
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A066.md`
+
+- [ ] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns types.ts constants, transcript.ts accumulator, merge.ts redaction, repo.ts side-row writes + backfill methods, ingest.ts one-time backfill, 106-prompt fixture, claudeHome/memoryIngestStore helpers, unit + int tests. Exit: fake key in no table, rest byte-identical; backfill fills legacy row to version 2 changing nothing else, second run no-op; other hosts untouched; pruned-transcript row redacted at version 1 and upgraded later; graph query unchanged.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — Full, redacted prompts in the shared DB (with per-host backfill)
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A067.md`
+
+- [ ] **P1-NOTES-A068** Phase 4: Node panel Summary: reason labels + Summarize button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns web sessionDetailApi.ts, subtree.ts, NodePanel.tsx + css, jsdom tests, features/projects.md merged Summary entry. Exit: four reason strings render per state; button posts once and flips to 'Summary requested'; no button for empty/requested/has-summary; a graph node gaining a summary triggers one detail refetch; jsdom green.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R1 — Reason labels replace 'No summary yet' in the node panel, plus an icon-only Summarize button
+  - **Depends on**: P1-NOTES-A066
+  - **Plan**: `.workflows/plan/P1-NOTES-A068.md`
+
+- [ ] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns view.ts/readModel.ts prompts payload, GET /api/sessions/:nodeId/prompts, web fetchSessionPrompts, useCopied, PromptsModal + css, NodePanel Expand button, NodeModal Esc handling, tests, features/projects.md. Exit: modal lists every stored prompt of the fixture (>100), >2000-char prompt in full, key shown [redacted]; copy buttons copy exactly the shown text; Esc/backdrop close only the modal; version 1 and 0 rows show their incomplete lines; verify-notesd proof captured.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R2 — Expand prompts modal with per-prompt copy and copy-all, loaded from the DB
+  - **Depends on**: P1-NOTES-A066, P1-NOTES-A067, P1-NOTES-A068
+  - **Plan**: `.workflows/plan/P1-NOTES-A069.md`
+
 ### [P2] Medium
 
 ### [P3] Low
@@ -42,6 +82,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A065** Phase 1: Schema 0010 + SessionsRepo summary-request writer
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns schema.ts (summary_requested_at, prompts_version, cc_session_prompts), drizzle 0010 + snapshot + journal, types.ts re-exports, repo.ts requestSummary/setSummary/clearSummaryRequest, blankSessionRow, truncateAll, migration + repo int tests. Exit: migration applies on fresh and 0009 DBs with data unchanged, db:check clean, writers int-tested, typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R1, R2 — Summarize on demand and full redacted prompts both need one shared drizzle migration (0010) and repo writers
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A065.md`
+  - **Completed**: 2026-11-03 15:37
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, drizzle/0010_session_prompts_summary_requests.sql, drizzle/meta/0010_snapshot.json, drizzle/meta/_journal.json, src/sessions/types.ts, src/sessions/repo.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/merge.test.ts, tests/integration/setup.ts, tests/integration/migration0010.int.test.ts, tests/integration/sessions.repo.int.test.ts
 
 - [x] **P1-NOTES-A064** Phase 2: Web: open session notes in the big editor, link icon; feature map
   - **Difficulty**: NORMAL

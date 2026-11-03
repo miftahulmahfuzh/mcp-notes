@@ -7,7 +7,14 @@ import type {
   SessionPrompt,
 } from '../db/schema.js';
 
-export type { ModelUsage, ParentLinkSource, SessionCommit, SessionPrompt } from '../db/schema.js';
+export type {
+  CcSessionPromptRow,
+  ModelUsage,
+  NewCcSessionPromptRow,
+  ParentLinkSource,
+  SessionCommit,
+  SessionPrompt,
+} from '../db/schema.js';
 export { PARENT_LINK_SOURCES } from '../db/schema.js';
 
 /** A `cc_sessions` row as the app sees it: every column except the generated `search_tsv`. */
@@ -274,6 +281,11 @@ export interface SummaryInput {
   sha: string;
   /** Default: the repo clock. */
   at?: Date;
+}
+
+/** A pending summary request (`cc_sessions.summary_requested_at`): when it was first made. */
+export interface SummaryRequest {
+  requestedAt: Date;
 }
 
 export interface SessionEmbeddingInput {

@@ -56,6 +56,8 @@ export function blankSessionRow(sessionId: string, host: string, over: Partial<S
     summary: null,
     summarySha: null,
     summarizedAt: null,
+    summaryRequestedAt: null,
+    promptsVersion: 0,
     createdAt: at,
     updatedAt: at,
     ...over,

@@ -42,6 +42,8 @@ function blankRow(over: Partial<SessionRow> = {}): SessionRow {
     summary: null,
     summarySha: null,
     summarizedAt: null,
+    summaryRequestedAt: null,
+    promptsVersion: 0,
     createdAt: T(0),
     updatedAt: T(0),
     ...over,
