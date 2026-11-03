@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { SessionsRepo } from './repo.js';
+import type { PromptsBackfillCandidate, PromptsReplacement, RedactStoredPromptsResult, ReplacePromptsResult } from './types.js';
 import { createGitRangeLog, withRangeCommits, type GitRangeLog } from './gitRange.js';
 import { createRepoResolver, type RepoResolver } from './repoResolve.js';
 import {
@@ -43,6 +44,17 @@ import {
  * - Rows are written only through `SessionsRepo.upsertFromTranscript` (phase 1), with
  *   `host = os.hostname()`. Ingest never writes parent links, tmux or summaries.
  *
+ * - Full prompts: every write carries every prompt of the bytes it read (SessionsRepo stores them,
+ *   redacted, in `cc_session_prompts`). Once the startup pass is done, `promptsBackfill` runs once:
+ *   each row of this host still below PROMPTS_VERSION has its transcript re-read from 0 to its
+ *   stored offset for prompts only (no tokens, commits, links or observers) and its prompt columns
+ *   replaced (`SessionsRepo.replacePrompts`, a compare-and-set on the offset), under the same
+ *   per-file hold as the tail reads. A row whose transcript is gone has its stored excerpts redacted
+ *   in place (`redactStoredPrompts`, PROMPTS_VERSION_EXCERPTS); it stays a candidate, is skipped
+ *   without a write while the file is missing, and is filled if the file is readable again. Only
+ *   transcripts under `<claudeHome>/projects` are read. One log line, only when a row changed,
+ *   was deferred or failed.
+ *
  * EXTENSION POINT (phase 4 heuristic links; any later consumer): `IngestObserver`, passed as
  * `observers` or added with `addObserver`. `onBatch` runs after each committed write with the
  * parsed records of exactly the bytes that write covered; `onPassComplete` runs after every full
@@ -66,10 +78,16 @@ const CHAT_PROJECT_DIR = /-data-chat$/;
 
 /**
  * The `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation; one without
- * the subagent methods leaves subagent transcripts unread.
+ * the subagent methods leaves subagent transcripts unread; one without the three prompts methods
+ * skips the prompts backfill.
  */
 export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'> &
-  Partial<Pick<SessionsRepo, 'subagentOffsets' | 'upsertFromSubagentTranscript'>>;
+  Partial<
+    Pick<
+      SessionsRepo,
+      'subagentOffsets' | 'upsertFromSubagentTranscript' | 'promptsBackfillCandidates' | 'replacePrompts' | 'redactStoredPrompts'
+    >
+  >;
 
 export type IngestReason = 'backfill' | 'sweep' | 'watch';
 
@@ -113,6 +131,42 @@ export interface IngestObserver {
   onPassComplete?(pass: IngestPass): void | Promise<void>;
 }
 
+/** What the one-time prompts backfill did. */
+export interface PromptsBackfillReport {
+  /** Rows of this host below PROMPTS_VERSION when it started. */
+  candidates: number;
+  /** Re-read from the transcript and replaced. */
+  filled: number;
+  /** Transcript gone: stored excerpts redacted in place (PROMPTS_VERSION_EXCERPTS). */
+  redacted: number;
+  /** Nothing to do when reached: already redacted in place with the transcript still gone, or already current. */
+  skipped: number;
+  /** Left for the next daemon start: closing, a file that shrank, a second offset miss, a path outside this Claude home. */
+  deferred: number;
+  failed: number;
+  ms: number;
+}
+
+type PromptsBackfillOutcome = 'filled' | 'redacted' | 'skipped' | 'deferred';
+
+function emptyPromptsReport(): PromptsBackfillReport {
+  return { candidates: 0, filled: 0, redacted: 0, skipped: 0, deferred: 0, failed: 0, ms: 0 };
+}
+
+async function fileSize(file: string): Promise<number | null> {
+  try {
+    return (await stat(file)).size;
+  } catch {
+    return null;
+  }
+}
+
+/** True when `file` is inside `dir` (not `dir` itself). */
+function isUnder(dir: string, file: string): boolean {
+  const rel = path.relative(dir, path.resolve(file));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 export interface SessionIngestOptions {
   /** `config.sessions.claudeHome`; transcripts are under `<claudeHome>/projects`. */
   claudeHome: string;
@@ -148,6 +202,8 @@ export interface SessionIngestOptions {
 export interface SessionIngester {
   /** Settles when the startup backfill pass has finished (never rejects). */
   ready: Promise<IngestReport>;
+  /** Settles once the one-time prompts backfill that follows `ready` is done (never rejects). */
+  promptsBackfill: Promise<PromptsBackfillReport>;
   /** Adds an observer (see EXTENSION POINT above). Returns the function that removes it. */
   addObserver(observer: IngestObserver): () => void;
   /** One full sweep now. Concurrent calls share the running sweep. */
@@ -484,23 +540,133 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     return 0;
   };
 
-  /** `readFile`, serialized per file: a request during a read runs once more right after it. */
+  /**
+   * Holds `file` for one task: `first`, then every read asked for meanwhile (`again`), in order.
+   * Tail reads and the prompts backfill of a file both go through here, so they never overlap.
+   */
+  const holdFile = (file: string, first: () => Promise<number>): Promise<number> => {
+    const task: Promise<number> = (async () => {
+      let bytes = await first();
+      while (again.has(file) && !closed) {
+        again.delete(file);
+        bytes += await readFile(file);
+      }
+      return bytes;
+    })().finally(() => {
+      if (inflight.get(file) === task) inflight.delete(file);
+    });
+    inflight.set(file, task);
+    return task;
+  };
+
+  /** `readFile`, serialized per file: a request during a read (or a backfill) runs once more right after it. */
   const runFile = (file: string): Promise<number> => {
     const running = inflight.get(file);
     if (running !== undefined) {
       again.add(file);
       return running.then(() => 0);
     }
-    const task = (async () => {
-      let bytes = 0;
-      do {
-        again.delete(file);
-        bytes += await readFile(file);
-      } while (again.has(file) && !closed);
-      return bytes;
-    })().finally(() => inflight.delete(file));
-    inflight.set(file, task);
-    return task;
+    return holdFile(file, () => {
+      again.delete(file);
+      return readFile(file);
+    });
+  };
+
+  /**
+   * Runs `body` with `file` held: after the running read (if any), before any read asked for while
+   * it runs. `body()` starts in the same tick the hold is taken, so no read can slip in between.
+   */
+  const withFileHeld = async <T>(file: string, body: () => Promise<T>): Promise<T> => {
+    for (;;) {
+      const running = inflight.get(file);
+      if (running === undefined) break;
+      await running.catch(() => 0);
+    }
+    const result = body();
+    await holdFile(file, () => result.then(() => 0));
+    return result;
+  };
+
+  interface PromptsFill {
+    replace: (sessionId: string, host: string, input: PromptsReplacement) => Promise<ReplacePromptsResult>;
+    redact: (sessionId: string, host: string) => Promise<RedactStoredPromptsResult>;
+  }
+
+  /**
+   * One candidate of the prompts backfill. Re-reads the transcript from 0 to the stored offset,
+   * collecting prompts only, and replaces the row's prompt columns. An offset miss (a tail write
+   * landed first) retries once with the stored offset; a second miss waits for the next start.
+   */
+  const backfillSession = async (c: PromptsBackfillCandidate, fill: PromptsFill): Promise<PromptsBackfillOutcome> => {
+    let upTo = c.transcriptOffset;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (closed) return 'deferred';
+      const file = c.transcriptPath;
+      if (file !== null && !isUnder(projectsDir, file)) return 'deferred';
+      const size = file === null ? null : await fileSize(file);
+      if (file === null || size === null) {
+        const redacted = await fill.redact(c.sessionId, host);
+        if (redacted === 'applied') return 'redacted';
+        return redacted === 'current' ? 'skipped' : 'deferred';
+      }
+      // A file shorter than its offset is re-read from 0 by the tail ingester, which fills the prompts.
+      if (size < upTo) return 'deferred';
+      const acc = new TranscriptAccumulator(c.sessionId);
+      const read = await readJsonlFrom(
+        file,
+        0,
+        (line) => {
+          const record = parseRecord(line);
+          if (record !== null) acc.add(record);
+        },
+        { until: upTo, shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
+      );
+      if (read.stopped || read.endOffset !== upTo) return 'deferred';
+      const delta = acc.delta();
+      const result = await fill.replace(c.sessionId, host, {
+        upToOffset: upTo,
+        prompts: delta.prompts,
+        firstPrompt: delta.firstPrompt,
+        lastPrompt: delta.lastPrompt,
+      });
+      if (result.status === 'applied') return 'filled';
+      if (result.status !== 'offset_mismatch') return 'deferred';
+      upTo = result.storedOffset;
+    }
+    return 'deferred';
+  };
+
+  /** The one-time prompts backfill for this host (see the header). Never notifies observers. */
+  const backfillPrompts = async (): Promise<PromptsBackfillReport> => {
+    const started = Date.now();
+    const report = emptyPromptsReport();
+    const store = options.store;
+    const list = store.promptsBackfillCandidates?.bind(store);
+    const replace = store.replacePrompts?.bind(store);
+    const redact = store.redactStoredPrompts?.bind(store);
+    if (list === undefined || replace === undefined || redact === undefined || closed) return report;
+    const fill: PromptsFill = { replace, redact };
+    const candidates = await list(host);
+    report.candidates = candidates.length;
+    if (candidates.length === 0) return report;
+    await forEachLimit(candidates, concurrency, async (c) => {
+      if (closed) {
+        report.deferred += 1;
+        return;
+      }
+      try {
+        const file = c.transcriptPath;
+        const outcome = file === null ? await backfillSession(c, fill) : await withFileHeld(file, () => backfillSession(c, fill));
+        report[outcome] += 1;
+      } catch (err) {
+        report.failed += 1;
+        log(`[notesd] sessions: prompts backfill ${c.sessionId}: ${errorMessage(err)}`);
+      }
+    });
+    report.ms = Date.now() - started;
+    // Rows redacted in place stay candidates and are skipped on every start: say nothing then.
+    if (report.filled + report.redacted + report.deferred + report.failed > 0) log(formatPromptsReport(report));
+    return report;
   };
 
   const pass = async (files: string[], reason: IngestReason): Promise<{ report: IngestReport; written: string[] } | null> => {
@@ -603,6 +769,17 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     },
   );
 
+  let promptsSettled = false;
+  const promptsBackfill: Promise<PromptsBackfillReport> = ready
+    .then(() => backfillPrompts())
+    .catch((err: unknown) => {
+      log(`[notesd] sessions: prompts backfill failed: ${errorMessage(err)}`);
+      return { ...emptyPromptsReport(), failed: 1 };
+    })
+    .finally(() => {
+      promptsSettled = true;
+    });
+
   let timer: ReturnType<typeof setInterval> | null = null;
   if (sweepMs > 0) {
     timer = setInterval(() => {
@@ -619,6 +796,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
 
   return {
     ready,
+    promptsBackfill,
     addObserver(observer) {
       observers.add(observer);
       return () => {
@@ -632,7 +810,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
           clearTimeout(watchTimer);
           drainWatch();
         }
-        const pending = [sweeping, watchDrain, ...inflight.values()].filter((p) => p !== null);
+        const pending = [sweeping, watchDrain, promptsSettled ? null : promptsBackfill, ...inflight.values()].filter((p) => p !== null);
         if (pending.length === 0) return;
         await Promise.allSettled(pending);
       }
@@ -644,7 +822,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       if (watchTimer !== null) clearTimeout(watchTimer);
       watchTimer = null;
       const closing = watcher?.close().catch(() => undefined);
-      const pending = Promise.allSettled([closing, sweeping, watchDrain, ...inflight.values()]);
+      const pending = Promise.allSettled([closing, sweeping, watchDrain, promptsBackfill, ...inflight.values()]);
       let grace: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         pending,
@@ -662,4 +840,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
 export function formatReport(report: IngestReport): string {
   const mb = (report.bytes / (1024 * 1024)).toFixed(1);
   return `[notesd] sessions: ${report.reason} ${report.files} files, ${report.upserted} rows written, ${mb} MB, ${report.failed} failed, ${report.ms}ms`;
+}
+
+/** e.g. `[notesd] sessions: prompts backfill 640 sessions, 612 filled, 25 redacted in place, 0 already done, 3 deferred, 0 failed, 4210ms` */
+export function formatPromptsReport(r: PromptsBackfillReport): string {
+  return `[notesd] sessions: prompts backfill ${r.candidates} sessions, ${r.filled} filled, ${r.redacted} redacted in place, ${r.skipped} already done, ${r.deferred} deferred, ${r.failed} failed, ${r.ms}ms`;
 }

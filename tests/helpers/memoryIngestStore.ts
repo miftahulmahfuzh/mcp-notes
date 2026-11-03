@@ -1,13 +1,30 @@
 import type { IngestStore } from '../../src/sessions/ingest.js';
-import { latest, mergeCommits, mergeModels, mergeTranscriptPatch, subtractModels } from '../../src/sessions/merge.js';
-import type {
-  SessionRow,
-  SubagentTotals,
-  SubagentTranscriptPatch,
-  SubagentUpsertResult,
-  TranscriptOffset,
-  TranscriptPatch,
-  TranscriptUpsertResult,
+import {
+  latest,
+  mergeCommits,
+  mergeModels,
+  mergeTranscriptPatch,
+  redactedPromptColumns,
+  replacedPromptColumns,
+  storedPrompts,
+  storedPromptsFromExcerpts,
+  subtractModels,
+} from '../../src/sessions/merge.js';
+import {
+  PROMPTS_VERSION,
+  PROMPTS_VERSION_EXCERPTS,
+  type PromptsBackfillCandidate,
+  type PromptsReplacement,
+  type RedactStoredPromptsResult,
+  type ReplacePromptsResult,
+  type SessionRow,
+  type StoredPrompt,
+  type SubagentTotals,
+  type SubagentTranscriptPatch,
+  type SubagentUpsertResult,
+  type TranscriptOffset,
+  type TranscriptPatch,
+  type TranscriptUpsertResult,
 } from '../../src/sessions/types.js';
 
 /** One `cc_subagent_transcripts` row, as the memory store keeps it. */
@@ -65,7 +82,7 @@ export function blankSessionRow(sessionId: string, host: string, over: Partial<S
 }
 
 /**
- * `SessionsRepo`'s ingest methods over Maps, with the repo's own merge (`mergeTranscriptPatch`,
+ * `SessionsRepo`'s ingest and prompts-backfill methods over Maps, with the repo's own merge (`mergeTranscriptPatch`,
  * `mergeModels`, `mergeCommits`) and its compare-and-set rules, so unit tests see the same row
  * values the database would hold. `patches` records every session call in order.
  */
@@ -74,6 +91,8 @@ export class MemoryIngestStore implements IngestStore {
   readonly patches: TranscriptPatch[] = [];
   /** Subagent rows by transcript path. */
   readonly subagents = new Map<string, MemorySubagentRow>();
+  /** `cc_session_prompts` by session id, in seq order. */
+  readonly sidePrompts = new Map<string, StoredPrompt[]>();
 
   async subagentOffsets(host: string): Promise<Map<string, number>> {
     return new Map([...this.subagents].filter(([, r]) => r.host === host).map(([file, r]) => [file, r.offset]));
@@ -150,10 +169,43 @@ export class MemoryIngestStore implements IngestStore {
     if (patch.fromOffset !== 0 && row.transcriptOffset !== patch.fromOffset) {
       return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row };
     }
-    const subagents = patch.fromOffset === 0 ? this.subagentTotals(patch.sessionId) : null;
-    const next: SessionRow = { ...row, ...mergeTranscriptPatch(row, patch, subagents) };
+    const reset = patch.fromOffset === 0;
+    const subagents = reset ? this.subagentTotals(patch.sessionId) : null;
+    const added = storedPrompts(patch.prompts);
+    this.sidePrompts.set(patch.sessionId, reset ? added : [...(this.sidePrompts.get(patch.sessionId) ?? []), ...added]);
+    const next: SessionRow = {
+      ...row,
+      ...mergeTranscriptPatch(row, patch, subagents),
+      ...(reset ? { promptsVersion: PROMPTS_VERSION } : {}),
+    };
     this.rows.set(patch.sessionId, next);
     return { applied: true, row: next };
+  }
+
+  async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
+    return [...this.rows.values()]
+      .filter((r) => r.host === host && r.promptsVersion < PROMPTS_VERSION)
+      .map((r) => ({ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset }));
+  }
+
+  async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {
+    const row = this.rows.get(sessionId);
+    if (!row) return { status: 'missing' };
+    if (row.host !== host) return { status: 'other_host' };
+    if (row.transcriptOffset !== input.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
+    this.sidePrompts.set(sessionId, storedPrompts(input.prompts));
+    this.rows.set(sessionId, { ...row, ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION });
+    return { status: 'applied' };
+  }
+
+  async redactStoredPrompts(sessionId: string, host: string): Promise<RedactStoredPromptsResult> {
+    const row = this.rows.get(sessionId);
+    if (!row) return 'missing';
+    if (row.host !== host) return 'other_host';
+    if (row.promptsVersion >= PROMPTS_VERSION_EXCERPTS) return 'current';
+    this.sidePrompts.set(sessionId, storedPromptsFromExcerpts(row.prompts));
+    this.rows.set(sessionId, { ...row, ...redactedPromptColumns(row), promptsVersion: PROMPTS_VERSION_EXCERPTS });
+    return 'applied';
   }
 
   /** A row a hook would have made before the transcript had any message (phase 5's upsertFromHook). */

@@ -64,8 +64,31 @@ export const PARENT_LINK_RANK: Readonly<Record<ParentLinkSource, number>> = { en
 /** Inserts tried before ensureSession gives up on finding a free node id. */
 export const NODE_ID_ATTEMPTS = 8;
 
+/** `cc_sessions.prompts` is the excerpt list: the newest MAX_PROMPTS prompts, each clipped to MAX_PROMPT_CHARS (redacted first). */
 export const MAX_PROMPTS = 100;
 export const MAX_PROMPT_CHARS = 2000;
+/**
+ * Ceiling on one stored prompt (`cc_session_prompts.text`, UTF-16 code units). A longer prompt is cut
+ * here and stored with `truncated = true`. Measured 2026-11-03: the largest typed prompt was 46 KB.
+ */
+export const MAX_PROMPT_STORE_CHARS = 256 * 1024;
+/**
+ * `cc_sessions.prompts_version` of a row whose transcript was gone when the prompts backfill
+ * reached it: the stored excerpts, first and last prompt were redacted in place and
+ * `cc_session_prompts` was rebuilt from those excerpts (≤ MAX_PROMPTS, each ≤ MAX_PROMPT_CHARS).
+ * Nothing unredacted is left, but the full text is unrecoverable: never report such a row as
+ * complete. Still a backfill candidate (below PROMPTS_VERSION): upgraded if the transcript is
+ * readable again, otherwise skipped without a write.
+ */
+export const PROMPTS_VERSION_EXCERPTS = 1;
+/**
+ * `cc_sessions.prompts_version` of a row whose prompts are stored in full and redacted
+ * (`cc_session_prompts` holds every prompt; the excerpts, first and last prompt are redacted).
+ * 0 = written before that: truncated, unredacted excerpts only. The owning host's ingester brings
+ * such rows up once (`SessionsRepo.replacePrompts`, or `redactStoredPrompts` to
+ * PROMPTS_VERSION_EXCERPTS when the transcript is gone).
+ */
+export const PROMPTS_VERSION = 2;
 export const MAX_TITLE_CHARS = 300;
 export const MAX_COMMITS = 200;
 export const MAX_FILES_EDITED = 500;
@@ -117,8 +140,12 @@ export interface TranscriptPatch {
   models?: Record<string, Partial<ModelUsage>>;
   /** Absolute total from the latest `cost-state` record in this patch. */
   costUsd?: number | null;
-  /** Appended (or, on fromOffset 0, replacing), capped to the newest MAX_PROMPTS. */
-  prompts?: SessionPrompt[];
+  /**
+   * Every human prompt of the read, full text (cut only at MAX_PROMPT_STORE_CHARS), not yet
+   * redacted: SessionsRepo redacts before writing. Appended to `cc_session_prompts` (replacing it on
+   * fromOffset 0); the excerpt list keeps the newest MAX_PROMPTS, each clipped to MAX_PROMPT_CHARS.
+   */
+  prompts?: PatchPrompt[];
   /** Appended, deduped by sha, capped to the newest MAX_COMMITS. */
   commits?: SessionCommit[];
   /** Union, first-seen order, capped to MAX_FILES_EDITED. */
@@ -126,6 +153,47 @@ export interface TranscriptPatch {
   /** Union, first-seen order, capped to MAX_PLAN_DOCS. */
   planDocs?: string[];
 }
+
+/** One human prompt as ingest read it. `truncated`: cut at MAX_PROMPT_STORE_CHARS (absent = false). */
+export interface PatchPrompt {
+  text: string;
+  at: string | null;
+  truncated?: boolean;
+}
+
+/** One `cc_session_prompts` row's content, redacted, as SessionsRepo writes it. */
+export interface StoredPrompt {
+  text: string;
+  at: Date | null;
+  truncated: boolean;
+}
+
+/** A row of this host below PROMPTS_VERSION (legacy, or redacted in place from excerpts). */
+export interface PromptsBackfillCandidate {
+  sessionId: string;
+  transcriptPath: string | null;
+  transcriptOffset: number;
+}
+
+/** The prompts of a transcript re-read from byte 0 up to `upToOffset` (the row's stored offset). */
+export interface PromptsReplacement {
+  /** Must equal the stored transcript_offset when the write happens (compare-and-set). */
+  upToOffset: number;
+  prompts: PatchPrompt[];
+  /** First human prompt of the file; null keeps the stored one (redacted). */
+  firstPrompt: string | null;
+  /** Latest `last-prompt` record of the file; null keeps the stored one (redacted). */
+  lastPrompt: string | null;
+}
+
+export type ReplacePromptsResult =
+  | { status: 'applied' }
+  | { status: 'offset_mismatch'; storedOffset: number }
+  | { status: 'other_host' }
+  | { status: 'missing' };
+
+/** `current`: the row was already at PROMPTS_VERSION_EXCERPTS or above, nothing written. */
+export type RedactStoredPromptsResult = 'applied' | 'current' | 'other_host' | 'missing';
 
 /** Columns a transcript patch writes. */
 export type TranscriptSet = Pick<

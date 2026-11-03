@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 69
+- Completed: 70
 
 ---
 
@@ -33,21 +33,11 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns types.ts constants, transcript.ts accumulator, merge.ts redaction, repo.ts side-row writes + backfill methods, ingest.ts one-time backfill, 106-prompt fixture, claudeHome/memoryIngestStore helpers, unit + int tests. Exit: fake key in no table, rest byte-identical; backfill fills legacy row to version 2 changing nothing else, second run no-op; other hosts untouched; pruned-transcript row redacted at version 1 and upgraded later; graph query unchanged.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 3 of 5)
-  - **Satisfies**: R2 — Full, redacted prompts in the shared DB (with per-host backfill)
-  - **Depends on**: P1-NOTES-A065
-  - **Plan**: `.workflows/plan/P1-NOTES-A067.md`
-
 - [ ] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns view.ts/readModel.ts prompts payload, GET /api/sessions/:nodeId/prompts, web fetchSessionPrompts, useCopied, PromptsModal + css, NodePanel Expand button, NodeModal Esc handling, tests, features/projects.md. Exit: modal lists every stored prompt of the fixture (>100), >2000-char prompt in full, key shown [redacted]; copy buttons copy exactly the shown text; Esc/backdrop close only the modal; version 1 and 0 rows show their incomplete lines; verify-notesd proof captured.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 5 of 5)
   - **Satisfies**: R2 — Expand prompts modal with per-prompt copy and copy-all, loaded from the DB
   - **Depends on**: P1-NOTES-A066, P1-NOTES-A067, P1-NOTES-A068
@@ -62,6 +52,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns types.ts constants, transcript.ts accumulator, merge.ts redaction, repo.ts side-row writes + backfill methods, ingest.ts one-time backfill, 106-prompt fixture, claudeHome/memoryIngestStore helpers, unit + int tests. Exit: fake key in no table, rest byte-identical; backfill fills legacy row to version 2 changing nothing else, second run no-op; other hosts untouched; pruned-transcript row redacted at version 1 and upgraded later; graph query unchanged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — Full, redacted prompts in the shared DB (with per-host backfill)
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A067.md`
+  - **Completed**: 2026-11-03 16:40
+  - **Method**: /do
+  - **Files**: src/sessions/types.ts, src/sessions/transcript.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/ingest.ts, tests/fixtures/make-many-prompts-fixture.mjs, tests/fixtures/claude-home/projects/-home-u-mcp-notes/5e55a001-0000-4000-8000-000000000005.jsonl, tests/helpers/claudeHome.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/transcript.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/ingest.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.repo.int.test.ts, tests/integration/sessions.prompts.int.test.ts
+  - **Drift**: Proof neighbor check: plan expected 3 graph nodes; harness lists 2 because the worktree fixture resolves to repo wall-editing in the verify daemon (pre-existing resolver behavior, unrelated). Main row unchanged; new many-prompts node listed.
+  - **Decided**: Phase 1's sessions.repo.int.test.ts asserted promptsVersion 0 after a byte-0 upsert; now asserts PROMPTS_VERSION (rung 3: phase 3 code block sets version 2 on a fromOffset-0 write; coordinator accepted)
 
 - [x] **P1-NOTES-A068** Phase 4: Node panel Summary: reason labels + Summarize button
   - **Difficulty**: NORMAL

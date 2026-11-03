@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { clip, earliest, latest, mergeTranscriptPatch, normalizeCwd } from '../../../src/sessions/merge.js'
-import { MAX_PROMPTS, type SessionRow, type TranscriptPatch } from '../../../src/sessions/types.js'
+import {
+  clip,
+  earliest,
+  latest,
+  mergeTranscriptPatch,
+  normalizeCwd,
+  promptExcerpt,
+  redactedPromptColumns,
+  replacedPromptColumns,
+  storedPrompts,
+  storedPromptsFromExcerpts,
+} from '../../../src/sessions/merge.js'
+import { MAX_PROMPT_CHARS, MAX_PROMPTS, type SessionRow, type TranscriptPatch } from '../../../src/sessions/types.js'
 
 const T = (m: number) => new Date(Date.UTC(2026, 10, 1, 10, m))
 
@@ -135,5 +146,59 @@ describe('helpers', () => {
     expect(normalizeCwd('/a/b//')).toBe('/a/b')
     expect(normalizeCwd('/')).toBe('/')
     expect(normalizeCwd('///')).toBe('/')
+  })
+})
+
+describe('prompt redaction', () => {
+  const KEY = 'sk-ant-api03-FAKE-not-a-real-key-0000000000'
+  const typed = `line one\n    indented with ${KEY} inside\n\ttabbed tail  `
+
+  it('stores a prompt with a fake key without the key, and the rest byte for byte', () => {
+    const [row] = storedPrompts([{ text: typed, at: '2026-11-01T10:00:00.000Z' }])
+    expect(row?.text).toBe(`line one\n    indented with [redacted] inside\n\ttabbed tail  `)
+    expect(row?.text).not.toContain('sk-ant')
+    expect(row?.at?.toISOString()).toBe('2026-11-01T10:00:00.000Z')
+    expect(row?.truncated).toBe(false)
+  })
+
+  it('keeps the full text in the side rows, the excerpt clipped after redacting', () => {
+    const long = `${'a '.repeat(1500)}${KEY} end`
+    expect(storedPrompts([{ text: long, at: null, truncated: true }])[0]).toMatchObject({ text: long.replace(KEY, '[redacted]'), truncated: true })
+    const excerpt = promptExcerpt(`${'b'.repeat(MAX_PROMPT_CHARS - 5)} ${KEY}`)
+    expect(excerpt).toHaveLength(MAX_PROMPT_CHARS)
+    expect(excerpt).not.toContain('sk-ant')
+    expect(excerpt.endsWith('…')).toBe(true)
+  })
+
+  it('redacts the excerpts, first and last prompt on every write, including stored legacy ones', () => {
+    const row = blankRow({ transcriptOffset: 10, firstPrompt: `first ${KEY}`, lastPrompt: `last ${KEY}`, prompts: [{ text: `old ${KEY}`, at: null }] })
+    const set = mergeTranscriptPatch(row, patch({ fromOffset: 10, toOffset: 20, prompts: [{ text: `new ${KEY}`, at: null }] }))
+    expect(set.prompts.map((p) => p.text)).toEqual(['old [redacted]', 'new [redacted]'])
+    expect(set.firstPrompt).toBe('first [redacted]')
+    expect(set.lastPrompt).toBe('last [redacted]')
+    const fresh = mergeTranscriptPatch(blankRow(), patch({ firstPrompt: `x ${KEY}`, lastPrompt: `y ${'z'.repeat(3000)}` }))
+    expect(fresh.firstPrompt).toBe('x [redacted]')
+    expect(fresh.lastPrompt).toHaveLength(MAX_PROMPT_CHARS)
+  })
+
+  it('builds backfill columns: re-read values win, missing ones keep the stored value redacted', () => {
+    const row = { prompts: [{ text: `legacy ${KEY}`, at: null }], firstPrompt: `f ${KEY}`, lastPrompt: `l ${KEY}` }
+    expect(replacedPromptColumns(row, { prompts: [{ text: 'p1', at: null }], firstPrompt: null, lastPrompt: 'last' })).toEqual({
+      prompts: [{ text: 'p1', at: null }],
+      firstPrompt: 'f [redacted]',
+      lastPrompt: 'last',
+    })
+    expect(redactedPromptColumns(row)).toEqual({
+      prompts: [{ text: 'legacy [redacted]', at: null }],
+      firstPrompt: 'f [redacted]',
+      lastPrompt: 'l [redacted]',
+    })
+  })
+
+  it('rebuilds side rows from excerpts, truncated where the excerpt was clipped', () => {
+    expect(storedPromptsFromExcerpts([{ text: 'whole', at: null }, { text: `cut ${KEY} …`, at: '2026-11-01T10:00:00.000Z' }, { text: '  ', at: null }])).toEqual([
+      { text: 'whole', at: null, truncated: false },
+      { text: 'cut [redacted] …', at: new Date('2026-11-01T10:00:00.000Z'), truncated: true },
+    ])
   })
 })

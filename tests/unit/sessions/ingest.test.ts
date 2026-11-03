@@ -13,7 +13,8 @@ import {
   type SessionIngestOptions,
 } from '../../../src/sessions/ingest.js';
 import { createRepoResolver } from '../../../src/sessions/repoResolve.js';
-import { copyFixtureClaudeHome, FIXTURE } from '../../helpers/claudeHome.js';
+import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS, type SessionRow } from '../../../src/sessions/types.js';
+import { copyFixtureClaudeHome, FIXTURE, MANY_PROMPTS } from '../../helpers/claudeHome.js';
 import { MemoryIngestStore } from '../../helpers/memoryIngestStore.js';
 
 let home: string;
@@ -101,8 +102,10 @@ describe('helpers', () => {
     expect(subagentFromPath(`/x/-home-u/${FIXTURE.main}/other/agent-a1.jsonl`)).toBeNull();
     const files = (await listTranscripts(path.join(home, 'projects'))).map((f) => path.relative(home, f.path));
     // Sessions first, subagents after them.
-    expect(files.slice(0, 3).sort()).toEqual([FIXTURE.worktreeFile, FIXTURE.mainFile, `projects/-home-u-mcp-notes/${FIXTURE.sdkCli}.jsonl`].sort());
-    expect(files.slice(3)).toEqual([SUBAGENT_FILE]);
+    expect(files.slice(0, 4).sort()).toEqual(
+      [FIXTURE.worktreeFile, FIXTURE.mainFile, FIXTURE.manyPromptsFile, `projects/-home-u-mcp-notes/${FIXTURE.sdkCli}.jsonl`].sort(),
+    );
+    expect(files.slice(4)).toEqual([SUBAGENT_FILE]);
   });
 
   it('watches project dirs, their transcripts and subagent transcripts, nothing else', () => {
@@ -136,9 +139,9 @@ describe('startSessionIngest', () => {
       ],
     });
     const report = await ingester.ready;
-    // 3 sessions (one sdk, skipped) and the main session's one subagent.
-    expect(report).toMatchObject({ reason: 'backfill', files: 4, upserted: 3, failed: 0 });
-    expect([...store.rows.keys()].sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild].sort());
+    // 4 sessions (one sdk, skipped) and the main session's one subagent.
+    expect(report).toMatchObject({ reason: 'backfill', files: 5, upserted: 4, failed: 0 });
+    expect([...store.rows.keys()].sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.manyPrompts].sort());
 
     const main = store.rows.get(FIXTURE.main);
     expect(main).toMatchObject({
@@ -157,7 +160,7 @@ describe('startSessionIngest', () => {
     expect(main?.transcriptOffset).toBe((await stat(mainPath())).size);
     expect(store.rows.get(FIXTURE.worktreeChild)).toMatchObject({ repo: 'mcp-notes', branch: 'feature/wall-editing', name: 'impl-wall-editing-p1' });
 
-    expect(batches.map((b) => b.sessionId).sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild].sort());
+    expect(batches.map((b) => b.sessionId).sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.manyPrompts].sort());
     const mainBatch = batches.find((b) => b.sessionId === FIXTURE.main);
     expect(mainBatch).toMatchObject({ host: 'test-host', fromOffset: 0, transcriptPath: mainPath() });
     // Every parsed record of the read, ignored types (mode, api-request-blob, ...) excluded.
@@ -165,7 +168,7 @@ describe('startSessionIngest', () => {
     expect(mainBatch?.records.some((r) => r.type === 'api-request-blob')).toBe(false);
     expect(passes).toHaveLength(1);
     expect(passes[0]).toMatchObject({ initial: true, reason: 'backfill' });
-    expect([...(passes[0]?.sessionIds ?? [])].sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild].sort());
+    expect([...(passes[0]?.sessionIds ?? [])].sort()).toEqual([FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.manyPrompts].sort());
 
     await ingester.sweep();
     expect(passes[1]).toMatchObject({ initial: false, reason: 'sweep', sessionIds: [] });
@@ -347,9 +350,9 @@ describe('startSessionIngest', () => {
     });
     await ingester.ready;
     await new Promise((r) => setTimeout(r, 10));
-    expect(lines.filter((l) => l.includes('observer failed: boom'))).toHaveLength(2);
+    expect(lines.filter((l) => l.includes('observer failed: boom'))).toHaveLength(3);
     expect(lines.filter((l) => l.includes('observer failed: async boom'))).toHaveLength(1);
-    expect(store.rows.size).toBe(2);
+    expect(store.rows.size).toBe(3);
   });
 
   it('closes within the grace period while a store write hangs', async () => {
@@ -435,5 +438,103 @@ describe('startSessionIngest: subagents', () => {
     expect(main?.models['claude-haiku-5-5']).toEqual({ inputTokens: 0, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 });
     // Commits are only ever added.
     expect(main?.commits.map((c) => c.sha)).toContain('eee5555');
+  });
+});
+
+describe('startSessionIngest: prompts backfill', () => {
+  const KEY = MANY_PROMPTS.fakeKey;
+  const withoutPrompts = (r: SessionRow | undefined): Partial<SessionRow> => {
+    if (r === undefined) return {};
+    const { prompts, firstPrompt, lastPrompt, promptsVersion, ...rest } = r;
+    void prompts;
+    void firstPrompt;
+    void lastPrompt;
+    void promptsVersion;
+    return rest;
+  };
+
+  it('stores every prompt of a fresh session and marks it current, so the backfill has nothing to do', async () => {
+    const ingester = start();
+    await ingester.ready;
+    expect(await ingester.promptsBackfill).toMatchObject({ candidates: 0 });
+    expect(store.sidePrompts.get(FIXTURE.manyPrompts)).toHaveLength(MANY_PROMPTS.count);
+    expect(store.rows.get(FIXTURE.manyPrompts)?.promptsVersion).toBe(PROMPTS_VERSION);
+    expect(store.rows.get(FIXTURE.manyPrompts)?.prompts).toHaveLength(100);
+  });
+
+  it("replaces a legacy row's prompts from its transcript and changes nothing else", async () => {
+    await start().ready;
+    const row = store.rows.get(FIXTURE.manyPrompts);
+    if (!row) throw new Error('no row');
+    store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: 0, prompts: [{ text: `legacy ${KEY}`, at: null }], lastPrompt: `legacy ${KEY}` });
+    store.sidePrompts.delete(FIXTURE.manyPrompts);
+    const writes = store.patches.length;
+    const second = start();
+    await second.ready;
+    expect(await second.promptsBackfill).toMatchObject({ candidates: 1, filled: 1, failed: 0 });
+    expect(store.patches.length).toBe(writes);
+    const after = store.rows.get(FIXTURE.manyPrompts);
+    expect(after?.promptsVersion).toBe(PROMPTS_VERSION);
+    expect(withoutPrompts(after)).toEqual(withoutPrompts(row));
+    expect(store.sidePrompts.get(FIXTURE.manyPrompts)).toHaveLength(MANY_PROMPTS.count);
+    expect(JSON.stringify([after, store.sidePrompts.get(FIXTURE.manyPrompts)])).not.toContain(KEY);
+  });
+
+  it('retries once with the stored offset after a compare-and-set miss', async () => {
+    await start().ready;
+    const row = store.rows.get(FIXTURE.manyPrompts);
+    if (!row) throw new Error('no row');
+    store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: 0 });
+    const real = store.replacePrompts.bind(store);
+    let calls = 0;
+    store.replacePrompts = async (id, host, input) => {
+      calls += 1;
+      return calls === 1 ? { status: 'offset_mismatch', storedOffset: row.transcriptOffset } : real(id, host, input);
+    };
+    const second = start();
+    await second.ready;
+    expect(await second.promptsBackfill).toMatchObject({ filled: 1 });
+    expect(calls).toBe(2);
+  });
+
+  it('redacts stored prompts in place when the transcript is gone, marks them excerpts-only, and skips them next time', async () => {
+    const id = '5e55a001-0000-4000-8000-0000000000dd';
+    store.seedRow(id, 'test-host', {
+      transcriptPath: path.join(home, `projects/-home-u-mcp-notes/${id}.jsonl`),
+      transcriptOffset: 50,
+      prompts: [{ text: `use ${KEY} now…`, at: null }],
+    });
+    const ingester = start();
+    await ingester.ready;
+    expect(await ingester.promptsBackfill).toMatchObject({ redacted: 1 });
+    expect(store.rows.get(id)).toMatchObject({ promptsVersion: PROMPTS_VERSION_EXCERPTS, prompts: [{ text: 'use [redacted] now…', at: null }], transcriptOffset: 50 });
+    expect(store.sidePrompts.get(id)).toEqual([{ text: 'use [redacted] now…', at: null, truncated: true }]);
+    const second = start();
+    await second.ready;
+    expect(await second.promptsBackfill).toMatchObject({ candidates: 1, skipped: 1, redacted: 0, filled: 0 });
+    expect(store.rows.get(id)?.promptsVersion).toBe(PROMPTS_VERSION_EXCERPTS);
+  });
+
+  it('fills a row redacted in place once its transcript is readable again', async () => {
+    await start().ready;
+    const row = store.rows.get(FIXTURE.manyPrompts);
+    if (!row) throw new Error('no row');
+    store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: PROMPTS_VERSION_EXCERPTS });
+    store.sidePrompts.set(FIXTURE.manyPrompts, [{ text: 'excerpt…', at: null, truncated: true }]);
+    const second = start();
+    await second.ready;
+    expect(await second.promptsBackfill).toMatchObject({ candidates: 1, filled: 1 });
+    expect(store.rows.get(FIXTURE.manyPrompts)?.promptsVersion).toBe(PROMPTS_VERSION);
+    expect(store.sidePrompts.get(FIXTURE.manyPrompts)).toHaveLength(MANY_PROMPTS.count);
+  });
+
+  it("never reads outside its own Claude home and never touches another host's rows", async () => {
+    store.seedRow('5e55a001-0000-4000-8000-0000000000de', 'test-host', { transcriptPath: '/elsewhere/x.jsonl', transcriptOffset: 10, prompts: [{ text: `a ${KEY}`, at: null }] });
+    store.seedRow('5e55a001-0000-4000-8000-0000000000df', 'other-laptop', { prompts: [{ text: `b ${KEY}`, at: null }] });
+    const ingester = start();
+    await ingester.ready;
+    expect(await ingester.promptsBackfill).toMatchObject({ candidates: 1, deferred: 1 });
+    expect(store.rows.get('5e55a001-0000-4000-8000-0000000000de')?.promptsVersion).toBe(0);
+    expect(store.rows.get('5e55a001-0000-4000-8000-0000000000df')?.prompts[0]?.text).toBe(`b ${KEY}`);
   });
 });

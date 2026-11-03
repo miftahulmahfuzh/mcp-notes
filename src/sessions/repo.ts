@@ -2,13 +2,26 @@ import { randomInt } from 'node:crypto';
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
-import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
+import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPrompts, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../embeddings/constants.js';
 import { toVectorLiteral } from '../embeddings/repo.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
 import { pgErrorInfo } from '../notes/imageRepo.js';
 import { generateNodeId, normalizeNodeId } from './ids.js';
-import { clip, earliest, latest, mergeCommits, mergeModels, mergeTranscriptPatch, normalizeCwd, subtractModels } from './merge.js';
+import {
+  clip,
+  earliest,
+  latest,
+  mergeCommits,
+  mergeModels,
+  mergeTranscriptPatch,
+  normalizeCwd,
+  redactedPromptColumns,
+  replacedPromptColumns,
+  storedPrompts,
+  storedPromptsFromExcerpts,
+  subtractModels,
+} from './merge.js';
 import {
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
@@ -17,6 +30,8 @@ import {
   PARENT_LINK_RANK,
   PENDING_SPAWN_SKEW_MS,
   PENDING_SPAWN_WINDOW_MS,
+  PROMPTS_VERSION,
+  PROMPTS_VERSION_EXCERPTS,
   SELECTED_PROJECT_KEY,
   type HookStart,
   type HookStartResult,
@@ -26,6 +41,10 @@ import {
   type PendingSpawnInput,
   type PendingSpawnRow,
   type ProjectSummary,
+  type PromptsBackfillCandidate,
+  type PromptsReplacement,
+  type RedactStoredPromptsResult,
+  type ReplacePromptsResult,
   type SessionEmbeddingFailure,
   type SessionEmbeddingInput,
   type SessionListItem,
@@ -34,6 +53,7 @@ import {
   type SetParentResult,
   type SpawnClaim,
   type SpawnClaimResult,
+  type StoredPrompt,
   type SubagentTotals,
   type SubagentTranscriptPatch,
   type SubagentUpsertResult,
@@ -94,6 +114,28 @@ const ORDER_AT: SQL = sql`coalesce(${ccSessions.startedAt}, ${ccSessions.created
 const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} when 'env' then 3 when 'hook' then 2 when 'heuristic' then 1 else 0 end)`;
 
 const MAX_SESSION_ID_CHARS = 128;
+
+/** Rows and characters per insert into cc_session_prompts, so one statement stays small. */
+const PROMPT_INSERT_ROWS = 200;
+const PROMPT_INSERT_CHARS = 4 * 1024 * 1024;
+
+/** `prompts` in insert-sized groups, in order. */
+function promptBatches(prompts: readonly StoredPrompt[]): StoredPrompt[][] {
+  const batches: StoredPrompt[][] = [];
+  let current: StoredPrompt[] = [];
+  let chars = 0;
+  for (const p of prompts) {
+    if (current.length > 0 && (current.length >= PROMPT_INSERT_ROWS || chars + p.text.length > PROMPT_INSERT_CHARS)) {
+      batches.push(current);
+      current = [];
+      chars = 0;
+    }
+    current.push(p);
+    chars += p.text.length;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
 
 /** A token delta as stored: a non-negative integer. */
 function tokenCount(n: number | undefined): number {
@@ -206,11 +248,48 @@ export class SessionsRepo {
     return row;
   }
 
+  /** The row, locked until the transaction ends, or null when the session has no row. */
+  private async lockIfExists(tx: Tx, sessionId: string): Promise<SessionRow | null> {
+    const rows = await tx.select(SESSION_COLUMNS).from(ccSessions).where(eq(ccSessions.sessionId, sessionId)).for('update');
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Writes a session's `cc_session_prompts` rows. The caller holds the cc_sessions row lock, which
+   * every writer of a session's prompt rows takes, so seq cannot race. `replace`: the rows become
+   * exactly `prompts`, seq 1..n. Otherwise `prompts` are appended after the highest seq.
+   */
+  private async writePromptRows(tx: Tx, sessionId: string, prompts: readonly StoredPrompt[], replace: boolean): Promise<void> {
+    let next = 1;
+    if (replace) {
+      await tx.delete(ccSessionPrompts).where(eq(ccSessionPrompts.sessionId, sessionId));
+    } else {
+      if (prompts.length === 0) return;
+      const top = await tx
+        .select({ max: sql<number>`coalesce(max(${ccSessionPrompts.seq}), 0)`.mapWith(Number) })
+        .from(ccSessionPrompts)
+        .where(eq(ccSessionPrompts.sessionId, sessionId));
+      next = (top[0]?.max ?? 0) + 1;
+    }
+    for (const batch of promptBatches(prompts)) {
+      const values = batch.map((p, i) => ({ sessionId, seq: next + i, at: p.at, text: p.text, truncated: p.truncated }));
+      await tx.insert(ccSessionPrompts).values(values);
+      next += batch.length;
+    }
+  }
+
   // ---------- transcript ingest (Phase 3) ----------
 
   /**
    * Applies one ingest pass. Compare-and-set on transcript_offset: see TranscriptPatch. Replaying
    * a patch is a no-op (`offset_mismatch`); the caller then resumes from `storedOffset`.
+   *
+   * The pass's prompts go to `cc_session_prompts` in the same transaction, redacted: appended after
+   * the highest seq, or replacing every row on fromOffset 0. Only a read from byte 0 has seen every
+   * prompt, so only it marks the row `prompts_version = PROMPTS_VERSION`. An append to a row below
+   * it (0: written before full prompts existed; PROMPTS_VERSION_EXCERPTS: rebuilt from excerpts)
+   * adds its prompts but leaves the version, so the prompts backfill still replaces that row's
+   * side rows whole.
    */
   async upsertFromTranscript(patch: TranscriptPatch): Promise<TranscriptUpsertResult> {
     assertSessionId(patch.sessionId);
@@ -228,10 +307,13 @@ export class SessionsRepo {
       if (patch.fromOffset !== 0 && row.transcriptOffset !== patch.fromOffset) {
         return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row } as const;
       }
-      const set = mergeTranscriptPatch(row, patch, patch.fromOffset === 0 ? await this.subagentTotals(tx, patch.sessionId) : null);
+      const reset = patch.fromOffset === 0;
+      const set = mergeTranscriptPatch(row, patch, reset ? await this.subagentTotals(tx, patch.sessionId) : null);
+      await this.writePromptRows(tx, patch.sessionId, storedPrompts(patch.prompts), reset);
+      const now = this.now();
       const updated = await tx
         .update(ccSessions)
-        .set({ ...set, updatedAt: this.now() })
+        .set(reset ? { ...set, promptsVersion: PROMPTS_VERSION, updatedAt: now } : { ...set, updatedAt: now })
         .where(eq(ccSessions.sessionId, patch.sessionId))
         .returning(SESSION_COLUMNS);
       const next = updated[0];
@@ -252,6 +334,75 @@ export class SessionsRepo {
       .from(ccSessions)
       .where(eq(ccSessions.host, host));
     return new Map(rows.map((r) => [r.sessionId, { offset: r.offset, size: r.size, path: r.path }]));
+  }
+
+  // ---------- full prompts backfill ----------
+
+  /**
+   * Rows of `host` below PROMPTS_VERSION, most recently active first: legacy rows (0) and rows
+   * redacted in place from excerpts (PROMPTS_VERSION_EXCERPTS), which upgrade if their transcript
+   * is readable again.
+   */
+  async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
+    assertHost(host);
+    return this.db
+      .select({
+        sessionId: ccSessions.sessionId,
+        transcriptPath: ccSessions.transcriptPath,
+        transcriptOffset: ccSessions.transcriptOffset,
+      })
+      .from(ccSessions)
+      .where(and(eq(ccSessions.host, host), lt(ccSessions.promptsVersion, PROMPTS_VERSION)))
+      .orderBy(desc(sql`coalesce(${ccSessions.lastActiveAt}, ${ccSessions.createdAt})`), asc(ccSessions.sessionId));
+  }
+
+  /**
+   * Replaces a session's prompts with those of its transcript re-read from byte 0 to `upToOffset`.
+   * Compare-and-set on transcript_offset and host, under the row lock. Writes `cc_session_prompts`
+   * (redacted, seq 1..n), the excerpt list, first_prompt, last_prompt, prompts_version and
+   * updated_at, and no other column.
+   */
+  async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {
+    assertSessionId(sessionId);
+    assertHost(host);
+    assertOffset(input.upToOffset, 'upToOffset');
+    return this.db.transaction(async (tx): Promise<ReplacePromptsResult> => {
+      const row = await this.lockIfExists(tx, sessionId);
+      if (row === null) return { status: 'missing' };
+      if (row.host !== host) return { status: 'other_host' };
+      if (row.transcriptOffset !== input.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
+      await this.writePromptRows(tx, sessionId, storedPrompts(input.prompts), true);
+      await tx
+        .update(ccSessions)
+        .set({ ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION, updatedAt: this.now() })
+        .where(eq(ccSessions.sessionId, sessionId));
+      return { status: 'applied' };
+    });
+  }
+
+  /**
+   * For a row of `host` whose transcript is gone: redacts the stored excerpts, first_prompt and
+   * last_prompt in place, rebuilds `cc_session_prompts` from the redacted excerpts (the full text
+   * cannot be recovered; `truncated` where an excerpt ends in `…`) and marks the row
+   * PROMPTS_VERSION_EXCERPTS, never PROMPTS_VERSION: the list is not complete. Same columns as
+   * replacePrompts. A row already at PROMPTS_VERSION_EXCERPTS or above is left alone ('current'),
+   * so a pruned transcript costs one locked read per daemon start, not a rewrite.
+   */
+  async redactStoredPrompts(sessionId: string, host: string): Promise<RedactStoredPromptsResult> {
+    assertSessionId(sessionId);
+    assertHost(host);
+    return this.db.transaction(async (tx): Promise<RedactStoredPromptsResult> => {
+      const row = await this.lockIfExists(tx, sessionId);
+      if (row === null) return 'missing';
+      if (row.host !== host) return 'other_host';
+      if (row.promptsVersion >= PROMPTS_VERSION_EXCERPTS) return 'current';
+      await this.writePromptRows(tx, sessionId, storedPromptsFromExcerpts(row.prompts), true);
+      await tx
+        .update(ccSessions)
+        .set({ ...redactedPromptColumns(row), promptsVersion: PROMPTS_VERSION_EXCERPTS, updatedAt: this.now() })
+        .where(eq(ccSessions.sessionId, sessionId));
+      return 'applied';
+    });
   }
 
   /** What the session's subagent transcripts add up to (zeros and no commits when it has none). */

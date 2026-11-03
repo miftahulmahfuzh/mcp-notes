@@ -5,7 +5,7 @@ import type { Db } from '../../src/db/client.js'
 import { EMBEDDING_DIMENSIONS } from '../../src/embeddings/constants.js'
 import { NODE_ID_PATTERN } from '../../src/sessions/ids.js'
 import { SessionsRepo } from '../../src/sessions/repo.js'
-import { SELECTED_PROJECT_KEY, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
+import { PROMPTS_VERSION, SELECTED_PROJECT_KEY, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
 import { closeTestDb, openTestDb, truncateAll } from './setup.js'
 
 const HOST = 'host-a'
@@ -426,7 +426,8 @@ describe('SessionsRepo', () => {
       await c.repo.requestSummary('s-1')
       const after = await c.repo.getBySessionId('s-1')
       expect(after).toEqual({ ...before, summaryRequestedAt: at(7), updatedAt: at(7) })
-      expect(after?.promptsVersion).toBe(0)
+      // The byte-0 upsert marked the prompts current (phase 3); the request leaves the version alone.
+      expect(after?.promptsVersion).toBe(PROMPTS_VERSION)
     })
 
     it('setSummary clears a pending request', async () => {

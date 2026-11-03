@@ -4,12 +4,11 @@ import {
   MAX_FILES_EDITED,
   MAX_FINAL_MESSAGE_CHARS,
   MAX_PLAN_DOCS,
-  MAX_PROMPT_CHARS,
-  MAX_PROMPTS,
+  MAX_PROMPT_STORE_CHARS,
   MAX_TITLE_CHARS,
   type ModelUsage,
+  type PatchPrompt,
   type SessionCommit,
-  type SessionPrompt,
   type TokenCounts,
   type TranscriptPatch,
 } from './types.js';
@@ -126,10 +125,10 @@ export interface TranscriptDelta {
   lastPrompt: string | null;
   firstAt: Date | null;
   lastAt: Date | null;
-  /** First human prompt of this read. */
+  /** First human prompt of this read (cut only at MAX_PROMPT_STORE_CHARS). */
   firstPrompt: string | null;
-  /** Human prompts of this read, oldest first, the newest MAX_PROMPTS. */
-  prompts: SessionPrompt[];
+  /** Every human prompt of this read, oldest first, each cut only at MAX_PROMPT_STORE_CHARS. No count cap. */
+  prompts: PatchPrompt[];
   /** Assistant usage of this read, one count per message id. */
   tokens: TokenCounts;
   /** The same usage by `message.model` (`<synthetic>` excluded). */
@@ -179,6 +178,18 @@ function cut(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
+/**
+ * A prompt cut to the storage ceiling (MAX_PROMPT_STORE_CHARS), never through a surrogate pair.
+ * No ellipsis is added: `truncated` records the cut.
+ */
+export function storeCut(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_PROMPT_STORE_CHARS) return { text, truncated: false };
+  let end = MAX_PROMPT_STORE_CHARS;
+  const code = text.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return { text: text.slice(0, end), truncated: true };
+}
+
 function zeroTokens(): TokenCounts {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 }
@@ -209,6 +220,11 @@ export interface ReadJsonlOptions {
   chunkBytes?: number;
   /** Checked before every chunk; true stops the read (the result still covers the lines read). */
   shouldStop?: () => boolean;
+  /**
+   * Read no further than this byte offset (a line boundary, e.g. a stored transcript_offset).
+   * Default: the file size when opened.
+   */
+  until?: number;
 }
 
 export interface ReadJsonlResult {
@@ -223,9 +239,10 @@ export interface ReadJsonlResult {
 }
 
 /**
- * Streams the complete lines of `file` from byte `start` to the size it had when opened, in fixed
- * chunks (memory stays O(chunk + longest line), whatever the file size). A trailing line without
- * its `\n` is still being written: it is not handed out and `endOffset` stops before it.
+ * Streams the complete lines of `file` from byte `start` to the size it had when opened (or to
+ * `options.until`, if smaller), in fixed chunks (memory stays O(chunk + longest line), whatever the
+ * file size). A trailing line without its `\n` is still being written: it is not handed out and
+ * `endOffset` stops before it.
  */
 export async function readJsonlFrom(
   file: string,
@@ -237,18 +254,19 @@ export async function readJsonlFrom(
   const handle = await open(file, 'r');
   try {
     const { size } = await handle.stat();
-    let endOffset = Math.min(Math.max(start, 0), size);
+    const end = options.until === undefined ? size : Math.min(size, Math.max(0, options.until));
+    let endOffset = Math.min(Math.max(start, 0), end);
     let position = endOffset;
     let lines = 0;
     let stopped = false;
     const pending: Buffer[] = [];
     const buffer = Buffer.allocUnsafe(chunkBytes);
-    while (position < size) {
+    while (position < end) {
       if (options.shouldStop?.() === true) {
         stopped = true;
         break;
       }
-      const { bytesRead } = await handle.read(buffer, 0, Math.min(chunkBytes, size - position), position);
+      const { bytesRead } = await handle.read(buffer, 0, Math.min(chunkBytes, end - position), position);
       if (bytesRead === 0) break;
       const chunk = buffer.subarray(0, bytesRead);
       let from = 0;
@@ -373,7 +391,7 @@ export class TranscriptAccumulator {
   private firstMs: number | null = null;
   private lastMs: number | null = null;
   private firstPrompt: string | null = null;
-  private prompts: SessionPrompt[] = [];
+  private prompts: PatchPrompt[] = [];
   private readonly tokens: TokenCounts = zeroTokens();
   private readonly models = new Map<string, TokenCounts>();
   private costUsd: number | null = null;
@@ -422,7 +440,7 @@ export class TranscriptAccumulator {
         return;
       case 'last-prompt': {
         const text = nonEmpty(record.lastPrompt);
-        if (text !== null) this.lastPrompt = cut(text, MAX_PROMPT_CHARS);
+        if (text !== null) this.lastPrompt = storeCut(text).text;
         return;
       }
       case 'cost-state':
@@ -456,7 +474,7 @@ export class TranscriptAccumulator {
       firstAt: this.firstMs === null ? null : new Date(this.firstMs),
       lastAt: this.lastMs === null ? null : new Date(this.lastMs),
       firstPrompt: this.firstPrompt,
-      prompts: this.prompts.slice(-MAX_PROMPTS),
+      prompts: [...this.prompts],
       tokens: { ...this.tokens },
       models,
       costUsd: this.costUsd,
@@ -509,10 +527,9 @@ export class TranscriptAccumulator {
     if (isHumanPrompt(record)) {
       const text = promptText(record);
       if (text !== '' && !INTERRUPTED.test(text) && !BARE_COMMAND.test(text)) {
-        const clipped = cut(text, MAX_PROMPT_CHARS);
-        this.firstPrompt ??= clipped;
-        this.prompts.push({ text: clipped, at });
-        if (this.prompts.length > MAX_PROMPTS * 2) this.prompts = this.prompts.slice(-MAX_PROMPTS);
+        const stored = storeCut(text);
+        this.firstPrompt ??= stored.text;
+        this.prompts.push({ text: stored.text, at, truncated: stored.truncated });
         this.segment = [];
       }
       return;
