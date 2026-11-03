@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ChatInline, NoteLinkContext, type NoteLinks } from '../ChatText';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
 import { useNow } from '../../hooks/useNow';
@@ -35,8 +36,8 @@ export interface NodePanelProps {
   nodeId: string;
   /** The project graph's nodes (phase 10's payload through `toSubtreeNodes`), for the subtree views and refresh. */
   nodes: readonly SubtreeNode[];
-  /** Select another node (pushes `?node=`). */
-  onSelectNode: (nodeId: string) => void;
+  /** Select another node (pushes `?node=`). `repo` is set when the node is in another project (a cross-repo parent). */
+  onSelectNode: (nodeId: string, repo?: string) => void;
   onClose: () => void;
   /** The chat pop-up's "Show on graph": open this node on its project's graph. Absent on the graph page itself. */
   onShowOnGraph?: (detail: SessionDetail) => void;
@@ -77,6 +78,12 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
   const [notice, setNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ fresh: boolean } | null>(null);
   const [promptsOpen, setPromptsOpen] = useState(false);
+  // Note ids in the summary open like "Notes made": the big editor in place when the page gives one.
+  const outerLinks = useContext(NoteLinkContext);
+  const summaryLinks = useMemo<NoteLinks | null>(
+    () => (onOpenNote ? { isKnown: outerLinks?.isKnown ?? (() => false), open: onOpenNote } : outerLinks),
+    [onOpenNote, outerLinks],
+  );
   const currentKey = useRef(idKey(nodeId));
   currentKey.current = idKey(nodeId);
 
@@ -267,7 +274,16 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
           <h2 className="np-title">{detail.name ?? detail.title ?? 'Untitled session'}</h2>
           {detail.name && detail.title && detail.title !== detail.name && <p className="np-sub">{detail.title}</p>}
           {detail.parent && (
-            <ParentLine parent={detail.parent} source={detail.parent_link_source} onSelect={onSelectNode} />
+            <ParentLine
+              parent={detail.parent}
+              source={detail.parent_link_source}
+              onSelect={() => {
+                const p = detail.parent;
+                if (!p) return;
+                if (p.repo !== null && p.repo !== detail.repo) onSelectNode(p.node_id, p.repo);
+                else onSelectNode(p.node_id);
+              }}
+            />
           )}
 
           <section className="np-sec" aria-label="Summary">
@@ -285,7 +301,13 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
                 </button>
               )}
             </div>
-            {detail.summary ? <p className="np-summary">{detail.summary}</p> : <SummaryLine detail={detail} />}
+            {detail.summary ? (
+              <p className="np-summary">
+                <NoteLinkContext.Provider value={summaryLinks}>
+                  <ChatInline text={detail.summary} />
+                </NoteLinkContext.Provider>
+              </p>
+            ) : <SummaryLine detail={detail} />}
           </section>
 
           <section className="np-sec" aria-label="Prompts">
@@ -478,14 +500,14 @@ function ParentLine({
   source,
   onSelect,
 }: {
-  parent: { node_id: string; name: string | null };
+  parent: { node_id: string; name: string | null; repo: string | null };
   source: SessionDetail['parent_link_source'];
-  onSelect: (nodeId: string) => void;
+  onSelect: () => void;
 }) {
   return (
     <p className="np-parent">
       from{' '}
-      <button type="button" className="np-link" aria-label={`Open parent ${parent.node_id}`} onClick={() => onSelect(parent.node_id)}>
+      <button type="button" className="np-link" aria-label={`Open parent ${parent.node_id}`} onClick={onSelect}>
         {parent.node_id}
       </button>
       {parent.name ? ` ${parent.name}` : ''}

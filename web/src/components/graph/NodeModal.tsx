@@ -30,8 +30,17 @@ export interface NodeModalProps {
  */
 export function NodeModal({ nodeId, repo, onClose, onShowOnGraph, onOpenNote }: NodeModalProps) {
   const [current, setCurrent] = useState(nodeId);
-  useEffect(() => setCurrent(nodeId), [nodeId]);
-  const graph = useSessionGraph(repo);
+  // A cross-repo parent moves the pop-up to that project's graph.
+  const [shownRepo, setShownRepo] = useState(repo);
+  useEffect(() => {
+    setCurrent(nodeId);
+    setShownRepo(repo);
+  }, [nodeId, repo]);
+  const select = (id: string, other?: string) => {
+    setCurrent(id);
+    if (other !== undefined) setShownRepo(other);
+  };
+  const graph = useSessionGraph(shownRepo);
   const nodes = useMemo(() => toSubtreeNodes(graph.nodes), [graph.nodes]);
 
   useEffect(() => {
@@ -56,7 +65,7 @@ export function NodeModal({ nodeId, repo, onClose, onShowOnGraph, onOpenNote }: 
   return createPortal(
     <div className="nm" data-modal="node" onClick={onClose}>
       <div className="nm-panel" role="dialog" aria-label={`Session ${current}`} onClick={(e) => e.stopPropagation()}>
-        <NodePanel nodeId={current} nodes={nodes} onSelectNode={setCurrent} onClose={onClose} onShowOnGraph={show} onOpenNote={onOpenNote} />
+        <NodePanel nodeId={current} nodes={nodes} onSelectNode={select} onClose={onClose} onShowOnGraph={show} onOpenNote={onOpenNote} />
       </div>
     </div>,
     document.body,

@@ -323,7 +323,10 @@ export function App() {
   );
 
   /** Graph click: `?node=`. Pins the shown repo into the URL too, so the link is complete. */
-  const selectNode = useCallback((node: string | null) => setProjectsRoute((r) => ({ repo: projectRepo, node, focus: r.focus })), [projectRepo]);
+  const selectNode = useCallback(
+    (node: string | null, repo?: string) => setProjectsRoute((r) => ({ repo: repo ?? projectRepo, node, focus: r.focus })),
+    [projectRepo],
+  );
 
   /** The projects toolbar's focus icon (and Esc in focus mode). Pins the shown repo, like a node click. */
   const toggleFocus = useCallback(() => setProjectsRoute((r) => ({ ...r, repo: projectRepo, focus: !r.focus })), [projectRepo]);

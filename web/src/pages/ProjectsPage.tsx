@@ -18,7 +18,8 @@ export interface ProjectsPageProps {
   resolving?: boolean;
   /** `?node=`: the selected node id, canonical. */
   node: string | null;
-  onSelectNode: (nodeId: string | null) => void;
+  /** `repo`: the node is in another project (a cross-repo parent link); App switches to it. */
+  onSelectNode: (nodeId: string | null, repo?: string) => void;
   /** Graph focus mode (`&focus=1`): App hides the rail, sidebar and header; the page itself is unchanged. */
   focus?: boolean;
   /** The toolbar's focus icon, and Esc in focus mode with no node selected. Absent: no focus icon. */
@@ -106,7 +107,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
   const panel =
     renderPanel ??
     ((n: SessionNode, closePanel: () => void) => (
-      <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} onOpenNote={onOpenNote} />
+      <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id, other) => onSelectNode(id, other)} onClose={closePanel} onOpenNote={onOpenNote} />
     ));
   // Stable, so the graph measures its titles only when the layout changes.
   const badge = useMemo(

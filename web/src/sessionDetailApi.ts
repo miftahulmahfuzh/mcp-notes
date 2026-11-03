@@ -72,7 +72,8 @@ export interface SessionDetail {
   /** Subagent transcripts folded into this session, and their estimated cost (part of `cost_usd`). */
   subagent_count: number;
   subagent_cost_usd: number | null;
-  parent: { node_id: string; name: string | null } | null;
+  /** `repo` can differ from this session's: a session spawned from another project's session. */
+  parent: { node_id: string; name: string | null; repo: string | null } | null;
   parent_link_source: ParentLinkSource | null;
   transcript_path: string | null;
 }
@@ -224,7 +225,7 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     cost_estimated: w.cost_estimated === true,
     subagent_count: num(w.subagent_count),
     subagent_cost_usd: numOrNull(w.subagent_cost_usd),
-    parent: parentId === null ? null : { node_id: parentId, name: str(parentObj?.title) ?? str(parentObj?.name) },
+    parent: parentId === null ? null : { node_id: parentId, name: str(parentObj?.title) ?? str(parentObj?.name), repo: str(parentObj?.repo) },
     parent_link_source: src === 'env' || src === 'hook' || src === 'heuristic' ? src : null,
     transcript_path: str(w.transcript_path),
   };

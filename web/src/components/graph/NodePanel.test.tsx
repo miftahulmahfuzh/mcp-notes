@@ -185,6 +185,23 @@ describe('NodePanel', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('opens a parent in another project with its repo', async () => {
+    stubFetch({ ...WIRE, repo: 'agentic_golang', parent: { node_id: '5U-I7', title: 'pstack', repo: 'mcp-notes' }, parent_link_source: 'env' });
+    const { props } = renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Open parent 5U-I7' }));
+    expect(props.onSelectNode).toHaveBeenCalledWith('5U-I7', 'mcp-notes');
+  });
+
+  it('links note ids in the summary to the big editor', async () => {
+    stubFetch({ ...WIRE, summary: 'Linked 5-BW7 into the session.' });
+    const onOpenNote = vi.fn();
+    renderPanel({ onOpenNote });
+    const link = await within(await screen.findByRole('region', { name: 'Summary' })).findByRole('link', { name: '5-BW7' });
+    expect(link.getAttribute('href')).toBe('/?note=5-BW7');
+    expect(press(link)).toBe(true);
+    expect(onOpenNote).toHaveBeenCalledWith('5-BW7');
+  });
+
   it('copies the node id', async () => {
     stubFetch(WIRE);
     renderPanel({ nodeId: 'a03g' });
