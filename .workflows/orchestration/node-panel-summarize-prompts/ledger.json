@@ -1,0 +1,109 @@
+{
+  "branch": "feature/node-panel-summarize-prompts",
+  "coordinator": "orch-node-panel-summarize-prompts",
+  "coordinator_session_id": "3caa1e7e-262f-470f-b1ea-4fa8426d41fc",
+  "created": "2026-11-03T15:30:14+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `src/sessions/repo.ts",
+      "plan": ".workflows/plan/node-panel-summarize-prompts/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Schema 0010 + SessionsRepo summary-request writer"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/sessions`, `src/http",
+      "plan": ".workflows/plan/node-panel-summarize-prompts/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Summary requests: worker priority, POST route, summary state in detail"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions`, `tests/fixtures",
+      "plan": ".workflows/plan/node-panel-summarize-prompts/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/node-panel-summarize-prompts/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Node panel Summary: reason labels + Summarize button"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/sessions`, `src/http`, `web/",
+      "plan": ".workflows/plan/node-panel-summarize-prompts/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Prompts read API + Expand prompts modal with copy"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/.workflows/orchestration/node-panel-summarize-prompts/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "node-panel-summarize-prompts",
+  "updated": "2026-11-03T15:30:14+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts"
+}
