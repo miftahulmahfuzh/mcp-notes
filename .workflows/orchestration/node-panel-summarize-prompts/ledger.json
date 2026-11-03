@@ -24,21 +24,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "74cea75",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "worker serves requests first; POST /summarize same-origin; summary_state in detail. Commit trailer says Haiku 5.5 (pusher swapped it), left as is: no force-push on shared branch",
       "package": "src/sessions`, `src/http",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T16:07:11+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A066",
       "title": "Summary requests: worker priority, POST route, summary state in detail"
     },
     {
@@ -49,14 +49,14 @@
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "implemented; waiting on full test:int (shared Docker DB contention with p2); edited phase-1 test sessions.repo.int.test.ts prompts_version 0->2 per own plan (rung 3)",
       "package": "src/sessions`, `tests/fixtures",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T16:07:07+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
+      "status": "running",
       "task_id": null,
       "title": "Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill"
     },
@@ -75,7 +75,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Node panel Summary: reason labels + Summarize button"
     },
@@ -104,6 +104,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/.workflows/orchestration/node-panel-summarize-prompts/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "node-panel-summarize-prompts",
-  "updated": "2026-11-03T15:39:36+07:00",
+  "updated": "2026-11-03T16:07:11+07:00",
+  "verified_at": "2026-11-03T16:06:57+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts"
 }
