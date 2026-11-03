@@ -1,0 +1,49 @@
+{
+  "branch": "feature/session-note-links",
+  "coordinator": "orch-session-note-links",
+  "coordinator_session_id": "16888acd-031b-438e-80e6-ffb1343b69a5",
+  "created": "2026-11-03T14:41:13+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/` (db, notes, sessions, mcp), `drizzle/`, `claude/skills/n`, `README.md`, `tests/",
+      "plan": ".workflows/plan/session-note-links/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Server: link table, link_note/unlink_note, made \u222a linked detail"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "web/src`, `.claude/skills/verify-notesd/features",
+      "plan": ".workflows/plan/session-note-links/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web: open session notes in the big editor, link icon; feature map"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "session-note-links",
+  "updated": "2026-11-03T14:41:13+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/session-note-links"
+}
