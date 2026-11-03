@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 67
+- Completed: 68
 
 ---
 
@@ -33,16 +33,6 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A066** Phase 2: Summary requests: worker priority, POST route, summary state in detail
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns summaryWorker.ts (requested sessions first, same limiter and pause), view.ts summary_state, readModel.ts requestSummaryFor, POST /api/sessions/:nodeId/summarize (same-origin), tests, features/projects.md API half. Exit: requested live session summarized on next drain and request cleared; other hosts' requests never summarized here; POST never calls the summarizer; 409 empty_session int-tested; typecheck + unit + int green.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 2 of 5)
-  - **Satisfies**: R1 — Summarize button records a request; the owning host's worker summarizes requested sessions first
-  - **Depends on**: P1-NOTES-A065
-  - **Plan**: `.workflows/plan/P1-NOTES-A066.md`
-
 - [ ] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -57,7 +47,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns web sessionDetailApi.ts, subtree.ts, NodePanel.tsx + css, jsdom tests, features/projects.md merged Summary entry. Exit: four reason strings render per state; button posts once and flips to 'Summary requested'; no button for empty/requested/has-summary; a graph node gaining a summary triggers one detail refetch; jsdom green.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 4 of 5)
   - **Satisfies**: R1 — Reason labels replace 'No summary yet' in the node panel, plus an icon-only Summarize button
   - **Depends on**: P1-NOTES-A066
@@ -82,6 +72,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A066** Phase 2: Summary requests: worker priority, POST route, summary state in detail
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns summaryWorker.ts (requested sessions first, same limiter and pause), view.ts summary_state, readModel.ts requestSummaryFor, POST /api/sessions/:nodeId/summarize (same-origin), tests, features/projects.md API half. Exit: requested live session summarized on next drain and request cleared; other hosts' requests never summarized here; POST never calls the summarizer; 409 empty_session int-tested; typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — Summarize button records a request; the owning host's worker summarizes requested sessions first
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A066.md`
+  - **Completed**: 2026-11-03 16:20
+  - **Method**: /do
+  - **Files**: src/sessions/summaryWorker.ts, src/sessions/view.ts, src/sessions/readModel.ts, src/http/sessionsApi.ts, tests/unit/sessions/summaryWorker.test.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions/summarizeRoute.test.ts, tests/integration/sessions.summaries.int.test.ts, tests/integration/sessions.api.int.test.ts, .claude/skills/verify-notesd/features/projects.md
 
 - [x] **P1-NOTES-A065** Phase 1: Schema 0010 + SessionsRepo summary-request writer
   - **Difficulty**: NORMAL

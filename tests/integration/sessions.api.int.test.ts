@@ -242,6 +242,76 @@ describe('GET /api/sessions/:nodeId', () => {
   });
 });
 
+describe('POST /api/sessions/:nodeId/summarize', () => {
+  const summarize = (nodeId: string, headers: Record<string, string> = SAME_ORIGIN): Promise<Response> =>
+    Promise.resolve(app.request(`/api/sessions/${nodeId}/summarize`, { method: 'POST', headers }));
+
+  const requestedAt = async (sessionId: string): Promise<string | null> => {
+    const res = await h.deps.db.execute<{ at: Date | string | null }>(
+      sql`select summary_requested_at as at from cc_sessions where session_id = ${sessionId}`,
+    );
+    const at = res.rows[0]?.at ?? null;
+    return at === null ? null : new Date(at).toISOString();
+  };
+
+  it('detail says why there is no summary', async () => {
+    expect((await get<SessionDetail>('/api/sessions/A0-3G')).body.session).toMatchObject({ summary_state: 'ready', summary_requested_at: null });
+    expect((await get<SessionDetail>('/api/sessions/B1-22')).body.session.summary_state).toBe('idle_wait');
+    expect((await get<SessionDetail>('/api/sessions/C2-33')).body.session.summary_state).toBe('empty');
+    await h.deps.db.execute(sql`update cc_sessions set input_tokens = 5 where session_id = 'sess-c2'`);
+    expect((await get<SessionDetail>('/api/sessions/C2-33')).body.session.summary_state).toBe('other_host');
+  });
+
+  it('records a request through SessionsRepo, same-origin only, idempotently, and detail shows it', async () => {
+    const noOrigin = await summarize('D4-44', {});
+    expect(noOrigin.status).toBe(403);
+    expect(await noOrigin.json()).toEqual({ error: 'forbidden_origin' });
+    expect(await requestedAt('sess-d4')).toBeNull();
+
+    const first = await summarize('d444');
+    expect(first.status).toBe(200);
+    const body = (await first.json()) as { node_id: string; summary_state: string; summary_requested_at: string | null };
+    expect(body).toMatchObject({ node_id: 'D4-44', summary_state: 'requested' });
+    expect(body.summary_requested_at).toBe(await requestedAt('sess-d4'));
+    expect(body.summary_requested_at).not.toBeNull();
+
+    const again = await summarize('D4-44');
+    expect(await again.json()).toEqual(body);
+
+    expect((await get<SessionDetail>('/api/sessions/D4-44')).body.session).toMatchObject({
+      summary_state: 'requested',
+      summary_requested_at: body.summary_requested_at,
+    });
+  });
+
+  it('a live session can be requested; another host\'s session too', async () => {
+    expect(((await (await summarize('B1-22')).json()) as { summary_state: string }).summary_state).toBe('requested');
+    await h.deps.db.execute(sql`update cc_sessions set input_tokens = 5 where session_id = 'sess-c2'`);
+    expect(((await (await summarize('C2-33')).json()) as { summary_state: string }).summary_state).toBe('requested');
+    expect(await requestedAt('sess-c2')).not.toBeNull();
+  });
+
+  it('ready writes nothing; empty is 409; bad and unknown ids are 400 / 404', async () => {
+    const ready = await summarize('A0-3G');
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ node_id: 'A0-3G', summary_state: 'ready', summary_requested_at: null });
+    expect(await requestedAt('sess-root')).toBeNull();
+
+    const empty = await summarize('C2-33');
+    expect(empty.status).toBe(409);
+    expect(await empty.json()).toEqual({ error: 'empty_session', node_id: 'C2-33' });
+    expect(await requestedAt('sess-c2')).toBeNull();
+
+    const bad = await summarize('A-B32');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_node_id' });
+
+    const missing = await summarize('ZZ-ZZ');
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
+  });
+});
+
 describe('GET /api/sessions/:nodeId/transcript', () => {
   it('searches the transcript on the owning host', async () => {
     const { status, body } = await get<TranscriptPayload>('/api/sessions/A0-3G/transcript?query=photo%20delete');

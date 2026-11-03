@@ -145,6 +145,23 @@ export interface NodeRef {
   parent_link_source: ParentLinkSource | null;
 }
 
+/**
+ * Why a session has, or has not, a summary. Decided on the server (summaryState) so the web only
+ * maps it to a label: ready (has one), empty (0 tokens, nothing to summarize), requested
+ * (summary_requested_at set; the owning host's worker serves it on its next sweep), other_host
+ * (only that host's worker can read the transcript), idle_wait (this host; summarized once idle
+ * 15 min, live or not).
+ */
+export type SummaryState = 'ready' | 'empty' | 'requested' | 'idle_wait' | 'other_host';
+
+/** POST /api/sessions/:nodeId/summarize answer. */
+export interface SummaryRequestPayload {
+  node_id: string;
+  summary_state: SummaryState;
+  /** ISO time of the pending request; null when there is none (ready, or nothing was recorded). */
+  summary_requested_at: string | null;
+}
+
 export interface SessionInfo extends GraphNode {
   /**
    * True when `cost_usd` is estimated from token counts and model prices (src/sessions/pricing.ts)
@@ -162,6 +179,9 @@ export interface SessionInfo extends GraphNode {
   last_prompt: string | null;
   summary: string | null;
   summarized_at: string | null;
+  /** ISO time someone asked for a summary (Summarize button); null when none is pending. */
+  summary_requested_at: string | null;
+  summary_state: SummaryState;
   final_message: string | null;
 }
 
@@ -282,6 +302,7 @@ export type DetailRow = NodeRow & {
   last_prompt: string | null;
   summary: string | null;
   summarized_at: Date | string | null;
+  summary_requested_at: Date | string | null;
   final_message: string | null;
   prompts: unknown;
   commits: unknown;
@@ -473,9 +494,30 @@ export interface SubagentShare {
   costUsd: number | null;
 }
 
+export interface SummaryStateInput {
+  has_summary: boolean;
+  /** input + output + cache read + cache write. */
+  total_tokens: number;
+  /** ISO, or null when no request is pending. */
+  summary_requested_at: string | null;
+  /** The host that owns the session (cc_sessions.host). */
+  host: string;
+}
+
+/** First match wins: ready > empty > requested > other_host > idle_wait. */
+export function summaryState(s: SummaryStateInput, thisHost: string): SummaryState {
+  if (s.has_summary) return 'ready';
+  if (s.total_tokens <= 0) return 'empty';
+  if (s.summary_requested_at !== null) return 'requested';
+  if (s.host !== thisHost) return 'other_host';
+  return 'idle_wait';
+}
+
 export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: SubagentShare = { count: 0, costUsd: null }): SessionInfo {
   const node = toGraphNode(row, ctx);
   const estimate = node.cost_usd === null ? estimateCostUsd(isRecord(row.models) ? (row.models as Record<string, Partial<ModelUsage>>) : null) : null;
+  const summary = clip(row.summary, Number.MAX_SAFE_INTEGER);
+  const summaryRequestedAt = iso(row.summary_requested_at);
   return {
     ...node,
     cost_usd: node.cost_usd ?? estimate,
@@ -488,8 +530,13 @@ export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: Subag
     models: row.models ?? null,
     transcript_path: nonEmpty(row.transcript_path),
     last_prompt: clip(row.last_prompt, DETAIL_TEXT_CHARS),
-    summary: clip(row.summary, Number.MAX_SAFE_INTEGER),
+    summary,
     summarized_at: iso(row.summarized_at),
+    summary_requested_at: summaryRequestedAt,
+    summary_state: summaryState(
+      { has_summary: summary !== null, total_tokens: node.tokens.total, summary_requested_at: summaryRequestedAt, host: row.host },
+      ctx.host,
+    ),
     final_message: clip(row.final_message, DETAIL_TEXT_CHARS),
   };
 }

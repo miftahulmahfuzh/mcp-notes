@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Clock } from '../../../src/embeddings/backfill.js';
 import type { SessionSummarySource } from '../../../src/sessions/summarize.js';
 import {
   startSummaryWorker,
@@ -16,6 +17,7 @@ interface MemRow extends SessionSummarySource {
   host: string;
   lastActiveAt: Date;
   summarizedAt: Date | null;
+  requestedAt: Date | null;
   embedding: { sha: string; model: string; vector: number[] } | null;
 }
 
@@ -23,6 +25,7 @@ class MemoryStore implements SummaryStore {
   readonly rows = new Map<string, MemRow>();
   summarySaves = 0;
   embeddingSaves = 0;
+  requestClears = 0;
 
   add(over: Partial<MemRow> & { sessionId: string }): MemRow {
     const row: MemRow = {
@@ -43,6 +46,7 @@ class MemoryStore implements SummaryStore {
       host: HOST,
       lastActiveAt: OLD,
       summarizedAt: null,
+      requestedAt: null,
       embedding: null,
       ...over,
     };
@@ -50,19 +54,31 @@ class MemoryStore implements SummaryStore {
     return row;
   }
 
+  private candidate(r: MemRow): SummaryCandidate {
+    return {
+      sessionId: r.sessionId,
+      lastActiveAt: r.lastActiveAt,
+      summarySha: r.summarySha,
+      summarizedAt: r.summarizedAt,
+      embeddingSha: r.embedding?.sha ?? null,
+      embeddingModel: r.embedding?.model ?? null,
+    };
+  }
+
   async listIdle(o: Parameters<SummaryStore['listIdle']>[0]): Promise<SummaryCandidate[]> {
     return [...this.rows.values()]
       .filter((r) => r.host === o.host && r.lastActiveAt < o.idleBefore)
       .sort((a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime())
       .slice(0, o.limit)
-      .map((r) => ({
-        sessionId: r.sessionId,
-        lastActiveAt: r.lastActiveAt,
-        summarySha: r.summarySha,
-        summarizedAt: r.summarizedAt,
-        embeddingSha: r.embedding?.sha ?? null,
-        embeddingModel: r.embedding?.model ?? null,
-      }));
+      .map((r) => this.candidate(r));
+  }
+
+  async listRequested(o: Parameters<SummaryStore['listRequested']>[0]): Promise<SummaryCandidate[]> {
+    return [...this.rows.values()]
+      .filter((r): r is MemRow & { requestedAt: Date } => r.host === o.host && r.requestedAt !== null)
+      .sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime())
+      .slice(0, o.limit)
+      .map((r) => this.candidate(r));
   }
 
   async load(ids: readonly string[]): Promise<SessionSummarySource[]> {
@@ -72,17 +88,24 @@ class MemoryStore implements SummaryStore {
     });
   }
 
+  /** Like SessionsRepo.setSummary: a saved summary also clears a pending request. */
   async saveSummary(v: { sessionId: string; summary: string; summarySha: string }): Promise<void> {
     const r = this.rows.get(v.sessionId)!;
     r.summary = v.summary;
     r.summarySha = v.summarySha;
     r.summarizedAt = new Date();
+    r.requestedAt = null;
     this.summarySaves += 1;
   }
 
   async saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[] }): Promise<void> {
     this.rows.get(v.sessionId)!.embedding = { sha: v.sha, model: v.model, vector: v.embedding };
     this.embeddingSaves += 1;
+  }
+
+  async clearRequest(sessionId: string): Promise<void> {
+    this.rows.get(sessionId)!.requestedAt = null;
+    this.requestClears += 1;
   }
 }
 
@@ -232,5 +255,138 @@ describe('summary worker', () => {
     await w.close();
     expect(Date.now() - t0).toBeLessThan(5_000);
     expect(store.rows.get('s-1')?.summary).toBeNull();
+  });
+});
+
+/** A clock whose sleep only advances time, so rate-limit waits are observable and instant. */
+function fakeClock(): Clock & { slept: number[] } {
+  let t = Date.now();
+  const slept: number[] = [];
+  return {
+    slept,
+    now: () => t,
+    sleep: async (ms: number) => {
+      slept.push(ms);
+      t += ms;
+    },
+  };
+}
+
+describe('summary requests', () => {
+  it('summarizes a requested session that is live and not idle, and clears the request', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 'live-now', nodeId: 'B1-22', lastActiveAt: new Date(), requestedAt: new Date() });
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer, liveSessionIds: async () => new Set(['live-now']) });
+    await w.idle();
+    expect(summarizer.calls.map((c) => c.sessionId)).toEqual(['live-now']);
+    const row = store.rows.get('live-now')!;
+    expect(row.summary).toMatch(/^Summary of Node: B1-22/);
+    expect(row.requestedAt).toBeNull();
+    await w.close();
+  });
+
+  it('serves requests before the idle backlog, oldest request first', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 'idle', nodeId: 'C0-000' });
+    store.add({ sessionId: 'asked-second', nodeId: 'D0-000', lastActiveAt: new Date(), requestedAt: new Date(Date.now() - 1_000) });
+    store.add({ sessionId: 'asked-first', nodeId: 'E0-000', lastActiveAt: new Date(), requestedAt: new Date(Date.now() - 60_000) });
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer });
+    await w.idle();
+    expect(summarizer.calls.map((c) => c.sessionId)).toEqual(['asked-first', 'asked-second', 'idle']);
+    await w.close();
+  });
+
+  it("never serves another host's request", async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 'theirs', host: 'gpd', requestedAt: new Date() });
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer });
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(0);
+    expect(store.rows.get('theirs')?.requestedAt).not.toBeNull();
+    await w.close();
+  });
+
+  it('a request on an up-to-date summary is answered by re-saving it, without a model call', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 's-1' });
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer });
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(1);
+    const row = store.rows.get('s-1')!;
+    row.requestedAt = new Date();
+    w.kick();
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(1);
+    expect(row.requestedAt).toBeNull();
+    expect(store.summarySaves).toBe(2);
+    await w.close();
+  });
+
+  it('drops a request for a session with nothing to summarize', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 'blank', prompts: [], firstPrompt: null, finalMessage: null, lastActiveAt: new Date(), requestedAt: new Date() });
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer });
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(0);
+    expect(store.rows.get('blank')?.requestedAt).toBeNull();
+    expect(store.requestClears).toBe(1);
+    await w.close();
+  });
+
+  it('a failed request keeps the request and waits for its backoff', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 's-1', lastActiveAt: new Date(), requestedAt: new Date() });
+    const summarizer = createFakeSummarizer();
+    summarizer.failNext(1);
+    const w = start(store, { summarizer });
+    await w.idle();
+    w.kick();
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(1);
+    expect(store.rows.get('s-1')?.requestedAt).not.toBeNull();
+    await w.close();
+  });
+
+  it('requests respect the global pause after three failures in a row', async () => {
+    const store = new MemoryStore();
+    for (const id of ['r-1', 'r-2', 'r-3']) store.add({ sessionId: id, lastActiveAt: new Date(), requestedAt: new Date() });
+    const summarizer = createFakeSummarizer();
+    summarizer.failNext(3);
+    const w = start(store, { summarizer });
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(3);
+    store.add({ sessionId: 'r-4', lastActiveAt: new Date(), requestedAt: new Date() });
+    w.kick();
+    await w.idle();
+    expect(summarizer.calls).toHaveLength(3);
+    expect(store.rows.get('r-4')?.requestedAt).not.toBeNull();
+    await w.close();
+  });
+
+  it('requests go through the summary rate limiter', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 'r-1', lastActiveAt: new Date(), requestedAt: new Date(Date.now() - 2_000) });
+    store.add({ sessionId: 'r-2', lastActiveAt: new Date(), requestedAt: new Date(Date.now() - 1_000) });
+    const clock = fakeClock();
+    const summarizer = createFakeSummarizer();
+    const w = start(store, { summarizer, embedder: null, clock, minIntervalMs: 5_000 });
+    await w.idle();
+    expect(summarizer.calls.map((c) => c.sessionId)).toEqual(['r-1', 'r-2']);
+    expect(clock.slept).toEqual([5_000]);
+    await w.close();
+  });
+
+  it('without a summarizer a request waits (not cleared)', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 's-1', lastActiveAt: new Date(), requestedAt: new Date() });
+    const w = start(store, { summarizer: null });
+    await w.idle();
+    expect(store.rows.get('s-1')?.requestedAt).not.toBeNull();
+    await w.close();
   });
 });

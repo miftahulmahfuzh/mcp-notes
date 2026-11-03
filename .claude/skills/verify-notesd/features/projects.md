@@ -13,6 +13,13 @@
   note id opens it in the big editor (bigger-view-on-note) over `/projects`, or over the chat node
   pop-up; Esc / X / backdrop closes only the editor and the node panel stays. Ctrl/middle click still
   opens the wall on that note in a new tab.
+- Summary on demand (R1). Session detail carries `summary_state` (`ready` | `empty` | `requested` |
+  `idle_wait` | `other_host`) and `summary_requested_at`. Same-origin
+  `POST /api/sessions/:nodeId/summarize` records a request: 200 `{ node_id, summary_state, summary_requested_at }`,
+  idempotent; 409 `empty_session` for a 0-token session; 403 `forbidden_origin` without the page's Origin;
+  a summarized node answers `ready` and records nothing. It never calls the model: the summary worker on the
+  host that owns the session serves requests first on its next sweep (within 60 s), live sessions included,
+  and the request clears when the summary is saved.
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
@@ -50,6 +57,22 @@ UI selectors (pass ids to the steps file through the environment: `NODE=$NODE LI
 - a note: `.getByRole('link', { name: LINKED, exact: true })`; the icon: `getByRole('img', { name: 'Linked note' })` inside that `li`
 - the editor: `page.getByRole('dialog', { name: 'Edit note ' + LINKED })`, text box `getByLabel('Note text')`
 
+Summary requests. Start the run with the summarizer off so nothing is billed and the request stays
+visible (`NOTESD_CLAUDE_BIN` pointing nowhere turns summaries off; the daemon log says so):
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r '.nodes[] | select(.session_id=="5e55a001-0000-4000-8000-000000000001") | .node_id' <<<"$S")
+$V api RUN GET /api/sessions/$NODE                # session.summary_state "idle_wait"
+$V api RUN POST /api/sessions/$NODE/summarize     # 200 summary_state "requested", summary_requested_at set
+$V api RUN POST /api/sessions/$NODE/summarize     # same body again (idempotent)
+$V api RUN POST /api/sessions/ZZ-ZZ/summarize     # 404 not_found
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$URL/api/sessions/$NODE/summarize"   # 403: no Origin
+$V sql RUN "select node_id, summary_requested_at from cc_sessions where summary_requested_at is not null"
+```
+No fixture node has 0 tokens (fixture `…0003` is an `sdk-cli` session, which ingest skips), so the
+409 `empty_session` answer is proven by `tests/integration/sessions.api.int.test.ts`, not on a run.
+
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`
   above waits for it; `/api/projects/<repo>/sessions` is 404 until the repo has a session).
@@ -60,3 +83,5 @@ UI selectors (pass ids to the steps file through the environment: `NODE=$NODE LI
 - A note's row: `notes.locator('li').filter({ has: page.getByRole('link', { name: ID, exact: true }) })`. A `has`
   locator chained from `notes` never matches: Playwright resolves `has` inside each `li`.
 - `$V mcp` prints a `> tool args` line first; strip it (`sed 1d`) before `jq`.
+- Do not prove "the worker serves a request" on a run with a real `claude` binary: it bills Haiku. That
+  half is proven by `tests/unit/sessions/summaryWorker.test.ts` and `tests/integration/sessions.summaries.int.test.ts`.

@@ -25,6 +25,7 @@ import {
   normalizePrompts,
   num,
   numOrNull,
+  summaryState,
   toGraphNode,
   toNodeRef,
   toNoteRef,
@@ -40,6 +41,7 @@ import {
   type ProjectsPayload,
   type SearchPayload,
   type SessionDetail,
+  type SummaryRequestPayload,
   type TranscriptPayload,
   type UsageMonthRow,
   type UsageNodeRow,
@@ -75,6 +77,9 @@ export interface SessionSearchOutcome {
 
 export type SessionSearchFn = (args: { query: string; repo: string | null; limit: number }) => Promise<SessionSearchOutcome>;
 
+/** Records a summary request for one session: SessionsRepo.requestSummary (invariant 2). */
+export type SummaryRequestWriter = (sessionId: string) => Promise<void>;
+
 /** Everything the sessions read API and MCP session tools read through. */
 export interface SessionsReadDeps {
   db: Db;
@@ -89,6 +94,8 @@ export interface SessionsReadDeps {
   search: SessionSearchFn;
   /** Forge links for a session's commits (src/sessions/commitLinks.ts). */
   commitLinks: CommitLinker;
+  /** The one session write this API makes (POST /api/sessions/:nodeId/summarize). */
+  requestSummary: SummaryRequestWriter;
 }
 
 /** Test seams; production passes none. */
@@ -99,6 +106,7 @@ export interface SessionsReadOverrides {
   settings?: SettingsStore;
   search?: SessionSearchFn;
   commitLinks?: CommitLinker;
+  requestSummary?: SummaryRequestWriter;
 }
 
 // ---- Cross-phase seams: the only places this phase calls phase 1/3/6 runtime code. ----
@@ -120,6 +128,15 @@ function repoSettings(db: Db): SettingsStore {
   return {
     get: (key) => get().getSetting(key),
     put: (key, value) => get().putSetting(key, value),
+  };
+}
+
+/** Summary requests go through SessionsRepo, created on first use (building deps does no I/O). */
+function repoSummaryRequests(db: Db): SummaryRequestWriter {
+  let repo: SessionsRepo | null = null;
+  return async (sessionId) => {
+    repo ??= new SessionsRepo(db);
+    await repo.requestSummary(sessionId);
   };
 }
 
@@ -149,6 +166,7 @@ export function sessionsReadDeps(deps: AppDeps, over: SessionsReadOverrides = {}
     settings: over.settings ?? repoSettings(deps.db),
     commitLinks: over.commitLinks ?? createCommitLinker({ homeDir: os.homedir() }),
     search: over.search ?? phase6Search(deps.db, embedder),
+    requestSummary: over.requestSummary ?? repoSummaryRequests(deps.db),
   };
 }
 
@@ -190,7 +208,7 @@ const DETAIL_SELECT = sql.raw(`
   s.entrypoint, s.version, s.models, s.transcript_path,
   left(s.first_prompt, 4000) as first_prompt_full,
   left(s.last_prompt, 4000) as last_prompt,
-  s.summary, s.summarized_at,
+  s.summary, s.summarized_at, s.summary_requested_at,
   left(s.final_message, 4000) as final_message,
   s.prompts, s.commits, s.files_edited, s.plan_docs`);
 
@@ -357,6 +375,62 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     parent: parentRow === undefined ? null : toNodeRef(toGraphNode(parentRow, ctx)),
     children: children.rows.map((c) => toNodeRef(toGraphNode(c, ctx))),
   };
+}
+
+export type SummaryRequestOutcome =
+  | { ok: true; payload: SummaryRequestPayload }
+  | { ok: false; error: 'not_found'; node_id: string }
+  | { ok: false; error: 'empty_session'; node_id: string };
+
+type SummaryStateRow = {
+  session_id: string;
+  node_id: string;
+  host: string;
+  has_summary: boolean | null;
+  total_tokens: number | string | null;
+  summary_requested_at: Date | string | null;
+};
+
+/** The light columns summaryState needs; never loads the summary or prompt text. */
+async function readSummaryStateRow(rd: SessionsReadDeps, nodeId: string): Promise<SummaryStateRow | null> {
+  const res = await rd.db.execute<SummaryStateRow>(sql`
+    select s.session_id, s.node_id, s.host,
+      (s.summary is not null and btrim(s.summary) <> '') as has_summary,
+      ${TOTAL_TOKENS}::float8 as total_tokens,
+      s.summary_requested_at
+    from cc_sessions s
+    where s.node_id = ${nodeId}
+    limit 1`);
+  return res.rows[0] ?? null;
+}
+
+function summaryPayload(row: SummaryStateRow, thisHost: string): SummaryRequestPayload {
+  const requestedAt = iso(row.summary_requested_at);
+  return {
+    node_id: row.node_id,
+    summary_state: summaryState(
+      { has_summary: row.has_summary === true, total_tokens: num(row.total_tokens), summary_requested_at: requestedAt, host: row.host },
+      thisHost,
+    ),
+    summary_requested_at: requestedAt,
+  };
+}
+
+/**
+ * Records a summary request for a node (the Summarize button). Never calls the summarizer: the
+ * owning host's summary worker serves the request on its next sweep. Idempotent: a node already
+ * requested or already summarized is answered as it is, without a write. A session with no tokens
+ * has nothing to summarize. `nodeId` is already normalized by the caller.
+ */
+export async function requestSummaryFor(rd: SessionsReadDeps, nodeId: string): Promise<SummaryRequestOutcome> {
+  const before = await readSummaryStateRow(rd, nodeId);
+  if (before === null) return { ok: false, error: 'not_found', node_id: nodeId };
+  const current = summaryPayload(before, rd.host);
+  if (current.summary_state === 'empty') return { ok: false, error: 'empty_session', node_id: before.node_id };
+  if (current.summary_state === 'ready' || current.summary_state === 'requested') return { ok: true, payload: current };
+  await rd.requestSummary(before.session_id);
+  const after = await readSummaryStateRow(rd, nodeId);
+  return { ok: true, payload: summaryPayload(after ?? before, rd.host) };
 }
 
 /** A node id that exists, with its repo: the wall links it in chat and opens its graph. */
