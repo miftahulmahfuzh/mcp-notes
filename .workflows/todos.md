@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 65
+- Completed: 66
 
 ---
 
@@ -21,16 +21,6 @@
 ### [P0] Critical
 
 ### [P1] High
-
-- [ ] **P1-NOTES-A064** Phase 2: Web: open session notes in the big editor, link icon; feature map
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns `web/src/sessionDetailApi.ts`, `web/src/components/NoteEditor.tsx` (`isEditorOpen`), `web/src/components/graph/NodePanel.tsx`, `NodeModal.tsx`, `web/src/pages/ProjectsPage.tsx`, `web/src/App.tsx` (`openNote`) + tests, `.claude/skills/verify-notesd/features/projects.md`. Exit: typecheck and `npm test` green; Journey 1 (link_note over MCP, session_get shows both kinds) and Journey 2 (Playwright: click on a note in Notes made opens NoteEditor over /projects, Esc/X closes only the editor, linked note has the icon); `features/projects.md` documents the link and click drive.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md` (phase 2 of 2)
-  - **Satisfies**: R2 — Clicking a note in "Notes made" pops it up in the bigger-view modal; linked items show a link icon
-  - **Depends on**: P1-NOTES-A063
-  - **Plan**: `.workflows/plan/P1-NOTES-A064.md`
 
 - [x] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
   - **Difficulty**: EASY
@@ -52,6 +42,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A064** Phase 2: Web: open session notes in the big editor, link icon; feature map
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/sessionDetailApi.ts`, `web/src/components/NoteEditor.tsx` (`isEditorOpen`), `web/src/components/graph/NodePanel.tsx`, `NodeModal.tsx`, `web/src/pages/ProjectsPage.tsx`, `web/src/App.tsx` (`openNote`) + tests, `.claude/skills/verify-notesd/features/projects.md`. Exit: typecheck and `npm test` green; Journey 1 (link_note over MCP, session_get shows both kinds) and Journey 2 (Playwright: click on a note in Notes made opens NoteEditor over /projects, Esc/X closes only the editor, linked note has the icon); `features/projects.md` documents the link and click drive.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md` (phase 2 of 2)
+  - **Satisfies**: R2 — Clicking a note in "Notes made" pops it up in the bigger-view modal; linked items show a link icon
+  - **Depends on**: P1-NOTES-A063
+  - **Plan**: `.workflows/plan/P1-NOTES-A064.md`
+  - **Completed**: 2026-11-03 14:55
+  - **Method**: /do
+  - **Files**: web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/components/NoteEditor.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, web/src/components/graph/NodeModal.tsx, web/src/components/graph/NodeModal.test.tsx, web/src/pages/ProjectsPage.tsx, web/src/App.tsx, web/src/App.projectnotes.test.tsx, .claude/skills/verify-notesd/features/projects.md
+  - **Drift**: No code drift; plan applied as written.
+    Proof Journey 2 steps file: `notes.locator('li', { has: a })` with `a` chained from `notes` never matches (Playwright resolves `has` inside each li), so the icon check failed although the icon rendered (screenshot). Replaced with `notes.locator('li').filter({ has: page.getByRole('link', { name: ID, exact: true }) })`; same assertion. Gotcha added to features/projects.md.
+    features/projects.md also records, at the coordinator's request, that purging a note from the bin drops its note_session_links rows (on delete cascade) while a soft delete keeps them.
+  - **Decided**: Broken Proof locator -> fixed the selector, not the assertion (rung 2: exit criteria require Journey 2 to pass; never relax a check)
 
 - [x] **P1-NOTES-A063** Phase 1: Server: link table, link_note/unlink_note, made ∪ linked detail
   - **Difficulty**: NORMAL

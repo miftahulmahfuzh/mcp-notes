@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SubtreeNode } from '../../lib/subtree';
 import { NodePanel } from './NodePanel';
 
@@ -83,6 +83,22 @@ function renderPanel(over: Partial<Parameters<typeof NodePanel>[0]> = {}) {
   const props = { nodeId: 'A0-3G', nodes: NODES, onSelectNode: vi.fn(), onClose: vi.fn(), now: NOW, ...over };
   const r = render(<NodePanel {...props} />);
   return { ...r, props };
+}
+
+/** Click; true when the page cancelled it (it opened the note in place instead of following the link). */
+function press(el: Element, init: MouseEventInit = {}): boolean {
+  const box: { seen: boolean | null } = { seen: null };
+  const stop = (e: Event) => {
+    box.seen = e.defaultPrevented;
+    e.preventDefault();
+  };
+  document.addEventListener('click', stop);
+  try {
+    const notCancelled = fireEvent.click(el, init);
+    return box.seen ?? !notCancelled;
+  } finally {
+    document.removeEventListener('click', stop);
+  }
 }
 
 beforeEach(() => {
@@ -265,5 +281,43 @@ describe('NodePanel', () => {
     rerender(<NodePanel {...props} nodes={later} />);
     await waitFor(() => expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2));
     expect(screen.getByText('Orchestrated the wall editing phases.')).toBeTruthy();
+  });
+
+  it('a plain click on a note opens it in place; a modified click follows the link to the wall', async () => {
+    stubFetch(WIRE);
+    const onOpenNote = vi.fn();
+    renderPanel({ onOpenNote });
+    const a = await screen.findByRole('link', { name: 'K-F07' });
+    expect(a.getAttribute('href')).toBe('/?note=K-F07');
+    expect(press(a)).toBe(true);
+    expect(onOpenNote).toHaveBeenCalledWith('K-F07');
+    onOpenNote.mockClear();
+    expect(press(a, { ctrlKey: true })).toBe(false);
+    expect(press(a, { metaKey: true })).toBe(false);
+    expect(press(a, { button: 1 })).toBe(false);
+    expect(onOpenNote).not.toHaveBeenCalled();
+  });
+
+  it('without onOpenNote a note click is an ordinary link', async () => {
+    stubFetch(WIRE);
+    renderPanel();
+    const a = await screen.findByRole('link', { name: 'K-F07' });
+    expect(press(a)).toBe(false);
+  });
+
+  it('marks a linked note with a link icon, and a note made in the session without one', async () => {
+    stubFetch({
+      ...WIRE,
+      notes: [
+        { id: '5-BW7', excerpt: 'linked in later', kind: 'linked' },
+        { id: 'K-F07', excerpt: 'wall editing notes', kind: 'made' },
+      ],
+    });
+    renderPanel();
+    const linked = (await screen.findByRole('link', { name: '5-BW7' })).closest('li') as HTMLElement;
+    const made = screen.getByRole('link', { name: 'K-F07' }).closest('li') as HTMLElement;
+    expect(within(linked).getByRole('img', { name: 'Linked note' })).toBeTruthy();
+    expect(within(made).queryByRole('img', { name: 'Linked note' })).toBeNull();
+    expect(screen.getAllByRole('img', { name: 'Linked note' })).toHaveLength(1);
   });
 });

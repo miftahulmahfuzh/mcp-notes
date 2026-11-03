@@ -27,6 +27,8 @@ export interface ProjectsPageProps {
   renderPanel?: (node: SessionNode, close: () => void) => ReactNode;
   /** Phase 13 slot: forwarded to each GraphNode's `badge`. */
   renderBadge?: (node: SessionNode) => ReactNode;
+  /** "Notes made" in the default node panel: open a note in the big editor over this page. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 /**
@@ -36,7 +38,7 @@ export interface ProjectsPageProps {
  *   .proj-body  .proj-graph (SessionGraph) + .proj-panel (phase 11's renderPanel); graph view only
  *   ProjectChat (phase 12): `project-pill-query-input` in graph view, `project-chat-history` in chat view
  */
-export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focus = false, onToggleFocus, renderPanel, renderBadge }: ProjectsPageProps) {
+export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focus = false, onToggleFocus, renderPanel, renderBadge, onOpenNote }: ProjectsPageProps) {
   const graph = useSessionGraph(repo);
   const [view, setView] = useState<ProjectView>('graph');
   const showChat = useCallback(() => setView('chat'), []);
@@ -104,7 +106,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
   const panel =
     renderPanel ??
     ((n: SessionNode, closePanel: () => void) => (
-      <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} />
+      <NodePanel nodeId={n.node_id} nodes={panelNodes} onSelectNode={(id) => onSelectNode(id)} onClose={closePanel} onOpenNote={onOpenNote} />
     ));
   // Stable, so the graph measures its titles only when the layout changes.
   const badge = useMemo(

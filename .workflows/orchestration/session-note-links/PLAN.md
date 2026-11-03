@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/session-note-links`
 **Branch:** `feature/session-note-links` (base: `origin/main` @ `287b1c4`)
 **Phases:** 2
-**Status:** phase 1/2 complete
+**Status:** complete
 **Coordinator:** —
 
 ---
@@ -52,7 +52,7 @@ After it lands: rebuild + restart the live daemon, then link 5-BW7 to 5U-I7 with
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Server: link table, link_note/unlink_note, made ∪ linked detail | R1 | `src/` (db, notes, sessions, mcp), `drizzle/`, `claude/skills/n`, `README.md`, `tests/` | 17 | — | NORMAL | `.workflows/plan/session-note-links/phase-1.md` | P1-NOTES-A063 | done |
-| 2 | Web: open session notes in the big editor, link icon; feature map | R2 | `web/src`, `.claude/skills/verify-notesd/features` | 12 | 1 | NORMAL | `.workflows/plan/session-note-links/phase-2.md` | P1-NOTES-A064 | — |
+| 2 | Web: open session notes in the big editor, link icon; feature map | R2 | `web/src`, `.claude/skills/verify-notesd/features` | 12 | 1 | NORMAL | `.workflows/plan/session-note-links/phase-2.md` | P1-NOTES-A064 | done |
 
 ### Phase 1 — Server: link table, link_note/unlink_note, made ∪ linked detail
 **Satisfies:** R1

@@ -43,6 +43,18 @@ export interface NoteEditorProps {
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
+/** The editor root carries `data-modal="editor"`; its presence in the DOM means "the big editor is open". */
+export const EDITOR_SELECTOR = '[data-modal="editor"]';
+
+/**
+ * True while the big editor is mounted. A modal key listener that runs before the editor's own
+ * (an earlier-registered window capture listener, e.g. NodeModal's Esc) must return early when this
+ * is true: the editor's stopPropagation cannot stop a listener on the same target that already ran.
+ */
+export function isEditorOpen(doc: Document = document): boolean {
+  return doc.querySelector(EDITOR_SELECTOR) !== null;
+}
+
 export function NoteEditor({ note, copied, notice, onCopy, onSave, onClose, onRemoveImage, onDelete, onAttachFiles, onRemoveFile, onShowOnWall, onChatAbout, tags: knownTags = [], closeSignal = 0 }: NoteEditorProps) {
   const [draft, setDraft] = useState(note.body);
   const draftRef = useRef(note.body);

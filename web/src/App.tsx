@@ -716,6 +716,14 @@ export function App() {
     [knownIds, openNoteModal],
   );
 
+  /** A note in a session's "Notes made" (projects node panel, node pop-up): the big editor in place, like a chat note link. */
+  const openNote = useCallback(
+    (id: string) => {
+      void openNoteModal(id);
+    },
+    [openNoteModal],
+  );
+
   // Node ids in chat (`BE-XU`): linked once the server knows them, opened in the node pop-up.
   const knownNodes = useKnownNodes();
   const [nodeModal, setNodeModal] = useState<string | null>(null);
@@ -838,6 +846,7 @@ export function App() {
                   onSelectNode={selectNode}
                   focus={focus}
                   onToggleFocus={toggleFocus}
+                  onOpenNote={openNote}
                 />
               ) : view === 'history' ? (
                 <HistoryPage store={history} focusThread={historyThread} now={now} pushUndo={pushUndo} seedImage={chatSeed} />
@@ -940,6 +949,7 @@ export function App() {
                 repo={knownNodes.lookup(nodeModal)?.repo ?? null}
                 onClose={closeNodeModal}
                 onShowOnGraph={showNodeOnGraph}
+                onOpenNote={openNote}
               />
             )}
             <UndoBar entry={undoEntry} onUndo={runUndo} />
