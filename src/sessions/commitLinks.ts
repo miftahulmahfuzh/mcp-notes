@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -8,6 +9,11 @@ import path from 'node:path';
  * GitLab (self-hosted, e.g. git.tuntun.co.id) and links `<base>/-/commit/<sha>`. The short sha is
  * widened to the full one when the commit is in the local clone. Everything is read from a clone on
  * this machine (the session's cwd, else `~/<repo>`); without one the commits carry no link.
+ *
+ * A session often commits in a repo other than the one it started in (`cd ~/other && git commit`),
+ * so each sha is looked up in the session's own clone first and then in the other clones directly
+ * under the home folder, and linked to the first clone that holds it as a commit. A sha no clone
+ * knows still links through the session's own clone, as before.
  */
 
 export type ForgeKind = 'github' | 'gitlab' | 'bitbucket';
@@ -71,12 +77,49 @@ const runGit: GitRunner = (dir, args, input) =>
     if (input !== undefined) child.stdin?.end(input);
   });
 
-export function createCommitLinker(options: { homeDir: string; git?: GitRunner; now?: () => number }): CommitLinker {
+/** Directories directly under `homeDir` that hold a git checkout (`.git` file or folder). */
+async function listHomeClones(homeDir: string): Promise<string[]> {
+  try {
+    const names = await readdir(homeDir);
+    const dirs: string[] = [];
+    await Promise.all(
+      names
+        .filter((n) => !n.startsWith('.'))
+        .map(async (n) => {
+          const dir = path.join(homeDir, n);
+          try {
+            await stat(path.join(dir, '.git'));
+            dirs.push(dir);
+          } catch {
+            // Not a checkout.
+          }
+        }),
+    );
+    return dirs.sort();
+  } catch {
+    return [];
+  }
+}
+
+export function createCommitLinker(options: {
+  homeDir: string;
+  git?: GitRunner;
+  now?: () => number;
+  /** Clones to search after the session's own. Default: the git checkouts directly under `homeDir`. */
+  siblings?: () => Promise<string[]>;
+}): CommitLinker {
   const git = options.git ?? runGit;
   const now = options.now ?? Date.now;
+  const listSiblings = options.siblings ?? (() => listHomeClones(options.homeDir));
   const repos = new Map<string, { at: number; found: { dir: string; web: RepoWeb } | null }>();
+  let siblingCache: { at: number; clones: { dir: string; web: RepoWeb }[] } | null = null;
   /** `${dir}\0${short}` -> full sha. */
   const fullShas = new Map<string, string>();
+
+  const webOf = async (dir: string): Promise<RepoWeb | null> => {
+    const remote = await git(dir, ['remote', 'get-url', 'origin']);
+    return remote === null ? null : webFromRemote(remote);
+  };
 
   const locate = async (repo: string | null, cwd: string | null): Promise<{ dir: string; web: RepoWeb } | null> => {
     const key = repo ?? `cwd:${cwd ?? ''}`;
@@ -86,8 +129,7 @@ export function createCommitLinker(options: { homeDir: string; git?: GitRunner; 
     let found: { dir: string; web: RepoWeb } | null = null;
     for (const dir of dirs) {
       if (dir === null || dir.trim() === '') continue;
-      const remote = await git(dir, ['remote', 'get-url', 'origin']);
-      const web = remote === null ? null : webFromRemote(remote);
+      const web = await webOf(dir);
       if (web !== null) {
         found = { dir, web };
         break;
@@ -97,9 +139,20 @@ export function createCommitLinker(options: { homeDir: string; git?: GitRunner; 
     return found;
   };
 
-  /** Widens the shas the clone knows to full ones, one `git cat-file --batch-check` for the ones not seen yet. */
+  const siblingClones = async (): Promise<{ dir: string; web: RepoWeb }[]> => {
+    if (siblingCache !== null && now() - siblingCache.at < FOUND_TTL_MS) return siblingCache.clones;
+    const clones: { dir: string; web: RepoWeb }[] = [];
+    for (const dir of await listSiblings()) {
+      const web = await webOf(dir);
+      if (web !== null) clones.push({ dir, web });
+    }
+    siblingCache = { at: now(), clones };
+    return clones;
+  };
+
+  /** Resolves each sha to its full form where `dir` holds it as a commit, one `git cat-file --batch-check` for the ones not seen yet. */
   const widen = async (dir: string, shas: readonly string[]): Promise<void> => {
-    const ask = shas.filter((s) => !FULL_SHA.test(s) && !fullShas.has(`${dir}\0${s}`));
+    const ask = shas.filter((s) => !fullShas.has(`${dir}\0${s}`));
     if (ask.length === 0) return;
     const out = await git(dir, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], `${ask.join('\n')}\n`);
     if (out === null) return;
@@ -115,10 +168,29 @@ export function createCommitLinker(options: { homeDir: string; git?: GitRunner; 
     const wanted = [...new Set(shas.map((s) => s.toLowerCase()).filter((s) => SHORT_SHA.test(s)))];
     if (wanted.length === 0) return out;
     try {
-      const found = await locate(repo, cwd);
-      if (found === null) return out;
-      await widen(found.dir, wanted);
-      for (const sha of wanted) out.set(sha, commitUrl(found.web, fullShas.get(`${found.dir}\0${sha}`) ?? sha));
+      const primary = await locate(repo, cwd);
+      let remaining = wanted;
+      /** Links the shas of `remaining` that `clone` holds as commits. */
+      const tryClone = async (clone: { dir: string; web: RepoWeb }): Promise<void> => {
+        await widen(clone.dir, remaining);
+        const left: string[] = [];
+        for (const sha of remaining) {
+          const full = fullShas.get(`${clone.dir}\0${sha}`);
+          if (full !== undefined) out.set(sha, commitUrl(clone.web, full));
+          else left.push(sha);
+        }
+        remaining = left;
+      };
+      // The session's own clone answers first; the others are only opened for shas it does not hold.
+      if (primary !== null) await tryClone(primary);
+      if (remaining.length > 0) {
+        for (const clone of await siblingClones()) {
+          if (remaining.length === 0) break;
+          if (clone.dir !== primary?.dir) await tryClone(clone);
+        }
+      }
+      // No clone holds these (pruned, or a machine without the repo): link through the session's own clone.
+      if (primary !== null) for (const sha of remaining) out.set(sha, commitUrl(primary.web, sha));
     } catch {
       // No links rather than no detail.
     }

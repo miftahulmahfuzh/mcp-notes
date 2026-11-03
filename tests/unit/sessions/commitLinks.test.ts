@@ -74,4 +74,23 @@ describe('createCommitLinker', () => {
     expect(out.get('9740de1')).toBe('https://git.tuntun.co.id/ai/chatbot/agentic/-/commit/9740de1');
     expect((await link({ repo: 'elsewhere', cwd: null, shas: ['9740de1'] })).size).toBe(0);
   });
+
+  it('links a commit made in another clone to that clone, not to the session repo', async () => {
+    const OTHER = 'a91b816000000000000000000000000000000000';
+    const git: GitRunner = async (dir, args, input) => {
+      if (args[0] === 'remote') {
+        return { '/home/u/seer': 'git@github.com:o/seer.git', '/home/u/mcp-notes': 'git@github.com:o/mcp-notes.git' }[dir] ?? null;
+      }
+      if (args[0] === 'cat-file') {
+        const own = dir === '/home/u/mcp-notes';
+        return (input ?? '').trim().split('\n').map((s) => (own && OTHER.startsWith(s) ? `${OTHER} commit` : `${s} missing`)).join('\n');
+      }
+      return null;
+    };
+    const link = createCommitLinker({ homeDir: '/home/u', git, siblings: async () => ['/home/u/mcp-notes', '/home/u/seer'] });
+    const out = await link({ repo: 'seer', cwd: '/home/u/seer', shas: ['a91b816', '0b6e27d'] });
+    expect(out.get('a91b816')).toBe(`https://github.com/o/mcp-notes/commit/${OTHER}`);
+    // Held by no clone: still linked through the session's own repo.
+    expect(out.get('0b6e27d')).toBe('https://github.com/o/seer/commit/0b6e27d');
+  });
 });
