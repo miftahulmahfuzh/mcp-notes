@@ -23,27 +23,27 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "12dbe57",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "web: session notes open in NoteEditor over /projects + NodeModal, link icon on kind=linked, Esc yields to editor; Proof J1+J2 PASS; journey locator fixed (has-scoped), not the assertion",
       "package": "web/src`, `.claude/skills/verify-notesd/features",
       "plan": ".workflows/plan/session-note-links/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T14:56:59+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A064",
       "title": "Web: open session notes in the big editor, link icon; feature map"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-note-links",
-  "updated": "2026-11-03T14:52:26+07:00",
+  "updated": "2026-11-03T14:56:59+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-note-links"
 }
