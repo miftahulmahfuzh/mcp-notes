@@ -18,14 +18,17 @@ export function copyText(text: string): void {
   else fallback();
 }
 
-/** The id last copied, cleared after `ms` (design: 1.4 s "copied" fade). */
-export function useCopied(ms = 1400): { copied: string | null; copy: (id: string) => void } {
+/**
+ * The key last copied, cleared after `ms` (design: 1.4 s "copied" fade). `copy(id)` copies the id
+ * itself; `copy(key, text)` copies `text` and flags `key` (a prompt's text under "prompt-3").
+ */
+export function useCopied(ms = 1400): { copied: string | null; copy: (key: string, text?: string) => void } {
   const [copied, setCopied] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const copy = useCallback(
-    (id: string) => {
-      copyText(id);
-      setCopied(id);
+    (key: string, text?: string) => {
+      copyText(text ?? key);
+      setCopied(key);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setCopied(null), ms);
     },

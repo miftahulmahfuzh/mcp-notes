@@ -13,6 +13,35 @@
   note id opens it in the big editor (bigger-view-on-note) over `/projects`, or over the chat node
   pop-up; Esc / X / backdrop closes only the editor and the node panel stays. Ctrl/middle click still
   opens the wall on that note in a new tab.
+- Summary on demand (R1, node panel section "Summary"). With no summary the section says why:
+  "Empty session" (0 tokens), "Summarizes once idle" (this machine, waiting for 15 min idle),
+  "Summary requested", "Will be summarized on <host>" (another machine), or "No summary yet"
+  (older daemon). Where a summary can still be made (not empty, not already requested) an
+  icon-only button "Summarize" records a request; the label flips to "Summary requested" at once
+  and survives a reload (`cc_sessions.summary_requested_at`). API: session detail carries
+  `summary_state` (`ready` | `empty` | `requested` | `idle_wait` | `other_host`) and
+  `summary_requested_at`; same-origin `POST /api/sessions/:nodeId/summarize` answers 200
+  `{ node_id, summary_state, summary_requested_at }`, idempotent; 409 `empty_session` for a
+  0-token session; 400 `invalid_node_id` for a malformed node id; 404 `not_found`
+  for an unknown one; 403 `forbidden_origin` without the page's Origin; a summarized node answers
+  `ready` and records nothing. It never calls the model: the summary worker on the host that owns
+  the session serves requests first on its next sweep (within 60 s), live sessions included, and
+  the request clears when the summary is saved; the panel shows the summary when the graph poll
+  sees it.
+- Expand prompts (R2): the node panel's Prompts section has an icon-only "Expand prompts" button
+  (shown when the session has a prompt). It opens a large modal (`role=dialog`, "Prompts of <NODE>")
+  listing every stored prompt, numbered from 1, with its time and the full text, whitespace kept.
+  Secrets are shown as `[redacted]`, and a prompt cut at the 256 KB storage ceiling is marked
+  "truncated". "Copy prompt N" copies that prompt's text. "Copy all prompts" (top right) copies
+  `1. <text>\n\n2. <text>…`. Both show a brief check mark. Esc, X ("Close prompts") or a backdrop
+  click closes only the modal; the node panel, `?node=` and the chat node pop-up stay. The modal
+  reads `GET /api/sessions/:nodeId/prompts` (DB only, any host). A row its owning host has not
+  backfilled yet shows its excerpts and the line "Full prompts arrive once <host> backfills"
+  (`complete: false`, `incomplete_reason: not_backfilled`). A row whose transcript was pruned
+  before the backfill shows its redacted excerpts and "Older prompts were cut; the full text is no
+  longer on <host>" (`prompts_version` 1, `incomplete_reason: transcript_pruned`). Fixture:
+  session `5e55a001-…-000000000005` (106 prompts, #50 over 2000 chars, #60 with a fake key shown
+  as `[redacted]`); it adds a third node to the mcp-notes graph.
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
@@ -50,6 +79,57 @@ UI selectors (pass ids to the steps file through the environment: `NODE=$NODE LI
 - a note: `.getByRole('link', { name: LINKED, exact: true })`; the icon: `getByRole('img', { name: 'Linked note' })` inside that `li`
 - the editor: `page.getByRole('dialog', { name: 'Edit note ' + LINKED })`, text box `getByLabel('Note text')`
 
+Summary requests. Start the run with the summarizer off so nothing is billed and the request stays
+visible (`NOTESD_CLAUDE_BIN` pointing nowhere turns summaries off; the daemon log says so):
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r '.nodes[] | select(.session_id=="5e55a001-0000-4000-8000-000000000001") | .node_id' <<<"$S")
+$V api RUN GET /api/sessions/$NODE                # session.summary_state "idle_wait"
+$V api RUN POST /api/sessions/$NODE/summarize     # 200 summary_state "requested", summary_requested_at set
+$V api RUN POST /api/sessions/$NODE/summarize     # same body again (idempotent)
+$V api RUN POST /api/sessions/ZZ-ZZ/summarize     # 404 not_found
+$V api RUN POST /api/sessions/A-B32/summarize     # 400 invalid_node_id
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$URL/api/sessions/$NODE/summarize"   # 403: no Origin
+$V sql RUN "select node_id, summary_requested_at from cc_sessions where summary_requested_at is not null"
+```
+No fixture node has 0 tokens (fixture `…0003` is an `sdk-cli` session, which ingest skips), so the
+409 `empty_session` answer is proven by `tests/integration/sessions.api.int.test.ts`, not on a run.
+
+Summarize in the wall. Start the run with the summarizer off, so nothing summarizes the fixtures
+behind the check (and nothing bills): `NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions --web`
+(real env wins over `.env.local`; `daemon.log` then says `session summaries off`). Pick a node
+with tokens and no summary, read its state, drive the click, read the row back:
+```sh
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r '[.nodes[] | select(.summary_excerpt == null and (.tokens.input + .tokens.output + .tokens.cache_read + .tokens.cache_write) > 0)][0].node_id' <<<"$S")
+curl -sf "$URL/api/sessions/$NODE" | jq -r '.session.summary_state'        # idle_wait
+NODE=$NODE $V ui RUN summarize-steps.mjs
+curl -sf "$URL/api/sessions/$NODE" | jq -r '.session.summary_state'        # requested
+$V sql RUN "select node_id, summary_requested_at from cc_sessions where node_id = '$NODE'"   # timestamp, not null
+```
+UI selectors: panel `page.locator('aside.np[data-node="' + NODE + '"]')`; section
+`.getByRole('region', { name: 'Summary' })`; button `.getByRole('button', { name: 'Summarize' })`;
+labels by text (`'Summarizes once idle'`, `'Summary requested'`, `'Empty session'`,
+`'Will be summarized on GPD'`).
+
+Expand prompts. The fixture session with more than 100 prompts (one over 2000 chars, one with a fake
+`sk-ant-` key) is in repo `mcp-notes`; find it by its prompt count, never by a typed id:
+```sh
+BIG=""; for i in $(seq 30); do
+  for n in $(curl -sf "$URL/api/projects/mcp-notes/sessions" | jq -r '.nodes[].node_id'); do
+    [ "$(curl -sf "$URL/api/sessions/$n/prompts" | jq '.prompts | length')" -gt 100 ] && BIG=$n
+  done; [ -n "$BIG" ] && break; sleep 1; done; echo "BIG=$BIG"
+$V api RUN GET /api/sessions/$BIG/prompts      # complete:true, n = 1..N, one text > 2000 chars, "[redacted]", no "sk-ant-"
+$V sql RUN "select count(*) from cc_session_prompts p join cc_sessions s using (session_id) where s.node_id = '$BIG'"
+$V api RUN GET /api/sessions/ZZ-ZZ/prompts     # 404 not_found; A-B32 -> 400 invalid_node_id
+```
+UI selectors (pass ids through the environment: `NODE=$BIG PROMPTS_JSON=<file> $V ui RUN steps.mjs`):
+- expand: `panel.getByRole('region', { name: 'Prompts' }).getByRole('button', { name: 'Expand prompts' })`
+- modal: `page.getByRole('dialog', { name: 'Prompts of ' + NODE })`; rows `li.prm-item[data-n="N"]`, text `.prm-text`
+- copy: `getByRole('button', { name: 'Copy prompt 1', exact: true })` (exact, or it also matches 10, 11, …), `'Copy all prompts'`
+- backdrop: `page.locator('[data-modal="prompts"]').dispatchEvent('click')`
+
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`
   above waits for it; `/api/projects/<repo>/sessions` is 404 until the repo has a session).
@@ -60,3 +140,14 @@ UI selectors (pass ids to the steps file through the environment: `NODE=$NODE LI
 - A note's row: `notes.locator('li').filter({ has: page.getByRole('link', { name: ID, exact: true }) })`. A `has`
   locator chained from `notes` never matches: Playwright resolves `has` inside each `li`.
 - `$V mcp` prints a `> tool args` line first; strip it (`sed 1d`) before `jq`.
+- The verify daemon finds the real `claude` binary unless `NOTESD_CLAUDE_BIN` points nowhere; then
+  its summary worker runs Haiku on the fixtures (billed, nondeterministic). Assert the request
+  (label, `summary_state`, `summary_requested_at`), never the Haiku output. "The worker serves a
+  request" is proven by `tests/unit/sessions/summaryWorker.test.ts` and
+  `tests/integration/sessions.summaries.int.test.ts`; "Empty session" and "Will be summarized on
+  <host>" need a 0-token row and a row of another host, which the fixtures do not have: cover them
+  in `tests/integration/sessions.api.int.test.ts` and the jsdom tests, not on a run.
+- Headless chromium has no clipboard permission: to check what a copy button copied, stub
+  `navigator.clipboard.writeText` with `page.addInitScript` before `goto` and read the stub back.
+- Compare a prompt with `.prm-text` `textContent()`, not `innerText()`: textContent keeps the
+  prompt's whitespace byte for byte.

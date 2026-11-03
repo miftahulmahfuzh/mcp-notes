@@ -71,6 +71,13 @@
       "when": 1793691744788,
       "tag": "0009_note_session_links",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793694716915,
+      "tag": "0010_session_prompts_summary_requests",
+      "breakpoints": true
     }
   ]
 }

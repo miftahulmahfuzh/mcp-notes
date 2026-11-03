@@ -1,0 +1,22 @@
+/* Expand prompts (R2): the big editor's scrim and box; one prompt per row, its text as typed. */
+.prm { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 9, .94); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px 16px; box-sizing: border-box; }
+.prm-panel { width: min(1080px, 100%); height: min(880px, calc(100vh - 48px)); display: flex; flex-direction: column; gap: 10px; background: var(--bg); border: 1px solid var(--line-14); padding: 12px 18px 0; box-sizing: border-box; color: var(--text); font-family: var(--sans); outline: none; }
+.prm-head { display: flex; align-items: center; gap: 10px; min-height: 40px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.prm-id { color: var(--id); letter-spacing: .03em; }
+.prm-title { margin: 0; font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.prm-count { color: var(--muted); }
+.prm-spacer { flex: 1; }
+.prm-head .ibtn { font-size: 19px; }
+.prm-head .ibtn:disabled { opacity: .35; cursor: default; }
+.prm-head .ibtn:disabled:hover { background: transparent; }
+.prm-dim { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+.prm-list { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0 0 24px; border-top: 1px solid var(--line); }
+.prm-item { display: flex; flex-direction: column; gap: 8px; padding: 14px 0 16px; border-bottom: 1px solid var(--line-12); }
+.prm-item:last-child { border-bottom: 0; }
+.prm-item-head { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.prm-item-head time { cursor: default; }
+.prm-n { min-width: 2.5ch; color: var(--id); }
+.prm-cut { padding: 1px 7px 2px; border-radius: 999px; background: var(--chip-bg); color: var(--chip); }
+.prm-item-head .ibtn { margin-left: auto; width: 30px; height: 30px; font-size: 16px; }
+.prm-text { margin: 0; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; color: var(--text); }

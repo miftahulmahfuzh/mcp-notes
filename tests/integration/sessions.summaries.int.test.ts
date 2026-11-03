@@ -88,4 +88,39 @@ describe('session summary worker (Postgres)', () => {
     expect(summarizer2.calls).toHaveLength(0);
     expect(embedder2.calls).toHaveLength(0);
   });
+
+  it('serves this host\'s requests first (fresh ones too), clears them, and leaves another host\'s request alone', async () => {
+    const A = '44444444-4444-4444-4444-444444444444';
+    const B = '55555555-5555-5555-5555-555555555555';
+    const C = '66666666-6666-6666-6666-666666666666';
+    const D = '77777777-7777-7777-7777-777777777777';
+    const repo = new SessionsRepo(db);
+    await insertSession({ sessionId: A, nodeId: 'A0-3G', lastActiveMinutesAgo: 60, prompts: ['idle backlog'] });
+    await insertSession({ sessionId: B, nodeId: 'B1-4H', lastActiveMinutesAgo: 1, prompts: ['live work so far'] });
+    await insertSession({ sessionId: C, nodeId: 'C2-5J', host: 'other-host', lastActiveMinutesAgo: 60, prompts: ['elsewhere'] });
+    await insertSession({ sessionId: D, nodeId: 'D3-6K', lastActiveMinutesAgo: 1, prompts: [] });
+    await db.execute(sql`update cc_sessions set final_message = null where session_id = ${D}`);
+    await repo.requestSummary(B);
+    await repo.requestSummary(C);
+    await repo.requestSummary(D);
+
+    const store = dbSummaryStore(db, repo);
+    expect((await store.listRequested({ host: HOST, limit: 10 })).map((c) => c.sessionId).sort()).toEqual([B, D].sort());
+
+    const summarizer = createFakeSummarizer();
+    const w = startSummaryWorker({ store, summarizer, embedder: null, host: HOST, minIntervalMs: 0, sweepMs: 3_600_000, log: () => {} });
+    await w.idle();
+    await w.close();
+
+    expect(summarizer.calls.map((c) => c.sessionId)).toEqual([B, A]);
+    const rows = await db.execute<{ session_id: string; summary: string | null; requested: boolean }>(sql`
+      select session_id, summary, summary_requested_at is not null as requested from cc_sessions order by session_id
+    `);
+    const byId = new Map(rows.rows.map((r) => [r.session_id, r]));
+    expect(byId.get(B)).toMatchObject({ requested: false });
+    expect(byId.get(B)?.summary).toMatch(/^Summary of Node: B1-4H/);
+    expect(byId.get(A)?.summary).toMatch(/^Summary of Node: A0-3G/);
+    expect(byId.get(C)).toMatchObject({ summary: null, requested: true });
+    expect(byId.get(D)).toMatchObject({ summary: null, requested: false });
+  });
 });

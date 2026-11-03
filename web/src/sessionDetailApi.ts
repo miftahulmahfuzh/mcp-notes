@@ -5,6 +5,11 @@ const JSON_HEADERS = { 'content-type': 'application/json' };
 
 export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
 
+/** Phase 2's server-computed reason for the Summary section. */
+export type SummaryState = 'ready' | 'empty' | 'requested' | 'idle_wait' | 'other_host';
+
+const SUMMARY_STATES: readonly SummaryState[] = ['ready', 'empty', 'requested', 'idle_wait', 'other_host'];
+
 export interface SessionCommit {
   sha: string;
   subject: string;
@@ -50,6 +55,13 @@ export interface SessionDetail {
   started_at: string | null;
   last_active_at: string | null;
   summary: string | null;
+  /**
+   * Why there is (no) summary. Always 'ready' when `summary` is set, never 'ready' without one.
+   * Null: the daemon did not say (older daemon); the panel then shows "No summary yet".
+   */
+  summary_state: SummaryState | null;
+  /** When someone pressed Summarize and the owning host has not served it yet. */
+  summary_requested_at: string | null;
   prompts: string[];
   commits: SessionCommit[];
   notes: SessionNoteRef[];
@@ -77,6 +89,12 @@ export interface ResumeResult {
   window: string | null;
 }
 
+/** `POST /api/sessions/:nodeId/summarize`'s answer. */
+export interface SummaryRequest {
+  summary_state: SummaryState;
+  summary_requested_at: string | null;
+}
+
 type Wire = Record<string, unknown>;
 
 const PREVIEW_MAX = 120;
@@ -98,6 +116,10 @@ function isObj(v: unknown): v is Wire {
 
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+function summaryState(v: unknown): SummaryState | null {
+  return typeof v === 'string' && (SUMMARY_STATES as readonly string[]).includes(v) ? (v as SummaryState) : null;
 }
 
 function numOrNull(v: unknown): number | null {
@@ -170,6 +192,8 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
   const parentObj = isObj(raw.parent) ? raw.parent : isObj(w.parent) ? w.parent : null;
   const parentId = str(parentObj?.node_id) ?? str(w.parent_node_id);
   const src = w.parent_link_source;
+  const summary = str(w.summary);
+  const state = summaryState(w.summary_state);
   return {
     session_id: str(w.session_id) ?? '',
     node_id: str(w.node_id) ?? '',
@@ -184,7 +208,9 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     title: str(w.custom_title) ?? str(w.ai_title) ?? str(w.title),
     started_at: str(w.started_at),
     last_active_at: str(w.last_active_at),
-    summary: str(w.summary),
+    summary,
+    summary_state: summary !== null ? 'ready' : state === 'ready' ? null : state,
+    summary_requested_at: str(w.summary_requested_at),
     prompts: compact(list(raw.prompts ?? w.prompts).map(prompt)),
     commits: compact(list(raw.commits ?? w.commits).map(commit)),
     notes: compact(list(raw.notes ?? w.notes).map(noteRef)),
@@ -253,4 +279,82 @@ export function resumeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_id'
     return `Could not resume ${d.node_id}: ${err.message}`;
   }
   return `Could not resume ${d.node_id}`;
+}
+
+/**
+ * Phase 2: `POST /api/sessions/:nodeId/summarize` records a summary request (the owning host's worker
+ * serves it; no model call happens in the request). Idempotent. Throws `ApiError`
+ * (`empty_session` 409, `not_found` 404, 403 from the same-origin guard, ...).
+ */
+export async function requestSummary(nodeId: string): Promise<SummaryRequest> {
+  const res = await fetch(`/api/sessions/${enc(nodeId)}/summarize`, { method: 'POST' });
+  if (!res.ok) throw await failure(res);
+  const j: unknown = await res.json();
+  const o = isObj(j) ? j : {};
+  // A 200 means the request is recorded; a state this build does not know still reads as requested.
+  return { summary_state: summaryState(o.summary_state) ?? 'requested', summary_requested_at: str(o.summary_requested_at) };
+}
+
+/** The panel's one-line report of a failed Summarize. */
+export function summarizeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_id'>): string {
+  if (err instanceof ApiError) {
+    if (err.message === 'empty_session') return `${d.node_id} is an empty session, nothing to summarize`;
+    if (err.status === 403) return 'Summarize only works from the wall on this machine';
+    if (err.status === 404) return `No session ${d.node_id}`;
+    return `Could not request a summary of ${d.node_id}: ${err.message}`;
+  }
+  return `Could not request a summary of ${d.node_id}`;
+}
+
+/** One prompt of `GET /api/sessions/:nodeId/prompts`: numbered from 1, text exactly as stored. */
+export interface SessionPromptItem {
+  n: number;
+  text: string;
+  at: string | null;
+  truncated: boolean;
+}
+
+/** Why a prompt list is not complete (server `PromptsIncompleteReason`). */
+export type PromptsIncompleteReason = 'not_backfilled' | 'transcript_pruned';
+
+/**
+ * `GET /api/sessions/:nodeId/prompts`, normalised. `complete` false: excerpts only, either until
+ * `host` backfills (`not_backfilled`) or for good, its transcript was pruned (`transcript_pruned`).
+ * `incomplete_reason` is null exactly when `complete` is true.
+ */
+export interface SessionPrompts {
+  node_id: string;
+  host: string;
+  available: boolean;
+  complete: boolean;
+  incomplete_reason: PromptsIncompleteReason | null;
+  prompts: SessionPromptItem[];
+}
+
+function promptItem(v: unknown, i: number): SessionPromptItem | null {
+  if (!isObj(v) || typeof v.text !== 'string' || v.text === '') return null;
+  const n = typeof v.n === 'number' && Number.isInteger(v.n) && v.n > 0 ? v.n : i + 1;
+  return { n, text: v.text, at: str(v.at), truncated: v.truncated === true };
+}
+
+export function normalizeSessionPrompts(raw: Wire): SessionPrompts {
+  const complete = raw.complete !== false;
+  return {
+    node_id: str(raw.node_id) ?? '',
+    host: str(raw.host) ?? '',
+    available: raw.available !== false,
+    complete,
+    incomplete_reason: complete ? null : raw.incomplete_reason === 'transcript_pruned' ? 'transcript_pruned' : 'not_backfilled',
+    prompts: compact(list(raw.prompts).map(promptItem)),
+  };
+}
+
+/** `GET /api/sessions/:nodeId/prompts` -> every stored prompt, or null on 404. The server normalises the id. */
+export async function fetchSessionPrompts(nodeId: string, signal?: AbortSignal): Promise<SessionPrompts | null> {
+  const res = await fetch(`/api/sessions/${enc(nodeId)}/prompts`, signal ? { signal } : undefined);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await failure(res);
+  const j: unknown = await res.json();
+  if (!isObj(j)) throw new ApiError(500, 'bad prompts payload');
+  return normalizeSessionPrompts(j);
 }

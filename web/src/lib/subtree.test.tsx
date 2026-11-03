@@ -11,6 +11,7 @@ const node = (node_id: string, parent: string | null, over: Partial<SubtreeNode>
   live: false,
   available: true,
   host: 'lenovo',
+  summarized: false,
   ...over,
 });
 
@@ -32,6 +33,16 @@ describe('toSubtreeNodes', () => {
     ]);
     expect(out[3]).toMatchObject({ available: false, live: true, host: 'GPD' });
     expect(out[0]).toMatchObject({ available: true, live: false, started_at: null });
+  });
+
+  it('marks a node summarized when the graph carries a summary excerpt', () => {
+    const out = toSubtreeNodes([
+      { node_id: 'A0-00', summary_excerpt: 'Did the thing.' },
+      { node_id: 'B1-11', summary_excerpt: null },
+      { node_id: 'C2-22' },
+      { node_id: 'D3-33', summary_excerpt: '  ' },
+    ]);
+    expect(out.map((n) => n.summarized)).toEqual([true, false, false, false]);
   });
 });
 

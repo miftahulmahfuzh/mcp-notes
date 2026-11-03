@@ -1,4 +1,5 @@
 import type { ModelUsage, SessionCommit, SessionPrompt } from '../db/schema.js';
+import { redactSecrets } from './redact.js';
 import {
   MAX_COMMITS,
   MAX_FILES_EDITED,
@@ -7,7 +8,10 @@ import {
   MAX_PROMPT_CHARS,
   MAX_PROMPTS,
   MAX_TITLE_CHARS,
+  type PatchPrompt,
+  type PromptsReplacement,
   type SessionRow,
+  type StoredPrompt,
   type SubagentTotals,
   type TranscriptPatch,
   type TranscriptSet,
@@ -20,6 +24,33 @@ export function clip(value: string, max: number): string {
 
 function clipOrKeep(value: string | null | undefined, max: number): string | null | undefined {
   return value === null || value === undefined ? value : clip(value, max);
+}
+
+/**
+ * A prompt as `cc_sessions` keeps it (the excerpt list, first_prompt, last_prompt): redacted, then
+ * clipped to MAX_PROMPT_CHARS. Redacting first means a clip can never leave behind the head of a
+ * secret that is too short to match a pattern any more.
+ */
+export function promptExcerpt(text: string): string {
+  return clip(redactSecrets(text), MAX_PROMPT_CHARS);
+}
+
+function excerptOrKeep(value: string | null | undefined): string | null | undefined {
+  return value === null || value === undefined ? value : promptExcerpt(value);
+}
+
+/**
+ * A stored prompt text written back. redactSecrets is idempotent: text stored redacted comes back
+ * unchanged, text stored before redaction existed comes back redacted.
+ */
+function redactStored(value: string | null): string | null {
+  return value === null ? null : redactSecrets(value);
+}
+
+function parseAt(at: string | null | undefined): Date | null {
+  if (at === null || at === undefined) return null;
+  const ms = Date.parse(at);
+  return Number.isFinite(ms) ? new Date(ms) : null;
 }
 
 /** The earlier of two times; a missing one never wins. */
@@ -84,12 +115,67 @@ export function subtractModels(prev: Record<string, ModelUsage>, take: Record<st
   return out;
 }
 
-function mergePrompts(prev: SessionPrompt[], next: SessionPrompt[] | undefined, reset: boolean): SessionPrompt[] {
+/**
+ * The excerpt list: the stored excerpts (written back redacted, a no-op for redacted text) then the
+ * new prompts as excerpts, keeping the newest MAX_PROMPTS. Blank prompts are dropped.
+ */
+function mergePrompts(prev: SessionPrompt[], next: readonly PatchPrompt[] | undefined, reset: boolean): SessionPrompt[] {
   const incoming = (next ?? [])
     .filter((p) => p.text.trim().length > 0)
-    .map((p) => ({ text: clip(p.text, MAX_PROMPT_CHARS), at: p.at ?? null }));
-  const all = [...(reset ? [] : prev), ...incoming];
+    .map((p) => ({ text: promptExcerpt(p.text), at: p.at ?? null }));
+  const kept = reset ? [] : prev.map((p) => ({ text: redactSecrets(p.text), at: p.at ?? null }));
+  const all = [...kept, ...incoming];
   return all.length > MAX_PROMPTS ? all.slice(all.length - MAX_PROMPTS) : all;
+}
+
+/**
+ * `cc_session_prompts` rows for `prompts`, in order: the full text as ingest cut it, redacted.
+ * Blank prompts are dropped (the same rule as the excerpt list).
+ */
+export function storedPrompts(prompts: readonly PatchPrompt[] | undefined): StoredPrompt[] {
+  return (prompts ?? [])
+    .filter((p) => p.text.trim().length > 0)
+    .map((p) => ({ text: redactSecrets(p.text), at: parseAt(p.at), truncated: p.truncated === true }));
+}
+
+/**
+ * `cc_session_prompts` rows rebuilt from a row's stored excerpts, for a session whose transcript is
+ * gone: each excerpt redacted, `truncated` where the excerpt was clipped (it ends in `…`).
+ */
+export function storedPromptsFromExcerpts(excerpts: readonly SessionPrompt[]): StoredPrompt[] {
+  return excerpts
+    .filter((p) => p.text.trim().length > 0)
+    .map((p) => {
+      const text = redactSecrets(p.text);
+      return { text, at: parseAt(p.at), truncated: text.endsWith('…') };
+    });
+}
+
+/** The three `cc_sessions` columns that hold prompt text. */
+export type PromptColumns = Pick<SessionRow, 'prompts' | 'firstPrompt' | 'lastPrompt'>;
+
+/**
+ * The prompt columns after a transcript was re-read from byte 0 (the prompts backfill). A first or
+ * last prompt the re-read did not find keeps the stored one, redacted.
+ */
+export function replacedPromptColumns(
+  row: PromptColumns,
+  input: Pick<PromptsReplacement, 'prompts' | 'firstPrompt' | 'lastPrompt'>,
+): PromptColumns {
+  return {
+    prompts: mergePrompts([], input.prompts, true),
+    firstPrompt: input.firstPrompt === null ? redactStored(row.firstPrompt) : promptExcerpt(input.firstPrompt),
+    lastPrompt: input.lastPrompt === null ? redactStored(row.lastPrompt) : promptExcerpt(input.lastPrompt),
+  };
+}
+
+/** The prompt columns of a row whose transcript is gone: what is stored, redacted in place. */
+export function redactedPromptColumns(row: PromptColumns): PromptColumns {
+  return {
+    prompts: row.prompts.map((p) => ({ text: redactSecrets(p.text), at: p.at ?? null })),
+    firstPrompt: redactStored(row.firstPrompt),
+    lastPrompt: redactStored(row.lastPrompt),
+  };
 }
 
 /**
@@ -120,7 +206,8 @@ function unionStrings(prev: string[], next: string[] | undefined, reset: boolean
  * The column values `row` takes after applying `patch`. Pure; the caller (SessionsRepo) has
  * already checked the offset precondition. See TranscriptPatch for the rules. A re-read from byte 0
  * replaces tokens, models and commits, starting from `subagents` (the session's subagent share,
- * which lives in other files) instead of from zero.
+ * which lives in other files) instead of from zero. Every prompt text written (excerpts, first and
+ * last prompt) is redacted, so a row written before redaction existed is cleaned on its next write.
  */
 export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, subagents: SubagentTotals | null = null): TranscriptSet {
   const reset = patch.fromOffset === 0;
@@ -138,7 +225,8 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
   }
   const keep = reset && subagents !== null;
   const tokens = patch.tokens ?? {};
-  const firstPrompt = clipOrKeep(patch.firstPrompt, MAX_PROMPT_CHARS);
+  const firstPrompt = excerptOrKeep(patch.firstPrompt);
+  const storedFirst = redactStored(row.firstPrompt);
   return {
     repo: patch.repo ?? row.repo,
     cwd: patch.cwd ?? row.cwd,
@@ -146,8 +234,8 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
     name: clipOrKeep(patch.name, MAX_TITLE_CHARS) ?? row.name,
     customTitle: clipOrKeep(patch.customTitle, MAX_TITLE_CHARS) ?? row.customTitle,
     aiTitle: clipOrKeep(patch.aiTitle, MAX_TITLE_CHARS) ?? row.aiTitle,
-    firstPrompt: reset ? (firstPrompt ?? row.firstPrompt) : (row.firstPrompt ?? firstPrompt ?? null),
-    lastPrompt: clipOrKeep(patch.lastPrompt, MAX_PROMPT_CHARS) ?? row.lastPrompt,
+    firstPrompt: reset ? (firstPrompt ?? storedFirst) : (storedFirst ?? firstPrompt ?? null),
+    lastPrompt: excerptOrKeep(patch.lastPrompt) ?? redactStored(row.lastPrompt),
     entrypoint: patch.entrypoint ?? row.entrypoint,
     version: patch.version ?? row.version,
     finalMessage: clipOrKeep(patch.finalMessage, MAX_FINAL_MESSAGE_CHARS) ?? row.finalMessage,

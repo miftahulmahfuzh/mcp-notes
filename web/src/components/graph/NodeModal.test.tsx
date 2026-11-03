@@ -98,3 +98,31 @@ describe('NodeModal: a note opened from "Notes made"', () => {
     expect(onModalClosed).not.toHaveBeenCalled();
   });
 });
+
+describe('NodeModal: the prompts modal over the pop-up', () => {
+  it('Esc closes only the prompts modal, a second Esc the pop-up', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === '/api/sessions/BE-XU/prompts') {
+          return json({ node_id: 'BE-XU', host: 'pc', available: true, complete: true, prompts: [{ n: 1, text: 'hello prompts', at: null, truncated: false }] });
+        }
+        if (url.startsWith('/api/sessions/BE-XU')) {
+          return json({ session: { session_id: 's1', node_id: 'BE-XU', repo: null, host: 'pc', name: 'orch-project-session-graph' }, prompts: [{ text: 'hello prompts', at: null }] });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const onClose = vi.fn();
+    render(<NodeModal nodeId="BE-XU" repo={null} onClose={onClose} onShowOnGraph={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand prompts' }));
+    await screen.findByRole('dialog', { name: 'Prompts of BE-XU' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Prompts of BE-XU' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(popup()).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

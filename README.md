@@ -1057,11 +1057,13 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/projects/:repo/sessions?before=&limit=` | That repo's sessions for the graph: node id, parent and link source (`env`, `hook`, `heuristic`), times, name, `live`, `host`, `available`, `unfinished`. Sends a weak `ETag`; answers `304` to a matching `If-None-Match` (the wall polls it; there is no SSE event for sessions) |
 | `GET /api/sessions/:nodeId` | One session in full: summary, prompts, commits, plan docs, files, notes saved from it, tokens, children |
 | `GET /api/sessions/:nodeId/transcript?query=` | Matching passages of the transcript; 404 `not_on_this_machine` when it lives on the other machine |
+| `GET /api/sessions/:nodeId/prompts` | Every stored prompt of a session, numbered, in full. Read from the database, so it works for either machine's sessions. `complete: false` with `incomplete_reason` (`not_backfilled`, `transcript_pruned`) when only excerpts are kept |
 | `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback` |
 | `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
 | `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
+| `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |
 | `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
 | `/full/:imageId` | The full-screen photo page |
 | `/projects?repo=&node=&focus=1` | The project session graph, opened on that repo and node; `focus=1` shows only the graph (or project chat), toolbar and pill. With `node` and no `repo` (how Claude Code links a session) the node's own repo is looked up |

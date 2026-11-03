@@ -4,10 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/http/app.js';
 import { sessionsApiRoutes } from '../../src/http/sessionsApi.js';
 import type { SessionsReadOverrides } from '../../src/sessions/readModel.js';
+import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS } from '../../src/sessions/types.js';
 import type {
   ContextPayload,
   GraphPayload,
   ProjectsPayload,
+  PromptsPayload,
   SearchPayload,
   SessionDetail,
   TranscriptPayload,
@@ -242,6 +244,76 @@ describe('GET /api/sessions/:nodeId', () => {
   });
 });
 
+describe('POST /api/sessions/:nodeId/summarize', () => {
+  const summarize = (nodeId: string, headers: Record<string, string> = SAME_ORIGIN): Promise<Response> =>
+    Promise.resolve(app.request(`/api/sessions/${nodeId}/summarize`, { method: 'POST', headers }));
+
+  const requestedAt = async (sessionId: string): Promise<string | null> => {
+    const res = await h.deps.db.execute<{ at: Date | string | null }>(
+      sql`select summary_requested_at as at from cc_sessions where session_id = ${sessionId}`,
+    );
+    const at = res.rows[0]?.at ?? null;
+    return at === null ? null : new Date(at).toISOString();
+  };
+
+  it('detail says why there is no summary', async () => {
+    expect((await get<SessionDetail>('/api/sessions/A0-3G')).body.session).toMatchObject({ summary_state: 'ready', summary_requested_at: null });
+    expect((await get<SessionDetail>('/api/sessions/B1-22')).body.session.summary_state).toBe('idle_wait');
+    expect((await get<SessionDetail>('/api/sessions/C2-33')).body.session.summary_state).toBe('empty');
+    await h.deps.db.execute(sql`update cc_sessions set input_tokens = 5 where session_id = 'sess-c2'`);
+    expect((await get<SessionDetail>('/api/sessions/C2-33')).body.session.summary_state).toBe('other_host');
+  });
+
+  it('records a request through SessionsRepo, same-origin only, idempotently, and detail shows it', async () => {
+    const noOrigin = await summarize('D4-44', {});
+    expect(noOrigin.status).toBe(403);
+    expect(await noOrigin.json()).toEqual({ error: 'forbidden_origin' });
+    expect(await requestedAt('sess-d4')).toBeNull();
+
+    const first = await summarize('d444');
+    expect(first.status).toBe(200);
+    const body = (await first.json()) as { node_id: string; summary_state: string; summary_requested_at: string | null };
+    expect(body).toMatchObject({ node_id: 'D4-44', summary_state: 'requested' });
+    expect(body.summary_requested_at).toBe(await requestedAt('sess-d4'));
+    expect(body.summary_requested_at).not.toBeNull();
+
+    const again = await summarize('D4-44');
+    expect(await again.json()).toEqual(body);
+
+    expect((await get<SessionDetail>('/api/sessions/D4-44')).body.session).toMatchObject({
+      summary_state: 'requested',
+      summary_requested_at: body.summary_requested_at,
+    });
+  });
+
+  it('a live session can be requested; another host\'s session too', async () => {
+    expect(((await (await summarize('B1-22')).json()) as { summary_state: string }).summary_state).toBe('requested');
+    await h.deps.db.execute(sql`update cc_sessions set input_tokens = 5 where session_id = 'sess-c2'`);
+    expect(((await (await summarize('C2-33')).json()) as { summary_state: string }).summary_state).toBe('requested');
+    expect(await requestedAt('sess-c2')).not.toBeNull();
+  });
+
+  it('ready writes nothing; empty is 409; bad and unknown ids are 400 / 404', async () => {
+    const ready = await summarize('A0-3G');
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ node_id: 'A0-3G', summary_state: 'ready', summary_requested_at: null });
+    expect(await requestedAt('sess-root')).toBeNull();
+
+    const empty = await summarize('C2-33');
+    expect(empty.status).toBe(409);
+    expect(await empty.json()).toEqual({ error: 'empty_session', node_id: 'C2-33' });
+    expect(await requestedAt('sess-c2')).toBeNull();
+
+    const bad = await summarize('A-B32');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_node_id' });
+
+    const missing = await summarize('ZZ-ZZ');
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
+  });
+});
+
 describe('GET /api/sessions/:nodeId/transcript', () => {
   it('searches the transcript on the owning host', async () => {
     const { status, body } = await get<TranscriptPayload>('/api/sessions/A0-3G/transcript?query=photo%20delete');
@@ -268,6 +340,101 @@ describe('GET /api/sessions/:nodeId/transcript', () => {
 
     await seedSession(h.deps.db, { sessionId: 'sess-gone', nodeId: 'E5-55', transcriptPath: '/nonexistent/sess-gone.jsonl', startedAt: '2026-10-01T00:00:00Z' });
     expect((await get<{ error: string }>('/api/sessions/E5-55/transcript')).body).toEqual({ error: 'transcript_missing', node_id: 'E5-55' });
+  });
+});
+
+describe('GET /api/sessions/:nodeId/prompts', () => {
+  const LONG = `${'x'.repeat(2500)}\n  tail kept`;
+  const SPACED = '  indented\n\n\tkeep [redacted] spacing  ';
+
+  async function storePrompts(sessionId: string, version: number, rows: Array<{ seq: number; at: string | null; text: string; truncated?: boolean }>): Promise<void> {
+    await h.deps.db.execute(sql`update cc_sessions set prompts_version = ${version} where session_id = ${sessionId}`);
+    for (const r of rows) {
+      await h.deps.db.execute(sql`
+        insert into cc_session_prompts (session_id, seq, at, text, truncated)
+        values (${sessionId}, ${r.seq}, ${r.at}::timestamptz, ${r.text}, ${r.truncated ?? false})`);
+    }
+  }
+
+  it('lists every stored prompt of a backfilled row in seq order, numbered from 1, text byte for byte', async () => {
+    await storePrompts('sess-root', PROMPTS_VERSION, [
+      { seq: 2, at: '2026-10-31T18:05:00Z', text: LONG },
+      { seq: 1, at: '2026-10-31T18:00:00Z', text: SPACED },
+      { seq: 3, at: null, text: 'cut here', truncated: true },
+    ]);
+    const { status, body } = await get<PromptsPayload>('/api/sessions/a03g/prompts');
+    expect(status).toBe(200);
+    expect(body).toEqual({
+      node_id: 'A0-3G',
+      host: THIS_HOST,
+      available: true,
+      complete: true,
+      incomplete_reason: null,
+      prompts: [
+        { n: 1, text: SPACED, at: '2026-10-31T18:00:00.000Z', truncated: false },
+        { n: 2, text: LONG, at: '2026-10-31T18:05:00.000Z', truncated: false },
+        { n: 3, text: 'cut here', at: null, truncated: true },
+      ],
+    });
+  });
+
+  it('a backfilled row with no prompts answers an empty list', async () => {
+    await storePrompts('sess-b1', PROMPTS_VERSION, []);
+    const { body } = await get<PromptsPayload>('/api/sessions/B1-22/prompts');
+    expect(body).toMatchObject({ node_id: 'B1-22', complete: true, prompts: [] });
+  });
+
+  it('falls back to the cc_sessions excerpts, complete false, until the owning host backfills', async () => {
+    await h.deps.db.execute(sql`
+      update cc_sessions set prompts = ${JSON.stringify([{ text: 'old excerpt…', at: '2026-11-01T02:00:00Z' }])}::jsonb
+      where session_id = 'sess-c2'`);
+    // A tail append on a legacy row may already have written side rows; they are partial and ignored.
+    await storePrompts('sess-c2', 0, [{ seq: 1, at: null, text: 'partial side row' }]);
+    const { status, body } = await get<PromptsPayload>('/api/sessions/C2-33/prompts');
+    expect(status).toBe(200);
+    expect(body).toEqual({
+      node_id: 'C2-33',
+      host: OTHER_HOST,
+      available: false,
+      complete: false,
+      incomplete_reason: 'not_backfilled',
+      prompts: [{ n: 1, text: 'old excerpt…', at: '2026-11-01T02:00:00.000Z', truncated: false }],
+    });
+  });
+
+  it('a row redacted in place from excerpts (transcript pruned) lists its side rows, never complete', async () => {
+    await storePrompts('sess-d4', PROMPTS_VERSION_EXCERPTS, [
+      { seq: 1, at: '2026-10-01T00:00:00Z', text: 'old one' },
+      { seq: 2, at: null, text: 'deploy with [redacted] and more…', truncated: true },
+    ]);
+    const { status, body } = await get<PromptsPayload>('/api/sessions/D4-44/prompts');
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      node_id: 'D4-44',
+      complete: false,
+      incomplete_reason: 'transcript_pruned',
+      prompts: [
+        { n: 1, text: 'old one', at: '2026-10-01T00:00:00.000Z', truncated: false },
+        { n: 2, text: 'deploy with [redacted] and more…', at: null, truncated: true },
+      ],
+    });
+  });
+
+  it('400 invalid_node_id, 404 not_found', async () => {
+    const bad = await get<{ error: string }>('/api/sessions/A-B32/prompts');
+    expect(bad.status).toBe(400);
+    expect(bad.body).toEqual({ error: 'invalid_node_id' });
+    const missing = await get<{ error: string }>('/api/sessions/ZZ-ZZ/prompts');
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
+  });
+
+  it('the graph and detail payloads do not carry the side-table text', async () => {
+    await storePrompts('sess-root', PROMPTS_VERSION, [{ seq: 1, at: null, text: 'only-in-side-table-7f3' }]);
+    const graph = await app.request('/api/projects/mcp-notes/sessions');
+    expect(await graph.text()).not.toContain('only-in-side-table-7f3');
+    const detail = await app.request('/api/sessions/A0-3G');
+    expect(await detail.text()).not.toContain('only-in-side-table-7f3');
   });
 });
 

@@ -17,7 +17,7 @@ import { copyFixtureClaudeHome, FIXTURE } from '../helpers/claudeHome.js';
 import { closeTestDb, openTestDb, testDatabaseUrl } from './setup.js';
 
 const NODE_ID = /^[0-9A-Z]{2}-[0-9A-Z]{2}$/;
-const IDS = [FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.sdkCli, FIXTURE.sdkTs];
+const IDS = [FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.manyPrompts, FIXTURE.sdkCli, FIXTURE.sdkTs];
 
 let db: Db;
 let repo: SessionsRepo;
@@ -76,8 +76,8 @@ afterEach(async () => {
 describe('session ingest into cc_sessions', () => {
   it('backfills one row per cli session with a node id and a resolved repo', async () => {
     const report = await start().ready;
-    // Two cli sessions, plus the main session's subagent transcript (folded into its row).
-    expect(report).toMatchObject({ upserted: 3, failed: 0 });
+    // Three cli sessions, plus the main session's subagent transcript (folded into its row).
+    expect(report).toMatchObject({ upserted: 4, failed: 0 });
 
     const main = await repo.getBySessionId(FIXTURE.main);
     expect(main?.nodeId).toMatch(NODE_ID);

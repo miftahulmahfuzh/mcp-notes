@@ -10,6 +10,7 @@ import {
   normalizePaths,
   normalizePrompts,
   sessionTitle,
+  summaryState,
   toGraphNode,
   toNoteRef,
   toSessionInfo,
@@ -58,6 +59,7 @@ function detail(over: Partial<DetailRow> = {}): DetailRow {
     last_prompt: null,
     summary: null,
     summarized_at: null,
+    summary_requested_at: null,
     final_message: null,
     prompts: [],
     commits: [],
@@ -207,5 +209,32 @@ describe('toNoteRef', () => {
       created_at: null,
       kind: 'linked',
     });
+  });
+});
+
+describe('summaryState', () => {
+  const base = { has_summary: false, total_tokens: 10, summary_requested_at: null, host: 'lenovo' };
+
+  it('ready > empty > requested > other_host > idle_wait', () => {
+    expect(summaryState({ ...base, has_summary: true, total_tokens: 0 }, 'lenovo')).toBe('ready');
+    expect(summaryState({ ...base, total_tokens: 0, summary_requested_at: '2026-11-03T08:00:00.000Z' }, 'lenovo')).toBe('empty');
+    expect(summaryState({ ...base, summary_requested_at: '2026-11-03T08:00:00.000Z', host: 'gpd' }, 'lenovo')).toBe('requested');
+    expect(summaryState({ ...base, host: 'gpd' }, 'lenovo')).toBe('other_host');
+    expect(summaryState(base, 'lenovo')).toBe('idle_wait');
+  });
+
+  it('toSessionInfo carries summary_requested_at as ISO and the state', () => {
+    const live = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'busy', tmux: null }]]);
+    expect(toSessionInfo(detail(), { host: 'lenovo', live })).toMatchObject({ summary_requested_at: null, summary_state: 'idle_wait' });
+    expect(toSessionInfo(detail({ summary: '   ' }), { host: 'lenovo', live: noLive }).summary_state).toBe('idle_wait');
+    expect(toSessionInfo(detail({ summary: 'Built it.' }), { host: 'lenovo', live: noLive }).summary_state).toBe('ready');
+    expect(
+      toSessionInfo(detail({ summary_requested_at: new Date('2026-11-03T08:00:00Z') }), { host: 'lenovo', live: noLive }),
+    ).toMatchObject({ summary_requested_at: '2026-11-03T08:00:00.000Z', summary_state: 'requested' });
+    expect(toSessionInfo(detail({ host: 'gpd' }), { host: 'lenovo', live: noLive }).summary_state).toBe('other_host');
+    expect(
+      toSessionInfo(detail({ input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 }), { host: 'lenovo', live: noLive })
+        .summary_state,
+    ).toBe('empty');
   });
 });

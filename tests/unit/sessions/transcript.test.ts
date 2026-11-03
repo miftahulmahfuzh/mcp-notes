@@ -12,8 +12,8 @@ import {
   TranscriptAccumulator,
   type PatchContext,
 } from '../../../src/sessions/transcript.js';
-import { MAX_PROMPTS } from '../../../src/sessions/types.js';
-import { FIXTURE, FIXTURE_CLAUDE_HOME } from '../../helpers/claudeHome.js';
+import { MAX_PROMPT_STORE_CHARS } from '../../../src/sessions/types.js';
+import { FIXTURE, FIXTURE_CLAUDE_HOME, MANY_PROMPTS, manyPromptsText } from '../../helpers/claudeHome.js';
 
 const user = (text: string, extra: Record<string, unknown> = {}): string =>
   JSON.stringify({ type: 'user', message: { role: 'user', content: text }, timestamp: '2026-11-02T00:00:00Z', cwd: '/c', entrypoint: 'cli', ...extra });
@@ -74,6 +74,16 @@ describe('readJsonlFrom', () => {
     expect(r.stopped).toBe(true);
     expect(r.endOffset).toBe(16);
   });
+
+  it('stops at `until` when it is before the end of the file', async () => {
+    const file = path.join(dir, 'w.jsonl');
+    await writeFile(file, '{"a":1}\n{"b":2}\n{"c":3}\n');
+    const lines: string[] = [];
+    const r = await readJsonlFrom(file, 0, (l) => lines.push(l), { until: Buffer.byteLength('{"a":1}\n{"b":2}\n'), chunkBytes: 5 });
+    expect(lines).toEqual(['{"a":1}', '{"b":2}']);
+    expect(r.endOffset).toBe(Buffer.byteLength('{"a":1}\n{"b":2}\n'));
+    expect(r.size).toBe(Buffer.byteLength('{"a":1}\n{"b":2}\n{"c":3}\n'));
+  });
 });
 
 describe('TranscriptAccumulator on the fixture', () => {
@@ -90,7 +100,7 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.lastPrompt).toBe('sketch the project-session-graph feature');
     // `/model` (bare command), the peer message and "[Request interrupted by user]" are not prompts.
     expect(d.firstPrompt).toBe('sketch the project-session-graph feature');
-    expect(d.prompts).toEqual([{ text: 'sketch the project-session-graph feature', at: '2026-11-02T02:21:51.300Z' }]);
+    expect(d.prompts).toEqual([{ text: 'sketch the project-session-graph feature', at: '2026-11-02T02:21:51.300Z', truncated: false }]);
     expect(d.firstAt?.toISOString()).toBe('2026-11-02T02:12:57.806Z');
     expect(d.lastAt?.toISOString()).toBe('2026-11-02T02:23:20.000Z');
     // The Edit result that happens to contain "[main 0000000] ..." is not a commit.
@@ -173,12 +183,33 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.filesEdited).toEqual([]);
   });
 
-  it('keeps the newest prompts and the first one when a read has many', () => {
-    const text = Array.from({ length: MAX_PROMPTS + 30 }, (_, i) => user(`p${i}`)).join('\n');
+  it('keeps every prompt of a read, in order, with the first one', () => {
+    const text = Array.from({ length: 130 }, (_, i) => user(`p${i}`)).join('\n');
     const d = accumulateText('s', text).delta();
-    expect(d.prompts).toHaveLength(MAX_PROMPTS);
-    expect(d.prompts.at(-1)?.text).toBe(`p${MAX_PROMPTS + 29}`);
+    expect(d.prompts).toHaveLength(130);
+    expect(d.prompts[0]?.text).toBe('p0');
+    expect(d.prompts.at(-1)?.text).toBe('p129');
     expect(d.firstPrompt).toBe('p0');
+  });
+
+  it('stores a long prompt whole, cut only at the ceiling and marked truncated', () => {
+    const long = `start\n    indented\n${'x'.repeat(5000)}`;
+    const huge = 'y'.repeat(MAX_PROMPT_STORE_CHARS + 10);
+    const d = accumulateText('s', [user(long), user(huge), JSON.stringify({ type: 'last-prompt', lastPrompt: huge })].join('\n')).delta();
+    expect(d.prompts[0]).toEqual({ text: long, at: '2026-11-02T00:00:00Z', truncated: false });
+    expect(d.prompts[1]?.text).toHaveLength(MAX_PROMPT_STORE_CHARS);
+    expect(d.prompts[1]?.truncated).toBe(true);
+    expect(d.firstPrompt).toBe(long);
+    expect(d.lastPrompt).toHaveLength(MAX_PROMPT_STORE_CHARS);
+  });
+
+  it('reads all 106 prompts of the many-prompts fixture, the long one whole', async () => {
+    const text = await readFile(path.join(FIXTURE_CLAUDE_HOME, FIXTURE.manyPromptsFile), 'utf8');
+    const d = accumulateText(FIXTURE.manyPrompts, text).delta();
+    expect(d.prompts).toHaveLength(MANY_PROMPTS.count);
+    expect(d.prompts[MANY_PROMPTS.long - 1]?.text).toBe(await manyPromptsText(MANY_PROMPTS.long));
+    expect(d.prompts[MANY_PROMPTS.long - 1]?.text.length).toBeGreaterThan(2000);
+    expect(d.prompts.every((p) => p.truncated === false)).toBe(true);
   });
 });
 

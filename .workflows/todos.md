@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 66
+- Completed: 71
 
 ---
 
@@ -42,6 +42,75 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns view.ts/readModel.ts prompts payload, GET /api/sessions/:nodeId/prompts, web fetchSessionPrompts, useCopied, PromptsModal + css, NodePanel Expand button, NodeModal Esc handling, tests, features/projects.md. Exit: modal lists every stored prompt of the fixture (>100), >2000-char prompt in full, key shown [redacted]; copy buttons copy exactly the shown text; Esc/backdrop close only the modal; version 1 and 0 rows show their incomplete lines; verify-notesd proof captured.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R2 — Expand prompts modal with per-prompt copy and copy-all, loaded from the DB
+  - **Depends on**: P1-NOTES-A066, P1-NOTES-A067, P1-NOTES-A068
+  - **Plan**: `.workflows/plan/P1-NOTES-A069.md`
+  - **Completed**: 2026-11-03 16:21
+  - **Method**: /do
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, src/http/sessionsApi.ts, src/sessions/readModel.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/unit/sessions/promptsPayload.test.ts, web/src/components/graph/NodeModal.test.tsx, web/src/components/graph/NodeModal.tsx, web/src/components/graph/NodePanel.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/PromptsModal.css, web/src/components/graph/PromptsModal.test.tsx, web/src/components/graph/PromptsModal.tsx, web/src/hooks/useCopied.ts, web/src/sessionDetailApi.test.tsx, web/src/sessionDetailApi.ts
+  - **Drift**: none; line numbers shifted from phases 2–4 only
+  - **Decided**: coordinator asked to add 400 invalid_node_id for POST /summarize to features/projects.md → added to the Summary on demand bullet and a driving line, proven live on the run (coordinator request, docs only)
+
+- [x] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns types.ts constants, transcript.ts accumulator, merge.ts redaction, repo.ts side-row writes + backfill methods, ingest.ts one-time backfill, 106-prompt fixture, claudeHome/memoryIngestStore helpers, unit + int tests. Exit: fake key in no table, rest byte-identical; backfill fills legacy row to version 2 changing nothing else, second run no-op; other hosts untouched; pruned-transcript row redacted at version 1 and upgraded later; graph query unchanged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — Full, redacted prompts in the shared DB (with per-host backfill)
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A067.md`
+  - **Completed**: 2026-11-03 16:40
+  - **Method**: /do
+  - **Files**: src/sessions/types.ts, src/sessions/transcript.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/ingest.ts, tests/fixtures/make-many-prompts-fixture.mjs, tests/fixtures/claude-home/projects/-home-u-mcp-notes/5e55a001-0000-4000-8000-000000000005.jsonl, tests/helpers/claudeHome.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/transcript.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/ingest.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.repo.int.test.ts, tests/integration/sessions.prompts.int.test.ts
+  - **Drift**: Proof neighbor check: plan expected 3 graph nodes; harness lists 2 because the worktree fixture resolves to repo wall-editing in the verify daemon (pre-existing resolver behavior, unrelated). Main row unchanged; new many-prompts node listed.
+  - **Decided**: Phase 1's sessions.repo.int.test.ts asserted promptsVersion 0 after a byte-0 upsert; now asserts PROMPTS_VERSION (rung 3: phase 3 code block sets version 2 on a fromOffset-0 write; coordinator accepted)
+
+- [x] **P1-NOTES-A068** Phase 4: Node panel Summary: reason labels + Summarize button
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns web sessionDetailApi.ts, subtree.ts, NodePanel.tsx + css, jsdom tests, features/projects.md merged Summary entry. Exit: four reason strings render per state; button posts once and flips to 'Summary requested'; no button for empty/requested/has-summary; a graph node gaining a summary triggers one detail refetch; jsdom green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R1 — Reason labels replace 'No summary yet' in the node panel, plus an icon-only Summarize button
+  - **Depends on**: P1-NOTES-A066
+  - **Plan**: `.workflows/plan/P1-NOTES-A068.md`
+  - **Completed**: 2026-11-03 16:10
+  - **Method**: /do
+  - **Files**: web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/lib/subtree.ts, web/src/lib/subtree.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, .claude/skills/verify-notesd/features/projects.md
+
+- [x] **P1-NOTES-A066** Phase 2: Summary requests: worker priority, POST route, summary state in detail
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns summaryWorker.ts (requested sessions first, same limiter and pause), view.ts summary_state, readModel.ts requestSummaryFor, POST /api/sessions/:nodeId/summarize (same-origin), tests, features/projects.md API half. Exit: requested live session summarized on next drain and request cleared; other hosts' requests never summarized here; POST never calls the summarizer; 409 empty_session int-tested; typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — Summarize button records a request; the owning host's worker summarizes requested sessions first
+  - **Depends on**: P1-NOTES-A065
+  - **Plan**: `.workflows/plan/P1-NOTES-A066.md`
+  - **Completed**: 2026-11-03 16:20
+  - **Method**: /do
+  - **Files**: src/sessions/summaryWorker.ts, src/sessions/view.ts, src/sessions/readModel.ts, src/http/sessionsApi.ts, tests/unit/sessions/summaryWorker.test.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions/summarizeRoute.test.ts, tests/integration/sessions.summaries.int.test.ts, tests/integration/sessions.api.int.test.ts, .claude/skills/verify-notesd/features/projects.md
+
+- [x] **P1-NOTES-A065** Phase 1: Schema 0010 + SessionsRepo summary-request writer
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns schema.ts (summary_requested_at, prompts_version, cc_session_prompts), drizzle 0010 + snapshot + journal, types.ts re-exports, repo.ts requestSummary/setSummary/clearSummaryRequest, blankSessionRow, truncateAll, migration + repo int tests. Exit: migration applies on fresh and 0009 DBs with data unchanged, db:check clean, writers int-tested, typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R1, R2 — Summarize on demand and full redacted prompts both need one shared drizzle migration (0010) and repo writers
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A065.md`
+  - **Completed**: 2026-11-03 15:37
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, drizzle/0010_session_prompts_summary_requests.sql, drizzle/meta/0010_snapshot.json, drizzle/meta/_journal.json, src/sessions/types.ts, src/sessions/repo.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/merge.test.ts, tests/integration/setup.ts, tests/integration/migration0010.int.test.ts, tests/integration/sessions.repo.int.test.ts
 
 - [x] **P1-NOTES-A064** Phase 2: Web: open session notes in the big editor, link icon; feature map
   - **Difficulty**: NORMAL

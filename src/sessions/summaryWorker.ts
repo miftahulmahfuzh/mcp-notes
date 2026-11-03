@@ -28,6 +28,8 @@ export const DEFAULT_SUMMARY_EMBED_INTERVAL_MS = 1_000;
 export const DEFAULT_SUMMARY_BATCH = 20;
 /** Most candidates one sweep looks at. */
 export const SUMMARY_SCAN_LIMIT = 5_000;
+/** Most requested sessions one sweep serves (each still waits for the summary rate limiter). */
+export const SUMMARY_REQUEST_LIMIT = 100;
 /** close() waits this long for the in-flight call, like the embedding workers. */
 export const DEFAULT_SUMMARY_CLOSE_GRACE_MS = 5_000;
 /** Consecutive summarizer failures before summaries pause globally (usage limit, logged out). */
@@ -60,9 +62,17 @@ export interface SummaryStore {
     /** Include rows whose embedding for this model may be stale; null = no embedder. */
     embeddingModel: string | null;
   }): Promise<SummaryCandidate[]>;
+  /**
+   * Sessions of `host` someone asked to summarize (`summary_requested_at` set; the wall's
+   * Summarize button), oldest request first. Not filtered by idleness or liveness.
+   */
+  listRequested(opts: { host: string; limit: number }): Promise<SummaryCandidate[]>;
   load(sessionIds: readonly string[]): Promise<SessionSummarySource[]>;
+  /** Saves a summary. The real store goes through SessionsRepo.setSummary, which also clears a pending request. */
   saveSummary(v: { sessionId: string; summary: string; summarySha: string }): Promise<void>;
   saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[] }): Promise<void>;
+  /** Drops a request that can never be served (nothing to summarize). Through SessionsRepo. */
+  clearRequest(sessionId: string): Promise<void>;
 }
 
 function toDate(v: unknown): Date | null {
@@ -105,6 +115,23 @@ type SourceDbRow = {
   summary_sha: string | null;
 };
 
+function toCandidates(rows: readonly CandidateDbRow[]): SummaryCandidate[] {
+  const out: SummaryCandidate[] = [];
+  for (const r of rows) {
+    const lastActiveAt = toDate(r.last_active_at);
+    if (lastActiveAt === null) continue;
+    out.push({
+      sessionId: r.session_id,
+      lastActiveAt,
+      summarySha: r.summary_sha,
+      summarizedAt: toDate(r.summarized_at),
+      embeddingSha: r.embedding_sha,
+      embeddingModel: r.embedding_model,
+    });
+  }
+  return out;
+}
+
 /** Reads by raw SQL on the phase-1 column names; writes only through SessionsRepo (invariant 3). */
 export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
   return {
@@ -128,20 +155,24 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
         order by s.last_active_at desc, s.session_id asc
         limit ${Math.max(1, Math.trunc(o.limit))}
       `);
-      const out: SummaryCandidate[] = [];
-      for (const r of res.rows) {
-        const lastActiveAt = toDate(r.last_active_at);
-        if (lastActiveAt === null) continue;
-        out.push({
-          sessionId: r.session_id,
-          lastActiveAt,
-          summarySha: r.summary_sha,
-          summarizedAt: toDate(r.summarized_at),
-          embeddingSha: r.embedding_sha,
-          embeddingModel: r.embedding_model,
-        });
-      }
-      return out;
+      return toCandidates(res.rows);
+    },
+    async listRequested(o) {
+      // last_active_at can be null on a row that has only just been created; the request time
+      // stands in so the candidate (and the `seen` bookkeeping keyed on it) stays well defined.
+      const res = await db.execute<CandidateDbRow>(sql`
+        select s.session_id,
+               coalesce(s.last_active_at, s.started_at, s.summary_requested_at) as last_active_at,
+               s.summary_sha, s.summarized_at,
+               e.sha as embedding_sha, e.model as embedding_model
+        from cc_sessions s
+        left join cc_session_embeddings e on e.session_id = s.session_id
+        where s.host = ${o.host}
+          and s.summary_requested_at is not null
+        order by s.summary_requested_at asc, s.session_id asc
+        limit ${Math.max(1, Math.trunc(o.limit))}
+      `);
+      return toCandidates(res.rows);
     },
     async load(sessionIds) {
       if (sessionIds.length === 0) return [];
@@ -174,6 +205,9 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
     },
     async saveEmbedding(v) {
       await repo.saveEmbedding(v.sessionId, { sha: v.sha, model: v.model, embedding: v.embedding });
+    },
+    async clearRequest(sessionId) {
+      await repo.clearSummaryRequest(sessionId);
     },
   };
 }
@@ -230,8 +264,9 @@ export function formatSummaryReport(r: SummaryDrainReport): string {
 }
 
 /**
- * Summarizes and embeds idle sessions of this host in the background. Starts a drain at once
- * (the backlog, newest first), then one per sweep. Never throws into its caller.
+ * Summarizes and embeds sessions of this host in the background. Each drain serves requested
+ * sessions first (summary_requested_at; no idle wait, live ones included), then the idle backlog,
+ * newest first. Starts a drain at once, then one per sweep. Never throws into its caller.
  */
 export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
   const { store, summarizer, embedder } = opts;
@@ -275,7 +310,17 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
     retryAt.set(sessionId, clock.now() + retryDelayMs(n));
   }
 
-  async function processOne(row: SessionSummarySource, c: SummaryCandidate, report: SummaryDrainReport): Promise<void> {
+  /**
+   * One session: its summary (summarizer on and not paused), then its embedding. `requested`: the
+   * row carries summary_requested_at. An up-to-date summary is then saved again (setSummary clears
+   * the request, no model call), and a row with nothing to summarize has its request dropped.
+   */
+  async function processOne(
+    row: SessionSummarySource,
+    c: SummaryCandidate,
+    report: SummaryDrainReport,
+    requested: boolean,
+  ): Promise<void> {
     const id = row.sessionId;
     const signal = abort.signal;
     let summary = row.summary;
@@ -285,10 +330,14 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
 
     if (summarize && summarizer !== null) {
       const input = buildSummaryInput(row);
-      if (input !== null) {
+      if (input === null) {
+        // No prompts and no final message: a request for this row can never be served.
+        if (requested) await store.clearRequest(id);
+      } else {
         const sha = summaryInputSha(input);
         if (sha === row.summarySha && row.summary !== null) {
-          if (c.summarizedAt === null || c.summarizedAt.getTime() < c.lastActiveAt.getTime()) {
+          const stale = c.summarizedAt === null || c.summarizedAt.getTime() < c.lastActiveAt.getTime();
+          if (requested || stale) {
             await store.saveSummary({ sessionId: id, summary: row.summary, summarySha: sha });
           }
         } else {
@@ -347,11 +396,36 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
     retryAt.delete(id);
   }
 
+  /** Loads and processes `list` in batches, in list order. Stops on abort or once summaries pause. */
+  async function processAll(list: readonly SummaryCandidate[], requested: boolean, report: SummaryDrainReport): Promise<void> {
+    for (let i = 0; i < list.length && !abort.signal.aborted; i += batchSize) {
+      if (summariesPaused()) return;
+      const batch = list.slice(i, i + batchSize);
+      const rows = new Map((await store.load(batch.map((c) => c.sessionId))).map((r) => [r.sessionId, r]));
+      for (const c of batch) {
+        if (abort.signal.aborted) return;
+        const row = rows.get(c.sessionId);
+        if (row === undefined) continue;
+        try {
+          await processOne(row, c, report, requested);
+        } catch (err) {
+          if (abort.signal.aborted) return;
+          fail(report, row.sessionId, errorMessage(err));
+        }
+      }
+    }
+  }
+
   async function drainOnce(): Promise<void> {
     const started = clock.now();
     if (summariesPaused()) return;
     const report: SummaryDrainReport = { considered: 0, summarized: 0, embedded: 0, failed: 0, failures: [], ms: 0 };
     try {
+      // Requests first. They skip the idle wait, the live filter and `seen` (a live session gets a
+      // summary so far; one summarized earlier in this process is served again), but not the
+      // per-session retry backoff, the global pause or the summary rate limiter. Without a
+      // summarizer nothing can serve them, so they wait for a daemon that has one.
+      const requested = summarizer === null ? [] : await store.listRequested({ host, limit: SUMMARY_REQUEST_LIMIT });
       const live = await liveSet();
       const candidates = await store.listIdle({
         host,
@@ -361,30 +435,18 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
         embeddingModel: embedder?.model ?? null,
       });
       const now = clock.now();
-      const due = candidates.filter(
+      const requestedIds = new Set(requested.map((c) => c.sessionId));
+      const dueRequested = requested.filter((c) => (retryAt.get(c.sessionId) ?? 0) <= now);
+      const dueIdle = candidates.filter(
         (c) =>
+          !requestedIds.has(c.sessionId) &&
           !live.has(c.sessionId) &&
           seen.get(c.sessionId) !== c.lastActiveAt.getTime() &&
           (retryAt.get(c.sessionId) ?? 0) <= now,
       );
-      report.considered = due.length;
-      for (let i = 0; i < due.length && !abort.signal.aborted; i += batchSize) {
-        if (summariesPaused()) break;
-        const batch = due.slice(i, i + batchSize);
-        const byId = new Map(batch.map((c) => [c.sessionId, c]));
-        const rows = await store.load([...byId.keys()]);
-        for (const row of rows) {
-          if (abort.signal.aborted) break;
-          const c = byId.get(row.sessionId);
-          if (c === undefined) continue;
-          try {
-            await processOne(row, c, report);
-          } catch (err) {
-            if (abort.signal.aborted) break;
-            fail(report, row.sessionId, errorMessage(err));
-          }
-        }
-      }
+      report.considered = dueRequested.length + dueIdle.length;
+      await processAll(dueRequested, true, report);
+      await processAll(dueIdle, false, report);
     } catch (err) {
       if (!abort.signal.aborted) log(`[notesd] session summaries: drain failed: ${errorMessage(err).slice(0, LOG_ERROR_CHARS)}`);
     }

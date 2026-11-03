@@ -145,6 +145,23 @@ export interface NodeRef {
   parent_link_source: ParentLinkSource | null;
 }
 
+/**
+ * Why a session has, or has not, a summary. Decided on the server (summaryState) so the web only
+ * maps it to a label: ready (has one), empty (0 tokens, nothing to summarize), requested
+ * (summary_requested_at set; the owning host's worker serves it on its next sweep), other_host
+ * (only that host's worker can read the transcript), idle_wait (this host; summarized once idle
+ * 15 min, live or not).
+ */
+export type SummaryState = 'ready' | 'empty' | 'requested' | 'idle_wait' | 'other_host';
+
+/** POST /api/sessions/:nodeId/summarize answer. */
+export interface SummaryRequestPayload {
+  node_id: string;
+  summary_state: SummaryState;
+  /** ISO time of the pending request; null when there is none (ready, or nothing was recorded). */
+  summary_requested_at: string | null;
+}
+
 export interface SessionInfo extends GraphNode {
   /**
    * True when `cost_usd` is estimated from token counts and model prices (src/sessions/pricing.ts)
@@ -162,6 +179,9 @@ export interface SessionInfo extends GraphNode {
   last_prompt: string | null;
   summary: string | null;
   summarized_at: string | null;
+  /** ISO time someone asked for a summary (Summarize button); null when none is pending. */
+  summary_requested_at: string | null;
+  summary_state: SummaryState;
   final_message: string | null;
 }
 
@@ -282,6 +302,7 @@ export type DetailRow = NodeRow & {
   last_prompt: string | null;
   summary: string | null;
   summarized_at: Date | string | null;
+  summary_requested_at: Date | string | null;
   final_message: string | null;
   prompts: unknown;
   commits: unknown;
@@ -473,9 +494,30 @@ export interface SubagentShare {
   costUsd: number | null;
 }
 
+export interface SummaryStateInput {
+  has_summary: boolean;
+  /** input + output + cache read + cache write. */
+  total_tokens: number;
+  /** ISO, or null when no request is pending. */
+  summary_requested_at: string | null;
+  /** The host that owns the session (cc_sessions.host). */
+  host: string;
+}
+
+/** First match wins: ready > empty > requested > other_host > idle_wait. */
+export function summaryState(s: SummaryStateInput, thisHost: string): SummaryState {
+  if (s.has_summary) return 'ready';
+  if (s.total_tokens <= 0) return 'empty';
+  if (s.summary_requested_at !== null) return 'requested';
+  if (s.host !== thisHost) return 'other_host';
+  return 'idle_wait';
+}
+
 export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: SubagentShare = { count: 0, costUsd: null }): SessionInfo {
   const node = toGraphNode(row, ctx);
   const estimate = node.cost_usd === null ? estimateCostUsd(isRecord(row.models) ? (row.models as Record<string, Partial<ModelUsage>>) : null) : null;
+  const summary = clip(row.summary, Number.MAX_SAFE_INTEGER);
+  const summaryRequestedAt = iso(row.summary_requested_at);
   return {
     ...node,
     cost_usd: node.cost_usd ?? estimate,
@@ -488,8 +530,13 @@ export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: Subag
     models: row.models ?? null,
     transcript_path: nonEmpty(row.transcript_path),
     last_prompt: clip(row.last_prompt, DETAIL_TEXT_CHARS),
-    summary: clip(row.summary, Number.MAX_SAFE_INTEGER),
+    summary,
     summarized_at: iso(row.summarized_at),
+    summary_requested_at: summaryRequestedAt,
+    summary_state: summaryState(
+      { has_summary: summary !== null, total_tokens: node.tokens.total, summary_requested_at: summaryRequestedAt, host: row.host },
+      ctx.host,
+    ),
     final_message: clip(row.final_message, DETAIL_TEXT_CHARS),
   };
 }
@@ -511,6 +558,70 @@ export function normalizePrompts(value: unknown): SessionPrompt[] {
     if (t !== null) out.push({ text: t, at });
   }
   return out.slice(-DETAIL_MAX_PROMPTS);
+}
+
+/** Why a prompt list is not complete: not backfilled by its owning host yet, or its transcript was pruned before the backfill. */
+export type PromptsIncompleteReason = 'not_backfilled' | 'transcript_pruned';
+
+/** One prompt as the wall's Expand prompts modal shows it: numbered from 1 in typed order. */
+export interface NumberedPrompt {
+  n: number;
+  /** Exactly as stored (redacted at ingest); whitespace kept. */
+  text: string;
+  at: string | null;
+  /**
+   * Cut when it was written: at the storage ceiling (MAX_PROMPT_STORE_CHARS) on a complete list,
+   * to an excerpt (ends in `…`) on a `transcript_pruned` one.
+   */
+  truncated: boolean;
+}
+
+/**
+ * GET /api/sessions/:nodeId/prompts. Read from the DB only, so every host's nodes answer.
+ * `complete` false, `incomplete_reason`:
+ * - `not_backfilled`: the owning host has not backfilled this row yet; `prompts` are the bounded
+ *   excerpts (newest 100, each at most 2000 chars) kept on cc_sessions.
+ * - `transcript_pruned`: the transcript was gone when the owning host backfilled; `prompts` are the
+ *   redacted excerpts it kept, and the older prompts and full text are lost for good.
+ */
+export interface PromptsPayload {
+  node_id: string;
+  host: string;
+  available: boolean;
+  complete: boolean;
+  incomplete_reason: PromptsIncompleteReason | null;
+  prompts: NumberedPrompt[];
+}
+
+/** One cc_session_prompts row, as readModel selects them (ordered by seq). */
+export type StoredPromptRow = {
+  text: string;
+  at: Date | string | null;
+  truncated: boolean | null;
+};
+
+/**
+ * Where a node's prompt list comes from: the full side table (prompts_version >= PROMPTS_VERSION),
+ * the side table rebuilt from excerpts (PROMPTS_VERSION_EXCERPTS), or the cc_sessions excerpts (0).
+ */
+export type PromptsSource =
+  | { kind: 'full'; rows: readonly StoredPromptRow[] }
+  | { kind: 'pruned'; rows: readonly StoredPromptRow[] }
+  | { kind: 'legacy'; excerpts: unknown };
+
+export function toPromptsPayload(head: { node_id: string; host: string }, thisHost: string, source: PromptsSource): PromptsPayload {
+  const prompts: NumberedPrompt[] =
+    source.kind === 'legacy'
+      ? normalizePrompts(source.excerpts).map((p, i) => ({ n: i + 1, text: p.text, at: p.at, truncated: false }))
+      : source.rows.map((r, i) => ({ n: i + 1, text: r.text, at: iso(r.at), truncated: r.truncated === true }));
+  return {
+    node_id: head.node_id,
+    host: head.host,
+    available: head.host === thisHost,
+    complete: source.kind === 'full',
+    incomplete_reason: source.kind === 'full' ? null : source.kind === 'pruned' ? 'transcript_pruned' : 'not_backfilled',
+    prompts,
+  };
 }
 
 const SHA_THEN_SUBJECT = /^([0-9a-f]{7,40})(?:\s+(.*))?$/i;
