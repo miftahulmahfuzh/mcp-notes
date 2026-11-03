@@ -18,8 +18,6 @@ import {
   CONTEXT_HEADER,
   DETAIL_MAX_CHILDREN,
   DETAIL_MAX_NOTES,
-  NOTE_EXCERPT_CHARS,
-  excerpt,
   formatContext,
   iso,
   normalizeCommits,
@@ -29,6 +27,7 @@ import {
   numOrNull,
   toGraphNode,
   toNodeRef,
+  toNoteRef,
   toSessionInfo,
   type ContextNode,
   type ContextPayload,
@@ -37,6 +36,7 @@ import {
   type LiveEntry,
   type NodeContext,
   type NodeRow,
+  type NoteRefRow,
   type ProjectsPayload,
   type SearchPayload,
   type SessionDetail,
@@ -217,8 +217,6 @@ type ProjectRow = {
   hosts: string[] | null;
 };
 
-type NoteRow = { id: string; body: string; tags: string[] | null; created_at: Date | string | null };
-
 type SumsRow = {
   sessions: number | string;
   input_tokens: number | string | null;
@@ -323,10 +321,18 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     row.parent_session_id === null
       ? Promise.resolve(null)
       : rd.db.execute<NodeRow>(sql`select ${NODE_SELECT} from ${NODE_FROM} where s.session_id = ${row.parent_session_id} limit 1`),
-    rd.db.execute<NoteRow>(sql`
-      select id, body, tags, created_at from notes
-      where deleted_at is null and origin ->> 'claude_session' = ${row.session_id}
-      order by created_at desc
+    // Made (origin.claude_session) or linked (note_session_links), each note once: one row per
+    // note, so a note that is both comes back once with kind 'made'. The limit caps the union.
+    rd.db.execute<NoteRefRow>(sql`
+      select n.id, n.body, n.tags, n.created_at,
+        case when n.origin ->> 'claude_session' = ${row.session_id} then 'made' else 'linked' end as kind
+      from notes n
+      where n.deleted_at is null
+        and (
+          n.origin ->> 'claude_session' = ${row.session_id}
+          or exists (select 1 from note_session_links l where l.note_id = n.id and l.session_id = ${row.session_id})
+        )
+      order by n.created_at desc, n.id desc
       limit ${DETAIL_MAX_NOTES}`),
     rd.db.execute<{ models: unknown }>(sql`select models from cc_subagent_transcripts where session_id = ${row.session_id}`),
   ]);
@@ -347,12 +353,7 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     commits: commits.map((c) => ({ ...c, url: c.sha === null ? null : (links.get(c.sha.toLowerCase()) ?? null) })),
     files_edited: normalizePaths(row.files_edited),
     plan_docs: normalizePaths(row.plan_docs),
-    notes: notes.rows.map((n) => ({
-      id: n.id,
-      excerpt: excerpt(n.body, NOTE_EXCERPT_CHARS) ?? '',
-      tags: Array.isArray(n.tags) ? n.tags : [],
-      created_at: iso(n.created_at),
-    })),
+    notes: notes.rows.map(toNoteRef),
     parent: parentRow === undefined ? null : toNodeRef(toGraphNode(parentRow, ctx)),
     children: children.rows.map((c) => toNodeRef(toGraphNode(c, ctx))),
   };

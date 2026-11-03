@@ -12,11 +12,16 @@ export interface SessionCommit {
   url: string | null;
 }
 
-/** A note this session saved (its `origin.claude_session` is this session). */
+/** How a note belongs to a session: saved from it (`origin.claude_session`), or linked to it with `link_note`. */
+export type SessionNoteKind = 'made' | 'linked';
+
+/** A note this session saved, or one linked to it (`kind`). */
 export interface SessionNoteRef {
   id: string;
   /** First non-empty line of the body, clipped; '' when the server sent only the id. */
   preview: string;
+  /** 'made' when the server did not say (older daemon, bare id). */
+  kind: SessionNoteKind;
 }
 
 export interface SessionTokens {
@@ -140,11 +145,15 @@ function commit(v: unknown): SessionCommit | null {
 }
 
 function noteRef(v: unknown): SessionNoteRef | null {
-  if (typeof v === 'string') return str(v) === null ? null : { id: v.trim(), preview: '' };
+  if (typeof v === 'string') return str(v) === null ? null : { id: v.trim(), preview: '', kind: 'made' };
   if (isObj(v)) {
     const id = str(v.id);
     if (id === null) return null;
-    return { id, preview: firstLine(str(v.excerpt) ?? str(v.preview) ?? str(v.body) ?? '') };
+    return {
+      id,
+      preview: firstLine(str(v.excerpt) ?? str(v.preview) ?? str(v.body) ?? ''),
+      kind: v.kind === 'linked' ? 'linked' : 'made',
+    };
   }
   return null;
 }

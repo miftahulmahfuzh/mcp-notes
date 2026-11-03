@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
 import { useNow } from '../../hooks/useNow';
@@ -29,6 +29,11 @@ export interface NodePanelProps {
   onClose: () => void;
   /** The chat pop-up's "Show on graph": open this node on its project's graph. Absent on the graph page itself. */
   onShowOnGraph?: (detail: SessionDetail) => void;
+  /**
+   * Open a note from "Notes made" in the big editor over this page. A plain primary click calls it;
+   * a modified or middle click still follows the link to the wall. Absent: every click follows the link.
+   */
+  onOpenNote?: (noteId: string) => void;
   /** Tests pin the clock; the page uses a minute tick. */
   now?: Date;
 }
@@ -46,7 +51,12 @@ function placeLabel(host: string): string {
   return hostsLabel(host ? [host] : []);
 }
 
-export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph, now: nowProp }: NodePanelProps) {
+/** A plain primary click: no modifier, left button. Anything else is left to the browser (new tab or window). */
+function isPlainClick(e: ReactMouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
+export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph, onOpenNote, now: nowProp }: NodePanelProps) {
   const clock = useNow();
   const now = nowProp ?? clock;
   const { copied, copy } = useCopied();
@@ -279,7 +289,26 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
               <ul className="np-notes">
                 {detail.notes.map((n) => (
                   <li key={n.id}>
-                    <a href={`/?note=${encodeURIComponent(n.id)}`}>{n.id}</a>
+                    <a
+                      href={`/?note=${encodeURIComponent(n.id)}`}
+                      data-tip={onOpenNote ? 'Open note' : undefined}
+                      onClick={
+                        onOpenNote
+                          ? (e) => {
+                              if (!isPlainClick(e)) return;
+                              e.preventDefault();
+                              onOpenNote(n.id);
+                            }
+                          : undefined
+                      }
+                    >
+                      {n.id}
+                    </a>
+                    {n.kind === 'linked' && (
+                      <span className="np-linked" role="img" aria-label="Linked note" data-tip="Linked to this session">
+                        <LinkSimple weight="duotone" />
+                      </span>
+                    )}
                     {n.preview && <span>{n.preview}</span>}
                   </li>
                 ))}

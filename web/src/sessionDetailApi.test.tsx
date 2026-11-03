@@ -51,7 +51,7 @@ describe('normalizeSessionDetail', () => {
     });
     expect(d.prompts).toEqual(['first']);
     expect(d.commits).toEqual([{ sha: 'abcdef1', subject: 'feat: x', url: 'https://github.com/o/r/commit/abcdef1' }]);
-    expect(d.notes).toEqual([{ id: 'K-F07', preview: 'saved note' }]);
+    expect(d.notes).toEqual([{ id: 'K-F07', preview: 'saved note', kind: 'made' }]);
     expect(d.parent).toEqual({ node_id: 'B1-11', name: 'orch-x' });
     expect(d.tokens).toEqual({ input: 1, output: 2, cache_read: 3, cache_write: 4 });
     expect(d.summary).toBe('Did the thing.');
@@ -83,8 +83,8 @@ describe('normalizeSessionDetail', () => {
       { sha: '1234567', subject: 'fix: y', url: null },
     ]);
     expect(d.notes).toEqual([
-      { id: 'K-F07', preview: '' },
-      { id: 'Z-Z01', preview: 'first line' },
+      { id: 'K-F07', preview: '', kind: 'made' },
+      { id: 'Z-Z01', preview: 'first line', kind: 'made' },
     ]);
     expect(d.tokens).toEqual({ input: 10, output: 20, cache_read: 30, cache_write: 0 });
     expect(d.cost_usd).toBe(1.5);
@@ -92,6 +92,24 @@ describe('normalizeSessionDetail', () => {
     expect(d.parent_link_source).toBe('heuristic');
     expect(d.live).toBe(true);
     expect(d.repo).toBeNull();
+  });
+
+  it('reads each note kind: linked stays linked, a missing or unknown kind is made', () => {
+    const d = normalizeSessionDetail({
+      session: { session_id: 'cc64', node_id: '5U-I7', host: 'lenovo' },
+      notes: [
+        { id: '5-BW7', excerpt: 'linked in later', kind: 'linked' },
+        { id: 'K-F07', excerpt: 'saved here', kind: 'made' },
+        { id: 'Z-Z01', excerpt: 'old daemon' },
+        { id: 'Q-R88', excerpt: 'future kind', kind: 'pinned' },
+      ],
+    });
+    expect(d.notes.map((n) => [n.id, n.kind])).toEqual([
+      ['5-BW7', 'linked'],
+      ['K-F07', 'made'],
+      ['Z-Z01', 'made'],
+      ['Q-R88', 'made'],
+    ]);
   });
 
   it('reads a tokens object, a parent object, a {session} wrapper and defaults the rest', () => {

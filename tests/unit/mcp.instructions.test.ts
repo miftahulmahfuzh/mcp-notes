@@ -126,7 +126,7 @@ describe('buildInstructions', () => {
     const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Sessions.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
-    for (const word of ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage', 'not_on_this_machine', 'A0-3G', 'A-B32']) {
+    for (const word of ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage', 'link_note', 'unlink_note', 'not_on_this_machine', 'A0-3G', 'A-B32']) {
       expect(p).toContain(word);
     }
     expect(p).toContain('[A0-3G](http://localhost:7317/projects?repo=REPO&node=A0-3G)');

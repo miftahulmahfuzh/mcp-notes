@@ -1,0 +1,49 @@
+{
+  "branch": "feature/session-note-links",
+  "coordinator": "orch-session-note-links",
+  "coordinator_session_id": "16888acd-031b-438e-80e6-ffb1343b69a5",
+  "created": "2026-11-03T14:41:13+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": "6d432ae",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": "link_note/unlink_note + note_session_links (0009) + session notes made\u222alinked with kind; NoteRefRow is a type alias (drizzle execute constraint); all suites + Proof PASS",
+      "package": "src/` (db, notes, sessions, mcp), `drizzle/`, `claude/skills/n`, `README.md`, `tests/",
+      "plan": ".workflows/plan/session-note-links/phase-1.md",
+      "reported_at": "2026-11-03T14:51:04+07:00",
+      "satisfies": [
+        "R1"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A063",
+      "title": "Server: link table, link_note/unlink_note, made \u222a linked detail"
+    },
+    {
+      "card": null,
+      "commit": "12dbe57",
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": "web: session notes open in NoteEditor over /projects + NodeModal, link icon on kind=linked, Esc yields to editor; Proof J1+J2 PASS; journey locator fixed (has-scoped), not the assertion",
+      "package": "web/src`, `.claude/skills/verify-notesd/features",
+      "plan": ".workflows/plan/session-note-links/phase-2.md",
+      "reported_at": "2026-11-03T14:56:59+07:00",
+      "satisfies": [
+        "R2"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A064",
+      "title": "Web: open session notes in the big editor, link icon; feature map"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "session-note-links",
+  "updated": "2026-11-03T14:56:59+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/session-note-links"
+}
