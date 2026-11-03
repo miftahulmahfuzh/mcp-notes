@@ -3,6 +3,12 @@
   "coordinator": "orch-node-panel-summarize-prompts",
   "coordinator_session_id": "3caa1e7e-262f-470f-b1ea-4fa8426d41fc",
   "created": "2026-11-03T15:30:14+07:00",
+  "landed": {
+    "at": "2026-11-03T16:24:57+07:00",
+    "base": "main",
+    "commit": "077a759f7dd30ddeccf46d56ccfdfbff12c468cb",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -49,10 +55,10 @@
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": "full redacted prompts in cc_session_prompts + per-host backfill; 106-prompt fixture; also edited phase-1 test sessions.repo.int.test.ts (prompts_version 0->2 after full read, rung 3); coordinator re-checked: only repo.ts writes side table, all prompt writes via redactSecrets, no graph/worker query reads it",
+      "note": "full redacted prompts + per-host backfill; wave verifier: verified (106 rows, #50 md5 match, sk-ant 0 rows anywhere, version 2); backfill-on-restart inconclusive live, covered by sessions.prompts.int; also edited phase-1 test (prompts_version 0->2, rung 3)",
       "package": "src/sessions`, `tests/fixtures",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-3.md",
-      "reported_at": "2026-11-03T16:15:01+07:00",
+      "reported_at": "2026-11-03T16:16:10+07:00",
       "satisfies": [
         "R2"
       ],
@@ -81,7 +87,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "4097488",
       "depends_on": [
         2,
         3,
@@ -89,22 +95,22 @@
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "GET /prompts + Expand prompts modal; added 400 invalid_node_id for POST /summarize to projects.md per coordinator",
       "package": "src/sessions`, `src/http`, `web/",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T16:23:45+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A069",
       "title": "Prompts read API + Expand prompts modal with copy"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/.workflows/orchestration/node-panel-summarize-prompts/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "node-panel-summarize-prompts",
-  "updated": "2026-11-03T16:15:01+07:00",
+  "updated": "2026-11-03T16:24:57+07:00",
   "verified_at": "2026-11-03T16:06:57+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts"
 }
