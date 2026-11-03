@@ -1,5 +1,6 @@
 import type { Note } from '../types';
 import { NoteCard } from './NoteCard';
+import type { LightboxItem } from './Lightbox';
 
 export interface WallProps {
   notes: Note[];
@@ -16,9 +17,10 @@ export interface WallProps {
   onToggleTag: (tag: string) => void;
   /** Open the big editor on a note (phase 7). */
   onExpand: (note: Note, draft: string | null) => void;
+  onOpenImages?: (items: LightboxItem[], index: number) => void;
 }
 
-export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand }: WallProps) {
+export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand, onOpenImages }: WallProps) {
   return (
     <section className="wall">
       {notes.map((n) => (
@@ -36,6 +38,7 @@ export function Wall({ notes, now, editingId, usedIds, copiedId, onCopy, onEdit,
           onDelete={onDelete}
           onToggleTag={onToggleTag}
           onExpand={onExpand}
+          onOpenImages={onOpenImages}
         />
       ))}
     </section>

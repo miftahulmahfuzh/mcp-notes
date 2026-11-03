@@ -4,6 +4,7 @@ import type { Note } from '../types';
 import { fontSizeFor, letterSpacingFor, rowsFor, segmentBody } from '../lib/text';
 import { relativeDate } from '../lib/dates';
 import { NoteImage } from './NoteImage';
+import { noteImageItems, type LightboxItem } from './Lightbox';
 import { NoteRevealButton } from './NoteRevealButton';
 
 export interface NoteCardProps {
@@ -23,6 +24,8 @@ export interface NoteCardProps {
   onToggleTag: (tag: string) => void;
   /** Open the big editor. `draft` = the unsaved inline text when the card is being edited, else null. */
   onExpand: (note: Note, draft: string | null) => void;
+  /** Click on the cover opens the bigger-view lightbox on the note's available images. */
+  onOpenImages?: (items: LightboxItem[], index: number) => void;
 }
 
 function CardEditor({
@@ -61,7 +64,7 @@ function CardEditor({
   );
 }
 
-function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand }: NoteCardProps) {
+function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, onCommit, onDelete, onToggleTag, onExpand, onOpenImages }: NoteCardProps) {
   // Images whose file is not on this machine are hidden: a placeholder cover only eats space.
   const shown = note.images.filter((img) => img.available);
   const count = shown.length;
@@ -76,7 +79,18 @@ function NoteCardImpl({ note, now, editing, dim, used, copied, onCopy, onEdit, o
     <article className={cls} data-note={note.id}>
       {cover && (
         <div className="card-cover">
-          <NoteImage image={cover} />
+          <NoteImage
+            image={cover}
+            style={onOpenImages ? { cursor: 'zoom-in' } : undefined}
+            onClick={
+              onOpenImages
+                ? (e) => {
+                    e.stopPropagation();
+                    onOpenImages(noteImageItems(shown), 0);
+                  }
+                : undefined
+            }
+          />
           {count > 1 && (
             <span className="card-count" data-count={count}>
               {count}

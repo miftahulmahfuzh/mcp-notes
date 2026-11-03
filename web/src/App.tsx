@@ -870,6 +870,7 @@ export function App() {
                   onDelete={askRemoveNote}
                   onToggleTag={toggleTag}
                   onExpand={expand}
+                  onOpenImages={(items, index) => setViewer({ items, index })}
                 />
               )}
             </main>
