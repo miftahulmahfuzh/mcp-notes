@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-03
-**Total Active Tasks**: 1
+**Total Active Tasks**: 0
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 0
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 70
+- Completed: 71
 
 ---
 
@@ -33,16 +33,6 @@
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
 
 
-- [ ] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns view.ts/readModel.ts prompts payload, GET /api/sessions/:nodeId/prompts, web fetchSessionPrompts, useCopied, PromptsModal + css, NodePanel Expand button, NodeModal Esc handling, tests, features/projects.md. Exit: modal lists every stored prompt of the fixture (>100), >2000-char prompt in full, key shown [redacted]; copy buttons copy exactly the shown text; Esc/backdrop close only the modal; version 1 and 0 rows show their incomplete lines; verify-notesd proof captured.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 5 of 5)
-  - **Satisfies**: R2 — Expand prompts modal with per-prompt copy and copy-all, loaded from the DB
-  - **Depends on**: P1-NOTES-A066, P1-NOTES-A067, P1-NOTES-A068
-  - **Plan**: `.workflows/plan/P1-NOTES-A069.md`
-
 ### [P2] Medium
 
 ### [P3] Low
@@ -52,6 +42,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns view.ts/readModel.ts prompts payload, GET /api/sessions/:nodeId/prompts, web fetchSessionPrompts, useCopied, PromptsModal + css, NodePanel Expand button, NodeModal Esc handling, tests, features/projects.md. Exit: modal lists every stored prompt of the fixture (>100), >2000-char prompt in full, key shown [redacted]; copy buttons copy exactly the shown text; Esc/backdrop close only the modal; version 1 and 0 rows show their incomplete lines; verify-notesd proof captured.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/docs/plans/NODE_PANEL_SUMMARIZE_PROMPTS_PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R2 — Expand prompts modal with per-prompt copy and copy-all, loaded from the DB
+  - **Depends on**: P1-NOTES-A066, P1-NOTES-A067, P1-NOTES-A068
+  - **Plan**: `.workflows/plan/P1-NOTES-A069.md`
+  - **Completed**: 2026-11-03 16:21
+  - **Method**: /do
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, src/http/sessionsApi.ts, src/sessions/readModel.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/unit/sessions/promptsPayload.test.ts, web/src/components/graph/NodeModal.test.tsx, web/src/components/graph/NodeModal.tsx, web/src/components/graph/NodePanel.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/PromptsModal.css, web/src/components/graph/PromptsModal.test.tsx, web/src/components/graph/PromptsModal.tsx, web/src/hooks/useCopied.ts, web/src/sessionDetailApi.test.tsx, web/src/sessionDetailApi.ts
+  - **Drift**: none; line numbers shifted from phases 2–4 only
+  - **Decided**: coordinator asked to add 400 invalid_node_id for POST /summarize to features/projects.md → added to the Summary on demand bullet and a driving line, proven live on the run (coordinator request, docs only)
 
 - [x] **P1-NOTES-A067** Phase 3: Full redacted prompts: ingest into cc_session_prompts + per-host backfill
   - **Difficulty**: HARD

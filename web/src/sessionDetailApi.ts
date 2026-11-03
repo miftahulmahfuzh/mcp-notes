@@ -305,3 +305,56 @@ export function summarizeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_
   }
   return `Could not request a summary of ${d.node_id}`;
 }
+
+/** One prompt of `GET /api/sessions/:nodeId/prompts`: numbered from 1, text exactly as stored. */
+export interface SessionPromptItem {
+  n: number;
+  text: string;
+  at: string | null;
+  truncated: boolean;
+}
+
+/** Why a prompt list is not complete (server `PromptsIncompleteReason`). */
+export type PromptsIncompleteReason = 'not_backfilled' | 'transcript_pruned';
+
+/**
+ * `GET /api/sessions/:nodeId/prompts`, normalised. `complete` false: excerpts only, either until
+ * `host` backfills (`not_backfilled`) or for good, its transcript was pruned (`transcript_pruned`).
+ * `incomplete_reason` is null exactly when `complete` is true.
+ */
+export interface SessionPrompts {
+  node_id: string;
+  host: string;
+  available: boolean;
+  complete: boolean;
+  incomplete_reason: PromptsIncompleteReason | null;
+  prompts: SessionPromptItem[];
+}
+
+function promptItem(v: unknown, i: number): SessionPromptItem | null {
+  if (!isObj(v) || typeof v.text !== 'string' || v.text === '') return null;
+  const n = typeof v.n === 'number' && Number.isInteger(v.n) && v.n > 0 ? v.n : i + 1;
+  return { n, text: v.text, at: str(v.at), truncated: v.truncated === true };
+}
+
+export function normalizeSessionPrompts(raw: Wire): SessionPrompts {
+  const complete = raw.complete !== false;
+  return {
+    node_id: str(raw.node_id) ?? '',
+    host: str(raw.host) ?? '',
+    available: raw.available !== false,
+    complete,
+    incomplete_reason: complete ? null : raw.incomplete_reason === 'transcript_pruned' ? 'transcript_pruned' : 'not_backfilled',
+    prompts: compact(list(raw.prompts).map(promptItem)),
+  };
+}
+
+/** `GET /api/sessions/:nodeId/prompts` -> every stored prompt, or null on 404. The server normalises the id. */
+export async function fetchSessionPrompts(nodeId: string, signal?: AbortSignal): Promise<SessionPrompts | null> {
+  const res = await fetch(`/api/sessions/${enc(nodeId)}/prompts`, signal ? { signal } : undefined);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await failure(res);
+  const j: unknown = await res.json();
+  if (!isObj(j)) throw new ApiError(500, 'bad prompts payload');
+  return normalizeSessionPrompts(j);
+}

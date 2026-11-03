@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
 import { useNow } from '../../hooks/useNow';
@@ -22,6 +22,7 @@ import {
 import { SubtreeTimeline } from './SubtreeTimeline';
 import { SubtreeTree } from './SubtreeTree';
 import { UnfinishedPill } from './UnfinishedBadge';
+import { PromptsModal } from './PromptsModal';
 import './NodePanel.css';
 
 export type SubtreeView = 'tree' | 'timeline';
@@ -75,6 +76,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
   const [busy, setBusy] = useState<'resume' | 'fresh' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ fresh: boolean } | null>(null);
+  const [promptsOpen, setPromptsOpen] = useState(false);
   const currentKey = useRef(idKey(nodeId));
   currentKey.current = idKey(nodeId);
 
@@ -101,6 +103,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
   useEffect(() => {
     setNotice(null);
     setConfirm(null);
+    setPromptsOpen(false);
   }, [nodeId]);
 
   const detail = load.state === 'ready' ? load.detail : null;
@@ -286,7 +289,21 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
           </section>
 
           <section className="np-sec" aria-label="Prompts">
-            <h3>Prompts</h3>
+            <div className="np-sec-head">
+              <h3>Prompts</h3>
+              {detail.prompts.length > 0 && (
+                <button
+                  type="button"
+                  className="ibtn hov"
+                  data-tip="Expand prompts"
+                  aria-label="Expand prompts"
+                  aria-haspopup="dialog"
+                  onClick={() => setPromptsOpen(true)}
+                >
+                  <ArrowsOut weight="duotone" />
+                </button>
+              )}
+            </div>
             {detail.prompts.length === 0 ? (
               <p className="np-dim">None</p>
             ) : (
@@ -451,6 +468,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
           />,
           document.body,
         )}
+      {promptsOpen && detail && <PromptsModal nodeId={detail.node_id} now={now} onClose={() => setPromptsOpen(false)} />}
     </aside>
   );
 }

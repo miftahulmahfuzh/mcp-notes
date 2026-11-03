@@ -29,6 +29,7 @@ import {
   toGraphNode,
   toNodeRef,
   toNoteRef,
+  toPromptsPayload,
   toSessionInfo,
   type ContextNode,
   type ContextPayload,
@@ -39,8 +40,10 @@ import {
   type NodeRow,
   type NoteRefRow,
   type ProjectsPayload,
+  type PromptsPayload,
   type SearchPayload,
   type SessionDetail,
+  type StoredPromptRow,
   type SummaryRequestPayload,
   type TranscriptPayload,
   type UsageMonthRow,
@@ -49,7 +52,7 @@ import {
   type UsageTotals,
 } from './view.js';
 
-import { SELECTED_PROJECT_KEY } from './types.js';
+import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS, SELECTED_PROJECT_KEY } from './types.js';
 
 export { SELECTED_PROJECT_KEY };
 export const CONTEXT_MAX_IDS = 10;
@@ -431,6 +434,38 @@ export async function requestSummaryFor(rd: SessionsReadDeps, nodeId: string): P
   await rd.requestSummary(before.session_id);
   const after = await readSummaryStateRow(rd, nodeId);
   return { ok: true, payload: summaryPayload(after ?? before, rd.host) };
+}
+
+type PromptsHeadRow = {
+  session_id: string;
+  node_id: string;
+  host: string;
+  prompts_version: number;
+  excerpts: unknown;
+};
+
+/**
+ * Every stored prompt of one node, for the wall's Expand prompts modal. DB only, never the
+ * transcript, so it answers for every host's nodes. A row at PROMPTS_VERSION reads the full
+ * redacted list from cc_session_prompts (seq order), complete. A row at PROMPTS_VERSION_EXCERPTS
+ * (transcript pruned before the backfill) reads the same table, which then holds the redacted
+ * excerpts, with complete: false. A legacy row, which its owning host has not backfilled yet, falls
+ * back to the excerpts on cc_sessions with complete: false; its side-table rows, if the tail
+ * ingester appended some, are partial and ignored. Null when the node does not exist. Never part of
+ * the graph or detail queries (invariant 5).
+ */
+export async function sessionPrompts(rd: SessionsReadDeps, nodeId: string): Promise<PromptsPayload | null> {
+  const head = await rd.db.execute<PromptsHeadRow>(sql`
+    select session_id, node_id, host, prompts_version,
+      case when prompts_version >= ${PROMPTS_VERSION_EXCERPTS} then null else prompts end as excerpts
+    from cc_sessions where node_id = ${nodeId} limit 1`);
+  const row = head.rows[0];
+  if (row === undefined) return null;
+  const version = Number(row.prompts_version);
+  if (version < PROMPTS_VERSION_EXCERPTS) return toPromptsPayload(row, rd.host, { kind: 'legacy', excerpts: row.excerpts });
+  const rows = await rd.db.execute<StoredPromptRow>(sql`
+    select text, at, truncated from cc_session_prompts where session_id = ${row.session_id} order by seq`);
+  return toPromptsPayload(row, rd.host, { kind: version >= PROMPTS_VERSION ? 'full' : 'pruned', rows: rows.rows });
 }
 
 /** A node id that exists, with its repo: the wall links it in chat and opens its graph. */

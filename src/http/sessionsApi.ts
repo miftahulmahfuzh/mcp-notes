@@ -14,6 +14,7 @@ import {
   requestSummaryFor,
   searchNodes,
   sessionDetail,
+  sessionPrompts,
   sessionsReadDeps,
   usage,
   writeSelected,
@@ -122,6 +123,7 @@ export function parseIdList(raw: string): string[] {
  * GET  /api/sessions/search?q=&repo=&limit=
  * GET  /api/sessions/usage?by=&repo=&month=&limit=
  * GET  /api/sessions/:nodeId/transcript?query=&limit=   owning host only
+ * GET  /api/sessions/:nodeId/prompts      every stored prompt (full when backfilled), from the DB, any host
  * POST /api/sessions/:nodeId/summarize     records a summary request   same-origin only
  * GET  /api/sessions/:nodeId
  */
@@ -214,6 +216,15 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     if (out.error === 'empty_session') return c.json({ error: out.error, node_id: out.node_id }, 409);
     return c.json({ error: out.error, node_id: out.node_id }, 404);
   });
+
+  r.get('/api/sessions/:nodeId/prompts', async (c) => {
+    const nodeId = normalizeNodeId(c.req.param('nodeId'));
+    if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
+    const payload = await sessionPrompts(rd, nodeId);
+    if (payload === null) return c.json({ error: 'not_found', node_id: nodeId }, 404);
+    return c.json(payload);
+  });
+
 
   r.get('/api/sessions/:nodeId', async (c) => {
     const nodeId = normalizeNodeId(c.req.param('nodeId'));

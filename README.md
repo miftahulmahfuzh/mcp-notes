@@ -1057,6 +1057,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/projects/:repo/sessions?before=&limit=` | That repo's sessions for the graph: node id, parent and link source (`env`, `hook`, `heuristic`), times, name, `live`, `host`, `available`, `unfinished`. Sends a weak `ETag`; answers `304` to a matching `If-None-Match` (the wall polls it; there is no SSE event for sessions) |
 | `GET /api/sessions/:nodeId` | One session in full: summary, prompts, commits, plan docs, files, notes saved from it, tokens, children |
 | `GET /api/sessions/:nodeId/transcript?query=` | Matching passages of the transcript; 404 `not_on_this_machine` when it lives on the other machine |
+| `GET /api/sessions/:nodeId/prompts` | Every stored prompt of a session, numbered, in full. Read from the database, so it works for either machine's sessions. `complete: false` with `incomplete_reason` (`not_backfilled`, `transcript_pruned`) when only excerpts are kept |
 | `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback` |

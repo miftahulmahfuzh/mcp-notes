@@ -423,3 +423,55 @@ describe('NodePanel summary', () => {
     expect(screen.queryByText('Summary requested')).toBeNull();
   });
 });
+
+describe('NodePanel: Expand prompts', () => {
+  const PROMPTS = {
+    node_id: 'A0-3G',
+    host: 'lenovo',
+    available: true,
+    complete: true,
+    prompts: [
+      { n: 1, text: 'run the swarm', at: '2026-11-01T01:00:00.000Z', truncated: false },
+      { n: 2, text: 'merge phase 3', at: null, truncated: false },
+    ],
+  };
+
+  function stubRoutes(detail: unknown): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('/prompts') ? json(200, PROMPTS) : json(200, detail))),
+    );
+  }
+
+  it('offers no expand button for a session without prompts', async () => {
+    stubRoutes({ ...WIRE, prompts: [] });
+    renderPanel();
+    await screen.findByRole('heading', { name: 'orch-wall-editing' });
+    expect(screen.queryByRole('button', { name: 'Expand prompts' })).toBeNull();
+  });
+
+  it('opens the prompts modal; Esc closes only the modal, the next Esc reaches the page', async () => {
+    stubRoutes(WIRE);
+    const pageEsc = vi.fn();
+    // ProjectsPage's listener: clears the node unless the Esc was already handled.
+    const onDocKey = (e: KeyboardEvent) => {
+      if (!e.defaultPrevented && e.key === 'Escape') pageEsc();
+    };
+    document.addEventListener('keydown', onDocKey);
+    try {
+      const { props } = renderPanel();
+      fireEvent.click(await screen.findByRole('button', { name: 'Expand prompts' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Prompts of A0-3G' });
+      expect(await within(dialog).findByText('merge phase 3')).toBeTruthy();
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Prompts of A0-3G' })).toBeNull());
+      expect(pageEsc).not.toHaveBeenCalled();
+      expect(props.onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('complementary', { name: 'Session A0-3G' })).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(pageEsc).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', onDocKey);
+    }
+  });
+});

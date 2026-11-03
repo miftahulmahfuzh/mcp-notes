@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './api';
 import {
   fetchSessionDetail,
+  fetchSessionPrompts,
   normalizeSessionDetail,
   requestSummary,
   resumeErrorNotice,
@@ -253,5 +254,48 @@ describe('summarizeErrorNotice', () => {
     expect(summarizeErrorNotice(new ApiError(404, 'not_found'), d)).toBe('No session A0-3G');
     expect(summarizeErrorNotice(new ApiError(500, 'boom'), d)).toBe('Could not request a summary of A0-3G: boom');
     expect(summarizeErrorNotice(new Error('x'), d)).toBe('Could not request a summary of A0-3G');
+  });
+});
+
+describe('fetchSessionPrompts', () => {
+  it('GETs /api/sessions/:id/prompts and keeps each text exactly as sent', async () => {
+    const seen = stub(200, {
+      node_id: 'A0-3G',
+      host: 'GPD',
+      available: false,
+      complete: false,
+      prompts: [
+        { n: 1, text: '  a\n\tb  ', at: '2026-11-01T01:00:00.000Z', truncated: false },
+        { n: 2, text: 'cut', at: null, truncated: true },
+        { n: 3, text: 42 },
+      ],
+    });
+    const p = await fetchSessionPrompts('A0-3G');
+    expect(seen[0]).toEqual({ url: '/api/sessions/A0-3G/prompts', method: 'GET', body: null });
+    expect(p).toEqual({
+      node_id: 'A0-3G',
+      host: 'GPD',
+      available: false,
+      complete: false,
+      incomplete_reason: 'not_backfilled',
+      prompts: [
+        { n: 1, text: '  a\n\tb  ', at: '2026-11-01T01:00:00.000Z', truncated: false },
+        { n: 2, text: 'cut', at: null, truncated: true },
+      ],
+    });
+  });
+
+  it('keeps transcript_pruned, and has no reason when complete', async () => {
+    stub(200, { node_id: 'A0-3G', host: 'pc', complete: false, incomplete_reason: 'transcript_pruned', prompts: [] });
+    expect((await fetchSessionPrompts('A0-3G'))?.incomplete_reason).toBe('transcript_pruned');
+    stub(200, { node_id: 'A0-3G', host: 'pc', complete: true, incomplete_reason: 'transcript_pruned', prompts: [] });
+    expect((await fetchSessionPrompts('A0-3G'))?.incomplete_reason).toBeNull();
+  });
+
+  it('null on 404, ApiError with the server error otherwise', async () => {
+    stub(404, { error: 'not_found' });
+    expect(await fetchSessionPrompts('ZZ-ZZ')).toBeNull();
+    stub(500, { error: 'boom' });
+    await expect(fetchSessionPrompts('A0-3G')).rejects.toMatchObject({ status: 500, message: 'boom' });
   });
 });

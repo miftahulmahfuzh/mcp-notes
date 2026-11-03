@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { isConfirmOpen } from '../ConfirmDialog';
 import { isLightboxOpen } from '../Lightbox';
 import { isEditorOpen } from '../NoteEditor';
+import { isPromptsOpen } from './PromptsModal';
 import { useSessionGraph } from '../../hooks/useSessionGraph';
 import { toSubtreeNodes } from '../../lib/subtree';
 import type { SessionDetail } from '../../sessionDetailApi';
@@ -35,9 +36,10 @@ export function NodeModal({ nodeId, repo, onClose, onShowOnGraph, onOpenNote }: 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // The big editor (opened from "Notes made") registers its Esc listener after this one: yield
-      // to it, or one Esc would close both. Same for a lightbox or confirm.
-      if (e.key !== 'Escape' || isEditorOpen() || isLightboxOpen() || isConfirmOpen()) return;
+      // The big editor (opened from "Notes made") and the prompts modal (Expand prompts) register
+      // their Esc listeners after this one: yield to them, or one Esc would close both. Same for a
+      // lightbox or confirm.
+      if (e.key !== 'Escape' || isEditorOpen() || isLightboxOpen() || isConfirmOpen() || isPromptsOpen()) return;
       // Capture phase + preventDefault + stopPropagation (the editor's seam): Esc closes only the pop-up.
       e.preventDefault();
       e.stopPropagation();

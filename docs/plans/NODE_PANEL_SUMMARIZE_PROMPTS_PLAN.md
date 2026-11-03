@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts`
 **Branch:** `feature/node-panel-summarize-prompts` (base: `origin/main` @ `5c21bad`)
 **Phases:** 5
-**Status:** phases 1, 2, 3, 4 of 5 complete
+**Status:** phases 1–5 of 5 complete
 **Coordinator:** —
 
 ---
