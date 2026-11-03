@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`verify-notesd` skill** (`.claude/skills/verify-notesd/`): `verify.sh up` starts a
+  throwaway daemon from the current checkout. Each run gets its own database in the
+  `mcp-notes-pg-verify` container (127.0.0.1:55436), its own port, data dir and empty
+  `CLAUDE_HOME`. `doctor`, `api`, `upload`, `mcp`, `ui` (Playwright with video and screenshots),
+  `sql` and `down` drive it. Every call saves numbered evidence under
+  `~/.local/state/notesd-verify/<run>/evidence`, and that evidence survives teardown. It never
+  touches the live daemon, Neon, `~/mcp-notes-data` or `~/.claude`
+- **Feature map** (`features/`): notes, search, images and files, recycle bin, wall, projects,
+  chat. Each entry says how a user reaches the feature, how to drive it, and the end state that
+  proves it works. Plans cite these entries in their Proof sections
+- `playwright` 1.62.1 as a dev dependency, for the wall drives
+
+### Changed
+- `.claude/settings.local.json` is ignored by git; `CLAUDE.md` points at the verify skill
+
 ## [v0.3.0] - 2026-11-02
 
 The project session graph: every Claude Code session on both laptops, per repo, with

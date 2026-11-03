@@ -46,6 +46,7 @@ scripts/install.sh           # idempotent: build, systemd user unit, MCP registr
 ## Conventions
 
 - Note ids look like `A-B32`; lookup is case-insensitive and tolerates a missing dash. Ids are generated server-side (`src/notes/ids.ts`). Never invent one.
+- **Proving a change:** `.claude/skills/verify-notesd` launches a throwaway daemon (own DB, port, data dir) and drives it over HTTP, MCP and Playwright, saving evidence. Its `features/` map lists what proves each feature. Use it before calling a change done; update the map when a user-facing feature changes.
 - `.workflows/` holds task/plan/orchestration records from the planning tooling, and `docs/` holds roadmap and design briefs. Check them for the intent behind a feature before changing it.
 
 > [!IMPORTANT]
