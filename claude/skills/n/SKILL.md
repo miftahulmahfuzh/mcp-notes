@@ -1,6 +1,6 @@
 ---
 name: n
-description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
+description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them, or link a note to a Claude Code session ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32", "link 5-BW7 into 5U-I7"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
 argument-hint: <request for mcp-notes>
 ---
 
@@ -241,6 +241,25 @@ Every `/n` exchange (the prompt as typed, your final answer and any pasted image
 the wall's chat history by a Claude Code hook after you answer. You do not save it yourself and
 need not mention it, unless the user asks where their `/n` conversations go: the wall's chat
 history page, badged "claude code".
+
+## Sessions
+
+Claude Code sessions are nodes with ids like `A0-3G` (two characters, a dash, two characters).
+Note ids look like `A-B32` (one character, a dash, three). Never swap the two and never invent
+either.
+
+- "Which session did X", "what did A0-3G do" → `sessions_search`, then `session_get`. A
+  session's `notes` are the notes saved from it (`kind: "made"`) and the notes linked to it
+  (`kind: "linked"`).
+- "Link 5-BW7 into 5U-I7", "link note A-B32 to session A0-3G", "put this note under that
+  session" → `link_note` with `note_id` = the note id and `node_id` = the session's node id.
+  Linking twice is harmless (`changed: false`). It never edits the note, so do not `update` or
+  `append` anything to "make" the link. A deleted note must be restored first; ask before
+  restoring it.
+- "Unlink A-B32 from A0-3G" → `unlink_note`. A note saved from that session (`made: true`)
+  stays listed there; say so.
+- Reply with both ids as links (the note as described under Replies, the session with the
+  `url` that `session_get` returns) and whether anything changed.
 
 ## Deleting
 

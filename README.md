@@ -676,7 +676,7 @@ The route answers only requests from the wall's own page, like "open file locati
 
 ### Asking about sessions
 
-The MCP server and the chat bar have the same five tools for sessions (listed under
+The MCP server and the chat bar have the same five tools for reading sessions (listed under
 [MCP tools](#mcp-tools)), so from Claude Code or the wall:
 
 ```
@@ -684,7 +684,13 @@ The MCP server and the chat bar have the same five tools for sessions (listed un
 /n how many tokens did I spend on mcp-notes sessions in October?
 /n show me the transcript of A0-3G around the migration error
 /n resume A0-3G and ask it to rerun the integration tests
+/n link 5-BW7 into A0-3G
 ```
+
+A session's notes are the ones saved from it plus the ones linked to it. `link_note` (Claude Code
+only, not the chat bar) links any existing note to a session without changing the note; it then
+shows in that session's panel on the graph and in `session_get`, marked as linked. `unlink_note`
+removes the link.
 
 `session_transcript` reads the transcript file, so it works only on the laptop that holds it and
 answers `not_on_this_machine` on the other.
@@ -968,10 +974,11 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
 | `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
 | `sessions_search` | Claude Code sessions by meaning and by words over their summaries, names and prompts, blended like `search`; filter by `repo`. Each hit has its node id, repo, times and summary. Says `fallback` when only words were used |
-| `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, notes saved from it, tokens and cost, parent and children, `host` and `available` |
+| `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, its notes (saved from it or linked to it, each with `kind: "made" \| "linked"`), tokens and cost, parent and children, `host` and `available` |
 | `session_transcript` | Passages of a session's transcript matching `query`. Only on the laptop that holds the transcript; elsewhere `not_on_this_machine` |
 | `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
 | `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. Same machine only |
+| `link_note`, `unlink_note` | Link an existing note (`note_id`) to a session (`node_id`) so it is listed with that session's notes as `linked`, and remove the link. The note's text and origin never change; both are idempotent; a deleted note cannot be linked |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything

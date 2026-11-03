@@ -20,6 +20,7 @@ import * as repo from './repo.js';
 import * as imageRepo from './imageRepo.js';
 import * as fileRepo from './fileRepo.js';
 import * as bin from './binRepo.js';
+import * as sessionLinks from './sessionLinks.js';
 import type { BinImageRow } from './binRepo.js';
 import type { NoteFilter } from './repo.js';
 import { parseTags } from './tags.js';
@@ -144,6 +145,19 @@ export interface GetResult {
   missing: string[];
   /** Ids of soft-deleted notes, reported here when includeDeleted is false. */
   deleted: string[];
+}
+
+/** What link_note / unlink_note report (src/mcp/sessionTools.ts returns it as is). */
+export interface SessionLinkResult {
+  note_id: string;
+  node_id: string;
+  session_id: string;
+  /** Whether the link exists after the call: true after linkSession, false after unlinkSession. */
+  linked: boolean;
+  /** Whether this call inserted or deleted the row; false when it already was that way. */
+  changed: boolean;
+  /** The note was saved from this session (origin.claude_session), so session detail lists it as kind "made" either way. */
+  made: boolean;
 }
 
 interface Mutation {
@@ -456,6 +470,59 @@ export class NotesService {
       return { row: await repo.setDeleted(tx, id, false), op: 'restored' };
     });
     return this.finish(result);
+  }
+
+  /**
+   * Links a live note to the session whose node id is `nodeId` (canonical: the caller ran
+   * normalizeNodeId). Idempotent: an existing link is kept (`changed: false`). Never writes the
+   * note's body, origin or updated_at, and emits no event: the note itself did not change.
+   * Unknown note -> NoteError('not_found'); deleted note -> NoteError('deleted');
+   * no session with that node id -> null.
+   */
+  async linkSession(noteIdInput: string, nodeId: string): Promise<SessionLinkResult | null> {
+    const id = this.requireId(noteIdInput);
+    return this.db.transaction(async (tx): Promise<SessionLinkResult | null> => {
+      // The row lock keeps a concurrent purge from removing the note between the check and the insert.
+      const cur = await repo.lockNote(tx, id);
+      if (cur === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
+      if (cur.deletedAt !== null) {
+        throw new NoteError('deleted', `Note ${id} is deleted, so it cannot be linked to a session. Call restore("${id}") first.`);
+      }
+      const session = await sessionLinks.findSessionByNodeId(tx, nodeId);
+      if (session === null) return null;
+      const changed = await sessionLinks.insertLink(tx, id, session.sessionId);
+      return {
+        note_id: id,
+        node_id: session.nodeId,
+        session_id: session.sessionId,
+        linked: true,
+        changed,
+        made: cur.origin?.claude_session === session.sessionId,
+      };
+    });
+  }
+
+  /**
+   * Removes the link between a note and the session whose node id is `nodeId` (canonical).
+   * Idempotent: no link -> `changed: false`. Works on a deleted note too. Never touches a note
+   * made in that session (origin is not a link), and emits no event.
+   * Unknown note -> NoteError('not_found'); no session with that node id -> null.
+   */
+  async unlinkSession(noteIdInput: string, nodeId: string): Promise<SessionLinkResult | null> {
+    const id = this.requireId(noteIdInput);
+    const cur = await repo.findNoteById(this.db, id);
+    if (cur === null) throw new NoteError('not_found', `Note ${id} does not exist.`);
+    const session = await sessionLinks.findSessionByNodeId(this.db, nodeId);
+    if (session === null) return null;
+    const changed = await sessionLinks.deleteLink(this.db, id, session.sessionId);
+    return {
+      note_id: id,
+      node_id: session.nodeId,
+      session_id: session.sessionId,
+      linked: false,
+      changed,
+      made: cur.origin?.claude_session === session.sessionId,
+    };
   }
 
   /**

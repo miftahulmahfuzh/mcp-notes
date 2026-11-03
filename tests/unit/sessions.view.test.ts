@@ -11,6 +11,7 @@ import {
   normalizePrompts,
   sessionTitle,
   toGraphNode,
+  toNoteRef,
   toSessionInfo,
   type DetailRow,
   type LiveEntry,
@@ -191,5 +192,20 @@ describe('formatContext', () => {
     const session = toSessionInfo(detail({ summary: 'x'.repeat(10_000) }), { host: 'lenovo', live: noLive });
     const text = formatContext({ session, commits: [], plan_docs: [], children_node_ids: [] }, opts);
     expect(text.length).toBeLessThanOrEqual(CONTEXT_NODE_MAX_CHARS);
+  });
+});
+
+describe('toNoteRef', () => {
+  it('maps a session-detail note row to the wire NoteRef with its kind', () => {
+    expect(
+      toNoteRef({ id: 'A-B32', body: '  hello \n  world #x ', tags: ['x'], created_at: new Date('2026-11-03T00:00:00Z'), kind: 'made' }),
+    ).toEqual({ id: 'A-B32', excerpt: 'hello world #x', tags: ['x'], created_at: '2026-11-03T00:00:00.000Z', kind: 'made' });
+    expect(toNoteRef({ id: 'A-B33', body: '', tags: null, created_at: null, kind: 'linked' })).toEqual({
+      id: 'A-B33',
+      excerpt: '',
+      tags: [],
+      created_at: null,
+      kind: 'linked',
+    });
   });
 });

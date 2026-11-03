@@ -33,6 +33,8 @@ import {
  * Migration 0007 (project session graph) adds `cc_sessions`, `cc_session_embeddings`,
  * `cc_pending_spawns` and `app_settings`, and `chat_threads.project`; src/sessions/repo.ts is the
  * only writer of the three `cc_*` tables and of `app_settings`.
+ * Migration 0009 (session note links) adds `note_session_links`; src/notes/sessionLinks.ts,
+ * called only by NotesService, is its only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -578,6 +580,27 @@ export const ccSubagentTranscripts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [index('cc_subagent_transcripts_session_idx').on(t.sessionId), index('cc_subagent_transcripts_host_idx').on(t.host)],
+)
+
+/**
+ * An explicit link from an existing note to a Claude Code session (migration 0009), made with the
+ * `link_note` MCP tool. Session detail lists the notes made in a session (`notes.origin
+ * ->> 'claude_session'`) together with the notes linked here; a link never rewrites the note's
+ * origin. Written only by src/notes/sessionLinks.ts through NotesService. Purging a note or
+ * removing a session drops its links.
+ */
+export const noteSessionLinks = pgTable(
+  'note_session_links',
+  {
+    noteId: text('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => ccSessions.sessionId, { onDelete: 'cascade' }),
+    linkedAt: timestamp('linked_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.noteId, t.sessionId] }), index('note_session_links_session_idx').on(t.sessionId)],
 )
 
 /**

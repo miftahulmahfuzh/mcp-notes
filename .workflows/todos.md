@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-02
-**Total Active Tasks**: 1
+**Last Updated**: 2026-11-03
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 64
+- Completed: 65
 
 ---
 
@@ -21,6 +21,16 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [ ] **P1-NOTES-A064** Phase 2: Web: open session notes in the big editor, link icon; feature map
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `web/src/sessionDetailApi.ts`, `web/src/components/NoteEditor.tsx` (`isEditorOpen`), `web/src/components/graph/NodePanel.tsx`, `NodeModal.tsx`, `web/src/pages/ProjectsPage.tsx`, `web/src/App.tsx` (`openNote`) + tests, `.claude/skills/verify-notesd/features/projects.md`. Exit: typecheck and `npm test` green; Journey 1 (link_note over MCP, session_get shows both kinds) and Journey 2 (Playwright: click on a note in Notes made opens NoteEditor over /projects, Esc/X closes only the editor, linked note has the icon); `features/projects.md` documents the link and click drive.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md` (phase 2 of 2)
+  - **Satisfies**: R2 — Clicking a note in "Notes made" pops it up in the bigger-view modal; linked items show a link icon
+  - **Depends on**: P1-NOTES-A063
+  - **Plan**: `.workflows/plan/P1-NOTES-A064.md`
 
 - [x] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
   - **Difficulty**: EASY
@@ -42,6 +52,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A063** Phase 1: Server: link table, link_note/unlink_note, made ∪ linked detail
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns `src/db/schema.ts` (`noteSessionLinks`), `drizzle/0009_note_session_links.sql` + meta, `tests/integration/setup.ts` truncateAll, `src/notes/sessionLinks.ts`, `NotesService.linkSession`/`unlinkSession`, `NoteRef.kind` in `src/sessions/view.ts`, union query in `src/sessions/readModel.ts`, MCP `link_note`/`unlink_note` in `src/mcp/sessionTools.ts`, `src/mcp/instructions.ts`, `README.md`, `claude/skills/n/SKILL.md`, tests. Exit: `npm run typecheck`, `npm test`, `npm run test:int` green; verify-notesd Proof script (`up --sessions`) prints `RESULT: PASS`; `drizzle/` gains exactly the three generated 0009 files.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md` (phase 1 of 2)
+  - **Satisfies**: R1 — Link an existing note into a session so it shows in "Notes made" (table, `link_note`/`unlink_note`, `/n link`, made ∪ linked with `kind`), then link 5-BW7 into 5U-I7 live
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A063.md`
+  - **Completed**: 2026-11-03 14:48
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, drizzle/0009_note_session_links.sql, drizzle/meta/0009_snapshot.json, drizzle/meta/_journal.json, tests/integration/setup.ts, src/notes/sessionLinks.ts, src/notes/service.ts, src/sessions/view.ts, src/sessions/readModel.ts, src/mcp/sessionTools.ts, src/mcp/instructions.ts, README.md, claude/skills/n/SKILL.md, tests/unit/sessions.view.test.ts, tests/unit/sessions/linkNoteTool.test.ts, tests/unit/mcp.instructions.test.ts, tests/integration/sessions.noteLinks.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A063.md, .workflows/plan/P1-NOTES-A064.md, .workflows/orchestration/session-note-links/PLAN.md
+  - **Drift**: NoteRefRow written as a `type` alias instead of the plan's `interface`: drizzle's execute<T> needs Record<string, unknown>, which interfaces don't satisfy (matches NodeRow in view.ts).
+    claude/skills/n/SKILL.md: the screenshot example closes the description's parenthesis, so the new "link 5-BW7 into 5U-I7" example was appended after it instead of inserted before a following comma.
+    Proof script: SID grep `[0-9a-f-]{36}` matched psql's dashed separator line; tightened to a strict UUID regex. No assertion changed.
 
 - [x] **P1-NOTES-A062** Phase 14: Docs: README, CHANGELOG, CLAUDE.md, ROADMAP
   - **Difficulty**: EASY

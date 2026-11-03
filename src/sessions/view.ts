@@ -110,12 +110,26 @@ export interface LinkedCommit extends SessionCommit {
   url: string | null;
 }
 
+/** How a note belongs to a session: saved from it (origin.claude_session) or linked to it with link_note. */
+export type NoteRefKind = 'made' | 'linked';
+
 export interface NoteRef {
   id: string;
   excerpt: string;
   tags: string[];
   created_at: string | null;
+  /** "made" wins when a note was both saved from the session and linked to it. */
+  kind: NoteRefKind;
 }
+
+/** One row of session detail's notes query (src/sessions/readModel.ts sessionDetail). */
+export type NoteRefRow = {
+  id: string;
+  body: string;
+  tags: string[] | null;
+  created_at: Date | string | null;
+  kind: string;
+};
 
 export interface NodeRef {
   session_id: string;
@@ -354,6 +368,17 @@ export function excerpt(text: string | null | undefined, max: number): string | 
   if (flat === '') return null;
   if (flat.length <= max) return flat;
   return `${dropTrailingHighSurrogate(flat.slice(0, Math.max(0, max - 1)))}…`;
+}
+
+/** A session-detail note row as the wire NoteRef. Any kind other than "made" reads as "linked". */
+export function toNoteRef(r: NoteRefRow): NoteRef {
+  return {
+    id: r.id,
+    excerpt: excerpt(r.body, NOTE_EXCERPT_CHARS) ?? '',
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    created_at: iso(r.created_at),
+    kind: r.kind === 'made' ? 'made' : 'linked',
+  };
 }
 
 /** Like excerpt but keeps line breaks (multi-line text such as a summary or the context block). */

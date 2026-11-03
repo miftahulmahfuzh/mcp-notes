@@ -6,6 +6,7 @@ import { RESUME_PROMPT_MAX_CHARS, type ResumeOutcome } from '../sessions/resume.
 import { readTranscript, searchNodes, sessionDetail, usage, type SessionsReadDeps } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
 import { nodeUrl, type NodeRef } from '../sessions/view.js';
+import type { SessionLinkResult } from '../notes/service.js';
 import { errorResult, jsonResult, type ToolDeps } from './tools.js';
 
 export const SESSIONS_SEARCH_DEFAULT_LIMIT = 10;
@@ -19,6 +20,11 @@ const nodeIdField = z
   .string()
   .min(1)
   .describe('Session node id like A0-3G: two characters, a dash, two characters. Case-insensitive; the dash may be omitted. Not a note id (A-B32).');
+
+const noteIdField = z
+  .string()
+  .min(1)
+  .describe('Note id like A-B32: one character, a dash, three characters. Case-insensitive; the dash may be omitted. Not a session node id (A0-3G).');
 
 function fail(text: string): CallToolResult {
   return { isError: true, content: [{ type: 'text', text }] };
@@ -107,7 +113,8 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
       title: 'Get a Claude Code session',
       description:
         'One Claude Code session by node id (like A0-3G): { session: { node_id, session_id, repo, title, name, branch, cwd, started_at, last_active_at, host, available, live, status, tokens, cost_usd, summary, first_prompt, last_prompt, final_message, transcript_path, url, ... }, ' +
-        'prompts, commits, files_edited, plan_docs, notes (notes saved from that session), parent, children (sessions it spawned) }. available: false means it ran on the other machine (host).',
+        'prompts, commits, files_edited, plan_docs, notes, parent, children (sessions it spawned) }. notes are the notes saved from that session and the notes linked to it with link_note, newest first, each { id, excerpt, tags, created_at, kind: "made" | "linked" }; a note that is both is listed once as "made". ' +
+        'available: false means it ran on the other machine (host).',
       inputSchema: { node_id: nodeIdField },
       annotations: { readOnlyHint: true },
     },
@@ -216,6 +223,50 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
       }
     },
   );
+  /** Shared tail of link_note / unlink_note: node id at the boundary, then the service. */
+  async function linkCall(
+    rawNodeId: string,
+    op: (nodeId: string) => Promise<SessionLinkResult | null>,
+  ): Promise<CallToolResult> {
+    if (rd === undefined) return fail(SESSIONS_OFF);
+    const nodeId = normalizeNodeId(rawNodeId);
+    if (nodeId === null) return badNodeId(rawNodeId);
+    try {
+      const res = await op(nodeId);
+      return res === null ? notFound(nodeId) : jsonResult(res);
+    } catch (err) {
+      return errorResult(err);
+    }
+  }
+
+  server.registerTool(
+    'link_note',
+    {
+      title: 'Link a note to a Claude Code session',
+      description:
+        "Link an existing note to a Claude Code session, so session_get and the wall's project graph list it with that session's notes as kind \"linked\" (\"/n link A-B32 into A0-3G\"). " +
+        'note_id is a note id like A-B32, node_id a session node id like A0-3G; both are case-insensitive and the dash may be omitted. The note itself (body, tags, origin) does not change. ' +
+        'Linking again is a no-op. A deleted note cannot be linked: restore it first. ' +
+        'Returns { note_id, node_id, session_id, linked: true, changed, made }: changed false means the link already existed; made true means the note was saved from that session, so it is listed there as "made" anyway.',
+      inputSchema: { note_id: noteIdField, node_id: nodeIdField },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (args): Promise<CallToolResult> => linkCall(args.node_id, (nodeId) => deps.service.linkSession(args.note_id, nodeId)),
+  );
+
+  server.registerTool(
+    'unlink_note',
+    {
+      title: 'Unlink a note from a Claude Code session',
+      description:
+        'Remove a link made with link_note between a note (note_id like A-B32) and a Claude Code session (node_id like A0-3G). The note itself does not change, and a note saved from that session stays listed there as "made" (origin is not a link). ' +
+        'Unlinking what is not linked is a no-op. Returns { note_id, node_id, session_id, linked: false, changed, made }: changed false means there was no link.',
+      inputSchema: { note_id: noteIdField, node_id: nodeIdField },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (args): Promise<CallToolResult> => linkCall(args.node_id, (nodeId) => deps.service.unlinkSession(args.note_id, nodeId)),
+  );
+
   registerSessionResumeTool(server, deps);
 }
 

@@ -64,6 +64,13 @@
       "when": 1793599670164,
       "tag": "0008_subagent_transcripts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793691744788,
+      "tag": "0009_note_session_links",
+      "breakpoints": true
     }
   ]
 }
