@@ -43,40 +43,40 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e8f5f46",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": "implemented; waiting on full test:int (shared Docker DB contention with p2); edited phase-1 test sessions.repo.int.test.ts prompts_version 0->2 per own plan (rung 3)",
+      "note": "full redacted prompts in cc_session_prompts + per-host backfill; 106-prompt fixture; also edited phase-1 test sessions.repo.int.test.ts (prompts_version 0->2 after full read, rung 3); coordinator re-checked: only repo.ts writes side table, all prompt writes via redactSecrets, no graph/worker query reads it",
       "package": "src/sessions`, `tests/fixtures",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-3.md",
-      "reported_at": "2026-11-03T16:07:07+07:00",
+      "reported_at": "2026-11-03T16:15:01+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "running",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A067",
       "title": "Full redacted prompts: ingest into `cc_session_prompts` + per-host backfill"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6ca1a47",
       "depends_on": [
         2
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "node panel Summary reason labels + MagicWand Summarize button; merged Summary-on-demand feature-map entry",
       "package": "web/",
       "plan": ".workflows/plan/node-panel-summarize-prompts/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T16:11:49+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A068",
       "title": "Node panel Summary: reason labels + Summarize button"
     },
     {
@@ -104,7 +104,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts/.workflows/orchestration/node-panel-summarize-prompts/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "node-panel-summarize-prompts",
-  "updated": "2026-11-03T16:07:11+07:00",
+  "updated": "2026-11-03T16:15:01+07:00",
   "verified_at": "2026-11-03T16:06:57+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/node-panel-summarize-prompts"
 }
