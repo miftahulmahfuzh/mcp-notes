@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "6d432ae",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "link_note/unlink_note + note_session_links (0009) + session notes made\u222alinked with kind; NoteRefRow is a type alias (drizzle execute constraint); all suites + Proof PASS",
       "package": "src/` (db, notes, sessions, mcp), `drizzle/`, `claude/skills/n`, `README.md`, `tests/",
       "plan": ".workflows/plan/session-note-links/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-03T14:51:04+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A063",
       "title": "Server: link table, link_note/unlink_note, made \u222a linked detail"
     },
     {
@@ -36,7 +36,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web: open session notes in the big editor, link icon; feature map"
     }
@@ -44,6 +44,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-note-links",
-  "updated": "2026-11-03T14:41:13+07:00",
+  "updated": "2026-11-03T14:52:26+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-note-links"
 }
