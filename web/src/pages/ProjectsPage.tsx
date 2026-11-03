@@ -91,6 +91,21 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
     return () => document.removeEventListener('keydown', onKey);
   }, [focus, node, onToggleFocus]);
 
+  // Alt+Z toggles focus mode from the keyboard, on either view. It listens in the capture phase and
+  // calls preventDefault so the browser's own handling of the chord never runs. `z` as in vim's `zen`:
+  // no browser binds Alt+Z, whereas Alt+F/E/D/H/S open menus or the address bar. `code` rather than
+  // `key` because macOS Option turns Alt+Z into another character.
+  useEffect(() => {
+    if (!onToggleFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyZ' || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+      e.preventDefault();
+      onToggleFocus();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onToggleFocus]);
+
   const layout = useMemo(() => layoutGraph(graph.nodes, expanded, forest), [graph.nodes, expanded, forest]);
 
   const toggle = useCallback((sessionId: string) => {
@@ -159,7 +174,7 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
           <button
             type="button"
             className="ibtn hov proj-focus"
-            data-tip={focus ? 'Exit focus' : 'Focus on graph'}
+            data-tip={focus ? 'Exit focus (Alt+Z)' : 'Focus on graph (Alt+Z)'}
             data-tip-side="below"
             aria-label={focus ? 'Exit focus' : 'Focus on graph'}
             aria-pressed={focus}

@@ -143,6 +143,24 @@ describe('App: projects view', () => {
     expect(h1()).toBe('mcp-notes.');
   });
 
+  it('Alt+Z toggles focus mode both ways and is cancelled so the browser never sees it', async () => {
+    at('/projects?repo=mcp-notes');
+    render(<App />);
+    await screen.findByText('A0-3G');
+    const chord = (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent('keydown', { code: 'KeyZ', key: 'z', bubbles: true, cancelable: true, ...init });
+      document.body.dispatchEvent(e);
+      return e;
+    };
+    expect(chord({ altKey: true }).defaultPrevented).toBe(true);
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes&focus=1'));
+    expect(chord({ altKey: true }).defaultPrevented).toBe(true);
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes'));
+    // Plain Z and Ctrl+Alt+Z are not the chord.
+    expect(chord({}).defaultPrevented).toBe(false);
+    expect(chord({ altKey: true, ctrlKey: true }).defaultPrevented).toBe(false);
+  });
+
   it('a focus deep link opens in focus mode; with a node selected, Esc clears the node first', async () => {
     at('/projects?repo=mcp-notes&node=A0-3G&focus=1');
     render(<App />);
