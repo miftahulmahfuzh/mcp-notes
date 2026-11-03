@@ -92,6 +92,9 @@ const INTERRUPTED = /^\[Request interrupted by user/;
 /** `/model`, `/clear`, `/exit`: a slash command with no arguments says nothing about the work. */
 const BARE_COMMAND = /^\/[\w:.-]+$/;
 const GIT_COMMIT_COMMAND = /\bgit\b[^\n]*\b(?:commit|push|merge)\b/;
+/** A `git log --oneline` line (`sha subject`, optionally graph-prefixed and ref-decorated). */
+const ONELINE_LINE = /^(?:[*|\\/ ]+)?([0-9a-f]{7,40})(?: \([^)]*\))? (\S.*)$/gm;
+const MAX_ONELINE_COMMITS = 20;
 const COMMIT_LINE = /^\[(.+?)(?: \(root-commit\))? ([0-9a-f]{7,40})\] (.+)$/gm;
 /** A ref update (`+ a...b` when forced). `git push` prints it under `To <remote>`, `git fetch` under `From <remote>`. */
 const REF_RANGE_LINE = /^\s*\+?\s*([0-9a-f]{7,40})\.\.\.?([0-9a-f]{7,40})\s+\S+\s+->\s+\S+/;
@@ -353,6 +356,23 @@ export function parseCommitLines(text: string, at: string | null): SessionCommit
   return commits;
 }
 
+/**
+ * Every `sha subject` line of `git log --oneline` output. Only trusted for the output of a command
+ * that also committed, pushed or merged (`git commit -q -m x && git log --oneline -2`): `-q` leaves
+ * no `[branch sha]` line, and the log is then the one place the new hashes are printed.
+ */
+export function parseOnelineCommits(text: string, at: string | null): SessionCommit[] {
+  const commits: SessionCommit[] = [];
+  for (const match of text.matchAll(ONELINE_LINE)) {
+    const sha = match[1];
+    const subject = match[2];
+    if (sha === undefined || subject === undefined) continue;
+    commits.push({ sha, subject: cut(subject.trim(), MAX_TITLE_CHARS), at });
+    if (commits.length >= MAX_ONELINE_COMMITS) break;
+  }
+  return commits;
+}
+
 /** Every push or fast-forward merge range in `text`, in order. Fetched ranges (under `From`) are not this session's. */
 export function parseCommitRanges(text: string, cwd: string | null, at: string | null): CommitRange[] {
   const ranges: CommitRange[] = [];
@@ -559,9 +579,10 @@ export class TranscriptAccumulator {
   }
 
   private scanCommit(id: string | null, text: string, toolUseResult: unknown, at: string | null, cwd: string | null): void {
-    if (!text.includes('] ') && !text.includes('..')) return;
     const pendingIndex = id === null ? -1 : this.pendingCommitIds.indexOf(id);
     const matched = pendingIndex >= 0;
+    // Unmatched output must look like a commit or a ref range; a known git command is always scanned.
+    if (!matched && !text.includes('] ') && !text.includes('..')) return;
     if (matched) {
       this.pendingCommitIds.splice(pendingIndex, 1);
     } else {
@@ -570,7 +591,9 @@ export class TranscriptAccumulator {
       // Its tool_use was in an earlier read we no longer remember: accept Bash-shaped output only.
       if (!isObject(toolUseResult) || typeof toolUseResult.stdout !== 'string') return;
     }
-    for (const commit of parseCommitLines(text, at)) {
+    let found = parseCommitLines(text, at);
+    if (found.length === 0 && matched) found = parseOnelineCommits(text, at);
+    for (const commit of found) {
       if (!this.commits.has(commit.sha)) this.commits.set(commit.sha, commit);
     }
     // Ranges only from a known git command: unmatched output is too easy to mistake.

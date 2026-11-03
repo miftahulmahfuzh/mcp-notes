@@ -176,6 +176,23 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.commitRanges[0]).toMatchObject({ cwd: '/c', at: '2026-11-02T00:00:00Z' });
   });
 
+  it('takes commits from `git log --oneline` only when the same command committed (quiet -q commits)', () => {
+    const run = (id: string, command: string, output: string): string =>
+      [
+        assistant(`m_${id}`, {}, { type: 'tool_use', id, name: 'Bash', input: { command } }),
+        user('', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] }, toolUseResult: { stdout: output } }),
+      ].join('\n');
+    const d = accumulateText(
+      's',
+      [
+        run('t1', 'git commit -q -m a && git commit -q -m b && git push -q origin main && git log --oneline -2', 'a91b816 (HEAD -> main, origin/main) feat(web): Alt+Z\nb478a2a fix(sessions): bare skill'),
+        run('t2', 'git log --oneline -3', 'ccccccc someone else\nddddddd older'),
+        run('t3', 'git commit -m x', '[main eeeeeee] loud commit\n 1 file changed'),
+      ].join('\n'),
+    ).delta();
+    expect(d.commits.map((c) => `${c.sha} ${c.subject}`)).toEqual(['a91b816 feat(web): Alt+Z', 'b478a2a fix(sessions): bare skill', 'eeeeeee loud commit']);
+  });
+
   it('parses a push range only under its To header', () => {
     expect(parseCommitRanges('   aaaaaaa..bbbbbbb  main -> main', null, null)).toEqual([]);
     expect(parseCommitRanges('To x\n   aaaaaaa..bbbbbbb  main -> main\n * [new branch]      f -> f', '/r', null)).toEqual([
