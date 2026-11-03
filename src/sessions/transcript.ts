@@ -400,6 +400,7 @@ export class TranscriptAccumulator {
   private readonly filesEdited = new Set<string>();
   private readonly planDocs = new Set<string>();
   private segment: string[] = [];
+  private pendingBare: { text: string; at: string | null } | null = null;
   private readonly toolIdsThisRead = new Set<string>();
   private readonly recentMessageIds: string[];
   private readonly pendingCommitIds: string[];
@@ -524,13 +525,19 @@ export class TranscriptAccumulator {
 
   private addUser(record: TranscriptRecord): void {
     const at = typeof record.timestamp === 'string' ? record.timestamp : null;
+    const bare = this.pendingBare;
+    this.pendingBare = null;
+    // A bare `/skill-name` is a prompt when the next record is that skill's expansion: `/clear` and
+    // `/model` produce no such record, a skill does. Without this a session started by a bare skill
+    // call (`/sera-the-explorer`) had its second prompt recorded as its first.
+    if (bare !== null && record.isMeta === true && promptText(record).startsWith('Base directory for this skill')) {
+      this.recordPrompt(bare.text, bare.at);
+    }
     if (isHumanPrompt(record)) {
       const text = promptText(record);
-      if (text !== '' && !INTERRUPTED.test(text) && !BARE_COMMAND.test(text)) {
-        const stored = storeCut(text);
-        this.firstPrompt ??= stored.text;
-        this.prompts.push({ text: stored.text, at, truncated: stored.truncated });
-        this.segment = [];
+      if (text !== '' && !INTERRUPTED.test(text)) {
+        if (BARE_COMMAND.test(text)) this.pendingBare = { text, at };
+        else this.recordPrompt(text, at);
       }
       return;
     }
@@ -542,6 +549,13 @@ export class TranscriptAccumulator {
       const id = typeof block.tool_use_id === 'string' ? block.tool_use_id : null;
       this.scanCommit(id, toolResultText(block.content), record.toolUseResult, at, nonEmpty(record.cwd));
     }
+  }
+
+  private recordPrompt(text: string, at: string | null): void {
+    const stored = storeCut(text);
+    this.firstPrompt ??= stored.text;
+    this.prompts.push({ text: stored.text, at, truncated: stored.truncated });
+    this.segment = [];
   }
 
   private scanCommit(id: string | null, text: string, toolUseResult: unknown, at: string | null, cwd: string | null): void {

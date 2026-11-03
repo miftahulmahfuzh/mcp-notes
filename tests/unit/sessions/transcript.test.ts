@@ -118,6 +118,21 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.costUsd).toBe(1.25);
   });
 
+  it('keeps a bare skill call as the first prompt, but not a bare built-in command', () => {
+    const cmd = (name: string): string => `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>`;
+    const skillBody = user('Base directory for this skill: /x/.claude/skills/sera\n\n# Sera', { isMeta: true });
+    const text = [
+      user(cmd('model')),
+      user('<local-command-stdout>Set model</local-command-stdout>'),
+      user(cmd('sera-the-explorer')),
+      skillBody,
+      user('wait until all done. then "a"'),
+    ].join('\n');
+    const d = accumulateText('s', `${text}\n`).delta();
+    expect(d.prompts.map((p) => p.text)).toEqual(['/sera-the-explorer', 'wait until all done. then "a"']);
+    expect(d.firstPrompt).toBe('/sera-the-explorer');
+  });
+
   it('counts a message once when its records straddle two reads (carry)', async () => {
     const text = await readFile(path.join(FIXTURE_CLAUDE_HOME, FIXTURE.worktreeFile), 'utf8');
     const lines = text.trim().split('\n');
