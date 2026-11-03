@@ -3,6 +3,12 @@
   "coordinator": "orch-session-note-links",
   "coordinator_session_id": "16888acd-031b-438e-80e6-ffb1343b69a5",
   "created": "2026-11-03T14:41:13+07:00",
+  "landed": {
+    "at": "2026-11-03T14:59:11+07:00",
+    "base": "main",
+    "commit": "ff31df8fdda62152b65ff866cedf85dea4ba11ff",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -44,6 +50,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-note-links/.workflows/orchestration/session-note-links/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-note-links",
-  "updated": "2026-11-03T14:56:59+07:00",
+  "updated": "2026-11-03T14:59:11+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-note-links"
 }
