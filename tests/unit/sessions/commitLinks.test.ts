@@ -93,4 +93,71 @@ describe('createCommitLinker', () => {
     // Held by no clone: still linked through the session's own repo.
     expect(out.get('0b6e27d')).toBe('https://github.com/o/seer/commit/0b6e27d');
   });
+
+  /** Git where `commonDirs` maps a checkout (or a worktree) to its absolute `--git-common-dir`. */
+  function cloneGit(remotes: Record<string, string>, commonDirs: Record<string, string>, calls: string[] = []): GitRunner {
+    const { git: base } = fakeGit(remotes);
+    return async (dir, args, input) => {
+      calls.push(`${dir} ${args.join(' ')}`);
+      if (args[0] === 'rev-parse') return commonDirs[dir] === undefined ? null : `${commonDirs[dir]}\n`;
+      return base(dir, args, input);
+    };
+  }
+
+  it('finds the clone through another session of the repo when the cwd worktree is gone', async () => {
+    const calls: string[] = [];
+    const git = cloneGit({ '/home/u/proj': 'git@github.com:o/proj.git' }, { '/home/u/.worktrees/proj/alive': '/home/u/proj/.git' }, calls);
+    const asked: string[] = [];
+    const link = createCommitLinker({
+      homeDir: '/srv/elsewhere',
+      git,
+      siblings: async () => [],
+      knownClones: async (repo) => {
+        asked.push(repo);
+        return ['/home/u/.worktrees/proj/gone', '/home/u/.worktrees/proj/alive'];
+      },
+    });
+    const out = await link({ repo: 'proj', cwd: '/home/u/.worktrees/proj/gone', shas: ['ba90ae1'] });
+    // The surviving worktree leads to the main checkout, which supplies the remote and the full sha.
+    expect(out.get('ba90ae1')).toBe(`https://github.com/o/proj/commit/${FULL}`);
+    expect(asked).toEqual(['proj']);
+    expect(calls).toContain('/home/u/proj cat-file --batch-check=%(objectname) %(objecttype)');
+    await link({ repo: 'proj', cwd: '/home/u/.worktrees/proj/other-gone', shas: ['ba90ae1'] });
+    expect(asked).toHaveLength(1);
+  });
+
+  it('reaches a clone in a dot dir (~/.config/nvim) that the home scan skips', async () => {
+    const git = cloneGit(
+      { '/home/u/.config/nvim': 'git@github.com:o/nvim-config.git' },
+      { '/home/u/.config/nvim': '/home/u/.config/nvim/.git', '/home/u/.config/nvim/lua': '/home/u/.config/nvim/.git' },
+    );
+    const link = createCommitLinker({ homeDir: '/home/u', git, siblings: async () => [], knownClones: async () => ['/home/u/.config/nvim/lua'] });
+    const out = await link({ repo: 'nvim', cwd: '/home/u/.worktrees/nvim/fix-bugs', shas: ['ba90ae1', 'dead123'] });
+    expect(out.get('ba90ae1')).toBe(`https://github.com/o/nvim-config/commit/${FULL}`);
+    expect(out.get('dead123')).toBe('https://github.com/o/nvim-config/commit/dead123');
+  });
+
+  it('links nothing, and does not throw, when the known clones are gone or the lookup fails', async () => {
+    const git = cloneGit({}, {});
+    const gone = createCommitLinker({ homeDir: '/home/u', git, siblings: async () => [], knownClones: async () => ['/home/u/.worktrees/x/a'] });
+    expect((await gone({ repo: 'x', cwd: '/home/u/.worktrees/x/b', shas: ['ba90ae1'] })).size).toBe(0);
+    const failing = createCommitLinker({
+      homeDir: '/home/u',
+      git: cloneGit({ '/home/u/x': 'git@github.com:o/x.git' }, {}),
+      siblings: async () => [],
+      knownClones: async () => {
+        throw new Error('db down');
+      },
+    });
+    expect((await failing({ repo: 'x', cwd: null, shas: ['ba90ae1'] })).get('ba90ae1')).toBe(`https://github.com/o/x/commit/${FULL}`);
+    const failingNoHome = createCommitLinker({
+      homeDir: '/home/u',
+      git,
+      siblings: async () => [],
+      knownClones: async () => {
+        throw new Error('db down');
+      },
+    });
+    expect((await failingNoHome({ repo: 'y', cwd: null, shas: ['ba90ae1'] })).size).toBe(0);
+  });
 });

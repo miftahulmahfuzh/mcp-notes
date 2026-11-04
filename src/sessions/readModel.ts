@@ -155,19 +155,39 @@ function phase6Search(db: Db, embedder: Embedder | null): SessionSearchFn {
   };
 }
 
+/** How many of a repo's recent cwds the commit linker may try when the session's own clone is gone. */
+const KNOWN_CLONES_MAX = 20;
+
+/**
+ * Where other sessions of `repo` ran on `host`, most recently active first: the commit linker's way
+ * to the clone of a session whose worktree was removed (src/sessions/commitLinks.ts).
+ */
+function sessionClones(db: Db, host: string): (repo: string) => Promise<string[]> {
+  return async (repo) => {
+    const res = await db.execute<{ cwd: string }>(sql`
+      select cwd from cc_sessions
+      where repo = ${repo} and host = ${host} and cwd is not null and cwd <> ''
+      group by cwd
+      order by max(last_active_at) desc nulls last
+      limit ${KNOWN_CLONES_MAX}`);
+    return res.rows.map((r) => r.cwd);
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 
 export function sessionsReadDeps(deps: AppDeps, over: SessionsReadOverrides = {}): SessionsReadDeps {
   const claudeHome = deps.config.sessions?.claudeHome ?? path.join(os.homedir(), '.claude');
   const embedder = deps.embedder ?? null;
+  const host = over.host ?? os.hostname();
   return {
     db: deps.db,
-    host: over.host ?? os.hostname(),
+    host,
     timeZone: over.timeZone ?? localTimeZone(),
     wallUrl: wallUrlForPort(deps.config.port) ?? DEFAULT_WALL_URL,
     live: over.live ?? (() => liveFromRegistry(claudeHome)),
     settings: over.settings ?? repoSettings(deps.db),
-    commitLinks: over.commitLinks ?? createCommitLinker({ homeDir: os.homedir() }),
+    commitLinks: over.commitLinks ?? createCommitLinker({ homeDir: os.homedir(), knownClones: sessionClones(deps.db, host) }),
     search: over.search ?? phase6Search(deps.db, embedder),
     requestSummary: over.requestSummary ?? repoSummaryRequests(deps.db),
   };

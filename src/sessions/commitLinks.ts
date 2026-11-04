@@ -8,7 +8,12 @@ import path from 'node:path';
  * `<base>/commit/<sha>`, bitbucket.org `<base>/commits/<sha>`, and any other host is taken for
  * GitLab (self-hosted, e.g. git.tuntun.co.id) and links `<base>/-/commit/<sha>`. The short sha is
  * widened to the full one when the commit is in the local clone. Everything is read from a clone on
- * this machine (the session's cwd, else `~/<repo>`); without one the commits carry no link.
+ * this machine (the session's cwd, else `~/<repo>`, else a clone other sessions of the same repo
+ * worked in); without one the commits carry no link.
+ *
+ * The last step is for sessions that worked in a worktree removed when its branch landed: the cwd is
+ * gone and the clone may sit anywhere (`~/.config/nvim`), but the sessions table knows where other
+ * sessions of that repo ran. A surviving worktree among them is followed to its main checkout.
  *
  * A session often commits in a repo other than the one it started in (`cd ~/other && git commit`),
  * so each sha is looked up in the session's own clone first and then in the other clones directly
@@ -69,6 +74,15 @@ const MISSING_TTL_MS = 60_000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHORT_SHA = /^[0-9a-f]{4,40}$/;
 
+/** The main checkout of the clone `dir` belongs to (a worktree's main clone; itself otherwise), or null when `dir` is no checkout. */
+async function mainCheckout(git: GitRunner, dir: string): Promise<string | null> {
+  const out = await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  const common = out?.trim() ?? '';
+  if (common === '') return null;
+  // `<main>/.git` for a normal clone and its worktrees; a bare repo's common dir is the repo itself.
+  return path.basename(common) === '.git' ? path.dirname(common) : common;
+}
+
 const runGit: GitRunner = (dir, args, input) =>
   new Promise((resolve) => {
     const child = execFile('git', ['-C', dir, ...args], { timeout: GIT_TIMEOUT_MS, windowsHide: true }, (err, stdout) =>
@@ -107,10 +121,16 @@ export function createCommitLinker(options: {
   now?: () => number;
   /** Clones to search after the session's own. Default: the git checkouts directly under `homeDir`. */
   siblings?: () => Promise<string[]>;
+  /**
+   * Dirs where other sessions of `repo` ran on this machine, most recently active first; tried
+   * (each resolved to its main checkout) when neither the cwd nor `~/<repo>` is a clone. Default: none.
+   */
+  knownClones?: (repo: string) => Promise<string[]>;
 }): CommitLinker {
   const git = options.git ?? runGit;
   const now = options.now ?? Date.now;
   const listSiblings = options.siblings ?? (() => listHomeClones(options.homeDir));
+  const listKnown = options.knownClones ?? (async () => []);
   const repos = new Map<string, { at: number; found: { dir: string; web: RepoWeb } | null }>();
   let siblingCache: { at: number; clones: { dir: string; web: RepoWeb }[] } | null = null;
   /** `${dir}\0${short}` -> full sha. */
@@ -133,6 +153,25 @@ export function createCommitLinker(options: {
       if (web !== null) {
         found = { dir, web };
         break;
+      }
+    }
+    if (found === null && repo !== null) {
+      let known: string[];
+      try {
+        known = await listKnown(repo);
+      } catch {
+        known = [];
+      }
+      const tried = new Set<string>(dirs.filter((d): d is string => d !== null));
+      for (const dir of known) {
+        const main = await mainCheckout(git, dir);
+        if (main === null || tried.has(main)) continue;
+        tried.add(main);
+        const web = await webOf(main);
+        if (web !== null) {
+          found = { dir: main, web };
+          break;
+        }
       }
     }
     repos.set(key, { at: now(), found });
