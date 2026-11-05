@@ -124,15 +124,16 @@ describe('App: delete, undo, bin', () => {
     await waitFor(() => expect(wallCard('A-B32')).not.toBeNull());
   });
 
-  it('the sidebar trash toggles the bin as well', async () => {
+  it('the extended sidebar has no recycle bin icon of its own, but the rail one still toggles the bin while it is open', async () => {
     render(<App />);
     await screen.findByText('onboarding is long');
     fireEvent.click(screen.getByLabelText('Toggle sidebar'));
     const side = document.querySelector('.side') as HTMLElement;
-    fireEvent.click(within(side).getByRole('button', { name: 'Recycle bin' }));
+    expect(within(side).queryByRole('button', { name: 'Recycle bin' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Recycle bin' }));
     expect(h1()).toBe('Deleted.');
     await waitFor(() => expect(sent('GET', '/api/bin')).toBe(true));
-    fireEvent.click(within(side).getByRole('button', { name: 'Back to the wall' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the wall' }));
     expect(h1()).toBe('Notes.');
   });
 

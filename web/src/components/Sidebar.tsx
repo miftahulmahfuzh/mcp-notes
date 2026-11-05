@@ -1,9 +1,9 @@
-import { ChatsCircle, Sword, Trash, TreeStructure } from '@phosphor-icons/react';
+import { ChatsCircle, Sword, TreeStructure } from '@phosphor-icons/react';
 import type { Mode, ProjectSummary, TagCount, View } from '../types';
 import type { AdversaryMethod } from '../adversaryApi';
 import { MODE_ORDER, MODE_TIP } from '../lib/filter';
 import { sortProjects } from '../lib/projects';
-import { ADVERSARY_TIP, BIN_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
+import { ADVERSARY_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
 import { RosterList } from './adversary/RosterList';
 
 export interface SidebarProps {
@@ -15,7 +15,6 @@ export interface SidebarProps {
   onToggleProjects: () => void;
   onToggleHistory: () => void;
   onToggleAdversary: () => void;
-  onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
   /** Projects view: repos with sessions (null while loading). */
   projects?: ProjectSummary[] | null;
@@ -38,7 +37,6 @@ export function Sidebar({
   onToggleProjects,
   onToggleHistory,
   onToggleAdversary,
-  onToggleBin,
   onToggleTag,
   projects = null,
   repo = null,
@@ -101,17 +99,6 @@ export function Sidebar({
           onClick={onToggleAdversary}
         >
           <Sword weight="duotone" />
-        </button>
-        <button
-          type="button"
-          className={view === 'bin' ? 'ibtn on' : 'ibtn'}
-          data-tip={BIN_TIP[view]}
-          data-tip-side="below"
-          aria-label={BIN_TIP[view]}
-          aria-pressed={view === 'bin'}
-          onClick={onToggleBin}
-        >
-          <Trash weight="duotone" />
         </button>
       </div>
       <div className="side-sep" />

@@ -17,7 +17,7 @@ export function RosterList({ roster, strategy, onPick }: RosterListProps) {
     .filter((r) => r.status === 'retired')
     .slice()
     .sort((a, b) => (b.paper_end ?? '').localeCompare(a.paper_end ?? ''));
-  const row = (r: AdversaryMethod, right: string) => (
+  const row = (r: AdversaryMethod, tip: string | undefined) => (
     <div
       key={r.strategy_id}
       role="listitem"
@@ -26,8 +26,9 @@ export function RosterList({ roster, strategy, onPick }: RosterListProps) {
       aria-current={r.strategy_id === strategy ? 'true' : undefined}
       onClick={() => onPick(r.strategy_id)}
     >
-      <span className="repo-name">{r.name}</span>
-      <span className="n">{right}</span>
+      <span className="repo-name" data-tip={tip}>
+        {r.name}
+      </span>
     </div>
   );
   return (
@@ -37,13 +38,13 @@ export function RosterList({ roster, strategy, onPick }: RosterListProps) {
           <span>Overview</span>
           <span className="n">{active.length}</span>
         </div>
-        {active.map((r) => row(r, r.cadence ?? ''))}
+        {active.map((r) => row(r, r.cadence ?? undefined))}
       </div>
       {retired.length > 0 && (
         <div className="side-retired">
           <span className="side-note">retired</span>
           <div className="side-repos" role="list" aria-label="Retired methods">
-            {retired.map((r) => row(r, r.paper_end ? shortDate(r.paper_end) : ''))}
+            {retired.map((r) => row(r, r.paper_end ? `retired on ${shortDate(r.paper_end)}` : undefined))}
           </div>
         </div>
       )}

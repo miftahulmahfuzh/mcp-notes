@@ -837,7 +837,6 @@ export function App() {
                 onToggleProjects={toggleProjects}
                 onToggleHistory={toggleHistory}
                 onToggleAdversary={toggleAdversary}
-                onToggleBin={toggleBin}
                 onToggleTag={toggleTag}
                 projects={projectsStore.projects}
                 repo={projectRepo}

@@ -37,7 +37,6 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
       onToggleProjects={vi.fn()}
       onToggleHistory={onToggleHistory}
       onToggleAdversary={vi.fn()}
-      onToggleBin={vi.fn()}
       onToggleTag={vi.fn()}
       {...extra}
     />,
@@ -54,11 +53,11 @@ describe('chat-history icon', () => {
     expect(labels.indexOf('Seer Adversarial')).toBe(labels.indexOf('Recycle bin') - 1);
   });
 
-  it('keeps the same order in the sidebar', () => {
+  it('keeps the same order in the sidebar, which has no recycle bin icon of its own', () => {
     const { container } = side('wall');
     const labels = order(container.querySelector('.side-modes') as Element);
     expect(labels.indexOf('Chat history')).toBe(labels.indexOf('Seer Adversarial') - 1);
-    expect(labels.indexOf('Seer Adversarial')).toBe(labels.indexOf('Recycle bin') - 1);
+    expect(labels.indexOf('Recycle bin')).toBe(-1);
   });
 
   it('is pressed on the history page and calls the toggle', () => {
@@ -181,15 +180,19 @@ describe('sidebar roster list', () => {
     m('MOM70-GT', 'MOM70 · Momentum + SPY', { status: 'retired', paper_end: '2026-11-01' }),
   ];
 
-  it('lists Overview first, active methods with cadence, retired greyed below, newest retirement first', () => {
+  it('lists Overview first, active methods with cadence as a tooltip, retired greyed below with a tooltip date, newest retirement first', () => {
     const pick = vi.fn();
     const { container } = side('adversary', vi.fn(), { roster, strategy: 'RAW35-FR-GT', onPickStrategy: pick, tags: [{ tag: 'kitchen', count: 3, last_used: null }] });
     expect(container.querySelector('.side-tags')).toBeNull();
     const rows = within(screen.getByRole('list', { name: 'Seer roster' })).getAllByRole('listitem');
-    expect(rows.map((r) => r.textContent)).toEqual(['Overview2', 'A · Dip buydaily', 'RAW35 · Momentummonthly']);
+    expect(rows.map((r) => r.textContent)).toEqual(['Overview2', 'A · Dip buy', 'RAW35 · Momentum']);
+    expect(rows[1]!.querySelector('.repo-name')!.getAttribute('data-tip')).toBe('daily');
+    expect(rows[2]!.querySelector('.repo-name')!.getAttribute('data-tip')).toBe('monthly');
     expect(rows[2]!.className).toBe('tagrow on');
     const retired = within(screen.getByRole('list', { name: 'Retired methods' })).getAllByRole('listitem');
-    expect(retired.map((r) => r.textContent)).toEqual(['MOM70 · Momentum + SPYNov 1', 'FULL50 · Never asideOct 30']);
+    expect(retired.map((r) => r.textContent)).toEqual(['MOM70 · Momentum + SPY', 'FULL50 · Never aside']);
+    expect(retired[0]!.querySelector('.repo-name')!.getAttribute('data-tip')).toBe('retired on Nov 1');
+    expect(retired[1]!.querySelector('.repo-name')!.getAttribute('data-tip')).toBe('retired on Oct 30');
     expect(container.querySelector('.side-retired')).not.toBeNull();
     fireEvent.click(rows[0]!);
     expect(pick).toHaveBeenCalledWith(null);
