@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Seer Adversarial: A, C and Claude</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;family=Host+Grotesk:wght@300..800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121211;color:#ecebe4;font-family:'Host Grotesk',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#ecebe4;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}a:hover{color:#fff}
+.ibtn{width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;cursor:pointer;display:grid;place-items:center;padding:0}
+.ibtn svg{width:20px;height:20px;fill:currentColor}
+.ibtn.on{background:#ecebe4;color:#121211}
+.ibtn.hov:hover{background:#222220}
+.tagrow{display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;border-radius:999px;color:#d6d5cd;font-size:13px;border:0;background:transparent;width:100%;font-family:inherit;cursor:pointer;text-align:left}
+.tagrow.on{background:#ecebe4;color:#121211}
+.tagrow .n{font-family:'Geist Mono',monospace;font-size:11px;opacity:.7}
+.mono{font-family:'Geist Mono',monospace;letter-spacing:.03em}
+.chip{display:inline-block;font-family:'Geist Mono',monospace;font-size:10.5px;line-height:1;padding:3px 8px 4px;border-radius:999px;letter-spacing:.02em;white-space:nowrap}
+.chip.obj{background:#ecebe4;color:#121211}
+.chip.ok{border:1px solid rgba(236,235,228,.25);color:#d6d5cd}
+.chip.unsure{border:1px dashed rgba(236,235,228,.4);color:#a9a89f}
+.chip.dim{background:#2a2a27;color:#d6d5cd}
+.buy{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ecebe4}
+.nobuy{display:inline-block;width:9px;height:9px;border-radius:999px;border:1px solid rgba(236,235,228,.18);box-sizing:border-box}
+.divider{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-family:'Geist Mono',monospace;font-size:10.5px;color:#8a897f;white-space:nowrap}
+.divider::after{content:"";flex:1;height:1px;background:rgba(236,235,228,.12)}
+.cand:hover{background:#1a1a18}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #121211;">
+
+  <nav aria-label="Rail" style="flex: 0 0 56px; box-sizing: border-box; border-right: 1px solid rgba(236,235,228,.1); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0;">
+    <button class="ibtn hov" type="button" aria-label="Hide sidebar" title="Hide sidebar"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M88,48V208H40a8,8,0,0,1-8-8V56a8,8,0,0,1,8-8Z" opacity="0.2"></path><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"></path></svg></button>
+    <button class="ibtn on" type="button" aria-label="Seer Adversarial" aria-pressed="true" title="Seer Adversarial"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M141.66,201,129,213.66a8,8,0,0,1-11.32,0L92,188,58.35,221.66a8,8,0,0,1-11.32,0L34.34,209a8,8,0,0,1,0-11.31L68,164,42.34,138.36a8,8,0,0,1,0-11.32L55,114.34a8,8,0,0,1,11.32,0l75.3,75.3A8,8,0,0,1,141.66,201Z" opacity="0.2"></path><path d="M216,32H152a8,8,0,0,0-6.34,3.12l-64,83.21L72,108.69a16,16,0,0,0-22.64,0l-12.69,12.7a16,16,0,0,0,0,22.63l20,20-28,28a16,16,0,0,0,0,22.63l12.69,12.68a16,16,0,0,0,22.62,0l28-28,20,20a16,16,0,0,0,22.64,0l12.69-12.7a16,16,0,0,0,0-22.63l-9.64-9.64,83.21-64A8,8,0,0,0,224,104V40A8,8,0,0,0,216,32ZM52.69,216,40,203.32l28-28L80.68,188Zm70.61-8L48,132.71,60.7,120,136,195.31ZM208,100.06l-81.74,62.88L115.32,152l50.34-50.34a8,8,0,0,0-11.32-11.31L104,140.68,93.07,129.74,155.94,48H208Z"></path></svg></button>
+  </nav>
+
+  <aside aria-label="Roster" style="flex: 0 0 240px; box-sizing: border-box; border-right: 1px solid rgba(236,235,228,.1); padding: 14px 12px 40px; display: flex; flex-direction: column; gap: 18px;">
+    <div style="height: 40px;"></div>
+    <div style="height: 1px; background: rgba(236,235,228,.1);"></div>
+    <div role="list" style="display: flex; flex-direction: column; gap: 2px;">
+      <button class="tagrow" type="button"><span>Overview</span><span class="n">3</span></button>
+      <button class="tagrow on" type="button" aria-current="true"><span>A · Dip buy</span><span class="n">daily</span></button>
+      <button class="tagrow" type="button"><span>RAW35 · Momentum</span><span class="n">monthly</span></button>
+      <button class="tagrow" type="button"><span>COSK · Crash-prone</span><span class="n">quarterly</span></button>
+    </div>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 0 20px 120px;">
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; height: 44px; padding-top: 10px;">
+      <button class="ibtn on" type="button" aria-label="Auto-runs on (click to pause)" aria-pressed="true" title="Auto-runs on (click to pause)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"></path><path d="M120,128V48a8,8,0,0,1,16,0v80a8,8,0,0,1-16,0Zm60.37-78.7a8,8,0,0,0-8.74,13.4C194.74,77.77,208,101.57,208,128a80,80,0,0,1-160,0c0-26.43,13.26-50.23,36.37-65.3a8,8,0,0,0-8.74-13.4C47.9,67.38,32,96.06,32,128a96,96,0,0,0,192,0C224,96.06,208.1,67.38,180.37,49.3Z"></path></svg></button>
+      <button class="ibtn hov" type="button" aria-label="Focus (Alt+Z)" title="Focus (Alt+Z)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M208,48V208H48V48Z" opacity="0.2"></path><path d="M216,48V88a8,8,0,0,1-16,0V56H168a8,8,0,0,1,0-16h40A8,8,0,0,1,216,48ZM88,200H56V168a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H88a8,8,0,0,0,0-16Zm120-40a8,8,0,0,0-8,8v32H168a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V168A8,8,0,0,0,208,160ZM88,40H48a8,8,0,0,0-8,8V88a8,8,0,0,0,16,0V56H88a8,8,0,0,0,0-16Z"></path></svg></button>
+    </div>
+
+    <header style="padding-top: 18px; display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: end; gap: 24px;">
+      <p style="margin: 0 0 18px; font-size: 12px; line-height: 1.5; color: #c9c8c0; text-wrap: pretty;">
+        A buys a sharp dip in a rising stock and is out within 5 days. Two critics read the same ranked list: C, a news model with a fixed checklist, and Claude. Below is the real list and C's real verdicts for Nov 4; Claude's column is a sample.
+      </p>
+      <h1 style="margin: 0; font-weight: 400; font-size: clamp(72px, 13vw, 230px); line-height: .84; letter-spacing: -.06em; text-align: right; white-space: nowrap; overflow: hidden; padding-bottom: .24em; margin-bottom: -.24em;">Dip buy.</h1>
+    </header>
+    <div style="height: 1px; background: rgba(236,235,228,.12); margin-top: 26px;"></div>
+
+    <!-- three-way -->
+    <section aria-label="A, C and Claude compared" style="padding-top: 30px;">
+      <div class="divider">three books, one list · money-weighted since each began <span class="chip dim" style="margin-left: 4px;">sample data</span></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;">
+        <div style="background: #1a1a18; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 20px;">A</span><span style="font-size: 12px; color: #a9a89f;">buys the list as ranked</span></div>
+          <span style="font-size: 36px; letter-spacing: -.03em; line-height: 1;">+3.1%</span>
+          <div class="mono" style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 11px; color: #c9c8c0;"><span style="color: #8a897f;">trades</span><span>212</span><span style="color: #8a897f;">wins ÷ losses</span><span>1.06</span><span style="color: #8a897f;">worst drop</span><span>14.8%</span></div>
+        </div>
+        <div style="background: #1a1a18; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 20px;">C</span><span style="font-size: 12px; color: #a9a89f;">news model vetoes</span></div>
+          <span style="font-size: 36px; letter-spacing: -.03em; line-height: 1;">+2.2%</span>
+          <div class="mono" style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 11px; color: #c9c8c0;"><span style="color: #8a897f;">trades</span><span>176</span><span style="color: #8a897f;">wins ÷ losses</span><span>1.02</span><span style="color: #8a897f;">worst drop</span><span>13.1%</span></div>
+        </div>
+        <div style="background: #ecebe4; color: #121211; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 20px;">A + Claude</span><span style="font-size: 12px; color: #55544e;">Claude objects</span></div>
+          <span style="font-size: 36px; letter-spacing: -.03em; line-height: 1;">+5.4%</span>
+          <div class="mono" style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 11px; color: #2a2a27;"><span style="color: #55544e;">trades</span><span>198</span><span style="color: #55544e;">wins ÷ losses</span><span>1.21</span><span style="color: #55544e;">worst drop</span><span>11.6%</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- the night's list -->
+    <section aria-label="Ranked list for Nov 4" style="padding-top: 40px;">
+      <div class="divider">nov 4 · a's ranked 10 · read after seer's nightly, decided before the 20:30 step</div>
+      <div class="mono" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 0 12px 10px; font-size: 10.5px; color: #8a897f; border-bottom: 1px solid rgba(236,235,228,.12);">
+        <span>#</span><span>stock</span><span>C · news model</span><span>Claude</span><span>buys · A C +</span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">1</span><span style="font-size: 16px;">ZBRA</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">veto</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Q3 earnings released November 3, within the last 3 days, and the disappointing Q4 guidance/margin warning moved shares.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">object</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">It fell on a lower forecast. That is the market re-pricing the company, and those drops rarely bounce inside the 5 days this rule allows.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">sec.gov 8-K</a> · <a href="#">benzinga.com</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="buy" title="A buys"></span><span class="nobuy"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">2</span><span style="font-size: 16px;">PLTR</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">veto</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Palantir's Q3 earnings report was released the day before entry (Nov. 3), within the last 3 days.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">object</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">The fall came with its results and a rating cut the same day. This is news being priced in, not the brief overreaction A is built to catch.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">[publisher]</a> · <a href="#">[publisher]</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="buy" title="A buys"></span><span class="nobuy"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">3</span><span style="font-size: 16px;">SHOP</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">veto</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Q3 earnings released Nov 3, within the last 3 days, with revenue/GMV misses and multiple analyst price-target cuts.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">object</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">Missed on sales and several analysts lowered their targets. Same story as ZBRA: a re-pricing, not a dip.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">[publisher]</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="nobuy"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">4</span><span style="font-size: 16px;">HPQ</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">veto</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">HP announced a new CEO appointment (Emma Walmsley) on November 4, inside the holding window, a covered leadership event.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">agree</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">A planned CEO appointment is not a surprise exit. The dip matches the whole PC group's, which is the kind of noise this rule buys.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">[hp.com press release]</a> · <a href="#">[publisher]</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="nobuy"></span><span class="buy" title="A + Claude buys"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">5</span><span style="font-size: 16px;">CRM</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">veto</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Salesforce announced a $2.7 billion acquisition of Cresta inside the window, which is merger/acquisition news.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">agree</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">A $2.7B purchase is small for a company this size. It doesn't explain the dip and is unlikely to move the stock within 5 days.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">[publisher]</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="nobuy"></span><span class="buy" title="A + Claude buys"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">6</span><span style="font-size: 16px;">PANW</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">allow</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">No company-specific event risk found; earnings are scheduled Nov 18 outside the window and remaining news is routine.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">agree</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">Nothing company-specific. Results are two weeks out, after this trade would end.</span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="nobuy"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">8</span><span style="font-size: 16px;">CSX</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">allow</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Headlines are general commentary, chart recaps, and opinion pieces; no earnings, guidance, legal, or leadership-departure news.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip unsure" style="align-self: flex-start;">can't tell</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">Only three headlines, all opinion. I couldn't find why it dipped, so the pick stands.</span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="buy" title="C buys"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="cand" style="display: grid; grid-template-columns: 32px 72px minmax(0, 1fr) minmax(0, 1fr) 84px; gap: 16px; padding: 14px 12px; border-bottom: 1px solid rgba(236,235,228,.08); align-items: start;">
+        <span class="mono" style="font-size: 12px; color: #8a897f;">9</span><span style="font-size: 16px;">SLB</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip ok" style="align-self: flex-start;">allow</span><span style="font-size: 13px; line-height: 1.4; color: #c9c8c0;">Only routine ETF flow recaps and general oil market commentary; no earnings, guidance, legal, or management event risk.</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px;"><span class="chip obj" style="align-self: flex-start;">object</span><span style="font-size: 13px; line-height: 1.4; color: #e4e3dc;">The checklist sees no company news, but the dip follows oil, and the loudest oil bull just called the end of the run. The trend may be turning.</span><span class="mono" style="font-size: 10.5px; color: #bdbcb4;"><a href="#">benzinga.com</a> · <a href="#">eia.gov</a></span></div>
+        <span style="display: flex; gap: 6px; padding-top: 4px;"><span class="nobuy"></span><span class="buy" title="C buys"></span><span class="nobuy"></span></span>
+      </div>
+
+      <div class="mono" style="padding: 12px 12px 0; font-size: 10.5px; color: #8a897f;">ranks 7 (AAPL) and 10 (CDW) hidden: both critics agree. 2 free slots in each book tonight.</div>
+    </section>
+
+    <!-- agreement and record -->
+    <section aria-label="Where the critics disagree" style="padding-top: 40px; display: flex; flex-wrap: wrap; gap: 28px;">
+      <div style="flex: 1 1 340px; min-width: 0;">
+        <div class="divider">tonight · where they disagree</div>
+        <div style="display: grid; grid-template-columns: 90px repeat(2, minmax(0, 1fr)); gap: 2px; font-size: 13px;">
+          <span></span><span class="mono" style="font-size: 10.5px; color: #8a897f; padding: 6px 10px;">C vetoes</span><span class="mono" style="font-size: 10.5px; color: #8a897f; padding: 6px 10px;">C allows</span>
+          <span class="mono" style="font-size: 10.5px; color: #8a897f; padding: 14px 0;">Claude objects</span>
+          <div style="background: #1a1a18; padding: 12px 10px;"><span style="font-size: 24px;">4</span><span class="mono" style="font-size: 10.5px; color: #8a897f; display: block; margin-top: 4px;">ZBRA PLTR SHOP CDW</span></div>
+          <div style="background: #ecebe4; color: #121211; padding: 12px 10px;"><span style="font-size: 24px;">1</span><span class="mono" style="font-size: 10.5px; color: #55544e; display: block; margin-top: 4px;">SLB</span></div>
+          <span class="mono" style="font-size: 10.5px; color: #8a897f; padding: 14px 0;">Claude lets it in</span>
+          <div style="background: #ecebe4; color: #121211; padding: 12px 10px;"><span style="font-size: 24px;">2</span><span class="mono" style="font-size: 10.5px; color: #55544e; display: block; margin-top: 4px;">HPQ CRM</span></div>
+          <div style="background: #1a1a18; padding: 12px 10px;"><span style="font-size: 24px;">3</span><span class="mono" style="font-size: 10.5px; color: #8a897f; display: block; margin-top: 4px;">PANW AAPL CSX</span></div>
+        </div>
+      </div>
+      <div style="flex: 1 1 340px; min-width: 0;">
+        <div class="divider">after 5 sessions · who was right when they disagreed <span class="chip dim" style="margin-left: 4px;">sample data</span></div>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div><div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px;"><span>Claude's calls against C</span><span class="mono">31 of 48</span></div><div style="height: 6px; background: #2a2a27;"><div style="width: 65%; height: 6px; background: #ecebe4;"></div></div></div>
+          <div><div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px;"><span>C's calls against Claude</span><span class="mono">17 of 48</span></div><div style="height: 6px; background: #2a2a27;"><div style="width: 35%; height: 6px; background: #a9a89f;"></div></div></div>
+          <p style="margin: 0; font-size: 12.5px; line-height: 1.5; color: #a9a89f;">Only the nights they disagree can tell them apart. A stock counts as rightly blocked if it did worse over the 5 sessions than the picks that were bought.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1640}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

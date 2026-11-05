@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Seer Adversarial focus mode, auto-runs off</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;family=Host+Grotesk:wght@300..800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121211;color:#ecebe4;font-family:'Host Grotesk',sans-serif;-webkit-font-smoothing:antialiased}
+.ibtn{width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;cursor:pointer;display:grid;place-items:center;padding:0}
+.ibtn svg{width:20px;height:20px;fill:currentColor}
+.ibtn.on{background:#ecebe4;color:#121211}
+.ibtn.hov:hover{background:#222220}
+.ibtn.off{border:1px dashed rgba(236,235,228,.45);color:#a9a89f;box-sizing:border-box}
+.mono{font-family:'Geist Mono',monospace;letter-spacing:.03em}
+.chip{display:inline-block;font-family:'Geist Mono',monospace;font-size:10.5px;line-height:1;padding:3px 8px 4px;border-radius:999px;letter-spacing:.02em;white-space:nowrap}
+.chip.ok{border:1px solid rgba(236,235,228,.25);color:#d6d5cd}
+.chip.dim{background:#2a2a27;color:#d6d5cd}
+.dot{display:inline-block;width:8px;height:8px;border-radius:999px;box-sizing:border-box}
+.dot.pass{background:#ecebe4}.dot.fail{border:1px solid rgba(236,235,228,.45)}.dot.na{border:1px dashed rgba(236,235,228,.45)}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; padding: 0 20px; background: #121211; overflow: hidden; position: relative;">
+
+  <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; height: 44px; padding-top: 10px;">
+    <button class="ibtn off" type="button" aria-label="Auto-runs off (click to turn on)" aria-pressed="false" title="Auto-runs off (click to turn on)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"></path><path d="M120,128V48a8,8,0,0,1,16,0v80a8,8,0,0,1-16,0Zm60.37-78.7a8,8,0,0,0-8.74,13.4C194.74,77.77,208,101.57,208,128a80,80,0,0,1-160,0c0-26.43,13.26-50.23,36.37-65.3a8,8,0,0,0-8.74-13.4C47.9,67.38,32,96.060,32,128a96,96,0,0,0,192,0C224,96.06,208.1,67.38,180.37,49.3Z"></path></svg></button>
+    <button class="ibtn hov" type="button" aria-label="Review now" title="Review now (runs once, even while auto-runs are off)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"></path><path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.36,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"></path></svg></button>
+    <button class="ibtn on" type="button" aria-label="Exit focus (Alt+Z)" aria-pressed="true" title="Exit focus (Alt+Z)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M208,64V192a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V64A16,16,0,0,1,64,48H192A16,16,0,0,1,208,64Z" opacity="0.2"></path><path d="M152,96V48a8,8,0,0,1,16,0V88h40a8,8,0,0,1,0,16H160A8,8,0,0,1,152,96ZM96,152H48a8,8,0,0,0,0,16H88v40a8,8,0,0,0,16,0V160A8,8,0,0,0,96,152Zm112,0H160a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V168h40a8,8,0,0,0,0-16ZM96,40a8,8,0,0,0-8,8V88H48a8,8,0,0,0,0,16H96a8,8,0,0,0,8-8V48A8,8,0,0,0,96,40Z"></path></svg></button>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 14px; padding-top: 6px;">
+    <span style="font-size: 64px; letter-spacing: -.05em; line-height: .9;">Adversary.</span>
+    <span class="mono" style="font-size: 11px; color: #a9a89f;">auto-runs off since May 4, 09:12 · twins copy their originals until it is back on · 3 decisions paused</span>
+    <span class="chip dim">sample data</span>
+  </div>
+  <div style="height: 1px; background: rgba(236,235,228,.12); margin-top: 18px;"></div>
+
+  <div class="mono" style="display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.5fr) minmax(0, 1.1fr); gap: 16px; padding: 22px 12px 10px; font-size: 10.5px; color: #8a897f; border-bottom: 1px solid rgba(236,235,228,.12);">
+    <span>method</span><span>original</span><span>Claude twin</span><span>SPY</span><span>objections</span><span>reviewed · absent · paused</span><span>go-live, orig / twin</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.5fr) minmax(0, 1.1fr); gap: 16px; padding: 18px 12px; align-items: center; border-bottom: 1px solid rgba(236,235,228,.1);">
+    <span style="font-size: 17px;">A · Dip buy <span class="chip ok" style="margin-left: 6px; vertical-align: .15em;">daily</span></span>
+    <span class="mono" style="font-size: 14px;">+3.1%</span><span class="mono" style="font-size: 14px; color: #fff;">+5.4%</span><span class="mono" style="font-size: 14px; color: #a9a89f;">+6.0%</span>
+    <span class="mono" style="font-size: 12px; color: #c9c8c0;">61 / 1,190</span>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><div style="display: flex; height: 6px; gap: 2px;"><span style="flex: 76; background: #ecebe4;"></span><span style="flex: 17; background: #55544e;"></span><span style="flex: 7; border: 1px dashed #8a897f; box-sizing: border-box;"></span></div><span class="mono" style="font-size: 10.5px; color: #8a897f;">76% · 17% · 7%</span></div>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot fail"></span><span class="dot fail"></span><span class="dot fail"></span><span class="dot fail"></span></span><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot fail"></span><span class="dot pass"></span><span class="dot pass"></span><span class="dot na"></span></span></div>
+  </div>
+  <div style="display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.5fr) minmax(0, 1.1fr); gap: 16px; padding: 18px 12px; align-items: center; border-bottom: 1px solid rgba(236,235,228,.1);">
+    <span style="font-size: 17px;">RAW35 · Momentum <span class="chip ok" style="margin-left: 6px; vertical-align: .15em;">monthly</span></span>
+    <span class="mono" style="font-size: 14px;">+8.9%</span><span class="mono" style="font-size: 14px; color: #fff;">+9.6%</span><span class="mono" style="font-size: 14px; color: #a9a89f;">+6.0%</span>
+    <span class="mono" style="font-size: 12px; color: #c9c8c0;">23 / 245</span>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><div style="display: flex; height: 6px; gap: 2px;"><span style="flex: 86; background: #ecebe4;"></span><span style="flex: 14; border: 1px dashed #8a897f; box-sizing: border-box;"></span></div><span class="mono" style="font-size: 10.5px; color: #8a897f;">6 of 7 · 1 paused</span></div>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot pass"></span><span class="dot pass"></span><span class="dot pass"></span><span class="dot fail"></span></span><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot pass"></span><span class="dot pass"></span><span class="dot pass"></span><span class="dot na"></span></span></div>
+  </div>
+  <div style="display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.5fr) minmax(0, 1.1fr); gap: 16px; padding: 18px 12px; align-items: center; border-bottom: 1px solid rgba(236,235,228,.1);">
+    <span style="font-size: 17px;">COSK · Crash-prone <span class="chip ok" style="margin-left: 6px; vertical-align: .15em;">quarterly</span></span>
+    <span class="mono" style="font-size: 14px;">+4.4%</span><span class="mono" style="font-size: 14px; color: #a9a89f;">+4.1%</span><span class="mono" style="font-size: 14px; color: #a9a89f;">+6.0%</span>
+    <span class="mono" style="font-size: 12px; color: #c9c8c0;">6 / 140</span>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><div style="display: flex; height: 6px; gap: 2px;"><span style="flex: 100; background: #ecebe4;"></span></div><span class="mono" style="font-size: 10.5px; color: #8a897f;">3 of 3</span></div>
+    <div style="display: flex; flex-direction: column; gap: 6px;"><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot fail"></span><span class="dot pass"></span><span class="dot fail"></span><span class="dot fail"></span></span><span style="display: flex; gap: 4px;"><span class="dot fail"></span><span class="dot fail"></span><span class="dot pass"></span><span class="dot fail"></span><span class="dot na"></span></span></div>
+  </div>
+
+  <div class="mono" style="display: flex; flex-wrap: wrap; gap: 18px; padding: 14px 12px 0; font-size: 10.5px; color: #8a897f;">
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 14px; height: 6px; background: #ecebe4;"></span>reviewed</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 14px; height: 6px; background: #55544e;"></span>absent: no laptop had WSL up</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 14px; height: 6px; border: 1px dashed #8a897f; box-sizing: border-box;"></span>paused: you turned auto-runs off</span>
+  </div>
+
+  <div style="position: absolute; left: 0; right: 0; bottom: 16px; display: flex; justify-content: center;">
+    <div style="width: 760px; display: flex; align-items: center; background: #ecebe4; color: #7a7972; border-radius: 999px; padding: 6px 6px 6px 24px; box-sizing: border-box; font-size: 15px;">
+      <span style="flex: 1;">Ask about Seer Adversarial</span>
+      <span style="width: 40px; height: 40px; border-radius: 999px; background: #121211; color: #ecebe4; display: grid; place-items: center;"><svg viewBox="0 0 256 256" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M216,128l-72,72V56Z" opacity="0.2"></path><path d="M221.66,122.34l-72-72A8,8,0,0,0,136,56v64H40a8,8,0,0,0,0,16h96v64a8,8,0,0,0,13.66,5.66l72-72A8,8,0,0,0,221.66,122.34ZM152,180.69V75.31L204.69,128Z"></path></svg></span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
