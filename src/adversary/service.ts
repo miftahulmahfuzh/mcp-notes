@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import type { AdversaryConfig } from '../config.js';
 import { createConnector } from '../connectors/connector.js';
@@ -7,6 +8,7 @@ import type { Db } from '../db/client.js';
 import type { AdversaryStoredVerdict } from '../db/schema.js';
 import { SessionsRepo } from '../sessions/repo.js';
 import { ADVERSARY_SUBDIR, createAgentReviewer } from './agent.js';
+import { NightlyDispatcher, defaultGhRunner, repoSlugFromRemote } from './dispatch.js';
 import { AdversaryEvents } from './events.js';
 import { BRIEFS_DIR, buildLens, readBrief } from './lens.js';
 import {
@@ -82,6 +84,8 @@ export interface AdversaryServiceOptions {
   now?: () => Date;
   log?: (line: string) => void;
   briefsDir?: string;
+  /** Starts Seer's GitHub nightly when its data is fetchable (dispatch.ts). Looked at on every automatic pass, before the schema check. */
+  dispatcher?: Pick<NightlyDispatcher, 'tick'>;
 }
 
 const CLOSE_GRACE_MS = 5_000;
@@ -232,6 +236,7 @@ export class AdversaryService {
     this.running = trigger;
     this.events.emit({ op: 'run' });
     try {
+      if (trigger === 'auto') await this.dispatchNightly();
       await this.passBody(trigger, options, summary);
       this.logChanged('[notesd] adversary: Seer is reachable and ready');
     } catch (err) {
@@ -250,6 +255,21 @@ export class AdversaryService {
       );
     }
     return summary;
+  }
+
+  /**
+   * Before anything reads Seer's adversary tables: the first nightly after a Seer deploy is what
+   * creates them. Never fails a pass; follows the ON/OFF toggle like every other automatic action.
+   */
+  private async dispatchNightly(): Promise<void> {
+    const { dispatcher } = this.opts;
+    if (dispatcher === undefined) return;
+    try {
+      if (!(await this.getToggle()).on) return;
+      await dispatcher.tick();
+    } catch (err) {
+      this.logChanged(`[notesd] adversary: nightly dispatch check failed: ${reasonOf(err)}`);
+    }
   }
 
   private async passBody(trigger: RunTrigger, options: ReviewNowOptions, summary: RunSummary): Promise<void> {
@@ -598,6 +618,17 @@ export class AdversaryService {
   }
 }
 
+/** `owner/name` of the Seer checkout's `origin` remote on GitHub. */
+function seerRepoSlug(dir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', ['-C', dir, 'remote', 'get-url', 'origin'], { timeout: 10_000, windowsHide: true }, (err, stdout) => {
+      const slug = err === null ? repoSlugFromRemote(String(stdout)) : null;
+      if (slug === null) reject(new Error(`cannot tell Seer's GitHub repo from ${dir}'s origin remote`));
+      else resolve(slug);
+    });
+  });
+}
+
 export interface CreateAdversaryServiceOptions {
   config: AdversaryConfig;
   db: Db;
@@ -634,7 +665,19 @@ export function createAdversaryService(opts: CreateAdversaryServiceOptions): Adv
       ),
   });
   if (reviewer === null) return null;
+  const settings = new SessionsRepo(opts.db);
+  const dispatcher = opts.config.dispatchNightly
+    ? new NightlyDispatcher({
+        lastSuccessAt: () => seer.lastSuccessfulRunAt(),
+        repo: () => seerRepoSlug(seerDir()),
+        store: settings,
+        gh: defaultGhRunner(),
+        host: opts.host,
+        log: opts.log,
+      })
+    : undefined;
   return new AdversaryService({
+    dispatcher,
     config: opts.config,
     db: opts.db,
     host: opts.host,

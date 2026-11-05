@@ -18,6 +18,7 @@ daemon; the only write is a note per problem.
   picks for the next US session) -> Veto -> Paper -> Paper check -> Explain -> Sean marks. A later
   slot logs "session ... already succeeded; nothing to do". A red run whose Nightly/Veto/Paper steps
   passed still wrote the picks; Paper check failing is a real problem but does not block them.
+- notesd starts the nightly itself (`src/adversary/dispatch.ts`, `NOTESD_SEER_DISPATCH`, default on): on New York Tue-Sat, from New York midnight + 5 min (12:05 WIB winter / 11:05 summer), if no nightly has succeeded since, via `gh workflow run`. Its state is `app_settings` key `adversary.nightly_dispatch` (no HTTP route; read the daemon log lines "started Seer's nightly" / "could not start Seer's nightly" with `journalctl --user -u notesd`). It only fires while a notesd with `gh` logged in is running after that time. A day with no dispatch log and no run means no machine was up or `gh` is logged out.
 - Seer Adversarial is **not event-driven**. notesd (a systemd user unit in WSL) polls Seer's
   database every 10 minutes (`ADVERSARY_POLL_MS`, first pass 30 s after start) and reviews decisions
   whose session has not opened. Nothing from GitHub triggers it.

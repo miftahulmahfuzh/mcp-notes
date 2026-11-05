@@ -51,6 +51,11 @@ SELECT strategy_id, session_date::text AS session_date
 FROM adversary_marks
 WHERE session_date >= $1::date AND strategy_id = ANY($2::text[])`;
 
+const LAST_SUCCESS_SQL = `
+SELECT to_char(max(finished_at) AT TIME ZONE 'UTC', ${ISO_UTC}) AS at
+FROM runs
+WHERE status = 'success' AND NOT is_demo`;
+
 const HELD_SQL = `SELECT DISTINCT symbol FROM book_positions WHERE strategy_id = $1 ORDER BY symbol`;
 
 const BARS_SQL = `
@@ -167,6 +172,14 @@ export class SeerReader {
       strategyId: str(r.strategy_id),
       sessionDate: str(r.session_date),
     }));
+  }
+
+  /** `finished_at` of the newest successful real nightly run, null when Seer has none. Needs no adversary tables. */
+  async lastSuccessfulRunAt(): Promise<Date | null> {
+    const at = (await this.rows(LAST_SUCCESS_SQL, [], { maxRows: 1 }))[0]?.at;
+    if (at === null || at === undefined) return null;
+    const ms = Date.parse(str(at));
+    return Number.isNaN(ms) ? null : new Date(ms);
   }
 
   /** Symbols the original holds now (book strategies). */

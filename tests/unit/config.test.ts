@@ -44,7 +44,7 @@ describe('loadConfig', () => {
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
       sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true, swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py') },
-      adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true },
+      adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true, dispatchNightly: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -263,6 +263,7 @@ describe('adversary config', () => {
       gatherMaxTurns: 20,
       stockTimeoutMs: 420_000,
       pollMs: 600_000,
+      dispatchNightly: true,
     })
   })
 
@@ -276,6 +277,7 @@ describe('adversary config', () => {
       ADVERSARY_GATHER_MAX_TURNS: '9',
       ADVERSARY_STOCK_TIMEOUT_MS: '60000',
       ADVERSARY_POLL_MS: '5000',
+      NOTESD_SEER_DISPATCH: 'off',
     }
     expect(loadConfig({ env, envFile: false }).adversary).toEqual({
       enabled: false,
@@ -285,6 +287,7 @@ describe('adversary config', () => {
       gatherMaxTurns: 9,
       stockTimeoutMs: 60_000,
       pollMs: 5_000,
+      dispatchNightly: false,
     })
   })
 
@@ -292,6 +295,7 @@ describe('adversary config', () => {
     ['NOTESD_ADVERSARY', 'maybe'],
     ['ADVERSARY_DAILY_CAP', '0'],
     ['ADVERSARY_POLL_MS', '-5'],
+    ['NOTESD_SEER_DISPATCH', 'sometimes'],
     ['ADVERSARY_VERDICT_MODEL', 'op us'],
   ])('rejects %s=%j', (key, value) => {
     expect(() => loadConfig({ env: { DATABASE_URL: URL_A, [key]: value }, envFile: false })).toThrow(ConfigError)

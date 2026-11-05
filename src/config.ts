@@ -117,6 +117,8 @@ export interface AdversaryConfig {
   stockTimeoutMs: number
   /** `ADVERSARY_POLL_MS`, default 600000. Pause between automatic passes. */
   pollMs: number
+  /** `NOTESD_SEER_DISPATCH`, default on. Start Seer's GitHub nightly from this machine once its data is fetchable. */
+  dispatchNightly: boolean
 }
 
 /** Reviewer off, default limits. Tests build `Config` literals with it, so no hand-built config ever reviews. */
@@ -128,6 +130,7 @@ export const DEFAULT_ADVERSARY_CONFIG: AdversaryConfig = {
   gatherMaxTurns: DEFAULT_ADVERSARY_GATHER_MAX_TURNS,
   stockTimeoutMs: DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS,
   pollMs: DEFAULT_ADVERSARY_POLL_MS,
+  dispatchNightly: false,
 }
 
 export interface Config {
@@ -303,6 +306,7 @@ export function parseAdversary(env: Record<string, string | undefined>): Adversa
     gatherMaxTurns: parsePositiveInt('ADVERSARY_GATHER_MAX_TURNS', env.ADVERSARY_GATHER_MAX_TURNS, DEFAULT_ADVERSARY_GATHER_MAX_TURNS),
     stockTimeoutMs: parsePositiveInt('ADVERSARY_STOCK_TIMEOUT_MS', env.ADVERSARY_STOCK_TIMEOUT_MS, DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS),
     pollMs: parsePositiveInt('ADVERSARY_POLL_MS', env.ADVERSARY_POLL_MS, DEFAULT_ADVERSARY_POLL_MS),
+    dispatchNightly: parseSwitch('NOTESD_SEER_DISPATCH', env.NOTESD_SEER_DISPATCH),
   }
 }
 
@@ -330,7 +334,7 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS,
  * NOTESD_SWARM_SCRIPT. Adversary keys: NOTESD_ADVERSARY, ADVERSARY_DAILY_CAP,
  * ADVERSARY_GATHER_MODEL, ADVERSARY_VERDICT_MODEL, ADVERSARY_GATHER_MAX_TURNS,
- * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS. Other keys are ignored.
+ * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Other keys are ignored.
  * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
