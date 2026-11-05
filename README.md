@@ -928,6 +928,13 @@ part of `npm test` or `test:int`.
 | `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer` | Where the connectors find each repo and its `.env.local`. Read on every call. |
 | `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query. |
 | `TEST_CONNECTORS_URL` | set by `test:int` | Connector test container (admin URL). |
+| `NOTESD_ADVERSARY` | on | `off` stops the Seer Adversarial reviewer on this machine: no reviews, no `paused` marks, no leases. It is the deploy-free kill switch. The ON/OFF toggle on the wall's `/adversary` page is a different switch, kept in the shared database, which both machines obey; while it is off the reviewer still writes `paused` marks. |
+| `ADVERSARY_DAILY_CAP` | `15` | Deep reviews (one per Seer decision: a strategy's candidates for one session) per WIB day across this machine. A's candidates go first, then book decisions by earliest open, then early looks at book previews. A decision over the cap is left unreviewed, so its twin copies the original, and it is logged as `skipped_budget`. |
+| `ADVERSARY_GATHER_MODEL` | `sonnet` | Claude model alias for the gathering stage (reads news, filings and prices through the reviewer's tools). The exact model id the SDK used is stored with each review. |
+| `ADVERSARY_VERDICT_MODEL` | `opus` | Claude model alias that writes the verdict (agree, object, can't tell) from what was gathered. Its exact id is stored on every `adversary_verdicts` row, and a change shows as a dated revision on the page. |
+| `ADVERSARY_GATHER_MAX_TURNS` | `20` | Turn cap of the gathering stage for one stock. A stock that runs out of turns is judged on what was gathered so far. |
+| `ADVERSARY_STOCK_TIMEOUT_MS` | `420000` | Wall-clock limit for one stock, both stages together. A stock that times out gets no verdict, so its twin copies the original. |
+| `ADVERSARY_POLL_MS` | `600000` | Pause between automatic review passes (10 minutes). "Review now" on the wall starts a pass at once. |
 | `NOTESD_SESSIONS` | on | `off` stops the daemon reading Claude Code transcripts. The session graph then shows only what is already in the database. |
 | `CLAUDE_HOME` | `~/.claude` | Where Claude Code keeps `projects/` (transcripts) and `sessions/` (which sessions are running). |
 | `NOTES_WORKTREES_DIR` | `~/.worktrees` | Root of the `<repo>/<slug>` worktrees; sessions run in one are filed under its repo, even after it is deleted. |
