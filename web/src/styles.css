@@ -225,12 +225,18 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .adv-stat-l { font-family: var(--sans); color: var(--muted); }
 .adv-stat .hi { color: #fff; }
 .adv-stat .lo { color: var(--soft); }
-.adv-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-.adv-check { background: var(--card); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.adv-check-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.adv-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.adv-check { background: var(--card); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.adv-check .adv-meta { font-size: 9.5px; }
+.adv-check-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 .adv-check-row > span:first-child { color: var(--soft); }
 .adv-check-row > span:last-child { text-align: right; }
-.adv-check-note { font-size: 12px; line-height: 1.4; color: var(--dim); }
+.adv-check-note { font-size: 10.5px; line-height: 1.4; color: var(--dim); }
+.app-focus .adv-checks { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.app-focus .adv-check { padding: 14px; gap: 10px; }
+.app-focus .adv-check .adv-meta { font-size: 10.5px; }
+.app-focus .adv-check-row { gap: 12px; font-size: 14px; }
+.app-focus .adv-check-note { font-size: 12px; }
 .adv-progress { height: 3px; background: var(--chip-bg); }
 .adv-progress > div { height: 3px; background: var(--fg); }
 .adv-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
