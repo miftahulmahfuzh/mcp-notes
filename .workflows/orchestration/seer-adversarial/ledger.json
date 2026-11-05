@@ -10,10 +10,10 @@
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": "seer commit (verified on seer origin/feature/seer-adversarial by coordinator; swarm verify cannot see seer commits). proof: verified-after-fix. decisions: 027 CHECK requires weight NOT NULL for book candidates (rung 1 plan invariant: a NULL CHECK passes); test_009 evidence-column list gains strategy_candidates. 6 pre-existing test_lab_methods M0461-* failures reproduced on seer main a6322d7 by coordinator -> follow-up, not this set. coordinator decisions: shared worktree per repo (2+3 seer, 4 mcp-notes), gate exit 0.",
+      "note": "wave 0 verifier: verified (evidence ~/.local/state/seer-verify/1105-102254-1332717/evidence); inconclusive: real paper night (no bars in harness), proven via pytest synthetic world. no map drift. implementer decisions: 027 CHECK weight NOT NULL for book candidates; test_009 lists strategy_candidates. 6 pre-existing test_lab_methods M0461-* failures (also on seer main a6322d7) -> follow-up. wave 1 spawned: p2,p3 shared seer worktree, p4 mcp-notes worktree.",
       "package": "seer `db/`, `engine/",
       "plan": ".workflows/plan/seer-adversarial/phase-1.md",
-      "reported_at": "2026-11-05T10:22:30+07:00",
+      "reported_at": "2026-11-05T10:26:39+07:00",
       "satisfies": [
         "R1"
       ],
@@ -37,7 +37,7 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Seer twin machinery: roster twins, lag stepping, verdict filter, paper_check, promote"
     },
@@ -56,7 +56,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Seer web: twins on Leaderboard as Paper, never Today, rule 5"
     },
@@ -75,7 +75,7 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "mcp-notes reviewer job"
     },
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T10:22:30+07:00",
+  "updated": "2026-11-05T10:26:39+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
