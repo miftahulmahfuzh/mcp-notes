@@ -29,10 +29,10 @@
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": "seer commit f710d97 verified on seer origin/feature/seer-adversarial by coordinator, no web/ files, is_twin gone. proof: verified-first-pass, 4 journeys (evidence ~/.local/state/seer-verify/1105-104007-1448243). decision: plan fixture nights (2026-08-06, 09-23..10-01) unaffordable for A at 10M IDR whole shares -> bracket objection tests moved to 2026-08-03->08-04, no-verdict equality to 09-09..09-17, as plan's note allows (rung 3); no assertion weakened. suite 8598 passed, 6 known M0461 failures.",
+      "note": "self-verified (owner quota stop): wave 1 independent verifiers stopped at owner's request (96% weekly token quota used); landed on the implementer's own proof + coordinator git/file-list checks only.",
       "package": "seer `engine/",
       "plan": ".workflows/plan/seer-adversarial/phase-2.md",
-      "reported_at": "2026-11-05T10:48:12+07:00",
+      "reported_at": "2026-11-05T10:57:59+07:00",
       "satisfies": [
         "R1",
         "R2"
@@ -49,10 +49,10 @@
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": "seer commit c4ed002 verified on seer origin/feature/seer-adversarial by coordinator, no engine/ files. proof: verified-after-fix 5/5 (evidence ~/.local/state/seer-verify/1105-103006-1386938, 1105-103054-1393936). decisions: attachedOriginal test rows typed TwinIn (rung 1, tsc); journey card() selector scoped to [data-status] (rung 2); leaderboard.module.css desktop .name max-width (rung 2, file outside plan table, unowned). twin_of read via to_jsonb(s) so web works before 027 on Neon. swarm.py find returned swarm:false for the phase (cross-repo blind spot).",
+      "note": "self-verified (owner quota stop): wave 1 independent verifiers stopped at owner's request (96% weekly token quota used); landed on the implementer's own proof + coordinator git/file-list checks only.",
       "package": "seer `web/",
       "plan": ".workflows/plan/seer-adversarial/phase-3.md",
-      "reported_at": "2026-11-05T10:35:11+07:00",
+      "reported_at": "2026-11-05T10:57:59+07:00",
       "satisfies": [
         "R3"
       ],
@@ -68,10 +68,10 @@
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": "mcp-notes c33ef35; no src/http, src/mcp, src/connectors or web/ files (coordinator checked). proof: verified-after-fix (J4 paid: CLI rejected zod draft 2020-12 json-schema). decision: VERDICT_JSON_SCHEMA uses z.toJSONSchema target draft-7, unit-pinned (rung 2, exit criterion J4). int 598/598 with SEER_DIR=seer worktree; one flaky afterAll drop-db timeout on shared container, rerun green. commit also carries phase 2/3 plan-index ticks. handoff to p5: package_readme says HTTP/SSE not yet.",
+      "note": "self-verified (owner quota stop): wave 1 independent verifiers stopped at owner's request (96% weekly token quota used); landed on the implementer's own proof + coordinator git/file-list checks only.",
       "package": "mcp-notes `src/adversary`, `claude/adversary",
       "plan": ".workflows/plan/seer-adversarial/phase-4.md",
-      "reported_at": "2026-11-05T10:54:08+07:00",
+      "reported_at": "2026-11-05T10:57:59+07:00",
       "satisfies": [
         "R4"
       ],
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T10:54:08+07:00",
+  "updated": "2026-11-05T10:57:59+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
