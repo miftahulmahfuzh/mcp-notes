@@ -2,16 +2,16 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-03
-**Total Active Tasks**: 0
+**Last Updated**: 2026-11-05
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 0
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
+- Blocked: 4
 - Completed: 71
 
 ---
@@ -31,7 +31,42 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-
+- [ ] **P1-NOTES-A070** Phase 4: mcp-notes reviewer job
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/adversary/*` (config, sessions open-time mirror, read-only seer reader, writer [C4], discovery, lease, briefs/lens builder, in-process SDK MCP data tools: Seer bars, Finnhub, Massive/Polygon, SEC EDGAR, `fetch_url`; two-stage gather/verdict agent with zod-validated output; budget; marks; toggle; events bus; job loop), `claude/adversary/briefs/*.md`, `src/config.ts`, `src/deps.ts`, `src/background.ts`, `src/daemon.ts`, `src/db/schema.ts` + `drizzle/0011_adversary_reviews.sql`, unit and integration tests (fake query fn, no network), `verify.sh` (`NOTESD_ADVERSARY=off` pin, `up --adversary`, `exec`); creates verify-notesd `features/adversary.md` and its README row. Hands seven env keys to phase 7. Does not touch `src/http/*`, `src/mcp/*`, `web/`, the read-only connector guard. Exit: with a fake agent the job reviews due candidates in a test Seer schema (from the Seer worktree's migrations), writes verdicts/marks/leases correctly, respects toggle, cap and lease across two simulated hosts; typecheck + unit + int green.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 4 of 7)
+  - **Satisfies**: R4 — mcp-notes reviewer: discovery, lease, briefs, data tools, agent, writer, toggle, budget, marks
+  - **Depends on**: P1-ROOT-B10D
+  - **Plan**: `.workflows/plan/P1-NOTES-A070.md`
+- [ ] **P1-NOTES-A071** Phase 5: mcp-notes API, SSE, MCP tools, scorecard, go-live parity
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/adversary/read.ts`, `readTypes.ts` (wire types phase 6 mirrors verbatim), `scorecard.ts`, `golive.ts` (Seer web's checklist ported exactly, not money-weighted per D17, with Seer's money-weighted return beside it; rule 5 for twins), `src/http/adversaryApi.ts` mounted in `app.ts` (GETs; same-origin PUT toggle and POST review-now answering 202 unawaited), SSE relay on `/api/events`, `src/mcp/adversaryTools.ts` (`adversary_overview`, `adversary_verdicts`, `adversary_scorecard`) + the `Adversary.` instructions paragraph (incl. pill first-line context) + chat allow-list, README HTTP/MCP tables, appended section in `features/adversary.md` and its README row, tests. Does not touch `web/` or reviewer internals beyond `reviewNow()` and toggle API. Exit: API and MCP return the `readTypes.ts` shapes on a seeded test Seer schema; same-origin guard on writes; SSE event delivered; typecheck + unit + int green.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 5 of 7)
+  - **Satisfies**: R5 — mcp-notes `/api/adversary/*` + SSE + MCP tools + scorecard + go-live parity
+  - **Depends on**: P1-NOTES-A070
+  - **Plan**: `.workflows/plan/P1-NOTES-A071.md`
+- [ ] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` `'adversary'`, routes `/adversary` and `/adversary/<strategy_id>`, Rail and Sidebar sword button (Phosphor `Sword`, duotone) between Chat history and Trash, heading `Adversary.`, sidebar roster list, toolbar (Power toggle, Review now, Focus), Alt+Z / Esc focus via a hook shared with ProjectsPage, overview/method/A pages per the mock, chat pill, SSE refresh, `web/src/adversaryApi.ts` (phase 5's `readTypes.ts` verbatim plus fetchers), web tests, appended wall section in `features/adversary.md` and `, wall` on its README row. Does not touch server code; never creates `features/adversary.md`. Exit: web tests green; verify-notesd Playwright run on a seeded instance shows the four mock states (overview, method, A three-way, focus with auto-runs off) with screenshots saved.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 6 of 7)
+  - **Satisfies**: R6 — Wall page `/adversary`, sword button between Chat history and Trash, Alt+Z focus, ON/OFF toggle
+  - **Depends on**: P1-NOTES-A071
+  - **Plan**: `.workflows/plan/P1-NOTES-A072.md`
+- [ ] **P1-NOTES-A073** Phase 7: Go live: land Seer, config, install/restart, first review
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns merging Seer `feature/seer-adversarial` into `~/seer` main and pushing (after full suite), applying migration 027 to Neon, README configuration rows for phase 4's seven keys, one CLAUDE.md Architecture bullet for `src/adversary/*`, `.env.local` keys only if a default forces one, `npm run db:migrate` (drizzle 0011) before build and restart of notesd, one "Review now" and a go-live note. Does not touch feature code (fixes become follow-up tasks). Exit: Seer main has migration applied on Neon; next paper night created the twins (or the phase records when it will); notesd restarted with the reviewer on; at least one verdict or a recorded reason for none.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 7 of 7)
+  - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
+  - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
+  - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
 
 ### [P2] Medium
 
