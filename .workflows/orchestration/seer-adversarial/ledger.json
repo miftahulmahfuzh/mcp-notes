@@ -81,21 +81,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "59bca59",
       "depends_on": [
         4
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "self-verified (quota economy 93-95%): ran on sonnet (opus session killed at 11:04, its partial tree finished, backup tag rescue/p5-opus-partial). journeys 1-9 once (evidence ~/.local/state/notesd-verify/1105-111032-1619455). coordinator checked: sameOriginOnly on PUT toggle and POST review-now (j8 400 vs 403 was zsh word-split). fixes: read.ts Map type, scorecard.ts shadowed alias. swarm-deck block present in first prompt (live proof).",
       "package": "mcp-notes `src/http`, `src/mcp`, `src/adversary",
       "plan": ".workflows/plan/seer-adversarial/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-05T11:13:01+07:00",
       "satisfies": [
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A071",
       "title": "mcp-notes API, SSE, MCP tools, scorecard, go-live parity"
     },
     {
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T10:57:59+07:00",
+  "updated": "2026-11-05T11:13:01+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
