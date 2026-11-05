@@ -127,14 +127,14 @@
       ],
       "difficulty": "NORMAL",
       "n": 7,
-      "note": null,
+      "note": "STOPPED at B5/B6 gate: Seer main f710d97 (ff-pushed) CI red run 41969703392 on 6 test_lab_methods M0461-* failures that also fail on a6322d7 (CI run 41942185226) - pre-existing. Neon NOT migrated; drizzle 0011, build, restart, first review not run. Part A a08ee55 landed; mcp-notes merged to main d197bc1 by coordinator (pushed). go-live note 5-7EW. Awaiting owner: migrate under pre-existing red, or fix M0461 first.",
       "package": "both",
       "plan": ".workflows/plan/seer-adversarial/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-05T11:54:21+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "blocked",
       "task_id": null,
       "title": "Go live: land Seer, config, install/restart, first review"
     }
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T11:25:25+07:00",
+  "updated": "2026-11-05T11:54:21+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
