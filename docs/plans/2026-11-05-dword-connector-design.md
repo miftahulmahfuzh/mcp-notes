@@ -11,17 +11,19 @@ Two triggers:
 
 ```
 /v <word or phrase>
-/v <word or phrase> -> <sentence it was read in>
+/v <word or phrase> > <sentence it was read in>
 /j <wise words>
 ```
 
-Examples: `/v pendulous breasts`, `/v perch -> she watched sima ting jerk backward on his perch`, `/j most things in life don't go according to one's wishes`. Non-English input to `/v` must work. (The user's first message said the trigger was "j" for both; this plan reads it as `/v` for vocabulary and `/j` for journal.)
+The separator is a single `>` (changed from `->` on 2026-11-05 for typing speed). Everything before the first `>` is the term, everything after it is the sentence.
+
+Examples: `/v pendulous breasts`, `/v perch > she watched sima ting jerk backward on his perch`, `/j most things in life don't go according to one's wishes`. Non-English input to `/v` must work. (The user's first message said the trigger was "j" for both; this plan reads it as `/v` for vocabulary and `/j` for journal.)
 
 ### `/v` flow
 1. Look the term up in dword's `vocab_entries` for the owner. If it exists, return it.
 2. If it is missing, Claude writes the English explanation itself and inserts a new `vocab_entries` row.
 3. A non-English term follows dword's existing convention: `term` is the **English** word, and `origin_term`, `origin_language` and `origin_context` record the foreign word, its language and the sentence.
-4. The sentence after `->` selects the right sense (for example `perch` as a bird's roost) and is stored as `origin_context`.
+4. The sentence after `>` selects the right sense (for example `perch` as a bird's roost) and is stored as `origin_context`.
 
 ### `/j` flow
 1. Look for the same or a similar entry in `journal_entries`. If one is found, show it and its insight, and insert nothing (decision D3).
@@ -34,7 +36,7 @@ Examples: `/v pendulous breasts`, `/v perch -> she watched sima ting jerk backwa
 | D1 | Write path is a direct SQL writer into dword's database, allow-listed like `src/adversary/seerWriter.ts`. Not dword's HTTP API (it needs Auth.js sessions), and not importing dword code (it uses `server-only` and the `@/` alias). |
 | D2 | Claude writes the explanation, examples and insight itself, in the session. dword's GLM prompts are not called. The MCP tool validates what Claude sends against dword's own limits. |
 | D3 | Journal near-duplicate found: show the existing entry and insert nothing, unless the user says "save anyway" (then `force: true`). Mirrors dword's own warn-then-force behavior. |
-| D4 | Vocab hit with a `-> sentence`: show the entry; store the sentence as `origin_context` only when the row has no origin yet, in one conditional statement (mirrors dword's `attachOrigin`). Never overwrite an existing origin. |
+| D4 | Vocab hit with a `> sentence`: show the entry; store the sentence as `origin_context` only when the row has no origin yet, in one conditional statement (mirrors dword's `attachOrigin`). Never overwrite an existing origin. |
 | D5 | Wall chat bar is in the same plan, as a later phase after the Claude Code path works. |
 
 ## 3. What dword looks like (facts found, verified in `~/daily-words`)
@@ -96,7 +98,7 @@ One module `src/dword/rules.ts` holds the limits copied from dword with a commen
 - All tool inputs go through parameters (`$1...`), never string concatenation.
 
 ### 5.6 Skills and wall chat
-- `claude/skills/v/SKILL.md` and `claude/skills/j/SKILL.md`, symlinked by `scripts/install.sh`. The `v` skill parses `<term> -> <sentence>` (split on the first ` -> `), detects language, and instructs Claude: lookup first; on a miss, write the entry in dword's register (British RP pronunciation, definition under 60 characters, three examples each containing the English term, sense chosen from the sentence, for non-English input the English term goes in `term`); then add. The `j` skill instructs: find similar first; on a miss, write the insight in dword's journal register (meaning plus 2 to 3 concrete situations, English, no advice, no praise); then add. Both reply with the stored entry and say whether it was found or newly added.
+- `claude/skills/v/SKILL.md` and `claude/skills/j/SKILL.md`, symlinked by `scripts/install.sh`. The `v` skill parses `<term> > <sentence>` (split on the first `>`, both sides trimmed; a trailing `-` on the term side is dropped so the old `->` still works; a term never legitimately contains `>`; no `>` means no sentence), detects language, and instructs Claude: lookup first; on a miss, write the entry in dword's register (British RP pronunciation, definition under 60 characters, three examples each containing the English term, sense chosen from the sentence, for non-English input the English term goes in `term`); then add. The `j` skill instructs: find similar first; on a miss, write the insight in dword's journal register (meaning plus 2 to 3 concrete situations, English, no advice, no praise); then add. Both reply with the stored entry and say whether it was found or newly added.
 - Wall chat: extend the chat system prompt (`src/chat/prompt.ts`) and the tool allow-list (`ALL_CONNECTOR_TOOL_NAMES` plus the four curated tools) so a message starting `v ` or `j ` (and `/v`, `/j`) runs the same flow. Capture of `/n`-style exchanges (`POST /api/capture/claude-code`) is checked for `/v` and `/j` so they also appear in chat history.
 - `claude/hooks/notes-prompt.mjs` must stay I/O-free when no node id matches; do not touch it for this feature.
 
@@ -120,7 +122,7 @@ One module `src/dword/rules.ts` holds the limits copied from dword with a commen
 - Unit: `assertWritable` refuses every statement outside the allow-list; rules reject bad limits; `normalizeForCompare` and dedup-key parity fixtures.
 - Integration (`npm run test:int` style, skips when `~/daily-words` is missing): lookup hit and miss; add idempotent on the unique index; origin attach only when null; non-English add stores English `term` plus origin; journal duplicate shows and does not insert; `force` inserts; daily limit.
 - Live (opt-in, never in `npm test`): against a throwaway dword DB, not the production Neon.
-- Manual on the real daemon only after the above: `/v perch -> she watched sima ting jerk backward on his perch`, a non-English word, and `/j` with a known and an unknown saying.
+- Manual on the real daemon only after the above: `/v perch > she watched sima ting jerk backward on his perch`, a non-English word, and `/j` with a known and an unknown saying.
 
 ## 8. Out of scope
 Any web UI; changes to dword's own code; deleting or editing existing dword rows; calling dword's GLM prompts; dword's share, chat and gamification features.
