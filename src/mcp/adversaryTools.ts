@@ -96,4 +96,66 @@ export function registerAdversaryTools(server: McpServer, deps: Pick<ToolDeps, '
     },
     async ({ strategy }) => run(() => reader().scorecard(strategy), { compact: true }),
   );
+
+  const reviewerOff = { ok: false, code: 'reviewer_off', message: 'The Seer Adversarial reviewer is not running on this machine (NOTESD_ADVERSARY=off), so a redo cannot be written.' };
+  const symbolField = z
+    .string()
+    .trim()
+    .min(1)
+    .max(12)
+    .regex(/^[A-Za-z0-9.-]+$/)
+    .describe("The stock's ticker, e.g. 'SLB'.");
+  const sessionField = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe('The decision session, YYYY-MM-DD. Omit for the next one that has not opened.');
+
+  server.registerTool(
+    'adversary_redo_context',
+    {
+      title: 'Redo a Seer Adversarial review: context and clock',
+      description:
+        "For /redo only. Says whether redoing Claude's review of one pick is still fresh: a verdict counts only when decided before the US open (09:30 New York) of the pick's session, so after that a redo is stale and nothing is written. " +
+        "Returns can_redo, a plain message, the clock (open_utc, open_wib, start_by_wib, minutes_to_open; state fresh | closing | closed), the existing verdict, and, when fresh, the facts of the pick, the method's lens and the rules to follow. " +
+        "When can_redo is false, stop and tell the owner the message in a sentence or two; do not research. strategy takes 'A-GT' or a short form like 'A'.",
+      inputSchema: { strategy: strategyField, symbol: symbolField, session: sessionField },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ strategy, symbol, session }) =>
+      run(async () => (deps.adversary ? deps.adversary.redoContext({ strategy, symbol, session_date: session }) : reviewerOff), { compact: true }),
+  );
+
+  server.registerTool(
+    'adversary_redo_submit',
+    {
+      title: 'Redo a Seer Adversarial review: write the verdict',
+      description:
+        "For /redo only. Writes your verdict on one pick to Seer, replacing the earlier one. Call it only after adversary_redo_context said can_redo and you researched with web search, opening every page you cite. " +
+        "The clock is checked again here and nothing is written once the session has opened. agree or object without at least one source becomes unsure. reason: at most 600 characters, plain words for a non-trader.",
+      inputSchema: {
+        strategy: strategyField,
+        symbol: symbolField,
+        session: sessionField,
+        verdict: z.enum(['agree', 'object', 'unsure']),
+        reason: z.string().min(1).max(600),
+        sources: z
+          .array(
+            z.object({
+              url: z.string().url().describe('A page you opened with WebFetch, copied exactly.'),
+              title: z.string().optional(),
+              publisher: z.string().optional(),
+              published_at: z.string().optional().describe('ISO 8601 date when the page says when it was published.'),
+            }),
+          )
+          .max(12),
+        model: z.string().max(80).optional().describe('Your exact model id.'),
+      },
+    },
+    async ({ strategy, symbol, session, verdict, reason, sources, model }) =>
+      run(
+        async () => (deps.adversary ? deps.adversary.redoSubmit({ strategy, symbol, session_date: session, verdict, reason, sources, model }) : reviewerOff),
+        { compact: true },
+      ),
+  );
 }

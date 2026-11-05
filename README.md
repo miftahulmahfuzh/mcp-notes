@@ -990,6 +990,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `adversary_overview` | Seer Adversarial: every Seer method with its Claude twin and SPY, returns since the twin started (money-weighted, deposits included), objections, coverage (reviewed · absent · paused · pending), both go-live checklists (Seer's five rules and wording; a twin's backtest "can't be run"), the newest objections and the reviewer's status |
 | `adversary_verdicts` | Claude's verdicts (`agree`, `object`, `unsure`) with reasons, sources, model, prompt version and host; `late: true` when decided after the open. Optional `strategy`, `session` (default: each method's latest decision), `verdict`, `limit` |
 | `adversary_scorecard` | One method's record: each objected stock's return over the method's horizon (5 sessions for a daily method, until the next rebalance for a book) against the kept picks; for a daily method with C, Claude against C on the nights they disagree |
+| `adversary_redo_context` / `adversary_redo_submit` | For the `/redo <method> <TICKER>` skill: redo one pick's review with real web search. Context says whether it is still fresh (a verdict counts only before the session's 09:30 New York open; after that nothing is written) and gives the facts and rules; submit writes the verdict to Seer, superseding the old one, and re-checks the clock |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything

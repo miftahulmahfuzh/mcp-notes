@@ -20,14 +20,15 @@ import {
   toPreviewDecisions,
   type PlannedAction,
 } from './plan.js';
-import { promptVersion } from './prompt.js';
+import { decisionFacts, promptVersion } from './prompt.js';
+import { REDO_RULES, checkSubmitted, decisionsOf, pickDecision, redoClock, resolveOriginal, type RedoClock, type SubmittedSource } from './redo.js';
 import { ReviewsRepo, type NewReview } from './reviewsRepo.js';
 import { SeerReader } from './seerReader.js';
 import { SeerWriter } from './seerWriter.js';
 import { addDays, utcDate, wibDayStartUtc } from './sessions.js';
 import { readToggle, writeToggle, type ToggleState } from './toggle.js';
 import { adversaryServer, createTickerCikLookup, defaultLimiters, loadSeerKeys } from './tools.js';
-import { ReviewFailure, type Decision, type Lens, type ReviewOutcome, type RosterRow, type StockReviewer } from './types.js';
+import { ReviewFailure, type Decision, type Verdict, type Lens, type ReviewOutcome, type RosterRow, type StockReviewer } from './types.js';
 
 export type RunTrigger = 'auto' | 'manual';
 export type SchemaState = 'unknown' | 'ready' | 'missing' | 'unreachable';
@@ -87,6 +88,65 @@ export interface AdversaryServiceOptions {
   /** Starts Seer's GitHub nightly when its data is fetchable (dispatch.ts). Looked at on every automatic pass, before the schema check. */
   dispatcher?: Pick<NightlyDispatcher, 'tick'>;
 }
+
+export interface RedoRequest {
+  /** A method id ('A-GT'), a short form ('A') or a twin's id. */
+  strategy: string;
+  symbol: string;
+  /** The decision session, YYYY-MM-DD. Omit for the next one that has not opened. */
+  session_date?: string | undefined;
+}
+
+export interface RedoSubmission {
+  verdict: Verdict;
+  reason: string;
+  sources: readonly SubmittedSource[];
+  /** The exact model id of the session making the call. */
+  model?: string | undefined;
+}
+
+export interface RedoRefusal {
+  ok: false;
+  code: string;
+  message: string;
+}
+
+interface RedoTarget {
+  ok: true;
+  strategy: RosterRow;
+  picked: { decision: Decision; pick: Decision['picks'][number] };
+  existing: { id: number; verdict: Verdict; decidedAt: string } | null;
+}
+
+export type RedoContextResult =
+  | RedoRefusal
+  | {
+      ok: true;
+      strategy_id: string;
+      strategy_name: string;
+      symbol: string;
+      session_date: string;
+      clock: RedoClock;
+      existing_verdict: { id: number; verdict: Verdict; decided_at: string } | null;
+      can_redo: boolean;
+      message: string;
+      facts?: string;
+      lens?: string;
+      rules?: string;
+    };
+
+export type RedoSubmitResult =
+  | RedoRefusal
+  | {
+      ok: true;
+      written: true;
+      verdict_id: number;
+      decided_at: string;
+      late: boolean;
+      verdict: Verdict;
+      downgraded: boolean;
+      replaced: { id: number; verdict: Verdict } | null;
+    };
 
 const CLOSE_GRACE_MS = 5_000;
 const INITIAL_DELAY_MS = 30_000;
@@ -166,6 +226,160 @@ export class AdversaryService {
   /** One manual pass now: runs even while auto runs are off ("Review now"). Do not await it in a request handler. */
   reviewNow(options: ReviewNowOptions = {}): Promise<RunSummary> {
     return this.enqueue('manual', options);
+  }
+
+  /**
+   * /redo, step 1: what a Claude Code session needs to redo one pick's review itself (it has web
+   * search; the headless reviewer often does not), and whether redoing is still fresh. Read-only.
+   */
+  async redoContext(req: RedoRequest): Promise<RedoContextResult> {
+    const now = this.now();
+    const target = await this.redoTarget(req, now);
+    if (!target.ok) return target;
+    const { strategy, picked, existing } = target;
+    const clock = redoClock(picked.decision.openUtc, now);
+    const base = {
+      ok: true as const,
+      strategy_id: strategy.id,
+      strategy_name: strategy.name,
+      symbol: picked.pick.symbol,
+      session_date: picked.decision.sessionDate,
+      clock,
+      existing_verdict: existing === null ? null : { id: existing.id, verdict: existing.verdict, decided_at: existing.decidedAt },
+    };
+    if (clock.state !== 'fresh') {
+      const why =
+        clock.state === 'closed'
+          ? `Too late: the ${picked.decision.sessionDate} session opened at ${clock.open_wib} WIB, so a verdict written now would not count (the twin ignores it). Redo before the open.`
+          : `Too tight: the session opens at ${clock.open_wib} WIB, in ${clock.minutes_to_open} min, and a web-search review takes longer. Start a redo before ${clock.start_by_wib} WIB.`;
+      return { ...base, can_redo: false, message: why };
+    }
+    const lenses = await this.lensesFor([strategy]);
+    const lens = lenses.get(strategy.id);
+    if (lens === undefined) return { ok: false, code: 'no_lens', message: `the lens of ${strategy.id} could not be built right now; try again shortly` };
+    const held = picked.decision.kind === 'book' ? new Set(await this.opts.seer.heldSymbols(strategy.id)) : null;
+    const pv = promptVersion(lens, this.opts.reviewer.gatherModel, this.opts.reviewer.verdictModel);
+    const facts = decisionFacts({ strategy, lens, promptVersion: pv, decision: picked.decision, pick: picked.pick, held: held === null ? null : held.has(picked.pick.symbol), now });
+    return {
+      ...base,
+      can_redo: true,
+      message: `Fresh: the session opens at ${clock.open_wib} WIB (${clock.minutes_to_open} min from now).`,
+      facts,
+      lens: lens.text,
+      rules: REDO_RULES,
+    };
+  }
+
+  /**
+   * /redo, step 2: writes the session's verdict to Seer, superseding the one it replaces. The time
+   * rule is checked again here with the server's clock: nothing is written once the session opened.
+   */
+  async redoSubmit(req: RedoRequest & RedoSubmission): Promise<RedoSubmitResult> {
+    const now = this.now();
+    const target = await this.redoTarget(req, now);
+    if (!target.ok) return target;
+    const { strategy, picked, existing } = target;
+    const { decision, pick } = picked;
+    const clock = redoClock(decision.openUtc, now);
+    if (clock.state === 'closed') {
+      return { ok: false, code: 'too_late', message: `the ${decision.sessionDate} session opened at ${clock.open_wib} WIB; a verdict now would not count, so none was written` };
+    }
+    let checked;
+    try {
+      checked = checkSubmitted(req, now);
+    } catch (err) {
+      return { ok: false, code: 'invalid', message: reasonOf(err) };
+    }
+    const lens = (await this.lensesFor([strategy])).get(strategy.id);
+    if (lens === undefined) return { ok: false, code: 'no_lens', message: `the lens of ${strategy.id} could not be built right now; try again shortly` };
+    const model = req.model?.trim() || 'claude-code-session';
+    const pv = promptVersion(lens, model, model);
+    const { writer } = this.opts;
+    if (!(await writer.claimLease(strategy.id, decision.sessionDate, this.opts.host, this.leaseMs))) {
+      return { ok: false, code: 'leased', message: 'another machine is reviewing this decision right now; try again in a few minutes' };
+    }
+    try {
+      const written = await writer.insertVerdict(
+        {
+          strategyId: strategy.id,
+          sessionDate: decision.sessionDate,
+          symbol: pick.symbol,
+          verdict: checked.verdict,
+          reason: checked.reason,
+          sources: checked.sources,
+          lens: lens.id,
+          model,
+          promptVersion: pv,
+          host: this.opts.host,
+          startedAt: now,
+        },
+        existing?.id ?? null,
+      );
+      const late = Date.parse(written.decidedAt) >= decision.openUtc.getTime();
+      await this.reviews.insert({
+        strategyId: strategy.id,
+        sessionDate: decision.sessionDate,
+        symbol: pick.symbol,
+        stage: 'final',
+        status: late ? 'late' : 'ok',
+        verdict: { verdict: checked.verdict, reason: checked.reason, sources: checked.sources, lens: lens.id, seer_verdict_id: written.id, downgraded: checked.downgraded },
+        promptVersion: pv,
+        gatherModel: model,
+        verdictModel: model,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        turns: 0,
+        error: null,
+        host: this.opts.host,
+        reusedFrom: null,
+        startedAt: now,
+        finishedAt: this.now(),
+      });
+      this.events.emit({ op: 'verdict', strategy_id: strategy.id, session_date: decision.sessionDate });
+      this.log(`[notesd] adversary: redo ${strategy.id} ${decision.sessionDate} ${pick.symbol} -> ${checked.verdict}${late ? ' (late)' : ''}`);
+      return {
+        ok: true,
+        written: true,
+        verdict_id: written.id,
+        decided_at: written.decidedAt,
+        late,
+        verdict: checked.verdict,
+        downgraded: checked.downgraded,
+        replaced: existing === null ? null : { id: existing.id, verdict: existing.verdict },
+      };
+    } catch (err) {
+      return { ok: false, code: 'write_failed', message: `the verdict could not be written to Seer: ${reasonOf(err)}` };
+    } finally {
+      await writer
+        .releaseLease(strategy.id, decision.sessionDate, this.opts.host)
+        .catch((err: unknown) => this.log(`[notesd] adversary: could not release the lease of ${strategy.id} ${decision.sessionDate}: ${reasonOf(err)}`));
+    }
+  }
+
+  private async redoTarget(req: RedoRequest, now: Date): Promise<RedoTarget | RedoRefusal> {
+    const { seer } = this.opts;
+    try {
+      if (!(await seer.schemaReady())) return { ok: false, code: 'seer_not_ready', message: "Seer's database has no adversary tables yet" };
+      const originals = reviewableOriginals(await seer.roster());
+      const match = resolveOriginal(originals, req.strategy);
+      if (match.kind === 'ambiguous') return { ok: false, code: 'ambiguous_method', message: `"${req.strategy}" fits several methods: ${match.ids.join(', ')}. Use the full id.` };
+      if (match.kind === 'none') return { ok: false, code: 'unknown_method', message: `no Seer Adversarial method "${req.strategy}". Reviewable: ${originals.map((r) => r.id).join(', ') || 'none'}` };
+      const strategy = match.row;
+      const fromDate = addDays(utcDate(now), -4);
+      const decisions = decisionsOf(await seer.candidates(fromDate, [strategy.id]), strategy.id);
+      const picked = pickDecision(decisions, req.symbol, now, req.session_date);
+      if (picked === null) {
+        const recent = decisions[decisions.length - 1];
+        const names = recent === undefined ? 'no recent decision' : `${recent.sessionDate}: ${recent.picks.map((p) => p.symbol).join(', ')}`;
+        return { ok: false, code: 'not_a_pick', message: `${req.symbol.toUpperCase()} is not a pick of ${strategy.id} in a recent decision (${names})` };
+      }
+      const verdicts = await seer.verdictsFrom(picked.decision.sessionDate, [strategy.id]);
+      const existing = verdicts.find((v) => v.sessionDate === picked.decision.sessionDate && v.symbol.toUpperCase() === picked.pick.symbol.toUpperCase()) ?? null;
+      return { ok: true, strategy, picked, existing };
+    } catch (err) {
+      return { ok: false, code: 'seer_unreachable', message: reasonOf(err) };
+    }
   }
 
   async getToggle(): Promise<ToggleState> {
