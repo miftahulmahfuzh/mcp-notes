@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
 import type { SettingsStore } from './toggle.js';
 
 /**
@@ -22,6 +25,8 @@ export const WORKFLOW_FILE = 'nightly.yml';
 export const SETTLE_AFTER_ET_MIDNIGHT_MS = 5 * 60_000;
 /** Time given to one dispatched run (about 20 minutes, plus GitHub queueing) before asking again. */
 export const REDISPATCH_AFTER_MS = 90 * 60_000;
+/** After an attempt that failed (gh missing, logged out, GitHub down): short, so a fix or a blip does not cost the day. */
+export const RETRY_AFTER_FAILURE_MS = 15 * 60_000;
 /** Dispatches per New York date: the first plus two retries after a failed or missing run. */
 export const MAX_DISPATCHES_PER_DAY = 3;
 /** The workflow's own schedule: New York weekdays Tue-Sat (0 = Sunday). */
@@ -118,7 +123,8 @@ export function dispatchDue({ now, lastSuccessAt, state }: DispatchDueInput): Di
   if (state !== null && state.date === date) {
     if (state.attempts >= MAX_DISPATCHES_PER_DAY) return { dispatch: false, reason: 'gave_up' };
     const last = Date.parse(state.last_at);
-    if (Number.isFinite(last) && now.getTime() - last < REDISPATCH_AFTER_MS) return { dispatch: false, reason: 'cooling_down' };
+    const wait = state.result === 'ok' ? REDISPATCH_AFTER_MS : RETRY_AFTER_FAILURE_MS;
+    if (Number.isFinite(last) && now.getTime() - last < wait) return { dispatch: false, reason: 'cooling_down' };
   }
   return { dispatch: true };
 }
@@ -132,7 +138,29 @@ export interface GhResult {
 /** Runs `gh <args>`. Injectable so tests never start a process. */
 export type GhRunner = (args: readonly string[]) => Promise<GhResult>;
 
-export function defaultGhRunner(ghBin = 'gh', timeoutMs = 60_000): GhRunner {
+/**
+ * The `gh` to run. `NOTESD_GH_BIN` wins. Otherwise the first executable `gh` on PATH or in the
+ * usual user locations: the systemd unit's PATH has no ~/.local/bin, where `gh` normally lives.
+ * Falls back to plain `gh`, so a missing binary shows up as a failed attempt in the log.
+ */
+export function resolveGhBin(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
+  const explicit = env.NOTESD_GH_BIN?.trim();
+  if (explicit) return explicit.startsWith('~') ? path.join(home, explicit.slice(1)) : explicit;
+  const dirs = [...(env.PATH ?? '').split(path.delimiter), path.join(home, '.local', 'bin'), '/usr/local/bin', '/usr/bin'];
+  for (const dir of dirs) {
+    if (dir === '') continue;
+    const candidate = path.join(dir, 'gh');
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // not here
+    }
+  }
+  return 'gh';
+}
+
+export function defaultGhRunner(ghBin: string = resolveGhBin(), timeoutMs = 60_000): GhRunner {
   return (args) =>
     new Promise((resolve) => {
       execFile(ghBin, [...args], { timeout: timeoutMs, windowsHide: true }, (err, _stdout, stderr) => {

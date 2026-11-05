@@ -1,14 +1,19 @@
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DISPATCH_STATE_KEY,
   MAX_DISPATCHES_PER_DAY,
   NightlyDispatcher,
   REDISPATCH_AFTER_MS,
+  RETRY_AFTER_FAILURE_MS,
   dispatchDue,
   easternDate,
   easternMidnightUtc,
   parseDispatchState,
   repoSlugFromRemote,
+  resolveGhBin,
   settleInstant,
   type GhRunner,
 } from '../../../src/adversary/dispatch.js';
@@ -84,6 +89,16 @@ describe('dispatchDue', () => {
     expect(dispatchDue({ now: soon, lastSuccessAt: null, state: state(1) })).toEqual({ dispatch: false, reason: 'cooling_down' });
     expect(dispatchDue({ now: later, lastSuccessAt: null, state: state(1) })).toEqual({ dispatch: true });
     expect(dispatchDue({ now: later, lastSuccessAt: null, state: state(MAX_DISPATCHES_PER_DAY) })).toEqual({ dispatch: false, reason: 'gave_up' });
+  });
+
+  it('retries a failed attempt after fifteen minutes, not ninety', () => {
+    const last = at('2026-11-05T06:00:00Z');
+    const failed = { date: '2026-11-05', attempts: 1, last_at: last.toISOString(), host: 'GPD', result: 'spawn gh ENOENT' };
+    expect(dispatchDue({ now: new Date(last.getTime() + RETRY_AFTER_FAILURE_MS - 1), lastSuccessAt: null, state: failed })).toEqual({
+      dispatch: false,
+      reason: 'cooling_down',
+    });
+    expect(dispatchDue({ now: new Date(last.getTime() + RETRY_AFTER_FAILURE_MS), lastSuccessAt: null, state: failed })).toEqual({ dispatch: true });
   });
 
   it('ignores a state left by an earlier New York date', () => {
@@ -182,7 +197,7 @@ describe('NightlyDispatcher', () => {
     const t = setup({ now: THU_AFTER, gh: async () => ({ ok: false, error: 'gh: not logged in' }) });
     for (let i = 0; i < MAX_DISPATCHES_PER_DAY; i++) {
       expect(await t.dispatcher.tick()).toEqual({ type: 'failed', error: 'gh: not logged in' });
-      t.clock.now = new Date(t.clock.now.getTime() + REDISPATCH_AFTER_MS);
+      t.clock.now = new Date(t.clock.now.getTime() + RETRY_AFTER_FAILURE_MS);
     }
     expect(await t.dispatcher.tick()).toEqual({ type: 'skipped', reason: 'gave_up' });
     expect((t.store.values.get(DISPATCH_STATE_KEY) as { result: string }).result).toBe('gh: not logged in');
@@ -198,5 +213,30 @@ describe('NightlyDispatcher', () => {
     });
     expect(await t.dispatcher.tick()).toEqual({ type: 'failed', error: "cannot tell Seer's GitHub repo" });
     expect(t.calls).toHaveLength(0);
+  });
+});
+
+describe('resolveGhBin', () => {
+  function fakeHome(): string {
+    const home = mkdtempSync(path.join(tmpdir(), 'gh-home-'));
+    mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
+    const gh = path.join(home, '.local', 'bin', 'gh');
+    writeFileSync(gh, '#!/bin/sh\n');
+    chmodSync(gh, 0o755);
+    return home;
+  }
+
+  it('finds gh in ~/.local/bin although the daemon PATH lacks it', () => {
+    const home = fakeHome();
+    expect(resolveGhBin({ PATH: '/nonexistent' }, home)).toBe(path.join(home, '.local', 'bin', 'gh'));
+  });
+
+  it('prefers NOTESD_GH_BIN, expanding ~', () => {
+    expect(resolveGhBin({ NOTESD_GH_BIN: '/opt/gh' }, '/h')).toBe('/opt/gh');
+    expect(resolveGhBin({ NOTESD_GH_BIN: '~/bin/gh' }, '/h')).toBe('/h/bin/gh');
+  });
+
+  it('falls back to plain gh when none is found', () => {
+    expect(resolveGhBin({ PATH: '/nonexistent' }, mkdtempSync(path.join(tmpdir(), 'gh-empty-')))).toMatch(/gh$/);
   });
 });
