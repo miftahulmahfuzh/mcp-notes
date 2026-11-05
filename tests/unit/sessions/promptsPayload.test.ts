@@ -9,9 +9,10 @@ describe('toPromptsPayload', () => {
     const out = toPromptsPayload(HEAD, 'pc', {
       kind: 'full',
       rows: [
-        { text: spaced, at: new Date('2026-11-01T01:00:00Z'), truncated: false },
-        { text: 'cut', at: null, truncated: true },
+        { seq: 1, text: spaced, at: new Date('2026-11-01T01:00:00Z'), truncated: false },
+        { seq: 2, text: 'cut', at: null, truncated: true },
       ],
+      images: [],
     });
     expect(out).toEqual({
       node_id: 'A0-3G',
@@ -20,10 +21,37 @@ describe('toPromptsPayload', () => {
       complete: true,
       incomplete_reason: null,
       prompts: [
-        { n: 1, text: spaced, at: '2026-11-01T01:00:00.000Z', truncated: false },
-        { n: 2, text: 'cut', at: null, truncated: true },
+        { n: 1, text: spaced, at: '2026-11-01T01:00:00.000Z', truncated: false, images: [] },
+        { n: 2, text: 'cut', at: null, truncated: true, images: [] },
       ],
     });
+  });
+
+  it('attaches each prompt its own images, in position order, by matching seq', () => {
+    const out = toPromptsPayload(HEAD, 'pc', {
+      kind: 'full',
+      rows: [
+        { seq: 1, text: 'no pictures', at: null, truncated: false },
+        { seq: 2, text: 'two pictures', at: null, truncated: false },
+      ],
+      images: [
+        { prompt_seq: 2, id: 'A-AA2', width: 20, height: 10, host: 'pc' },
+        { prompt_seq: 2, id: 'A-AA1', width: 30, height: 15, host: 'lenovo' },
+      ],
+    });
+    expect(out.prompts).toEqual([
+      { n: 1, text: 'no pictures', at: null, truncated: false, images: [] },
+      {
+        n: 2,
+        text: 'two pictures',
+        at: null,
+        truncated: false,
+        images: [
+          { id: 'A-AA2', width: 20, height: 10, available: true, urls: { thumb: '/api/chat/images/A-AA2/thumb', display: '/api/chat/images/A-AA2/display' } },
+          { id: 'A-AA1', width: 30, height: 15, available: false, urls: { thumb: '/api/chat/images/A-AA1/thumb', display: '/api/chat/images/A-AA1/display' } },
+        ],
+      },
+    ]);
   });
 
   it('falls back to the excerpt jsonb, not_backfilled, on another host', () => {
@@ -38,18 +66,18 @@ describe('toPromptsPayload', () => {
       complete: false,
       incomplete_reason: 'not_backfilled',
       prompts: [
-        { n: 1, text: 'old excerpt…', at: '2026-11-01T02:00:00.000Z', truncated: false },
-        { n: 2, text: 'bare string', at: null, truncated: false },
+        { n: 1, text: 'old excerpt…', at: '2026-11-01T02:00:00.000Z', truncated: false, images: [] },
+        { n: 2, text: 'bare string', at: null, truncated: false, images: [] },
       ],
     });
   });
 
-  it('a row rebuilt from excerpts (transcript pruned) is never complete', () => {
-    const out = toPromptsPayload(HEAD, 'pc', { kind: 'pruned', rows: [{ text: 'kept excerpt…', at: null, truncated: true }] });
+  it('a row rebuilt from excerpts (transcript pruned) is never complete, and never carries images', () => {
+    const out = toPromptsPayload(HEAD, 'pc', { kind: 'pruned', rows: [{ seq: 1, text: 'kept excerpt…', at: null, truncated: true }] });
     expect(out).toMatchObject({
       complete: false,
       incomplete_reason: 'transcript_pruned',
-      prompts: [{ n: 1, text: 'kept excerpt…', at: null, truncated: true }],
+      prompts: [{ n: 1, text: 'kept excerpt…', at: null, truncated: true, images: [] }],
     });
   });
 });

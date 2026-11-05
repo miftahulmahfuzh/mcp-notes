@@ -8,6 +8,7 @@ import {
   customType,
   date,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -631,6 +632,37 @@ export const ccSessionPrompts = pgTable(
 )
 
 /**
+ * One pasted image carried by a prompt (migration 0012): links a `cc_session_prompts` row to a
+ * `chat_images` row (`source: 'claude_code'`), so an image pasted into a Claude Code session gets
+ * the same stable id a wall-chat image has, shows as a thumbnail in the Projects page's Prompts
+ * view, and can be named later from wall chat or another session. Written only by
+ * src/sessions/repo.ts, alongside the prompt row. A prompt rewritten by a from-byte-0 replace
+ * (`replacePrompts`) drops and relinks its images the same way its text is rewritten; re-pasting the
+ * same bytes is a no-op (`chat_images` dedupes by sha256).
+ */
+export const ccSessionPromptImages = pgTable(
+  'cc_session_prompt_images',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => ccSessions.sessionId, { onDelete: 'cascade' }),
+    promptSeq: integer('prompt_seq').notNull(),
+    /** Position of the image among its prompt's content blocks, 0-based. */
+    position: integer('position').notNull(),
+    imageId: text('image_id')
+      .notNull()
+      .references(() => chatImages.id, { onDelete: 'cascade' }),
+    /** The `[Image #N]` Claude Code assigned, or the 1-based position when absent. */
+    pasteId: integer('paste_id'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.promptSeq, t.position] }),
+    foreignKey({ columns: [t.sessionId, t.promptSeq], foreignColumns: [ccSessionPrompts.sessionId, ccSessionPrompts.seq] }).onDelete('cascade'),
+    index('cc_session_prompt_images_image_idx').on(t.imageId),
+  ],
+)
+
+/**
  * An explicit link from an existing note to a Claude Code session (migration 0009), made with the
  * `link_note` MCP tool. Session detail lists the notes made in a session (`notes.origin
  * ->> 'claude_session'`) together with the notes linked here; a link never rewrites the note's
@@ -800,6 +832,8 @@ export type NewCcSessionRow = typeof ccSessions.$inferInsert
 export type CcSessionEmbeddingRow = typeof ccSessionEmbeddings.$inferSelect
 export type CcSessionPromptRow = typeof ccSessionPrompts.$inferSelect
 export type NewCcSessionPromptRow = typeof ccSessionPrompts.$inferInsert
+export type CcSessionPromptImageRow = typeof ccSessionPromptImages.$inferSelect
+export type NewCcSessionPromptImageRow = typeof ccSessionPromptImages.$inferInsert
 export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
 export type AppSettingRow = typeof appSettings.$inferSelect
 export type AdversaryReviewRow = typeof adversaryReviews.$inferSelect

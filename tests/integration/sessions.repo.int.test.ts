@@ -1,11 +1,16 @@
-import { sql } from 'drizzle-orm'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { eq, sql } from 'drizzle-orm'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
+import { ccSessionPromptImages, ccSessionPrompts, chatImages } from '../../src/db/schema.js'
 import { EMBEDDING_DIMENSIONS } from '../../src/embeddings/constants.js'
 import { NODE_ID_PATTERN } from '../../src/sessions/ids.js'
 import { SessionsRepo } from '../../src/sessions/repo.js'
 import { PROMPTS_VERSION, SELECTED_PROJECT_KEY, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
+import { makeImage } from './imageHarness.js'
 import { closeTestDb, openTestDb, truncateAll } from './setup.js'
 
 const HOST = 'host-a'
@@ -475,6 +480,72 @@ describe('SessionsRepo', () => {
       expect(await repo.getSelectedProject()).toBeNull()
       await repo.putSetting('x', null)
       expect(await repo.getSetting('x')).toBeNull()
+    })
+  })
+
+  describe('pasted-image prompts', () => {
+    let dataDir: string
+    let imageRepo: SessionsRepo
+
+    beforeEach(async () => {
+      dataDir = await mkdtemp(path.join(os.tmpdir(), 'notes-session-images-'))
+      imageRepo = new SessionsRepo(db, { dataDir, hostname: () => HOST })
+    })
+    afterEach(async () => {
+      await rm(dataDir, { recursive: true, force: true })
+    })
+
+    async function png(rgb: { r: number; g: number; b: number }): Promise<string> {
+      return (await makeImage('png', 4, 4, rgb)).toString('base64')
+    }
+
+    it('stores a pasted image as a chat_images row and links it to its prompt', async () => {
+      const data = await png({ r: 10, g: 20, b: 30 })
+      await imageRepo.upsertFromTranscript(
+        patch('s-img', { prompts: [{ text: 'look at this', at: null, images: [{ mediaType: 'image/png', dataBase64: data, pasteId: 1 }] }] }),
+      )
+      const links = await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img'))
+      expect(links).toHaveLength(1)
+      expect(links[0]).toMatchObject({ promptSeq: 1, position: 0, pasteId: 1 })
+      const [image] = await db.select().from(chatImages).where(eq(chatImages.id, links[0]!.imageId))
+      expect(image).toMatchObject({ source: 'claude_code', host: HOST, mime: 'image/png', width: 4, height: 4 })
+    })
+
+    it('dedupes identical bytes pasted into two different prompts, by sha256', async () => {
+      const data = await png({ r: 1, g: 2, b: 3 })
+      await imageRepo.upsertFromTranscript(patch('s-img-a', { prompts: [{ text: 'first', at: null, images: [{ mediaType: 'image/png', dataBase64: data, pasteId: 1 }] }] }))
+      await imageRepo.upsertFromTranscript(patch('s-img-b', { prompts: [{ text: 'second', at: null, images: [{ mediaType: 'image/png', dataBase64: data, pasteId: 1 }] }] }))
+      const a = await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img-a'))
+      const b = await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img-b'))
+      expect(a[0]!.imageId).toBe(b[0]!.imageId)
+      expect(await db.select().from(chatImages)).toHaveLength(1)
+    })
+
+    it('relinks (not duplicates) an image when a from-byte-0 replace rewrites the same prompt', async () => {
+      const data = await png({ r: 4, g: 5, b: 6 })
+      const prompts = [{ text: 'again', at: null, images: [{ mediaType: 'image/png', dataBase64: data, pasteId: 1 }] }]
+      await imageRepo.upsertFromTranscript(patch('s-img-replace', { prompts }))
+      await imageRepo.upsertFromTranscript(patch('s-img-replace', { fromOffset: 0, prompts }))
+      const links = await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img-replace'))
+      expect(links).toHaveLength(1)
+      expect(await db.select().from(chatImages)).toHaveLength(1)
+    })
+
+    it('drops a corrupt pasted image but keeps the prompt text', async () => {
+      await imageRepo.upsertFromTranscript(
+        patch('s-img-bad', { prompts: [{ text: 'broken paste', at: null, images: [{ mediaType: 'image/png', dataBase64: 'not-an-image', pasteId: 1 }] }] }),
+      )
+      expect(await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img-bad'))).toEqual([])
+      const rows = await db.select().from(ccSessionPrompts).where(eq(ccSessionPrompts.sessionId, 's-img-bad'))
+      expect(rows[0]?.text).toBe('broken paste')
+    })
+
+    it('a SessionsRepo with no dataDir drops images silently (text still stored)', async () => {
+      const data = await png({ r: 7, g: 8, b: 9 })
+      await repo.upsertFromTranscript(patch('s-img-nodeps', { prompts: [{ text: 'no deps', at: null, images: [{ mediaType: 'image/png', dataBase64: data, pasteId: 1 }] }] }))
+      expect(await db.select().from(ccSessionPromptImages).where(eq(ccSessionPromptImages.sessionId, 's-img-nodeps'))).toEqual([])
+      const rows = await db.select().from(ccSessionPrompts).where(eq(ccSessionPrompts.sessionId, 's-img-nodeps'))
+      expect(rows[0]?.text).toBe('no deps')
     })
   })
 })

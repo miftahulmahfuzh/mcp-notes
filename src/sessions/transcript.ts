@@ -3,11 +3,13 @@ import {
   MAX_COMMITS,
   MAX_FILES_EDITED,
   MAX_FINAL_MESSAGE_CHARS,
+  MAX_IMAGES_PER_PROMPT,
   MAX_PLAN_DOCS,
   MAX_PROMPT_STORE_CHARS,
   MAX_TITLE_CHARS,
   type ModelUsage,
   type PatchPrompt,
+  type PatchPromptImage,
   type SessionCommit,
   type TokenCounts,
   type TranscriptPatch,
@@ -334,6 +336,35 @@ export function promptText(record: TranscriptRecord): string {
     .trim();
 }
 
+/**
+ * The base64 image blocks of a human-prompt record, in block order, capped to MAX_IMAGES_PER_PROMPT.
+ * `pasteId` is the matching `imagePasteIds` value (the N of "[Image #N]"), or the 1-based image
+ * position when absent. Ported from `claude/hooks/lib/transcript.mjs` `extractImages`: images
+ * pasted alongside a bare slash command (carried on the `isMeta` records that follow it) are not
+ * collected here, only images on an ordinary prompt record's own content array.
+ */
+export function extractImages(record: TranscriptRecord): PatchPromptImage[] {
+  const message = record.message;
+  const content = isObject(message) ? message.content : undefined;
+  if (!Array.isArray(content)) return [];
+  const pasteIds = Array.isArray(record.imagePasteIds) ? record.imagePasteIds : [];
+  const images: PatchPromptImage[] = [];
+  let position = 0;
+  for (const block of content) {
+    if (!isObject(block) || block.type !== 'image') continue;
+    const index = position;
+    position += 1;
+    if (images.length >= MAX_IMAGES_PER_PROMPT) continue;
+    const source = block.source;
+    if (!isObject(source) || source.type !== 'base64') continue;
+    if (typeof source.data !== 'string' || source.data === '' || typeof source.media_type !== 'string') continue;
+    const rawPasteId: unknown = pasteIds[index];
+    const pasteId = typeof rawPasteId === 'number' && Number.isInteger(rawPasteId) ? rawPasteId : index + 1;
+    images.push({ mediaType: source.media_type, dataBase64: source.data, pasteId });
+  }
+  return images;
+}
+
 /** The text of a tool_result block's `content` (a string or an array of text blocks). */
 export function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -557,7 +588,7 @@ export class TranscriptAccumulator {
       const text = promptText(record);
       if (text !== '' && !INTERRUPTED.test(text)) {
         if (BARE_COMMAND.test(text)) this.pendingBare = { text, at };
-        else this.recordPrompt(text, at);
+        else this.recordPrompt(text, at, extractImages(record));
       }
       return;
     }
@@ -571,10 +602,10 @@ export class TranscriptAccumulator {
     }
   }
 
-  private recordPrompt(text: string, at: string | null): void {
+  private recordPrompt(text: string, at: string | null, images: PatchPromptImage[] = []): void {
     const stored = storeCut(text);
     this.firstPrompt ??= stored.text;
-    this.prompts.push({ text: stored.text, at, truncated: stored.truncated });
+    this.prompts.push({ text: stored.text, at, truncated: stored.truncated, ...(images.length > 0 ? { images } : {}) });
     this.segment = [];
   }
 

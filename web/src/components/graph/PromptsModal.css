@@ -20,3 +20,9 @@
 .prm-cut { padding: 1px 7px 2px; border-radius: 999px; background: var(--chip-bg); color: var(--chip); }
 .prm-item-head .ibtn { margin-left: auto; width: 30px; height: 30px; font-size: 16px; }
 .prm-text { margin: 0; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; color: var(--text); }
+
+.prm-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.prm-thumb { width: 64px; height: 64px; padding: 0; border: 1px solid var(--line-14); border-radius: 6px; overflow: hidden; background: var(--chip-bg); cursor: pointer; }
+.prm-thumb:hover { border-color: var(--line); }
+.prm-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.prm-thumb-unavailable { opacity: .45; }

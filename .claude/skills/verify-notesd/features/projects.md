@@ -33,9 +33,19 @@
   listing every stored prompt, numbered from 1, with its time and the full text, whitespace kept.
   Secrets are shown as `[redacted]`, and a prompt cut at the 256 KB storage ceiling is marked
   "truncated". "Copy prompt N" copies that prompt's text. "Copy all prompts" (top right) copies
-  `1. <text>\n\n2. <text>…`. Both show a brief check mark. Esc, X ("Close prompts") or a backdrop
-  click closes only the modal; the node panel, `?node=` and the chat node pop-up stay. The modal
-  reads `GET /api/sessions/:nodeId/prompts` (DB only, any host). A row its owning host has not
+  `1. <text>\n\n2. <text>…`. Both show a brief check mark. Images a prompt carried (pasted into
+  Claude Code alongside its text) show as small clickable thumbnails under the prompt's text;
+  clicking one opens the Lightbox scoped to that prompt's own images (arrow keys / Esc as
+  elsewhere; Esc closes only the Lightbox first, leaving the Prompts modal open). Each image is a
+  real `chat_images` row (`source: claude_code`), extracted from the transcript's base64 content
+  blocks during normal tail ingestion and by the one-time `PROMPTS_VERSION` backfill for sessions
+  ingested before this shipped (idempotent: `chat_images` dedupes by sha256, so re-extraction never
+  duplicates a file). An image on another host than this daemon shows greyed with the tooltip "Not
+  on this machine" instead of opening; it is served (and host-gated) exactly like a wall chat
+  image, at `/api/chat/images/:id/{thumb,display}` — no separate route. Esc, X ("Close prompts") or
+  a backdrop click closes only the modal; the node panel, `?node=` and the chat node pop-up stay.
+  The modal reads `GET /api/sessions/:nodeId/prompts` (DB only, any host), now joined with
+  `cc_session_prompt_images`/`chat_images` for the full-prompts case. A row its owning host has not
   backfilled yet shows its excerpts and the line "Full prompts arrive once <host> backfills"
   (`complete: false`, `incomplete_reason: not_backfilled`). A row whose transcript was pruned
   before the backfill shows its redacted excerpts and "Older prompts were cut; the full text is no
@@ -129,6 +139,23 @@ UI selectors (pass ids through the environment: `NODE=$BIG PROMPTS_JSON=<file> $
 - modal: `page.getByRole('dialog', { name: 'Prompts of ' + NODE })`; rows `li.prm-item[data-n="N"]`, text `.prm-text`
 - copy: `getByRole('button', { name: 'Copy prompt 1', exact: true })` (exact, or it also matches 10, 11, …), `'Copy all prompts'`
 - backdrop: `page.locator('[data-modal="prompts"]').dispatchEvent('click')`
+
+Pasted images on a prompt. Extraction out of a real transcript's base64 blocks is proven by
+`tests/unit/sessions/transcript.test.ts` (`extractImages`) and the `pasted-image prompts` describe
+block of `tests/integration/sessions.repo.int.test.ts` (storage, sha256 dedupe, from-byte-0 relink,
+a corrupt paste dropped without losing the prompt's text) — all against a real Postgres and a real
+temp data dir, not a run. To check the read side (API shape, thumbnail, Lightbox) on a run, seed a
+`chat_images` row and a `cc_session_prompt_images` link directly rather than crafting a fixture
+transcript with a real base64 image block:
+```sh
+$V exec RUN "insert into chat_images (id, path, sha256, mime, width, height, bytes, host, source) values ('A-IMG1', 'chat-images/2026/11/A-IMG1.png', repeat('a', 64), 'image/png', 12, 8, 100, '<RUN's host>', 'claude_code')"
+$V exec RUN "insert into cc_session_prompt_images (session_id, prompt_seq, position, image_id, paste_id) values ('<a seeded session_id>', 1, 0, 'A-IMG1', 1)"
+$V api RUN GET /api/sessions/$NODE/prompts   # prompts[0].images: [{id:"A-IMG1", width:12, height:8, available:true, urls:{thumb,display}}]
+```
+UI: `panel.getByRole('button', { name: /Open pasted image/ })` inside `li.prm-item[data-n="1"]`;
+clicking opens `page.getByRole('dialog', { name: 'Image viewer' })`. `path` need not exist on disk
+for this read-side check (`available` is a host-string compare, not a file probe); the thumbnail
+`<img>` itself will 404 since there is no real file, which is fine for proving the API/DOM wiring.
 
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`

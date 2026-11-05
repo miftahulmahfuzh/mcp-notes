@@ -279,10 +279,36 @@ describe('fetchSessionPrompts', () => {
       complete: false,
       incomplete_reason: 'not_backfilled',
       prompts: [
-        { n: 1, text: '  a\n\tb  ', at: '2026-11-01T01:00:00.000Z', truncated: false },
-        { n: 2, text: 'cut', at: null, truncated: true },
+        { n: 1, text: '  a\n\tb  ', at: '2026-11-01T01:00:00.000Z', truncated: false, images: [] },
+        { n: 2, text: 'cut', at: null, truncated: true, images: [] },
       ],
     });
+  });
+
+  it('normalizes pasted images, defaulting urls and an unset available to true', async () => {
+    stub(200, {
+      node_id: 'A0-3G',
+      host: 'pc',
+      complete: true,
+      prompts: [
+        {
+          n: 1,
+          text: 'see this',
+          at: null,
+          truncated: false,
+          images: [
+            { id: 'A-IMG1', width: 12, height: 8, available: false, urls: { thumb: '/api/chat/images/A-IMG1/thumb', display: '/api/chat/images/A-IMG1/display' } },
+            { id: 'A-IMG2', width: '20', height: 10 },
+            'bogus',
+          ],
+        },
+      ],
+    });
+    const p = await fetchSessionPrompts('A0-3G');
+    expect(p?.prompts[0]?.images).toEqual([
+      { id: 'A-IMG1', width: 12, height: 8, available: false, urls: { thumb: '/api/chat/images/A-IMG1/thumb', display: '/api/chat/images/A-IMG1/display' } },
+      { id: 'A-IMG2', width: 20, height: 10, available: true, urls: { thumb: '/api/chat/images/A-IMG2/thumb', display: '/api/chat/images/A-IMG2/display' } },
+    ]);
   });
 
   it('keeps transcript_pruned, and has no reason when complete', async () => {

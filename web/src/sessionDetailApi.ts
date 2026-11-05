@@ -307,12 +307,22 @@ export function summarizeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_
   return `Could not request a summary of ${d.node_id}`;
 }
 
+/** One image pasted on a prompt: the same id, urls and host-availability a chat image has. */
+export interface SessionPromptImage {
+  id: string;
+  width: number;
+  height: number;
+  available: boolean;
+  urls: { thumb: string; display: string };
+}
+
 /** One prompt of `GET /api/sessions/:nodeId/prompts`: numbered from 1, text exactly as stored. */
 export interface SessionPromptItem {
   n: number;
   text: string;
   at: string | null;
   truncated: boolean;
+  images: SessionPromptImage[];
 }
 
 /** Why a prompt list is not complete (server `PromptsIncompleteReason`). */
@@ -332,10 +342,24 @@ export interface SessionPrompts {
   prompts: SessionPromptItem[];
 }
 
+function promptImage(v: unknown): SessionPromptImage | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id);
+  if (id === null) return null;
+  const urls = isObj(v.urls) ? v.urls : {};
+  return {
+    id,
+    width: num(v.width),
+    height: num(v.height),
+    available: v.available !== false,
+    urls: { thumb: str(urls.thumb) ?? `/api/chat/images/${id}/thumb`, display: str(urls.display) ?? `/api/chat/images/${id}/display` },
+  };
+}
+
 function promptItem(v: unknown, i: number): SessionPromptItem | null {
   if (!isObj(v) || typeof v.text !== 'string' || v.text === '') return null;
   const n = typeof v.n === 'number' && Number.isInteger(v.n) && v.n > 0 ? v.n : i + 1;
-  return { n, text: v.text, at: str(v.at), truncated: v.truncated === true };
+  return { n, text: v.text, at: str(v.at), truncated: v.truncated === true, images: compact(list(v.images).map(promptImage)) };
 }
 
 export function normalizeSessionPrompts(raw: Wire): SessionPrompts {

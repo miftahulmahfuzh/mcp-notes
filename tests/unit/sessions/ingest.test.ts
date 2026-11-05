@@ -508,7 +508,7 @@ describe('startSessionIngest: prompts backfill', () => {
     await ingester.ready;
     expect(await ingester.promptsBackfill).toMatchObject({ redacted: 1 });
     expect(store.rows.get(id)).toMatchObject({ promptsVersion: PROMPTS_VERSION_EXCERPTS, prompts: [{ text: 'use [redacted] now…', at: null }], transcriptOffset: 50 });
-    expect(store.sidePrompts.get(id)).toEqual([{ text: 'use [redacted] now…', at: null, truncated: true }]);
+    expect(store.sidePrompts.get(id)).toEqual([{ text: 'use [redacted] now…', at: null, truncated: true, images: [] }]);
     const second = start();
     await second.ready;
     expect(await second.promptsBackfill).toMatchObject({ candidates: 1, skipped: 1, redacted: 0, filled: 0 });
@@ -520,7 +520,7 @@ describe('startSessionIngest: prompts backfill', () => {
     const row = store.rows.get(FIXTURE.manyPrompts);
     if (!row) throw new Error('no row');
     store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: PROMPTS_VERSION_EXCERPTS });
-    store.sidePrompts.set(FIXTURE.manyPrompts, [{ text: 'excerpt…', at: null, truncated: true }]);
+    store.sidePrompts.set(FIXTURE.manyPrompts, [{ text: 'excerpt…', at: null, truncated: true, images: [] }]);
     const second = start();
     await second.ready;
     expect(await second.promptsBackfill).toMatchObject({ candidates: 1, filled: 1 });

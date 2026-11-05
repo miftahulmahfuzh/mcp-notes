@@ -14,11 +14,14 @@ const PAYLOAD = {
   complete: true,
   incomplete_reason: null,
   prompts: [
-    { n: 1, text: 'run the swarm', at: '2026-11-01T01:00:00.000Z', truncated: false },
-    { n: 2, text: SPACED, at: '2026-11-01T01:05:00.000Z', truncated: false },
-    { n: 3, text: LONG, at: null, truncated: true },
+    { n: 1, text: 'run the swarm', at: '2026-11-01T01:00:00.000Z', truncated: false, images: [] },
+    { n: 2, text: SPACED, at: '2026-11-01T01:05:00.000Z', truncated: false, images: [] },
+    { n: 3, text: LONG, at: null, truncated: true, images: [] },
   ],
 };
+
+const IMG_A = { id: 'A-IMG1', width: 12, height: 8, available: true, urls: { thumb: '/api/chat/images/A-IMG1/thumb', display: '/api/chat/images/A-IMG1/display' } };
+const IMG_B = { id: 'A-IMG2', width: 20, height: 10, available: false, urls: { thumb: '/api/chat/images/A-IMG2/thumb', display: '/api/chat/images/A-IMG2/display' } };
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -134,6 +137,33 @@ describe('PromptsModal', () => {
     } finally {
       document.removeEventListener('keydown', onDocKey);
     }
+  });
+
+  it('shows pasted images as thumbnails, greys an unavailable one, and opens the lightbox scoped to that prompt', async () => {
+    stub(200, { ...PAYLOAD, prompts: [{ ...PAYLOAD.prompts[0], images: [IMG_A, IMG_B] }, PAYLOAD.prompts[1]] });
+    open();
+    const d = await ready();
+    const thumbs = within(d).getAllByRole('button', { name: /Open pasted image/ });
+    expect(thumbs).toHaveLength(2);
+    expect(thumbs[0]!.className).not.toContain('unavailable');
+    expect(thumbs[1]!.className).toContain('prm-thumb-unavailable');
+    expect(thumbs[1]!.getAttribute('data-tip')).toBe('Not on this machine');
+    expect(screen.queryByRole('dialog', { name: 'Image viewer' })).toBeNull();
+    fireEvent.click(thumbs[0]!);
+    expect(screen.getByRole('dialog', { name: 'Image viewer' })).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+  });
+
+  it('Esc closes the lightbox first, leaving the prompts modal open', async () => {
+    stub(200, { ...PAYLOAD, prompts: [{ ...PAYLOAD.prompts[0], images: [IMG_A] }] });
+    const onClose = open();
+    const d = await ready();
+    fireEvent.click(within(d).getByRole('button', { name: /Open pasted image/ }));
+    expect(screen.getByRole('dialog', { name: 'Image viewer' })).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Image viewer' })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(isPromptsOpen()).toBe(true);
   });
 
   it('a backdrop click closes it; a click inside does not', async () => {

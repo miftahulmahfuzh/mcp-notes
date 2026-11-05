@@ -87,8 +87,8 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
   if (!deps.config.sessions.enabled) {
     console.log('[notesd] session ingest off: NOTESD_SESSIONS=off');
   } else {
-    const sessionsRepo = new SessionsRepo(deps.db);
     const sessionsHost = hostname();
+    const sessionsRepo = new SessionsRepo(deps.db, { dataDir: deps.config.dataDir, hostname: () => sessionsHost });
     sessionLinks = startLinkWorker({ store: dbLinkStore(deps.db, sessionsRepo), host: sessionsHost });
     sessionIngest = startSessionIngest({
       claudeHome: deps.config.sessions.claudeHome,

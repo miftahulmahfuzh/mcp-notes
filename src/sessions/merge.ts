@@ -4,6 +4,7 @@ import {
   MAX_COMMITS,
   MAX_FILES_EDITED,
   MAX_FINAL_MESSAGE_CHARS,
+  MAX_IMAGES_PER_PROMPT,
   MAX_PLAN_DOCS,
   MAX_PROMPT_CHARS,
   MAX_PROMPTS,
@@ -135,7 +136,12 @@ function mergePrompts(prev: SessionPrompt[], next: readonly PatchPrompt[] | unde
 export function storedPrompts(prompts: readonly PatchPrompt[] | undefined): StoredPrompt[] {
   return (prompts ?? [])
     .filter((p) => p.text.trim().length > 0)
-    .map((p) => ({ text: redactSecrets(p.text), at: parseAt(p.at), truncated: p.truncated === true }));
+    .map((p) => ({
+      text: redactSecrets(p.text),
+      at: parseAt(p.at),
+      truncated: p.truncated === true,
+      images: (p.images ?? []).slice(0, MAX_IMAGES_PER_PROMPT),
+    }));
 }
 
 /**
@@ -147,7 +153,7 @@ export function storedPromptsFromExcerpts(excerpts: readonly SessionPrompt[]): S
     .filter((p) => p.text.trim().length > 0)
     .map((p) => {
       const text = redactSecrets(p.text);
-      return { text, at: parseAt(p.at), truncated: text.endsWith('…') };
+      return { text, at: parseAt(p.at), truncated: text.endsWith('…'), images: [] };
     });
 }
 

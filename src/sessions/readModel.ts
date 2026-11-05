@@ -43,6 +43,7 @@ import {
   type PromptsPayload,
   type SearchPayload,
   type SessionDetail,
+  type StoredPromptImageRow,
   type StoredPromptRow,
   type SummaryRequestPayload,
   type TranscriptPayload,
@@ -484,8 +485,13 @@ export async function sessionPrompts(rd: SessionsReadDeps, nodeId: string): Prom
   const version = Number(row.prompts_version);
   if (version < PROMPTS_VERSION_EXCERPTS) return toPromptsPayload(row, rd.host, { kind: 'legacy', excerpts: row.excerpts });
   const rows = await rd.db.execute<StoredPromptRow>(sql`
-    select text, at, truncated from cc_session_prompts where session_id = ${row.session_id} order by seq`);
-  return toPromptsPayload(row, rd.host, { kind: version >= PROMPTS_VERSION ? 'full' : 'pruned', rows: rows.rows });
+    select seq, text, at, truncated from cc_session_prompts where session_id = ${row.session_id} order by seq`);
+  if (version < PROMPTS_VERSION) return toPromptsPayload(row, rd.host, { kind: 'pruned', rows: rows.rows });
+  const images = await rd.db.execute<StoredPromptImageRow>(sql`
+    select pi.prompt_seq, ci.id, ci.width, ci.height, ci.host
+    from cc_session_prompt_images pi join chat_images ci on ci.id = pi.image_id
+    where pi.session_id = ${row.session_id} order by pi.prompt_seq, pi.position`);
+  return toPromptsPayload(row, rd.host, { kind: 'full', rows: rows.rows, images: images.rows });
 }
 
 /** A node id that exists, with its repo: the wall links it in chat and opens its graph. */

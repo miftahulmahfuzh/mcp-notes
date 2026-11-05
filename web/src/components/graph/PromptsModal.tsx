@@ -4,7 +4,8 @@ import { Check, Copy, X } from '@phosphor-icons/react';
 import { useCopied } from '../../hooks/useCopied';
 import { chatTime, chatTimeTitle } from '../../lib/chatTime';
 import { hostsLabel } from '../../lib/remote';
-import { fetchSessionPrompts, type SessionPromptItem, type SessionPrompts } from '../../sessionDetailApi';
+import { fetchSessionPrompts, type SessionPromptImage, type SessionPromptItem, type SessionPrompts } from '../../sessionDetailApi';
+import { isLightboxOpen, Lightbox, type LightboxItem } from '../Lightbox';
 import './PromptsModal.css';
 
 /** The modal root carries `data-modal="prompts"`; its presence in the DOM means "the prompts modal is open". */
@@ -42,6 +43,11 @@ const stop = (e: MouseEvent) => e.stopPropagation();
 const ALL_KEY = 'all';
 const promptKey = (n: number): string => `prompt-${n}`;
 
+/** A prompt's pasted images as lightbox items, in paste order. */
+function promptImageItems(images: readonly SessionPromptImage[]): LightboxItem[] {
+  return images.map((img) => ({ id: img.id, src: img.urls.display, label: img.id, width: img.width, height: img.height }));
+}
+
 /**
  * Expand prompts (R2): every stored prompt of a node over the page, numbered, timed, in full with
  * whitespace kept, each with its own copy button and "Copy all prompts" at the top right. Loads
@@ -51,6 +57,7 @@ const promptKey = (n: number): string => `prompt-${n}`;
 export function PromptsModal({ nodeId, now, onClose }: PromptsModalProps) {
   const { copied, copy } = useCopied();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
+  const [viewing, setViewing] = useState<{ n: number; index: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const live = useRef(onClose);
   live.current = onClose;
@@ -72,6 +79,10 @@ export function PromptsModal({ nodeId, now, onClose }: PromptsModalProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // A lightbox over an image carried by a prompt owns Esc while it is open: it registers its own
+      // window capture listener after this one, so its stopPropagation cannot stop this one from
+      // running first. Yield so Esc closes only the lightbox, not the whole prompts modal.
+      if (isLightboxOpen()) return;
       // Capture phase + preventDefault + stopPropagation (the Lightbox seam): the page's document
       // listeners (ProjectsPage clears the node, App closes the chat) never see this Esc, and
       // stopImmediatePropagation stops window capture listeners registered after this one.
@@ -177,12 +188,42 @@ export function PromptsModal({ nodeId, now, onClose }: PromptsModalProps) {
                     </button>
                   </div>
                   <div className="prm-text">{p.text}</div>
+                  {p.images.length > 0 && (
+                    <div className="prm-images">
+                      {p.images.map((img, i) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          className={img.available ? 'prm-thumb' : 'prm-thumb prm-thumb-unavailable'}
+                          data-tip={img.available ? undefined : 'Not on this machine'}
+                          data-tip-side="below"
+                          aria-label={`Open pasted image ${i + 1} of ${p.images.length} of prompt ${p.n}`}
+                          onClick={() => setViewing({ n: p.n, index: i })}
+                        >
+                          <img src={img.urls.thumb} alt="" draggable={false} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </li>
               );
             })}
           </ol>
         )}
       </div>
+      {viewing &&
+        (() => {
+          const p = prompts.find((x) => x.n === viewing.n);
+          if (!p) return null;
+          return (
+            <Lightbox
+              items={promptImageItems(p.images)}
+              index={viewing.index}
+              onIndex={(index) => setViewing({ n: viewing.n, index })}
+              onClose={() => setViewing(null)}
+            />
+          );
+        })()}
     </div>,
     document.body,
   );

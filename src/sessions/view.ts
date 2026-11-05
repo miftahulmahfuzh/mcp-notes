@@ -563,6 +563,20 @@ export function normalizePrompts(value: unknown): SessionPrompt[] {
 /** Why a prompt list is not complete: not backfilled by its owning host yet, or its transcript was pruned before the backfill. */
 export type PromptsIncompleteReason = 'not_backfilled' | 'transcript_pruned';
 
+/**
+ * One image pasted on a prompt (`cc_session_prompt_images`, joined to its `chat_images` row), as
+ * `/api/chat/images/:id/*` already serves it: same id space, same `not_on_this_machine` gating.
+ * Never present on a `legacy` or `transcript_pruned` prompts list (the excerpts never carry images).
+ */
+export interface PromptImageItem {
+  id: string;
+  width: number;
+  height: number;
+  /** False when `chat_images.host` is set and differs from this daemon's host. */
+  available: boolean;
+  urls: { thumb: string; display: string };
+}
+
 /** One prompt as the wall's Expand prompts modal shows it: numbered from 1 in typed order. */
 export interface NumberedPrompt {
   n: number;
@@ -574,6 +588,8 @@ export interface NumberedPrompt {
    * to an excerpt (ends in `…`) on a `transcript_pruned` one.
    */
   truncated: boolean;
+  /** Pasted images, in paste order; empty when the prompt carried none. */
+  images: PromptImageItem[];
 }
 
 /**
@@ -595,25 +611,56 @@ export interface PromptsPayload {
 
 /** One cc_session_prompts row, as readModel selects them (ordered by seq). */
 export type StoredPromptRow = {
+  seq: number;
   text: string;
   at: Date | string | null;
   truncated: boolean | null;
 };
 
+/** One cc_session_prompt_images row joined to its chat_images row, as readModel selects them. */
+export type StoredPromptImageRow = {
+  prompt_seq: number;
+  id: string;
+  width: number;
+  height: number;
+  host: string | null;
+};
+
 /**
  * Where a node's prompt list comes from: the full side table (prompts_version >= PROMPTS_VERSION),
  * the side table rebuilt from excerpts (PROMPTS_VERSION_EXCERPTS), or the cc_sessions excerpts (0).
+ * `images`: every pasted image of the session's prompts, any seq, unordered; absent for `legacy`.
  */
 export type PromptsSource =
-  | { kind: 'full'; rows: readonly StoredPromptRow[] }
+  | { kind: 'full'; rows: readonly StoredPromptRow[]; images: readonly StoredPromptImageRow[] }
   | { kind: 'pruned'; rows: readonly StoredPromptRow[] }
   | { kind: 'legacy'; excerpts: unknown };
 
+function chatImageItem(row: StoredPromptImageRow, thisHost: string): PromptImageItem {
+  return {
+    id: row.id,
+    width: row.width,
+    height: row.height,
+    available: row.host === null || row.host === thisHost,
+    urls: { thumb: `/api/chat/images/${row.id}/thumb`, display: `/api/chat/images/${row.id}/display` },
+  };
+}
+
 export function toPromptsPayload(head: { node_id: string; host: string }, thisHost: string, source: PromptsSource): PromptsPayload {
-  const prompts: NumberedPrompt[] =
-    source.kind === 'legacy'
-      ? normalizePrompts(source.excerpts).map((p, i) => ({ n: i + 1, text: p.text, at: p.at, truncated: false }))
-      : source.rows.map((r, i) => ({ n: i + 1, text: r.text, at: iso(r.at), truncated: r.truncated === true }));
+  let prompts: NumberedPrompt[];
+  if (source.kind === 'legacy') {
+    prompts = normalizePrompts(source.excerpts).map((p, i) => ({ n: i + 1, text: p.text, at: p.at, truncated: false, images: [] }));
+  } else if (source.kind === 'pruned') {
+    prompts = source.rows.map((r, i) => ({ n: i + 1, text: r.text, at: iso(r.at), truncated: r.truncated === true, images: [] }));
+  } else {
+    const bySeq = new Map<number, PromptImageItem[]>();
+    for (const img of source.images) {
+      const list = bySeq.get(img.prompt_seq) ?? [];
+      list.push(chatImageItem(img, thisHost));
+      bySeq.set(img.prompt_seq, list);
+    }
+    prompts = source.rows.map((r, i) => ({ n: i + 1, text: r.text, at: iso(r.at), truncated: r.truncated === true, images: bySeq.get(r.seq) ?? [] }));
+  }
   return {
     node_id: head.node_id,
     host: head.host,

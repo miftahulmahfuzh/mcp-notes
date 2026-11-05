@@ -371,11 +371,39 @@ describe('GET /api/sessions/:nodeId/prompts', () => {
       complete: true,
       incomplete_reason: null,
       prompts: [
-        { n: 1, text: SPACED, at: '2026-10-31T18:00:00.000Z', truncated: false },
-        { n: 2, text: LONG, at: '2026-10-31T18:05:00.000Z', truncated: false },
-        { n: 3, text: 'cut here', at: null, truncated: true },
+        { n: 1, text: SPACED, at: '2026-10-31T18:00:00.000Z', truncated: false, images: [] },
+        { n: 2, text: LONG, at: '2026-10-31T18:05:00.000Z', truncated: false, images: [] },
+        { n: 3, text: 'cut here', at: null, truncated: true, images: [] },
       ],
     });
+  });
+
+  it('attaches a pasted image to its prompt, with chat-image urls and host availability', async () => {
+    await storePrompts('sess-root', PROMPTS_VERSION, [{ seq: 1, at: null, text: 'see this' }]);
+    const sha1 = 'x'.repeat(64);
+    const sha2 = 'y'.repeat(64);
+    await h.deps.db.execute(sql`delete from chat_images where id in ('A-IMG1', 'A-IMG2')`);
+    await h.deps.db.execute(sql`
+      insert into chat_images (id, path, sha256, mime, width, height, bytes, host, source)
+      values ('A-IMG1', 'chat-images/2026/11/A-IMG1.png', ${sha1}, 'image/png', 12, 8, 100, ${THIS_HOST}, 'claude_code'),
+             ('A-IMG2', 'chat-images/2026/11/A-IMG2.png', ${sha2}, 'image/png', 20, 10, 100, ${OTHER_HOST}, 'claude_code')`);
+    await h.deps.db.execute(sql`
+      insert into cc_session_prompt_images (session_id, prompt_seq, position, image_id, paste_id)
+      values ('sess-root', 1, 0, 'A-IMG1', 1), ('sess-root', 1, 1, 'A-IMG2', 2)`);
+    const { status, body } = await get<PromptsPayload>('/api/sessions/a03g/prompts');
+    expect(status).toBe(200);
+    expect(body.prompts).toEqual([
+      {
+        n: 1,
+        text: 'see this',
+        at: null,
+        truncated: false,
+        images: [
+          { id: 'A-IMG1', width: 12, height: 8, available: true, urls: { thumb: '/api/chat/images/A-IMG1/thumb', display: '/api/chat/images/A-IMG1/display' } },
+          { id: 'A-IMG2', width: 20, height: 10, available: false, urls: { thumb: '/api/chat/images/A-IMG2/thumb', display: '/api/chat/images/A-IMG2/display' } },
+        ],
+      },
+    ]);
   });
 
   it('a backfilled row with no prompts answers an empty list', async () => {
@@ -398,7 +426,7 @@ describe('GET /api/sessions/:nodeId/prompts', () => {
       available: false,
       complete: false,
       incomplete_reason: 'not_backfilled',
-      prompts: [{ n: 1, text: 'old excerpt…', at: '2026-11-01T02:00:00.000Z', truncated: false }],
+      prompts: [{ n: 1, text: 'old excerpt…', at: '2026-11-01T02:00:00.000Z', truncated: false, images: [] }],
     });
   });
 

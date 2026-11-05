@@ -72,6 +72,8 @@ export const MAX_PROMPT_CHARS = 2000;
  * here and stored with `truncated = true`. Measured 2026-11-03: the largest typed prompt was 46 KB.
  */
 export const MAX_PROMPT_STORE_CHARS = 256 * 1024;
+/** At most this many pasted images are kept per prompt; later ones in the same paste are dropped. */
+export const MAX_IMAGES_PER_PROMPT = 8;
 /**
  * `cc_sessions.prompts_version` of a row whose transcript was gone when the prompts backfill
  * reached it: the stored excerpts, first and last prompt were redacted in place and
@@ -87,8 +89,14 @@ export const PROMPTS_VERSION_EXCERPTS = 1;
  * 0 = written before that: truncated, unredacted excerpts only. The owning host's ingester brings
  * such rows up once (`SessionsRepo.replacePrompts`, or `redactStoredPrompts` to
  * PROMPTS_VERSION_EXCERPTS when the transcript is gone).
+ *
+ * 2 -> 3 (migration 0012, pasted-image support): a row below 3 may have pasted images sitting
+ * un-extracted in its still-on-disk transcript, so the one-time backfill re-reads it once more
+ * (cheap: `chat_images` dedupes by sha256) to collect them into `cc_session_prompt_images`. A row
+ * whose transcript is gone cannot gain images either way and is simply redacted up to
+ * PROMPTS_VERSION_EXCERPTS as before.
  */
-export const PROMPTS_VERSION = 2;
+export const PROMPTS_VERSION = 3;
 export const MAX_TITLE_CHARS = 300;
 export const MAX_COMMITS = 200;
 export const MAX_FILES_EDITED = 500;
@@ -154,11 +162,27 @@ export interface TranscriptPatch {
   planDocs?: string[];
 }
 
+/** One image pasted on a prompt, as ingest read it from the transcript's base64 content block. */
+export interface PatchPromptImage {
+  mediaType: string;
+  dataBase64: string;
+  /** The `[Image #N]` Claude Code assigned, or the 1-based position in the prompt when absent. */
+  pasteId: number;
+}
+
+/** One image already stored as a `chat_images` row (SessionsRepo.ingestPromptImages), linked to a prompt. */
+export interface PromptImageLink {
+  imageId: string;
+  pasteId: number;
+}
+
 /** One human prompt as ingest read it. `truncated`: cut at MAX_PROMPT_STORE_CHARS (absent = false). */
 export interface PatchPrompt {
   text: string;
   at: string | null;
   truncated?: boolean;
+  /** Pasted images, in paste order, capped to MAX_IMAGES_PER_PROMPT. */
+  images?: PatchPromptImage[];
 }
 
 /** One `cc_session_prompts` row's content, redacted, as SessionsRepo writes it. */
@@ -166,6 +190,8 @@ export interface StoredPrompt {
   text: string;
   at: Date | null;
   truncated: boolean;
+  /** Pasted images not yet ingested into `chat_images`; empty when the prompt carried none. */
+  images: PatchPromptImage[];
 }
 
 /** A row of this host below PROMPTS_VERSION (legacy, or redacted in place from excerpts). */
@@ -373,4 +399,12 @@ export interface SessionsRepoOptions {
   random?: (max: number) => number;
   /** Clock for updated_at / claimed_at / default times. Default `() => new Date()`. */
   now?: () => Date;
+  /**
+   * `config.dataDir`, so a prompt's pasted images can be stored as `chat_images`. Omitted: a
+   * transcript patch's images are dropped (no table write, no file write), as for every
+   * `SessionsRepo` built for something other than ingest (read models, hooks, resume, adversary).
+   */
+  dataDir?: string;
+  /** `os.hostname()` of the machine ingesting, stamped on images it stores. Default os.hostname. */
+  hostname?: () => string;
 }

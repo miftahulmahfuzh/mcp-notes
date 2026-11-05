@@ -2,7 +2,8 @@ import { randomInt } from 'node:crypto';
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
-import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPrompts, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
+import { ingestChatImage, type ChatImageStoreDeps } from '../chat/images.js';
+import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPromptImages, ccSessionPrompts, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../embeddings/constants.js';
 import { toVectorLiteral } from '../embeddings/repo.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
@@ -41,6 +42,7 @@ import {
   type PendingSpawnInput,
   type PendingSpawnRow,
   type ProjectSummary,
+  type PromptImageLink,
   type PromptsBackfillCandidate,
   type PromptsReplacement,
   type RedactStoredPromptsResult,
@@ -177,6 +179,7 @@ function clampLimit(limit: number | undefined): number {
 export class SessionsRepo {
   private readonly random: (max: number) => number;
   private readonly now: () => Date;
+  private readonly imageDeps: ChatImageStoreDeps | null;
 
   constructor(
     private readonly db: Db,
@@ -184,6 +187,7 @@ export class SessionsRepo {
   ) {
     this.random = opts.random ?? randomInt;
     this.now = opts.now ?? (() => new Date());
+    this.imageDeps = opts.dataDir === undefined ? null : { db, dataDir: opts.dataDir, ...(opts.hostname ? { hostname: opts.hostname } : {}) };
   }
 
   // ---------- rows and node ids ----------
@@ -255,11 +259,49 @@ export class SessionsRepo {
   }
 
   /**
-   * Writes a session's `cc_session_prompts` rows. The caller holds the cc_sessions row lock, which
-   * every writer of a session's prompt rows takes, so seq cannot race. `replace`: the rows become
-   * exactly `prompts`, seq 1..n. Otherwise `prompts` are appended after the highest seq.
+   * Stores each prompt's pasted images as `chat_images` (source `claude_code`, sha256-deduped), so
+   * every image gets the same stable id a wall-chat image has. Runs before the write transaction:
+   * `ingestChatImage` does its own file write and insert, and is cheap to redo if the transaction it
+   * feeds is later discarded (an offset race, or a replayed patch finds nothing new to do). Returns
+   * one array per `prompts` entry, aligned by index; a prompt with no images gets `[]`. No
+   * `imageDeps` (a `SessionsRepo` not built for ingest): every prompt gets `[]`, images are dropped.
+   * A single image that cannot be stored (corrupt bytes, over the chat image size cap) is skipped;
+   * the rest of its prompt's images, and the prompt's text, are unaffected.
    */
-  private async writePromptRows(tx: Tx, sessionId: string, prompts: readonly StoredPrompt[], replace: boolean): Promise<void> {
+  private async ingestPromptImages(prompts: readonly StoredPrompt[]): Promise<PromptImageLink[][]> {
+    const deps = this.imageDeps;
+    if (deps === null) return prompts.map(() => []);
+    return Promise.all(
+      prompts.map(async (p) => {
+        if (p.images.length === 0) return [];
+        const out: PromptImageLink[] = [];
+        for (const img of p.images) {
+          try {
+            const { image } = await ingestChatImage(deps, { bytes: Buffer.from(img.dataBase64, 'base64'), originalName: null, source: 'claude_code' });
+            out.push({ imageId: image.id, pasteId: img.pasteId });
+          } catch {
+            // Corrupt or oversized paste: drop this one image, keep the rest of the prompt.
+          }
+        }
+        return out;
+      }),
+    );
+  }
+
+  /**
+   * Writes a session's `cc_session_prompts` rows and their `cc_session_prompt_images` links. The
+   * caller holds the cc_sessions row lock, which every writer of a session's prompt rows takes, so
+   * seq cannot race. `replace`: the rows become exactly `prompts`, seq 1..n (their old images are
+   * dropped by the FK cascade; `images` relinks them, free of charge when the same bytes dedupe).
+   * Otherwise `prompts` are appended after the highest seq. `images[i]` are prompts[i]'s images.
+   */
+  private async writePromptRows(
+    tx: Tx,
+    sessionId: string,
+    prompts: readonly StoredPrompt[],
+    images: readonly PromptImageLink[][],
+    replace: boolean,
+  ): Promise<void> {
     let next = 1;
     if (replace) {
       await tx.delete(ccSessionPrompts).where(eq(ccSessionPrompts.sessionId, sessionId));
@@ -271,10 +313,16 @@ export class SessionsRepo {
         .where(eq(ccSessionPrompts.sessionId, sessionId));
       next = (top[0]?.max ?? 0) + 1;
     }
+    let index = 0;
     for (const batch of promptBatches(prompts)) {
       const values = batch.map((p, i) => ({ sessionId, seq: next + i, at: p.at, text: p.text, truncated: p.truncated }));
       await tx.insert(ccSessionPrompts).values(values);
+      const imageValues = batch.flatMap((_, i) =>
+        (images[index + i] ?? []).map((img, position) => ({ sessionId, promptSeq: next + i, position, imageId: img.imageId, pasteId: img.pasteId })),
+      );
+      if (imageValues.length > 0) await tx.insert(ccSessionPromptImages).values(imageValues);
       next += batch.length;
+      index += batch.length;
     }
   }
 
@@ -299,6 +347,8 @@ export class SessionsRepo {
     assertOffset(patch.size, 'size');
     if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
     await this.ensureSession(patch.sessionId, patch.host);
+    const prompts = storedPrompts(patch.prompts);
+    const promptImages = await this.ingestPromptImages(prompts);
     return this.db.transaction(async (tx) => {
       const row = await this.lock(tx, patch.sessionId);
       if (row.host !== patch.host) {
@@ -309,7 +359,7 @@ export class SessionsRepo {
       }
       const reset = patch.fromOffset === 0;
       const set = mergeTranscriptPatch(row, patch, reset ? await this.subagentTotals(tx, patch.sessionId) : null);
-      await this.writePromptRows(tx, patch.sessionId, storedPrompts(patch.prompts), reset);
+      await this.writePromptRows(tx, patch.sessionId, prompts, promptImages, reset);
       const now = this.now();
       const updated = await tx
         .update(ccSessions)
@@ -366,12 +416,14 @@ export class SessionsRepo {
     assertSessionId(sessionId);
     assertHost(host);
     assertOffset(input.upToOffset, 'upToOffset');
+    const prompts = storedPrompts(input.prompts);
+    const promptImages = await this.ingestPromptImages(prompts);
     return this.db.transaction(async (tx): Promise<ReplacePromptsResult> => {
       const row = await this.lockIfExists(tx, sessionId);
       if (row === null) return { status: 'missing' };
       if (row.host !== host) return { status: 'other_host' };
       if (row.transcriptOffset !== input.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
-      await this.writePromptRows(tx, sessionId, storedPrompts(input.prompts), true);
+      await this.writePromptRows(tx, sessionId, prompts, promptImages, true);
       await tx
         .update(ccSessions)
         .set({ ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION, updatedAt: this.now() })
@@ -396,7 +448,14 @@ export class SessionsRepo {
       if (row === null) return 'missing';
       if (row.host !== host) return 'other_host';
       if (row.promptsVersion >= PROMPTS_VERSION_EXCERPTS) return 'current';
-      await this.writePromptRows(tx, sessionId, storedPromptsFromExcerpts(row.prompts), true);
+      const prompts = storedPromptsFromExcerpts(row.prompts);
+      await this.writePromptRows(
+        tx,
+        sessionId,
+        prompts,
+        prompts.map(() => []),
+        true,
+      );
       await tx
         .update(ccSessions)
         .set({ ...redactedPromptColumns(row), promptsVersion: PROMPTS_VERSION_EXCERPTS, updatedAt: this.now() })

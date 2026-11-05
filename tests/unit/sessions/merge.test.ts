@@ -197,8 +197,8 @@ describe('prompt redaction', () => {
 
   it('rebuilds side rows from excerpts, truncated where the excerpt was clipped', () => {
     expect(storedPromptsFromExcerpts([{ text: 'whole', at: null }, { text: `cut ${KEY} …`, at: '2026-11-01T10:00:00.000Z' }, { text: '  ', at: null }])).toEqual([
-      { text: 'whole', at: null, truncated: false },
-      { text: 'cut [redacted] …', at: new Date('2026-11-01T10:00:00.000Z'), truncated: true },
+      { text: 'whole', at: null, truncated: false, images: [] },
+      { text: 'cut [redacted] …', at: new Date('2026-11-01T10:00:00.000Z'), truncated: true, images: [] },
     ])
   })
 })

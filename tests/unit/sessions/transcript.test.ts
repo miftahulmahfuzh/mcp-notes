@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   accumulateText,
   buildTranscriptPatch,
+  extractImages,
   parseCommitLines,
   parseCommitRanges,
   parseRecord,
@@ -242,6 +243,59 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.prompts[MANY_PROMPTS.long - 1]?.text).toBe(await manyPromptsText(MANY_PROMPTS.long));
     expect(d.prompts[MANY_PROMPTS.long - 1]?.text.length).toBeGreaterThan(2000);
     expect(d.prompts.every((p) => p.truncated === false)).toBe(true);
+  });
+});
+
+describe('extractImages', () => {
+  const imageBlock = (data: string, mediaType = 'image/png') => ({ type: 'image', source: { type: 'base64', media_type: mediaType, data } });
+
+  it('reads base64 image blocks in order, numbered by imagePasteIds', () => {
+    const record = {
+      type: 'user',
+      imagePasteIds: [2],
+      message: { role: 'user', content: [{ type: 'text', text: '[Image #2] look' }, imageBlock('AAA', 'image/jpeg')] },
+    };
+    expect(extractImages(record)).toEqual([{ mediaType: 'image/jpeg', dataBase64: 'AAA', pasteId: 2 }]);
+  });
+
+  it('falls back to the 1-based content position when imagePasteIds is absent', () => {
+    const record = { type: 'user', message: { role: 'user', content: [imageBlock('AAA'), { type: 'text', text: 'two pics' }, imageBlock('BBB')] } };
+    expect(extractImages(record)).toEqual([
+      { mediaType: 'image/png', dataBase64: 'AAA', pasteId: 1 },
+      { mediaType: 'image/png', dataBase64: 'BBB', pasteId: 2 },
+    ]);
+  });
+
+  it('skips a non-base64 source and caps at MAX_IMAGES_PER_PROMPT', () => {
+    const urlBlock = { type: 'image', source: { type: 'url', url: 'https://x/y.png' } };
+    const many = Array.from({ length: 10 }, (_, i) => imageBlock(`img${i}`));
+    const record = { type: 'user', message: { role: 'user', content: [urlBlock, ...many] } };
+    const images = extractImages(record);
+    expect(images).toHaveLength(8);
+    expect(images[0]).toEqual({ mediaType: 'image/png', dataBase64: 'img0', pasteId: 2 });
+  });
+
+  it('is empty for string content, no content, or no image blocks', () => {
+    expect(extractImages({ type: 'user', message: { role: 'user', content: 'just text' } })).toEqual([]);
+    expect(extractImages({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } })).toEqual([]);
+    expect(extractImages({ type: 'user' })).toEqual([]);
+  });
+
+  it('TranscriptAccumulator attaches a prompt record\'s images to its PatchPrompt', () => {
+    const acc = new TranscriptAccumulator('s');
+    acc.add({
+      type: 'user',
+      timestamp: '2026-11-05T00:00:00Z',
+      imagePasteIds: [1],
+      message: { role: 'user', content: [{ type: 'text', text: 'see this' }, imageBlock('AAA', 'image/jpeg')] },
+    });
+    expect(acc.delta().prompts).toEqual([{ text: 'see this', at: '2026-11-05T00:00:00Z', truncated: false, images: [{ mediaType: 'image/jpeg', dataBase64: 'AAA', pasteId: 1 }] }]);
+  });
+
+  it('a prompt with no images has no images field', () => {
+    const acc = new TranscriptAccumulator('s');
+    acc.add({ type: 'user', timestamp: '2026-11-05T00:00:00Z', message: { role: 'user', content: 'plain text' } });
+    expect(acc.delta().prompts).toEqual([{ text: 'plain text', at: '2026-11-05T00:00:00Z', truncated: false }]);
   });
 });
 
