@@ -80,3 +80,74 @@
 - The checklist is Seer's own and is NOT money-weighted (raw equity, as seertrade.site shows it); the
   money-weighted figures are `returns.*` and `figures.*.return`.
 - A twin decides one session late, so its `buys` read `null` on the decision night.
+
+## Wall page (phase 6)
+
+### Sub-features
+- Wall page `/adversary` (overview) and `/adversary/<strategy_id>` (one method), opened by the Sword icon
+  ("Seer Adversarial") between Chat history and the recycle bin, in the rail and the sidebar. A second press
+  returns to the wall. Heading "Adversary." on the overview; a method page is headed by its code ("RAW35.")
+  or, for a one- or two-letter code, its plain name ("Dip buy.").
+- Sidebar: Seer's roster as Projects lists repos: "Overview" first (count of active methods), active
+  methods with their cadence, then "retired" methods greyed with their retirement date (list names
+  "Seer roster" and "Retired methods").
+- Overview: cause tiles (1 · beat SPY, 2 · most profit, 3 · smaller drops), one row per method with
+  original / twin / SPY money-weighted returns, objections, a reviewed · absent · paused · pending coverage bar,
+  both go-live checklists as dots (twin rule 5 dashed: no backtest possible), latest objection cards with
+  their sources.
+- Method page: curves (growth of 100, deposits out), stats, side-by-side checklist with twin rule 5
+  "can't be run", the latest decision's verdict cards (filter object / can't tell / agree; book cards
+  show "held · sell" / "new · skip" and the weight change; host and time in each footer; a late
+  verdict says "late · not used"), Claude's record (one dot per objection), revisions.
+- Daily three-way page: chosen when the method's detail carries a C sibling (`three_way`): three books
+  (original, C, original + Claude), the ranked list with C's and Claude's verdicts side by side, the
+  disagreement grid, who was right.
+- Toolbar: Power toggle (on = inverted, `aria-pressed=true`, "Auto-runs on (click to pause)"; off = dashed
+  ring, "Auto-runs off (click to turn on)"; PUT `{on}` only, the server records its own host), "Review now" /
+  "Review this method now" (starts one pass even while off; the 202 answers at once and the page shows
+  "review started", the verdicts arrive later over SSE), Focus ("Focus (Alt+Z)"). Alt+Z toggles focus mode (`?focus=1`: no rail, sidebar or header) and Esc
+  leaves it, exactly as on Projects (shared `useFocusShortcut`).
+- Live: SSE `adversary` events and a 60 s poll re-fetch the page.
+- Chat pill "Ask about Seer Adversarial": sends through the wall chat with `[Seer Adversarial · <id|overview>]`
+  on the first line; the answer opens in the answer panel over the page.
+- Empty states: Seer unreachable (`seer_unavailable`), no twins yet, no verdicts yet, no objections yet.
+  No "sample data" anywhere: every number comes from `/api/adversary/*`.
+
+### How to get to it (user POV)
+Wall rail or sidebar → Sword "Seer Adversarial" → `/adversary`; click a method row (table or sidebar) →
+`/adversary/<id>`. Alt+Z for focus. Power to pause automatic reviews.
+
+### Driving it with verify.sh
+Seer lives in another database. Give the run a throwaway Seer schema: a database in the verify container
+built from the Seer checkout's migrations, seeded with twins, candidates and verdicts, and point the run's
+`SEER_DIR` at a scratch directory whose `.env.local` names it. `NOTESD_ADVERSARY=off` keeps the reviewer
+(billed agent) from running. Real env wins over `.env.local`, so both reach the daemon.
+```sh
+SEER_SRC=/home/miftah/seer                      # or the Seer worktree before it lands on main
+S=$(mktemp -d); mkdir -p "$S/seer"; SEERDB=seer_v_$$
+echo "DATABASE_URL=postgres://postgres:mcpnotes@127.0.0.1:55436/$SEERDB" > "$S/seer/.env.local"
+SEER_DIR="$S/seer" NOTESD_ADVERSARY=off $V up --web --sessions
+P() { docker exec -i mcp-notes-pg-verify psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
+P -c "create database $SEERDB"
+for f in "$SEER_SRC"/db/migrations/*.sql; do P -d "$SEERDB" < "$f"; done
+P -d "$SEERDB" < seer-seed.sql                  # the seed in .workflows/plan/seer-adversarial/phase-6.md (Proof)
+$V api RUN GET /api/adversary/overview
+```
+UI selectors: rail `getByRole('button', { name: 'Seer Adversarial' })`; sidebar
+`getByRole('list', { name: 'Seer roster' })`; table rows `a.adv-row[data-strategy="<id>"]`; regions
+`'Methods'`, `'Latest objections'`, `'Go-live checklist'`, `'<A>, <C> and Claude compared'`; toolbar
+`'Auto-runs on (click to pause)'` / `'Auto-runs off (click to turn on)'`, `'Review now'`, `'Focus (Alt+Z)'`;
+pill `getByPlaceholder('Ask about Seer Adversarial')`.
+
+### Gotchas
+- Never click "Review now" on a run without `page.route` stubbing `/api/adversary/review-now`: it starts
+  a real (billed) agent review when the reviewer is on.
+- Never drive the pill: it is the chat bar (billed).
+- Strategy ids and names come from the seeded Seer DB; read them from `/api/adversary/overview`, never type them.
+- `$V sql` reads the notes DB, not Seer's; read Seer rows with `docker exec … psql -d $SEERDB`.
+- Drop the Seer DB after `$V down`: `P -c "drop database $SEERDB with (force)"`.
+- The connector tools (`seer_*`) read the same `SEER_DIR`; on a run they see the seeded schema only.
+- The toggle needs the reviewer: with `NOTESD_ADVERSARY=off` the toggle GET/PUT answer 503 `reviewer_off` and the
+  page shows the Power button disabled. Drive the toggle (and focus-with-auto-runs-off) on `up --adversary`; give
+  it an empty Seer schema (nothing due, nothing billed) and `ADVERSARY_DAILY_CAP=1 ADVERSARY_POLL_MS=3600000`.
+  The overview, method and three-way journeys run on `NOTESD_ADVERSARY=off` against the seeded Seer schema.

@@ -6,11 +6,14 @@ import type { View } from '../types';
  * `/projects?repo=<repo>&node=<NODE-ID>` with one graph node selected. `&focus=1` is graph focus
  * mode: the page alone, without rail, sidebar and header. `/projects?node=<NODE-ID>` (no repo) is how
  * Claude Code links a node: the app looks up the node's repo.
+ * Seer Adversarial (seer-adversarial phase 6): `/adversary` (overview) and `/adversary/<strategy_id>`
+ * (one roster method, the id exactly as Seer stores it), each with `?focus=1` for focus mode.
  * The wall and the bin have no path of their own: they live at `/` (and `/?note=<id>` deep links,
- * lib/deepLink.ts), so leaving the history or projects page pushes `/` and nothing else is touched.
+ * lib/deepLink.ts), so leaving the history, projects or adversary page pushes `/` and nothing else is touched.
  */
 export const HISTORY_PATH = '/history';
 export const PROJECTS_PATH = '/projects';
+export const ADVERSARY_PATH = '/adversary';
 
 export interface Route {
   history: boolean;
@@ -74,15 +77,54 @@ export function projectsHref(r: ProjectsRoute): string {
   return q ? `${PROJECTS_PATH}?${q}` : PROJECTS_PATH;
 }
 
+/** What `/adversary` asks for. `strategy` null = the overview; else a Seer strategy id, never altered. */
+export interface AdversaryRoute {
+  strategy: string | null;
+  /** Focus mode: the page alone, without rail, sidebar and header. */
+  focus: boolean;
+}
+
+export const NO_ADVERSARY_ROUTE: AdversaryRoute = { strategy: null, focus: false };
+
+/** The adversary route, or null when the URL is not `/adversary[/<id>]`. A deeper path is not this page. */
+export function adversaryRouteFromLocation(loc: Loc): AdversaryRoute | null {
+  const p = pathOf(loc);
+  const focus = param(loc.search, 'focus') === '1';
+  if (p === ADVERSARY_PATH) return { strategy: null, focus };
+  if (!p.startsWith(`${ADVERSARY_PATH}/`)) return null;
+  const rest = p.slice(ADVERSARY_PATH.length + 1);
+  if (rest === '' || rest.includes('/')) return null;
+  let id: string;
+  try {
+    id = decodeURIComponent(rest).trim();
+  } catch {
+    return null;
+  }
+  return { strategy: id === '' ? null : id, focus };
+}
+
+export function adversaryHref(r: AdversaryRoute): string {
+  const base = r.strategy ? `${ADVERSARY_PATH}/${encodeURIComponent(r.strategy)}` : ADVERSARY_PATH;
+  return r.focus ? `${base}?focus=1` : base;
+}
+
 /**
  * The URL to push so the address bar matches `view`, or null when it already does. Wall and bin
- * accept any non-history, non-projects URL as it is (a `/?note=` link stays put); only leaving
- * `/history` or `/projects` pushes `/`.
+ * accept any non-history, non-projects, non-adversary URL as it is (a `/?note=` link stays put); only
+ * leaving `/history`, `/projects` or `/adversary` pushes `/`.
  */
-export function hrefForView(view: View, thread: string | null, loc: Loc, projects: ProjectsRoute = NO_PROJECT_ROUTE): string | null {
+export function hrefForView(
+  view: View,
+  thread: string | null,
+  loc: Loc,
+  projects: ProjectsRoute = NO_PROJECT_ROUTE,
+  adversary: AdversaryRoute = NO_ADVERSARY_ROUTE,
+): string | null {
   const r = routeFromLocation(loc);
   const p = projectsRouteFromLocation(loc);
+  const a = adversaryRouteFromLocation(loc);
   if (view === 'history') return r.history && r.thread === thread ? null : historyHref(thread);
   if (view === 'projects') return p !== null && p.repo === projects.repo && p.node === projects.node && p.focus === projects.focus ? null : projectsHref(projects);
-  return r.history || p !== null ? '/' : null;
+  if (view === 'adversary') return a !== null && a.strategy === adversary.strategy && a.focus === adversary.focus ? null : adversaryHref(adversary);
+  return r.history || p !== null || a !== null ? '/' : null;
 }

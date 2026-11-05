@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/seer-adversarial` (plans, mcp-notes code) and `/home/miftah/.worktrees/seer/seer-adversarial` (Seer code)
 **Branch:** `feature/seer-adversarial` in BOTH repos (mcp-notes base `origin/main` @ `5331550`; seer base `origin/main` @ `a6322d7`)
 **Phases:** 7
-**Status:** phase 5/7 complete (phases 1, 2, 3, 4, 5 done)
+**Status:** phase 6/7 complete (phases 1, 2, 3, 4, 5, 6 done)
 **Coordinator:** —
 
 ---
@@ -205,7 +205,7 @@ fixed.
 | [x] 3 | Seer web: twins on Leaderboard as Paper, never Today, rule 5 | R3 | seer `web/` | 16 | 1 | NORMAL | `.workflows/plan/seer-adversarial/phase-3.md` | P1-ROOT-BXVQ | — |
 | [x] 4 | mcp-notes reviewer job | R4 | mcp-notes `src/adversary`, `claude/adversary` | ~49 (30 rows) | 1 | HARD | `.workflows/plan/seer-adversarial/phase-4.md` | P1-NOTES-A070 | — |
 | [x] 5 | mcp-notes API, SSE, MCP tools, scorecard, go-live parity | R5 | mcp-notes `src/http`, `src/mcp`, `src/adversary` | 27 | 4 | HARD | `.workflows/plan/seer-adversarial/phase-5.md` | P1-NOTES-A071 | — |
-| 6 | Wall page `/adversary` | R6 | mcp-notes `web/` | 31 | 5 | HARD | `.workflows/plan/seer-adversarial/phase-6.md` | P1-NOTES-A072 | — |
+| [x] 6 | Wall page `/adversary` | R6 | mcp-notes `web/` | 31 | 5 | HARD | `.workflows/plan/seer-adversarial/phase-6.md` | P1-NOTES-A072 | — |
 | 7 | Go live: land Seer, config, install/restart, first review | R7 | both | 2 | 2, 3, 6 | NORMAL | `.workflows/plan/seer-adversarial/phase-7.md` | P1-NOTES-A073 | — |
 
 Phases 2 and 3 may run in parallel (both need only phase 1; their files are disjoint). Phase 4 may run in

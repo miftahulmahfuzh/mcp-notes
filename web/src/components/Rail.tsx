@@ -1,4 +1,4 @@
-import { ChatsCircle, Images, NotePencil, SidebarSimple, SquaresFour, TextAa, Trash, TreeStructure, XCircle } from '@phosphor-icons/react';
+import { ChatsCircle, Images, NotePencil, SidebarSimple, SquaresFour, Sword, TextAa, Trash, TreeStructure, XCircle } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { Mode, View } from '../types';
 import { MODE_TIP } from '../lib/filter';
@@ -6,13 +6,16 @@ import { MODE_TIP } from '../lib/filter';
 export const MODE_ICON: Record<Mode, Icon> = { text: TextAa, images: Images, all: SquaresFour };
 
 /** Tooltip / label of the Trash toggle, by the view it is pressed from. */
-export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall', history: 'Recycle bin', projects: 'Recycle bin' };
+export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall', history: 'Recycle bin', projects: 'Recycle bin', adversary: 'Recycle bin' };
 
 /** Tooltip / label of the chat-history toggle (phase 9). Pressed state says when it is open; a second press returns to the wall. */
 export const HISTORY_TIP = 'Chat history';
 
 /** Tooltip / label of the projects toggle (project-session-graph phase 10): the session graph, with the repo list in the sidebar. */
 export const PROJECTS_TIP = 'Projects';
+
+/** Tooltip / label of the Seer Adversarial toggle (seer-adversarial phase 6): Claude's twins of Seer's roster, with the roster in the sidebar. */
+export const ADVERSARY_TIP = 'Seer Adversarial';
 
 export interface RailProps {
   mode: Mode;
@@ -23,12 +26,13 @@ export interface RailProps {
   onCycleMode: () => void;
   onToggleProjects: () => void;
   onToggleHistory: () => void;
+  onToggleAdversary: () => void;
   onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
   onClear: () => void;
 }
 
-export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleProjects, onToggleHistory, onToggleBin, onToggleTag, onClear }: RailProps) {
+export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleProjects, onToggleHistory, onToggleAdversary, onToggleBin, onToggleTag, onClear }: RailProps) {
   const ModeIcon = MODE_ICON[mode];
   return (
     <nav className="rail">
@@ -69,6 +73,17 @@ export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onT
         onClick={onToggleHistory}
       >
         <ChatsCircle weight="duotone" />
+      </button>
+      <button
+        type="button"
+        className={view === 'adversary' ? 'ibtn on' : 'ibtn hov'}
+        data-tip={ADVERSARY_TIP}
+        data-tip-side="right"
+        aria-label={ADVERSARY_TIP}
+        aria-pressed={view === 'adversary'}
+        onClick={onToggleAdversary}
+      >
+        <Sword weight="duotone" />
       </button>
       <button
         type="button"

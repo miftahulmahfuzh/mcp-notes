@@ -6,6 +6,7 @@ import { UnfinishedBadgeSvg } from '../components/graph/UnfinishedBadge';
 import { ProjectChat } from '../components/projectChat/ProjectChat';
 import { ProjectViewToggle, type ProjectView } from '../components/projectChat/ProjectViewToggle';
 import { useSessionGraph } from '../hooks/useSessionGraph';
+import { useFocusShortcut } from '../hooks/useFocusShortcut';
 import { ancestorsOf, buildForest, expandAll, layoutGraph } from '../lib/sessionGraph';
 import { toSubtreeNodes } from '../lib/subtree';
 import type { SessionNode } from '../types';
@@ -81,30 +82,9 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
     return () => document.removeEventListener('keydown', onKey);
   }, [node, onSelectNode]);
 
-  // In focus mode, Esc with no node selected leaves it (with a node selected, Esc clears that first).
-  useEffect(() => {
-    if (!focus || node !== null || !onToggleFocus) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.defaultPrevented && e.key === 'Escape') onToggleFocus();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [focus, node, onToggleFocus]);
-
-  // Alt+Z toggles focus mode from the keyboard, on either view. It listens in the capture phase and
-  // calls preventDefault so the browser's own handling of the chord never runs. `z` as in vim's `zen`:
-  // no browser binds Alt+Z, whereas Alt+F/E/D/H/S open menus or the address bar. `code` rather than
-  // `key` because macOS Option turns Alt+Z into another character.
-  useEffect(() => {
-    if (!onToggleFocus) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'KeyZ' || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
-      e.preventDefault();
-      onToggleFocus();
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [onToggleFocus]);
+  // In focus mode, Esc with no node selected leaves it (with a node selected, Esc clears that first);
+  // Alt+Z toggles focus mode on either view. Shared with the Seer Adversarial page.
+  useFocusShortcut(onToggleFocus, { focus, escapeLeaves: node === null });
 
   const layout = useMemo(() => layoutGraph(graph.nodes, expanded, forest), [graph.nodes, expanded, forest]);
 

@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-05
-**Total Active Tasks**: 2
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 73
+- Blocked: 0
+- Completed: 74
 
 ---
 
@@ -31,20 +31,11 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-- [ ] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `View` `'adversary'`, routes `/adversary` and `/adversary/<strategy_id>`, Rail and Sidebar sword button (Phosphor `Sword`, duotone) between Chat history and Trash, heading `Adversary.`, sidebar roster list, toolbar (Power toggle, Review now, Focus), Alt+Z / Esc focus via a hook shared with ProjectsPage, overview/method/A pages per the mock, chat pill, SSE refresh, `web/src/adversaryApi.ts` (phase 5's `readTypes.ts` verbatim plus fetchers), web tests, appended wall section in `features/adversary.md` and `, wall` on its README row. Does not touch server code; never creates `features/adversary.md`. Exit: web tests green; verify-notesd Playwright run on a seeded instance shows the four mock states (overview, method, A three-way, focus with auto-runs off) with screenshots saved.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 6 of 7)
-  - **Satisfies**: R6 — Wall page `/adversary`, sword button between Chat history and Trash, Alt+Z focus, ON/OFF toggle
-  - **Depends on**: P1-NOTES-A071
-  - **Plan**: `.workflows/plan/P1-NOTES-A072.md`
 - [ ] **P1-NOTES-A073** Phase 7: Go live: land Seer, config, install/restart, first review
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns merging Seer `feature/seer-adversarial` into `~/seer` main and pushing (after full suite), applying migration 027 to Neon, README configuration rows for phase 4's seven keys, one CLAUDE.md Architecture bullet for `src/adversary/*`, `.env.local` keys only if a default forces one, `npm run db:migrate` (drizzle 0011) before build and restart of notesd, one "Review now" and a go-live note. Does not touch feature code (fixes become follow-up tasks). Exit: Seer main has migration applied on Neon; next paper night created the twins (or the phase records when it will); notesd restarted with the reviewer on; at least one verdict or a recorded reason for none.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 7 of 7)
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
@@ -59,6 +50,24 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` `'adversary'`, routes `/adversary` and `/adversary/<strategy_id>`, Rail and Sidebar sword button (Phosphor `Sword`, duotone) between Chat history and Trash, heading `Adversary.`, sidebar roster list, toolbar (Power toggle, Review now, Focus), Alt+Z / Esc focus via a hook shared with ProjectsPage, overview/method/A pages per the mock, chat pill, SSE refresh, `web/src/adversaryApi.ts` (phase 5's `readTypes.ts` verbatim plus fetchers), web tests, appended wall section in `features/adversary.md` and `, wall` on its README row. Does not touch server code; never creates `features/adversary.md`. Exit: web tests green; verify-notesd Playwright run on a seeded instance shows the four mock states (overview, method, A three-way, focus with auto-runs off) with screenshots saved.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 6 of 7)
+  - **Satisfies**: R6 — Wall page `/adversary`, sword button between Chat history and Trash, Alt+Z focus, ON/OFF toggle
+  - **Depends on**: P1-NOTES-A071
+  - **Plan**: `.workflows/plan/P1-NOTES-A072.md`
+  - **Completed**: 2026-11-05 12:00
+  - **Method**: /do
+  - **Files**: web/src/{App.tsx,App.adversary.test.tsx,adversaryApi.ts,types.ts,styles.css}, web/src/components/{Header,Rail,Rail.test,Sidebar}.tsx, web/src/components/adversary/*, web/src/hooks/{useAdversary,useFocusShortcut}.ts(+tests), web/src/lib/{adversary,route}.ts(+tests), web/src/pages/{AdversaryPage,AdversaryPage.test,ProjectsPage}.tsx, web/src/testing/adversaryFixtures.ts, .claude/skills/verify-notesd/features/{README,adversary}.md
+  - **Drift**: J5 (toggle journey) assumed the toggle works with NOTESD_ADVERSARY=off, but phase 5's API answers 503 reviewer_off then; J5 ran on `up --adversary` with an empty Seer schema, Gotcha line added to features/adversary.md
+    useAdversary.test.tsx got cleanup() in afterEach (shared EventSource in lib/events leaked a stale source between tests)
+  - **Decided**: J5 toggle journey on a reviewer-on instance (empty Seer DB, nothing due, nothing billed) instead of NOTESD_ADVERSARY=off, phase 5 code is the producer authority (D20)
+  - **Decided**: overview journey waits for roster rows before reading them (page loads async), a timing race in the journey script, not the code
+  - **Proof**: self-verified (quota economy): overview, method, A-GT three-way, focus with auto-runs off PASS; evidence /home/miftah/.local/state/notesd-verify/1105-112141-1657209/evidence and /home/miftah/.local/state/notesd-verify/1105-112305-1664630/evidence; J1, J6/J7, Projects neighbor journey not run
 
 - [x] **P1-NOTES-A071** Phase 5: mcp-notes API, SSE, MCP tools, scorecard, go-live parity
   - **Difficulty**: HARD
