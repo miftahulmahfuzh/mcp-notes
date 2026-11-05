@@ -100,21 +100,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6cae11b",
       "depends_on": [
         5
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "self-verified (quota economy 96%), sonnet. 4 mock states PASS with screenshots (evidence ~/.local/state/notesd-verify/1105-112141-1657209, 1105-112305-1664630). inconclusive (quota economy): J1, J6, J7, Projects neighbor journey. decision: toggle journey on up --adversary with empty Seer schema since NOTESD_ADVERSARY=off returns 503 reviewer_off (gotcha in features/adversary.md).",
       "package": "mcp-notes `web/",
       "plan": ".workflows/plan/seer-adversarial/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-05T11:25:25+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A072",
       "title": "Wall page `/adversary"
     },
     {
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T11:13:01+07:00",
+  "updated": "2026-11-05T11:25:25+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
