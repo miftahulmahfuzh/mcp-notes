@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   ConfigError,
+  DEFAULT_ADVERSARY_CONFIG,
   DEFAULT_CHAT_CONFIG,
   DEFAULT_EMBEDDINGS_CONFIG,
   DEFAULT_PORT,
@@ -43,6 +44,7 @@ describe('loadConfig', () => {
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
       sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true, swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py') },
+      adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -248,5 +250,54 @@ describe('loadConfig sessions', () => {
 
   it('keeps DEFAULT_SESSIONS_CONFIG off so hand-built test configs never read ~/.claude', () => {
     expect(DEFAULT_SESSIONS_CONFIG.enabled).toBe(false)
+  })
+})
+
+describe('adversary config', () => {
+  it('defaults to on, 15 deep reviews a day, sonnet gathers and opus decides', () => {
+    expect(loadConfig({ env: { DATABASE_URL: URL_A }, envFile: false }).adversary).toEqual({
+      enabled: true,
+      dailyCap: 15,
+      gatherModel: 'sonnet',
+      verdictModel: 'opus',
+      gatherMaxTurns: 20,
+      stockTimeoutMs: 420_000,
+      pollMs: 600_000,
+    })
+  })
+
+  it('reads every key', () => {
+    const env = {
+      DATABASE_URL: URL_A,
+      NOTESD_ADVERSARY: 'off',
+      ADVERSARY_DAILY_CAP: '3',
+      ADVERSARY_GATHER_MODEL: 'haiku',
+      ADVERSARY_VERDICT_MODEL: 'claude-opus-5-5',
+      ADVERSARY_GATHER_MAX_TURNS: '9',
+      ADVERSARY_STOCK_TIMEOUT_MS: '60000',
+      ADVERSARY_POLL_MS: '5000',
+    }
+    expect(loadConfig({ env, envFile: false }).adversary).toEqual({
+      enabled: false,
+      dailyCap: 3,
+      gatherModel: 'haiku',
+      verdictModel: 'claude-opus-5-5',
+      gatherMaxTurns: 9,
+      stockTimeoutMs: 60_000,
+      pollMs: 5_000,
+    })
+  })
+
+  it.each([
+    ['NOTESD_ADVERSARY', 'maybe'],
+    ['ADVERSARY_DAILY_CAP', '0'],
+    ['ADVERSARY_POLL_MS', '-5'],
+    ['ADVERSARY_VERDICT_MODEL', 'op us'],
+  ])('rejects %s=%j', (key, value) => {
+    expect(() => loadConfig({ env: { DATABASE_URL: URL_A, [key]: value }, envFile: false })).toThrow(ConfigError)
+  })
+
+  it('keeps DEFAULT_ADVERSARY_CONFIG off so hand-built test configs never review', () => {
+    expect(DEFAULT_ADVERSARY_CONFIG.enabled).toBe(false)
   })
 })

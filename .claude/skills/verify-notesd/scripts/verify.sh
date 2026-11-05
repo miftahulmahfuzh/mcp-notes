@@ -5,15 +5,18 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
+#                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
+#                                       built from ${SEER_DIR:-~/seer}/db/migrations (reviews are real, billed)
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
 #   verify.sh mcp RUN TOOL [JSON]       MCP tool call over /mcp; saved as evidence
 #   verify.sh ui RUN STEPS.mjs          drive the wall with Playwright (video + final screenshot)
 #   verify.sh sql RUN "SELECT ..."      read the run's database (read-only transaction)
+#   verify.sh exec RUN [--seer] "SQL"   WRITE to the run's throwaway notes DB (or its Seer DB); saved as evidence
 #   verify.sh note RUN "TEXT"           append a line to the run's evidence log (what you proved)
 #   verify.sh down RUN|--all            stop what `up` started, drop its DB; evidence stays
 #   verify.sh ls                        runs with state, pid and evidence count
@@ -67,12 +70,13 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0
+  local web=0 embed=0 sessions=0 adversary=0
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
       --embed) embed=1 ;;
       --sessions) sessions=1 ;;
+      --adversary) adversary=1 ;;
       *) die "up: unknown flag $a" ;;
     esac
   done
@@ -103,8 +107,31 @@ cmd_up() {
     await pool.end()
   ") || die "migration failed (db $db kept for inspection; verify.sh down $run)"
 
+  # --adversary: a throwaway Seer DB from the Seer checkout's own migrations; never the real one.
+  local seer_src="${SEER_DIR:-$HOME/seer}"
+  if [ "$adversary" = 1 ]; then
+    [ -d "$seer_src/db/migrations" ] || die "--adversary: no Seer migrations at $seer_src/db/migrations (set SEER_DIR)"
+    local sdb f
+    sdb="s_$(echo "$run" | tr -- '-' '_')"
+    psql_run -c "create database $sdb" >/dev/null
+    echo "$sdb" >"$dir/seer_db"
+    for f in "$seer_src"/db/migrations/*.sql; do
+      psql_run -d "$sdb" <"$f" >/dev/null || die "--adversary: Seer migration $(basename "$f") failed (verify.sh down $run)"
+    done
+    mkdir -p "$dir/seer/engine/data"
+    {
+      echo "DATABASE_URL_UNPOOLED=$(db_url "$sdb")"
+      if [ -f "$HOME/seer/.env.local" ]; then
+        grep -E '^(FINNHUB_API_KEY|MASSIVE_API_KEY|SEC_CONTACT_EMAIL)=' "$HOME/seer/.env.local" || true
+      fi
+    } >"$dir/seer/.env.local"
+    chmod 600 "$dir/seer/.env.local"
+    if [ -f "$seer_src/engine/data/ticker_cik.csv" ]; then cp "$seer_src/engine/data/ticker_cik.csv" "$dir/seer/engine/data/"; fi
+  fi
+
   # Real env wins over .env.local, so these pin the instance to the run's own state.
   # OPENROUTER_API_KEY='' turns embeddings off (search reports fallback) unless --embed.
+  # NOTESD_ADVERSARY=off unless --adversary: a throwaway daemon never reviews the owner's real Seer.
   local -a env=(
     DATABASE_URL="$(db_url "$db")"
     NOTESD_PORT=0
@@ -114,11 +141,18 @@ cmd_up() {
     NOTESD_SWARM_SCRIPT="$dir/no-swarm.py"
   )
   [ "$embed" = 1 ] || env+=(OPENROUTER_API_KEY=)
+  if [ "$adversary" = 1 ]; then
+    env+=(NOTESD_ADVERSARY=on SEER_DIR="$dir/seer" ADVERSARY_POLL_MS="${ADVERSARY_POLL_MS:-5000}")
+  else
+    env+=(NOTESD_ADVERSARY=off)
+  fi
   {
     echo "repo=$root"
     echo "head=$(git -C "$root" rev-parse --short HEAD)"
     echo "dirty=$(git -C "$root" status --porcelain | wc -l)"
     echo "embed=$embed"
+    echo "adversary=$adversary"
+    [ "$adversary" = 1 ] && echo "seer_migrations=$seer_src"
   } >"$dir/meta"
 
   # setsid leads its own process group (so `down` kills exactly this tree), and every fd is
@@ -139,6 +173,7 @@ cmd_up() {
   echo "RUN=$run"
   echo "URL=http://127.0.0.1:$port"
   echo "EVIDENCE=$dir/evidence"
+  echo "LOG=$dir/daemon.log"
 }
 
 cmd_doctor() {
@@ -234,6 +269,21 @@ cmd_sql() {
   echo "[evidence: $out]" >&2
 }
 
+cmd_exec() {
+  local dir db target=notes out
+  dir="$(run_dir "${1:-}")"; shift
+  if [ "${1:-}" = --seer ]; then target=seer; shift; fi
+  if [ "$target" = seer ]; then
+    [ -f "$dir/seer_db" ] || die "exec --seer: this run was not started with --adversary"
+    db="$(cat "$dir/seer_db")"
+  else
+    db="$(cat "$dir/db")"
+  fi
+  out="$(next_evidence "$dir" "exec-$target" query txt)"
+  { echo "> [$target] ${1:?SQL}"; printf '%s;\n' "$1" | psql_run -d "$db" 2>&1; } | tee "$out"
+  echo "[evidence: $out]" >&2
+}
+
 cmd_note() {
   local dir
   dir="$(run_dir "${1:-}")"
@@ -252,7 +302,10 @@ stop_run() {
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi
-  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/pid" "$dir/port" "$dir/db"
+  if [ -f "$dir/seer_db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
+    psql_run -c "drop database if exists $(cat "$dir/seer_db") with (force)" >/dev/null || true
+  fi
+  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/seer" "$dir/pid" "$dir/port" "$dir/db" "$dir/seer_db"
   echo "verify: stopped $(basename "$dir"); evidence kept in $dir/evidence ($(find "$dir/evidence" -type f | wc -l) files)"
 }
 
@@ -283,8 +336,9 @@ case "$sub" in
   mcp) cmd_mcp "$@" ;;
   ui) cmd_ui "$@" ;;
   sql) cmd_sql "$@" ;;
+  exec) cmd_exec "$@" ;;
   note) cmd_note "$@" ;;
   down) cmd_down "$@" ;;
   ls) cmd_ls ;;
-  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

@@ -94,6 +94,42 @@ export const DEFAULT_SESSIONS_CONFIG: SessionsConfig = {
   swarmScript: null,
 }
 
+export const DEFAULT_ADVERSARY_DAILY_CAP = 15
+export const DEFAULT_ADVERSARY_GATHER_MODEL = 'sonnet'
+export const DEFAULT_ADVERSARY_VERDICT_MODEL = 'opus'
+export const DEFAULT_ADVERSARY_GATHER_MAX_TURNS = 20
+export const DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS = 420_000
+export const DEFAULT_ADVERSARY_POLL_MS = 600_000
+
+/** Seer Adversarial reviewer (src/adversary/*). */
+export interface AdversaryConfig {
+  /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
+  enabled: boolean
+  /** `ADVERSARY_DAILY_CAP`, default 15. Deep reviews per WIB day, both machines together. */
+  dailyCap: number
+  /** `ADVERSARY_GATHER_MODEL`, default `sonnet`. Agent SDK alias or model id for the gathering stage. */
+  gatherModel: string
+  /** `ADVERSARY_VERDICT_MODEL`, default `opus`. Agent SDK alias or model id for the verdict. */
+  verdictModel: string
+  /** `ADVERSARY_GATHER_MAX_TURNS`, default 20. Turn cap of the gathering stage per stock. */
+  gatherMaxTurns: number
+  /** `ADVERSARY_STOCK_TIMEOUT_MS`, default 420000. Wall clock per stock, both stages. */
+  stockTimeoutMs: number
+  /** `ADVERSARY_POLL_MS`, default 600000. Pause between automatic passes. */
+  pollMs: number
+}
+
+/** Reviewer off, default limits. Tests build `Config` literals with it, so no hand-built config ever reviews. */
+export const DEFAULT_ADVERSARY_CONFIG: AdversaryConfig = {
+  enabled: false,
+  dailyCap: DEFAULT_ADVERSARY_DAILY_CAP,
+  gatherModel: DEFAULT_ADVERSARY_GATHER_MODEL,
+  verdictModel: DEFAULT_ADVERSARY_VERDICT_MODEL,
+  gatherMaxTurns: DEFAULT_ADVERSARY_GATHER_MAX_TURNS,
+  stockTimeoutMs: DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS,
+  pollMs: DEFAULT_ADVERSARY_POLL_MS,
+}
+
 export interface Config {
   /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
   databaseUrl: string
@@ -109,6 +145,8 @@ export interface Config {
   embeddings: EmbeddingsConfig
   /** Claude Code session ingest. `enabled: false` starts nothing (DEFAULT_SESSIONS_CONFIG in tests). */
   sessions: SessionsConfig
+  /** Seer Adversarial reviewer. `enabled: false` starts nothing (DEFAULT_ADVERSARY_CONFIG in tests). */
+  adversary: AdversaryConfig
 }
 
 export interface LoadConfigOptions {
@@ -247,6 +285,27 @@ function parseSwitch(name: string, raw: string | undefined): boolean {
   throw new ConfigError(`${name} must be "on" or "off", got "${raw}"`)
 }
 
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._[\]-]*$/
+
+function parseModel(name: string, raw: string | undefined, fallback: string): string {
+  const value = raw?.trim() ?? ''
+  if (value === '') return fallback
+  if (!MODEL_NAME.test(value)) throw new ConfigError(`${name} must be a model alias or id such as "opus", got "${raw}"`)
+  return value
+}
+
+export function parseAdversary(env: Record<string, string | undefined>): AdversaryConfig {
+  return {
+    enabled: parseSwitch('NOTESD_ADVERSARY', env.NOTESD_ADVERSARY),
+    dailyCap: parsePositiveInt('ADVERSARY_DAILY_CAP', env.ADVERSARY_DAILY_CAP, DEFAULT_ADVERSARY_DAILY_CAP),
+    gatherModel: parseModel('ADVERSARY_GATHER_MODEL', env.ADVERSARY_GATHER_MODEL, DEFAULT_ADVERSARY_GATHER_MODEL),
+    verdictModel: parseModel('ADVERSARY_VERDICT_MODEL', env.ADVERSARY_VERDICT_MODEL, DEFAULT_ADVERSARY_VERDICT_MODEL),
+    gatherMaxTurns: parsePositiveInt('ADVERSARY_GATHER_MAX_TURNS', env.ADVERSARY_GATHER_MAX_TURNS, DEFAULT_ADVERSARY_GATHER_MAX_TURNS),
+    stockTimeoutMs: parsePositiveInt('ADVERSARY_STOCK_TIMEOUT_MS', env.ADVERSARY_STOCK_TIMEOUT_MS, DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS),
+    pollMs: parsePositiveInt('ADVERSARY_POLL_MS', env.ADVERSARY_POLL_MS, DEFAULT_ADVERSARY_POLL_MS),
+  }
+}
+
 function parseSwarmScript(raw: string | undefined, claudeHome: string): string {
   const value = raw?.trim() ?? ''
   if (value === '') return path.join(claudeHome, DEFAULT_SWARM_SCRIPT_REL)
@@ -269,7 +328,9 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * LLM_API_KEY, LLM_MODEL. Embeddings key: OPENROUTER_API_KEY (unset or blank: semantic search and
  * the embedding worker are off, `related` answers only from vectors already stored; note writes are
  * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS,
- * NOTESD_SWARM_SCRIPT. Other keys are ignored.
+ * NOTESD_SWARM_SCRIPT. Adversary keys: NOTESD_ADVERSARY, ADVERSARY_DAILY_CAP,
+ * ADVERSARY_GATHER_MODEL, ADVERSARY_VERDICT_MODEL, ADVERSARY_GATHER_MAX_TURNS,
+ * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS. Other keys are ignored.
  * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
@@ -297,5 +358,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     chat: parseChat(env),
     embeddings: parseEmbeddings(env),
     sessions: parseSessions(env),
+    adversary: parseAdversary(env),
   }
 }

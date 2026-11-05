@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startBackground } from '../../src/background.js';
 import { ChatService } from '../../src/chat/service.js';
-import { DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_ADVERSARY_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_EMBEDDINGS_CONFIG, type Config } from '../../src/config.js';
 import type { Db } from '../../src/db/client.js';
 import type { AppDeps } from '../../src/deps.js';
 import { NoteEvents } from '../../src/notes/events.js';
@@ -149,6 +149,7 @@ describe('startBackground with sessions enabled', () => {
       chat: DEFAULT_CHAT_CONFIG,
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
       sessions: { claudeHome: home, worktreesDir: FIXTURE.worktreesDir, enabled: true, swarmScript: null },
+      adversary: DEFAULT_ADVERSARY_CONFIG,
     };
     const events = new NoteEvents();
     const deps: AppDeps = {
@@ -158,7 +159,7 @@ describe('startBackground with sessions enabled', () => {
       service: new NotesService({ db, dataDir, events }),
       embedder: null,
       imageEmbedder: null,
-      chat: new ChatService({ db }),
+      chat: new ChatService({ db }), adversary: null,
     };
     const stop = await startBackground(deps);
     try {

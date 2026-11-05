@@ -1,7 +1,9 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hostname } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { serve, type ServerType } from '@hono/node-server';
+import { createAdversaryService, type AdversaryService } from './adversary/service.js';
 import { startBackground } from './background.js';
 import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
@@ -85,7 +87,20 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const events = new NoteEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
   const chatHistory = new ChatService({ db });
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory };
+  let adversary: AdversaryService | null = null;
+  if (config.adversary.enabled) {
+    adversary = createAdversaryService({
+      config: config.adversary,
+      db,
+      claudeBin: config.chat.claudeBin,
+      dataDir: config.dataDir,
+      host: hostname(),
+    });
+    if (adversary === null) {
+      console.log(`[notesd] adversary off: claude binary "${config.chat.claudeBin}" not found (set NOTESD_CLAUDE_BIN)`);
+    }
+  }
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;

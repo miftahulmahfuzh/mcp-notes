@@ -6,6 +6,8 @@ import {
   boolean,
   check,
   customType,
+  date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -39,6 +41,9 @@ import {
  * Migration 0010 (node panel: summarize on demand, full prompts) adds
  * `cc_sessions.summary_requested_at`, `cc_sessions.prompts_version` and `cc_session_prompts`;
  * src/sessions/repo.ts is their only writer.
+ * Migration 0011 (Seer Adversarial) adds `adversary_reviews`: one row per review attempt of the
+ * reviewer (src/adversary/reviewsRepo.ts is its only writer), which is also the usage log and the
+ * store of early "draft" verdicts that are never written to Seer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -710,6 +715,71 @@ export const appSettings = pgTable('app_settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 })
 
+/** One source a Seer Adversarial verdict cites: a page the reviewer opened with its fetch_url tool. */
+export interface AdversarySource {
+  url: string
+  title: string | null
+  publisher: string | null
+  /** ISO 8601 when the page said when it was published, else null. */
+  published_at: string | null
+  /** ISO 8601, when the reviewer fetched it (before the session opened). */
+  fetched_at: string
+}
+
+/** `adversary_reviews.verdict`: what one review concluded. */
+export interface AdversaryStoredVerdict {
+  verdict: 'agree' | 'object' | 'unsure'
+  /** Plain words, 1..600 characters. */
+  reason: string
+  sources: AdversarySource[]
+  /** The method brief's id@version, `<object_name>@<8 hex>`. */
+  lens: string
+  /** adversary_verdicts.id in Seer's DB once written; null for a draft (and a failed write). */
+  seer_verdict_id: number | null
+  /** True when an agree/object that cited no fetched page was turned into unsure. */
+  downgraded: boolean
+}
+
+/**
+ * One row per Seer Adversarial review attempt (migration 0011), from either machine. stage
+ * 'draft' is an early look at a book's next rebalance (from Seer's book_previews), kept here only;
+ * stage 'final' is a review of a real decision, written to Seer's adversary_verdicts when it
+ * succeeds. status 'late' means the Seer verdict was decided after the session opened (the engine
+ * ignores it); 'skipped_budget' means the daily cap was reached. Deep reviews counted against the
+ * cap: status ok/failed/late with reused_from null. Written only through src/adversary/reviewsRepo.ts.
+ */
+export const adversaryReviews = pgTable(
+  'adversary_reviews',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    strategyId: text('strategy_id').notNull(),
+    sessionDate: date('session_date', { mode: 'string' }).notNull(),
+    symbol: text('symbol').notNull(),
+    stage: text('stage').notNull(),
+    status: text('status').notNull(),
+    verdict: jsonb('verdict').$type<AdversaryStoredVerdict>(),
+    promptVersion: text('prompt_version').notNull(),
+    gatherModel: text('gather_model'),
+    verdictModel: text('verdict_model'),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    costUsd: doublePrecision('cost_usd').notNull().default(0),
+    turns: integer('turns').notNull().default(0),
+    error: text('error'),
+    host: text('host').notNull(),
+    /** The draft row whose verdict this final row reused (no tokens spent). */
+    reusedFrom: bigint('reused_from', { mode: 'number' }).references((): AnyPgColumn => adversaryReviews.id),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    check('adversary_reviews_stage_check', sql`${t.stage} in ('draft', 'final')`),
+    check('adversary_reviews_status_check', sql`${t.status} in ('ok', 'failed', 'skipped_budget', 'late')`),
+    index('adversary_reviews_started_idx').on(t.startedAt),
+    index('adversary_reviews_key_idx').on(t.strategyId, t.sessionDate, t.symbol, t.startedAt),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -732,3 +802,5 @@ export type CcSessionPromptRow = typeof ccSessionPrompts.$inferSelect
 export type NewCcSessionPromptRow = typeof ccSessionPrompts.$inferInsert
 export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
 export type AppSettingRow = typeof appSettings.$inferSelect
+export type AdversaryReviewRow = typeof adversaryReviews.$inferSelect
+export type NewAdversaryReviewRow = typeof adversaryReviews.$inferInsert
