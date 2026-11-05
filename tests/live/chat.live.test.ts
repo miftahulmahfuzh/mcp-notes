@@ -53,6 +53,8 @@ beforeAll(async () => {
       CHAT_BRAIN: 'claude',
       // Never ingest the real ~/.claude into the test database.
       NOTESD_SESSIONS: 'off',
+      // Never review real Seer decisions from a test daemon.
+      NOTESD_ADVERSARY: 'off',
     },
   });
   daemon = await startDaemon(config, { chat: createStubChatBackend({ delayMs: 0 }), embedder: null, imageEmbedder: null });

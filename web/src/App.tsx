@@ -15,7 +15,10 @@ import { useBin } from './hooks/useBin';
 import { useDeepLink } from './hooks/useDeepLink';
 import { useHistory } from './hooks/useHistory';
 import { normalizeNoteId, noteHref } from './lib/deepLink';
-import { hrefForView, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, type ProjectsRoute } from './lib/route';
+import { adversaryRouteFromLocation, hrefForView, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, type AdversaryRoute, type ProjectsRoute } from './lib/route';
+import { AdversaryPage } from './pages/AdversaryPage';
+import { useAdversary } from './hooks/useAdversary';
+import { adversaryChatMessage, adversaryCountLine, adversaryHeading } from './lib/adversary';
 import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
 import { HistoryPage } from './pages/HistoryPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -66,8 +69,8 @@ export function App() {
   const chatImages = useChatImages();
   const { copied, copy } = useCopied();
 
-  // Opening the projects view expands the sidebar with the repo list; a /projects deep link starts that way.
-  const [side, setSide] = useState(() => projectsRouteFromLocation(window.location) !== null);
+  // Opening the projects or adversary view expands the sidebar with its list; a deep link starts that way.
+  const [side, setSide] = useState(() => projectsRouteFromLocation(window.location) !== null || adversaryRouteFromLocation(window.location) !== null);
   const [mode, setMode] = useState<Mode>('text');
   const [active, setActive] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
@@ -75,13 +78,17 @@ export function App() {
   const [q, setQ] = useState('');
   const { notice, show: showNotice } = useNotice();
   // `/history[?thread=ID]` opens straight into the chat history page, `/projects[?repo=&node=]`
-  // into the session graph (both served by the SPA fallback).
+  // into the session graph, `/adversary[/<id>]` into Seer Adversarial (all served by the SPA fallback).
   const [view, setView] = useState<View>(() => {
     if (routeFromLocation(window.location).history) return 'history';
-    return projectsRouteFromLocation(window.location) !== null ? 'projects' : 'wall';
+    if (projectsRouteFromLocation(window.location) !== null) return 'projects';
+    return adversaryRouteFromLocation(window.location) !== null ? 'adversary' : 'wall';
   });
   const [historyThread, setHistoryThread] = useState<string | null>(() => routeFromLocation(window.location).thread);
   const [projectsRoute, setProjectsRoute] = useState<ProjectsRoute>(() => projectsRouteFromLocation(window.location) ?? NO_PROJECT_ROUTE);
+  const [adversaryRoute, setAdversaryRoute] = useState<AdversaryRoute>(() => adversaryRouteFromLocation(window.location) ?? NO_ADVERSARY_ROUTE);
+  // Fetches only while the adversary view is shown (overview for the sidebar and header, plus the method shown).
+  const adversary = useAdversary(view === 'adversary', adversaryRoute.strategy);
   // Fetches only while the projects view is shown; every visit re-reads the server-side selection.
   const projectsStore = useProjects(view === 'projects');
   const { pick: pickProject } = projectsStore;
@@ -95,8 +102,8 @@ export function App() {
   const projectRepo =
     projectsRoute.repo ?? (!awaitingNodeRepo && projectsStore.selectedLoaded ? (projectsStore.selected ?? mostRecentRepo) : null);
   const resolvingRepo = projectsRoute.repo === null && (awaitingNodeRepo || !projectsStore.selectedLoaded || projectsStore.projects === null);
-  // Graph focus mode: the projects page alone, no rail, sidebar or header.
-  const focus = view === 'projects' && projectsRoute.focus;
+  // Focus mode: the projects or adversary page alone, no rail, sidebar or header.
+  const focus = (view === 'projects' && projectsRoute.focus) || (view === 'adversary' && adversaryRoute.focus);
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
   // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
   const history = useHistory(view === 'history', { includeDeleted: true });
@@ -331,6 +338,31 @@ export function App() {
   /** The projects toolbar's focus icon (and Esc in focus mode). Pins the shown repo, like a node click. */
   const toggleFocus = useCallback(() => setProjectsRoute((r) => ({ ...r, repo: projectRepo, focus: !r.focus })), [projectRepo]);
 
+  /** Rail / sidebar sword icon: open Seer Adversarial and expand the sidebar with the roster; a second press returns to the wall. */
+  const toggleAdversary = useCallback(() => {
+    const opening = wallRef.current.view !== 'adversary';
+    setView(opening ? 'adversary' : 'wall');
+    if (opening) {
+      setSide(true);
+      setAdversaryRoute((r) => (r.focus ? { ...r, focus: false } : r));
+    }
+  }, []);
+
+  /** Sidebar roster row or overview table row: `/adversary/<id>` (null = the overview), keeping focus mode. */
+  const pickStrategy = useCallback((strategy: string | null) => setAdversaryRoute((r) => ({ strategy, focus: r.focus })), []);
+
+  /** The adversary toolbar's focus icon, Alt+Z, and Esc in focus mode. */
+  const toggleAdversaryFocus = useCallback(() => setAdversaryRoute((r) => ({ ...r, focus: !r.focus })), []);
+
+  /** The page's pill: the wall chat, with the page named on the message's first line (lib/adversary adversaryChatMessage). */
+  const { ask: askChat } = chat;
+  const askAdversary = useCallback(
+    (text: string, imageIds: string[]) => {
+      void askChat(adversaryChatMessage(text, adversaryRoute.strategy), imageIds);
+    },
+    [askChat, adversaryRoute.strategy],
+  );
+
   // Resolve a repo-less `/projects?node=` to the node's repo. The address bar is replaced (not pushed)
   // before the state changes, so Back skips the repo-less URL instead of resolving it again.
   const routeNode = view === 'projects' && projectsRoute.repo === null ? projectsRoute.node : null;
@@ -380,24 +412,28 @@ export function App() {
   }, [chat.threadId]);
 
   // The address bar follows the view (pathname guard, lib/route.ts hrefForView): entering the
-  // history page pushes /history[?thread=], the projects view /projects[?repo=&node=]; leaving
-  // either pushes / only when the path is theirs. Wall and bin never rewrite another URL, so
+  // history page pushes /history[?thread=], the projects view /projects[?repo=&node=], Seer
+  // Adversarial /adversary[/<id>][?focus=1]; leaving any of them pushes / only when the path is theirs. Wall and bin never rewrite another URL, so
   // /?note=ID survives a switch to the wall (Phase 11's show-on-wall relies on this). This is the
   // one URL-sync owner; no other phase adds one.
   useEffect(() => {
-    const href = hrefForView(view, historyThread, window.location, projectsRoute);
+    const href = hrefForView(view, historyThread, window.location, projectsRoute, adversaryRoute);
     if (href !== null) window.history.pushState(null, '', href);
-  }, [view, historyThread, projectsRoute]);
+  }, [view, historyThread, projectsRoute, adversaryRoute]);
 
-  // Back / forward between /history, /projects and the wall. A /?note= target is handled by
+  // Back / forward between /history, /projects, /adversary and the wall. A /?note= target is handled by
   // useDeepLink's own popstate listener (planReveal moves the view to the wall).
   useEffect(() => {
     const onPop = () => {
       const r = routeFromLocation(window.location);
       const p = projectsRouteFromLocation(window.location);
+      const a = adversaryRouteFromLocation(window.location);
       setHistoryThread(r.thread);
       if (p !== null) setProjectsRoute(p);
-      setView((v) => (r.history ? 'history' : p !== null ? 'projects' : v === 'history' || v === 'projects' ? 'wall' : v));
+      if (a !== null) setAdversaryRoute(a);
+      setView((v) =>
+        r.history ? 'history' : p !== null ? 'projects' : a !== null ? 'adversary' : v === 'history' || v === 'projects' || v === 'adversary' ? 'wall' : v,
+      );
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -785,6 +821,7 @@ export function App() {
                 }}
                 onToggleProjects={toggleProjects}
                 onToggleHistory={toggleHistory}
+                onToggleAdversary={toggleAdversary}
                 onToggleBin={toggleBin}
                 onToggleTag={toggleTag}
                 onClear={() => setActive([])}
@@ -799,11 +836,15 @@ export function App() {
                 onMode={pickMode}
                 onToggleProjects={toggleProjects}
                 onToggleHistory={toggleHistory}
+                onToggleAdversary={toggleAdversary}
                 onToggleBin={toggleBin}
                 onToggleTag={toggleTag}
                 projects={projectsStore.projects}
                 repo={projectRepo}
                 onPickRepo={pickRepo}
+                roster={adversary.overview?.roster ?? null}
+                strategy={adversaryRoute.strategy}
+                onPickStrategy={pickStrategy}
               />
             )}
             <main className="main" style={{ marginLeft: mainLeft }}>
@@ -811,22 +852,26 @@ export function App() {
                 <>
                   <Header
                     heading={
-                      view === 'projects'
-                        ? projectHeading(projectRepo)
-                        : view === 'history'
-                          ? HISTORY_HEADING
-                          : view === 'bin'
-                            ? BIN_HEADING
-                            : headingFor(mode, active)
+                      view === 'adversary'
+                        ? adversaryHeading(adversary, adversaryRoute.strategy)
+                        : view === 'projects'
+                          ? projectHeading(projectRepo)
+                          : view === 'history'
+                            ? HISTORY_HEADING
+                            : view === 'bin'
+                              ? BIN_HEADING
+                              : headingFor(mode, active)
                     }
                     countLine={
-                      view === 'projects'
-                        ? projectsCountLine(projectsStore.projects, projectRepo)
-                        : view === 'history'
-                          ? historyCountLine(history.items, history.hasMore)
-                          : view === 'bin'
-                            ? binCountLine(binStore.bin, active)
-                            : countLineFor(mode, active, notes, visible, photos)
+                      view === 'adversary'
+                        ? adversaryCountLine(adversary, adversaryRoute.strategy, now)
+                        : view === 'projects'
+                          ? projectsCountLine(projectsStore.projects, projectRepo)
+                          : view === 'history'
+                            ? historyCountLine(history.items, history.hasMore)
+                            : view === 'bin'
+                              ? binCountLine(binStore.bin, active)
+                              : countLineFor(mode, active, notes, visible, photos)
                     }
                     last={last}
                     lastWhen={last ? relativeDate(last.updated_at, now, true) : ''}
@@ -834,13 +879,24 @@ export function App() {
                     bin={view === 'bin'}
                     history={view === 'history'}
                     projects={view === 'projects'}
+                    adversary={view === 'adversary'}
                     onJumpLast={() => last && jump(last.id)}
                     onAdd={() => void addNote()}
                   />
                   <div className="rule" />
                 </>
               )}
-              {view === 'projects' ? (
+              {view === 'adversary' ? (
+                <AdversaryPage
+                  store={adversary}
+                  strategy={adversaryRoute.strategy}
+                  focus={focus}
+                  onToggleFocus={toggleAdversaryFocus}
+                  escapeLeavesFocus={!chat.open}
+                  onPickStrategy={pickStrategy}
+                  onAsk={askAdversary}
+                />
+              ) : view === 'projects' ? (
                 <ProjectsPage
                   key={projectRepo ?? ''}
                   repo={projectRepo}
@@ -893,7 +949,7 @@ export function App() {
                 onFullScreen={openHistoryThread}
               />
             )}
-            {view !== 'history' && view !== 'projects' && (
+            {view !== 'history' && view !== 'projects' && view !== 'adversary' && (
               <ChatBar
                 left={chatLeft}
                 value={q}

@@ -1,3 +1,4 @@
+import type { AdversaryService } from './adversary/service.js';
 import type { ChatService } from './chat/service.js';
 import type { Config } from './config.js';
 import type { Db } from './db/client.js';
@@ -18,4 +19,6 @@ export interface AppDeps {
   imageEmbedder: ImageEmbedder | null;
   /** Chat history: threads, messages, edits, deletes (phase 7). The only writer of the chat tables. */
   chat: ChatService;
+  /** Seer Adversarial reviewer (phase 4). Null when NOTESD_ADVERSARY=off or no claude binary. Phase 5's routes call it. */
+  adversary: AdversaryService | null;
 }

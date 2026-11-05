@@ -83,7 +83,7 @@ export interface Bin {
 }
 
 /** What the main area shows: the wall (text / images / all modes), the recycle bin, the chat history page (phase 9), or the projects session graph (project-session-graph phase 10). */
-export type View = 'wall' | 'bin' | 'history' | 'projects';
+export type View = 'wall' | 'bin' | 'history' | 'projects' | 'adversary';
 
 /** A pasted chat image as the server sends it (`POST /api/chat/images`; src/chat/images.ts `ChatImage`). */
 export interface ChatImage {

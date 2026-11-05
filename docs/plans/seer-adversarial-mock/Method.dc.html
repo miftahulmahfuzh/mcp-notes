@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Seer Adversarial: RAW35</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;family=Host+Grotesk:wght@300..800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121211;color:#ecebe4;font-family:'Host Grotesk',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#ecebe4;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}a:hover{color:#fff}
+.ibtn{width:40px;height:40px;border:0;border-radius:999px;background:transparent;color:#ecebe4;cursor:pointer;display:grid;place-items:center;padding:0}
+.ibtn svg{width:20px;height:20px;fill:currentColor}
+.ibtn.on{background:#ecebe4;color:#121211}
+.ibtn.hov:hover{background:#222220}
+.tagrow{display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;border-radius:999px;color:#d6d5cd;font-size:13px;border:0;background:transparent;width:100%;font-family:inherit;cursor:pointer;text-align:left}
+.tagrow.on{background:#ecebe4;color:#121211}
+.tagrow .n{font-family:'Geist Mono',monospace;font-size:11px;opacity:.7}
+.mono{font-family:'Geist Mono',monospace;letter-spacing:.03em}
+.chip{display:inline-block;font-family:'Geist Mono',monospace;font-size:10.5px;line-height:1;padding:3px 8px 4px;border-radius:999px;letter-spacing:.02em;white-space:nowrap}
+.chip.obj{background:#ecebe4;color:#121211}
+.chip.ok{border:1px solid rgba(236,235,228,.25);color:#d6d5cd}
+.chip.unsure{border:1px dashed rgba(236,235,228,.4);color:#a9a89f}
+.chip.dim{background:#2a2a27;color:#d6d5cd}
+.fpill{font-family:'Geist Mono',monospace;font-size:10.5px;padding:4px 10px;border-radius:999px;border:1px solid rgba(236,235,228,.25);background:transparent;color:#ecebe4;cursor:pointer}
+.fpill.on{background:#ecebe4;color:#121211;border-color:#ecebe4}
+.divider{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-family:'Geist Mono',monospace;font-size:10.5px;color:#8a897f;white-space:nowrap}
+.divider::after{content:"";flex:1;height:1px;background:rgba(236,235,228,.12)}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #121211;">
+
+  <nav aria-label="Rail" style="flex: 0 0 56px; box-sizing: border-box; border-right: 1px solid rgba(236,235,228,.1); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0;">
+    <button class="ibtn hov" type="button" aria-label="Hide sidebar" title="Hide sidebar"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M88,48V208H40a8,8,0,0,1-8-8V56a8,8,0,0,1,8-8Z" opacity="0.2"></path><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"></path></svg></button>
+    <button class="ibtn hov" type="button" aria-label="Projects" title="Projects"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M64,112v32a8,8,0,0,1-8,8H24a8,8,0,0,1-8-8V112a8,8,0,0,1,8-8H56A8,8,0,0,1,64,112ZM208,40H160a8,8,0,0,0-8,8V96a8,8,0,0,0,8,8h48a8,8,0,0,0,8-8V48A8,8,0,0,0,208,40Zm0,112H160a8,8,0,0,0-8,8v48a8,8,0,0,0,8,8h48a8,8,0,0,0,8-8V160A8,8,0,0,0,208,152Z" opacity="0.2"></path><path d="M160,112h48a16,16,0,0,0,16-16V48a16,16,0,0,0-16-16H160a16,16,0,0,0-16,16V64H128a24,24,0,0,0-24,24v32H72v-8A16,16,0,0,0,56,96H24A16,16,0,0,0,8,112v32a16,16,0,0,0,16,16H56a16,16,0,0,0,16-16v-8h32v32a24,24,0,0,0,24,24h16v16a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V160a16,16,0,0,0-16-16H160a16,16,0,0,0-16,16v16H128a8,8,0,0,1-8-8V88a8,8,0,0,1,8-8h16V96A16,16,0,0,0,160,112ZM56,144H24V112H56v32Zm104,16h48v48H160Zm0-112h48V96H160Z"></path></svg></button>
+    <button class="ibtn hov" type="button" aria-label="Chat history" title="Chat history"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M231.66,213.73a8,8,0,0,1-9.93,9.93L194,215.5A72.05,72.05,0,0,1,92.06,175.89h0c1.31.07,2.62.11,3.94.11a72,72,0,0,0,67.93-95.88h0A72,72,0,0,1,223.5,186Z" opacity="0.2"></path><path d="M232.07,186.76a80,80,0,0,0-62.5-114.17A80,80,0,1,0,23.93,138.76l-7.27,24.71a16,16,0,0,0,19.87,19.87l24.71-7.27a80.39,80.39,0,0,0,25.18,7.35,80,80,0,0,0,108.34,40.65l24.71,7.27a16,16,0,0,0,19.87-19.86ZM62,159.5a8.28,8.28,0,0,0-2.26.32L32,168l8.17-27.76a8,8,0,0,0-.63-6,64,64,0,1,1,26.26,26.26A8,8,0,0,0,62,159.5Zm153.79,28.73L224,216l-27.76-8.17a8,8,0,0,0-6,.63,64.05,64.05,0,0,1-85.87-24.88A79.93,79.93,0,0,0,174.7,89.71a64,64,0,0,1,41.75,92.48A8,8,0,0,0,215.82,188.23Z"></path></svg></button>
+    <button class="ibtn on" type="button" aria-label="Seer Adversarial" aria-pressed="true" title="Seer Adversarial"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M141.66,201,129,213.66a8,8,0,0,1-11.32,0L92,188,58.35,221.66a8,8,0,0,1-11.32,0L34.34,209a8,8,0,0,1,0-11.31L68,164,42.34,138.36a8,8,0,0,1,0-11.32L55,114.34a8,8,0,0,1,11.32,0l75.3,75.3A8,8,0,0,1,141.66,201Z" opacity="0.2"></path><path d="M216,32H152a8,8,0,0,0-6.34,3.12l-64,83.21L72,108.69a16,16,0,0,0-22.64,0l-12.69,12.7a16,16,0,0,0,0,22.630l20,20-28,28a16,16,0,0,0,0,22.63l12.69,12.68a16,16,0,0,0,22.62,0l28-28,20,20a16,16,0,0,0,22.64,0l12.69-12.7a16,16,0,0,0,0-22.63l-9.64-9.64,83.21-64A8,8,0,0,0,224,104V40A8,8,0,0,0,216,32ZM52.69,216,40,203.32l28-28L80.68,188Zm70.61-8L48,132.71,60.7,120,136,195.31ZM208,100.06l-81.74,62.88L115.32,152l50.34-50.34a8,8,0,0,0-11.32-11.31L104,140.68,93.07,129.74,155.94,48H208Z"></path></svg></button>
+    <button class="ibtn hov" type="button" aria-label="Recycle bin" title="Recycle bin"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M200,56V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V56Z" opacity="0.2"></path><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path></svg></button>
+  </nav>
+
+  <aside aria-label="Roster" style="flex: 0 0 240px; box-sizing: border-box; border-right: 1px solid rgba(236,235,228,.1); padding: 14px 12px 40px; display: flex; flex-direction: column; gap: 18px;">
+    <div style="height: 40px;"></div>
+    <div style="height: 1px; background: rgba(236,235,228,.1);"></div>
+    <div role="list" style="display: flex; flex-direction: column; gap: 2px;">
+      <button class="tagrow" type="button"><span>Overview</span><span class="n">3</span></button>
+      <button class="tagrow" type="button"><span>A · Dip buy</span><span class="n">daily</span></button>
+      <button class="tagrow on" type="button" aria-current="true"><span>RAW35 · Momentum</span><span class="n">monthly</span></button>
+      <button class="tagrow" type="button"><span>COSK · Crash-prone</span><span class="n">quarterly</span></button>
+    </div>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 0 20px 120px;">
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; height: 44px; padding-top: 10px;">
+      <button class="ibtn on" type="button" aria-label="Auto-runs on (click to pause)" aria-pressed="true" title="Auto-runs on (click to pause)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"></path><path d="M120,128V48a8,8,0,0,1,16,0v80a8,8,0,0,1-16,0Zm60.37-78.7a8,8,0,0,0-8.74,13.4C194.74,77.77,208,101.57,208,128a80,80,0,0,1-160,0c0-26.43,13.26-50.23,36.37-65.3a8,8,0,0,0-8.74-13.4C47.9,67.38,32,96.06,32,128a96,96,0,0,0,192,0C224,96.06,208.1,67.38,180.37,49.3Z"></path></svg></button>
+      <button class="ibtn hov" type="button" aria-label="Review this method now" title="Review this method now"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"></path><path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.36,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"></path></svg></button>
+      <button class="ibtn hov" type="button" aria-label="Focus (Alt+Z)" title="Focus (Alt+Z)"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M208,48V208H48V48Z" opacity="0.2"></path><path d="M216,48V88a8,8,0,0,1-16,0V56H168a8,8,0,0,1,0-16h40A8,8,0,0,1,216,48ZM88,200H56V168a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H88a8,8,0,0,0,0-16Zm120-40a8,8,0,0,0-8,8v32H168a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V168A8,8,0,0,0,208,160ZM88,40H48a8,8,0,0,0-8,8V88a8,8,0,0,0,16,0V56H88a8,8,0,0,0,0-16Z"></path></svg></button>
+    </div>
+
+    <header style="padding-top: 18px; display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: end; gap: 24px;">
+      <p style="margin: 0 0 18px; font-size: 12px; line-height: 1.5; color: #c9c8c0; text-wrap: pretty;">
+        The 35 stocks that rose most beyond the market, re-picked each month. Claude asks one thing of every pick: will what drove the rise last the month? May 3 decision: 35 picks, 4 objections, 1 can't tell.
+        <span class="chip dim" style="margin-left: 4px;">sample data</span>
+      </p>
+      <h1 style="margin: 0; font-weight: 400; font-size: clamp(72px, 13vw, 230px); line-height: .84; letter-spacing: -.06em; text-align: right; white-space: nowrap; overflow: hidden; padding-bottom: .24em; margin-bottom: -.24em;">RAW35.</h1>
+    </header>
+    <div style="height: 1px; background: rgba(236,235,228,.12); margin-top: 26px;"></div>
+
+    <!-- head to head -->
+    <section aria-label="Original against Claude twin" style="padding-top: 30px; display: flex; flex-wrap: wrap; gap: 28px;">
+      <figure style="margin: 0; flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div class="mono" style="display: flex; flex-wrap: wrap; gap: 18px; font-size: 10.5px; color: #8a897f;">
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 2px; background: #ecebe4;"></span>Claude twin</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 0; border-top: 2px dashed #a9a89f;"></span>original</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 18px; height: 0; border-top: 2px dotted #6d6c65;"></span>SPY</span>
+          <span style="margin-left: auto;">growth of 100, deposits taken out · Oct 14 → May 4</span>
+        </div>
+        <svg viewBox="0 0 800 220" preserveAspectRatio="none" role="img" aria-label="Claude twin ends at 109.6, original at 108.9, SPY at 106.0" style="width: 100%; height: 240px; display: block;">
+          <line x1="0" y1="165" x2="800" y2="165" stroke="rgba(236,235,228,.12)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <line x1="0" y1="96.3" x2="800" y2="96.3" stroke="rgba(236,235,228,.07)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <line x1="0" y1="27.5" x2="800" y2="27.5" stroke="rgba(236,235,228,.07)" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <polyline fill="none" stroke="#6d6c65" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round" vector-effect="non-scaling-stroke" points="0.0,165.0 27.6,168.4 55.2,149.8 82.8,159.0 110.3,150.1 137.9,156.2 165.5,137.8 193.1,146.6 220.7,145.0 248.3,139.8 275.9,126.7 303.4,128.9 331.0,133.9 358.6,125.1 386.2,120.8 413.8,133.0 441.4,110.7 469.0,111.5 496.6,105.8 524.1,118.4 551.7,113.9 579.3,109.2 606.9,94.9 634.5,96.8 662.1,90.1 689.7,97.2 717.2,95.1 744.8,83.3 772.4,94.1 800.0,82.5"></polyline>
+          <polyline fill="none" stroke="#a9a89f" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" points="0.0,165.0 27.6,158.6 55.2,170.3 82.8,161.5 110.3,150.2 137.9,143.7 165.5,154.7 193.1,121.9 220.7,128.0 248.3,130.2 275.9,130.5 303.4,108.5 331.0,108.7 358.6,125.3 386.2,106.0 413.8,111.2 441.4,91.3 469.0,105.5 496.6,86.9 524.1,85.3 551.7,92.2 579.3,92.5 606.9,56.5 634.5,51.1 662.1,77.3 689.7,61.5 717.2,39.0 744.8,62.2 772.4,49.7 800.0,42.6"></polyline>
+          <polyline fill="none" stroke="#ecebe4" stroke-width="2" vector-effect="non-scaling-stroke" points="0.0,165.0 27.6,148.2 55.2,162.0 82.8,163.3 110.3,155.0 137.9,134.4 165.5,146.9 193.1,138.4 220.7,119.4 248.3,128.9 275.9,115.9 303.4,104.6 331.0,96.7 358.6,105.3 386.2,107.4 413.8,98.1 441.4,93.8 469.0,85.1 496.6,90.4 524.1,69.1 551.7,85.5 579.3,60.9 606.9,78.8 634.5,65.9 662.1,57.6 689.7,50.0 717.2,43.8 744.8,37.4 772.4,30.4 800.0,33.0"></polyline>
+        </svg>
+        <div class="mono" style="display: flex; justify-content: space-between; font-size: 10.5px; color: #8a897f;"><span>Oct 14</span><span>Dec</span><span>Feb</span><span>Apr</span><span>May 4</span></div>
+      </figure>
+
+      <div style="flex: 1 1 300px; display: flex; flex-direction: column;">
+        <div class="mono" style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 0 8px; font-size: 10.5px; color: #8a897f; border-bottom: 1px solid rgba(236,235,228,.12);"><span></span><span>original</span><span>twin</span><span>SPY</span></div>
+        <div class="mono" style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 0; font-size: 13px; border-bottom: 1px solid rgba(236,235,228,.08);"><span style="font-family: 'Host Grotesk', sans-serif; color: #c9c8c0;">return</span><span>+8.9%</span><span style="color: #fff;">+9.6%</span><span style="color: #a9a89f;">+6.0%</span></div>
+        <div class="mono" style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 0; font-size: 13px; border-bottom: 1px solid rgba(236,235,228,.08);"><span style="font-family: 'Host Grotesk', sans-serif; color: #c9c8c0;">worst drop</span><span>11.2%</span><span style="color: #fff;">9.8%</span><span style="color: #a9a89f;">7.4%</span></div>
+        <div class="mono" style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 0; font-size: 13px; border-bottom: 1px solid rgba(236,235,228,.08);"><span style="font-family: 'Host Grotesk', sans-serif; color: #c9c8c0;">wins ÷ losses</span><span>2.04</span><span style="color: #fff;">2.11</span><span style="color: #a9a89f;">n/a</span></div>
+        <div class="mono" style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 0; font-size: 13px; border-bottom: 1px solid rgba(236,235,228,.08);"><span style="font-family: 'Host Grotesk', sans-serif; color: #c9c8c0;">fees paid</span><span>$6.12</span><span style="color: #fff;">$6.71</span><span style="color: #a9a89f;">$0.40</span></div>
+        <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: #a9a89f;">The twin pays more in fees: every objection to a stock the book already holds is a sale.</p>
+      </div>
+    </section>
+
+    <!-- go-live checklist, side by side -->
+    <section aria-label="Go-live checklist" style="padding-top: 40px;">
+      <div class="divider">go-live checklist · Seer's bar for real money</div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
+        <div style="background: #1a1a18; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="mono" style="font-size: 10.5px; color: #8a897f;">1 · 18 months on paper</span>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">original</span><span class="mono">7.0 of 18 mo</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">twin</span><span class="mono">7.0 of 18 mo</span></div>
+          <div style="height: 3px; background: #2a2a27;"><div style="width: 39%; height: 3px; background: #ecebe4;"></div></div>
+        </div>
+        <div style="background: #1a1a18; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="mono" style="font-size: 10.5px; color: #8a897f;">2 · beats SPY</span>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">original</span><span class="mono">+2.9 pts · pass</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">twin</span><span class="mono">+3.6 pts · pass</span></div>
+        </div>
+        <div style="background: #1a1a18; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="mono" style="font-size: 10.5px; color: #8a897f;">3 · wins ÷ losses ≥ 1.3</span>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">original</span><span class="mono">2.04 · pass</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">twin</span><span class="mono">2.11 · pass</span></div>
+        </div>
+        <div style="background: #1a1a18; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="mono" style="font-size: 10.5px; color: #8a897f;">4 · worst drop ≤ 25%</span>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">original</span><span class="mono">11.2% · pass</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">twin</span><span class="mono">9.8% · pass</span></div>
+        </div>
+        <div style="background: #1a1a18; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="mono" style="font-size: 10.5px; color: #8a897f;">5 · 10-year backtest</span>
+          <div style="display: flex; justify-content: space-between; font-size: 14px;"><span style="color: #a9a89f;">original</span><span class="mono">failed</span></div>
+          <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px;"><span style="color: #a9a89f;">twin</span><span class="mono" style="text-align: right;">can't be run</span></div>
+          <span style="font-size: 12px; line-height: 1.4; color: #8a897f;">Claude already knows how the past turned out, so a twin can never be backtested.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- the decision -->
+    <section aria-label="May 3 decision" style="padding-top: 40px;">
+      <div class="divider">may 3 decision · reviewed apr 30, 16:40 – 17:55 · claude-opus-5-5 · prompt raw35-v2</div>
+      <div role="group" aria-label="Filter verdicts" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;">
+        <button class="fpill on" type="button" aria-pressed="true">object 4</button>
+        <button class="fpill" type="button" aria-pressed="false">can't tell 1</button>
+        <button class="fpill" type="button" aria-pressed="false">agree 30</button>
+      </div>
+      <div style="columns: 300px; column-gap: 10px;">
+        <article style="break-inside: avoid; margin: 0 0 10px; background: #1a1a18; padding: 13px 14px 10px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px; letter-spacing: -.02em;">SLB</span><span class="chip obj">object</span><span style="flex: 1;"></span><span class="mono" style="font-size: 10.5px; color: #8a897f;">held · sell</span></div>
+          <p style="margin: 0; font-size: 14px; line-height: 1.38; color: #e4e3dc;">Its rise is the oil price's rise, not anything SLB did. A widely followed oil bull told clients this week to take profits, so the push behind this stock looks spent for the coming month.</p>
+          <ol class="mono" style="margin: 0; padding-left: 18px; font-size: 10.5px; color: #bdbcb4; display: flex; flex-direction: column; gap: 3px;">
+            <li><a href="#">benzinga.com · crude analyst calls end of the run</a></li>
+            <li><a href="#">eia.gov · weekly petroleum status</a></li>
+          </ol>
+          <div class="mono" style="display: flex; gap: 8px; font-size: 10.5px; color: #8a897f;"><span>weight 2.9% → 0</span><span style="margin-left: auto;">apr 30 17:12</span></div>
+        </article>
+        <article style="break-inside: avoid; margin: 0 0 10px; background: #1a1a18; padding: 13px 14px 10px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px; letter-spacing: -.02em;">[TICKER]</span><span class="chip obj">object</span><span style="flex: 1;"></span><span class="mono" style="font-size: 10.5px; color: #8a897f;">new · skip</span></div>
+          <p style="margin: 0; font-size: 14px; line-height: 1.38; color: #e4e3dc;">[Most of the rise came from one event. Name it and say in plain words why a one-off jump tends to give back part of the gain within a month.]</p>
+          <ol class="mono" style="margin: 0; padding-left: 18px; font-size: 10.5px; color: #bdbcb4; display: flex; flex-direction: column; gap: 3px;">
+            <li><a href="#">[publisher · headline]</a></li>
+            <li><a href="#">[sec.gov · filing]</a></li>
+          </ol>
+          <div class="mono" style="display: flex; gap: 8px; font-size: 10.5px; color: #8a897f;"><span>weight 2.9% → 0</span><span style="margin-left: auto;">apr 30 16:58</span></div>
+        </article>
+        <article style="break-inside: avoid; margin: 0 0 10px; background: #1a1a18; padding: 13px 14px 10px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px; letter-spacing: -.02em;">[TICKER]</span><span class="chip obj">object</span><span style="flex: 1;"></span><span class="mono" style="font-size: 10.5px; color: #8a897f;">new · skip</span></div>
+          <p style="margin: 0; font-size: 14px; line-height: 1.38; color: #e4e3dc;">[A pending takeover at a fixed price: the stock can barely rise from here, so it can't do what a momentum pick is bought for.]</p>
+          <ol class="mono" style="margin: 0; padding-left: 18px; font-size: 10.5px; color: #bdbcb4; display: flex; flex-direction: column; gap: 3px;">
+            <li><a href="#">[sec.gov · merger agreement]</a></li>
+          </ol>
+          <div class="mono" style="display: flex; gap: 8px; font-size: 10.5px; color: #8a897f;"><span>weight 2.9% → 0</span><span style="margin-left: auto;">apr 30 17:31</span></div>
+        </article>
+        <article style="break-inside: avoid; margin: 0 0 10px; background: #1a1a18; padding: 13px 14px 10px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px; letter-spacing: -.02em;">[TICKER]</span><span class="chip obj">object</span><span style="flex: 1;"></span><span class="mono" style="font-size: 10.5px; color: #8a897f;">held · sell</span></div>
+          <p style="margin: 0; font-size: 14px; line-height: 1.38; color: #e4e3dc;">[Results are due mid-month and analysts have cut their forecasts three weeks running. The rise is ahead of the news, not on it.]</p>
+          <ol class="mono" style="margin: 0; padding-left: 18px; font-size: 10.5px; color: #bdbcb4; display: flex; flex-direction: column; gap: 3px;">
+            <li><a href="#">[finnhub · estimate revisions]</a></li>
+            <li><a href="#">[publisher · headline]</a></li>
+          </ol>
+          <div class="mono" style="display: flex; gap: 8px; font-size: 10.5px; color: #8a897f;"><span>weight 2.9% → 0</span><span style="margin-left: auto;">apr 30 17:44</span></div>
+        </article>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px;">
+        <span class="mono" style="font-size: 10.5px; color: #8a897f; margin-right: 6px;">agree, each to 3.2%</span>
+        <span class="chip ok">MRNA</span><span class="chip ok">CNC</span><span class="chip ok">MU</span><span class="chip ok">FTNT</span><span class="chip ok">DOW</span><span class="chip ok">MRVL</span><span class="chip ok">AMD</span><span class="chip ok">BAX</span><span class="chip ok">FDS</span><span class="chip ok">INTC</span><span class="chip ok">DELL</span><span class="chip ok">LYB</span><span class="chip ok">TGT</span><span class="chip ok">BMY</span><span class="chip ok">WAT</span><span class="chip ok">+15</span>
+      </div>
+    </section>
+
+    <!-- Claude's record on this method -->
+    <section aria-label="Claude's record" style="padding-top: 40px;">
+      <div class="divider">claude's record on raw35 · each dot is one objection</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: center;">
+        <div style="flex: 999 1 480px; min-width: 0;">
+          <svg viewBox="0 0 800 70" role="img" aria-label="14 of 23 objected stocks did worse than the picks that were kept" style="width: 100%; height: 70px; display: block;">
+            <line x1="400" y1="6" x2="400" y2="64" stroke="rgba(236,235,228,.35)" stroke-width="1"></line>
+            <circle cx="120" cy="35" r="5" fill="#ecebe4"></circle><circle cx="168" cy="35" r="5" fill="#ecebe4"></circle><circle cx="205" cy="35" r="5" fill="#ecebe4"></circle><circle cx="232" cy="35" r="5" fill="#ecebe4"></circle><circle cx="250" cy="35" r="5" fill="#ecebe4"></circle><circle cx="276" cy="35" r="5" fill="#ecebe4"></circle><circle cx="294" cy="35" r="5" fill="#ecebe4"></circle><circle cx="311" cy="35" r="5" fill="#ecebe4"></circle><circle cx="330" cy="35" r="5" fill="#ecebe4"></circle><circle cx="342" cy="35" r="5" fill="#ecebe4"></circle><circle cx="355" cy="35" r="5" fill="#ecebe4"></circle><circle cx="368" cy="35" r="5" fill="#ecebe4"></circle><circle cx="381" cy="35" r="5" fill="#ecebe4"></circle><circle cx="392" cy="35" r="5" fill="#ecebe4"></circle>
+            <circle cx="418" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="436" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="455" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="478" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="503" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="540" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="588" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="642" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle><circle cx="715" cy="35" r="5" fill="none" stroke="#ecebe4" stroke-width="1.5"></circle>
+          </svg>
+          <div class="mono" style="display: flex; justify-content: space-between; font-size: 10.5px; color: #8a897f;"><span>did worse than the kept picks</span><span>same</span><span>did better</span></div>
+        </div>
+        <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 30px; letter-spacing: -.03em; line-height: 1;">14 of 23 right</span>
+          <span style="font-size: 13px; line-height: 1.45; color: #c9c8c0;">Over the month after each objection, the stocks Claude dropped trailed the ones it kept by 2.1 points on average. 23 calls is still too few to tell skill from luck.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- revisions -->
+    <section aria-label="Prompt and model revisions" style="padding-top: 40px;">
+      <div class="divider">revisions · a new line starts whenever the model or the instructions change</div>
+      <div class="mono" style="display: flex; flex-direction: column; font-size: 11px; color: #c9c8c0;">
+        <div style="display: grid; grid-template-columns: 110px 170px minmax(0, 1fr); gap: 16px; padding: 8px 0; border-bottom: 1px solid rgba(236,235,228,.08);"><span style="color: #8a897f;">since Jan 5</span><span>raw35-v2 · opus-5-5</span><span style="font-family: 'Host Grotesk', sans-serif; font-size: 12.5px;">Objects to a pending takeover at a fixed price.</span></div>
+        <div style="display: grid; grid-template-columns: 110px 170px minmax(0, 1fr); gap: 16px; padding: 8px 0; color: #8a897f;"><span>Oct 14 – Jan 2</span><span>raw35-v1 · opus-5-5</span><span style="font-family: 'Host Grotesk', sans-serif; font-size: 12.5px;">First instructions.</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2020}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

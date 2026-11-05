@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { ChatBackend } from '../chat/backend.js';
+import type { ReadOnlySource } from '../connectors/types.js';
 import type { AppDeps } from '../deps.js';
 import { dbChatUploadSource } from '../embeddings/chatUploads.js';
 import { wallUrlForPort } from '../mcp/instructions.js';
@@ -7,6 +8,7 @@ import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
 import { sessionsReadDeps, type SessionsReadOverrides } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
+import { adversaryApiRoutes } from './adversaryApi.js';
 import { apiRoutes } from './api.js';
 import { chatHistoryRoutes } from './chatApi.js';
 import { chatImageRoutes } from './chatImages.js';
@@ -48,6 +50,8 @@ export interface CreateAppOptions {
   sessionResume?: SessionResumer;
   /** The orch "unfinished" check behind the sessions read API. Omitted: swarm.py from config. */
   unfinished?: UnfinishedChecker;
+  /** Seer's database for /api/adversary/* (tests). Omitted: the Seer connector from SEER_DIR. */
+  adversarySeer?: ReadOnlySource;
 }
 
 /**
@@ -70,6 +74,7 @@ export function mcpToolDeps(
     imageEmbedder: deps.imageEmbedder ?? null,
     chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
     sessions: sessionsReadDeps(deps, sessionOverrides),
+    adversary: deps.adversary,
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };
@@ -83,7 +88,8 @@ export function mcpToolDeps(
  * capture, loopback + X-Notes-Capture only), sessionHookRoutes (iteration 8 phase 5: SessionStart
  * and spawn hooks), sessionsApiRoutes (iteration 8 phase 7: projects, session graph, detail,
  * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
- * resume/spawn into tmux, own Origin only), staticRoutes (P6, last: it owns the SPA fallback; it
+ * resume/spawn into tmux, own Origin only), adversaryApiRoutes (seer-adversarial phase 5: the Seer
+ * Adversarial read model, toggle and review-now), staticRoutes (P6, last: it owns the SPA fallback; it
  * reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
@@ -110,6 +116,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', sessionHookRoutes(deps));
   app.route('/', sessionsApiRoutes(deps, { ...options.sessions, unfinished: options.unfinished }));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
+  app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
   app.route('/', staticRoutes(deps));
   return app;
 }

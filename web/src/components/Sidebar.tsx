@@ -1,8 +1,10 @@
-import { ChatsCircle, Trash, TreeStructure } from '@phosphor-icons/react';
+import { ChatsCircle, Sword, Trash, TreeStructure } from '@phosphor-icons/react';
 import type { Mode, ProjectSummary, TagCount, View } from '../types';
+import type { AdversaryMethod } from '../adversaryApi';
 import { MODE_ORDER, MODE_TIP } from '../lib/filter';
 import { sortProjects } from '../lib/projects';
-import { BIN_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
+import { ADVERSARY_TIP, BIN_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
+import { RosterList } from './adversary/RosterList';
 
 export interface SidebarProps {
   mode: Mode;
@@ -12,6 +14,7 @@ export interface SidebarProps {
   onMode: (m: Mode) => void;
   onToggleProjects: () => void;
   onToggleHistory: () => void;
+  onToggleAdversary: () => void;
   onToggleBin: () => void;
   onToggleTag: (tag: string) => void;
   /** Projects view: repos with sessions (null while loading). */
@@ -19,6 +22,11 @@ export interface SidebarProps {
   /** Projects view: the repo shown. */
   repo?: string | null;
   onPickRepo?: (repo: string) => void;
+  /** Adversary view: Seer's roster (null while loading). */
+  roster?: AdversaryMethod[] | null;
+  /** Adversary view: the method shown; null = Overview. */
+  strategy?: string | null;
+  onPickStrategy?: (strategyId: string | null) => void;
 }
 
 export function Sidebar({
@@ -29,14 +37,19 @@ export function Sidebar({
   onMode,
   onToggleProjects,
   onToggleHistory,
+  onToggleAdversary,
   onToggleBin,
   onToggleTag,
   projects = null,
   repo = null,
   onPickRepo,
+  roster = null,
+  strategy = null,
+  onPickStrategy,
 }: SidebarProps) {
   const sorted = tags.slice().sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   const inProjects = view === 'projects';
+  const inAdversary = view === 'adversary';
   return (
     <aside className="side">
       <div className="side-modes">
@@ -80,6 +93,17 @@ export function Sidebar({
         </button>
         <button
           type="button"
+          className={inAdversary ? 'ibtn on' : 'ibtn'}
+          data-tip={ADVERSARY_TIP}
+          data-tip-side="below"
+          aria-label={ADVERSARY_TIP}
+          aria-pressed={inAdversary}
+          onClick={onToggleAdversary}
+        >
+          <Sword weight="duotone" />
+        </button>
+        <button
+          type="button"
           className={view === 'bin' ? 'ibtn on' : 'ibtn'}
           data-tip={BIN_TIP[view]}
           data-tip-side="below"
@@ -91,7 +115,9 @@ export function Sidebar({
         </button>
       </div>
       <div className="side-sep" />
-      {inProjects ? (
+      {inAdversary ? (
+        <RosterList roster={roster} strategy={strategy} onPick={(id) => onPickStrategy?.(id)} />
+      ) : inProjects ? (
         <div className="side-repos" role="list" aria-label="Projects">
           {projects === null ? (
             <span className="side-note">loading</span>

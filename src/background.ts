@@ -31,7 +31,8 @@ export interface BackgroundOptions {
  * OPENROUTER_API_KEY is set, the note embedding worker (iteration 6) and the image embedding
  * worker (image similarity search); with `config.sessions.enabled`, the Claude Code session
  * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`), its parent linker and the
- * session summary worker (summaries only with `options.sessionSummarizer`).
+ * session summary worker (summaries only with `options.sessionSummarizer`). With `deps.adversary`,
+ * the Seer Adversarial reviewer's poll loop.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -118,6 +119,21 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     }
   }
 
+  // Seer Adversarial reviewer (phase 4): built by the daemon, started here, closed on stop.
+  if (deps.adversary === null) {
+    console.log(
+      deps.config.adversary.enabled
+        ? '[notesd] adversary off: no reviewer could be built'
+        : '[notesd] adversary off: NOTESD_ADVERSARY=off',
+    );
+  } else {
+    deps.adversary.start();
+    const a = deps.config.adversary;
+    console.log(
+      `[notesd] adversary reviewer on as ${deps.adversary.host}: a pass every ${Math.round(a.pollMs / 1000)} s, up to ${a.dailyCap} deep reviews a day, ${a.gatherModel} gathers, ${a.verdictModel} decides`,
+    );
+  }
+
   return async () => {
     await inbox.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
@@ -130,6 +146,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
         await sessionLinks?.close();
       })(),
       sessionSummaries?.close(),
+      deps.adversary?.close(),
     ]);
   };
 }

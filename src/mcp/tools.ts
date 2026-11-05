@@ -10,6 +10,7 @@ import { NoteError } from '../notes/types.js';
 import { ConnectorError, type Connectors } from '../connectors/types.js';
 import type { SessionsReadDeps } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
+import type { AdversaryService } from '../adversary/service.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -31,6 +32,8 @@ export interface ToolDeps {
   sessions?: SessionsReadDeps;
   /** Phase 9: resume / spawn a session into tmux (`session_resume`). Omitted: the tool answers that it is unavailable. */
   sessionResume?: SessionResumer;
+  /** Seer Adversarial reviewer (phase 4) for adversary_overview's `reviewer`. Omitted or null: reported as null. */
+  adversary?: AdversaryService | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */

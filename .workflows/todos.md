@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-03
-**Total Active Tasks**: 0
+**Last Updated**: 2026-11-05
+**Total Active Tasks**: 1
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 0
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 71
+- Completed: 74
 
 ---
 
@@ -31,7 +31,15 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-
+- [ ] **P1-NOTES-A073** Phase 7: Go live: land Seer, config, install/restart, first review
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns merging Seer `feature/seer-adversarial` into `~/seer` main and pushing (after full suite), applying migration 027 to Neon, README configuration rows for phase 4's seven keys, one CLAUDE.md Architecture bullet for `src/adversary/*`, `.env.local` keys only if a default forces one, `npm run db:migrate` (drizzle 0011) before build and restart of notesd, one "Review now" and a go-live note. Does not touch feature code (fixes become follow-up tasks). Exit: Seer main has migration applied on Neon; next paper night created the twins (or the phase records when it will); notesd restarted with the reviewer on; at least one verdict or a recorded reason for none.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 7 of 7)
+  - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
+  - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
+  - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
 
 ### [P2] Medium
 
@@ -42,6 +50,57 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `View` `'adversary'`, routes `/adversary` and `/adversary/<strategy_id>`, Rail and Sidebar sword button (Phosphor `Sword`, duotone) between Chat history and Trash, heading `Adversary.`, sidebar roster list, toolbar (Power toggle, Review now, Focus), Alt+Z / Esc focus via a hook shared with ProjectsPage, overview/method/A pages per the mock, chat pill, SSE refresh, `web/src/adversaryApi.ts` (phase 5's `readTypes.ts` verbatim plus fetchers), web tests, appended wall section in `features/adversary.md` and `, wall` on its README row. Does not touch server code; never creates `features/adversary.md`. Exit: web tests green; verify-notesd Playwright run on a seeded instance shows the four mock states (overview, method, A three-way, focus with auto-runs off) with screenshots saved.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 6 of 7)
+  - **Satisfies**: R6 — Wall page `/adversary`, sword button between Chat history and Trash, Alt+Z focus, ON/OFF toggle
+  - **Depends on**: P1-NOTES-A071
+  - **Plan**: `.workflows/plan/P1-NOTES-A072.md`
+  - **Completed**: 2026-11-05 12:00
+  - **Method**: /do
+  - **Files**: web/src/{App.tsx,App.adversary.test.tsx,adversaryApi.ts,types.ts,styles.css}, web/src/components/{Header,Rail,Rail.test,Sidebar}.tsx, web/src/components/adversary/*, web/src/hooks/{useAdversary,useFocusShortcut}.ts(+tests), web/src/lib/{adversary,route}.ts(+tests), web/src/pages/{AdversaryPage,AdversaryPage.test,ProjectsPage}.tsx, web/src/testing/adversaryFixtures.ts, .claude/skills/verify-notesd/features/{README,adversary}.md
+  - **Drift**: J5 (toggle journey) assumed the toggle works with NOTESD_ADVERSARY=off, but phase 5's API answers 503 reviewer_off then; J5 ran on `up --adversary` with an empty Seer schema, Gotcha line added to features/adversary.md
+    useAdversary.test.tsx got cleanup() in afterEach (shared EventSource in lib/events leaked a stale source between tests)
+  - **Decided**: J5 toggle journey on a reviewer-on instance (empty Seer DB, nothing due, nothing billed) instead of NOTESD_ADVERSARY=off, phase 5 code is the producer authority (D20)
+  - **Decided**: overview journey waits for roster rows before reading them (page loads async), a timing race in the journey script, not the code
+  - **Proof**: self-verified (quota economy): overview, method, A-GT three-way, focus with auto-runs off PASS; evidence /home/miftah/.local/state/notesd-verify/1105-112141-1657209/evidence and /home/miftah/.local/state/notesd-verify/1105-112305-1664630/evidence; J1, J6/J7, Projects neighbor journey not run
+
+- [x] **P1-NOTES-A071** Phase 5: mcp-notes API, SSE, MCP tools, scorecard, go-live parity
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/adversary/read.ts`, `readTypes.ts` (wire types phase 6 mirrors verbatim), `scorecard.ts`, `golive.ts` (Seer web's checklist ported exactly, not money-weighted per D17, with Seer's money-weighted return beside it; rule 5 for twins), `src/http/adversaryApi.ts` mounted in `app.ts` (GETs; same-origin PUT toggle and POST review-now answering 202 unawaited), SSE relay on `/api/events`, `src/mcp/adversaryTools.ts` (`adversary_overview`, `adversary_verdicts`, `adversary_scorecard`) + the `Adversary.` instructions paragraph (incl. pill first-line context) + chat allow-list, README HTTP/MCP tables, appended section in `features/adversary.md` and its README row, tests. Does not touch `web/` or reviewer internals beyond `reviewNow()` and toggle API. Exit: API and MCP return the `readTypes.ts` shapes on a seeded test Seer schema; same-origin guard on writes; SSE event delivered; typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 5 of 7)
+  - **Satisfies**: R5 — mcp-notes `/api/adversary/*` + SSE + MCP tools + scorecard + go-live parity
+  - **Depends on**: P1-NOTES-A070
+  - **Plan**: `.workflows/plan/P1-NOTES-A071.md`
+  - **Completed**: 2026-11-05 11:30
+  - **Method**: /do
+  - **Files**: src/adversary/{read,readSql,readTypes,scorecard,golive}.ts, src/http/adversaryApi.ts, src/http/{api,app}.ts, src/mcp/{adversaryTools,instructions,server,tools}.ts, src/chat/status.ts, README.md, features/adversary.md + README row, adversary unit/int tests and fixtures
+  - **Decided**: Finished a partial tree left by a killed Opus session rather than restart (coordinator instruction)
+  - **Decided**: Fixed two bugs in it: read.ts stateBy Map typed Map<string, CoverageState> (TS2345); scorecard.ts entryLateral alias `b` shadowed outer `b` so inner alias renamed `e`
+  - **Proof**: self-verified (quota economy): verify-notesd journeys 1-9 + neighbor check on throwaway instance; evidence /home/miftah/.local/state/notesd-verify/1105-111032-1619455/evidence
+
+- [x] **P1-NOTES-A070** Phase 4: mcp-notes reviewer job
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/adversary/*` (config, sessions open-time mirror, read-only seer reader, writer [C4], discovery, lease, briefs/lens builder, in-process SDK MCP data tools: Seer bars, Finnhub, Massive/Polygon, SEC EDGAR, `fetch_url`; two-stage gather/verdict agent with zod-validated output; budget; marks; toggle; events bus; job loop), `claude/adversary/briefs/*.md`, `src/config.ts`, `src/deps.ts`, `src/background.ts`, `src/daemon.ts`, `src/db/schema.ts` + `drizzle/0011_adversary_reviews.sql`, unit and integration tests (fake query fn, no network), `verify.sh` (`NOTESD_ADVERSARY=off` pin, `up --adversary`, `exec`); creates verify-notesd `features/adversary.md` and its README row. Hands seven env keys to phase 7. Does not touch `src/http/*`, `src/mcp/*`, `web/`, the read-only connector guard. Exit: with a fake agent the job reviews due candidates in a test Seer schema (from the Seer worktree's migrations), writes verdicts/marks/leases correctly, respects toggle, cap and lease across two simulated hosts; typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 4 of 7)
+  - **Satisfies**: R4 — mcp-notes reviewer: discovery, lease, briefs, data tools, agent, writer, toggle, budget, marks
+  - **Depends on**: P1-ROOT-B10D
+  - **Plan**: `.workflows/plan/P1-NOTES-A070.md`
+  - **Completed**: 2026-11-05 10:47
+  - **Method**: /do
+  - **Files**: src/config.ts, src/db/schema.ts, src/deps.ts, src/daemon.ts, src/background.ts, drizzle/0011_adversary_reviews.sql, drizzle/meta/0011_snapshot.json, drizzle/meta/_journal.json, src/adversary/types.ts, src/adversary/sessions.ts, src/adversary/events.ts, src/adversary/toggle.ts, src/adversary/plan.ts, src/adversary/lens.ts, src/adversary/prompt.ts, src/adversary/seerReader.ts, src/adversary/seerWriter.ts, src/adversary/tools.ts, src/adversary/agent.ts, src/adversary/reviewsRepo.ts, src/adversary/service.ts, claude/adversary/briefs/STRATEGY_A.md, claude/adversary/briefs/RESIDMOM35.md, claude/adversary/briefs/COSKEW.md, tests/helpers/fakeReviewer.ts, tests/unit/adversary/sessions.test.ts, tests/unit/adversary/plan.test.ts, tests/unit/adversary/seerWriter.test.ts, tests/unit/adversary/lens.test.ts, tests/unit/adversary/toggle.test.ts, tests/unit/adversary/tools.test.ts, tests/unit/adversary/agent.test.ts, tests/unit/config.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts, tests/integration/adversary/harness.ts, tests/integration/adversary/reviewer.int.test.ts, tests/integration/setup.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/live/chat.live.test.ts, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/adversary.md, .claude/skills/verify-notesd/features/README.md
+  - **Drift**: tests/unit/config.test.ts 'applies defaults' needed `adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true }` (plan did not list this existing assertion)
+    tests/integration/sessions.ingest.int.test.ts had a Config literal with an inline sessions object the plan's codemod could not match; fixed by hand as Step 13 instructs
+  - **Decided**: VERDICT_JSON_SCHEMA generated by zod with its default draft 2020-12 $schema made the Claude CLI exit 1 ('--json-schema is not a valid JSON Schema') in paid Proof Journey 4 → generate with { target: 'draft-7' } and add a unit test pinning it (rung 2: exit criterion 'Journey 4 writes exactly one Seer verdict')
+
 
 - [x] **P1-NOTES-A069** Phase 5: Prompts read API + Expand prompts modal with copy
   - **Difficulty**: NORMAL

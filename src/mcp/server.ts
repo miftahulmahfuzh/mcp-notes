@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { defaultConnectors, registerConnectorTools } from '../connectors/register.js';
 import { registerImageTools } from './imageTools.js';
+import { registerAdversaryTools } from './adversaryTools.js';
 import { buildInstructions } from './instructions.js';
 import { registerSessionTools } from './sessionTools.js';
 import { registerSimilarTools } from './similarTools.js';
@@ -22,6 +23,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerSessionTools(server, deps);
   // Lazy: nothing is read or connected until a connector tool is called.
   registerConnectorTools(server, deps.connectors ?? defaultConnectors());
+  // Seer Adversarial (phase 5): read-only, reads Seer through the connector per call.
+  registerAdversaryTools(server, deps);
   return server;
 }
 

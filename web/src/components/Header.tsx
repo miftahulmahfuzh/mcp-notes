@@ -2,6 +2,7 @@ import { Plus } from '@phosphor-icons/react';
 import type { Note } from '../types';
 import { HISTORY_HINT } from '../lib/timeline';
 import { PROJECTS_HINT } from '../lib/projects';
+import { ADVERSARY_HINT } from '../lib/adversary';
 
 export interface HeaderProps {
   heading: string;
@@ -15,6 +16,8 @@ export interface HeaderProps {
   history?: boolean;
   /** The projects view is showing (project-session-graph phase 10): no "Last edited" link, and the hint explains the graph. */
   projects?: boolean;
+  /** Seer Adversarial is showing (seer-adversarial phase 6): no "Last edited" link, and the hint explains the twins. */
+  adversary?: boolean;
   onJumpLast: () => void;
   onAdd: () => void;
 }
@@ -22,13 +25,13 @@ export interface HeaderProps {
 const WALL_HINT = 'Drop or paste an image anywhere to make a photo note.';
 const BIN_HINT = 'Restore brings a note or an image back. Delete forever removes it and its files.';
 
-export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, history = false, projects = false, onJumpLast, onAdd }: HeaderProps) {
-  const hint = bin ? BIN_HINT : history ? HISTORY_HINT : projects ? PROJECTS_HINT : WALL_HINT;
+export function Header({ heading, countLine, last, lastWhen, showSticker, bin = false, history = false, projects = false, adversary = false, onJumpLast, onAdd }: HeaderProps) {
+  const hint = bin ? BIN_HINT : history ? HISTORY_HINT : projects ? PROJECTS_HINT : adversary ? ADVERSARY_HINT : WALL_HINT;
   return (
     <header className="hdr">
       <p className="hdr-p">
         {countLine}
-        {!bin && !history && !projects && last && (
+        {!bin && !history && !projects && !adversary && last && (
           <>
             {' '}Last edited{' '}
             <a

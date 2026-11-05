@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalNodeId, historyHref, hrefForView, projectsHref, projectsRouteFromLocation, routeFromLocation } from './route';
+import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, projectsHref, projectsRouteFromLocation, routeFromLocation } from './route';
 
 const loc = (url: string) => {
   const u = new URL(url, 'http://localhost');
@@ -82,5 +82,41 @@ describe('route', () => {
     expect(hrefForView('bin', null, loc('/projects'))).toBe('/');
     expect(hrefForView('history', null, loc('/projects'))).toBe('/history');
     expect(hrefForView('projects', null, loc('/history'), { repo: 'a', node: null, focus: false })).toBe('/projects?repo=a');
+  });
+});
+
+describe('adversary route', () => {
+  it('reads /adversary, /adversary/<id> and focus', () => {
+    expect(adversaryRouteFromLocation(loc('/adversary'))).toEqual({ strategy: null, focus: false });
+    expect(adversaryRouteFromLocation(loc('/adversary/'))).toEqual({ strategy: null, focus: false });
+    expect(adversaryRouteFromLocation(loc('/adversary/RAW35-FR-GT'))).toEqual({ strategy: 'RAW35-FR-GT', focus: false });
+    expect(adversaryRouteFromLocation(loc('/adversary/A-GT?focus=1'))).toEqual({ strategy: 'A-GT', focus: true });
+    expect(adversaryRouteFromLocation(loc('/adversary/a%20b'))).toEqual({ strategy: 'a b', focus: false });
+    expect(adversaryRouteFromLocation(loc('/adversary/a/b'))).toBeNull();
+    expect(adversaryRouteFromLocation(loc('/adversaryx'))).toBeNull();
+    expect(adversaryRouteFromLocation(loc('/'))).toBeNull();
+    expect(adversaryRouteFromLocation(loc('/projects'))).toBeNull();
+  });
+
+  it('keeps the strategy id exactly (no case change)', () => {
+    expect(adversaryRouteFromLocation(loc('/adversary/raw35-fr-gt'))?.strategy).toBe('raw35-fr-gt');
+  });
+
+  it('builds the href', () => {
+    expect(adversaryHref({ strategy: null, focus: false })).toBe('/adversary');
+    expect(adversaryHref({ strategy: 'RAW35-FR-GT', focus: false })).toBe('/adversary/RAW35-FR-GT');
+    expect(adversaryHref({ strategy: 'A-GT', focus: true })).toBe('/adversary/A-GT?focus=1');
+    expect(adversaryHref({ strategy: 'a b', focus: false })).toBe('/adversary/a%20b');
+  });
+
+  it('syncs the adversary view and leaves it for /', () => {
+    expect(hrefForView('adversary', null, loc('/'), undefined, { strategy: null, focus: false })).toBe('/adversary');
+    expect(hrefForView('adversary', null, loc('/adversary'), undefined, { strategy: null, focus: false })).toBeNull();
+    expect(hrefForView('adversary', null, loc('/adversary'), undefined, { strategy: 'A-GT', focus: false })).toBe('/adversary/A-GT');
+    expect(hrefForView('adversary', null, loc('/adversary/A-GT'), undefined, { strategy: 'A-GT', focus: true })).toBe('/adversary/A-GT?focus=1');
+    expect(hrefForView('wall', null, loc('/adversary/A-GT'))).toBe('/');
+    expect(hrefForView('bin', null, loc('/adversary'))).toBe('/');
+    expect(hrefForView('projects', null, loc('/adversary'), { repo: 'a', node: null, focus: false })).toBe('/projects?repo=a');
+    expect(hrefForView('wall', null, loc('/?note=A-B32'))).toBeNull();
   });
 });

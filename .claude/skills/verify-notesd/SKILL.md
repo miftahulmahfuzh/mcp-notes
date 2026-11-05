@@ -22,12 +22,20 @@ $V up                 # prints RUN=<id>, URL=http://127.0.0.1:<port>, EVIDENCE=<
 $V up --web           # also rebuild web/dist first: REQUIRED when the change touches web/
 $V up --sessions      # seed CLAUDE_HOME with tests/fixtures/claude-home (Projects page has data)
 $V up --embed         # keep OPENROUTER_API_KEY: real embeddings, billed (default: off, search = fallback)
+$V up --adversary     # Seer reviewer ON against a throwaway Seer DB built from ${SEER_DIR:-~/seer}/db/migrations
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,
 created on first use, all migrations applied), a free port, its own `NOTES_DATA_DIR` and an
 empty `CLAUDE_HOME`. The daemon runs from source with `tsx`, so server changes need no build. `up`
 returns only after `/health` answers. Runs are isolated, so parallel verifiers each `up` their own.
+
+Every run pins `NOTESD_ADVERSARY=off`, so a throwaway daemon never reads or writes the owner's
+real Seer. `--adversary` turns the reviewer on against its own Seer database (`s_<run>` in the same
+container) and a temp `SEER_DIR` that holds only that URL, the three data-tool keys from
+`~/seer/.env.local` and Seer's `ticker_cik.csv`; `ADVERSARY_POLL_MS` (default 5000 here) and any
+other `ADVERSARY_*` key in your shell pass through. A review it runs is a real, billed Agent SDK
+run: set the toggle off first (`exec`, below) unless the journey means to pay.
 
 ## Doctor
 
@@ -49,6 +57,7 @@ any drive that surprised you. `code WARN HEAD moved` means the instance serves o
 | MCP | `$V mcp RUN TOOL '{json}'`, `$V mcp RUN --list` | Real MCP client over `/mcp`. Argument schemas live in `src/mcp/*.ts`. |
 | Wall | `$V ui RUN steps.mjs` | Playwright, chromium, 1400x900. Records a video, a final screenshot, console errors. |
 | State | `$V sql RUN "select ..."` | Read-only transaction against the run's DB. Use it to prove side effects. |
+| Seed | `$V exec RUN [--seer] "SQL"` | WRITES to the run's throwaway notes DB, or with `--seer` its Seer DB (`--adversary` runs). For seeding only; prove state with `sql`. |
 | Log | `$V note RUN "what this proved"` | Appends to `evidence/LOG.md`, the human-readable summary. |
 
 A `steps.mjs` file (write it in the scratchpad, not the repo):

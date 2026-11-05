@@ -2,12 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ProjectSummary, View } from '../types';
+import type { AdversaryMethod } from '../adversaryApi';
 import { Rail } from './Rail';
 import { Sidebar, type SidebarProps } from './Sidebar';
 
 afterEach(cleanup);
 
-const rail = (view: View, onToggleHistory = vi.fn(), onToggleProjects = vi.fn()) =>
+const rail = (view: View, onToggleHistory = vi.fn(), onToggleProjects = vi.fn(), onToggleAdversary = vi.fn()) =>
   render(
     <Rail
       mode="text"
@@ -18,6 +19,7 @@ const rail = (view: View, onToggleHistory = vi.fn(), onToggleProjects = vi.fn())
       onCycleMode={vi.fn()}
       onToggleProjects={onToggleProjects}
       onToggleHistory={onToggleHistory}
+      onToggleAdversary={onToggleAdversary}
       onToggleBin={vi.fn()}
       onToggleTag={vi.fn()}
       onClear={vi.fn()}
@@ -34,6 +36,7 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
       onMode={vi.fn()}
       onToggleProjects={vi.fn()}
       onToggleHistory={onToggleHistory}
+      onToggleAdversary={vi.fn()}
       onToggleBin={vi.fn()}
       onToggleTag={vi.fn()}
       {...extra}
@@ -44,16 +47,18 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
 const order = (root: Element) => Array.from(root.querySelectorAll('button.ibtn')).map((b) => b.getAttribute('aria-label'));
 
 describe('chat-history icon', () => {
-  it('sits directly above the recycle bin in the rail', () => {
+  it('sits directly above Seer Adversarial, which sits directly above the recycle bin, in the rail', () => {
     const { container } = rail('wall');
     const labels = order(container.querySelector('.rail') as Element);
-    expect(labels.indexOf('Chat history')).toBe(labels.indexOf('Recycle bin') - 1);
+    expect(labels.indexOf('Chat history')).toBe(labels.indexOf('Seer Adversarial') - 1);
+    expect(labels.indexOf('Seer Adversarial')).toBe(labels.indexOf('Recycle bin') - 1);
   });
 
-  it('sits directly before the recycle bin in the sidebar', () => {
+  it('keeps the same order in the sidebar', () => {
     const { container } = side('wall');
     const labels = order(container.querySelector('.side-modes') as Element);
-    expect(labels.indexOf('Chat history')).toBe(labels.indexOf('Recycle bin') - 1);
+    expect(labels.indexOf('Chat history')).toBe(labels.indexOf('Seer Adversarial') - 1);
+    expect(labels.indexOf('Seer Adversarial')).toBe(labels.indexOf('Recycle bin') - 1);
   });
 
   it('is pressed on the history page and calls the toggle', () => {
@@ -133,5 +138,67 @@ describe('sidebar repo list', () => {
     const { container } = side('wall', vi.fn(), { projects, tags: [{ tag: 'kitchen', count: 3, last_used: null }] });
     expect(container.querySelector('.side-repos')).toBeNull();
     expect(screen.getByText('#kitchen')).toBeTruthy();
+  });
+});
+
+describe('Seer Adversarial icon', () => {
+  it('is an icon-only Sword, pressed on the adversary view, and calls its toggle', () => {
+    const toggle = vi.fn();
+    rail('adversary', vi.fn(), vi.fn(), toggle);
+    const btn = screen.getByRole('button', { name: 'Seer Adversarial' });
+    expect(btn.textContent).toBe('');
+    expect(btn.querySelector('svg')).not.toBeNull();
+    expect(btn.getAttribute('data-tip')).toBe('Seer Adversarial');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(btn.className).toBe('ibtn on');
+    expect(screen.getByRole('button', { name: 'Recycle bin' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(btn);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    cleanup();
+    rail('wall');
+    expect(screen.getByRole('button', { name: 'Seer Adversarial' }).getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('sidebar roster list', () => {
+  const m = (id: string, name: string, over: Partial<AdversaryMethod> = {}): AdversaryMethod => ({
+    strategy_id: id,
+    twin_id: `${id}-CX`,
+    name,
+    short: name.split(' · ')[0] ?? name,
+    sub: null,
+    engine: 'book',
+    cadence: 'monthly',
+    status: 'active',
+    paper_start: '2026-10-14',
+    paper_end: null,
+    ...over,
+  });
+  const roster = [
+    m('A-GT', 'A · Dip buy', { engine: 'bracket', cadence: 'daily' }),
+    m('RAW35-FR-GT', 'RAW35 · Momentum'),
+    m('FULL50-GT', 'FULL50 · Never aside', { status: 'retired', paper_end: '2026-10-30' }),
+    m('MOM70-GT', 'MOM70 · Momentum + SPY', { status: 'retired', paper_end: '2026-11-01' }),
+  ];
+
+  it('lists Overview first, active methods with cadence, retired greyed below, newest retirement first', () => {
+    const pick = vi.fn();
+    const { container } = side('adversary', vi.fn(), { roster, strategy: 'RAW35-FR-GT', onPickStrategy: pick, tags: [{ tag: 'kitchen', count: 3, last_used: null }] });
+    expect(container.querySelector('.side-tags')).toBeNull();
+    const rows = within(screen.getByRole('list', { name: 'Seer roster' })).getAllByRole('listitem');
+    expect(rows.map((r) => r.textContent)).toEqual(['Overview2', 'A · Dip buydaily', 'RAW35 · Momentummonthly']);
+    expect(rows[2]!.className).toBe('tagrow on');
+    const retired = within(screen.getByRole('list', { name: 'Retired methods' })).getAllByRole('listitem');
+    expect(retired.map((r) => r.textContent)).toEqual(['MOM70 · Momentum + SPYNov 1', 'FULL50 · Never asideOct 30']);
+    expect(container.querySelector('.side-retired')).not.toBeNull();
+    fireEvent.click(rows[0]!);
+    expect(pick).toHaveBeenCalledWith(null);
+    fireEvent.click(rows[1]!);
+    expect(pick).toHaveBeenCalledWith('A-GT');
+  });
+
+  it('says loading before the roster arrives', () => {
+    side('adversary', vi.fn(), { roster: null });
+    expect(screen.getByText('loading')).toBeTruthy();
   });
 });
