@@ -289,7 +289,16 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .adv-meter { height: 6px; background: var(--chip-bg); }
 .adv-meter > div { height: 6px; background: var(--fg); }
 .adv-meter.dim > div { background: var(--soft); }
-.adv-pill { position: sticky; bottom: 16px; z-index: 41; max-width: 760px; margin: 48px auto 0; }
+/* The pill rests at the bottom of the window like the wall: .main's 150px bottom padding is
+   dropped and .adv grows to fill the window, so a short overview or method page still lands the
+   pill at the true bottom instead of mid-page (the Projects/History pages fix the same way). */
+.main:has(.adv-pill) { display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box; padding-bottom: 0; }
+.main:has(.adv-pill) > .adv { flex: 1 0 auto; display: flex; flex-direction: column; }
+.main:has(.adv-pill) > .adv > .adv-overview,
+.main:has(.adv-pill) > .adv > .adv-method,
+.main:has(.adv-pill) > .adv > .adv-daily,
+.main:has(.adv-pill) > .adv > .adv-empty { flex: 1 0 auto; }
+.adv-pill { position: sticky; bottom: 16px; z-index: 41; width: 100%; max-width: 760px; margin: 48px auto 0; }
 .adv-pill .chatbar.chatbar-page { position: relative; left: auto; right: auto; bottom: auto; width: 100%; }
 @media (max-width: 900px) {
   .adv-cause { grid-template-columns: minmax(0, 1fr); }
