@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "4cbbe68",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "seer commit (verified on seer origin/feature/seer-adversarial by coordinator; swarm verify cannot see seer commits). proof: verified-after-fix. decisions: 027 CHECK requires weight NOT NULL for book candidates (rung 1 plan invariant: a NULL CHECK passes); test_009 evidence-column list gains strategy_candidates. 6 pre-existing test_lab_methods M0461-* failures reproduced on seer main a6322d7 by coordinator -> follow-up, not this set. coordinator decisions: shared worktree per repo (2+3 seer, 4 mcp-notes), gate exit 0.",
       "package": "seer `db/`, `engine/",
       "plan": ".workflows/plan/seer-adversarial/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-05T10:22:30+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-ROOT-B10D",
       "title": "Seer schema, A-GT, candidate list, session open time"
     },
     {
@@ -142,6 +142,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "seer-adversarial",
-  "updated": "2026-11-05T09:55:41+07:00",
+  "updated": "2026-11-05T10:22:30+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/seer-adversarial"
 }
