@@ -225,14 +225,14 @@ textarea:focus, input:focus, button:focus { outline: none; }
 .adv-stat-l { font-family: var(--sans); color: var(--muted); }
 .adv-stat .hi { color: #fff; }
 .adv-stat .lo { color: var(--soft); }
-.adv-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
-.adv-check { background: var(--card); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.adv-check .adv-meta { font-size: 9.5px; }
-.adv-check-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.adv-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.adv-check { background: var(--card); padding: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.adv-check .adv-meta { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adv-check-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; white-space: nowrap; }
 .adv-check-row > span:first-child { color: var(--soft); }
-.adv-check-row > span:last-child { text-align: right; }
+.adv-check-row > span:last-child { text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .adv-check-note { font-size: 10.5px; line-height: 1.4; color: var(--dim); }
-.app-focus .adv-checks { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.app-focus .adv-checks { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
 .app-focus .adv-check { padding: 14px; gap: 10px; }
 .app-focus .adv-check .adv-meta { font-size: 10.5px; }
 .app-focus .adv-check-row { gap: 12px; font-size: 14px; }
