@@ -19,6 +19,7 @@ import { resolveTurnNoteImages } from '../chat/noteImages.js';
 import { composeWallTurn } from '../chat/turn.js';
 import { imageDeps } from '../images/ingest.js';
 import type { AppDeps } from '../deps.js';
+import type { AdversaryChange } from '../adversary/events.js';
 import type { NoteEvent } from '../notes/events.js';
 import { normalizeId } from '../notes/ids.js';
 import { MAX_LIMIT } from '../notes/repo.js';
@@ -286,8 +287,19 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
           })
           .catch(() => undefined);
       };
+      // Seer Adversarial (phase 5): the reviewer's verdict / mark / toggle / run changes, so the wall refetches.
+      const onAdversary = (change: AdversaryChange): void => {
+        if (closed) return;
+        void stream
+          .writeSSE({
+            event: 'adversary',
+            data: JSON.stringify({ op: change.op, strategy_id: change.strategy_id ?? null, session_date: change.session_date ?? null }),
+          })
+          .catch(() => undefined);
+      };
       const unsubscribeNote = deps.events.on(onNote);
       const unsubscribeChat = history.events.on(onChat);
+      const unsubscribeAdversary = deps.adversary !== null ? deps.adversary.events.on(onAdversary) : (): void => undefined;
       await new Promise<void>((resolve) => {
         const timer = setInterval(() => {
           if (!closed) void stream.write(': heartbeat\n\n').catch(() => undefined);
@@ -297,6 +309,7 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
           clearInterval(timer);
           unsubscribeNote();
           unsubscribeChat();
+          unsubscribeAdversary();
           resolve();
         });
         void stream.write(': connected\n\n').catch(() => undefined);

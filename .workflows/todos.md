@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-05
-**Total Active Tasks**: 3
+**Total Active Tasks**: 2
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 72
+- Blocked: 1
+- Completed: 73
 
 ---
 
@@ -31,20 +31,11 @@
   - **Satisfies**: R2 — Exact parent links: `CC_PARENT_SESSION` from swarm.py, SessionStart hook, Bash PreToolUse pending spawns, install.sh registration
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A050.md`
-- [ ] **P1-NOTES-A071** Phase 5: mcp-notes API, SSE, MCP tools, scorecard, go-live parity
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns `src/adversary/read.ts`, `readTypes.ts` (wire types phase 6 mirrors verbatim), `scorecard.ts`, `golive.ts` (Seer web's checklist ported exactly, not money-weighted per D17, with Seer's money-weighted return beside it; rule 5 for twins), `src/http/adversaryApi.ts` mounted in `app.ts` (GETs; same-origin PUT toggle and POST review-now answering 202 unawaited), SSE relay on `/api/events`, `src/mcp/adversaryTools.ts` (`adversary_overview`, `adversary_verdicts`, `adversary_scorecard`) + the `Adversary.` instructions paragraph (incl. pill first-line context) + chat allow-list, README HTTP/MCP tables, appended section in `features/adversary.md` and its README row, tests. Does not touch `web/` or reviewer internals beyond `reviewNow()` and toggle API. Exit: API and MCP return the `readTypes.ts` shapes on a seeded test Seer schema; same-origin guard on writes; SSE event delivered; typecheck + unit + int green.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 5 of 7)
-  - **Satisfies**: R5 — mcp-notes `/api/adversary/*` + SSE + MCP tools + scorecard + go-live parity
-  - **Depends on**: P1-NOTES-A070
-  - **Plan**: `.workflows/plan/P1-NOTES-A071.md`
 - [ ] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns `View` `'adversary'`, routes `/adversary` and `/adversary/<strategy_id>`, Rail and Sidebar sword button (Phosphor `Sword`, duotone) between Chat history and Trash, heading `Adversary.`, sidebar roster list, toolbar (Power toggle, Review now, Focus), Alt+Z / Esc focus via a hook shared with ProjectsPage, overview/method/A pages per the mock, chat pill, SSE refresh, `web/src/adversaryApi.ts` (phase 5's `readTypes.ts` verbatim plus fetchers), web tests, appended wall section in `features/adversary.md` and `, wall` on its README row. Does not touch server code; never creates `features/adversary.md`. Exit: web tests green; verify-notesd Playwright run on a seeded instance shows the four mock states (overview, method, A three-way, focus with auto-runs off) with screenshots saved.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 6 of 7)
   - **Satisfies**: R6 — Wall page `/adversary`, sword button between Chat history and Trash, Alt+Z focus, ON/OFF toggle
   - **Depends on**: P1-NOTES-A071
@@ -68,6 +59,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A071** Phase 5: mcp-notes API, SSE, MCP tools, scorecard, go-live parity
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns `src/adversary/read.ts`, `readTypes.ts` (wire types phase 6 mirrors verbatim), `scorecard.ts`, `golive.ts` (Seer web's checklist ported exactly, not money-weighted per D17, with Seer's money-weighted return beside it; rule 5 for twins), `src/http/adversaryApi.ts` mounted in `app.ts` (GETs; same-origin PUT toggle and POST review-now answering 202 unawaited), SSE relay on `/api/events`, `src/mcp/adversaryTools.ts` (`adversary_overview`, `adversary_verdicts`, `adversary_scorecard`) + the `Adversary.` instructions paragraph (incl. pill first-line context) + chat allow-list, README HTTP/MCP tables, appended section in `features/adversary.md` and its README row, tests. Does not touch `web/` or reviewer internals beyond `reviewNow()` and toggle API. Exit: API and MCP return the `readTypes.ts` shapes on a seeded test Seer schema; same-origin guard on writes; SSE event delivered; typecheck + unit + int green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/seer-adversarial/.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (phase 5 of 7)
+  - **Satisfies**: R5 — mcp-notes `/api/adversary/*` + SSE + MCP tools + scorecard + go-live parity
+  - **Depends on**: P1-NOTES-A070
+  - **Plan**: `.workflows/plan/P1-NOTES-A071.md`
+  - **Completed**: 2026-11-05 11:30
+  - **Method**: /do
+  - **Files**: src/adversary/{read,readSql,readTypes,scorecard,golive}.ts, src/http/adversaryApi.ts, src/http/{api,app}.ts, src/mcp/{adversaryTools,instructions,server,tools}.ts, src/chat/status.ts, README.md, features/adversary.md + README row, adversary unit/int tests and fixtures
+  - **Decided**: Finished a partial tree left by a killed Opus session rather than restart (coordinator instruction)
+  - **Decided**: Fixed two bugs in it: read.ts stateBy Map typed Map<string, CoverageState> (TS2345); scorecard.ts entryLateral alias `b` shadowed outer `b` so inner alias renamed `e`
+  - **Proof**: self-verified (quota economy): verify-notesd journeys 1-9 + neighbor check on throwaway instance; evidence /home/miftah/.local/state/notesd-verify/1105-111032-1619455/evidence
 
 - [x] **P1-NOTES-A070** Phase 4: mcp-notes reviewer job
   - **Difficulty**: HARD

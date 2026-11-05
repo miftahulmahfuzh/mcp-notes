@@ -46,3 +46,37 @@
 - `strategy_candidates` rows for a session whose open has passed are never reviewed (cutoff).
 - The integration tests (`tests/integration/adversary`) need `SEER_DIR` pointing at a Seer checkout
   with migration 027, else they skip with that reason.
+
+## Read API, MCP tools and SSE (phase 5)
+
+### Sub-features
+- `GET /api/adversary/overview`: every Seer original (`roster`), each active one with a twin
+  (`methods`) with returns since the twin started (money-weighted, deposits included), objections
+  (`objected`, `reviewed`, `fell_after`), coverage (`reviewed`, `absent`, `late`, `paused`,
+  `pending`), both checklists (Seer's five rules, Seer's own strings under `seer`; a twin's rule 5 is
+  `state: "na"`, `seer.val: "Can't be run"`), `cause`, `latest` (≤ 8), `last_review`, `reviewer`.
+- `GET /api/adversary/methods/:id`: curves (growth of 100, deposits taken out), stats, checklists,
+  current decision, every decision, record of objections, revisions, three-way (daily methods).
+- `GET /api/adversary/methods/:id/decisions/:session`: verdict cards with `late`, weights, `held`, `action`.
+- `GET /api/adversary/daily/:id?session=`: A / C / A+Claude rows, `buys`, `grid`, `settled`.
+- `GET /api/adversary/scorecard/:id`: horizon record, C-vs-Claude duel.
+- `GET/PUT /api/adversary/toggle`, `POST /api/adversary/review-now` (same-origin, 202).
+- SSE `event: adversary {op, strategy_id, session_date}` on `/api/events`.
+- MCP `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` (read-only; chat may use them).
+
+### How to get to it (user POV)
+- Claude Code: "/n what did Claude object to today?" (MCP `adversary_verdicts` with `verdict: "object"`).
+- The wall's `/adversary` page (phase 6) reads these routes and refreshes on `event: adversary`.
+
+### Driving it with verify.sh
+- `SEER_DIR=<seer checkout with 027> $V up --adversary`, then
+  `$V exec RUN --seer "$(cat tests/fixtures/adversary/seer-seed.sql)"`, then
+  `$V api RUN GET /api/adversary/overview`, `$V mcp RUN adversary_verdicts '{"verdict":"object"}'`.
+  The expected values for that fixture are phase 5's Proof (`.workflows/plan/seer-adversarial/phase-5.md`).
+- Seeded sessions are all in the past, so a reviewer pointed at this DB finds nothing due and spends nothing.
+
+### Gotchas
+- 503 `seer_unavailable` with `detail: "not_migrated"` means Seer has no migration 027 yet.
+- The checklist is Seer's own and is NOT money-weighted (raw equity, as seertrade.site shows it); the
+  money-weighted figures are `returns.*` and `figures.*.return`.
+- A twin decides one session late, so its `buys` read `null` on the decision night.

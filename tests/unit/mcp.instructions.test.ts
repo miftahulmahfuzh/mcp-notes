@@ -257,3 +257,17 @@ describe('loopbackOnly', () => {
     expect((await app.request('http://localhost:7317/mcp', { method: 'POST', headers: { origin: 'null' } })).status).toBe(403);
   });
 });
+
+describe('buildInstructions: Seer Adversarial', () => {
+  it('has one Adversary paragraph, right before Sessions, naming the three tools and the honesty rules', () => {
+    const text = buildInstructions('Asia/Jakarta');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Adversary.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['adversary_overview', 'adversary_verdicts', 'adversary_scorecard', 'money-weighted', 'before the session opened', 'never invent', '[Seer Adversarial · <strategy_id|overview>]']) {
+      expect(p).toContain(word);
+    }
+    const order = text.split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('Sessions') - 1);
+  });
+});

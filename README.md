@@ -979,6 +979,9 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
 | `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. Same machine only |
 | `link_note`, `unlink_note` | Link an existing note (`note_id`) to a session (`node_id`) so it is listed with that session's notes as `linked`, and remove the link. The note's text and origin never change; both are idempotent; a deleted note cannot be linked |
+| `adversary_overview` | Seer Adversarial: every Seer method with its Claude twin and SPY, returns since the twin started (money-weighted, deposits included), objections, coverage (reviewed · absent · paused · pending), both go-live checklists (Seer's five rules and wording; a twin's backtest "can't be run"), the newest objections and the reviewer's status |
+| `adversary_verdicts` | Claude's verdicts (`agree`, `object`, `unsure`) with reasons, sources, model, prompt version and host; `late: true` when decided after the open. Optional `strategy`, `session` (default: each method's latest decision), `verdict`, `limit` |
+| `adversary_scorecard` | One method's record: each objected stock's return over the method's horizon (5 sessions for a daily method, until the next rebalance for a book) against the kept picks; for a daily method with C, Claude against C on the nights they disagree |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -989,7 +992,7 @@ The 15 connector tools are listed under [Connectors](#connectors-spending-runs-s
 
 The server also sends Claude short instructions: what mcp-notes is, how note and session ids look,
 that comparisons are Claude's job, and that the connectors are read-only and the curated tools
-come first. The chat bar can use the five session tools too.
+come first. The chat bar can use the five session tools and the three adversary tools too.
 
 ### Search by meaning
 
@@ -1027,7 +1030,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET/PATCH/DELETE /api/notes/:id`, `POST /api/notes` | One note. `DELETE` is soft (to the recycle bin) |
 | `POST /api/notes/:id/restore` | Bring a deleted note back |
 | `GET /api/tags` | Tags with counts, live notes only |
-| `GET /api/events` | Server-sent events, `event: note` on every note change and `event: chat {op, thread_id, id}` on every chat change |
+| `GET /api/events` | Server-sent events, `event: note` on every note change, `event: chat {op, thread_id, id}` on every chat change and `event: adversary {op, strategy_id, session_date}` on every Seer Adversarial reviewer change (`op`: `verdict`, `mark`, `toggle`, `run`) |
 | `POST /api/images` | Multipart upload (`file`, optional `body`), returns `{note, created}` |
 | `POST /api/notes/:id/images` | Multipart `file`, attached to that live note: 201 `{note, attached: true}`, or 200 with the note that already holds the file |
 | `GET /api/images/:imageId` | One photo's metadata and URLs, whatever its state |
@@ -1065,6 +1068,13 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
 | `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |
 | `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
+| `GET /api/adversary/overview` | Seer Adversarial overview: `roster`, `methods` (returns, objections, coverage, checklists per method), `cause`, `latest`, `last_review`, `reviewer`. 503 `seer_unavailable` (`detail`: `not_reachable`, `not_migrated`, `query_failed`) when Seer cannot be read |
+| `GET /api/adversary/methods/:id` | One method (any case; a twin id means its original): curves (growth of 100, deposits taken out), stats, checklists, the current decision's verdict cards, every decision, the objection record, revisions, and the A / C / A+Claude three-way for a daily method |
+| `GET /api/adversary/methods/:id/decisions/:session` | One decision's verdict cards: reason, sources, host, `late`, weight → twin weight, `held · sell` / `new · skip`. 404 `not_found`, 400 `invalid_session` |
+| `GET /api/adversary/daily/:id?session=` | The three-way for a daily method on one session (default: the latest): A's ranked list with C's and Claude's verdicts, what each book bought, the disagreement grid and who was right so far. 400 `not_bracket` |
+| `GET /api/adversary/scorecard/:id` | Each objection's horizon return against the kept picks, and Claude against C |
+| `GET/PUT /api/adversary/toggle` | Automatic reviews on or off (`{on}`), shared by both machines; `PUT` is same-origin only. 503 `reviewer_off` when this daemon runs with `NOTESD_ADVERSARY=off` |
+| `POST /api/adversary/review-now` | `{strategy_id?}`: start one review pass now, even while automatic reviews are off; 202 `{started, reason}` before it finishes. Same-origin only |
 | `/full/:imageId` | The full-screen photo page |
 | `/projects?repo=&node=&focus=1` | The project session graph, opened on that repo and node; `focus=1` shows only the graph (or project chat), toolbar and pill. With `node` and no `repo` (how Claude Code links a session) the node's own repo is looked up |
 

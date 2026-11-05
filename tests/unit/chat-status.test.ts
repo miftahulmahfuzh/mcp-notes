@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CONNECTOR_TOOL_NAMES } from '../../src/connectors/names.js';
-import { NOTES_TOOL_NAMES, SESSION_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src/chat/status.js';
+import { ADVERSARY_TOOL_NAMES, NOTES_TOOL_NAMES, SESSION_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src/chat/status.js';
 
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 15 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
+    expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(19 + 5 + 15 + 2);
+    expect(tools).toHaveLength(19 + 5 + 3 + 15 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -21,10 +22,17 @@ describe('allowedChatTools', () => {
     expect(tools).toContain('mcp__notes__similar_images');
     expect(tools).toContain('mcp__notes__session_resume');
     for (const name of SESSION_TOOL_NAMES) expect(tools).toContain(n(name));
+    for (const name of ADVERSARY_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
     expect(tools.filter((t) => !t.startsWith('mcp__notes__'))).toEqual(['WebSearch', 'WebFetch']);
+  });
+
+  it('captions the adversary tools', () => {
+    expect(captionForToolUse(n('adversary_overview'), {})).toBe('reading Seer Adversarial');
+    expect(captionForToolUse(n('adversary_verdicts'), { verdict: 'object' })).toBe("reading Claude's verdicts");
+    expect(captionForToolUse(n('adversary_scorecard'), { strategy: 'A-GT' })).toBe("reading Claude's record");
   });
 
   it('offers no tool that deletes permanently', () => {

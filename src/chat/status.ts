@@ -50,6 +50,11 @@ export const SESSION_TOOL_NAMES = [
 
 export type SessionToolName = (typeof SESSION_TOOL_NAMES)[number];
 
+/** Read-only Seer Adversarial tools (SEER_ADVERSARIAL_PLAN phase 5): src/mcp/adversaryTools.ts registers them under these names. */
+export const ADVERSARY_TOOL_NAMES = ['adversary_overview', 'adversary_verdicts', 'adversary_scorecard'] as const;
+
+export type AdversaryToolName = (typeof ADVERSARY_TOOL_NAMES)[number];
+
 export const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
 
 /** Status-line caption for every tool of one read-only system ('reading expenses' / 'reading runs' / 'reading seer'). */
@@ -60,17 +65,19 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 5 session tools, the 15 connector tools and WebSearch +
- * WebFetch (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
+ * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 15 connector tools and
+ * WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
  * SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN phase 3 adds
  * `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
  * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
- * PROJECT_SESSION_GRAPH_PLAN phase 9 adds `session_resume`).
+ * PROJECT_SESSION_GRAPH_PLAN phase 9 adds `session_resume`; SEER_ADVERSARIAL_PLAN phase 5 adds the
+ * adversary tools).
  */
 export function allowedChatTools(): string[] {
   return [
     ...NOTES_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...SESSION_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    ...ADVERSARY_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...WEB_TOOL_NAMES,
   ];
@@ -159,6 +166,12 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'counting session tokens';
     case 'session_resume':
       return 'opening a session in tmux';
+    case 'adversary_overview':
+      return 'reading Seer Adversarial';
+    case 'adversary_verdicts':
+      return "reading Claude's verdicts";
+    case 'adversary_scorecard':
+      return "reading Claude's record";
     default:
       return connectorCaption(tool);
   }
