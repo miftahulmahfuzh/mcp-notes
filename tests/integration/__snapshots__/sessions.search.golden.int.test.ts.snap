@@ -95,7 +95,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.34699862680344085,
+        "score": 0.23614063609839087,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -117,19 +117,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         "node_id": "B1-4H",
         "score": 1.2782689945331946,
         "session_id": "g-login",
-        "title": null,
-        "via_notes": [
-          {
-            "excerpt": "vault credentials rotated after the login incident",
-            "id": "N-004",
-          },
-        ],
-      },
-      {
-        "available": true,
-        "node_id": "D3-6K",
-        "score": 1.2481813345309922,
-        "session_id": "g-vault",
         "title": null,
         "via_notes": [
           {
@@ -193,6 +180,19 @@ exports[`searchSessions golden output (must not change in the candidate-source r
           },
         ],
       },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.0168502607349217,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
     ],
   },
   "hybrid {"host":"golden-host"} quokka": {
@@ -224,7 +224,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.353899100572176,
+        "score": 1.083945169484918,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -265,7 +265,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.34699862680344085,
+        "score": 0.23614063609839087,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -287,19 +287,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         "node_id": "B1-4H",
         "score": 1.2782689945331946,
         "session_id": "g-login",
-        "title": null,
-        "via_notes": [
-          {
-            "excerpt": "vault credentials rotated after the login incident",
-            "id": "N-004",
-          },
-        ],
-      },
-      {
-        "available": true,
-        "node_id": "D3-6K",
-        "score": 1.2481813345309922,
-        "session_id": "g-vault",
         "title": null,
         "via_notes": [
           {
@@ -350,6 +337,19 @@ exports[`searchSessions golden output (must not change in the candidate-source r
           },
         ],
       },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.0168502607349217,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
     ],
   },
   "hybrid {"repo":"mcp-notes"} quokka": {
@@ -381,7 +381,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.353899100572176,
+        "score": 1.083945169484918,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -454,7 +454,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.34699862680344085,
+        "score": 0.23614063609839087,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -471,19 +471,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
     "mode": "hybrid",
     "next_cursor": null,
     "sessions": [
-      {
-        "available": true,
-        "node_id": "D3-6K",
-        "score": 1.2481813345309922,
-        "session_id": "g-vault",
-        "title": null,
-        "via_notes": [
-          {
-            "excerpt": "vault credentials rotated after the login incident",
-            "id": "N-004",
-          },
-        ],
-      },
       {
         "available": true,
         "node_id": "G6-9N",
@@ -526,6 +513,19 @@ exports[`searchSessions golden output (must not change in the candidate-source r
           },
         ],
       },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.0168502607349217,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
     ],
   },
   "hybrid {"to":"2026-10-15"} quokka": {
@@ -557,7 +557,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.353899100572176,
+        "score": 1.083945169484918,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -712,7 +712,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.01519817765802145,
+        "score": 0.00911890659481287,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -753,7 +753,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -838,7 +838,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.01519817765802145,
+        "score": 0.00911890659481287,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -879,7 +879,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -991,7 +991,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.01519817765802145,
+        "score": 0.00911890659481287,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -1032,7 +1032,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1082,7 +1082,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "E4-7L",
-        "score": 1.091465291883115,
+        "score": 0.931465291883115,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -1143,7 +1143,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": false,
         "node_id": "C2-5J",
-        "score": 1.3736728069871311,
+        "score": 1.263718875899873,
         "session_id": "g-board",
         "title": null,
         "via_notes": [
@@ -1156,7 +1156,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "F5-8M",
-        "score": 0.1874187816366888,
+        "score": 0.14632542930463413,
         "session_id": "g-tie-a",
         "title": null,
         "via_notes": [
@@ -1169,7 +1169,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.18174765368416754,
+        "score": 0.1406543013521129,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1210,7 +1210,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.34699862680344085,
+        "score": 0.23614063609839087,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -1256,7 +1256,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.27936592412270633,
+        "score": 0.19556101448995017,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -1289,7 +1289,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.353899100572176,
+        "score": 1.083945169484918,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1319,19 +1319,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         "node_id": "B1-4H",
         "score": 1.2878658823873408,
         "session_id": "g-login",
-        "title": null,
-        "via_notes": [
-          {
-            "excerpt": "vault credentials rotated after the login incident",
-            "id": "N-004",
-          },
-        ],
-      },
-      {
-        "available": true,
-        "node_id": "D3-6K",
-        "score": 1.2577052523383787,
-        "session_id": "g-vault",
         "title": null,
         "via_notes": [
           {
@@ -1387,6 +1374,19 @@ exports[`searchSessions golden output (must not change in the candidate-source r
           },
         ],
       },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.0225646114193536,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
     ],
   },
   "leaderboard ranking tweaks": {
@@ -1410,7 +1410,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.679014272854031,
+        "score": 1.2790142728540308,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1457,7 +1457,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "B1-4H",
-        "score": 0.30679025468064147,
+        "score": 0.2229853450478853,
         "session_id": "g-login",
         "title": null,
         "via_notes": [
@@ -1534,7 +1534,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "E4-7L",
-        "score": 1.091465291883115,
+        "score": 0.931465291883115,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -1575,7 +1575,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.353899100572176,
+        "score": 1.083945169484918,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1603,7 +1603,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 1.537857811087742,
+        "score": 1.3543203957942576,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1624,7 +1624,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "F5-8M",
-        "score": 1.4438022965934487,
+        "score": 1.293923284237032,
         "session_id": "g-tie-a",
         "title": null,
         "via_notes": [
@@ -1665,7 +1665,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "B1-4H",
-        "score": 1.4636707502360105,
+        "score": 1.3171136423811067,
         "session_id": "g-login",
         "title": null,
         "via_notes": [
@@ -1689,8 +1689,16 @@ exports[`searchSessions golden output (must not change in the candidate-source r
     "sessions": [
       {
         "available": true,
-        "node_id": "E4-7L",
+        "node_id": "A0-3G",
         "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.059461931884288784,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -1699,14 +1707,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
             "id": "N-006",
           },
         ],
-      },
-      {
-        "available": true,
-        "node_id": "A0-3G",
-        "score": 0.09910321980714798,
-        "session_id": "g-photo",
-        "title": null,
-        "via_notes": [],
       },
     ],
   },
@@ -1724,7 +1724,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": false,
         "node_id": "C2-5J",
-        "score": 0.09735848009586334,
+        "score": 0.058415088057518,
         "session_id": "g-board",
         "title": null,
         "via_notes": [
@@ -1778,7 +1778,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1845,7 +1845,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.020264236256480217,
+        "score": 0.01215854175388813,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -1873,7 +1873,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.26832976937294006,
+        "score": 0.16099786162376403,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -1928,8 +1928,16 @@ exports[`searchSessions golden output (must not change in the candidate-source r
     "sessions": [
       {
         "available": true,
-        "node_id": "E4-7L",
+        "node_id": "A0-3G",
         "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.059461931884288784,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -1938,14 +1946,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
             "id": "N-006",
           },
         ],
-      },
-      {
-        "available": true,
-        "node_id": "A0-3G",
-        "score": 0.09910321980714798,
-        "session_id": "g-photo",
-        "title": null,
-        "via_notes": [],
       },
     ],
   },
@@ -1978,7 +1978,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2002,7 +2002,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2019,7 +2019,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "F5-8M",
-        "score": 0.09524299204349518,
+        "score": 0.057145795226097106,
         "session_id": "g-tie-a",
         "title": null,
         "via_notes": [
@@ -2039,7 +2039,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "B1-4H",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-login",
         "title": null,
         "via_notes": [
@@ -2052,7 +2052,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -2078,7 +2078,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "B1-4H",
-          "score": 1.4402012831070756,
+          "score": 1.3030319621037458,
           "session_id": "g-login",
           "title": null,
           "via_notes": [
@@ -2091,7 +2091,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "D3-6K",
-          "score": 1.4127769525491405,
+          "score": 1.2756076315458107,
           "session_id": "g-vault",
           "title": null,
           "via_notes": [
@@ -2111,7 +2111,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": false,
           "node_id": "C2-5J",
-          "score": 0.8987879792689859,
+          "score": 1.0321213126023192,
           "session_id": "g-board",
           "title": null,
           "via_notes": [
@@ -2124,7 +2124,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "E4-7L",
-          "score": 0.8914652918831151,
+          "score": 1.0247986252164485,
           "session_id": "g-noemb",
           "title": null,
           "via_notes": [
@@ -2144,7 +2144,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "G6-9N",
-          "score": 0.8846854008065522,
+          "score": 1.0180187341398854,
           "session_id": "g-tie-b",
           "title": null,
           "via_notes": [],
@@ -2152,7 +2152,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "F5-8M",
-          "score": 0.8846854008065522,
+          "score": 1.0180187341398854,
           "session_id": "g-tie-a",
           "title": null,
           "via_notes": [
@@ -2172,7 +2172,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "A0-3G",
-          "score": 0.879014272854031,
+          "score": 1.0123476061873642,
           "session_id": "g-photo",
           "title": null,
           "via_notes": [
@@ -2202,7 +2202,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "B1-4H",
-          "score": 0.02431708388030529,
+          "score": 0.014590250328183174,
           "session_id": "g-login",
           "title": null,
           "via_notes": [
@@ -2215,7 +2215,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
         {
           "available": true,
           "node_id": "D3-6K",
-          "score": 0.02431708388030529,
+          "score": 0.014590250328183174,
           "session_id": "g-vault",
           "title": null,
           "via_notes": [
@@ -2324,8 +2324,16 @@ exports[`searchSessions golden output (must not change in the candidate-source r
     "sessions": [
       {
         "available": true,
-        "node_id": "E4-7L",
+        "node_id": "A0-3G",
         "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.059461931884288784,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -2334,14 +2342,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
             "id": "N-006",
           },
         ],
-      },
-      {
-        "available": true,
-        "node_id": "A0-3G",
-        "score": 0.09910321980714798,
-        "session_id": "g-photo",
-        "title": null,
-        "via_notes": [],
       },
     ],
   },
@@ -2359,7 +2359,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": false,
         "node_id": "C2-5J",
-        "score": 0.09735848009586334,
+        "score": 0.058415088057518,
         "session_id": "g-board",
         "title": null,
         "via_notes": [
@@ -2413,7 +2413,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2480,7 +2480,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.020264236256480217,
+        "score": 0.01215854175388813,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
@@ -2508,7 +2508,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.26832976937294006,
+        "score": 0.16099786162376403,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2563,8 +2563,16 @@ exports[`searchSessions golden output (must not change in the candidate-source r
     "sessions": [
       {
         "available": true,
-        "node_id": "E4-7L",
+        "node_id": "A0-3G",
         "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.059461931884288784,
         "session_id": "g-noemb",
         "title": null,
         "via_notes": [
@@ -2573,14 +2581,6 @@ exports[`searchSessions golden output (must not change in the candidate-source r
             "id": "N-006",
           },
         ],
-      },
-      {
-        "available": true,
-        "node_id": "A0-3G",
-        "score": 0.09910321980714798,
-        "session_id": "g-photo",
-        "title": null,
-        "via_notes": [],
       },
     ],
   },
@@ -2613,7 +2613,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.0607927106320858,
+        "score": 0.03647562637925148,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2637,7 +2637,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "A0-3G",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-photo",
         "title": null,
         "via_notes": [
@@ -2654,7 +2654,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "F5-8M",
-        "score": 0.09524299204349518,
+        "score": 0.057145795226097106,
         "session_id": "g-tie-a",
         "title": null,
         "via_notes": [
@@ -2674,7 +2674,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "B1-4H",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-login",
         "title": null,
         "via_notes": [
@@ -2687,7 +2687,7 @@ exports[`searchSessions golden output (must not change in the candidate-source r
       {
         "available": true,
         "node_id": "D3-6K",
-        "score": 0.09910321980714798,
+        "score": 0.059461931884288784,
         "session_id": "g-vault",
         "title": null,
         "via_notes": [
