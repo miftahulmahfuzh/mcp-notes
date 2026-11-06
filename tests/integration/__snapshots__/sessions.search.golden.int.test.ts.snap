@@ -1,0 +1,2703 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`searchSessions golden output (must not change in the candidate-source refactor) > filters, both modes 1`] = `
+{
+  "hybrid {"from":"2026-10-15"} auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.5959265376253926,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"from":"2026-10-15"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 1.2782689945331946,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.0987879792689859,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"from":"2026-10-15"} quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "hybrid {"host":"golden-host"} auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.5959265376253926,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.34699862680344085,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"host":"golden-host"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 1.2782689945331946,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.2481813345309922,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.0790142728540308,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"host":"golden-host"} quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"repo":"mcp-notes"} auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.5959265376253926,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.34699862680344085,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"repo":"mcp-notes"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 1.2782689945331946,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.2481813345309922,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.0790142728540308,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"repo":"mcp-notes"} quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"repo":"seer"} auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "hybrid {"repo":"seer"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.0987879792689859,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"repo":"seer"} quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "hybrid {"to":"2026-10-15"} auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.34699862680344085,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"to":"2026-10-15"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.2481813345309922,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.0846854008065523,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.0790142728540308,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "hybrid {"to":"2026-10-15"} quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"from":"2026-10-15"} auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"from":"2026-10-15"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.01519817765802145,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.01519817765802145,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.01519817765802145,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"from":"2026-10-15"} quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"host":"golden-host"} auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"host":"golden-host"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.01519817765802145,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.01519817765802145,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.01519817765802145,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.01519817765802145,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"host":"golden-host"} quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"repo":"mcp-notes"} auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"repo":"mcp-notes"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.01519817765802145,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.01519817765802145,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.01519817765802145,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"repo":"mcp-notes"} quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"repo":"seer"} auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"repo":"seer"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.01519817765802145,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.01519817765802145,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"repo":"seer"} quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"to":"2026-10-15"} auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "text {"to":"2026-10-15"} leaderboard or login or photo or quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.01519817765802145,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.01519817765802145,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.01519817765802145,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "text {"to":"2026-10-15"} quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+}
+`;
+
+exports[`searchSessions golden output (must not change in the candidate-source refactor) > hybrid, every query 1`] = `
+{
+  ""photo delete"": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "C2-5J photo delete": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 2.0987879792689856,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.2238206615622923,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "adversarial trades": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.3736728069871311,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.1874187816366888,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.18174765368416754,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "auth failures after resume": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.5959265376253926,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.34699862680344085,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "crash": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.3096925537578532,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.27936592412270633,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.3736728069871311,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard or login or photo": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 1.2878658823873408,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.2577052523383787,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.0987879792689859,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.0790142728540308,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard ranking tweaks": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 1.698787979268986,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.679014272854031,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "no such word anywhere": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "password": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.3401833400203693,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.30679025468064147,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "photo -delete": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.3538991005721762,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "photo delete": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 1.091465291883115,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "quokka": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.3595702285246976,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.353899100572176,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "quokka migration": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 1.537857811087742,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 1.4438022965934487,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.22949178530802314,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "vault credentials": {
+    "fallback": null,
+    "mode": "hybrid",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 1.5222552369063254,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 1.4636707502360105,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+}
+`;
+
+exports[`searchSessions golden output (must not change in the candidate-source refactor) > no embedder: text fallback, every query 1`] = `
+{
+  ""photo delete"": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.09910321980714798,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "C2-5J photo delete": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "adversarial trades": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.09735848009586334,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+    ],
+  },
+  "auth failures after resume": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "crash": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.0607927106320858,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.0607927106320858,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard or login or photo": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.020264236256480217,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.020264236256480217,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.020264236256480217,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.020264236256480217,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.020264236256480217,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard ranking tweaks": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.26832976937294006,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.26832976937294006,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "no such word anywhere": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "password": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.0607927106320858,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "photo -delete": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 9.999999682655225e-21,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "photo delete": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.09910321980714798,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "quokka": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "quokka migration": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.09524299204349518,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "vault credentials": {
+    "fallback": "Meaning search is off on this server (OPENROUTER_API_KEY is not set), so these are full-text results only: sessions that share words with the query.",
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.09910321980714798,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.09910321980714798,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+}
+`;
+
+exports[`searchSessions golden output (must not change in the candidate-source refactor) > paging walks the whole ranking, both modes 1`] = `
+{
+  "hybrid": [
+    {
+      "fallback": null,
+      "mode": "hybrid",
+      "next_cursor": "eyJvIjoyfQ",
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "B1-4H",
+          "score": 1.4402012831070756,
+          "session_id": "g-login",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "vault credentials rotated after the login incident",
+              "id": "N-004",
+            },
+          ],
+        },
+        {
+          "available": true,
+          "node_id": "D3-6K",
+          "score": 1.4127769525491405,
+          "session_id": "g-vault",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "vault credentials rotated after the login incident",
+              "id": "N-004",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "hybrid",
+      "next_cursor": "eyJvIjo0fQ",
+      "sessions": [
+        {
+          "available": false,
+          "node_id": "C2-5J",
+          "score": 0.8987879792689859,
+          "session_id": "g-board",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+              "id": "N-001",
+            },
+          ],
+        },
+        {
+          "available": true,
+          "node_id": "E4-7L",
+          "score": 0.8914652918831151,
+          "session_id": "g-noemb",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "photo delete notes for the upload crash",
+              "id": "N-006",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "hybrid",
+      "next_cursor": "eyJvIjo2fQ",
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "G6-9N",
+          "score": 0.8846854008065522,
+          "session_id": "g-tie-b",
+          "title": null,
+          "via_notes": [],
+        },
+        {
+          "available": true,
+          "node_id": "F5-8M",
+          "score": 0.8846854008065522,
+          "session_id": "g-tie-a",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "second quokka note about the migration",
+              "id": "N-008",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "hybrid",
+      "next_cursor": null,
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "A0-3G",
+          "score": 0.879014272854031,
+          "session_id": "g-photo",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "quokka migration plan",
+              "id": "N-002",
+            },
+            {
+              "excerpt": "Leaderboard ranking tweaks.",
+              "id": "N-003",
+            },
+            {
+              "excerpt": "second quokka note about the migration",
+              "id": "N-008",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "text": [
+    {
+      "fallback": null,
+      "mode": "text",
+      "next_cursor": "eyJvIjoyfQ",
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "B1-4H",
+          "score": 0.02431708388030529,
+          "session_id": "g-login",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "vault credentials rotated after the login incident",
+              "id": "N-004",
+            },
+          ],
+        },
+        {
+          "available": true,
+          "node_id": "D3-6K",
+          "score": 0.02431708388030529,
+          "session_id": "g-vault",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "vault credentials rotated after the login incident",
+              "id": "N-004",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "text",
+      "next_cursor": "eyJvIjo0fQ",
+      "sessions": [
+        {
+          "available": false,
+          "node_id": "C2-5J",
+          "score": 0.012158541940152645,
+          "session_id": "g-board",
+          "title": null,
+          "via_notes": [],
+        },
+        {
+          "available": true,
+          "node_id": "E4-7L",
+          "score": 0.012158541940152645,
+          "session_id": "g-noemb",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "photo delete notes for the upload crash",
+              "id": "N-006",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "text",
+      "next_cursor": "eyJvIjo2fQ",
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "G6-9N",
+          "score": 0.012158541940152645,
+          "session_id": "g-tie-b",
+          "title": null,
+          "via_notes": [],
+        },
+        {
+          "available": true,
+          "node_id": "F5-8M",
+          "score": 0.012158541940152645,
+          "session_id": "g-tie-a",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "second quokka note about the migration",
+              "id": "N-008",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      "fallback": null,
+      "mode": "text",
+      "next_cursor": null,
+      "sessions": [
+        {
+          "available": true,
+          "node_id": "A0-3G",
+          "score": 0.012158541940152645,
+          "session_id": "g-photo",
+          "title": null,
+          "via_notes": [
+            {
+              "excerpt": "quokka migration plan",
+              "id": "N-002",
+            },
+            {
+              "excerpt": "Leaderboard ranking tweaks.",
+              "id": "N-003",
+            },
+            {
+              "excerpt": "second quokka note about the migration",
+              "id": "N-008",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`searchSessions golden output (must not change in the candidate-source refactor) > text mode, every query 1`] = `
+{
+  ""photo delete"": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.09910321980714798,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "C2-5J photo delete": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "adversarial trades": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.09735848009586334,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Adversarial shows zero trades, suspect the cutoff",
+            "id": "N-001",
+          },
+        ],
+      },
+    ],
+  },
+  "auth failures after resume": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "crash": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.0607927106320858,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.0607927106320858,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard or login or photo": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.020264236256480217,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.020264236256480217,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.020264236256480217,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.020264236256480217,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.020264236256480217,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+  "leaderboard ranking tweaks": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": false,
+        "node_id": "C2-5J",
+        "score": 0.26832976937294006,
+        "session_id": "g-board",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.26832976937294006,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "Leaderboard ranking tweaks.",
+            "id": "N-003",
+          },
+        ],
+      },
+    ],
+  },
+  "no such word anywhere": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [],
+  },
+  "password": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.0607927106320858,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "photo -delete": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 9.999999682655225e-21,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "photo delete": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "E4-7L",
+        "score": 0.09910321980714798,
+        "session_id": "g-noemb",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "photo delete notes for the upload crash",
+            "id": "N-006",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [],
+      },
+    ],
+  },
+  "quokka": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "G6-9N",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-b",
+        "title": null,
+        "via_notes": [],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.0607927106320858,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.0607927106320858,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "quokka migration": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "A0-3G",
+        "score": 0.09910321980714798,
+        "session_id": "g-photo",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "quokka migration plan",
+            "id": "N-002",
+          },
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "F5-8M",
+        "score": 0.09524299204349518,
+        "session_id": "g-tie-a",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "second quokka note about the migration",
+            "id": "N-008",
+          },
+        ],
+      },
+    ],
+  },
+  "vault credentials": {
+    "fallback": null,
+    "mode": "text",
+    "next_cursor": null,
+    "sessions": [
+      {
+        "available": true,
+        "node_id": "B1-4H",
+        "score": 0.09910321980714798,
+        "session_id": "g-login",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+      {
+        "available": true,
+        "node_id": "D3-6K",
+        "score": 0.09910321980714798,
+        "session_id": "g-vault",
+        "title": null,
+        "via_notes": [
+          {
+            "excerpt": "vault credentials rotated after the login incident",
+            "id": "N-004",
+          },
+        ],
+      },
+    ],
+  },
+}
+`;
