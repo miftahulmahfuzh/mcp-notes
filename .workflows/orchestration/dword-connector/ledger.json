@@ -110,7 +110,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "978ed74",
       "depends_on": [
         3,
         4,
@@ -118,22 +118,22 @@
       ],
       "difficulty": "NORMAL",
       "n": 6,
-      "note": null,
+      "note": "wall chat dword paragraph + 4 bespoke captions + verify-notesd wall-chat entry; prompt aligned to shipped tool args (origin object/context, 80/120 ceilings) per rung 2 not plan draft; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1106-134146-180505/evidence",
       "package": "src/chat`, `.claude/skills/verify-notesd",
       "plan": ".workflows/plan/dword-connector/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T13:49:38+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A079",
       "title": "Wall chat"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T13:38:25+07:00",
+  "updated": "2026-11-06T13:49:38+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
