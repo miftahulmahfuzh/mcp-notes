@@ -7,12 +7,12 @@
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 77
+- Completed: 78
 
 ---
 
@@ -40,20 +40,11 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A077** Phase 4: Journal tools
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: new `src/mcp/dwordJournalTools.ts` (`dword_journal_find_similar`, `dword_journal_add`); new `src/dword/journalSimilarity.ts` (ported Layer 1 hashing from dword's `similarity.ts`, plus `NEAR_DUPLICATE_MAX_DISTANCE` — reconciled to live here, not in phase 2's `rules.ts`; see Reconciliation Log #5); the curated names appended to `CONNECTOR_TOOL_NAMES.dword` after phase 3's own two (reconciled ownership: phase 3 appends its two first, this phase appends its two after, landing on the final six-name array — Reconciliation Log #2); the new `src/mcp/dwordTools.ts` barrel and the one `registerDwordCurated(server, connectors.dword)` call added to `src/connectors/register.ts` (this phase's job unconditionally, not "whichever phase lands second" — Reconciliation Log #2); `tests/integration/connectors/dword.journal.curated.int.test.ts`. Implements the 5.3 resolution (Layer 2 via OpenRouter at the 0.25 threshold, strict `<` comparison confirmed against dword's real source — Reconciliation Log #6 — never blocking a save on a failed embedding call). Exit criteria: duplicate found → shown, nothing inserted; `force: true` → inserted; no duplicate → inserted with `insight_status = 'ready'`; a simulated embedding failure still inserts the entry (no embeddings row, no block) — all against the throwaway Postgres harness.
-  - **Status**: open
-  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 4 of 6)
-  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
-  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075, P1-NOTES-A076
-  - **Plan**: `.workflows/plan/P1-NOTES-A077.md`
 - [ ] **P1-NOTES-A078** Phase 5: Skills `/v` and `/j`
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: new `claude/skills/v/SKILL.md`, `claude/skills/j/SKILL.md` (format per `check-seer-adversarial-nightly/SKILL.md`: `name`/`description`/`argument-hint` frontmatter, H1, short "what this does", numbered steps — lookup/find-similar first, add on a miss, reply stating found vs. added); confirms (does not assume) whether `scripts/install.sh`'s skill-symlink step is glob-based over `claude/skills/*`, adding the two new directories explicitly if it is not; new `.claude/skills/verify-notesd/features/dword.md` (or an extension, following the four-section contract) covering the Claude Code skill path. Exit criteria: `/v <term> > <sentence>` and `/j <text>` work end to end in a real Claude Code session against the throwaway daemon; `verify-notesd`'s `$V` commands for this entry are copy-pasteable and pass.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 5 of 6)
   - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
   - **Depends on**: P1-NOTES-A076, P1-NOTES-A077
@@ -78,6 +69,23 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A077** Phase 4: Journal tools
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/mcp/dwordJournalTools.ts` (`dword_journal_find_similar`, `dword_journal_add`); new `src/dword/journalSimilarity.ts` (ported Layer 1 hashing from dword's `similarity.ts`, plus `NEAR_DUPLICATE_MAX_DISTANCE` — reconciled to live here, not in phase 2's `rules.ts`; see Reconciliation Log #5); the curated names appended to `CONNECTOR_TOOL_NAMES.dword` after phase 3's own two (reconciled ownership: phase 3 appends its two first, this phase appends its two after, landing on the final six-name array — Reconciliation Log #2); the new `src/mcp/dwordTools.ts` barrel and the one `registerDwordCurated(server, connectors.dword)` call added to `src/connectors/register.ts` (this phase's job unconditionally, not "whichever phase lands second" — Reconciliation Log #2); `tests/integration/connectors/dword.journal.curated.int.test.ts`. Implements the 5.3 resolution (Layer 2 via OpenRouter at the 0.25 threshold, strict `<` comparison confirmed against dword's real source — Reconciliation Log #6 — never blocking a save on a failed embedding call). Exit criteria: duplicate found → shown, nothing inserted; `force: true` → inserted; no duplicate → inserted with `insight_status = 'ready'`; a simulated embedding failure still inserts the entry (no embeddings row, no block) — all against the throwaway Postgres harness.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
+  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075, P1-NOTES-A076
+  - **Plan**: `.workflows/plan/P1-NOTES-A077.md`
+  - **Completed**: 2026-11-06 13:17
+  - **Method**: /do
+  - **Files**: src/dword/journalSimilarity.ts, src/mcp/dwordJournalTools.ts, src/mcp/dwordTools.ts, src/connectors/register.ts, src/connectors/names.ts, tests/unit/dword/journalSimilarity.test.ts, tests/integration/connectors/dword.journal.curated.int.test.ts
+  - **Drift**:
+    - none: plan code applied verbatim; phase 3 had already landed, so dwordTools.ts typechecks
+    - register.ts doc comment updated (it said dword had no curated tools yet); names.ts comment count 17 -> 21
+  - **Decided**:
+    - test writer injection (index Decisions row from phase 3) -> registerDwordJournalCurated takes writer?/userEmail? options; the int test injects a DwordWriter on a temp repo dir pointed at the throwaway harness DB, so the default writer is never constructed in a test (rung 1: invariant 6)
 - [x] **P1-NOTES-A076** Phase 3: Vocab tools
   - **Difficulty**: HARD
   - **Type**: Feature

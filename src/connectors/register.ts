@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createDwordConnector, DWORD_ABOUT } from './dword/index.js';
+import { registerDwordCurated } from '../mcp/dwordTools.js';
 import { registerExpensesCurated } from './expenses/curated.js';
 import { createExpensesConnector, EXPENSES_ABOUT } from './expenses/index.js';
 import { CONNECTOR_SYSTEMS, type SystemId } from './names.js';
@@ -29,10 +30,8 @@ export function defaultConnectors(): Connectors {
 }
 
 /**
- * Registers <id>_schema and <id>_sql for every system, then each system's curated tools. dword
- * has no curated tools yet: its curated call (registerDwordCurated, covering both the vocab and
- * journal tools) is added once phases 3 and 4 have both landed (see DWORD_CONNECTOR_PLAN.md's
- * Decisions table) — phase 1 wires in only the generic pair every system gets below.
+ * Registers <id>_schema and <id>_sql for every system, then each system's curated tools. dword's
+ * curated call fans out to its vocab and journal tools (src/mcp/dwordTools.ts).
  */
 export function registerConnectorTools(server: McpServer, connectors: Connectors): void {
   for (const id of CONNECTOR_SYSTEMS) {
@@ -42,4 +41,5 @@ export function registerConnectorTools(server: McpServer, connectors: Connectors
   registerExpensesCurated(server, connectors.expenses);
   registerRunsCurated(server, connectors.runs);
   registerSeerCurated(server, connectors.seer);
+  registerDwordCurated(server, connectors.dword);
 }

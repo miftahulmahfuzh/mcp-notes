@@ -11,13 +11,19 @@ export const CONNECTOR_TOOL_NAMES = {
   expenses: ['expenses_schema', 'expenses_sql', 'expenses_spending', 'expenses_get', 'expenses_months'],
   runs: ['runs_schema', 'runs_sql', 'runs_list', 'runs_get', 'runs_review'],
   seer: ['seer_schema', 'seer_sql', 'seer_leaderboard', 'seer_positions', 'seer_sera_best'],
-  // Curated journal tool names are appended here by phase 4, after the vocab pair.
-  dword: ['dword_schema', 'dword_sql', 'dword_vocab_lookup', 'dword_vocab_add'],
+  dword: [
+    'dword_schema',
+    'dword_sql',
+    'dword_vocab_lookup',
+    'dword_vocab_add',
+    'dword_journal_find_similar',
+    'dword_journal_add',
+  ],
 } as const satisfies Record<SystemId, readonly string[]>;
 
 export type ConnectorToolName = (typeof CONNECTOR_TOOL_NAMES)[SystemId][number];
 
-/** Every name, flattened in the order above (17 once dword's generic pair is in). */
+/** Every name, flattened in the order above (21 with dword's six). */
 export const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[] = CONNECTOR_SYSTEMS.flatMap(
   (id): ConnectorToolName[] => [...CONNECTOR_TOOL_NAMES[id]],
 );
