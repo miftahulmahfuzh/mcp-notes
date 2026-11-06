@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/session-search-context`
 **Branch:** `feature/session-search-context` (base: `origin/main` @ `b41ae04`)
 **Phases:** 5
-**Status:** planned
+**Status:** phase 2/5 complete
 **Coordinator:** —
 
 ---
@@ -59,11 +59,11 @@
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Candidate-source refactor of searchSessions | R4 | `src/sessions` | 4 | — | NORMAL | `.workflows/plan/session-search-context/phase-1.md` | — | — |
-| 2 | Commit subjects in search_tsv and the session embedding | R1 | `src/db`, `src/sessions`, `drizzle` | 17 | — | NORMAL | `.workflows/plan/session-search-context/phase-2.md` | — | — |
-| 3 | Persist Claude's replies (cc_session_replies), tail + backfill | R2 | `src/sessions`, `src/db`, `drizzle` | 16 | 2 | HARD | `.workflows/plan/session-search-context/phase-3.md` | — | — |
-| 4 | Reply embedding worker | R3 | `src/sessions`, `src/embeddings`, `src/background.ts` | 8 | 3 | NORMAL | `.workflows/plan/session-search-context/phase-4.md` | — | — |
-| 5 | Replies as a search source, related-evidence weight, wiring and docs | R3, R4 | `src/sessions`, `src/search`, `src/mcp`, `src/chat`, `src/http`, docs | 20 | 1, 3, 4 | HARD | `.workflows/plan/session-search-context/phase-5.md` | — | — |
+| 1 | Candidate-source refactor of searchSessions | R4 | `src/sessions` | 4 | — | NORMAL | `.workflows/plan/session-search-context/phase-1.md` | P1-NOTES-A080 | — |
+| 2 | Commit subjects in search_tsv and the session embedding | R1 | `src/db`, `src/sessions`, `drizzle` | 17 | — | NORMAL | `.workflows/plan/session-search-context/phase-2.md` | P1-NOTES-A081 | — |
+| 3 | Persist Claude's replies (cc_session_replies), tail + backfill | R2 | `src/sessions`, `src/db`, `drizzle` | 16 | 2 | HARD | `.workflows/plan/session-search-context/phase-3.md` | P1-NOTES-A082 | — |
+| 4 | Reply embedding worker | R3 | `src/sessions`, `src/embeddings`, `src/background.ts` | 8 | 3 | NORMAL | `.workflows/plan/session-search-context/phase-4.md` | P1-NOTES-A083 | — |
+| 5 | Replies as a search source, related-evidence weight, wiring and docs | R3, R4 | `src/sessions`, `src/search`, `src/mcp`, `src/chat`, `src/http`, docs | 20 | 1, 3, 4 | HARD | `.workflows/plan/session-search-context/phase-5.md` | P1-NOTES-A084 | — |
 
 Waves: {1, 2} run concurrently, then 3, then 4, then 5. Every phase's Step 0 is `[ -d node_modules ] || npm ci` (the worktree starts without `node_modules`).
 

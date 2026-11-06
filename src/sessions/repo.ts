@@ -863,14 +863,15 @@ export class SessionsRepo {
     const literal = toVectorLiteral(input.embedding);
     const res = await this.db.execute<{ session_id: string }>(sql`
       insert into cc_session_embeddings
-        (session_id, embedding, sha, model, attempts, last_error, next_attempt_at, embedded_at, created_at, updated_at)
-      select cc_sessions.session_id, ${literal}::vector, ${input.sha}, ${input.model}, 0, null, null, now(), now(), now()
+        (session_id, embedding, sha, model, text_version, attempts, last_error, next_attempt_at, embedded_at, created_at, updated_at)
+      select cc_sessions.session_id, ${literal}::vector, ${input.sha}, ${input.model}, ${input.textVersion}::integer, 0, null, null, now(), now(), now()
       from cc_sessions
       where cc_sessions.session_id = ${sessionId}
       on conflict (session_id) do update set
         embedding = excluded.embedding,
         sha = excluded.sha,
         model = excluded.model,
+        text_version = excluded.text_version,
         attempts = 0,
         last_error = null,
         next_attempt_at = null,

@@ -9,6 +9,11 @@
   text rank / similarity, and the hit lists those notes in `via_notes` (`[{ id, excerpt }]`, best
   first, at most 3; `[]` when the session matched on its own text). Same in text mode. MCP
   `sessions_search` and `GET /api/sessions/search` both carry `via_notes`.
+- Session search matches a session's commit messages: every commit subject (not the sha) is in the
+  session's full-text index (`cc_sessions.search_tsv`, migration 0013) and in the text its vector
+  is made from, so a word or meaning only a commit has finds that session, in text and hybrid
+  mode. Vectors made before this (`cc_session_embeddings.text_version` 0) are rebuilt once by
+  the owning host's summary worker after a restart, then never again.
 - Link an existing note to a session (MCP `link_note` / `unlink_note`; Phase 1). Session notes =
   made ∪ linked, deduped (a note both made and linked is listed once as `made`), newest first, at most 50.
   Links live in `note_session_links`; purging a note from the bin (hard delete) drops its link rows
@@ -94,6 +99,23 @@ UI selectors (pass ids to the steps file through the environment: `NODE=$NODE LI
 - node panel: `page.locator('aside.np[data-node="' + NODE + '"]')`; its notes: `.getByRole('region', { name: 'Notes made' })`
 - a note: `.getByRole('link', { name: LINKED, exact: true })`; the icon: `getByRole('img', { name: 'Linked note' })` inside that `li`
 - the editor: `page.getByRole('dialog', { name: 'Edit note ' + LINKED })`, text box `getByLabel('Note text')`
+
+Commit messages in search. Fixture `5e55a001-…-000000000001` committed `feat(sessions): ingest
+transcripts`; `feat` appears nowhere else in its indexed text (only in tool output, which is not
+indexed), so it is a commit-only word:
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r '.nodes[] | select(.session_id=="5e55a001-0000-4000-8000-000000000001") | .node_id' <<<"$S")
+$V sql RUN "select node_id, commits from cc_sessions where session_id = '5e55a001-0000-4000-8000-000000000001'"
+$V mcp RUN sessions_search '{"query":"feat"}'        # mode "text" (fallback), hits contain NODE
+$V api RUN GET '/api/sessions/search?q=feat'         # same NODE in .hits
+$V sql RUN "select indexdef from pg_indexes where indexname = 'cc_sessions_search_gin'"   # gin (search_tsv)
+```
+With `--embed` (billed, a few embeddings) the vectors carry the version:
+`$V sql RUN "select count(*) filter (where text_version = 1) as cur, count(*) as all from cc_session_embeddings where embedding is not null"`
+→ `cur = all`. "Rebuilt once, then never again" needs a daemon restart, which `verify.sh` has no
+command for: it is proven by `tests/integration/sessions.commitSearch.int.test.ts`.
 
 Summary requests. Start the run with the summarizer off so nothing is billed and the request stays
 visible (`NOTESD_CLAUDE_BIN` pointing nowhere turns summaries off; the daemon log says so):

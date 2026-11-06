@@ -386,6 +386,8 @@ export interface SessionEmbeddingInput {
   sha: string;
   model: string;
   embedding: number[];
+  /** Layout version of the embed text (src/sessions/summarize.ts SESSION_EMBED_TEXT_VERSION). */
+  textVersion: number;
 }
 
 export interface SessionEmbeddingFailure {

@@ -7,6 +7,7 @@ import { embeddingErrorText, type Embedder } from '../embeddings/embedder.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
 import type { SessionsRepo } from './repo.js';
 import {
+  SESSION_EMBED_TEXT_VERSION,
   buildEmbedText,
   buildSummaryInput,
   cleanSummary,
@@ -42,9 +43,10 @@ export interface SummaryCandidate {
   lastActiveAt: Date;
   summarySha: string | null;
   summarizedAt: Date | null;
-  /** Stored embedding's sha / model; null when there is none. */
+  /** Stored embedding's sha / model / embed-text version; null when there is none. */
   embeddingSha: string | null;
   embeddingModel: string | null;
+  embeddingTextVersion: number | null;
 }
 
 /** The reads and writes the worker needs. `dbSummaryStore` is the real one; tests use memory. */
@@ -70,7 +72,7 @@ export interface SummaryStore {
   load(sessionIds: readonly string[]): Promise<SessionSummarySource[]>;
   /** Saves a summary. The real store goes through SessionsRepo.setSummary, which also clears a pending request. */
   saveSummary(v: { sessionId: string; summary: string; summarySha: string }): Promise<void>;
-  saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[] }): Promise<void>;
+  saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[]; textVersion: number }): Promise<void>;
   /** Drops a request that can never be served (nothing to summarize). Through SessionsRepo. */
   clearRequest(sessionId: string): Promise<void>;
 }
@@ -95,6 +97,7 @@ type CandidateDbRow = {
   summarized_at: Date | string | null;
   embedding_sha: string | null;
   embedding_model: string | null;
+  embedding_text_version: number | null;
 };
 
 type SourceDbRow = {
@@ -127,6 +130,7 @@ function toCandidates(rows: readonly CandidateDbRow[]): SummaryCandidate[] {
       summarizedAt: toDate(r.summarized_at),
       embeddingSha: r.embedding_sha,
       embeddingModel: r.embedding_model,
+      embeddingTextVersion: r.embedding_text_version,
     });
   }
   return out;
@@ -139,13 +143,15 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
       const needSummary = o.wantSummary
         ? sql`(s.summarized_at is null or s.summarized_at < s.last_active_at)`
         : sql`false`;
+      // text_version below the current layout: the vector predates it (e.g. migration 0013), so
+      // every such session is listed until processOne re-embeds it once.
       const needEmbedding =
         o.embeddingModel !== null
-          ? sql`(e.session_id is null or e.embedding is null or e.embedded_at is null or e.model <> ${o.embeddingModel} or e.embedded_at < s.last_active_at or (s.summarized_at is not null and e.embedded_at < s.summarized_at))`
+          ? sql`(e.session_id is null or e.embedding is null or e.embedded_at is null or e.model <> ${o.embeddingModel} or e.text_version < ${SESSION_EMBED_TEXT_VERSION}::integer or e.embedded_at < s.last_active_at or (s.summarized_at is not null and e.embedded_at < s.summarized_at))`
           : sql`false`;
       const res = await db.execute<CandidateDbRow>(sql`
         select s.session_id, s.last_active_at, s.summary_sha, s.summarized_at,
-               e.sha as embedding_sha, e.model as embedding_model
+               e.sha as embedding_sha, e.model as embedding_model, e.text_version as embedding_text_version
         from cc_sessions s
         left join cc_session_embeddings e on e.session_id = s.session_id
         where s.host = ${o.host}
@@ -164,7 +170,7 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
         select s.session_id,
                coalesce(s.last_active_at, s.started_at, s.summary_requested_at) as last_active_at,
                s.summary_sha, s.summarized_at,
-               e.sha as embedding_sha, e.model as embedding_model
+               e.sha as embedding_sha, e.model as embedding_model, e.text_version as embedding_text_version
         from cc_sessions s
         left join cc_session_embeddings e on e.session_id = s.session_id
         where s.host = ${o.host}
@@ -204,7 +210,7 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
       await repo.setSummary(v.sessionId, { summary: v.summary, sha: v.summarySha });
     },
     async saveEmbedding(v) {
-      await repo.saveEmbedding(v.sessionId, { sha: v.sha, model: v.model, embedding: v.embedding });
+      await repo.saveEmbedding(v.sessionId, { sha: v.sha, model: v.model, embedding: v.embedding, textVersion: v.textVersion });
     },
     async clearRequest(sessionId) {
       await repo.clearSummaryRequest(sessionId);
@@ -314,6 +320,8 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
    * One session: its summary (summarizer on and not paused), then its embedding. `requested`: the
    * row carries summary_requested_at. An up-to-date summary is then saved again (setSummary clears
    * the request, no model call), and a row with nothing to summarize has its request dropped.
+   * The vector is rebuilt when the embed text's sha or the model changed, or when it was made from
+   * an older embed-text layout (text_version < SESSION_EMBED_TEXT_VERSION), even if the text is the same.
    */
   async function processOne(
     row: SessionSummarySource,
@@ -367,7 +375,8 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
       const text = buildEmbedText({ ...row, summary });
       if (text !== null) {
         const sha = embedTextSha(text);
-        if (sha !== c.embeddingSha || c.embeddingModel !== embedder.model) {
+        const olderLayout = (c.embeddingTextVersion ?? 0) < SESSION_EMBED_TEXT_VERSION;
+        if (sha !== c.embeddingSha || c.embeddingModel !== embedder.model || olderLayout) {
           if (!(await embedLimiter.acquire(signal))) return;
           try {
             const vectors = await embedder.embed([text]);
@@ -375,7 +384,7 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
             if (vector === undefined || vector.length !== EMBEDDING_DIMENSIONS) {
               throw new Error(`the embedder returned ${vector?.length ?? 0} dimensions, expected ${EMBEDDING_DIMENSIONS}`);
             }
-            await store.saveEmbedding({ sessionId: id, sha, model: embedder.model, embedding: vector });
+            await store.saveEmbedding({ sessionId: id, sha, model: embedder.model, embedding: vector, textVersion: SESSION_EMBED_TEXT_VERSION });
             report.embedded += 1;
           } catch (err) {
             if (signal.aborted) return;

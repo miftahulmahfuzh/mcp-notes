@@ -92,6 +92,13 @@
       "when": 1793858296030,
       "tag": "0012_session_prompt_images",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793953879739,
+      "tag": "0013_session_commit_search",
+      "breakpoints": true
     }
   ]
 }
