@@ -27,6 +27,7 @@ its own chat bar.
   - [Editing a note, live on the wall](#editing-a-note-live-on-the-wall)
   - [Clickable note ids](#clickable-note-ids)
   - [Spending, runs and Seer](#spending-runs-and-seer)
+  - [Vocabulary and wise words: /v and /j](#vocabulary-and-wise-words-v-and-j)
   - [More things to ask](#more-things-to-ask)
 - [The chat bar](#the-chat-bar)
   - [The history page](#the-history-page)
@@ -38,7 +39,7 @@ its own chat bar.
   - [Asking about sessions](#asking-about-sessions)
   - [Chat about one project](#chat-about-one-project)
   - [Running swarms with the graph](#running-swarms-with-the-graph)
-- [Connectors: spending, runs, Seer](#connectors-spending-runs-seer)
+- [Connectors: spending, runs, Seer, daily-words](#connectors-spending-runs-seer-daily-words)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
   - [Install on WSL](#install-on-wsl)
@@ -110,7 +111,9 @@ The wall is for browsing, writing quickly, and dropping in photos.
   and a "not on this machine" placeholder.
 - **Your other apps answer too.** The same tools read expense-tracking, run-insights and Seer,
   read-only, so "how is my spending this week?" or "how did yesterday's run go?" gets an answer
-  from the real data, with Claude's opinion on it.
+  from the real data, with Claude's opinion on it. daily-words, your vocabulary and wise-words
+  app, can also be written to: `/v perch` looks a word up or adds it, and `/j <a line>` saves a
+  saying unless you already have one like it.
 - **It is yours alone.** One user, bound to `127.0.0.1`, no accounts, no telemetry.
 
 ## A tour of the wall
@@ -443,7 +446,7 @@ run-insights (Apple Watch runs, the app's analyses and reviews, coach Nina) and 
 leaderboard and positions, and the best Sera methods). `/n` sends questions about them to their
 curated tools, falls back to a system's `_sql` tool only when those don't answer, and replies
 with what the data shows plus Claude's own read and a suggestion, not a tally. The tools are
-listed under [Connectors](#connectors-spending-runs-seer).
+listed under [Connectors](#connectors-spending-runs-seer-daily-words).
 
 ```
 /n how are my spending this week? don't just tally the numbers and give me your inputs
@@ -451,6 +454,40 @@ listed under [Connectors](#connectors-spending-runs-seer).
 /n compare my running this month with last month
 /n what are the best sera method that we have found up until now?
 ```
+
+### Vocabulary and wise words: /v and /j
+
+Two more skills write to [daily-words](https://github.com/miftahulmahfuzh/daily-words), your
+vocabulary and journal app. They work from any repo.
+
+```
+/v perch
+/v put up with > he put up with a lot from his neighbours
+/v lari > Dia lari ke sekolah setiap pagi
+/j A stitch in time saves nine
+```
+
+`/v <word or phrase>` looks the term up first, matching the exact term, the original word behind
+an English entry, an inflected form (`studying` finds `study`) and near spellings (`naive` for
+`naïve`, offered as candidates). Found, it shows what you already have. Not found, Claude writes
+the entry itself the way daily-words would: part of speech, British IPA, a one-clause definition
+and exactly three examples, all inside daily-words' own limits. Then it adds the entry. Text after
+a single `>` is the sentence you met the word in. It is stored as the entry's origin, but only on
+an entry that has no origin yet, so an existing origin is never overwritten. A non-English word
+(`lari`) is added as its English word (`run`), with the original word, its language and the
+sentence kept as the origin. daily-words' own cap applies: 50 adds in a rolling 24 hours.
+
+`/j <a line>` checks for the same line, or one close to it, first. It runs the check daily-words
+itself runs: an exact match after normalizing whitespace, quotes and accents, then closeness in
+meaning (an OpenRouter embedding, a near duplicate below a cosine distance of 0.25). A near
+duplicate is shown with its insight and nothing is saved, unless you say "save it anyway".
+Otherwise Claude writes the insight (what the line means, and two or three everyday situations
+it fits) and saves it ready to read. A failed embedding call never blocks the save; daily-words'
+own backfill embeds the line later.
+
+The chat bar does the same from plain language ("add the word perch, as in the bird's perch",
+"save this: a stitch in time saves nine"). The tools are listed under
+[Connectors](#connectors-spending-runs-seer-daily-words).
 
 ### More things to ask
 
@@ -469,8 +506,8 @@ listed under [Connectors](#connectors-spending-runs-seer).
 
 The pill at the bottom of the wall is a natural-language command line. Its answer streams into a
 panel that rises above it, which you can pin or dismiss. A terse status line ("searching
-notes", "looking at 2 photos", "reading expenses", "reading runs", "reading seer", "searching
-the web") shows what the agent is doing. Notes the answer mentions are outlined on the wall and
+notes", "looking at 2 photos", "reading expenses", "reading runs", "reading seer", "looking up a
+word", "saving a saying", "searching the web") shows what the agent is doing. Notes the answer mentions are outlined on the wall and
 the rest dim. Chips under the answer jump to each note, switching the view if that note is
 hidden.
 
@@ -507,7 +544,7 @@ it is collapsed. Dismiss still closes the panel for good and starts a new thread
 
 Behind it is the Claude Agent SDK: headless Claude Code on your existing login, one run per
 message, with the same tools `/n` uses: the `notes` tools, the read-only tools for
-expense-tracking, run-insights and Seer, and web search. Ask it "how much did i spend on meals
+expense-tracking, run-insights and Seer, the daily-words tools, and web search. Ask it "how much did i spend on meals
 in october, and which week was the worst?" and it answers with the numbers and an opinion. A
 follow-up continues the same thread. Dismissing the panel starts a new one. Every question and
 answer is kept in notesd's own database (not as notes). Each turn rebuilds the conversation from
@@ -759,17 +796,19 @@ transcripts: the session was started some other way, or by an older `swarm.py`. 
 swarms (like the oldest one in the timeline picture) are a sign to start phases through
 `swarm.py launch`, so that the tree, the cost roll-up and the unfinished badge all hold up.
 
-## Connectors: spending, runs, Seer
+## Connectors: spending, runs, Seer, daily-words
 
-The same `notes` MCP server also reads three of your own apps, read-only, so `/n` and the chat bar
-can answer "how much did I spend on meals in October?" or "how did yesterday's run go?" straight
-from their data:
+The same `notes` MCP server also reads four of your own apps, so `/n` and the chat bar can answer
+"how much did I spend on meals in October?" or "how did yesterday's run go?" straight from their
+data. Three are read-only. daily-words also takes new vocabulary and journal entries, through
+`/v`, `/j` and the chat bar:
 
 | System | Repo | What it holds |
 |---|---|---|
 | `expenses` | [miftahulmahfuzh/expense-tracking](https://github.com/miftahulmahfuzh/expense-tracking) | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
 | `runs` | [miftahulmahfuzh/run-insights](https://github.com/miftahulmahfuzh/run-insights) | Apple Watch runs (pace, distance, heart rate, splits), weekly and monthly reviews, the coach Nina |
 | `seer` | [miftahulmahfuzh/seer](https://github.com/miftahulmahfuzh/seer) | The trading lab: strategies, positions, trades, the leaderboard, and Sera's experiments in `lab/lab.sqlite` |
+| `dword` | [miftahulmahfuzh/daily-words](https://github.com/miftahulmahfuzh/daily-words) | Your vocabulary (words and phrases with definitions, examples and where you met them) and your journal of wise words, each with its insight |
 
 | Tool | What it does |
 |---|---|
@@ -788,14 +827,29 @@ from their data:
 | `seer_leaderboard` | The leaderboard ranked as the app ranks it, over the common window; the benchmark, retired and too-new strategies listed apart |
 | `seer_positions` | Open bracket orders and book positions with marks and unrealised P&L, in USD. Optional `strategy` and `include_pending` |
 | `seer_sera_best` | The best dev variant of each Sera method by MAR, with the lab's metrics, hurdles and test trials; eligibility is as of the run date. Optional `status`, `only_eligible`, `limit` |
+| `dword_schema` | Tables, columns, types and what they mean |
+| `dword_sql` | One read-only SELECT, row-capped |
+| `dword_vocab_lookup` | Whether you already hold a `term`: exact, by its original word, by an inflected form, or near-spelling candidates |
+| `dword_vocab_add` | Adds a complete entry Claude wrote (part of speech, IPA, definition, three examples), with an optional `origin` for a non-English word or `context` for an English one. A term you already hold is returned, not added again (`created: false`), and gets the sentence as its origin only if it had none. At most 50 adds per rolling 24 hours |
+| `dword_journal_find_similar` | Whether a saying is already in the journal: exact after normalizing, then by meaning (cosine distance below 0.25). Returns `verdict` `duplicate` or `none` with the matches and their insights |
+| `dword_journal_add` | Runs the same check and saves the line with Claude's insight. A duplicate is returned and nothing is inserted unless `force: true`; a failed embedding never blocks the save |
 
 How it stays safe:
 
-- **Read-only twice.** Every Postgres connection starts with `default_transaction_read_only=on`
+- **Read-only twice, except four writes.** Every Postgres connection starts with `default_transaction_read_only=on`
   and every query runs inside `BEGIN READ ONLY`, so a write fails at the database even if a tool
   were wrong. `lab.sqlite` is opened read-only in a short-lived reader process (no write lock,
   safe while Seer's own jobs use it). `_sql` also refuses anything but one SELECT before it
   reaches the database.
+- **daily-words writes go through one allow-list.** `dword_vocab_add` and `dword_journal_add`
+  use a separate writer (`src/dword/writer.ts`) that can do only four things: insert a vocab
+  entry, attach an origin to an entry whose origin is still empty, insert a journal entry, and
+  insert that entry's embeddings row (a `failed` row when no embedding was made, which
+  daily-words' backfill retries). Each statement is parameterised and checked against that list before it
+  reaches a connection. Nothing is ever updated otherwise or deleted. Writes are made as the user
+  `DWORD_USER_EMAIL` names, looked up fresh on every call; unset or unknown, the add tools refuse
+  and write nothing. daily-words' limits (parts of speech, length ceilings, the daily cap) are
+  mirrored in `src/dword/rules.ts`, and a test fails if they drift from the real repo.
 - **Credentials stay where they are.** Each call reads that repo's `.env.local` (the direct,
   non-pooler `DATABASE_URL*`), so rotated credentials work without a restart. Nothing is copied
   into this repo, a log, a note or a tool result; errors are scrubbed.
@@ -808,7 +862,7 @@ How it stays safe:
   database.
 
 There are no recordings of the connectors on purpose: the only data they can show is real
-spending, real runs and real positions.
+spending, real runs, real positions and your own vocabulary and journal.
 
 ## Install and run
 
@@ -872,8 +926,8 @@ repo there, copy the same `.env.local`, and run `scripts/install.sh` (no `db:mig
 `embed:backfill`: the schema and the embeddings are already there). Notes, tags, revisions, the
 recycle bin, search by meaning and the chat bar work the same. Photos do not move: a photo made
 on one machine shows "not on this machine" on the other, by design, and its folder icon is
-hidden there. The connectors need the three sibling repos (or `*_DIR` pointing at them) on that
-machine too.
+hidden there. The connectors need the four sibling repos (or `*_DIR` pointing at them) on that
+machine too, and `/v` and `/j` need `DWORD_USER_EMAIL` in that machine's `.env.local`.
 
 ### Run it by hand
 
@@ -998,7 +1052,7 @@ URLs and `available` (false when the file lives on another machine). No tool del
 for good: `delete` and `remove_image` are soft, and `restore` / `restore_image` undo them.
 Delete forever exists only in the wall's recycle bin.
 
-The 15 connector tools are listed under [Connectors](#connectors-spending-runs-seer).
+The 21 connector tools are listed under [Connectors](#connectors-spending-runs-seer-daily-words).
 
 The server also sends Claude short instructions: what mcp-notes is, how note and session ids look,
 that comparisons are Claude's job, and that the connectors are read-only and the curated tools
@@ -1165,7 +1219,7 @@ disk again. Transcripts Claude Code has since deleted are gone from disk but kep
   not in the same instant. Without `OPENROUTER_API_KEY`, or while OpenRouter is down, `search`
   falls back to full text and says so, and `related` answers only for notes embedded earlier.
   Pictures are found by their text and dates, not by what is in them.
-- **Connectors are read-only.** Nothing in expense-tracking, run-insights or Seer can be changed from here, by design.
+- **Connectors are read-only, but daily-words takes additions.** Nothing in expense-tracking, run-insights or Seer can be changed from here, by design. daily-words only gains new vocab and journal entries (and an origin on an entry that has none); nothing there is edited or deleted from here, so fix a wrong entry in daily-words itself.
 - **Delete forever is final.** It removes the rows and the files, with no undo. Everything else
   (deleting a note, removing a photo) waits in the recycle bin until you restore it or delete it
   forever. Nothing is purged on a timer.
@@ -1208,7 +1262,8 @@ disk again. Transcripts Claude Code has since deleted are gone from disk but kep
 | 8 | Chat history, note files, image similarity search (v0.2.0) | done |
 | 9 | Claude Code hooks: `/n` capture, pasted image to note, clickable note ids (v0.2.0) | done |
 | 10 | Project session graph: every Claude Code session per repo, node ids, summaries, resume from the wall | done |
-| 11 | A second machine (the GPD), weekly digest, … | later |
+| 11 | daily-words connector: `/v` vocabulary, `/j` journal, the same from the chat bar | done |
+| 12 | A second machine (the GPD), weekly digest, … | later |
 
 Fixed decisions and the full acceptance set are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -1220,6 +1275,7 @@ web/            the Vite + React app (wall, gallery, modal, full-screen page)
 drizzle/        SQL migrations
 claude/skills/n the /n skill, symlinked into ~/.claude/skills/n
 claude/skills/migrate  the /migrate skill (a folder of images into one note, then the folder is deleted)
+claude/skills/v, j  the /v (vocabulary) and /j (journal) skills for daily-words
 claude/hooks    the Claude Code hooks (notes-capture: saves /n exchanges; notes-paste: pasted image -> similar_images; notes-prompt: /n prompt -> pasted image ids, node ids -> session context; notes-session: session start and parent link; notes-spawn: tmux child launched by hand)
 claude/mods/note-links  the note-links Claude Code mod (links note ids in replies, /open <id>); see its README
 deploy/         systemd user unit template
