@@ -120,7 +120,7 @@ export function parseIdList(raw: string): string[] {
  * GET  /api/projects/:repo/sessions        graph payload
  * GET  /api/sessions/context?ids=          prompt-hook context   loopback only
  * GET  /api/sessions/known?ids=            which ids exist, with their repo (chat node links)
- * GET  /api/sessions/search?q=&repo=&limit=
+ * GET  /api/sessions/search?q=&repo=&limit=    hits carry via_notes and via_replies
  * GET  /api/sessions/usage?by=&repo=&month=&limit=
  * GET  /api/sessions/:nodeId/transcript?query=&limit=   owning host only
  * GET  /api/sessions/:nodeId/prompts      every stored prompt (full when backfilled), from the DB, any host

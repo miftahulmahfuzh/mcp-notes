@@ -9,6 +9,8 @@ import type {
 
 export type {
   CcSessionPromptRow,
+  CcSessionReplyEmbeddingRow,
+  CcSessionReplyRow,
   ModelUsage,
   NewCcSessionPromptRow,
   ParentLinkSource,
@@ -97,11 +99,31 @@ export const PROMPTS_VERSION_EXCERPTS = 1;
  * PROMPTS_VERSION_EXCERPTS as before.
  */
 export const PROMPTS_VERSION = 3;
+
+/**
+ * `cc_sessions.replies_version` of a row whose `cc_session_replies` were written by a read of its
+ * transcript from byte 0 (the tail ingester's first read of a file, or the one-time backfill;
+ * migration 0014). 0 = ingested before replies were stored: the owning host's prompts backfill
+ * re-reads such a row once (`SessionsRepo.replacePrompts` writes prompts and replies together).
+ * A row whose transcript is gone stays at 0 with no replies: Claude Code pruned the only copy.
+ *
+ * Its own counter rather than a PROMPTS_VERSION bump: `GET /api/sessions/:nodeId/prompts` reports a
+ * row below PROMPTS_VERSION as `transcript_pruned`, so a bump would mislabel every complete row
+ * whose transcript is gone, and every row of a host that has not upgraded yet (a UI change, R5).
+ */
+export const REPLIES_VERSION = 1;
 export const MAX_TITLE_CHARS = 300;
 export const MAX_COMMITS = 200;
 export const MAX_FILES_EDITED = 500;
 export const MAX_PLAN_DOCS = 100;
 export const MAX_FINAL_MESSAGE_CHARS = 8000;
+
+/**
+ * Ceiling on one stored reply (`cc_session_replies.text`, UTF-16 code units), applied after
+ * redaction; a longer reply is cut here and stored with `truncated = true`. Measured 2026-11-06
+ * over 2511 replies: median 1.4k chars, p90 3.2k, max 20k.
+ */
+export const MAX_REPLY_STORE_CHARS = 16 * 1024;
 export const LIST_DEFAULT_LIMIT = 1000;
 export const LIST_MAX_LIMIT = 5000;
 
@@ -154,6 +176,18 @@ export interface TranscriptPatch {
    * fromOffset 0); the excerpt list keeps the newest MAX_PROMPTS, each clipped to MAX_PROMPT_CHARS.
    */
   prompts?: PatchPrompt[];
+  /**
+   * Claude's reply to prompts of this read (each the assistant text after its turn's last
+   * tool_use), raw: SessionsRepo redacts and caps them. `prompt` indexes `prompts`. Written to
+   * `cc_session_replies` with that prompt's seq, in the same transaction as the prompts (the whole
+   * list on fromOffset 0).
+   */
+  replies?: PatchReply[];
+  /**
+   * What this read does to the reply of the last prompt stored before it, when a turn straddles
+   * two reads. Ignored on fromOffset 0.
+   */
+  leadingReply?: LeadingReply | null;
   /** Appended, deduped by sha, capped to the newest MAX_COMMITS. */
   commits?: SessionCommit[];
   /** Union, first-seen order, capped to MAX_FILES_EDITED. */
@@ -185,6 +219,43 @@ export interface PatchPrompt {
   images?: PatchPromptImage[];
 }
 
+/** Claude's reply to one prompt, as ingest read it: raw text, not redacted, not capped. */
+export interface PatchReply {
+  /** 0-based index of the prompt it answers in the same patch's `prompts`. */
+  prompt: number;
+  /** The turn's final text blocks, each trimmed, joined by a blank line. Never blank. */
+  text: string;
+  /** Timestamp of the record that holds the reply's last text block. */
+  at: string | null;
+}
+
+/**
+ * The reply to the session's last stored prompt, as a read that starts mid-turn sees it.
+ * `append`: only assistant text came before this read's first prompt (or its end), so it continues
+ * the stored reply. `replace`: a tool_use came first, so the stored reply was narration; `reply`
+ * (the text after that tool_use) replaces it, and null deletes it.
+ */
+export type LeadingReply =
+  | { kind: 'append'; text: string; at: string | null }
+  | { kind: 'replace'; reply: { text: string; at: string | null } | null };
+
+/** One `cc_session_replies` row's content, redacted and capped, as SessionsRepo writes it. */
+export interface ReplyContent {
+  text: string;
+  at: Date | null;
+  truncated: boolean;
+}
+
+/** A reply ready to write. `prompt` indexes the stored prompts (`storedPrompts`) it answers. */
+export interface StoredReply extends ReplyContent {
+  prompt: number;
+}
+
+/** A LeadingReply redacted. An `append` text is capped only once it is joined to the stored reply. */
+export type StoredLeadingReply =
+  | { kind: 'append'; text: string; at: Date | null }
+  | { kind: 'replace'; reply: ReplyContent | null };
+
 /** One `cc_session_prompts` row's content, redacted, as SessionsRepo writes it. */
 export interface StoredPrompt {
   text: string;
@@ -194,18 +265,25 @@ export interface StoredPrompt {
   images: PatchPromptImage[];
 }
 
-/** A row of this host below PROMPTS_VERSION (legacy, or redacted in place from excerpts). */
+/**
+ * A row of this host below PROMPTS_VERSION (legacy, or redacted in place from excerpts) or below
+ * REPLIES_VERSION (ingested before replies were stored).
+ */
 export interface PromptsBackfillCandidate {
   sessionId: string;
   transcriptPath: string | null;
   transcriptOffset: number;
+  /** The row's prompts_version when listed: a gone transcript at PROMPTS_VERSION_EXCERPTS or above is skipped without a write. */
+  promptsVersion: number;
 }
 
-/** The prompts of a transcript re-read from byte 0 up to `upToOffset` (the row's stored offset). */
+/** The prompts (and replies) of a transcript re-read from byte 0 up to `upToOffset` (the row's stored offset). */
 export interface PromptsReplacement {
   /** Must equal the stored transcript_offset when the write happens (compare-and-set). */
   upToOffset: number;
   prompts: PatchPrompt[];
+  /** Claude's replies to `prompts` (`prompt` indexes it); they replace every stored reply of the session. */
+  replies?: PatchReply[];
   /** First human prompt of the file; null keeps the stored one (redacted). */
   firstPrompt: string | null;
   /** Latest `last-prompt` record of the file; null keeps the stored one (redacted). */
@@ -386,6 +464,8 @@ export interface SessionEmbeddingInput {
   sha: string;
   model: string;
   embedding: number[];
+  /** Layout version of the embed text (src/sessions/summarize.ts SESSION_EMBED_TEXT_VERSION). */
+  textVersion: number;
 }
 
 export interface SessionEmbeddingFailure {

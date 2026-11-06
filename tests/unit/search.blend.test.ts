@@ -3,6 +3,7 @@ import {
   BLEND,
   blendScore,
   isEligible,
+  literalRank,
   queryTerms,
   rankCandidates,
   recencyScore,
@@ -159,5 +160,59 @@ describe('rankCandidates', () => {
     const [r] = rankCandidates([c], { now: NOW });
     expect(r!.extra).toBe(42);
     expect(typeof r!.score).toBe('number');
+  });
+});
+
+describe('related evidence (a session\'s notes and replies)', () => {
+  it('weighs related evidence below own and above nothing', () => {
+    expect(BLEND.related).toBeGreaterThan(0);
+    expect(BLEND.related).toBeLessThan(1);
+  });
+
+  it('literalRank takes the better of own and weighted related', () => {
+    expect(literalRank(null, null)).toBeNull();
+    expect(literalRank(0.3, null)).toBe(0.3);
+    expect(literalRank(null, 0.5)).toBeCloseTo(BLEND.related * 0.5, 10);
+    expect(literalRank(0.35, 0.5, { ...BLEND, related: 0.6 })).toBe(0.35);
+    expect(literalRank(0.1, 0.5, { ...BLEND, related: 0.6 })).toBeCloseTo(0.3, 10);
+  });
+
+  it('a related literal match keeps the text floor, so it still beats any meaning-only match', () => {
+    const viaReply = cand('reply', { related: { textRank: 0.0001, similarity: null }, updatedAt: daysAgo(900) });
+    const rival = cand('rival', { similarity: 1, tagMatch: 1 });
+    expect(order([rival, viaReply])).toEqual(['reply', 'rival']);
+  });
+
+  it('the same evidence counts more as own text than through a related item', () => {
+    const own = cand('own', { textRank: 0.1, similarity: 0.8 });
+    const related = cand('related', { related: { textRank: 0.1, similarity: 0.8 } });
+    expect(order([related, own])).toEqual(['own', 'related']);
+  });
+
+  it('a related rank is weighted before the best-rank normalization', () => {
+    const [a, b] = rankCandidates([cand('own', { textRank: 0.1 }), cand('rel', { related: { textRank: 0.1, similarity: null } })], { now: NOW });
+    expect(a!.id).toBe('own');
+    expect(a!.score).toBeCloseTo(BLEND.textFloor + BLEND.text + BLEND.recency, 10);
+    expect(b!.score).toBeCloseTo(BLEND.textFloor + BLEND.text * BLEND.related + BLEND.recency, 10);
+  });
+
+  it('meaning: the better of own and weighted related', () => {
+    const s = blendScore({ exactId: false, textRank: null, similarity: 0.5, tagMatch: 0, recency: 0, related: { textRank: null, similarity: 1 } });
+    expect(s).toBeCloseTo(BLEND.vector * Math.max(similarityScore(0.5), BLEND.related * similarityScore(1)), 10);
+  });
+
+  it('related meaning alone is eligible once it clears minSimilarity; a related word match always is', () => {
+    const base = { exactId: false, textRank: null, similarity: null, tagMatch: 0, recency: 1 };
+    expect(isEligible({ ...base, related: { textRank: null, similarity: BLEND.minSimilarity } })).toBe(true);
+    expect(isEligible({ ...base, related: { textRank: null, similarity: BLEND.minSimilarity - 0.01 } })).toBe(false);
+    expect(isEligible({ ...base, related: { textRank: 0, similarity: null } })).toBe(true);
+  });
+
+  it('a candidate without related evidence scores exactly as before', () => {
+    const plain = { exactId: false, textRank: 0.5, similarity: 0.7, tagMatch: 0.5, recency: 0.5 };
+    expect(blendScore(plain)).toBeCloseTo(
+      BLEND.textFloor + BLEND.text * 0.5 + BLEND.vector * similarityScore(0.7) + BLEND.tag * 0.5 + BLEND.recency * 0.5,
+      10,
+    );
   });
 });

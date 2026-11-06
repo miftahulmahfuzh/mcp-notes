@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 import { toVectorLiteral } from '../../src/embeddings/repo.js';
-import { SESSIONS_SEMANTIC_OFF_FALLBACK, searchSessions } from '../../src/sessions/search.js';
+import { SESSIONS_SEMANTIC_OFF_FALLBACK, VIA_REPLIES_MAX, searchSessions } from '../../src/sessions/search.js';
 import { createFakeEmbedder, type FakeEmbedder } from '../helpers/fakeEmbedder.js';
 import { closeTestDb, migrateTestDb, openTestDb, truncateAll } from './setup.js';
 
@@ -162,5 +162,83 @@ describe('searchSessions: notes of a session count as its text', () => {
     expect(page.sessions).toEqual([]);
     const own = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
     expect(own.sessions[0]?.via_notes).toEqual([]);
+  });
+});
+
+describe('searchSessions: Claude\'s replies count as related text', () => {
+  async function insertReply(v: { sessionId: string; seq: number; text: string; embed?: boolean; embedText?: string; model?: string }): Promise<void> {
+    await db.execute(sql`
+      insert into cc_session_prompts (session_id, seq, at, text, truncated)
+      values (${v.sessionId}, ${v.seq}, now(), ${`prompt ${v.seq}`}, false)
+    `);
+    await db.execute(sql`
+      insert into cc_session_replies (session_id, seq, at, text, truncated)
+      values (${v.sessionId}, ${v.seq}, now(), ${v.text}, false)
+    `);
+    if (v.embed !== false) {
+      const made = v.embedText ?? v.text;
+      await db.execute(sql`
+        insert into cc_session_reply_embeddings (session_id, seq, sha, model, embedding, embedded_at, updated_at)
+        values (${v.sessionId}, ${v.seq}, encode(sha256(convert_to(${made}, 'UTF8')), 'hex'), ${v.model ?? embedder.model},
+          ${toVectorLiteral(embedder.vectorFor(made))}::vector, now(), now())
+      `);
+    }
+  }
+
+  it('hybrid: a word only a reply has finds its session, listed in via_replies with the passage', async () => {
+    await insertReply({ sessionId: 's-other', seq: 1, text: 'The wombat cache was stale because its key ignored the repo; it is keyed by repo now.' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'wombat');
+    expect(page.mode).toBe('hybrid');
+    expect(page.sessions[0]?.session_id).toBe('s-other');
+    expect(page.sessions[0]?.via_replies).toEqual([{ seq: 1, excerpt: expect.stringContaining('wombat') }]);
+    expect(page.sessions[0]?.via_notes).toEqual([]);
+  });
+
+  it('text mode and no embedder: reply words rank the session too', async () => {
+    await insertReply({ sessionId: 's-meaning', seq: 1, text: 'wombat flag removed', embed: false });
+    const text = await searchSessions({ db, embedder, host: HOST }, 'wombat', {}, { mode: 'text' });
+    expect(text.sessions.map((s) => s.session_id)).toEqual(['s-meaning']);
+    expect(text.sessions[0]?.via_replies.map((r) => r.seq)).toEqual([1]);
+    const fallback = await searchSessions({ db, embedder: null, host: HOST }, 'wombat');
+    expect(fallback.fallback).toBe(SESSIONS_SEMANTIC_OFF_FALLBACK);
+    expect(fallback.sessions[0]?.via_replies.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it('text mode: a session whose own text matches stays above one whose reply says the same', async () => {
+    await insertReply({ sessionId: 's-other', seq: 1, text: 'Wall photo delete button added to the editor.', embed: false });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'photo delete', {}, { mode: 'text' });
+    expect(page.sessions.map((s) => s.session_id)).toEqual(['s-literal', 's-other']);
+  });
+
+  it('hybrid: meaning only a reply has finds its session; the session whose own text answers stays first', async () => {
+    await insertReply({ sessionId: 's-literal', seq: 1, text: 'authentication failed again after suspend on the thinkpad' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'auth failures after resume');
+    expect(page.sessions[0]?.session_id).toBe('s-meaning');
+    expect(page.sessions.find((s) => s.session_id === 's-literal')?.via_replies.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it('ignores a reply vector made from older text or by another model', async () => {
+    await insertReply({ sessionId: 's-other', seq: 1, text: 'leaderboard copy tweaks', embedText: 'authentication failed after suspend' });
+    await insertReply({ sessionId: 's-other', seq: 2, text: 'authentication failed after suspend', model: 'other/model' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'auth failures after resume');
+    expect(page.sessions.map((s) => s.session_id)).not.toContain('s-other');
+  });
+
+  it('respects the repo filter and lists at most VIA_REPLIES_MAX replies, best first', async () => {
+    await insertReply({ sessionId: 's-meaning', seq: 1, text: 'quokka' });
+    await insertReply({ sessionId: 's-meaning', seq: 2, text: 'quokka quokka quokka' });
+    await insertReply({ sessionId: 's-meaning', seq: 3, text: 'quokka quokka' });
+    await insertReply({ sessionId: 's-meaning', seq: 4, text: 'quokka again' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'quokka');
+    const via = page.sessions[0]?.via_replies ?? [];
+    expect(via).toHaveLength(VIA_REPLIES_MAX);
+    expect(via[0]?.seq).toBe(2);
+    expect(via.every((r) => r.excerpt.includes('quokka'))).toBe(true);
+    expect((await searchSessions({ db, embedder, host: HOST }, 'quokka', { repo: 'seer' })).sessions).toEqual([]);
+  });
+
+  it('own-text hits keep an empty via_replies', async () => {
+    const page = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
+    expect(page.sessions[0]?.via_replies).toEqual([]);
   });
 });

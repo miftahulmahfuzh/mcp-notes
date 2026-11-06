@@ -26,8 +26,16 @@ const LOG_ERROR_CHARS = 200;
 
 export interface EmbeddingWorkerOptions {
   store: EmbeddingStore;
-  events: NoteEvents;
+  /**
+   * Note events: `created` / `updated` schedule a drain. Omitted (session replies, which are kicked
+   * by the session ingester): only `kick()` and the sweep start drains.
+   */
+  events?: NoteEvents;
   embedder: Embedder;
+  /** Names the worker in log lines: `[notesd] <label>: ...`. Default 'embeddings'. */
+  label?: string;
+  /** What one input is, for the fallback wording (`per-<itemNoun> fallback`). Default 'note'. */
+  itemNoun?: string;
   batchSize?: number;
   minIntervalMs?: number;
   sweepMs?: number;
@@ -49,21 +57,23 @@ export interface EmbeddingWorker {
 }
 
 /** e.g. `[notesd] embeddings: 15/16 embedded, 1 failed (A-B32: OpenRouter ...), per-note fallback, 17 calls, 2310ms` */
-export function formatBatch(r: BatchReport): string {
-  const parts = [`[notesd] embeddings: ${r.embedded}/${r.notes} embedded`];
+export function formatBatch(r: BatchReport, label = 'embeddings', itemNoun = 'note'): string {
+  const parts = [`[notesd] ${label}: ${r.embedded}/${r.notes} embedded`];
   if (r.skipped > 0) parts.push(`${r.skipped} changed meanwhile`);
   if (r.failed > 0) {
     const first = r.failures[0];
     const detail = first === undefined ? '' : ` (${first.id}: ${first.error.slice(0, LOG_ERROR_CHARS)})`;
     parts.push(`${r.failed} failed${detail}`);
   }
-  if (r.fellBack) parts.push('per-note fallback');
+  if (r.fellBack) parts.push(`per-${itemNoun} fallback`);
   parts.push(`${r.calls} call${r.calls === 1 ? '' : 's'}, ${r.ms}ms`);
   return parts.join(', ');
 }
 
 export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWorker {
   const log = opts.log ?? ((line: string) => console.log(line));
+  const label = opts.label ?? 'embeddings';
+  const itemNoun = opts.itemNoun ?? 'note';
   const clock = opts.clock ?? realClock;
   const limiter = new RateLimiter(opts.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS, clock);
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -84,10 +94,10 @@ export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWor
         limiter,
         clock,
         signal: abort.signal,
-        onBatch: (report) => log(formatBatch(report)),
+        onBatch: (report) => log(formatBatch(report, label, itemNoun)),
       });
     } catch (err) {
-      log(`[notesd] embeddings: drain failed: ${errorMessage(err).slice(0, LOG_ERROR_CHARS)}`);
+      log(`[notesd] ${label}: drain failed: ${errorMessage(err).slice(0, LOG_ERROR_CHARS)}`);
     }
   };
 
@@ -117,9 +127,10 @@ export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWor
 
   const sweep = setInterval(drain, opts.sweepMs ?? DEFAULT_SWEEP_MS);
   sweep.unref();
-  const unsubscribe = opts.events.on((event) => {
-    if (event.op === 'created' || event.op === 'updated') kick();
-  });
+  const unsubscribe =
+    opts.events?.on((event) => {
+      if (event.op === 'created' || event.op === 'updated') kick();
+    }) ?? ((): void => {});
   drain();
 
   return {

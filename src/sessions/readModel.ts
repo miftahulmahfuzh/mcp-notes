@@ -42,6 +42,7 @@ import {
   type ProjectsPayload,
   type PromptsPayload,
   type SearchNoteMatch,
+  type SearchReplyMatch,
   type SearchPayload,
   type SessionDetail,
   type StoredPromptImageRow,
@@ -74,6 +75,8 @@ export interface SessionSearchHit {
   score: number;
   /** The session's notes that matched the query (src/sessions/search.ts via_notes). Absent: none. */
   viaNotes?: SearchNoteMatch[];
+  /** Claude's replies in the session that matched the query (src/sessions/search.ts via_replies). Absent: none. */
+  viaReplies?: SearchReplyMatch[];
 }
 
 export interface SessionSearchOutcome {
@@ -154,7 +157,7 @@ function phase6Search(db: Db, embedder: Embedder | null): SessionSearchFn {
     return {
       mode: res.mode,
       fallback: res.fallback ?? null,
-      hits: res.sessions.map((h) => ({ sessionId: h.session_id, score: h.score, viaNotes: h.via_notes })),
+      hits: res.sessions.map((h) => ({ sessionId: h.session_id, score: h.score, viaNotes: h.via_notes, viaReplies: h.via_replies })),
     };
   };
 }
@@ -582,7 +585,14 @@ export async function searchNodes(
     const row = bySession.get(h.sessionId);
     return row === undefined
       ? []
-      : [{ ...toGraphNode(row, ctx), score: Math.round(h.score * 10_000) / 10_000, via_notes: h.viaNotes ?? [] }];
+      : [
+          {
+            ...toGraphNode(row, ctx),
+            score: Math.round(h.score * 10_000) / 10_000,
+            via_notes: h.viaNotes ?? [],
+            via_replies: h.viaReplies ?? [],
+          },
+        ];
   });
   return { query: q.query, mode: outcome.mode, fallback: outcome.fallback, hits };
 }

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { SessionsRepo } from './repo.js';
-import type { PromptsBackfillCandidate, PromptsReplacement, RedactStoredPromptsResult, ReplacePromptsResult } from './types.js';
+import { PROMPTS_VERSION_EXCERPTS, type PromptsBackfillCandidate, type PromptsReplacement, type RedactStoredPromptsResult, type ReplacePromptsResult } from './types.js';
 import { createGitRangeLog, withRangeCommits, type GitRangeLog } from './gitRange.js';
 import { createRepoResolver, type RepoResolver } from './repoResolve.js';
 import {
@@ -44,14 +44,17 @@ import {
  * - Rows are written only through `SessionsRepo.upsertFromTranscript` (phase 1), with
  *   `host = os.hostname()`. Ingest never writes parent links, tmux or summaries.
  *
- * - Full prompts: every write carries every prompt of the bytes it read (SessionsRepo stores them,
- *   redacted, in `cc_session_prompts`). Once the startup pass is done, `promptsBackfill` runs once:
- *   each row of this host still below PROMPTS_VERSION has its transcript re-read from 0 to its
- *   stored offset for prompts only (no tokens, commits, links or observers) and its prompt columns
- *   replaced (`SessionsRepo.replacePrompts`, a compare-and-set on the offset), under the same
- *   per-file hold as the tail reads. A row whose transcript is gone has its stored excerpts redacted
- *   in place (`redactStoredPrompts`, PROMPTS_VERSION_EXCERPTS); it stays a candidate, is skipped
- *   without a write while the file is missing, and is filled if the file is readable again. Only
+ * - Full prompts and replies: every write carries every prompt of the bytes it read and Claude's
+ *   reply to each (SessionsRepo stores them, redacted, in `cc_session_prompts` and
+ *   `cc_session_replies`; a turn split across reads is joined or superseded there, see
+ *   `TranscriptDelta.leadingReply`). Once the startup pass is done, `promptsBackfill` runs once:
+ *   each row of this host still below PROMPTS_VERSION or REPLIES_VERSION has its transcript re-read
+ *   from 0 to its stored offset for prompts and replies only (no tokens, commits, links or
+ *   observers) and its prompt columns and replies replaced (`SessionsRepo.replacePrompts`, a
+ *   compare-and-set on the offset), under the same per-file hold as the tail reads. A row whose
+ *   transcript is gone has its stored excerpts redacted in place (`redactStoredPrompts`,
+ *   PROMPTS_VERSION_EXCERPTS) and keeps no replies; it stays a candidate, is skipped without a
+ *   write (or a lock) while the file is missing, and is filled if the file is readable again. Only
  *   transcripts under `<claudeHome>/projects` are read. One log line, only when a row changed,
  *   was deferred or failed.
  *
@@ -133,7 +136,7 @@ export interface IngestObserver {
 
 /** What the one-time prompts backfill did. */
 export interface PromptsBackfillReport {
-  /** Rows of this host below PROMPTS_VERSION when it started. */
+  /** Rows of this host below PROMPTS_VERSION or REPLIES_VERSION when it started. */
   candidates: number;
   /** Re-read from the transcript and replaced. */
   filled: number;
@@ -594,8 +597,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
 
   /**
    * One candidate of the prompts backfill. Re-reads the transcript from 0 to the stored offset,
-   * collecting prompts only, and replaces the row's prompt columns. An offset miss (a tail write
-   * landed first) retries once with the stored offset; a second miss waits for the next start.
+   * collecting prompts and replies only, and replaces the row's prompt columns and replies. An
+   * offset miss (a tail write landed first) retries once with the stored offset; a second miss
+   * waits for the next start.
    */
   const backfillSession = async (c: PromptsBackfillCandidate, fill: PromptsFill): Promise<PromptsBackfillOutcome> => {
     let upTo = c.transcriptOffset;
@@ -605,6 +609,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       if (file !== null && !isUnder(projectsDir, file)) return 'deferred';
       const size = file === null ? null : await fileSize(file);
       if (file === null || size === null) {
+        // Transcript gone. Nothing is left to redact at PROMPTS_VERSION_EXCERPTS or above, and the
+        // replies cannot be recovered: skip without a write or a row lock.
+        if (c.promptsVersion >= PROMPTS_VERSION_EXCERPTS) return 'skipped';
         const redacted = await fill.redact(c.sessionId, host);
         if (redacted === 'applied') return 'redacted';
         return redacted === 'current' ? 'skipped' : 'deferred';
@@ -626,6 +633,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       const result = await fill.replace(c.sessionId, host, {
         upToOffset: upTo,
         prompts: delta.prompts,
+        replies: delta.replies,
         firstPrompt: delta.firstPrompt,
         lastPrompt: delta.lastPrompt,
       });

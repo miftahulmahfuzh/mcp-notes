@@ -109,7 +109,7 @@ export function renderProjectBlock(project: string): string {
   return [
     '<project>',
     `repo: ${repo}`,
-    `The owner is asking from the page of the repository "${repo}" in the wall's Projects view. Their questions are about the Claude Code sessions run in that repository: find them with sessions_search restricted to repo "${repo}" (it also matches the notes saved from or linked to each session and lists them in via_notes), read one with session_get before you describe it, and quote each session by its node id (like A0-3G) and each note you rely on by its note id (like A-B32).`,
+    `The owner is asking from the page of the repository "${repo}" in the wall's Projects view. Their questions are about the Claude Code sessions run in that repository: find them with sessions_search restricted to repo "${repo}" (it also matches the notes saved from or linked to each session, listed in via_notes, and what Claude replied to each prompt in it, listed in via_replies with the number of the prompt each reply answered), read one with session_get before you describe it, and quote each session by its node id (like A0-3G) and each note you rely on by its note id (like A-B32). When a reply excerpt is your evidence, quote it and say which session and prompt it came from (for example "A0-3G, prompt 4").`,
     '</project>',
   ].join('\n');
 }

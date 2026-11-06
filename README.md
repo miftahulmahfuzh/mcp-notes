@@ -689,8 +689,22 @@ once per state of the session: a session that has not changed is never summarize
 on disk when the feature lands get theirs in the background, a few at a time.
 
 Summaries are embedded like notes and searched the same way: words, meaning and recency blended
-with the weights in `src/search/blend.ts`. Without `OPENROUTER_API_KEY` session search is words
-only and says so.
+with the weights in `src/search/blend.ts`. A session's commit messages count as its own text:
+their subjects are in its full-text index and in the text its vector is made from (before the
+prompts, so a long session does not cut them off). When the embed-text layout changes, each daemon
+re-embeds its own sessions once in the background. Without `OPENROUTER_API_KEY` session search is
+words only and says so.
+
+Claude's replies are search context too. For each prompt the daemon keeps what Claude answered:
+the text after the turn's last tool call, not the narration between tool calls and not subagents.
+Replies are redacted like prompts, get their own full-text index, and are embedded one by one in
+the background on the machine that ran the session. Both machines can search them. A session's
+notes and replies count as related evidence: a session is ranked by the better of its own
+summary, prompts and commits and of its notes' and replies' best, which counts `BLEND.related`
+(0.6) times as much. A session whose own summary answers the question therefore stays above one
+that only repeats its words in a long reply. Each hit lists what it matched through in
+`via_notes` and `via_replies`. The Projects chat quotes those excerpts with the session's node id
+and the prompt number. There is no separate search box: ask in the Projects chat.
 
 ### Resume from the wall
 
@@ -1036,7 +1050,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `remove_image`, `restore_image` | Take one photo out of its note by photo id (soft, it goes to the recycle bin), and put it back at its old position |
 | `view_images` | Previews of up to 8 photos as image content, each after a text block with its ids, "image k of n" and metadata. Takes note ids (every photo of the note, in order) or photo ids; past 8 it lists the photo ids still to view |
 | `similar_images` | The photos that look most like one picture, nearest first with a similarity score: from an existing photo id (`image_id`), an image pasted into the wall chat (`upload_id`) or a description (`query`, e.g. "red top in a car"). Never the source photo, removed photos or deleted notes' photos. `pasted_image: N` (Claude Code: `[Image #N]` pasted into the conversation, uploaded by the notes-paste hook) |
-| `sessions_search` | Claude Code sessions by meaning and by words over their summaries, names and prompts, blended like `search`; filter by `repo`. Each hit has its node id, repo, times and summary. Says `fallback` when only words were used |
+| `sessions_search` | Claude Code sessions by meaning and by words over their summaries, names, prompts and commit messages, and over the notes saved from or linked to each session and Claude's replies in it, blended like `search`; filter by `repo`. Each hit has its node id, repo, times, summary, `via_notes` (`[{ id, excerpt }]`) and `via_replies` (`[{ seq, excerpt }]`, `seq` = the prompt the reply answered), each best first, at most 3, `[]` when none matched. Says `fallback` when only words were used |
 | `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, its notes (saved from it or linked to it, each with `kind: "made" \| "linked"`), tokens and cost, parent and children, `host` and `available` |
 | `session_transcript` | Passages of a session's transcript matching `query`. Only on the laptop that holds the transcript; elsewhere `not_on_this_machine` |
 | `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
@@ -1127,7 +1141,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/sessions/:nodeId/prompts` | Every stored prompt of a session, numbered, in full. Read from the database, so it works for either machine's sessions. `complete: false` with `incomplete_reason` (`not_backfilled`, `transcript_pruned`) when only excerpts are kept |
 | `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
-| `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback` |
+| `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback`; each hit carries `via_notes` and `via_replies` like the MCP tool |
 | `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
 | `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
 | `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |

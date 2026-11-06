@@ -29,6 +29,16 @@ const MAX_INPUT_CHARS = 24_000;
 const MAX_SUMMARY_CHARS = 1_500;
 /** Per-prompt cap inside the embed text (embedInput then clamps the whole to 8000). */
 const MAX_EMBED_PROMPT_CHARS = 500;
+/** Most commit subjects in the embed text (the newest ones); full text indexes all of them. */
+export const MAX_EMBED_COMMITS = 20;
+/** Per-subject cap inside the embed text. */
+const MAX_EMBED_COMMIT_CHARS = 150;
+/**
+ * Layout version of buildEmbedText, stored with each vector in `cc_session_embeddings.text_version`.
+ * Bump it whenever the layout changes: the summary worker then re-embeds every session once.
+ * 0 = vectors from before versions existed (no commit subjects); 1 = commit subjects (migration 0013).
+ */
+export const SESSION_EMBED_TEXT_VERSION = 1;
 
 export const SUMMARY_SYSTEM_PROMPT = [
   'You summarize one Claude Code session for its owner\'s personal index of past sessions.',
@@ -190,8 +200,29 @@ export function cleanSummary(raw: string): string {
 }
 
 /**
- * What gets embedded for a session: title/name/repo, the summary, then the prompts; redacted,
- * then trimmed and clamped by embedInput. Null when nothing is left.
+ * Commit subjects of a `commits` jsonb value, in stored order (oldest first). Objects give their
+ * `subject` (or `message`); a string is taken as the subject. Shas are never included.
+ */
+export function commitSubjects(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    let subject: unknown;
+    if (typeof item === 'string') subject = item;
+    else if (item !== null && typeof item === 'object') {
+      const rec = item as Record<string, unknown>;
+      subject = rec.subject ?? rec.message;
+    }
+    if (typeof subject === 'string' && subject.trim() !== '') out.push(subject.trim());
+  }
+  return out;
+}
+
+/**
+ * What gets embedded for a session: title/name/repo, the summary, the newest MAX_EMBED_COMMITS
+ * commit subjects, then the prompts; redacted, then trimmed and clamped by embedInput. Commits
+ * come before the prompts because the clamp cuts the end. Null when nothing is left. Changing
+ * this layout means bumping SESSION_EMBED_TEXT_VERSION.
  */
 export function buildEmbedText(s: SessionSummarySource): string | null {
   const head = [titleOf(s), s.name !== titleOf(s) ? s.name : null, s.repo].filter(
@@ -200,6 +231,7 @@ export function buildEmbedText(s: SessionSummarySource): string | null {
   const parts: string[] = [];
   if (head.length > 0) parts.push(head.join(' | '));
   if (s.summary !== null && s.summary.trim() !== '') parts.push(s.summary.trim());
+  for (const subject of commitSubjects(s.commits).slice(-MAX_EMBED_COMMITS)) parts.push(oneLine(subject, MAX_EMBED_COMMIT_CHARS));
   let prompts = asLines(s.prompts);
   if (prompts.length === 0 && s.firstPrompt !== null) prompts = [s.firstPrompt];
   for (const p of prompts) parts.push(oneLine(p, MAX_EMBED_PROMPT_CHARS));

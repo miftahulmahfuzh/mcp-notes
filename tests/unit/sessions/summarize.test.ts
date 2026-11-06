@@ -6,11 +6,13 @@ import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { QueryFn } from '../../../src/chat/agent.js';
 import {
+  MAX_EMBED_COMMITS,
   SUMMARY_MODEL,
   asLines,
   buildEmbedText,
   buildSummaryInput,
   cleanSummary,
+  commitSubjects,
   createAgentSummarizer,
   embedTextSha,
   findClaudeBin,
@@ -136,6 +138,49 @@ describe('shas', () => {
     expect(text).toContain('Made the wall editable.');
     expect(text).not.toContain('abc123secret');
     expect(embedTextSha(text)).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('commit subjects in the embed text', () => {
+  it('commitSubjects takes subjects (or messages, or strings), never shas', () => {
+    expect(
+      commitSubjects([{ sha: '0123456789abcdef', subject: ' fix(wall): spinner ' }, { message: 'chore: bump' }, 'docs: readme', { sha: 'x' }, null, 3]),
+    ).toEqual(['fix(wall): spinner', 'chore: bump', 'docs: readme']);
+    expect(commitSubjects(null)).toEqual([]);
+    expect(commitSubjects({ subject: 'not a list' })).toEqual([]);
+  });
+
+  it('puts commit subjects after the summary and before the prompts, without the sha', () => {
+    const text = buildEmbedText(source({ summary: 'Made the wall editable.' })) ?? '';
+    const summaryAt = text.indexOf('Made the wall editable.');
+    const commitAt = text.indexOf('feat(web): edit on the wall');
+    const promptAt = text.indexOf('also delete photos');
+    expect(summaryAt).toBeGreaterThanOrEqual(0);
+    expect(commitAt).toBeGreaterThan(summaryAt);
+    expect(promptAt).toBeGreaterThan(commitAt);
+    expect(text).not.toContain('8c259df0');
+  });
+
+  it('keeps commit subjects when long prompts fill the 8000-char clamp', () => {
+    const prompts = Array.from({ length: 40 }, (_, i) => `prompt ${i} ${'x'.repeat(480)}`);
+    const text = buildEmbedText(source({ prompts, commits: [{ sha: 'abc', subject: 'fix: zanzibar spinner' }] })) ?? '';
+    expect(text.length).toBeLessThanOrEqual(8000);
+    expect(text).toContain('fix: zanzibar spinner');
+    expect(text).not.toContain('prompt 39');
+  });
+
+  it('keeps only the newest MAX_EMBED_COMMITS subjects', () => {
+    const commits = Array.from({ length: MAX_EMBED_COMMITS + 5 }, (_, i) => ({ sha: `s${i}`, subject: `subject-${String(i + 1).padStart(2, '0')}` }));
+    const text = buildEmbedText(source({ commits })) ?? '';
+    expect(text).toContain(`subject-${String(MAX_EMBED_COMMITS + 5).padStart(2, '0')}`);
+    expect(text).toContain('subject-06');
+    expect(text).not.toContain('subject-05');
+  });
+
+  it('a commit changes the embed sha', () => {
+    const a = buildEmbedText(source({ commits: [] })) ?? '';
+    const b = buildEmbedText(source()) ?? '';
+    expect(embedTextSha(a)).not.toBe(embedTextSha(b));
   });
 });
 

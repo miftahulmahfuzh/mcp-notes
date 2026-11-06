@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { startEmbeddingWorker, type EmbeddingWorker } from '../../../src/embeddings/worker.js';
+import { formatBatch, startEmbeddingWorker, type EmbeddingWorker } from '../../../src/embeddings/worker.js';
 import { NoteEvents } from '../../../src/notes/events.js';
 import { MemoryEmbeddingStore, ScriptedEmbedder } from '../../helpers/memoryEmbeddingStore.js';
 
@@ -193,5 +193,36 @@ describe('startEmbeddingWorker', () => {
     await w.close();
     expect(Date.now() - t0).toBeLessThan(1_000);
     expect(store.isCurrent('A-001', embedder.model)).toBe(false);
+  });
+
+  it('runs without note events: drains at start and on kick', async () => {
+    const store = new MemoryEmbeddingStore();
+    store.setBody('R-1', 'first reply');
+    const embedder = new ScriptedEmbedder();
+    const w = startEmbeddingWorker({
+      store,
+      embedder,
+      minIntervalMs: 0,
+      debounceMs: 0,
+      sweepMs: 3_600_000,
+      log: () => {},
+    });
+    worker = w;
+    await w.idle();
+    expect(store.isCurrent('R-1', embedder.model)).toBe(true);
+
+    store.setBody('R-2', 'second reply');
+    w.kick();
+    await w.idle();
+    expect(store.isCurrent('R-2', embedder.model)).toBe(true);
+    expect(embedder.calls).toHaveLength(2);
+  });
+
+  it('names itself in log lines with its label and item noun; defaults are unchanged', () => {
+    const report = { notes: 2, calls: 3, embedded: 1, failed: 1, skipped: 0, fellBack: true, ms: 5, failures: [{ id: 'x#1', error: 'boom' }] };
+    expect(formatBatch(report)).toBe('[notesd] embeddings: 1/2 embedded, 1 failed (x#1: boom), per-note fallback, 3 calls, 5ms');
+    expect(formatBatch(report, 'reply embeddings', 'reply')).toBe(
+      '[notesd] reply embeddings: 1/2 embedded, 1 failed (x#1: boom), per-reply fallback, 3 calls, 5ms',
+    );
   });
 });

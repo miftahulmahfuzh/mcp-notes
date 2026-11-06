@@ -378,9 +378,12 @@ describe('SessionsRepo', () => {
     it('saves vectors and records failures with backoff', async () => {
       await repo.ensureSession('s-1', HOST)
       const v = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0))
-      expect(await repo.saveEmbedding('s-1', { sha: 'h1', model: 'm', embedding: v })).toBe(true)
-      expect(await repo.saveEmbedding('missing', { sha: 'h1', model: 'm', embedding: v })).toBe(false)
-      await expect(repo.saveEmbedding('s-1', { sha: 'h1', model: 'm', embedding: [1, 2] })).rejects.toThrow(/dimensions/)
+      expect(await repo.saveEmbedding('s-1', { sha: 'h1', model: 'm', embedding: v, textVersion: 1 })).toBe(true)
+      expect(
+        (await db.execute<{ text_version: number }>(sql`select text_version from cc_session_embeddings where session_id = 's-1'`)).rows[0],
+      ).toEqual({ text_version: 1 })
+      expect(await repo.saveEmbedding('missing', { sha: 'h1', model: 'm', embedding: v, textVersion: 1 })).toBe(false)
+      await expect(repo.saveEmbedding('s-1', { sha: 'h1', model: 'm', embedding: [1, 2], textVersion: 1 })).rejects.toThrow(/dimensions/)
 
       await repo.recordEmbeddingFailure('s-1', { sha: 'h1', model: 'm', error: 'boom' })
       let row = await db.execute<{ sha: string; attempts: number; has_vector: boolean }>(

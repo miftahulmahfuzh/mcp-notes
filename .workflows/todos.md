@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 3
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 80
+- Completed: 84
 
 ---
 
@@ -40,7 +40,6 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-
 ### [P2] Medium
 
 ### [P3] Low
@@ -50,6 +49,79 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/search/blend.ts` (`BLEND.related = 0.6`, `RelatedSignals`, `literalRank`, optional `related` on candidates — note search unchanged); `tests/unit/search.blend.test.ts`; `src/sessions/view.ts` (`REPLY_EXCERPT_CHARS`, `SearchReplyMatch`, `SearchHit.via_replies`); `src/sessions/search.ts` (`EvidenceKind` += `'reply'`, `repliesSource` with `items` = `[{ seq }]`, per-page `ts_headline` excerpts, `via_replies` max 3, weighted ranking from own vs related kept apart, `tuning` option; imports phase 4's `isCurrentReplyEmbeddingSql`); golden snapshot regenerated in its own commit after proving identity at `related: 1`; `tests/fixtures/semantic/sessionsLabelled.ts` + ... Exit criteria: a word or meaning only in a reply finds its session with `via_replies`; the labelled fixture passes at 0.6 and fails at 1 and 0.3; the golden snapshot holds at `related: 1`; MCP and HTTP carry `via_replies`; docs updated; `git diff --stat origin/main -- web/` prints nothing.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words); R4 — Improve and refactor Projects semantic search robustly
+  - **Depends on**: P1-NOTES-A080, P1-NOTES-A082, P1-NOTES-A083
+  - **Plan**: `.workflows/plan/P1-NOTES-A084.md`
+  - **Completed**: 2026-11-06 17:07
+  - **Method**: /do
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, .workflows/package_readme.md, CLAUDE.md, README.md, src/chat/context.ts, src/chat/prompt.ts, src/http/sessionsApi.ts, src/mcp/instructions.ts, src/mcp/sessionTools.ts, src/search/blend.ts, src/sessions/readModel.ts, src/sessions/search.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.mcp.int.test.ts, tests/integration/sessions.search.int.test.ts, tests/unit/chat-project.test.ts, tests/unit/search.blend.test.ts, tests/fixtures/semantic/sessionsLabelled.ts, tests/integration/sessions.relatedEvidence.int.test.ts, tests/integration/__snapshots__/sessions.search.golden.int.test.ts.snap
+  - **Drift**: none: every plan anchor matched phase 1-4's tree
+  - **Decided**: 0014 schema entry missing from package_readme.md → added one entry (coordinator request; rung 6, convention)
+    Proof journey 3's wait loop grepped echoed SQL text and never waited → check the count row instead; assertion unchanged (fix the check's wait, never its assertion)
+  - **Commits**: 50b91b7 (feature), e4b23bb (golden scores at BLEND.related 0.6)
+
+- [x] **P1-NOTES-A083** Phase 4: Reply embedding worker
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: new `src/sessions/replyEmbeddings.ts` (`currentReplySha256Sql`, `isCurrentReplyEmbeddingSql(model)` — the one "current reply vector" predicate, `dbReplyEmbeddingStore`, `startReplyEmbeddingWorker`, `REPLY_EMBEDDINGS_LABEL`); `src/embeddings/worker.ts` (`events?` optional, `label` / `itemNoun`, `formatBatch` defaults byte-identical); `src/embeddings/repo.ts` (`export NON_BLANK_PATTERN`, visibility only); `SessionsRepo.saveReplyEmbedding(sessionId, seq, Omit<SessionEmbeddingInput, 'textVersion'>)` and `recordReplyEmbeddingFailure` (+ `ccSessionReplyEmbeddings` in the schema import, class doc extended); `src/background.ts` (start with session ingest when an embedder exists, kick on ... Exit criteria: every non-blank reply of this host gets a current vector; an edited reply is re-embedded under its new sha; failures back off and retry; `close()` returns within its grace; without a key nothing new starts and ingest is unaffected.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words)
+  - **Depends on**: P1-NOTES-A082
+  - **Plan**: `.workflows/plan/P1-NOTES-A083.md`
+  - **Completed**: 2026-11-06 16:52
+  - **Method**: /do
+  - **Files**: src/embeddings/worker.ts, src/embeddings/repo.ts, src/sessions/replyEmbeddings.ts, src/sessions/repo.ts, src/background.ts, tests/unit/embeddings/worker.test.ts, tests/unit/sessions/replyEmbeddings.test.ts, tests/integration/sessions.replyEmbeddings.int.test.ts
+  - **Drift**: Plan's daemon-path int tests seeded a this-host session at prompts_version 0 with no transcript; phase 3's prompts backfill (redactStoredPrompts) treats that as a pruned transcript and deletes its replies. Tests now mark the seed ingested (prompts_version=PROMPTS_VERSION, replies_version=REPLIES_VERSION) via a markIngested helper.
+  - **Decided**: Daemon-path test seed pruned by phase 3 backfill → mark seeded rows as ingested in the test, no code change (rung 2: exit criteria concern live-ingested replies; the backfill behavior is phase 3's and correct)
+
+- [x] **P1-NOTES-A082** Phase 3: Persist Claude's replies (cc_session_replies), tail + backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `drizzle/0014_session_replies.sql` (generated on top of 0013) + snapshot + journal; `schema.ts`: `ccSessionReplies` (`session_id` FK cascade, `seq`, `at`, `text`, `truncated`, generated `search_tsv` + GIN), `ccSessionReplyEmbeddings` (`session_id`, `seq`, `embedding vector(1536)`, `sha`, `model`, `attempts`, `last_error`, `next_attempt_at`, `embedded_at`, `updated_at`; **no `created_at`**; PK `(session_id, seq)`; FK `cc_session_reply_embeddings_reply_fk` → replies on delete cascade; hnsw + next_attempt indexes), `ccSessions.repliesVersion`; `types.ts` (`REPLIES_VERSION = 1`, `MAX_REPLY_STORE_CHARS = 16 KiB`, reply types); reply capture in `TranscriptAccumulator` (final text after the last ... Exit criteria: each fixture prompt Claude answered has one redacted row with the turn's final text; split reads and a restart mid-turn equal a from-0 read; a `replies_version 0` row is backfilled exactly once.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — Claude's answers to the user in a session are persisted per node
+  - **Depends on**: P1-NOTES-A081
+  - **Plan**: `.workflows/plan/P1-NOTES-A082.md`
+  - **Completed**: 2026-11-06 16:30
+  - **Method**: /do
+  - **Files**: CLAUDE.md, drizzle/meta/_journal.json, drizzle/0014_session_replies.sql, drizzle/meta/0014_snapshot.json, src/db/schema.ts, src/sessions/ingest.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/transcript.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/integration/setup.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/schema.test.ts, tests/integration/sessions.replies.int.test.ts, tests/unit/sessions/replies.test.ts
+  - **Drift**: none: every quoted region matched; migration 0014 generated byte-identical to the plan
+  - **Decided**: migration0010.int afterAll hook timed out once in the full test:int run (drop database with force under shared-DB contention) → treated as an unrelated flake: all 669 tests passed, and the file passed 6/6 when run alone (rung 6: not a code regression; 0014 is not applied in that test)
+
+- [x] **P1-NOTES-A080** Phase 1: Candidate-source refactor of searchSessions
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/sessions/search.ts` structure only: named `CandidateSource`s (session text, session vector, node id, notes), `HYBRID_SOURCES` / `TEXT_SOURCES`, one pure `mergeCandidates` (per-signal max, `via_*` lists, `Signal.from` = `own` | `note`), `collectCandidates`, `compareTextRanked`, `relatedSourceRows`. The golden test `tests/integration/sessions.search.golden.int.test.ts` + snapshot (written on the unchanged code first) and `tests/unit/sessions/searchMerge.test.ts`. Exit criteria: `sessions.search.int.test.ts` passes unchanged; the golden snapshot passes unchanged after the refactor; `searchMerge.test.ts` passes; the A/B script (base = parent of this phase's Step 1 commit) prints `A/B IDENTICAL`; only the four files in its Files table change in its commits.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R4 — Improve and refactor Projects semantic search robustly
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A080.md`
+  - **Completed**: 2026-11-06 16:20
+
+- [x] **P1-NOTES-A081** Phase 2: Commit subjects in search_tsv and the session embedding
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/db/schema.ts` (`ccSessions.searchTsv` + header sentence for 0013, `ccSessionEmbeddings.textVersion`); `drizzle/0013_session_commit_search.sql` (generated, GIN index drop/recreate hand-added) + `meta/0013_snapshot.json` + journal; `src/sessions/summarize.ts` (`SESSION_EMBED_TEXT_VERSION = 1`, `MAX_EMBED_COMMITS`, `commitSubjects`, commits before prompts in `buildEmbedText`); `src/sessions/types.ts` `SessionEmbeddingInput.textVersion` (required); `src/sessions/repo.ts` `saveEmbedding` only; `src/sessions/summaryWorker.ts` (re-embed rule: `text_version < SESSION_EMBED_TEXT_VERSION`); tests (`sessions.commitSearch.int`, `migration0013.int`, summarize/summaryWorker unit, repo int); docs: ... Exit criteria: a commit-only word finds its session in text and hybrid mode; every pre-0013 vector is rebuilt exactly once (text_version 0 → 1) and not again; 0013 applies on a fresh DB and on a 0012 DB with data; the golden test (if phase 1 is in the tree) passes without `--update`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R1 — Commit messages of a session become part of its search context
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A081.md`
+  - **Completed**: 2026-11-06 16:03
+  - **Method**: /do
+  - **Files**: src/db/schema.ts, drizzle/0013_session_commit_search.sql, drizzle/meta/0013_snapshot.json, drizzle/meta/_journal.json, src/sessions/repo.ts, src/sessions/summarize.ts, src/sessions/summaryWorker.ts, src/sessions/types.ts, tests/integration/migration0013.int.test.ts, tests/integration/sessions.commitSearch.int.test.ts, tests/integration/sessions.repo.int.test.ts, tests/unit/sessions/summarize.test.ts, tests/unit/sessions/summaryWorker.test.ts, README.md, CLAUDE.md, .claude/skills/verify-notesd/features/projects.md, .workflows/todos.md, .workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md, .workflows/plan/P1-NOTES-A080.md, .workflows/plan/P1-NOTES-A081.md, .workflows/plan/P1-NOTES-A082.md, .workflows/plan/P1-NOTES-A083.md, .workflows/plan/P1-NOTES-A084.md
+  - **Drift**: Plan line offsets in src/db/schema.ts were off by one; code matched otherwise.
+  - **Decided**: Task bookkeeping for all 5 phases (A080-A084) created in this set worktree, not per phase worktree → narrower blast radius, one counter (tie-break: narrower blast radius)
 
 - [x] **P1-NOTES-A079** Phase 6: Wall chat
   - **Difficulty**: NORMAL

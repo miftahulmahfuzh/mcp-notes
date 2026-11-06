@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Clock } from '../../../src/embeddings/backfill.js';
-import type { SessionSummarySource } from '../../../src/sessions/summarize.js';
+import { SESSION_EMBED_TEXT_VERSION, type SessionSummarySource } from '../../../src/sessions/summarize.js';
 import {
   startSummaryWorker,
   type SummaryCandidate,
@@ -18,7 +18,7 @@ interface MemRow extends SessionSummarySource {
   lastActiveAt: Date;
   summarizedAt: Date | null;
   requestedAt: Date | null;
-  embedding: { sha: string; model: string; vector: number[] } | null;
+  embedding: { sha: string; model: string; vector: number[]; textVersion: number } | null;
 }
 
 class MemoryStore implements SummaryStore {
@@ -62,6 +62,7 @@ class MemoryStore implements SummaryStore {
       summarizedAt: r.summarizedAt,
       embeddingSha: r.embedding?.sha ?? null,
       embeddingModel: r.embedding?.model ?? null,
+      embeddingTextVersion: r.embedding?.textVersion ?? null,
     };
   }
 
@@ -98,8 +99,8 @@ class MemoryStore implements SummaryStore {
     this.summarySaves += 1;
   }
 
-  async saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[] }): Promise<void> {
-    this.rows.get(v.sessionId)!.embedding = { sha: v.sha, model: v.model, vector: v.embedding };
+  async saveEmbedding(v: { sessionId: string; sha: string; model: string; embedding: number[]; textVersion: number }): Promise<void> {
+    this.rows.get(v.sessionId)!.embedding = { sha: v.sha, model: v.model, vector: v.embedding, textVersion: v.textVersion };
     this.embeddingSaves += 1;
   }
 
@@ -242,6 +243,58 @@ describe('summary worker', () => {
     expect(b.rows.get('s-1')?.summary).not.toBeNull();
     expect(b.rows.get('s-1')?.embedding).toBeNull();
     await w2.close();
+  });
+
+  it('stores the current embed-text version with each vector', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 's-1' });
+    const w = start(store, { summarizer: null });
+    await w.idle();
+    expect(store.rows.get('s-1')?.embedding?.textVersion).toBe(SESSION_EMBED_TEXT_VERSION);
+    await w.close();
+  });
+
+  it('re-embeds a vector from an older embed-text layout once, even when its text is unchanged', async () => {
+    const store = new MemoryStore();
+    store.add({ sessionId: 's-1' });
+    const first = start(store, { summarizer: null });
+    await first.idle();
+    await first.close();
+    const row = store.rows.get('s-1')!;
+    row.embedding = { ...row.embedding!, textVersion: SESSION_EMBED_TEXT_VERSION - 1 };
+    const sha = row.embedding.sha;
+
+    const embedder = createFakeEmbedder();
+    const second = start(store, { summarizer: null, embedder });
+    await second.idle();
+    await second.close();
+    expect(embedder.calls).toHaveLength(1);
+    expect(row.embedding?.sha).toBe(sha);
+    expect(row.embedding?.textVersion).toBe(SESSION_EMBED_TEXT_VERSION);
+
+    const again = createFakeEmbedder();
+    const third = start(store, { summarizer: null, embedder: again });
+    await third.idle();
+    await third.close();
+    expect(again.calls).toHaveLength(0);
+  });
+
+  it('re-embeds when a new commit changes the embed text', async () => {
+    const store = new MemoryStore();
+    const row = store.add({ sessionId: 's-1' });
+    const first = start(store, { summarizer: null });
+    await first.idle();
+    await first.close();
+    const before = row.embedding?.sha;
+    row.commits = [{ sha: 'abc1234', subject: 'fix(wall): zanzibar spinner', at: null }];
+    row.lastActiveAt = new Date(OLD.getTime() + 1000);
+
+    const embedder = createFakeEmbedder();
+    const second = start(store, { summarizer: null, embedder });
+    await second.idle();
+    await second.close();
+    expect(embedder.calls.flat().join('\n')).toContain('fix(wall): zanzibar spinner');
+    expect(row.embedding?.sha).not.toBe(before);
   });
 
   it('close() aborts an in-flight summary within the grace', async () => {

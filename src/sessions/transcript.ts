@@ -7,9 +7,11 @@ import {
   MAX_PLAN_DOCS,
   MAX_PROMPT_STORE_CHARS,
   MAX_TITLE_CHARS,
+  type LeadingReply,
   type ModelUsage,
   type PatchPrompt,
   type PatchPromptImage,
+  type PatchReply,
   type SessionCommit,
   type TokenCounts,
   type TranscriptPatch,
@@ -42,6 +44,12 @@ import {
  *   `type: 'user'` records too; only `origin.kind` `human` or absent counts as a prompt.
  * - `api-request*`, `file-history-*` and a few bookkeeping types are most of the bytes and carry
  *   nothing a session row needs; they are dropped before JSON.parse.
+ * - Claude's reply to a prompt is the assistant text after the last tool_use of its turn (the same
+ *   `segment` that gives finalMessage), taken when the next prompt is recorded or the read ends.
+ *   Narration before a tool call and sidechain text are never a reply. A read that starts mid-turn
+ *   reports what it does to the earlier read's last reply (`leadingReply`): text alone continues
+ *   it, a tool_use first supersedes it. Nothing about the segment is carried between reads, so a
+ *   daemon restart mid-turn stores the same rows a single read would.
  */
 
 /** Record types that never feed a session row. Skipped from the leading `{"type":"..."` before JSON.parse. */
@@ -147,6 +155,18 @@ export interface TranscriptDelta {
   planDocs: string[];
   /** Assistant text after the last tool_use / human prompt of this read; null when there is none. */
   finalMessage: string | null;
+  /**
+   * Claude's reply to prompts of this read: for each prompt, the assistant text after the last
+   * tool_use of its turn (the last prompt's reply is what the read has so far). `prompt` indexes
+   * `prompts`; a turn that ended in a tool call has none. Always empty for a sidechain accumulator.
+   */
+  replies: PatchReply[];
+  /**
+   * What this read does to the reply of the last prompt of an earlier read (assistant records
+   * before this read's first prompt); null when it leaves it alone. Meaningful only for a read that
+   * does not start at byte 0. Always null for a sidechain accumulator.
+   */
+  leadingReply: LeadingReply | null;
 }
 
 /** `from..to` from push or merge output, with the cwd of the tool result that printed it. */
@@ -451,6 +471,16 @@ export class TranscriptAccumulator {
   private readonly filesEdited = new Set<string>();
   private readonly planDocs = new Set<string>();
   private segment: string[] = [];
+  /** Timestamp of the record that added the segment's latest text block. */
+  private segmentAt: string | null = null;
+  /** Index in `prompts` of the prompt the current segment answers; -1 while it answers a prompt of an earlier read. */
+  private replyOwner = -1;
+  /** A tool_use came in this read before its first prompt: the earlier read's stored reply was narration. */
+  private leadingCleared = false;
+  /** What this read does to the earlier read's last reply, fixed when this read's first prompt arrives. */
+  private leading: LeadingReply | null = null;
+  /** Replies of prompts of this read whose turn has ended (a later prompt was recorded). */
+  private readonly replies: PatchReply[] = [];
   private pendingBare: { text: string; at: string | null } | null = null;
   private readonly toolIdsThisRead = new Set<string>();
   private readonly recentMessageIds: string[];
@@ -512,6 +542,10 @@ export class TranscriptAccumulator {
   delta(): TranscriptDelta {
     const models: Record<string, ModelUsage> = {};
     for (const [model, usage] of this.models) models[model] = { ...usage };
+    const tail = this.sidechain ? null : this.segmentReply();
+    const replies =
+      this.sidechain ? [] : this.replyOwner >= 0 && tail !== null ? [...this.replies, { prompt: this.replyOwner, ...tail }] : [...this.replies];
+    const leadingReply = this.sidechain ? null : this.replyOwner >= 0 ? this.leading : this.leadingFrom(tail);
     return {
       sessionId: this.sessionId,
       records: this.records,
@@ -535,6 +569,8 @@ export class TranscriptAccumulator {
       filesEdited: [...this.filesEdited],
       planDocs: [...this.planDocs],
       finalMessage: this.segment.length > 0 ? cut(this.segment.join('\n\n').trim(), MAX_FINAL_MESSAGE_CHARS) : null,
+      replies,
+      leadingReply,
     };
   }
 
@@ -603,10 +639,36 @@ export class TranscriptAccumulator {
   }
 
   private recordPrompt(text: string, at: string | null, images: PatchPromptImage[] = []): void {
+    this.closeReply();
     const stored = storeCut(text);
     this.firstPrompt ??= stored.text;
     this.prompts.push({ text: stored.text, at, truncated: stored.truncated, ...(images.length > 0 ? { images } : {}) });
+    this.replyOwner = this.prompts.length - 1;
     this.segment = [];
+    this.segmentAt = null;
+  }
+
+  /** A new prompt ends the current turn: its segment becomes the reply of the prompt it answers. */
+  private closeReply(): void {
+    if (this.sidechain) return;
+    const reply = this.segmentReply();
+    if (this.replyOwner >= 0) {
+      if (reply !== null) this.replies.push({ prompt: this.replyOwner, ...reply });
+      return;
+    }
+    this.leading = this.leadingFrom(reply);
+  }
+
+  /** The segment as a reply: each text block trimmed, joined by a blank line. Null when empty. */
+  private segmentReply(): { text: string; at: string | null } | null {
+    if (this.segment.length === 0) return null;
+    return { text: this.segment.map((s) => s.trim()).join('\n\n'), at: this.segmentAt };
+  }
+
+  /** What `reply` (text before this read's first prompt) does to the earlier read's last reply. */
+  private leadingFrom(reply: { text: string; at: string | null } | null): LeadingReply | null {
+    if (this.leadingCleared) return { kind: 'replace', reply };
+    return reply === null ? null : { kind: 'append', text: reply.text, at: reply.at };
   }
 
   private scanCommit(id: string | null, text: string, toolUseResult: unknown, at: string | null, cwd: string | null): void {
@@ -650,15 +712,20 @@ export class TranscriptAccumulator {
         this.recentMessageIds.splice(0, this.recentMessageIds.length - RECENT_MESSAGE_IDS);
       }
     }
+    const at = typeof record.timestamp === 'string' ? record.timestamp : null;
     const content = message.content;
     const blocks: unknown[] = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
     for (const block of blocks) {
       if (!isObject(block)) continue;
       if (block.type === 'tool_use') {
         this.segment = [];
+        this.segmentAt = null;
+        // Text before this tool call answered an earlier read's prompt: it was narration, not the reply.
+        if (this.replyOwner < 0) this.leadingCleared = true;
         this.addToolUse(block);
       } else if (block.type === 'text' && typeof block.text === 'string' && block.text.trim() !== '') {
         this.segment.push(block.text);
+        this.segmentAt = at ?? this.segmentAt;
       }
     }
   }
@@ -695,7 +762,8 @@ export function accumulateText(sessionId: string, text: string, carry?: Transcri
  * The `SessionsRepo.upsertFromTranscript` patch for one read. Accumulators are this read's deltas
  * (the repo adds them, or replaces on `fromOffset === 0`). cwd, entrypoint and repo are sent only
  * for a read from byte 0, where the first cwd is the launch dir; a later read's first cwd may be a
- * `cd` target. Null scalars leave the stored value alone (repo merge rule).
+ * `cd` target. Null scalars leave the stored value alone (repo merge rule). `leadingReply` is sent
+ * only for a read that does not start at byte 0: a read from 0 has every reply in `replies`.
  */
 export function buildTranscriptPatch(delta: TranscriptDelta, ctx: PatchContext): TranscriptPatch {
   const fromStart = ctx.fromOffset === 0;
@@ -723,6 +791,8 @@ export function buildTranscriptPatch(delta: TranscriptDelta, ctx: PatchContext):
     models: delta.models,
     costUsd: delta.costUsd,
     prompts: delta.prompts,
+    replies: delta.replies,
+    leadingReply: fromStart ? null : delta.leadingReply,
     commits: delta.commits,
     filesEdited: delta.filesEdited,
     planDocs: delta.planDocs,

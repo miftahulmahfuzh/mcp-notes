@@ -535,6 +535,7 @@ describe('GET /api/sessions/search', () => {
       ['B1-22', 0.9123],
       ['A0-3G', 0.8],
     ]);
+    expect(body.hits.map((x) => x.via_replies)).toEqual([[], []]);
   });
 
   it('uses phase 6 search for real and reports the text fallback without an embedder', async () => {
@@ -543,6 +544,7 @@ describe('GET /api/sessions/search', () => {
     expect(body.mode).toBe('text');
     expect(typeof body.fallback).toBe('string');
     expect(body.hits.map((x) => x.node_id)).toContain('A0-3G');
+    expect(body.hits.every((x) => Array.isArray(x.via_notes) && Array.isArray(x.via_replies))).toBe(true);
   });
 
   it('400 without q', async () => {

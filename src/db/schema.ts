@@ -45,6 +45,13 @@ import {
  * Migration 0011 (Seer Adversarial) adds `adversary_reviews`: one row per review attempt of the
  * reviewer (src/adversary/reviewsRepo.ts is its only writer), which is also the usage log and the
  * store of early "draft" verdicts that are never written to Seer.
+ * Migration 0013 (session search context) adds commit subjects to the generated
+ * `cc_sessions.search_tsv` (drop + re-add of the column; the GIN index is dropped and recreated by
+ * hand-added statements, because drizzle-kit's drop/add does not re-emit it) and
+ * `cc_session_embeddings.text_version`.
+ * Migration 0014 (session replies) adds `cc_session_replies` (Claude's reply to each prompt of a
+ * session, redacted), `cc_session_reply_embeddings` (one vector per reply, filled in the
+ * background) and `cc_sessions.replies_version`; src/sessions/repo.ts is their only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -557,9 +564,18 @@ export const ccSessions = pgTable(
      * defined by src/sessions/types.ts; the owning host's backfill raises it once.
      */
     promptsVersion: integer('prompts_version').notNull().default(0),
-    /** Full text (`simple`) over ids, names, titles, prompts and summary. Never selected by the app. */
+    /**
+     * Whether `cc_session_replies` was written by a read of the whole transcript (migration 0014).
+     * 0 = ingested before replies were stored. src/sessions/types.ts REPLIES_VERSION; the owning
+     * host's prompts backfill raises it once while the transcript is still on disk.
+     */
+    repliesVersion: integer('replies_version').notNull().default(0),
+    /**
+     * Full text (`simple`) over ids, names, titles, prompts, summary and commit subjects
+     * (`commits[*].subject`, migration 0013; not the shas). Never selected by the app.
+     */
     searchTsv: tsvector('search_tsv').generatedAlwaysAs(
-      sql`to_tsvector('simple', coalesce("node_id", '') || ' ' || coalesce("repo", '') || ' ' || coalesce("name", '') || ' ' || coalesce("custom_title", '') || ' ' || coalesce("ai_title", '') || ' ' || coalesce("first_prompt", '') || ' ' || coalesce("last_prompt", '') || ' ' || coalesce(jsonb_path_query_array("prompts", '$[*].text')::text, '') || ' ' || coalesce("summary", ''))`,
+      sql`to_tsvector('simple', coalesce("node_id", '') || ' ' || coalesce("repo", '') || ' ' || coalesce("name", '') || ' ' || coalesce("custom_title", '') || ' ' || coalesce("ai_title", '') || ' ' || coalesce("first_prompt", '') || ' ' || coalesce("last_prompt", '') || ' ' || coalesce(jsonb_path_query_array("prompts", '$[*].text')::text, '') || ' ' || coalesce("summary", '') || ' ' || coalesce(jsonb_path_query_array("commits", '$[*].subject')::text, ''))`,
     ),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -663,6 +679,68 @@ export const ccSessionPromptImages = pgTable(
 )
 
 /**
+ * Claude's reply to each prompt of a session (migration 0014): the assistant text after the last
+ * tool call of the turn the prompt started, i.e. what Claude said back to the user. Narration
+ * between tool calls and subagent (sidechain) text are never stored. `seq` is the
+ * `cc_session_prompts.seq` of the prompt it answers; a prompt whose turn ended in a tool call has
+ * no row. `text` is stored only after src/sessions/redact.ts `redactSecrets` and is cut at
+ * MAX_REPLY_STORE_CHARS (`truncated`). There is deliberately no foreign key to
+ * `cc_session_prompts`: a from-byte-0 replace deletes and reinserts every prompt row, and a cascade
+ * from it would drop every reply and its vector each time. Written only by src/sessions/repo.ts, in
+ * the same transaction as the prompts. Removing the session drops its replies.
+ */
+export const ccSessionReplies = pgTable(
+  'cc_session_replies',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => ccSessions.sessionId, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    at: timestamp('at', { withTimezone: true, mode: 'date' }),
+    text: text('text').notNull(),
+    truncated: boolean('truncated').notNull().default(false),
+    /** Full text (`simple`) over the reply. Never selected by the app. */
+    searchTsv: tsvector('search_tsv').generatedAlwaysAs(sql`to_tsvector('simple', "text")`),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.seq] }), index('cc_session_replies_search_gin').using('gin', t.searchTsv)],
+)
+
+/**
+ * One vector per reply (migration 0014), mirroring `cc_session_embeddings`: current iff
+ * `embedding is not null`, `sha` equals the sha256 of the reply's current `text`, and `model`
+ * equals the embedder's model. A reply whose text changes keeps its row (stale by sha) until the
+ * background worker re-embeds it; deleting the reply drops the vector. Width =
+ * EMBEDDING_DIMENSIONS (a unit test asserts it).
+ */
+export const ccSessionReplyEmbeddings = pgTable(
+  'cc_session_reply_embeddings',
+  {
+    sessionId: text('session_id').notNull(),
+    seq: integer('seq').notNull(),
+    /** Null while the latest attempt for `sha` failed. */
+    embedding: vector('embedding', { dimensions: 1536 }),
+    sha: text('sha').notNull(),
+    model: text('model').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    /** At most 500 chars, keys redacted (src/embeddings/state.ts `clampError`). */
+    lastError: text('last_error'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' }),
+    embeddedAt: timestamp('embedded_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.seq] }),
+    foreignKey({
+      name: 'cc_session_reply_embeddings_reply_fk',
+      columns: [t.sessionId, t.seq],
+      foreignColumns: [ccSessionReplies.sessionId, ccSessionReplies.seq],
+    }).onDelete('cascade'),
+    index('cc_session_reply_embeddings_embedding_hnsw_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+    index('cc_session_reply_embeddings_next_attempt_idx').on(t.nextAttemptAt),
+  ],
+)
+
+/**
  * An explicit link from an existing note to a Claude Code session (migration 0009), made with the
  * `link_note` MCP tool. Session detail lists the notes made in a session (`notes.origin
  * ->> 'claude_session'`) together with the notes linked here; a link never rewrites the note's
@@ -685,8 +763,10 @@ export const noteSessionLinks = pgTable(
 
 /**
  * One row per session that has (or had) a summary to embed (migration 0007). Mirrors
- * `note_embeddings`: the vector is current iff `embedding is not null`, `sha` equals the hash
- * Phase 6 computes from the session's current summary, and `model` equals EMBEDDING_MODEL.
+ * `note_embeddings`: the vector is current iff `embedding is not null`, `sha` equals the hash of
+ * the session's current embed text (src/sessions/summarize.ts `buildEmbedText` / `embedTextSha`),
+ * `model` equals EMBEDDING_MODEL and `text_version` equals `SESSION_EMBED_TEXT_VERSION` (migration
+ * 0013; rows from before it are 0, and the summary worker rebuilds them once).
  * Width = EMBEDDING_DIMENSIONS (a unit test asserts it).
  */
 export const ccSessionEmbeddings = pgTable(
@@ -699,6 +779,8 @@ export const ccSessionEmbeddings = pgTable(
     embedding: vector('embedding', { dimensions: 1536 }),
     sha: text('sha').notNull(),
     model: text('model').notNull(),
+    /** Layout version of the embed text the vector came from (src/sessions/summarize.ts SESSION_EMBED_TEXT_VERSION). */
+    textVersion: integer('text_version').notNull().default(0),
     attempts: integer('attempts').notNull().default(0),
     /** At most 500 chars, keys redacted (src/embeddings/state.ts `clampError`). */
     lastError: text('last_error'),
@@ -834,6 +916,9 @@ export type CcSessionPromptRow = typeof ccSessionPrompts.$inferSelect
 export type NewCcSessionPromptRow = typeof ccSessionPrompts.$inferInsert
 export type CcSessionPromptImageRow = typeof ccSessionPromptImages.$inferSelect
 export type NewCcSessionPromptImageRow = typeof ccSessionPromptImages.$inferInsert
+export type CcSessionReplyRow = typeof ccSessionReplies.$inferSelect
+export type NewCcSessionReplyRow = typeof ccSessionReplies.$inferInsert
+export type CcSessionReplyEmbeddingRow = typeof ccSessionReplyEmbeddings.$inferSelect
 export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
 export type AppSettingRow = typeof appSettings.$inferSelect
 export type AdversaryReviewRow = typeof adversaryReviews.$inferSelect

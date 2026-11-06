@@ -74,11 +74,13 @@ describe('session MCP tools', () => {
   });
 
   it('sessions_search returns hits with wall links', async () => {
-    const res = await callJson<{ mode: string; hits: Array<{ node_id: string; url: string; summary: string }> }>('sessions_search', { query: 'photo delete' });
+    const res = await callJson<{ mode: string; hits: Array<{ node_id: string; url: string; summary: string; via_notes: unknown[]; via_replies: unknown[] }> }>('sessions_search', { query: 'photo delete' });
     expect(res.mode).toBe('hybrid');
     expect(res.hits).toHaveLength(1);
     expect(res.hits[0]).toMatchObject({ node_id: 'A0-3G', url: 'http://localhost:7317/projects?repo=mcp-notes&node=A0-3G' });
     expect(res.hits[0]!.summary).toContain('photo delete');
+    expect(res.hits[0]!.via_notes).toEqual([]);
+    expect(Array.isArray(res.hits[0]!.via_replies)).toBe(true);
   });
 
   it('session_get returns the detail with urls on the session, parent and children', async () => {
