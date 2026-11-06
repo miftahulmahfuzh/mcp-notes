@@ -35,9 +35,9 @@ export function isCurrentEmbeddingSql(model: string): SQL {
 /**
  * Postgres regex matching any character JS `String.prototype.trim` keeps, so
  * `body ~ NON_BLANK_PATTERN` is exactly `embedInput(body) !== null`. Bound as a parameter, so
- * the backslash escapes reach the regex engine untouched.
+ * the backslash escapes reach the regex engine untouched. Also used by src/sessions/replyEmbeddings.ts.
  */
-const NON_BLANK_PATTERN =
+export const NON_BLANK_PATTERN =
   '[^\\u0009\\u000a\\u000b\\u000c\\u000d\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]';
 
 function hasTextSql(): SQL {

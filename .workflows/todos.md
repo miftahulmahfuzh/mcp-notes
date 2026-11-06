@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 6
+**Total Active Tasks**: 5
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 3
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 82
+- Blocked: 0
+- Completed: 83
 
 ---
 
@@ -49,20 +49,11 @@
   - **Satisfies**: R4 — Improve and refactor Projects semantic search robustly
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A080.md`
-- [ ] **P1-NOTES-A083** Phase 4: Reply embedding worker
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: new `src/sessions/replyEmbeddings.ts` (`currentReplySha256Sql`, `isCurrentReplyEmbeddingSql(model)` — the one "current reply vector" predicate, `dbReplyEmbeddingStore`, `startReplyEmbeddingWorker`, `REPLY_EMBEDDINGS_LABEL`); `src/embeddings/worker.ts` (`events?` optional, `label` / `itemNoun`, `formatBatch` defaults byte-identical); `src/embeddings/repo.ts` (`export NON_BLANK_PATTERN`, visibility only); `SessionsRepo.saveReplyEmbedding(sessionId, seq, Omit<SessionEmbeddingInput, 'textVersion'>)` and `recordReplyEmbeddingFailure` (+ `ccSessionReplyEmbeddings` in the schema import, class doc extended); `src/background.ts` (start with session ingest when an embedder exists, kick on ... Exit criteria: every non-blank reply of this host gets a current vector; an edited reply is re-embedded under its new sha; failures back off and retry; `close()` returns within its grace; without a key nothing new starts and ingest is unaffected.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 4 of 5)
-  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words)
-  - **Depends on**: P1-NOTES-A082
-  - **Plan**: `.workflows/plan/P1-NOTES-A083.md`
 - [ ] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/search/blend.ts` (`BLEND.related = 0.6`, `RelatedSignals`, `literalRank`, optional `related` on candidates — note search unchanged); `tests/unit/search.blend.test.ts`; `src/sessions/view.ts` (`REPLY_EXCERPT_CHARS`, `SearchReplyMatch`, `SearchHit.via_replies`); `src/sessions/search.ts` (`EvidenceKind` += `'reply'`, `repliesSource` with `items` = `[{ seq }]`, per-page `ts_headline` excerpts, `via_replies` max 3, weighted ranking from own vs related kept apart, `tuning` option; imports phase 4's `isCurrentReplyEmbeddingSql`); golden snapshot regenerated in its own commit after proving identity at `related: 1`; `tests/fixtures/semantic/sessionsLabelled.ts` + ... Exit criteria: a word or meaning only in a reply finds its session with `via_replies`; the labelled fixture passes at 0.6 and fails at 1 and 0.3; the golden snapshot holds at `related: 1`; MCP and HTTP carry `via_replies`; docs updated; `git diff --stat origin/main -- web/` prints nothing.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 5 of 5)
   - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words); R4 — Improve and refactor Projects semantic search robustly
   - **Depends on**: P1-NOTES-A080, P1-NOTES-A082, P1-NOTES-A083
@@ -77,6 +68,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A083** Phase 4: Reply embedding worker
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: new `src/sessions/replyEmbeddings.ts` (`currentReplySha256Sql`, `isCurrentReplyEmbeddingSql(model)` — the one "current reply vector" predicate, `dbReplyEmbeddingStore`, `startReplyEmbeddingWorker`, `REPLY_EMBEDDINGS_LABEL`); `src/embeddings/worker.ts` (`events?` optional, `label` / `itemNoun`, `formatBatch` defaults byte-identical); `src/embeddings/repo.ts` (`export NON_BLANK_PATTERN`, visibility only); `SessionsRepo.saveReplyEmbedding(sessionId, seq, Omit<SessionEmbeddingInput, 'textVersion'>)` and `recordReplyEmbeddingFailure` (+ `ccSessionReplyEmbeddings` in the schema import, class doc extended); `src/background.ts` (start with session ingest when an embedder exists, kick on ... Exit criteria: every non-blank reply of this host gets a current vector; an edited reply is re-embedded under its new sha; failures back off and retry; `close()` returns within its grace; without a key nothing new starts and ingest is unaffected.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words)
+  - **Depends on**: P1-NOTES-A082
+  - **Plan**: `.workflows/plan/P1-NOTES-A083.md`
+  - **Completed**: 2026-11-06 16:52
+  - **Method**: /do
+  - **Files**: src/embeddings/worker.ts, src/embeddings/repo.ts, src/sessions/replyEmbeddings.ts, src/sessions/repo.ts, src/background.ts, tests/unit/embeddings/worker.test.ts, tests/unit/sessions/replyEmbeddings.test.ts, tests/integration/sessions.replyEmbeddings.int.test.ts
+  - **Drift**: Plan's daemon-path int tests seeded a this-host session at prompts_version 0 with no transcript; phase 3's prompts backfill (redactStoredPrompts) treats that as a pruned transcript and deletes its replies. Tests now mark the seed ingested (prompts_version=PROMPTS_VERSION, replies_version=REPLIES_VERSION) via a markIngested helper.
+  - **Decided**: Daemon-path test seed pruned by phase 3 backfill → mark seeded rows as ingested in the test, no code change (rung 2: exit criteria concern live-ingested replies; the backfill behavior is phase 3's and correct)
 
 - [x] **P1-NOTES-A082** Phase 3: Persist Claude's replies (cc_session_replies), tail + backfill
   - **Difficulty**: HARD

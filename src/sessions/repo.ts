@@ -3,12 +3,13 @@ import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, l
 
 import type { Db } from '../db/client.js';
 import { ingestChatImage, type ChatImageStoreDeps } from '../chat/images.js';
-import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPromptImages, ccSessionPrompts, ccSessionReplies, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
+import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPromptImages, ccSessionPrompts, ccSessionReplies, ccSessionReplyEmbeddings, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../embeddings/constants.js';
 import { toVectorLiteral } from '../embeddings/repo.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
 import { pgErrorInfo } from '../notes/imageRepo.js';
 import { generateNodeId, normalizeNodeId } from './ids.js';
+import { currentReplySha256Sql } from './replyEmbeddings.js';
 import {
   clip,
   earliest,
@@ -182,10 +183,10 @@ function clampLimit(limit: number | undefined): number {
 }
 
 /**
- * The only writer of `cc_sessions`, `cc_session_prompts`, `cc_session_replies`,
- * `cc_subagent_transcripts`, `cc_session_embeddings`, `cc_pending_spawns` and `app_settings`.
- * Ingest, the heuristic linker, the hook endpoints, the summary worker, the Summarize request route
- * and the read API all go through it; nothing else writes these tables.
+ * The only writer of `cc_sessions`, `cc_session_prompts`, `cc_session_replies`, `cc_subagent_transcripts`,
+ * `cc_session_embeddings`, `cc_session_reply_embeddings`, `cc_pending_spawns` and `app_settings`.
+ * Ingest, the heuristic linker, the hook endpoints, the summary worker, the reply embedding worker,
+ * the Summarize request route and the read API all go through it; nothing else writes these tables.
  */
 export class SessionsRepo {
   private readonly random: (max: number) => number;
@@ -1005,6 +1006,90 @@ export class SessionsRepo {
         next_attempt_at = excluded.next_attempt_at,
         embedded_at = null,
         updated_at = excluded.updated_at
+    `);
+  }
+
+  // ---------- reply embeddings (cc_session_reply_embeddings) ----------
+
+  /**
+   * Stores the vector of reply (`sessionId`, `seq`), but only while the reply's text still hashes
+   * to `input.sha` (it may have been replaced during the call). Clears any failure. False when
+   * skipped (text changed or reply gone). Idempotent.
+   */
+  async saveReplyEmbedding(sessionId: string, seq: number, input: Omit<SessionEmbeddingInput, 'textVersion'>): Promise<boolean> {
+    if (input.embedding.length !== EMBEDDING_DIMENSIONS) {
+      throw new Error(`embedding has ${input.embedding.length} dimensions, expected ${EMBEDDING_DIMENSIONS}`);
+    }
+    const literal = toVectorLiteral(input.embedding);
+    const res = await this.db.execute<{ session_id: string }>(sql`
+      insert into cc_session_reply_embeddings
+        (session_id, seq, embedding, sha, model, attempts, last_error, next_attempt_at, embedded_at, updated_at)
+      select cc_session_replies.session_id, cc_session_replies.seq, ${literal}::vector, ${input.sha}, ${input.model},
+             0, null, null, now(), now()
+      from cc_session_replies
+      where cc_session_replies.session_id = ${sessionId}
+        and cc_session_replies.seq = ${seq}::integer
+        and ${currentReplySha256Sql()} = ${input.sha}
+      on conflict (session_id, seq) do update set
+        embedding = excluded.embedding,
+        sha = excluded.sha,
+        model = excluded.model,
+        attempts = 0,
+        last_error = null,
+        next_attempt_at = null,
+        embedded_at = excluded.embedded_at,
+        updated_at = excluded.updated_at
+      returning session_id
+    `);
+    return res.rows.length > 0;
+  }
+
+  /**
+   * Records a failed attempt for reply (`sessionId`, `seq`): embedding := null, attempts := previous
+   * + 1 when the previous row was a failure for the same sha and model, else 1; next_attempt_at :=
+   * now() + retryDelayMs(attempts); last_error := clampError(error). No-op when the reply no longer
+   * hashes to `input.sha`, or when the row already holds a vector for this sha and model.
+   */
+  async recordReplyEmbeddingFailure(sessionId: string, seq: number, input: SessionEmbeddingFailure): Promise<void> {
+    const prev = await this.db
+      .select({
+        sha: ccSessionReplyEmbeddings.sha,
+        model: ccSessionReplyEmbeddings.model,
+        attempts: ccSessionReplyEmbeddings.attempts,
+        hasVector: sql<boolean>`${ccSessionReplyEmbeddings.embedding} is not null`,
+      })
+      .from(ccSessionReplyEmbeddings)
+      .where(and(eq(ccSessionReplyEmbeddings.sessionId, sessionId), eq(ccSessionReplyEmbeddings.seq, seq)))
+      .limit(1);
+    const row = prev[0];
+    const sameTarget = row !== undefined && row.sha === input.sha && row.model === input.model;
+    if (sameTarget && row.hasVector) return;
+    const attempts = sameTarget ? row.attempts + 1 : 1;
+    const delayMs = retryDelayMs(attempts);
+    await this.db.execute(sql`
+      insert into cc_session_reply_embeddings
+        (session_id, seq, embedding, sha, model, attempts, last_error, next_attempt_at, embedded_at, updated_at)
+      select cc_session_replies.session_id, cc_session_replies.seq, null, ${input.sha}, ${input.model},
+             ${attempts}::integer, ${clampError(input.error)},
+             now() + ${delayMs}::integer * interval '1 millisecond', null, now()
+      from cc_session_replies
+      where cc_session_replies.session_id = ${sessionId}
+        and cc_session_replies.seq = ${seq}::integer
+        and ${currentReplySha256Sql()} = ${input.sha}
+      on conflict (session_id, seq) do update set
+        embedding = null,
+        sha = excluded.sha,
+        model = excluded.model,
+        attempts = excluded.attempts,
+        last_error = excluded.last_error,
+        next_attempt_at = excluded.next_attempt_at,
+        embedded_at = null,
+        updated_at = excluded.updated_at
+      where not (
+        cc_session_reply_embeddings.embedding is not null
+        and cc_session_reply_embeddings.sha = excluded.sha
+        and cc_session_reply_embeddings.model = excluded.model
+      )
     `);
   }
 

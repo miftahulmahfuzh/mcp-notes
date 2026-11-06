@@ -11,6 +11,7 @@ import { ensureDataDirs } from './images/store.js';
 import { startSessionIngest, type SessionIngester } from './sessions/ingest.js';
 import { dbLinkStore, startLinkWorker, type LinkWorker } from './sessions/links.js';
 import { readLiveSessions } from './sessions/registry.js';
+import { dbReplyEmbeddingStore, startReplyEmbeddingWorker } from './sessions/replyEmbeddings.js';
 import { SessionsRepo } from './sessions/repo.js';
 import type { Summarizer } from './sessions/summarize.js';
 import { dbSummaryStore, startSummaryWorker, type SummaryWorker } from './sessions/summaryWorker.js';
@@ -30,9 +31,10 @@ export interface BackgroundOptions {
  * Long-running work beside the HTTP server: the inbox watcher (iteration 2) and, when
  * OPENROUTER_API_KEY is set, the note embedding worker (iteration 6) and the image embedding
  * worker (image similarity search); with `config.sessions.enabled`, the Claude Code session
- * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`), its parent linker and the
- * session summary worker (summaries only with `options.sessionSummarizer`). With `deps.adversary`,
- * the Seer Adversarial reviewer's poll loop.
+ * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`), its parent linker, the
+ * session summary worker (summaries only with `options.sessionSummarizer`) and, with an embedder,
+ * the reply embedding worker (one vector per Claude reply of this host's sessions). With
+ * `deps.adversary`, the Seer Adversarial reviewer's poll loop.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -81,9 +83,10 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
 
   // Session ingest (iteration 8). The backfill runs in the background: startBackground does not
   // wait for it, and a failure is logged, never thrown. Later session work (phase 4 links, phase 6
-  // summaries) hangs off `sessionIngest` / `sessionsRepo` / `sessionsHost` here.
+  // summaries, reply embeddings) hangs off `sessionIngest` / `sessionsRepo` / `sessionsHost` here.
   let sessionIngest: SessionIngester | null = null;
   let sessionLinks: LinkWorker | null = null;
+  let replyEmbeddings: EmbeddingWorker | null = null;
   if (!deps.config.sessions.enabled) {
     console.log('[notesd] session ingest off: NOTESD_SESSIONS=off');
   } else {
@@ -98,6 +101,24 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       observers: [sessionLinks],
     });
     console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
+
+    if (deps.embedder === null) {
+      console.log('[notesd] session reply vectors off: OPENROUTER_API_KEY is not set, replies are searched by words only');
+    } else {
+      const worker = startReplyEmbeddingWorker({
+        store: dbReplyEmbeddingStore(deps.db, sessionsRepo, sessionsHost),
+        embedder: deps.embedder,
+      });
+      replyEmbeddings = worker;
+      // Only a kick: never awaited, never blocks or fails a sweep. Watcher reads and the one-time
+      // replies backfill are caught by the worker's own 60 s sweep.
+      sessionIngest.addObserver({
+        onPassComplete: (pass) => {
+          if (pass.sessionIds.length > 0) worker.kick();
+        },
+      });
+      console.log(`[notesd] embedding session replies with ${deps.embedder.model}`);
+    }
   }
 
   let sessionSummaries: SummaryWorker | null = null;
@@ -145,6 +166,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
         await sessionIngest?.close();
         await sessionLinks?.close();
       })(),
+      replyEmbeddings?.close(),
       sessionSummaries?.close(),
       deps.adversary?.close(),
     ]);
