@@ -1,7 +1,7 @@
 # Package: mcp-notes
 
 **Location**: `.` (repo root)
-**Last Updated**: 2026-11-05 (after task P1-NOTES-A070)
+**Last Updated**: 2026-11-06 (after task P1-NOTES-A075)
 **Documentation Created**: 2026-10-30T03:03Z (after task P1-NOTES-A000)
 
 ## Overview
@@ -34,6 +34,7 @@ The Seer Adversarial plan set (`docs/plans/2026-11-05-seer-adversarial-design.md
 - Ship the web UI itself (`web/`, built to `web/dist` by Vite): a live note wall with inline editing, tag filters, visibility modes, a chat panel, a photo gallery and modal, a full-screen image tab and image upload, and a chat history page at `/history[?thread=ID]` showing every wall chat and `/n` exchange as one live timeline (iteration 8 phase 9), with per-bubble reply, edit (user rows), delete with undo and a "Show deleted" toggle with restore (iteration 8 phase 10), and note ids in chat text that open the note's big editor in place, with a "Show on wall" button in the editor (iteration 8 phase 11)
 - Run `notesd` as an always-on systemd user service in WSL, registered with Claude Code as the `notes` MCP server and driven by the `/n` skill
 - Expose the owner's expense-tracking, run-insights and Seer databases (plus Seer's `lab.sqlite`) over MCP as read-only `<system>_schema` / `<system>_sql` tools, with fail-soft, secret-free errors (iteration 5)
+- Write to the owner's daily-words (dword) database only through `DwordWriter` (`src/dword/writer.ts`), an allow-listed writer separate from the read-only connector guard, validated against limits mirrored from daily-words in `src/dword/rules.ts` (dword-connector phase 2)
 - Review Seer roster picks as an adversary (Seer Adversarial phase 4): poll Seer for due decisions, research each pick with Claude under a per-method lens, and write verdicts, paused marks and leases into Seer's three `adversary_*` tables only, within a daily deep-review cap shared by both machines and a per-session-open deadline (`src/adversary/`, `adversary_reviews`)
 
 ## Layout
@@ -94,6 +95,8 @@ src/connectors/{expenses,runs,seer}/index.ts    <ID>_ABOUT texts, create<Id>Conn
 src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (3 curated tools per system: expenses phase 2, runs phase 3, seer phase 4)
 src/connectors/dword/index.ts   DWORD_ABOUT, createDwordConnector (dword-connector phase 1; generic _schema/_sql only, no curated tools yet)
 src/connectors/dword/user.ts    resolveDwordUserId(connector, email), dwordUserNotConfiguredMessage, dwordUserNotFoundMessage
+src/dword/rules.ts     (dword-connector phase 2) pure mirror of daily-words' validation limits, each commented with its ~/daily-words source: PART_OF_SPEECH_VALUES, MAX_TERM_CHARS/WORDS, MAX_CONTEXT_CHARS + validateDwordContext, PRONUNCIATION/DEFINITION/EXAMPLE limits, JOURNAL_*, INSIGHT_*, DAILY_ADD_LIMIT
+src/dword/writer.ts    (dword-connector phase 2) DwordWriter, the only write path into dword's DB (own pg.Client per call): insertVocabEntry, attachVocabOrigin, insertJournalEntry, insertJournalEmbedding; assertWritable guard, WRITABLE_TABLES, DwordWriteError
 src/connectors/expenses/categories.ts  EXPENSE_CATEGORIES (17 slugs), EXPENSE_CATEGORY_LABELS, EATING_CATEGORIES, toExpenseCategory, categoryLabel
 src/connectors/expenses/dates.ts       pure WIB calendar helpers: DATE_RE/MONTH_RE, addDays, daysInclusive, isoWeekMonday/Key, todayWib, addMonths
 src/connectors/expenses/queries.ts     curated SQL, row builders, fetchSpending / fetchGroup / fetchMonths, limits
@@ -1010,6 +1013,50 @@ Run-insights curated tools (P1-NOTES-A014), all compact and `readOnlyHint`, date
 | `runs_list` | `from` YYYY-MM-DD, `to?` (default today) | `{ from, to, totals, runs, truncated }`: reviewed runs only, newest first, with headline/verdict of the app's analysis; totals use distance-weighted pace and time-weighted HR |
 | `runs_get` | exactly one of `id` or `date` | `{ id \| date, ... }` full metrics, per-km splits (last flagged partial), HR zones 1-5, note, `reviewed`, latest analysis, `profile`; unreviewed runs included; unknown id or unreal date throws |
 | `runs_review` | `scope` `week` (ISO) / `month`, `key?` (`2026-W34`, `2026-08` or a day inside; default current) | `{ scope, key, from, to, review, review_missing, totals, runs }` (brief runs); `review` null when the app stored none |
+
+### dword writer and rules: src/dword/ (dword-connector phase 2, P1-NOTES-A075)
+
+The write side of the dword connector. Nothing user-reachable calls it yet: the `/v` vocab and `/j` journal MCP tools land in phases 3 and 4. Modeled on `src/adversary/seerWriter.ts`; the read-only connector guard (`guard.ts`) stays read-only, and writes never go through `dword_sql`.
+
+**rules.ts** (pure: no I/O, no imports from `src/connectors/*` or `pg`). Every limit mcp-notes mirrors from daily-words, each constant commented with the `~/daily-words` file and line it was read from on 2026-11-06:
+
+```typescript
+const PART_OF_SPEECH_VALUES  // 14 values, dword's order (noun .. phrasal verb, abbreviation, other); type DwordPartOfSpeech; isDwordPartOfSpeech(value)
+const MAX_TERM_CHARS = 80, MAX_TERM_WORDS = 6        // countTermWords(term): split on spaces, drop empties
+const MAX_CONTEXT_CHARS = 200                         // validateDwordContext(raw): checks raw.trim() BEFORE any truncation, code 'context_too_long'
+const PRONUNCIATION_MAX_CHARS = 60
+const DEFINITION_TARGET_CHARS = 60 (advisory), DEFINITION_MAX_CHARS = 80 (enforced)
+const EXAMPLES_COUNT = 3, EXAMPLE_TARGET_CHARS = 100 (advisory), EXAMPLE_MAX_CHARS = 120 (enforced)
+function exampleContainsTerm(example, term): boolean  // verbatim, case-insensitive (no inflected-form matching, unlike dword's prompt)
+const JOURNAL_TEXT_MIN = 2, JOURNAL_TEXT_MAX = 1000, JOURNAL_SOURCE_NOTE_MAX = 200
+const INSIGHT_MEANING_MIN_CHARS = 20, INSIGHT_MEANING_MAX_CHARS = 220
+const INSIGHT_WHEN_IT_APPLIES_MIN_ITEMS = 2, _MAX_ITEMS = 3, _ITEM_MIN_CHARS = 8, _ITEM_MAX_CHARS = 120
+const DAILY_ADD_LIMIT = 50                            // rolling 24 h window, not a calendar day
+```
+
+`tests/unit/dword/rules.drift.test.ts` re-reads those daily-words source files (repo found through `siblingRepo`) and fails when a number no longer matches; it skips when `~/daily-words` is not checked out. When daily-words changes a limit, update `rules.ts` and its source comment together.
+
+**writer.ts**:
+
+```typescript
+const WRITABLE_TABLES = ['vocab_entries', 'journal_entries', 'journal_entry_embeddings'] as const
+class DwordWriteError extends Error
+function assertWritable(sql): WritableTable   // one statement (no ';'), INSERT INTO an allowed table, or the single UPDATE
+                                              // `vocab_entries SET origin_term, origin_language, origin_context ... WHERE ... origin_term IS NULL`; never DELETE
+class DwordWriter {
+  constructor({ repoDir: () => string, userEmail: () => string | undefined, timeoutMs? /* 15 s */ })
+  insertVocabEntry({ term, partOfSpeech, pronunciation, definition, examples }): Promise<VocabEntryRow | null>
+      // source 'manual', status 'active', enrichment_status 'ready'; ON CONFLICT (user_id, lower(term)) DO NOTHING -> null (caller re-looks-up)
+  attachVocabOrigin(vocabEntryId, { originTerm, originLanguage, originContext | null }): Promise<boolean>
+      // true only when it set the origin; false when the row already had one, is missing, or belongs to another user
+  insertJournalEntry({ text, sourceNote | null, insight: { meaning, whenItApplies } }): Promise<JournalEntryRow>   // insight_status 'ready'
+  insertJournalEmbedding({ entryId, textSha, normSha, model, embedding }): Promise<void>                        // status 'ready', vector literal
+}
+```
+
+Each call resolves `repoDir()` and `userEmail()` afresh (`DAILY_WORDS_DIR` / `DWORD_USER_EMAIL` may change without a restart), opens its own `pg.Client` through `loadDatabaseTarget('dword', ...)` (`application_name` `mcp-notes-dword`, `statement_timeout` and `TimeZone=UTC`, `CONNECTOR_PG_TYPES`), resolves the user on that client with the same refusal text as `resolveDwordUserId` (`ConnectorError` with `dwordUserNotConfiguredMessage()` / `dwordUserNotFoundMessage(email)`), runs every statement through `assertWritable`, and closes the client. Connection and query failures surface as `DwordWriteError` with secrets scrubbed. No statement is part of a transaction: a failed embedding insert never rolls back its journal entry (daily-words allows entries without an embedding yet), and callers call `insertJournalEmbedding` only after the embedding call succeeded. Timestamps come back as ISO UTC strings.
+
+Tests: `tests/unit/dword/writer.test.ts` (the allow-list, and a missing daily-words repo named instead of connecting), `tests/integration/connectors/dword.writer.int.test.ts` (against the dword schema rebuilt from daily-words' migrations; skipped when the repo is missing).
 
 ### src/http/app.ts
 
@@ -2496,4 +2543,4 @@ Iteration 5 plan: `docs/plans/CONNECTORS_PLAN.md` (6 phases, read-only connector
 
 Seer Adversarial plan set: `docs/plans/2026-11-05-seer-adversarial-design.md`, `.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (7 phases across Seer and mcp-notes). Phase 1 landed Seer's migration 027 (the `adversary_*` tables) on the seer repo. Phase 4 (P1-NOTES-A070) landed the reviewer in `src/adversary/`, `Config.adversary`, `AppDeps.adversary` and migration 0011 `adversary_reviews`. Phase 5 adds the HTTP routes and SSE `adversary` events; phase 7 the README / CLAUDE.md docs.
 
-dword-connector plan set: `docs/plans/` design for connecting notesd to daily-words (`/v` vocabulary, `/j` journal), plan `.workflows/plan/P1-NOTES-A074.md` .. `A079.md` (6 phases). Phase 1 (P1-NOTES-A074) added `dword` as the fourth connector system (`src/connectors/dword/{index,user}.ts`, `DAILY_WORDS_DIR`, generic `dword_schema`/`dword_sql`), `Config.dword` from `DWORD_USER_EMAIL`, and `resolveDwordUserId`. No curated dword tools, skill or chat wiring yet; later phases add the writer (`src/dword/writer.ts`) and the vocab/journal tools.
+dword-connector plan set: `docs/plans/` design for connecting notesd to daily-words (`/v` vocabulary, `/j` journal), plan `.workflows/plan/P1-NOTES-A074.md` .. `A079.md` (6 phases). Phase 1 (P1-NOTES-A074) added `dword` as the fourth connector system (`src/connectors/dword/{index,user}.ts`, `DAILY_WORDS_DIR`, generic `dword_schema`/`dword_sql`), `Config.dword` from `DWORD_USER_EMAIL`, and `resolveDwordUserId`. No curated dword tools, skill or chat wiring yet. Phase 2 (P1-NOTES-A075) added `src/dword/rules.ts` (limits mirrored from daily-words, with a drift test) and `src/dword/writer.ts` (`DwordWriter`, the allow-listed write path); nothing calls the writer until the vocab/journal tools of phases 3 and 4.

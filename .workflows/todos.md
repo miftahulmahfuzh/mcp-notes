@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 6
+**Total Active Tasks**: 5
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 5
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 75
+- Completed: 76
 
 ---
 
@@ -40,20 +40,11 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A075** Phase 2: Writer and rules
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: new `src/dword/rules.ts` (every mirrored dword limit, each constant commented with its dword source file — including `JOURNAL_TEXT_MIN/MAX` and `JOURNAL_SOURCE_NOTE_MAX` from dword's `src/lib/journal/limits.ts`, added during reconciliation after phase 4's draft needed them and phase 2's original draft never enumerated that file — Reconciliation Log #15 — plus a drift test that compares them to dword's real source when `~/daily-words` is present and skips otherwise); new `src/dword/writer.ts` (the allow-listed SQL writer: exact statements for `INSERT INTO vocab_entries`, `UPDATE vocab_entries SET origin_term/origin_language/origin_context … WHERE origin_term IS NULL`, `INSERT INTO journal_entries`, `INSERT INTO journal_entry_embeddings`; `assertWritable`-shaped allow-list rejecting anything else, reusing `loadDatabaseTarget`, `CONNECTOR_PG_TYPES`, `scrub` from `src/connectors/*`, and phase 1's two refusal-message builders for its own pg.Client-based user-id lookup, since it cannot reuse phase 1's `Connector`-based `resolveDwordUserId` directly (Reconciliation Log #1)). Exit criteria: unit tests prove `assertWritable` refuses every statement outside the allow-list (including a second statement, a `DELETE`, any other table, an `UPDATE` without the `origin_term IS NULL` guard); the drift test passes against real `~/daily-words` when present and skips cleanly when absent.
-  - **Status**: open
-  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 2 of 6)
-  - **Satisfies**: R1, R4 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Exact parameterised SQL for every write, and the `assertWritable` allow-list rules
-  - **Depends on**: P1-NOTES-A074
-  - **Plan**: `.workflows/plan/P1-NOTES-A075.md`
 - [ ] **P1-NOTES-A076** Phase 3: Vocab tools
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: new `src/mcp/dwordVocabTools.ts` (`dword_vocab_lookup`, `dword_vocab_add`); the curated names added to `CONNECTOR_TOOL_NAMES.dword` and wired into `registerDwordCurated` (owned jointly with phase 4 — see phase 4's note on `register.ts`'s curated call); `tests/integration/connectors/dword.vocab.curated.int.test.ts`. Implements the 5.7 resolution (`origin_language = 'English'` case) and the D4 conditional origin-attach. Exit criteria: lookup hit/miss, add with unique-index collision (returns existing row), add with origin attach (only when no prior origin), daily-limit refusal — all proven against the throwaway Postgres harness; never touches production Neon.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 3 of 6)
   - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
   - **Depends on**: P1-NOTES-A074, P1-NOTES-A075
@@ -96,6 +87,18 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A075** Phase 2: Writer and rules
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/dword/rules.ts` (every mirrored dword limit, each constant commented with its dword source file — including `JOURNAL_TEXT_MIN/MAX` and `JOURNAL_SOURCE_NOTE_MAX` from dword's `src/lib/journal/limits.ts`, added during reconciliation after phase 4's draft needed them and phase 2's original draft never enumerated that file — Reconciliation Log #15 — plus a drift test that compares them to dword's real source when `~/daily-words` is present and skips otherwise); new `src/dword/writer.ts` (the allow-listed SQL writer: exact statements for `INSERT INTO vocab_entries`, `UPDATE vocab_entries SET origin_term/origin_language/origin_context … WHERE origin_term IS NULL`, `INSERT INTO journal_entries`, `INSERT INTO journal_entry_embeddings`; `assertWritable`-shaped allow-list rejecting anything else, reusing `loadDatabaseTarget`, `CONNECTOR_PG_TYPES`, `scrub` from `src/connectors/*`, and phase 1's two refusal-message builders for its own pg.Client-based user-id lookup, since it cannot reuse phase 1's `Connector`-based `resolveDwordUserId` directly (Reconciliation Log #1)). Exit criteria: unit tests prove `assertWritable` refuses every statement outside the allow-list (including a second statement, a `DELETE`, any other table, an `UPDATE` without the `origin_term IS NULL` guard); the drift test passes against real `~/daily-words` when present and skips cleanly when absent.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1, R4 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Exact parameterised SQL for every write, and the `assertWritable` allow-list rules
+  - **Depends on**: P1-NOTES-A074
+  - **Plan**: `.workflows/plan/P1-NOTES-A075.md`
+  - **Completed**: 2026-11-06 12:57
+  - **Method**: /do
+  - **Files**: src/dword/rules.ts, src/dword/writer.ts, tests/unit/dword/writer.test.ts, tests/unit/dword/rules.drift.test.ts, tests/integration/connectors/dword.writer.int.test.ts
 - [x] **P1-NOTES-A074** Phase 1: Connector plumbing
   - **Difficulty**: NORMAL
   - **Type**: Feature
