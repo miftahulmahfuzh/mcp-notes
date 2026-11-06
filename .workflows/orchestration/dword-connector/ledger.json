@@ -67,7 +67,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b861eb4",
       "depends_on": [
         1,
         2,
@@ -75,17 +75,17 @@
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": null,
+      "note": "journal tools + registerDwordCurated barrel wired in register.ts, dword names now 6; test injects writer (invariant 6); proof: verified-first-pass test:int dword.journal.curated.int.test.ts (6 journeys)",
       "package": "src/mcp`, `tests/integration/connectors",
       "plan": ".workflows/plan/dword-connector/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T13:19:45+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A077",
       "title": "Journal tools"
     },
     {
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T13:09:55+07:00",
+  "updated": "2026-11-06T13:19:45+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
