@@ -1,0 +1,107 @@
+{
+  "branch": "feature/session-search-context",
+  "coordinator": "orch-session-search-context",
+  "coordinator_session_id": "fbc086ef-d3c2-4a06-be87-f45bad1bdd2b",
+  "created": "2026-11-06T15:29:35+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/session-search-context/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Candidate-source refactor of searchSessions"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/db`, `src/sessions`, `drizzle",
+      "plan": ".workflows/plan/session-search-context/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Commit subjects in search_tsv and the session embedding"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions`, `src/db`, `drizzle",
+      "plan": ".workflows/plan/session-search-context/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Persist Claude's replies (cc_session_replies), tail + backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/sessions`, `src/embeddings`, `src/background.ts",
+      "plan": ".workflows/plan/session-search-context/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Reply embedding worker"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        3,
+        4
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "src/sessions`, `src/search`, `src/mcp`, `src/chat`, `src/http`, docs",
+      "plan": ".workflows/plan/session-search-context/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Replies as a search source, related-evidence weight, wiring and docs"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/orchestration/session-search-context/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "session-search-context",
+  "updated": "2026-11-06T15:29:35+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/session-search-context"
+}
