@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 76
+- Completed: 77
 
 ---
 
@@ -40,20 +40,11 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A076** Phase 3: Vocab tools
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: new `src/mcp/dwordVocabTools.ts` (`dword_vocab_lookup`, `dword_vocab_add`); the curated names added to `CONNECTOR_TOOL_NAMES.dword` and wired into `registerDwordCurated` (owned jointly with phase 4 — see phase 4's note on `register.ts`'s curated call); `tests/integration/connectors/dword.vocab.curated.int.test.ts`. Implements the 5.7 resolution (`origin_language = 'English'` case) and the D4 conditional origin-attach. Exit criteria: lookup hit/miss, add with unique-index collision (returns existing row), add with origin attach (only when no prior origin), daily-limit refusal — all proven against the throwaway Postgres harness; never touches production Neon.
-  - **Status**: open
-  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 3 of 6)
-  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
-  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075
-  - **Plan**: `.workflows/plan/P1-NOTES-A076.md`
 - [ ] **P1-NOTES-A077** Phase 4: Journal tools
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: new `src/mcp/dwordJournalTools.ts` (`dword_journal_find_similar`, `dword_journal_add`); new `src/dword/journalSimilarity.ts` (ported Layer 1 hashing from dword's `similarity.ts`, plus `NEAR_DUPLICATE_MAX_DISTANCE` — reconciled to live here, not in phase 2's `rules.ts`; see Reconciliation Log #5); the curated names appended to `CONNECTOR_TOOL_NAMES.dword` after phase 3's own two (reconciled ownership: phase 3 appends its two first, this phase appends its two after, landing on the final six-name array — Reconciliation Log #2); the new `src/mcp/dwordTools.ts` barrel and the one `registerDwordCurated(server, connectors.dword)` call added to `src/connectors/register.ts` (this phase's job unconditionally, not "whichever phase lands second" — Reconciliation Log #2); `tests/integration/connectors/dword.journal.curated.int.test.ts`. Implements the 5.3 resolution (Layer 2 via OpenRouter at the 0.25 threshold, strict `<` comparison confirmed against dword's real source — Reconciliation Log #6 — never blocking a save on a failed embedding call). Exit criteria: duplicate found → shown, nothing inserted; `force: true` → inserted; no duplicate → inserted with `insight_status = 'ready'`; a simulated embedding failure still inserts the entry (no embeddings row, no block) — all against the throwaway Postgres harness.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 4 of 6)
   - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
   - **Depends on**: P1-NOTES-A074, P1-NOTES-A075, P1-NOTES-A076
@@ -87,6 +78,24 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A076** Phase 3: Vocab tools
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/mcp/dwordVocabTools.ts` (`dword_vocab_lookup`, `dword_vocab_add`); the curated names added to `CONNECTOR_TOOL_NAMES.dword` and wired into `registerDwordCurated` (owned jointly with phase 4 — see phase 4's note on `register.ts`'s curated call); `tests/integration/connectors/dword.vocab.curated.int.test.ts`. Implements the 5.7 resolution (`origin_language = 'English'` case) and the D4 conditional origin-attach. Exit criteria: lookup hit/miss, add with unique-index collision (returns existing row), add with origin attach (only when no prior origin), daily-limit refusal — all proven against the throwaway Postgres harness; never touches production Neon.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
+  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075
+  - **Plan**: `.workflows/plan/P1-NOTES-A076.md`
+  - **Completed**: 2026-11-06 13:08
+  - **Method**: /do
+  - **Files**: src/mcp/dwordVocabTools.ts, src/connectors/names.ts, tests/integration/connectors/dword.vocab.curated.int.test.ts
+  - **Drift**:
+    - None in phase 1/2 interfaces: resolveDwordUserId, rules.ts names, DwordWriter/NewVocabEntry/VocabOrigin all matched the reconciled plan.
+    - AddVocabArgs.part_of_speech typed DwordPartOfSpeech (not string) so the zod-parsed args pass to NewVocabEntry without the plan's `as AddVocabArgs` cast.
+    - Dropped the plan's stale comment 'If a future phase 2 adds these to rules.ts...' and updated the names.ts comment to say phase 4 appends the journal names.
+  - **Decided**:
+    - Plan's test registered the tools with no writer override, so the default DwordWriter would resolve DAILY_WORDS_DIR (~/daily-words/.env.local = production Neon) and the add tests would write to production → added a test-only `writer?: DwordWriter` to DwordVocabOptions; the test builds one over a temp repo dir whose .env.local points at Docker connectors_dword. Production call shape registerDwordVocabCurated(server, connector) unchanged. (rung 1: invariant 6). Phase 4's journal test likely needs the same option.
 - [x] **P1-NOTES-A075** Phase 2: Writer and rules
   - **Difficulty**: HARD
   - **Type**: Feature

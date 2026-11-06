@@ -11,8 +11,8 @@ export const CONNECTOR_TOOL_NAMES = {
   expenses: ['expenses_schema', 'expenses_sql', 'expenses_spending', 'expenses_get', 'expenses_months'],
   runs: ['runs_schema', 'runs_sql', 'runs_list', 'runs_get', 'runs_review'],
   seer: ['seer_schema', 'seer_sql', 'seer_leaderboard', 'seer_positions', 'seer_sera_best'],
-  // Generic pair only: curated vocab/journal tool names are appended here by phases 3 and 4.
-  dword: ['dword_schema', 'dword_sql'],
+  // Curated journal tool names are appended here by phase 4, after the vocab pair.
+  dword: ['dword_schema', 'dword_sql', 'dword_vocab_lookup', 'dword_vocab_add'],
 } as const satisfies Record<SystemId, readonly string[]>;
 
 export type ConnectorToolName = (typeof CONNECTOR_TOOL_NAMES)[SystemId][number];
