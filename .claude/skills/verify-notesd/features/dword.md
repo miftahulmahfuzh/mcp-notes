@@ -131,3 +131,69 @@ count), not the literal text any run happens to write.
 - `scripts/install.sh`'s symlink step is never run by `verify.sh` (it touches the real
   `~/.claude/skills` and a systemd unit) — confirm the array edit by reading the file
   (`grep -n '^SKILL_NAMES=' scripts/install.sh`), not by running the installer in verification.
+
+## Wall chat (phase 6)
+
+### Sub-features
+- The wall chat bar runs the same daily-words vocabulary and journal flow as `/v`/`/j`, from plain
+  language. The chat agent has no skill loading and no slash-command parser; its system prompt
+  (`src/chat/prompt.ts`, the daily-words paragraph) teaches the flow, and a message that happens to
+  start with `/v` or `/j` is read as its plain-language meaning.
+- A vocabulary-shaped message ("what does X mean", "add the word X", "X as in <sentence>") calls
+  `dword_vocab_lookup` first, then `dword_vocab_add` on a miss (a non-English word goes in `origin`,
+  an English word's sentence goes in `context`), or, on a hit with a sentence and no stored origin,
+  `dword_vocab_add` again so the one-time origin attach runs. It never overwrites an origin.
+- A saying-shaped message calls `dword_journal_find_similar` first; a `duplicate` is shown and
+  nothing is inserted unless the owner says to save it anyway (`force: true`).
+- All six dword tool names are on the chat allow-list through `ALL_CONNECTOR_TOOL_NAMES` (dword is a
+  `CONNECTOR_SYSTEMS` member); `allowedChatTools()` needed no change.
+- The status panel shows `looking up a word`, `saving a word`, `checking for a similar saying` and
+  `saving a saying` for the four curated tools; `dword_schema`/`dword_sql` keep the generic
+  `reading daily-words`.
+- Every wall exchange, these included, is written to chat history by `POST /api/chat`
+  (`src/http/api.ts`): the user row before the agent runs, the assistant row after a clean finish,
+  with no branch on content. No capture code was added.
+
+### How to get to it (user POV)
+The wall's bottom chat bar ("Ask about your notes"). Type a vocabulary or journal request in plain
+language, for example "add the word perch, as in: the bird sat on its perch" or "save this: a
+stitch in time saves nine".
+
+### Driving it with verify.sh
+Build the throwaway dword database and launch with the phase 5 block above, adding `--web` to
+`$V up`. Then drive the bar with Playwright steps files (scratchpad, not the repo):
+
+```js
+// dword-vocab-steps.mjs
+export default async ({ page, base, shot, log }) => {
+  await page.goto(base + '/');
+  await page.getByLabel('Ask about your notes').fill('add the word perch, as in: the sparrow sat on its perch by the window');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByText(/added|already/i).first().waitFor({ timeout: 180000 });
+  await shot('after-vocab');
+};
+```
+
+`dword-journal-steps.mjs` is the same with `save this: a stitch in time saves nine`. Then:
+
+```sh
+$V ui RUN dword-vocab-steps.mjs
+$V ui RUN dword-journal-steps.mjs
+P -d "$DWORDDB" -c "select term, origin_term, origin_language, origin_context from vocab_entries where lower(term) = 'perch'"
+# -> one row; origin_language English, origin_context the sentence
+P -d "$DWORDDB" -c "select text, insight_status from journal_entries order by created_at desc limit 1"
+# -> the saying, insight_status ready
+$V api RUN GET /api/chat/messages     # both exchanges, user + assistant rows, source wall
+```
+
+Each `$V ui` journey above is one real, billed Claude Agent SDK turn. Run them once, when the chat
+path changes, and say in the report that they were billed.
+
+### Gotchas
+- Never point `DAILY_WORDS_DIR` at the real `~/daily-words` checkout: that `.env.local` names
+  production Neon. Always the scratch directory from the phase 5 block.
+- The bar's answer streams; wait for the reply text, not for the request to return. A turn with
+  two or three tool calls can take a minute.
+- `$V sql` reads the notes DB only; read dword rows with `P -d "$DWORDDB"` as above.
+- The four bespoke captions are unit-tested (`tests/unit/chat-status.test.ts`); the prompt wording
+  is pinned by `tests/unit/chat-prompt.test.ts`. A live turn proves the model follows it.

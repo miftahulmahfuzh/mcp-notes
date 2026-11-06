@@ -109,4 +109,47 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/Replying is optional/);
     expect(prompt).toMatch(/never for the current message, and never invent a label/);
   });
+
+  it('names daily-words as the one writable app and gives its tool prefix', () => {
+    expect(prompt).toContain('daily-words');
+    expect(prompt).toMatch(/you may write to daily-words as well as read it/);
+    expect(prompt).toContain('dword_*');
+  });
+
+  it('triggers a vocab lookup-then-add flow from natural language, never a slash command', () => {
+    expect(prompt).toContain('what does X mean');
+    expect(prompt).toContain('add the word X');
+    expect(prompt).toContain('X as in <sentence>');
+    expect(prompt).toMatch(/call dword_vocab_lookup with that term first/);
+    expect(prompt).toMatch(/call dword_vocab_add with everything you wrote/);
+    expect(prompt).toMatch(/the chat bar never parses \/v or \/j/);
+  });
+
+  it('mirrors the vocab register rules from the /v skill: pronunciation, definition and example limits', () => {
+    expect(prompt).toMatch(/British RP pronunciation/);
+    expect(prompt).toMatch(/definition aiming under 60 characters \(hard ceiling 80\)/);
+    expect(prompt).toMatch(/three example sentences, each containing the term and aiming under 100 characters \(hard ceiling 120\)/);
+  });
+
+  it('passes origin as the tool takes it: an origin object for a non-English term, context for an English one', () => {
+    expect(prompt).toMatch(/put the natural English word in term/);
+    expect(prompt).toContain('origin.term');
+    expect(prompt).toContain('origin.language');
+    expect(prompt).toContain('origin.context');
+    expect(prompt).toMatch(/pass that sentence as context instead \(never both\)/);
+    expect(prompt).not.toMatch(/pass origin_term|set origin_term/);
+  });
+
+  it('never overwrites an existing vocab origin', () => {
+    expect(prompt).toMatch(/it never overwrites an origin that is already set/);
+  });
+
+  it('triggers a journal find-similar-then-add flow and shows a duplicate before inserting', () => {
+    expect(prompt).toMatch(/call dword_journal_find_similar with the text first/);
+    expect(prompt).toMatch(/show the owner the existing entry and its insight and insert nothing/);
+    expect(prompt).toMatch(/force: true/);
+    expect(prompt).toMatch(/meaning under 220 characters/);
+    expect(prompt).toMatch(/2 to 3 concrete everyday situations/);
+    expect(prompt).toMatch(/no advice, no praise/);
+  });
 });

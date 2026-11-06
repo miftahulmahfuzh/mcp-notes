@@ -55,6 +55,25 @@ export const ADVERSARY_TOOL_NAMES = ['adversary_overview', 'adversary_verdicts',
 
 export type AdversaryToolName = (typeof ADVERSARY_TOOL_NAMES)[number];
 
+/**
+ * The four curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
+ * src/mcp/dwordJournalTools.ts). Named here only so `captionForToolUse` can give each one its own caption
+ * and so this file's tests can assert on them by name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES,
+ * this array is deliberately NOT spread into `allowedChatTools()`'s return value: dword is a
+ * `CONNECTOR_SYSTEMS` member (DWORD_CONNECTOR_PLAN phase 1), so all six of its tool names (these four
+ * plus the generic `dword_schema`/`dword_sql`) already reach `allowedChatTools()` through
+ * `ALL_CONNECTOR_TOOL_NAMES` below. Spreading this array too would list the same four names twice and
+ * fail the no-duplicates assertion in tests/unit/chat-status.test.ts.
+ */
+export const DWORD_TOOL_NAMES = [
+  'dword_vocab_lookup',
+  'dword_vocab_add',
+  'dword_journal_find_similar',
+  'dword_journal_add',
+] as const;
+
+export type DwordToolName = (typeof DWORD_TOOL_NAMES)[number];
+
 export const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
 
 /** Status-line caption for every tool of one read-only system ('reading expenses' / 'reading runs' / 'reading seer'). */
@@ -65,19 +84,22 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 15 connector tools and
+ * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 21 connector tools and
  * WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes CHAT_BAR_BRAIN_PLAN invariant 4;
  * SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN phase 3 adds
  * `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
  * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
  * PROJECT_SESSION_GRAPH_PLAN phase 9 adds `session_resume`; SEER_ADVERSARIAL_PLAN phase 5 adds the
- * adversary tools).
+ * adversary tools; DWORD_CONNECTOR_PLAN phases 1/3/4 add dword's six tool names to
+ * `ALL_CONNECTOR_TOOL_NAMES`, 15 -> 21, with no change needed to this function's body).
  */
 export function allowedChatTools(): string[] {
   return [
     ...NOTES_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...SESSION_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...ADVERSARY_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
+    // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).
     ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...WEB_TOOL_NAMES,
   ];
@@ -172,6 +194,14 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return "reading Claude's verdicts";
     case 'adversary_scorecard':
       return "reading Claude's record";
+    case 'dword_vocab_lookup':
+      return 'looking up a word';
+    case 'dword_vocab_add':
+      return 'saving a word';
+    case 'dword_journal_find_similar':
+      return 'checking for a similar saying';
+    case 'dword_journal_add':
+      return 'saving a saying';
     default:
       return connectorCaption(tool);
   }

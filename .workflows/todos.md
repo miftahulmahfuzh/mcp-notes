@@ -7,12 +7,12 @@
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 1
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 79
+- Completed: 80
 
 ---
 
@@ -40,15 +40,6 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A079** Phase 6: Wall chat
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/chat/status.ts` (`DWORD_TOOL_NAMES`, the four curated tool names, added only for bespoke status captions and this file's own tests — not spliced into `allowedChatTools()`, since `dword` is already a `CONNECTOR_SYSTEMS` member from phase 1 and all six of its tool names already reach the allow-list through `ALL_CONNECTOR_TOOL_NAMES`; phase 6's own plan corrects this draft's original phrasing — see its "Load-bearing finding" and Principles Applied sections); `src/chat/prompt.ts` (a new paragraph in `buildChatSystemPrompt`'s `sections`, since the chat agent has no skill-loading and no slash-command parsing — natural-language triggers only, matching the existing connectors' paragraph style); confirms `/v`/`/j`-equivalent wall-chat exchanges are captured into chat history (the existing `POST /api/chat` route already captures every exchange unconditionally — this phase verifies, not builds, unless a gap is found); the `verify-notesd` `dword.md` entry gains its wall-chat section (`## Wall chat (phase 6)`, appended after phase 5's `## Claude Code skills (phase 5)` — confirmed matching, no heading mismatch). Exit criteria: a wall-chat message like "add the word perch, as in..." runs the same lookup/find-similar-then-add flow as the skill, through `verify-notesd`'s Playwright driving of the wall; the exchange appears in chat history.
-  - **Status**: open
-  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 6 of 6)
-  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
-  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077, P1-NOTES-A078
-  - **Plan**: `.workflows/plan/P1-NOTES-A079.md`
 
 ### [P2] Medium
 
@@ -59,6 +50,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A079** Phase 6: Wall chat
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/chat/status.ts` (`DWORD_TOOL_NAMES`, the four curated tool names, added only for bespoke status captions and this file's own tests — not spliced into `allowedChatTools()`, since `dword` is already a `CONNECTOR_SYSTEMS` member from phase 1 and all six of its tool names already reach the allow-list through `ALL_CONNECTOR_TOOL_NAMES`; phase 6's own plan corrects this draft's original phrasing — see its "Load-bearing finding" and Principles Applied sections); `src/chat/prompt.ts` (a new paragraph in `buildChatSystemPrompt`'s `sections`, since the chat agent has no skill-loading and no slash-command parsing — natural-language triggers only, matching the existing connectors' paragraph style); confirms `/v`/`/j`-equivalent wall-chat exchanges are captured into chat history (the existing `POST /api/chat` route already captures every exchange unconditionally — this phase verifies, not builds, unless a gap is found); the `verify-notesd` `dword.md` entry gains its wall-chat section (`## Wall chat (phase 6)`, appended after phase 5's `## Claude Code skills (phase 5)` — confirmed matching, no heading mismatch). Exit criteria: a wall-chat message like "add the word perch, as in..." runs the same lookup/find-similar-then-add flow as the skill, through `verify-notesd`'s Playwright driving of the wall; the exchange appears in chat history.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
+  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077, P1-NOTES-A078
+  - **Plan**: `.workflows/plan/P1-NOTES-A079.md`
+  - **Completed**: 2026-11-06 14:30
+  - **Method**: /do
+  - **Files**: src/chat/status.ts, src/chat/prompt.ts, tests/unit/chat-status.test.ts, tests/unit/chat-prompt.test.ts, .claude/skills/verify-notesd/features/dword.md
+  - **Drift**:
+    - Phase plan's prompt paragraph named origin_term/origin_language/origin_context as top-level dword_vocab_add arguments and capped definition at 60 chars; shipped tools take origin:{term,language,context} or context, and ceilings are 80 (definition) / 120 (example). Paragraph and its tests aligned to the shipped tool schema and phase 5 SKILL.md.
+    - test:int: migration0010.int.test.ts hook timed out once under load (concurrent verify daemon); re-run alone 6/6 green. Unrelated to this phase.
+  - **Decided**:
+    - Prompt paragraph wording: plan draft vs shipped tool args/limits → shipped tool schema + /v,/j SKILL.md text (rung 2: exit criteria — wall chat runs the same flow as the skill; plan's own Handoff says align to Phase 5's shipped text)
+    - DWORD_TOOL_NAMES used only for captions/tests, not spread into allowedChatTools() (per phase plan; dword already reaches it via ALL_CONNECTOR_TOOL_NAMES)
 
 - [x] **P1-NOTES-A078** Phase 5: Skills `/v` and `/j`
   - **Difficulty**: NORMAL
