@@ -14,6 +14,7 @@ feature, each with the same four sections: `Sub-features`, `How to get to it (us
 | Projects: Claude Code session graph | [projects.md](projects.md) | API, MCP, wall `/projects` |
 | Chat bar and chat history | [chat.md](chat.md) | wall, API (billed) |
 | Seer Adversarial: reviewer, verdicts in Seer, toggle, budget, read API, MCP, SSE, wall | [adversary.md](adversary.md) | background job (`up --adversary`), Seer DB, API, MCP, SSE, wall |
+| dword vocabulary (`/v`) and journal (`/j`) | [dword.md](dword.md) | MCP, Claude Code skills |
 
 Add an entry when a change ships a new user-facing feature; fix an entry when the app's behavior
 changed on purpose. A journey that fails because the app is broken is a product bug: report it,

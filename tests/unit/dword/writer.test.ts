@@ -11,12 +11,16 @@ const INSERT_JOURNAL = "INSERT INTO journal_entries (user_id, text, source_note,
 const INSERT_EMBEDDING =
   "INSERT INTO journal_entry_embeddings (entry_id, user_id, status, text_sha, norm_sha, model, embedding) VALUES ($1, $2, 'ready', $3, $4, $5, $6::vector)";
 
+const INSERT_UNEMBEDDED =
+  "INSERT INTO journal_entry_embeddings (entry_id, user_id, status, text_sha, norm_sha, failed_reason) VALUES ($1, $2, 'failed', $3, $4, $5)";
+
 describe('assertWritable (dword write allow-list)', () => {
   it.each([
     [INSERT_VOCAB, 'vocab_entries'],
     [ATTACH_ORIGIN, 'vocab_entries'],
     [INSERT_JOURNAL, 'journal_entries'],
     [INSERT_EMBEDDING, 'journal_entry_embeddings'],
+    [INSERT_UNEMBEDDED, 'journal_entry_embeddings'],
   ])('allows %s', (sql, table) => {
     expect(assertWritable(sql)).toBe(table);
   });

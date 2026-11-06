@@ -13,7 +13,7 @@ import { DwordWriter } from '../../../src/dword/writer.js';
 import { normShaFor, textShaFor } from '../../../src/dword/journalSimilarity.js';
 import { registerDwordJournalCurated, type JournalDuplicateResult, type JournalMatchEntry } from '../../../src/mcp/dwordJournalTools.js';
 import { createFakeEmbedder, type FakeEmbedder } from '../../../tests/helpers/fakeEmbedder.js';
-import { describeWithRepo, seedSystem, systemDbUrl, truncateSystem } from './harness.js';
+import { describeWithRepo, seedSystem, systemDbUrl, truncateSystem, withAdmin } from './harness.js';
 
 const OWNER_EMAIL = 'journal-int@example.test';
 const OWNER_ID = randomUUID();
@@ -189,10 +189,11 @@ describeWithRepo('dword', 'dword journal curated tools', () => {
     expect(out.entry.id).not.toBe(entryId);
   });
 
-  it('dword_journal_add still inserts the entry when the embedding call fails, with no embeddings row', async () => {
+  it("dword_journal_add still inserts the entry when the embedding call fails, with a 'failed' sibling row Layer 1 finds next time", async () => {
     embedder.failNext(1);
-    const out = await call<{ verdict: string; inserted: boolean; embedded: boolean; layer2_skipped?: true }>('dword_journal_add', {
-      text: 'a watched pot never boils, no matter how long you stare at it',
+    const saying = 'a watched pot never boils, no matter how long you stare at it';
+    const out = await call<{ verdict: string; inserted: boolean; embedded: boolean; layer2_skipped?: true; entry: JournalMatchEntry }>('dword_journal_add', {
+      text: saying,
       insight: {
         meaning: 'Time feels like it passes more slowly when you are anxiously waiting for something.',
         whenItApplies: ['Refreshing your inbox while waiting for a job offer email', 'Standing by the microwave counting down the seconds'],
@@ -202,5 +203,28 @@ describeWithRepo('dword', 'dword journal curated tools', () => {
     expect(out.inserted).toBe(true);
     expect(out.embedded).toBe(false);
     expect(out.layer2_skipped).toBe(true);
+
+    const sibling = await withAdmin(systemDbUrl('dword'), (c) =>
+      c.query<{ status: string; embedding: string | null }>('SELECT status, embedding FROM journal_entry_embeddings WHERE entry_id = $1', [out.entry.id]),
+    );
+    expect(sibling.rows[0]).toEqual({ status: 'failed', embedding: null });
+
+    const again = await call<{ verdict: string; entries: JournalMatchEntry[] }>('dword_journal_find_similar', { text: saying });
+    expect(again.verdict).toBe('duplicate');
+    expect(again.entries[0]?.id).toBe(out.entry.id);
+  });
+
+  it('dword_journal_add with no embedder at all still makes the line findable by exact text', async () => {
+    await client.close();
+    client = await connect(connector, writer, null);
+    const saying = 'the obstacle is the way';
+    const insight = {
+      meaning: 'What blocks a plan is often the material the next step has to be made from.',
+      whenItApplies: ['Rewriting a plan after a supplier falls through', 'Learning a tool because the usual one broke'],
+    };
+    const first = await call<{ inserted: boolean }>('dword_journal_add', { text: saying, insight });
+    expect(first.inserted).toBe(true);
+    const second = await call<{ verdict: string; inserted: boolean }>('dword_journal_add', { text: saying, insight });
+    expect(second).toMatchObject({ verdict: 'duplicate', inserted: false });
   });
 });

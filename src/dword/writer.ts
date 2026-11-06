@@ -123,6 +123,13 @@ export interface NewJournalEmbedding {
   embedding: readonly number[];
 }
 
+export interface UnembeddedJournalEntry {
+  entryId: string;
+  textSha: string;
+  normSha: string;
+  reason: string;
+}
+
 export interface DwordWriterOptions {
   /** dword repo dir, resolved on every call (DAILY_WORDS_DIR may change without a restart). */
   repoDir: () => string;
@@ -156,6 +163,16 @@ RETURNING id, text, source_note, insight, insight_status,
 const INSERT_JOURNAL_EMBEDDING_SQL = `INSERT INTO journal_entry_embeddings
   (entry_id, user_id, status, text_sha, norm_sha, model, embedding)
 VALUES ($1, $2, 'ready', $3, $4, $5, $6::vector)`;
+
+/**
+ * The "attempted, could not" sibling row dword's own route writes on every save without a vector
+ * (~/daily-words/src/lib/journal/duplicate-check.ts `unembedded`, journal-embeddings.ts
+ * `upsertEmbedding`): it records norm_sha, which is what lets Layer 1 find this entry with no
+ * embedding provider, and dword's backfill embeds it later under --retry-failed.
+ */
+const INSERT_UNEMBEDDED_JOURNAL_SQL = `INSERT INTO journal_entry_embeddings
+  (entry_id, user_id, status, text_sha, norm_sha, failed_reason)
+VALUES ($1, $2, 'failed', $3, $4, $5)`;
 
 function toVocabEntryRow(row: Record<string, unknown>): VocabEntryRow {
   return {
@@ -271,12 +288,19 @@ export class DwordWriter {
 
   /**
    * Inserts a 'ready' embedding row. Callers must only call this when the embedding call
-   * succeeded — a failed embedding never blocks `insertJournalEntry` and never calls this at all,
-   * matching dword's own backfill expectation that some rows have none yet.
+   * succeeded — a failed embedding never blocks `insertJournalEntry`; it records
+   * `insertUnembeddedJournalEntry` instead, for dword's own backfill to pick up.
    */
   async insertJournalEmbedding(input: NewJournalEmbedding): Promise<void> {
     await this.withClient(async (exec, userId) => {
       await exec(INSERT_JOURNAL_EMBEDDING_SQL, [input.entryId, userId, input.textSha, input.normSha, input.model, toVectorLiteral(input.embedding)]);
+    });
+  }
+
+  /** The 'failed' sibling row for an entry saved without a vector (Layer 1 still finds it by norm_sha). */
+  async insertUnembeddedJournalEntry(input: UnembeddedJournalEntry): Promise<void> {
+    await this.withClient(async (exec, userId) => {
+      await exec(INSERT_UNEMBEDDED_JOURNAL_SQL, [input.entryId, userId, input.textSha, input.normSha, input.reason]);
     });
   }
 }

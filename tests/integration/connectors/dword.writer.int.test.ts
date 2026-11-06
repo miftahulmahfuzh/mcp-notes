@@ -112,6 +112,23 @@ describeWithRepo('dword', 'DwordWriter against the dword schema rebuilt from its
     expect(after.rows[0]?.model).toBe('text-embedding-3-small');
   });
 
+  it("records a 'failed' sibling row carrying norm_sha for an entry saved without a vector", async () => {
+    await seedOwner();
+    const entry = await writer().insertJournalEntry({
+      text: 'A stitch in time saves nine.',
+      sourceNote: null,
+      insight: { meaning: 'Fixing a small problem now prevents a bigger one later.', whenItApplies: ['A small issue is noticed early'] },
+    });
+    await writer().insertUnembeddedJournalEntry({ entryId: entry.id, textSha: 'a'.repeat(64), normSha: 'b'.repeat(64), reason: 'not embedded' });
+    const row = await withAdmin(systemDbUrl('dword'), (c) =>
+      c.query<{ status: string; norm_sha: string; model: string | null; failed_reason: string }>(
+        'SELECT status, norm_sha, model, failed_reason FROM journal_entry_embeddings WHERE entry_id = $1',
+        [entry.id],
+      ),
+    );
+    expect(row.rows[0]).toEqual({ status: 'failed', norm_sha: 'b'.repeat(64), model: null, failed_reason: 'not embedded' });
+  });
+
   it('refuses to write when the configured email has no dword user', async () => {
     await seedOwner();
     await expect(

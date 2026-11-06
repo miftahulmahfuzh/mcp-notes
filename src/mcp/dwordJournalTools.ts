@@ -319,8 +319,8 @@ export function registerDwordJournalCurated(server: McpServer, connector: Connec
         const insertedRow = await writer.insertJournalEntry({ text, sourceNote, insight });
 
         let embedded = false;
-        if (check.sibling.status === 'ready' && check.sibling.model !== undefined && check.sibling.embedding !== undefined) {
-          try {
+        try {
+          if (check.sibling.status === 'ready' && check.sibling.model !== undefined && check.sibling.embedding !== undefined) {
             await writer.insertJournalEmbedding({
               entryId: insertedRow.id,
               textSha: check.sibling.textSha,
@@ -329,11 +329,20 @@ export function registerDwordJournalCurated(server: McpServer, connector: Connec
               embedding: check.sibling.embedding,
             });
             embedded = true;
-          } catch {
-            // Best-effort, same as dword's own route: the entry is already saved and shown;
-            // dword's own backfill (selectPendingForBackfill) picks this entry up later.
-            embedded = false;
+          } else {
+            // dword writes this 'failed' row on every save without a vector: it carries norm_sha,
+            // so Layer 1 finds the line next time even with no embedding provider (D3).
+            await writer.insertUnembeddedJournalEntry({
+              entryId: insertedRow.id,
+              textSha: check.sibling.textSha,
+              normSha: check.sibling.normSha,
+              reason: 'not embedded',
+            });
           }
+        } catch {
+          // Best-effort, same as dword's own route: the entry is already saved and shown;
+          // dword's own backfill (selectPendingForBackfill) picks this entry up later.
+          embedded = false;
         }
 
         return {

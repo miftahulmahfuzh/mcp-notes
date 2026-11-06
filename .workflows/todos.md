@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 4
+**Total Active Tasks**: 3
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 78
+- Completed: 79
 
 ---
 
@@ -40,20 +40,11 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
-- [ ] **P1-NOTES-A078** Phase 5: Skills `/v` and `/j`
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: new `claude/skills/v/SKILL.md`, `claude/skills/j/SKILL.md` (format per `check-seer-adversarial-nightly/SKILL.md`: `name`/`description`/`argument-hint` frontmatter, H1, short "what this does", numbered steps — lookup/find-similar first, add on a miss, reply stating found vs. added); confirms (does not assume) whether `scripts/install.sh`'s skill-symlink step is glob-based over `claude/skills/*`, adding the two new directories explicitly if it is not; new `.claude/skills/verify-notesd/features/dword.md` (or an extension, following the four-section contract) covering the Claude Code skill path. Exit criteria: `/v <term> > <sentence>` and `/j <text>` work end to end in a real Claude Code session against the throwaway daemon; `verify-notesd`'s `$V` commands for this entry are copy-pasteable and pass.
-  - **Status**: open
-  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 5 of 6)
-  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
-  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077
-  - **Plan**: `.workflows/plan/P1-NOTES-A078.md`
 - [ ] **P1-NOTES-A079** Phase 6: Wall chat
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/chat/status.ts` (`DWORD_TOOL_NAMES`, the four curated tool names, added only for bespoke status captions and this file's own tests — not spliced into `allowedChatTools()`, since `dword` is already a `CONNECTOR_SYSTEMS` member from phase 1 and all six of its tool names already reach the allow-list through `ALL_CONNECTOR_TOOL_NAMES`; phase 6's own plan corrects this draft's original phrasing — see its "Load-bearing finding" and Principles Applied sections); `src/chat/prompt.ts` (a new paragraph in `buildChatSystemPrompt`'s `sections`, since the chat agent has no skill-loading and no slash-command parsing — natural-language triggers only, matching the existing connectors' paragraph style); confirms `/v`/`/j`-equivalent wall-chat exchanges are captured into chat history (the existing `POST /api/chat` route already captures every exchange unconditionally — this phase verifies, not builds, unless a gap is found); the `verify-notesd` `dword.md` entry gains its wall-chat section (`## Wall chat (phase 6)`, appended after phase 5's `## Claude Code skills (phase 5)` — confirmed matching, no heading mismatch). Exit criteria: a wall-chat message like "add the word perch, as in..." runs the same lookup/find-similar-then-add flow as the skill, through `verify-notesd`'s Playwright driving of the wall; the exchange appears in chat history.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 6 of 6)
   - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
   - **Depends on**: P1-NOTES-A076, P1-NOTES-A077, P1-NOTES-A078
@@ -68,6 +59,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A078** Phase 5: Skills `/v` and `/j`
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: new `claude/skills/v/SKILL.md`, `claude/skills/j/SKILL.md` (format per `check-seer-adversarial-nightly/SKILL.md`: `name`/`description`/`argument-hint` frontmatter, H1, short "what this does", numbered steps — lookup/find-similar first, add on a miss, reply stating found vs. added); confirms (does not assume) whether `scripts/install.sh`'s skill-symlink step is glob-based over `claude/skills/*`, adding the two new directories explicitly if it is not; new `.claude/skills/verify-notesd/features/dword.md` (or an extension, following the four-section contract) covering the Claude Code skill path. Exit criteria: `/v <term> > <sentence>` and `/j <text>` work end to end in a real Claude Code session against the throwaway daemon; `verify-notesd`'s `$V` commands for this entry are copy-pasteable and pass.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
+  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077
+  - **Plan**: `.workflows/plan/P1-NOTES-A078.md`
+  - **Completed**: 2026-11-06 13:36
+  - **Method**: /do
+  - **Files**: claude/skills/v/SKILL.md, claude/skills/j/SKILL.md, .claude/skills/verify-notesd/features/dword.md, .claude/skills/verify-notesd/features/README.md, scripts/install.sh, src/dword/writer.ts, src/mcp/dwordJournalTools.ts, tests/unit/dword/writer.test.ts, tests/integration/connectors/dword.writer.int.test.ts, tests/integration/connectors/dword.journal.curated.int.test.ts
+  - **Drift**: Plan's /v SKILL.md text said the sentence is 'used as the context argument in Step 5'; the add call is Step 4. Fixed the step reference.
+  - **Decided**: Proof journey 4 failed: after dword_journal_add with no vector (no OPENROUTER key / embed failure), find_similar on the identical text returned verdict 'none' because phase 4 wrote no journal_entry_embeddings row, so Layer 1 (norm_sha) could never match. Fixed the code instead of the journey: DwordWriter gains insertUnembeddedJournalEntry (INSERT ... status 'failed', text_sha, norm_sha, failed_reason; passes assertWritable), and dword_journal_add writes that sibling row whenever it has no vector, mirroring dword's own duplicate-check.ts `unembedded` + upsertEmbedding (Rung 1: invariant 2 / D3, a duplicate is shown and nothing inserted unless force, outranks phase 4's 'no embeddings row' exit criterion). Phase 4's failing-embed test now asserts the 'failed' sibling row and a Layer-1 re-find; added a no-embedder double-add test and a writer int test.
 
 - [x] **P1-NOTES-A077** Phase 4: Journal tools
   - **Difficulty**: HARD
