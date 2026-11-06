@@ -3,6 +3,12 @@
   "coordinator": "orch-dword-connector",
   "coordinator_session_id": "dac02714-fcee-4130-aeed-fbd6c4aeb15c",
   "created": "2026-11-06T12:19:46+07:00",
+  "landed": {
+    "at": "2026-11-06T13:50:42+07:00",
+    "base": "main",
+    "commit": "7a60cda66c57513487ba822555b85f2f27900d32",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -133,7 +139,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T13:49:38+07:00",
+  "updated": "2026-11-06T13:50:42+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
