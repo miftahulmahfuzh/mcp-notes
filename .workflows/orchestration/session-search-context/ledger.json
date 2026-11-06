@@ -40,21 +40,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b14ae58",
       "depends_on": [
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "proof: verified-first-pass (verify-notesd 1106-162655-919410; npm test 2164; test:int 669/669 pre-rebase, sessions.* 156 post-rebase). Branch rebased onto e5efd3a, feature fast-forwarded to 93ea639. migration0010 afterAll timeout once under contention = flake (passes alone).",
       "package": "src/sessions`, `src/db`, `drizzle",
       "plan": ".workflows/plan/session-search-context/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T16:32:17+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A082",
       "title": "Persist Claude's replies (cc_session_replies), tail + backfill"
     },
     {
@@ -72,7 +72,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Reply embedding worker"
     },
@@ -102,7 +102,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/orchestration/session-search-context/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-search-context",
-  "updated": "2026-11-06T16:27:05+07:00",
+  "updated": "2026-11-06T16:32:17+07:00",
   "verified_at": "2026-11-06T16:10:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-search-context"
 }
