@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 81
+- Blocked: 1
+- Completed: 82
 
 ---
 
@@ -49,20 +49,11 @@
   - **Satisfies**: R4 — Improve and refactor Projects semantic search robustly
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A080.md`
-- [ ] **P1-NOTES-A082** Phase 3: Persist Claude's replies (cc_session_replies), tail + backfill
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `drizzle/0014_session_replies.sql` (generated on top of 0013) + snapshot + journal; `schema.ts`: `ccSessionReplies` (`session_id` FK cascade, `seq`, `at`, `text`, `truncated`, generated `search_tsv` + GIN), `ccSessionReplyEmbeddings` (`session_id`, `seq`, `embedding vector(1536)`, `sha`, `model`, `attempts`, `last_error`, `next_attempt_at`, `embedded_at`, `updated_at`; **no `created_at`**; PK `(session_id, seq)`; FK `cc_session_reply_embeddings_reply_fk` → replies on delete cascade; hnsw + next_attempt indexes), `ccSessions.repliesVersion`; `types.ts` (`REPLIES_VERSION = 1`, `MAX_REPLY_STORE_CHARS = 16 KiB`, reply types); reply capture in `TranscriptAccumulator` (final text after the last ... Exit criteria: each fixture prompt Claude answered has one redacted row with the turn's final text; split reads and a restart mid-turn equal a from-0 read; a `replies_version 0` row is backfilled exactly once.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 3 of 5)
-  - **Satisfies**: R2 — Claude's answers to the user in a session are persisted per node
-  - **Depends on**: P1-NOTES-A081
-  - **Plan**: `.workflows/plan/P1-NOTES-A082.md`
 - [ ] **P1-NOTES-A083** Phase 4: Reply embedding worker
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: new `src/sessions/replyEmbeddings.ts` (`currentReplySha256Sql`, `isCurrentReplyEmbeddingSql(model)` — the one "current reply vector" predicate, `dbReplyEmbeddingStore`, `startReplyEmbeddingWorker`, `REPLY_EMBEDDINGS_LABEL`); `src/embeddings/worker.ts` (`events?` optional, `label` / `itemNoun`, `formatBatch` defaults byte-identical); `src/embeddings/repo.ts` (`export NON_BLANK_PATTERN`, visibility only); `SessionsRepo.saveReplyEmbedding(sessionId, seq, Omit<SessionEmbeddingInput, 'textVersion'>)` and `recordReplyEmbeddingFailure` (+ `ccSessionReplyEmbeddings` in the schema import, class doc extended); `src/background.ts` (start with session ingest when an embedder exists, kick on ... Exit criteria: every non-blank reply of this host gets a current vector; an edited reply is re-embedded under its new sha; failures back off and retry; `close()` returns within its grace; without a key nothing new starts and ingest is unaffected.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 4 of 5)
   - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words)
   - **Depends on**: P1-NOTES-A082
@@ -86,6 +77,21 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A082** Phase 3: Persist Claude's replies (cc_session_replies), tail + backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `drizzle/0014_session_replies.sql` (generated on top of 0013) + snapshot + journal; `schema.ts`: `ccSessionReplies` (`session_id` FK cascade, `seq`, `at`, `text`, `truncated`, generated `search_tsv` + GIN), `ccSessionReplyEmbeddings` (`session_id`, `seq`, `embedding vector(1536)`, `sha`, `model`, `attempts`, `last_error`, `next_attempt_at`, `embedded_at`, `updated_at`; **no `created_at`**; PK `(session_id, seq)`; FK `cc_session_reply_embeddings_reply_fk` → replies on delete cascade; hnsw + next_attempt indexes), `ccSessions.repliesVersion`; `types.ts` (`REPLIES_VERSION = 1`, `MAX_REPLY_STORE_CHARS = 16 KiB`, reply types); reply capture in `TranscriptAccumulator` (final text after the last ... Exit criteria: each fixture prompt Claude answered has one redacted row with the turn's final text; split reads and a restart mid-turn equal a from-0 read; a `replies_version 0` row is backfilled exactly once.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R2 — Claude's answers to the user in a session are persisted per node
+  - **Depends on**: P1-NOTES-A081
+  - **Plan**: `.workflows/plan/P1-NOTES-A082.md`
+  - **Completed**: 2026-11-06 16:30
+  - **Method**: /do
+  - **Files**: CLAUDE.md, drizzle/meta/_journal.json, drizzle/0014_session_replies.sql, drizzle/meta/0014_snapshot.json, src/db/schema.ts, src/sessions/ingest.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/transcript.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/integration/setup.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/schema.test.ts, tests/integration/sessions.replies.int.test.ts, tests/unit/sessions/replies.test.ts
+  - **Drift**: none: every quoted region matched; migration 0014 generated byte-identical to the plan
+  - **Decided**: migration0010.int afterAll hook timed out once in the full test:int run (drop database with force under shared-DB contention) → treated as an unrelated flake: all 669 tests passed, and the file passed 6/6 when run alone (rung 6: not a code regression; 0014 is not applied in that test)
 
 - [x] **P1-NOTES-A081** Phase 2: Commit subjects in search_tsv and the session embedding
   - **Difficulty**: NORMAL
