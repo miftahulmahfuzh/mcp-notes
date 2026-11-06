@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-06
-**Total Active Tasks**: 5
+**Total Active Tasks**: 4
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 3
+- P1 High: 2
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 83
+- Completed: 84
 
 ---
 
@@ -49,16 +49,6 @@
   - **Satisfies**: R4 — Improve and refactor Projects semantic search robustly
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A080.md`
-- [ ] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/search/blend.ts` (`BLEND.related = 0.6`, `RelatedSignals`, `literalRank`, optional `related` on candidates — note search unchanged); `tests/unit/search.blend.test.ts`; `src/sessions/view.ts` (`REPLY_EXCERPT_CHARS`, `SearchReplyMatch`, `SearchHit.via_replies`); `src/sessions/search.ts` (`EvidenceKind` += `'reply'`, `repliesSource` with `items` = `[{ seq }]`, per-page `ts_headline` excerpts, `via_replies` max 3, weighted ranking from own vs related kept apart, `tuning` option; imports phase 4's `isCurrentReplyEmbeddingSql`); golden snapshot regenerated in its own commit after proving identity at `related: 1`; `tests/fixtures/semantic/sessionsLabelled.ts` + ... Exit criteria: a word or meaning only in a reply finds its session with `via_replies`; the labelled fixture passes at 0.6 and fails at 1 and 0.3; the golden snapshot holds at `related: 1`; MCP and HTTP carry `via_replies`; docs updated; `git diff --stat origin/main -- web/` prints nothing.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 5 of 5)
-  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words); R4 — Improve and refactor Projects semantic search robustly
-  - **Depends on**: P1-NOTES-A080, P1-NOTES-A082, P1-NOTES-A083
-  - **Plan**: `.workflows/plan/P1-NOTES-A084.md`
-
 ### [P2] Medium
 
 ### [P3] Low
@@ -68,6 +58,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/search/blend.ts` (`BLEND.related = 0.6`, `RelatedSignals`, `literalRank`, optional `related` on candidates — note search unchanged); `tests/unit/search.blend.test.ts`; `src/sessions/view.ts` (`REPLY_EXCERPT_CHARS`, `SearchReplyMatch`, `SearchHit.via_replies`); `src/sessions/search.ts` (`EvidenceKind` += `'reply'`, `repliesSource` with `items` = `[{ seq }]`, per-page `ts_headline` excerpts, `via_replies` max 3, weighted ranking from own vs related kept apart, `tuning` option; imports phase 4's `isCurrentReplyEmbeddingSql`); golden snapshot regenerated in its own commit after proving identity at `related: 1`; `tests/fixtures/semantic/sessionsLabelled.ts` + ... Exit criteria: a word or meaning only in a reply finds its session with `via_replies`; the labelled fixture passes at 0.6 and fails at 1 and 0.3; the golden snapshot holds at `related: 1`; MCP and HTTP carry `via_replies`; docs updated; `git diff --stat origin/main -- web/` prints nothing.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/plan/SESSION_SEARCH_CONTEXT_PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R3 — Those persisted answers are used as search context (semantic + words); R4 — Improve and refactor Projects semantic search robustly
+  - **Depends on**: P1-NOTES-A080, P1-NOTES-A082, P1-NOTES-A083
+  - **Plan**: `.workflows/plan/P1-NOTES-A084.md`
+  - **Completed**: 2026-11-06 17:07
+  - **Method**: /do
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, .workflows/package_readme.md, CLAUDE.md, README.md, src/chat/context.ts, src/chat/prompt.ts, src/http/sessionsApi.ts, src/mcp/instructions.ts, src/mcp/sessionTools.ts, src/search/blend.ts, src/sessions/readModel.ts, src/sessions/search.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.mcp.int.test.ts, tests/integration/sessions.search.int.test.ts, tests/unit/chat-project.test.ts, tests/unit/search.blend.test.ts, tests/fixtures/semantic/sessionsLabelled.ts, tests/integration/sessions.relatedEvidence.int.test.ts, tests/integration/__snapshots__/sessions.search.golden.int.test.ts.snap
+  - **Drift**: none: every plan anchor matched phase 1-4's tree
+  - **Decided**: 0014 schema entry missing from package_readme.md → added one entry (coordinator request; rung 6, convention)
+    Proof journey 3's wait loop grepped echoed SQL text and never waited → check the count row instead; assertion unchanged (fix the check's wait, never its assertion)
+  - **Commits**: 50b91b7 (feature), e4b23bb (golden scores at BLEND.related 0.6)
 
 - [x] **P1-NOTES-A083** Phase 4: Reply embedding worker
   - **Difficulty**: NORMAL
