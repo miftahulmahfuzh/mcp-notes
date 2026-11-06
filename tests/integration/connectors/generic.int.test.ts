@@ -25,6 +25,11 @@ const EXPECT: Record<SystemId, Expectation> = {
     column: { table: 'equity_snapshots', name: 'equity_usd', type: /^numeric/ },
     countSql: 'select count(*) as n from strategies',
   },
+  dword: {
+    tables: ['users', 'vocab_entries', 'journal_entries', 'journal_entry_embeddings'],
+    column: { table: 'vocab_entries', name: 'enrichment_status', type: /^text$/ },
+    countSql: 'select count(*) as n from users',
+  },
 };
 
 afterAll(() => cleanupHarness());

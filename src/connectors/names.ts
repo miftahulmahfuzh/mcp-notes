@@ -4,18 +4,26 @@
  * ALL_CONNECTOR_TOOL_NAMES for its allow list. Adding a fourth system is one more entry in each
  * table below plus one directory under src/connectors.
  */
-export const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer'] as const;
+export const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer', 'dword'] as const;
 export type SystemId = (typeof CONNECTOR_SYSTEMS)[number];
 
 export const CONNECTOR_TOOL_NAMES = {
   expenses: ['expenses_schema', 'expenses_sql', 'expenses_spending', 'expenses_get', 'expenses_months'],
   runs: ['runs_schema', 'runs_sql', 'runs_list', 'runs_get', 'runs_review'],
   seer: ['seer_schema', 'seer_sql', 'seer_leaderboard', 'seer_positions', 'seer_sera_best'],
+  dword: [
+    'dword_schema',
+    'dword_sql',
+    'dword_vocab_lookup',
+    'dword_vocab_add',
+    'dword_journal_find_similar',
+    'dword_journal_add',
+  ],
 } as const satisfies Record<SystemId, readonly string[]>;
 
 export type ConnectorToolName = (typeof CONNECTOR_TOOL_NAMES)[SystemId][number];
 
-/** All 15 names, flattened in the order above. */
+/** Every name, flattened in the order above (21 with dword's six). */
 export const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[] = CONNECTOR_SYSTEMS.flatMap(
   (id): ConnectorToolName[] => [...CONNECTOR_TOOL_NAMES[id]],
 );
@@ -58,6 +66,14 @@ export const SYSTEM_META: Record<SystemId, SystemMeta> = {
     defaultRepoDir: '~/seer',
     caption: 'reading seer',
     hasLab: true,
+  },
+  dword: {
+    id: 'dword',
+    label: 'daily-words',
+    repoDirEnv: 'DAILY_WORDS_DIR',
+    defaultRepoDir: '~/daily-words',
+    caption: 'reading daily-words',
+    hasLab: false,
   },
 };
 

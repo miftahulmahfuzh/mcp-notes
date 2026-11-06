@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CONNECTOR_TOOL_NAMES } from '../../src/connectors/names.js';
-import { ADVERSARY_TOOL_NAMES, NOTES_TOOL_NAMES, SESSION_TOOL_NAMES, allowedChatTools, captionForToolUse } from '../../src/chat/status.js';
+import {
+  ADVERSARY_TOOL_NAMES,
+  DWORD_TOOL_NAMES,
+  NOTES_TOOL_NAMES,
+  SESSION_TOOL_NAMES,
+  allowedChatTools,
+  captionForToolUse,
+} from '../../src/chat/status.js';
 
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 21 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
-    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(19 + 5 + 3 + 15 + 2);
+    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(21);
+    expect(tools).toHaveLength(19 + 5 + 3 + 21 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -24,6 +31,7 @@ describe('allowedChatTools', () => {
     for (const name of SESSION_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ADVERSARY_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
+    for (const name of DWORD_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
     expect(tools.filter((t) => !t.startsWith('mcp__notes__'))).toEqual(['WebSearch', 'WebFetch']);
@@ -100,13 +108,24 @@ describe('captionForToolUse', () => {
     [n('seer_leaderboard'), {}, 'reading seer'],
     [n('seer_positions'), {}, 'reading seer'],
     [n('seer_sera_best'), {}, 'reading seer'],
+    [n('dword_schema'), {}, 'reading daily-words'],
+    [n('dword_sql'), { sql: 'select 1' }, 'reading daily-words'],
   ])('%s %j -> %s', (name, input, caption) => {
     expect(captionForToolUse(name, input)).toBe(caption);
   });
 
-  it('captions every connector tool in the contract', () => {
+  it('captions the four curated dword tools distinctly, not with the generic connector caption', () => {
+    expect(captionForToolUse(n('dword_vocab_lookup'), { term: 'perch' })).toBe('looking up a word');
+    expect(captionForToolUse(n('dword_vocab_add'), { term: 'perch' })).toBe('saving a word');
+    expect(captionForToolUse(n('dword_journal_find_similar'), { text: 'x' })).toBe('checking for a similar saying');
+    expect(captionForToolUse(n('dword_journal_add'), { text: 'x' })).toBe('saving a saying');
+  });
+
+  it('captions every other connector tool with the generic one-per-system caption', () => {
+    const bespoke: readonly string[] = DWORD_TOOL_NAMES;
     for (const name of ALL_CONNECTOR_TOOL_NAMES) {
-      expect(captionForToolUse(n(name), {})).toMatch(/^reading (expenses|runs|seer)$/);
+      if (bespoke.includes(name)) continue;
+      expect(captionForToolUse(n(name), {})).toMatch(/^reading (expenses|runs|seer|daily-words)$/);
     }
   });
 

@@ -1,7 +1,7 @@
 # Package: mcp-notes
 
 **Location**: `.` (repo root)
-**Last Updated**: 2026-11-05 (after task P1-NOTES-A070)
+**Last Updated**: 2026-11-06 (after task P1-NOTES-A075)
 **Documentation Created**: 2026-10-30T03:03Z (after task P1-NOTES-A000)
 
 ## Overview
@@ -34,6 +34,11 @@ The Seer Adversarial plan set (`docs/plans/2026-11-05-seer-adversarial-design.md
 - Ship the web UI itself (`web/`, built to `web/dist` by Vite): a live note wall with inline editing, tag filters, visibility modes, a chat panel, a photo gallery and modal, a full-screen image tab and image upload, and a chat history page at `/history[?thread=ID]` showing every wall chat and `/n` exchange as one live timeline (iteration 8 phase 9), with per-bubble reply, edit (user rows), delete with undo and a "Show deleted" toggle with restore (iteration 8 phase 10), and note ids in chat text that open the note's big editor in place, with a "Show on wall" button in the editor (iteration 8 phase 11)
 - Run `notesd` as an always-on systemd user service in WSL, registered with Claude Code as the `notes` MCP server and driven by the `/n` skill
 - Expose the owner's expense-tracking, run-insights and Seer databases (plus Seer's `lab.sqlite`) over MCP as read-only `<system>_schema` / `<system>_sql` tools, with fail-soft, secret-free errors (iteration 5)
+- Write to the owner's daily-words (dword) database only through `DwordWriter` (`src/dword/writer.ts`), an allow-listed writer separate from the read-only connector guard, validated against limits mirrored from daily-words in `src/dword/rules.ts` (dword-connector phase 2)
+- Look up and add vocab entries in daily-words through the curated `dword_vocab_lookup` / `dword_vocab_add` MCP tools (`src/mcp/dwordVocabTools.ts`, dword-connector phase 3)
+- Check daily-words' journal for near-duplicates and add journal entries through `dword_journal_find_similar` / `dword_journal_add` (`src/mcp/dwordJournalTools.ts`, dword-connector phase 4); all four curated dword tools are live through `registerDwordCurated` (`src/mcp/dwordTools.ts`)
+- Drive those tools from any Claude Code session with the `/v <word>[ > <sentence>]` (vocab) and `/j <line>` (journal) skills in `claude/skills/{v,j}/`, linked into `~/.claude/skills` by `install.sh` (dword-connector phase 5)
+- Handle the same vocab and journal requests in plain language from the wall chat bar: a `buildChatSystemPrompt` paragraph tells the chat brain when to call the four curated dword tools, with no slash-command parser (dword-connector phase 6)
 - Review Seer roster picks as an adversary (Seer Adversarial phase 4): poll Seer for due decisions, research each pick with Claude under a per-method lens, and write verdicts, paused marks and leases into Seer's three `adversary_*` tables only, within a daily deep-review cap shared by both machines and a per-session-open deadline (`src/adversary/`, `adversary_reviews`)
 
 ## Layout
@@ -78,7 +83,10 @@ src/mcp/imageTools.ts  registerImageTools: create_image, view_images, attach_ima
 src/mcp/similarTools.ts registerSimilarTools: similar_images (iteration 8 phase 6); countSources, bodySnippet, IMAGE_SEARCH_OFF, PASTED_IMAGE_NEEDS_HOOK
 src/mcp/sessionTools.ts registerSessionTools (project-session-graph phase 7): sessions_search, session_get, session_transcript, sessions_usage, link_note, unlink_note (session-note-links phase 1) (+ session_resume, phase 9: registerSessionResumeTool, resumeToolResult); SESSIONS_OFF, SESSIONS_{SEARCH,USAGE}_{DEFAULT,MAX}_LIMIT
 src/mcp/server.ts      createMcpServer (notes, image, similar, session and connector tools), handleMcpRequest (stateless, JSON responses)
-src/connectors/names.ts     CONNECTOR_SYSTEMS, CONNECTOR_TOOL_NAMES (all 15), ALL_CONNECTOR_TOOL_NAMES, SYSTEM_META, schemaToolName/sqlToolName
+src/mcp/dwordVocabTools.ts  (dword-connector phase 3) registerDwordVocabCurated(server, connector, options?): dword_vocab_lookup, dword_vocab_add; ported daily-words term normalize/dedup helpers
+src/mcp/dwordJournalTools.ts (dword-connector phase 4) registerDwordJournalCurated(server, connector, options?): dword_journal_find_similar, dword_journal_add; findSimilarJournalEntries (shared two-layer check), defaultJournalEmbedder
+src/mcp/dwordTools.ts       (dword-connector phase 4) registerDwordCurated(server, connector): the one dword curated entry point, fans out to the vocab and journal registrars; called by register.ts
+src/connectors/names.ts     CONNECTOR_SYSTEMS (4, + dword), CONNECTOR_TOOL_NAMES (21: 15 + dword_schema/dword_sql/dword_vocab_lookup/dword_vocab_add/dword_journal_find_similar/dword_journal_add), ALL_CONNECTOR_TOOL_NAMES, SYSTEM_META, schemaToolName/sqlToolName
 src/connectors/types.ts     QueryResult, QueryOptions, ReadOnlySource, Connector(s), SystemAbout, ConnectorError, row/timeout limits
 src/connectors/errors.ts    scrub, reasonOf, unreachable, queryFailed (secret-free ConnectorError messages)
 src/connectors/env.ts       per-call settings, repo dir resolution, sibling .env.local parse, direct-URL pick, secretsOf
@@ -92,6 +100,11 @@ src/connectors/sql.ts       registerSqlTool (<id>_sql)
 src/connectors/register.ts  defaultConnectors, registerConnectorTools
 src/connectors/{expenses,runs,seer}/index.ts    <ID>_ABOUT texts, create<Id>Connector
 src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (3 curated tools per system: expenses phase 2, runs phase 3, seer phase 4)
+src/connectors/dword/index.ts   DWORD_ABOUT, createDwordConnector (dword-connector phase 1; curated tools live in src/mcp/dword*Tools.ts)
+src/connectors/dword/user.ts    resolveDwordUserId(connector, email), dwordUserNotConfiguredMessage, dwordUserNotFoundMessage
+src/dword/rules.ts     (dword-connector phase 2) pure mirror of daily-words' validation limits, each commented with its ~/daily-words source: PART_OF_SPEECH_VALUES, MAX_TERM_CHARS/WORDS, MAX_CONTEXT_CHARS + validateDwordContext, PRONUNCIATION/DEFINITION/EXAMPLE limits, JOURNAL_*, INSIGHT_*, DAILY_ADD_LIMIT
+src/dword/journalSimilarity.ts (dword-connector phase 4) port of daily-words' journal similarity: normalizeForCompare, sha256Hex, normShaFor, textShaFor, NEAR_DUPLICATE_MAX_DISTANCE = 0.25
+src/dword/writer.ts    (dword-connector phase 2) DwordWriter, the only write path into dword's DB (own pg.Client per call): insertVocabEntry, attachVocabOrigin, insertJournalEntry, insertJournalEmbedding; assertWritable guard, WRITABLE_TABLES, DwordWriteError
 src/connectors/expenses/categories.ts  EXPENSE_CATEGORIES (17 slugs), EXPENSE_CATEGORY_LABELS, EATING_CATEGORIES, toExpenseCategory, categoryLabel
 src/connectors/expenses/dates.ts       pure WIB calendar helpers: DATE_RE/MONTH_RE, addDays, daysInclusive, isoWeekMonday/Key, todayWib, addMonths
 src/connectors/expenses/queries.ts     curated SQL, row builders, fetchSpending / fetchGroup / fetchMonths, limits
@@ -128,8 +141,8 @@ src/chat/citation.ts   parseLeadingCitation, CitationFilter (streaming strip of 
 src/chat/project.ts    pure (project-session-graph phase 12): PROJECT_KEY_MAX, isProjectKey, projectKeySchema (repo key of a project-scoped chat thread)
 src/chat/capture.ts    (iteration 8 phase 8) captureClaudeCodeExchange: pasted images -> chat image store, then ChatService.recordExchange; captureExternalKey, CaptureImageError, CAPTURE_SOURCE, MAX_CAPTURED_IMAGE_BYTES
 src/chat/env.ts        claudeEnv, glmEnv, resolveExecutable, STRIPPED_ENV_KEYS/PREFIX, CLIENT_APP
-src/chat/prompt.ts     buildChatSystemPrompt (date/time/tz, id quoting, the three apps, data answers, plain prose, turn layout + [msg:ID] replies since phase 7)
-src/chat/status.ts     allowedChatTools (notes + session + connector + web), captionForToolUse, NOTES_TOOL_NAMES, SESSION_TOOL_NAMES (phase 7 of project-session-graph; + session_resume in phase 9), WEB_TOOL_NAMES, CONNECTOR_CAPTIONS
+src/chat/prompt.ts     buildChatSystemPrompt (date/time/tz, id quoting, the three apps, daily-words vocab/journal flow since dword-connector phase 6, data answers, plain prose, turn layout + [msg:ID] replies since phase 7)
+src/chat/status.ts     allowedChatTools (notes + session + connector + web), captionForToolUse, NOTES_TOOL_NAMES, SESSION_TOOL_NAMES (phase 7 of project-session-graph; + session_resume in phase 9), WEB_TOOL_NAMES, CONNECTOR_CAPTIONS, DWORD_TOOL_NAMES (captions only, dword-connector phase 6)
 src/sessions/ids.ts    (project-session-graph phase 1) node ids A0-3G: generateNodeId (never all digits), isValidNodeId, normalizeNodeId, parseNodeId, InvalidNodeIdError, findNodeIdCandidates, NODE_ID_CANDIDATE_SOURCE, NODE_ID_PATTERN, NODE_ID_SPACE
 src/sessions/types.ts  SessionRow, SessionListItem, TranscriptPatch, HookStart, spawn/summary/embedding inputs, PARENT_LINK_RANK, PENDING_SPAWN_WINDOW_MS/SKEW_MS, MAX_* caps, SELECTED_PROJECT_KEY
 src/sessions/merge.ts  pure: mergeTranscriptPatch, clip, earliest, latest, normalizeCwd
@@ -199,6 +212,7 @@ claude/hooks/lib/state.mjs      daemonBaseUrl (127.0.0.1:NOTESD_PORT|7317), stat
 scripts/windows/install-wsl-keepalive.ps1  Task Scheduler logon task keeping the WSL distro up (-Uninstall removes it)
 deploy/notesd.service  systemd user unit template (@NODE_BIN@ @NODE_DIR@ @REPO_DIR@ @DATA_DIR@ @CLAUDE_BIN@ @HOME_DIR@), rendered by install.sh
 claude/skills/n/SKILL.md  the /n Claude Code skill, symlinked to ~/.claude/skills/n
+claude/skills/v/SKILL.md, claude/skills/j/SKILL.md  (dword-connector phase 5) /v vocab (dword_vocab_lookup/_add) and /j journal (dword_journal_find_similar/_add) skills, symlinked like /n
 docs/INSTALL.md        install, WSL keepalive rationale, post-merge re-install, iteration 7 migration 0002 + Show in Explorer + recycle bin (section 7), uninstall, troubleshooting
 tests/unit/            vitest unit tests (node); hooks/ (transcript, notesCapture, notesPaste, notesPrompt + fixtures.ts), scripts/ (claudeHooks) since iteration 8 phase 8
 tests/integration/     *.int.test.ts, setup.ts helpers, globalSetup.ts (migrates once)
@@ -232,6 +246,7 @@ web/dist/              build output, gitignored, served by staticRoutes
 - `DEFAULT_SESSIONS_CONFIG: SessionsConfig`: `{ claudeHome: <home>/.claude, worktreesDir: <home>/.worktrees, enabled: false, swarmScript: null }`. Off, unlike `loadConfig`'s default, so a test that builds a `Config` literal never reads the real `~/.claude`. Every hand-built test `Config` carries `sessions: DEFAULT_SESSIONS_CONFIG`.
 - `DEFAULT_ADVERSARY_DAILY_CAP = 15`, `DEFAULT_ADVERSARY_GATHER_MODEL = 'sonnet'`, `DEFAULT_ADVERSARY_VERDICT_MODEL = 'opus'`, `DEFAULT_ADVERSARY_GATHER_MAX_TURNS = 20`, `DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS = 420_000`, `DEFAULT_ADVERSARY_POLL_MS = 600_000` (Seer Adversarial phase 4)
 - `DEFAULT_ADVERSARY_CONFIG: AdversaryConfig`: those defaults with `enabled: false`, unlike `loadConfig` (on by default), so no hand-built test `Config` ever reviews. Every hand-built test `Config` carries `adversary: DEFAULT_ADVERSARY_CONFIG`.
+- `DEFAULT_DWORD_CONFIG: DwordConfig`: `{ userEmail: null }`, what `loadConfig` returns without `DWORD_USER_EMAIL` (dword-connector phase 1). Every hand-built test `Config` carries `dword: DEFAULT_DWORD_CONFIG`.
 
 #### Config
 ```ts
@@ -244,6 +259,10 @@ interface Config {
   embeddings: EmbeddingsConfig // note embeddings via OpenRouter (iteration 6)
   sessions: SessionsConfig     // Claude Code session ingest (project-session-graph phase 3)
   adversary: AdversaryConfig   // Seer Adversarial reviewer (phase 4)
+  dword: DwordConfig           // daily-words connector write identity (dword-connector phase 1)
+}
+interface DwordConfig {
+  userEmail: string | null     // DWORD_USER_EMAIL, trimmed; null when unset or blank = every dword write tool refuses; never logged
 }
 interface AdversaryConfig {
   enabled: boolean             // NOTESD_ADVERSARY on/off (parseSwitch), default on; off = deps.adversary null
@@ -288,6 +307,8 @@ Merges the dotenv file under the real environment (real env wins). Database URL 
 Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, when `NOTESD_HOST` is anything but empty or `127.0.0.1`, when `CHAT_BRAIN` is not `claude`/`glm`, when `CHAT_MAX_TURNS`/`CHAT_TIMEOUT_MS` is not a positive integer, or when `CHAT_BRAIN=glm` and any `LLM_*` key is missing (the message names the missing keys). With `CHAT_BRAIN=claude` and incomplete `LLM_*`, `glm` is null and Claude runs have no fallback. `OPENROUTER_API_KEY` fills `embeddings.apiKey` (unset or blank gives null and never throws; note writes are unaffected). `parseSessions(env)` (exported) fills `sessions` from `CLAUDE_HOME`, `NOTES_WORKTREES_DIR` (both `~`-expanded and made absolute), `NOTESD_SESSIONS` and `NOTESD_SWARM_SCRIPT` (phase 13; blank falls back under the resolved `claudeHome`, never throws), and throws `ConfigError` on a `NOTESD_SESSIONS` value other than the on/off words. Other unknown keys are ignored. Synchronous file read; no other side effects.
 
 `parseAdversary(env)` (exported) builds `AdversaryConfig`; it throws `ConfigError` on a `NOTESD_ADVERSARY` other than on/off, a non-positive-integer cap/turns/timeout/poll, or a model name outside the pattern.
+
+`parseDword(env)` (private) fills `dword.userEmail` from `DWORD_USER_EMAIL`; it never throws. The email is only stored here; it is resolved to a `users.id` per call by `resolveDwordUserId` (`src/connectors/dword/user.ts`), never cached in `Config`.
 
 #### isPooledUrl
 ```ts
@@ -881,17 +902,18 @@ The server is stateless. Each POST gets a fresh `McpServer` and a `WebStandardSt
 
 ### Connectors: src/connectors/ (iteration 5 phase 1)
 
-Read-only access to the owner's three sibling apps. One `Connector` per system; no state is held between calls.
+Read-only access to the owner's four sibling apps (dword added by dword-connector phase 1). One `Connector` per system; no state is held between calls.
 
 ```ts
 // names.ts
-const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer'] as const; type SystemId
-const CONNECTOR_TOOL_NAMES   // per system: <id>_schema, <id>_sql, then 3 curated names (expenses_spending/get/months, runs_list/get/review, seer_leaderboard/positions/sera_best)
-const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[]   // all 15, for the chat bar allow list (phase 5)
+const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer', 'dword'] as const; type SystemId
+const CONNECTOR_TOOL_NAMES   // per system: <id>_schema, <id>_sql, then 3 curated names (expenses_spending/get/months, runs_list/get/review, seer_leaderboard/positions/sera_best); dword: generic pair + dword_vocab_lookup/dword_vocab_add (phase 3) + dword_journal_find_similar/dword_journal_add (phase 4)
+const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[]   // all 21 (17 before dword-connector phase 3, 19 before phase 4), for the chat bar allow list (phase 5)
 interface SystemMeta { id; label; repoDirEnv; defaultRepoDir; caption; hasLab }
 const SYSTEM_META            // expenses: 'expense-tracking', EXPENSE_TRACKING_DIR, ~/expense-tracking
                              // runs: 'run-insights', RUN_INSIGHTS_DIR, ~/run-insights
                              // seer: 'seer', SEER_DIR, ~/seer, hasLab
+                             // dword: 'daily-words', DAILY_WORDS_DIR, ~/daily-words, caption 'reading daily-words'
 function schemaToolName(id), sqlToolName(id)
 
 // types.ts
@@ -912,7 +934,7 @@ function queryFailed(label, reason, secrets?)      // "<label> query failed: <re
 
 // env.ts
 const CONNECTOR_SETTINGS_FILE                      // mcp-notes' own .env.local
-function connectorSettings(source?: SettingsSource) // EXPENSE_TRACKING_DIR, RUN_INSIGHTS_DIR, SEER_DIR, CONNECTOR_TIMEOUT_MS; env over file, read per call
+function connectorSettings(source?: SettingsSource) // EXPENSE_TRACKING_DIR, RUN_INSIGHTS_DIR, SEER_DIR, DAILY_WORDS_DIR, CONNECTOR_TIMEOUT_MS; env over file, read per call
 function expandHome, displayPath, resolveRepoDir(id, settings), connectorTimeoutMs(settings)   // timeout 100..300000 else default
 function pickDirectUrl(vars), prepareUrl(url), secretsOf(url)
 function loadDatabaseTarget(id, repoDir): DatabaseTarget   // { url, secrets }; reads <repo>/.env.local every call
@@ -944,9 +966,16 @@ function describePgSchema(source, only?): Promise<TableInfo[]>   // public table
 function describeLabSchema(lab, only?): Promise<TableInfo[]>
 function registerSchemaTool(server, connector, about), registerSqlTool(server, connector, about)
 function defaultConnectors(): Connectors
-function registerConnectorTools(server, connectors): void   // _schema + _sql for every system, then each register<Id>Curated
-// per system: EXPENSES_ABOUT/RUNS_ABOUT/SEER_ABOUT, create{Expenses,Runs,Seer}Connector, register{Expenses,Runs,Seer}Curated
+function registerConnectorTools(server, connectors): void   // _schema + _sql for every system, then each register<Id>Curated (dword: registerDwordCurated from src/mcp/dwordTools.ts, phase 4)
+// per system: EXPENSES_ABOUT/RUNS_ABOUT/SEER_ABOUT/DWORD_ABOUT, create{Expenses,Runs,Seer,Dword}Connector, register{Expenses,Runs,Seer,Dword}Curated
+
+// dword/user.ts (dword-connector phase 1)
+function resolveDwordUserId(connector, email: string | null): Promise<string>   // SELECT id FROM users WHERE email = $1, fresh every call, never cached
+function dwordUserNotConfiguredMessage(): string   // "daily-words user not configured: set DWORD_USER_EMAIL in .env.local"
+function dwordUserNotFoundMessage(email): string   // "daily-words user <email> not found"
 ```
+
+The dword (daily-words) connector reads `~/daily-words` (or `DAILY_WORDS_DIR`) and its `.env.local` like the others; `dword_schema` / `dword_sql` are the generic read-only pair. `DWORD_ABOUT` summarises `users`, `vocab_entries`, `journal_entries` and `journal_entry_embeddings`. `resolveDwordUserId` maps `config.dword.userEmail` to `users.id` for the later write tools: it throws a `ConnectorError` with `dwordUserNotConfiguredMessage()` when the email is null and `dwordUserNotFoundMessage(email)` when no row matches, before any write is attempted. Phase 2's writer (`src/dword/writer.ts`) does its own lookup on a raw `pg.Client` but reuses the same two message builders. Writes never go through `dword_sql`.
 
 | tool | input | returns |
 |---|---|---|
@@ -993,6 +1022,107 @@ Run-insights curated tools (P1-NOTES-A014), all compact and `readOnlyHint`, date
 | `runs_list` | `from` YYYY-MM-DD, `to?` (default today) | `{ from, to, totals, runs, truncated }`: reviewed runs only, newest first, with headline/verdict of the app's analysis; totals use distance-weighted pace and time-weighted HR |
 | `runs_get` | exactly one of `id` or `date` | `{ id \| date, ... }` full metrics, per-km splits (last flagged partial), HR zones 1-5, note, `reviewed`, latest analysis, `profile`; unreviewed runs included; unknown id or unreal date throws |
 | `runs_review` | `scope` `week` (ISO) / `month`, `key?` (`2026-W34`, `2026-08` or a day inside; default current) | `{ scope, key, from, to, review, review_missing, totals, runs }` (brief runs); `review` null when the app stored none |
+
+### dword writer and rules: src/dword/ (dword-connector phase 2, P1-NOTES-A075)
+
+The write side of the dword connector. Nothing user-reachable calls it yet: the `/v` vocab and `/j` journal MCP tools land in phases 3 and 4. Modeled on `src/adversary/seerWriter.ts`; the read-only connector guard (`guard.ts`) stays read-only, and writes never go through `dword_sql`.
+
+**rules.ts** (pure: no I/O, no imports from `src/connectors/*` or `pg`). Every limit mcp-notes mirrors from daily-words, each constant commented with the `~/daily-words` file and line it was read from on 2026-11-06:
+
+```typescript
+const PART_OF_SPEECH_VALUES  // 14 values, dword's order (noun .. phrasal verb, abbreviation, other); type DwordPartOfSpeech; isDwordPartOfSpeech(value)
+const MAX_TERM_CHARS = 80, MAX_TERM_WORDS = 6        // countTermWords(term): split on spaces, drop empties
+const MAX_CONTEXT_CHARS = 200                         // validateDwordContext(raw): checks raw.trim() BEFORE any truncation, code 'context_too_long'
+const PRONUNCIATION_MAX_CHARS = 60
+const DEFINITION_TARGET_CHARS = 60 (advisory), DEFINITION_MAX_CHARS = 80 (enforced)
+const EXAMPLES_COUNT = 3, EXAMPLE_TARGET_CHARS = 100 (advisory), EXAMPLE_MAX_CHARS = 120 (enforced)
+function exampleContainsTerm(example, term): boolean  // verbatim, case-insensitive (no inflected-form matching, unlike dword's prompt)
+const JOURNAL_TEXT_MIN = 2, JOURNAL_TEXT_MAX = 1000, JOURNAL_SOURCE_NOTE_MAX = 200
+const INSIGHT_MEANING_MIN_CHARS = 20, INSIGHT_MEANING_MAX_CHARS = 220
+const INSIGHT_WHEN_IT_APPLIES_MIN_ITEMS = 2, _MAX_ITEMS = 3, _ITEM_MIN_CHARS = 8, _ITEM_MAX_CHARS = 120
+const DAILY_ADD_LIMIT = 50                            // rolling 24 h window, not a calendar day
+```
+
+`tests/unit/dword/rules.drift.test.ts` re-reads those daily-words source files (repo found through `siblingRepo`) and fails when a number no longer matches; it skips when `~/daily-words` is not checked out. When daily-words changes a limit, update `rules.ts` and its source comment together.
+
+**writer.ts**:
+
+```typescript
+const WRITABLE_TABLES = ['vocab_entries', 'journal_entries', 'journal_entry_embeddings'] as const
+class DwordWriteError extends Error
+function assertWritable(sql): WritableTable   // one statement (no ';'), INSERT INTO an allowed table, or the single UPDATE
+                                              // `vocab_entries SET origin_term, origin_language, origin_context ... WHERE ... origin_term IS NULL`; never DELETE
+class DwordWriter {
+  constructor({ repoDir: () => string, userEmail: () => string | undefined, timeoutMs? /* 15 s */ })
+  insertVocabEntry({ term, partOfSpeech, pronunciation, definition, examples }): Promise<VocabEntryRow | null>
+      // source 'manual', status 'active', enrichment_status 'ready'; ON CONFLICT (user_id, lower(term)) DO NOTHING -> null (caller re-looks-up)
+  attachVocabOrigin(vocabEntryId, { originTerm, originLanguage, originContext | null }): Promise<boolean>
+      // true only when it set the origin; false when the row already had one, is missing, or belongs to another user
+  insertJournalEntry({ text, sourceNote | null, insight: { meaning, whenItApplies } }): Promise<JournalEntryRow>   // insight_status 'ready'
+  insertJournalEmbedding({ entryId, textSha, normSha, model, embedding }): Promise<void>                        // status 'ready', vector literal
+  insertUnembeddedJournalEntry({ entryId, textSha, normSha, reason }): Promise<void>                           // (phase 5) status 'failed', failed_reason, no vector: dword's own 'unembedded' sibling row
+}
+```
+
+Each call resolves `repoDir()` and `userEmail()` afresh (`DAILY_WORDS_DIR` / `DWORD_USER_EMAIL` may change without a restart), opens its own `pg.Client` through `loadDatabaseTarget('dword', ...)` (`application_name` `mcp-notes-dword`, `statement_timeout` and `TimeZone=UTC`, `CONNECTOR_PG_TYPES`), resolves the user on that client with the same refusal text as `resolveDwordUserId` (`ConnectorError` with `dwordUserNotConfiguredMessage()` / `dwordUserNotFoundMessage(email)`), runs every statement through `assertWritable`, and closes the client. Connection and query failures surface as `DwordWriteError` with secrets scrubbed. No statement is part of a transaction: a failed embedding insert never rolls back its journal entry (daily-words allows entries without an embedding yet), and callers call `insertJournalEmbedding` only after the embedding call succeeded, and otherwise `insertUnembeddedJournalEntry` (phase 5), which records `text_sha`/`norm_sha` so Layer 1 still finds the entry and dword's backfill embeds it later under `--retry-failed`. Timestamps come back as ISO UTC strings.
+
+Tests: `tests/unit/dword/writer.test.ts` (the allow-list, including the 'failed' sibling insert, and a missing daily-words repo named instead of connecting), `tests/integration/connectors/dword.writer.int.test.ts` (against the dword schema rebuilt from daily-words' migrations, including the 'failed' sibling row carrying `norm_sha`; skipped when the repo is missing).
+
+### dword vocab tools: src/mcp/dwordVocabTools.ts (dword-connector phase 3, P1-NOTES-A076)
+
+The first user-facing callers of `DwordWriter`. Registered on the live MCP server since phase 4, through `registerDwordCurated` (`src/mcp/dwordTools.ts`) called from `registerConnectorTools`. Their names are in `CONNECTOR_TOOL_NAMES.dword`, so the chat allow list carries them.
+
+```typescript
+interface DwordVocabOptions {
+  userEmail?: () => string | null   // default: loadConfig().dword.userEmail, read fresh per call
+  writer?: DwordWriter              // default: a DwordWriter over DAILY_WORDS_DIR's .env.local; tests always inject one
+}
+function registerDwordVocabCurated(server: McpServer, connector: Connector, options?: DwordVocabOptions): void
+```
+
+| Tool | Args | Returns |
+|---|---|---|
+| `dword_vocab_lookup` (readOnlyHint) | `term` | `{ found, entry?, candidates? }`; `entry`/`candidates` are full `VocabEntryJson` rows (every `vocab_entries` column, snake_case) |
+| `dword_vocab_add` | `term`, `part_of_speech` (enum `PART_OF_SPEECH_VALUES`), `pronunciation`, `definition`, `examples` (exactly `EXAMPLES_COUNT`), `origin? { term, language, context? }`, `context?` | `{ created, origin_attached, entry }` |
+
+Lookup resolves the user (`resolveDwordUserId`), loads every row the user holds (no status filter, like dword's `listTermsForDedup`), then matches in order: exact `lower(term)`; `origin_term`; morphological `dedupKey` (single words only); cosmetic `normalizeForDedup` equality, returned as `candidates` with `found: false`. The term normalize/validate and dedup helpers are ported from `~/daily-words` `src/lib/vocab/normalize.ts` and `dedup.ts` (read, never imported).
+
+Add makes no model call: the caller supplies the complete entry. It refuses `origin` and `context` together, validates the term (and `origin.term`) against `MAX_TERM_WORDS`, `MAX_TERM_CHARS` and dword's term pattern, checks context length through `validateDwordContext`, and refuses at `DAILY_ADD_LIMIT` adds in a rolling 24 h. A plain `context` is stored as the entry's own origin (`origin_term` = term, `origin_language` 'English'). On a term collision (`insertVocabEntry` returns null) it returns the existing row with `created: false`, attaching the origin only when that row has none yet (`attachVocabOrigin`). Refusals are `ConnectorError`s naming the failed rule.
+
+Tests: `tests/integration/connectors/dword.vocab.curated.int.test.ts` (exact, origin and miss lookups; create, case-insensitive collision, context attach and no-overwrite, the 24 h limit, origin+context rejection; skipped when daily-words is missing).
+
+### dword journal tools: src/mcp/dwordJournalTools.ts (dword-connector phase 4, P1-NOTES-A077)
+
+The `/j` side. `src/mcp/dwordTools.ts` holds `registerDwordCurated(server, connector)`, the single dword curated entry point that `registerConnectorTools` calls; it runs `registerDwordVocabCurated` then `registerDwordJournalCurated`. A later dword domain adds its own call line there, never a second registrar.
+
+```typescript
+// src/dword/journalSimilarity.ts: ported (never imported) from ~/daily-words src/lib/journal/similarity.ts; keep in sync
+function normalizeForCompare(raw): string   // glyph folds (smart quotes, dashes, ellipsis), NFKD + strip marks, collapse whitespace, trim edge punctuation, lowercase
+function sha256Hex(input), normShaFor(text) /* sha of normalized */, textShaFor(text) /* sha of exact text */
+const NEAR_DUPLICATE_MAX_DISTANCE = 0.25    // dword's measured cosine-distance threshold; never edit without re-running dword's corpus measurement
+
+// src/mcp/dwordJournalTools.ts
+interface DwordJournalOptions {
+  embedder?: Embedder | null        // default defaultJournalEmbedder(); null forces Layer 2 off
+  writer?: DwordWriter              // default: DwordWriter over DAILY_WORDS_DIR, resolved fresh
+  userEmail?: () => string | null   // default: loadConfig().dword.userEmail, read per call
+}
+function registerDwordJournalCurated(server, connector, options?): void
+function findSimilarJournalEntries(connector, userId, text, embedder): Promise<JournalDuplicateResult>
+    // { verdict: 'duplicate' | 'none', entries, layer2Skipped?, sibling: { textSha, normSha, status, model?, embedding? } }
+function defaultJournalEmbedder(): Embedder | null   // OpenRouter embedder from mcp-notes' own OPENROUTER_API_KEY (env over .env.local); null when unset
+```
+
+| Tool | Args | Returns |
+|---|---|---|
+| `dword_journal_find_similar` (readOnlyHint) | `text` (`JOURNAL_TEXT_MIN`..`JOURNAL_TEXT_MAX`) | `{ verdict, entries, layer2_skipped? }` |
+| `dword_journal_add` | `text`, `source_note?` (max `JOURNAL_SOURCE_NOTE_MAX`), `insight { meaning, whenItApplies }` (written by Claude, `INSIGHT_*` limits), `force?` | `{ verdict, inserted, entries, entry?, embedded, layer2_skipped? }` |
+
+Both tools resolve the user (`resolveDwordUserId`) and run the same `findSimilarJournalEntries`. Layer 1 is an exact `norm_sha` match on `journal_entry_embeddings` (no network). Only on a Layer 1 miss, Layer 2 embeds the text and takes the nearest ready, non-stale vector (`text_sha` still matches the entry's text); it is a duplicate only when cosine distance is strictly `< 0.25`, mirroring dword's `isNearDuplicate`. A missing key or a failed embedding call is never an error: Layer 2 is reported as `layer2_skipped: true` with verdict `none`. Entries carry `id, text, source_note, insight, insight_status, created_at` (ISO UTC).
+
+`dword_journal_add` on a duplicate without `force: true` inserts nothing and returns the match (`inserted: false`). Otherwise it inserts through `DwordWriter.insertJournalEntry` (`insight_status` 'ready'), then, when Layer 2 produced a vector, reuses it for `insertJournalEmbedding` (`embedded: true`); with no vector (no key, failed or skipped embedding, Layer 1 hit on a forced save) it writes the 'failed' sibling through `insertUnembeddedJournalEntry` (reason `not embedded`, `embedded: false`, phase 5), as dword's own route does, so the same line is a Layer 1 duplicate next time even without an embedding provider. The check runs even on a forced save, unlike dword's own route, so a forced save still gets an embedding when Layer 1 missed. A failed embedding or sibling insert never undoes the entry; dword's own backfill picks it up later.
+
+Tests: `tests/unit/dword/journalSimilarity.test.ts` (normalization folds, a pinned `normShaFor` hash, `textShaFor` unnormalized), `tests/integration/connectors/dword.journal.curated.int.test.ts` (empty journal, Layer 1 hit, clean insert with embedding, duplicate without and with `force`, failed embedder still inserts with a 'failed' sibling row that Layer 1 finds next time, no embedder at all still makes the line findable by exact text (phase 5); skipped when daily-words is missing).
 
 ### src/http/app.ts
 
@@ -1140,20 +1270,23 @@ const NOTES_MCP_SERVER = 'notes'
 const NOTES_TOOL_NAMES: readonly [18 names from mcp/tools + mcp/imageTools + mcp/similarTools]   // 14 -> 17 in iteration 7 phase 3: attach_image, remove_image, restore_image; 18 in iteration 8 phase 6: similar_images
 type NotesToolName
 const SESSION_TOOL_NAMES = ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage', 'session_resume']   // project-session-graph phase 7; session_resume appended in phase 9 (caption 'opening a session in tmux'); type SessionToolName
+const DWORD_TOOL_NAMES = ['dword_vocab_lookup', 'dword_vocab_add', 'dword_journal_find_similar', 'dword_journal_add']   // dword-connector phase 6; type DwordToolName. Captions only: NOT spread into allowedChatTools (already there via ALL_CONNECTOR_TOOL_NAMES; spreading would duplicate)
 const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch']
-const CONNECTOR_CAPTIONS: Record<SystemId, string>                     // from SYSTEM_META[id].caption: 'reading expenses' / 'reading runs' / 'reading seer'
-function allowedChatTools(): string[]                                  // mcp__notes__<name> x19 + mcp__notes__<session tool> x5 (phase 7, + session_resume in phase 9) + mcp__notes__<connector> x15 (ALL_CONNECTOR_TOOL_NAMES) + WebSearch, WebFetch = 41
+const CONNECTOR_CAPTIONS: Record<SystemId, string>                     // from SYSTEM_META[id].caption: 'reading expenses' / 'reading runs' / 'reading seer' / 'reading daily-words'
+function allowedChatTools(): string[]                                  // mcp__notes__<name> x19 + mcp__notes__<session tool> x5 (phase 7, + session_resume in phase 9) + mcp__notes__<connector> x21 (ALL_CONNECTOR_TOOL_NAMES; was 15 before dword-connector phase 1, 17 before phase 3, 19 before phase 4) + WebSearch, WebFetch
 function captionForToolUse(name: string, input: unknown): string | null
 ```
 `createAgentChatBackend` runs one stateless SDK `query` per `reply()` (since iteration 8 phase 7: no `resume`, `persistSession: false`, so nothing is written under `~/.claude/projects`; continuity comes only from `request.turn.text`, which claude and the GLM fallback both get verbatim). Its `prompt` comes from `toSdkPrompt(composeUserTurn({ message: turn.text, images: turn.images }, previews))` (`src/chat/compose.ts`), built once per run: the plain string for a turn without images, else a one-message stream whose content is one base64 image block per pasted image (its `preview` file read once per run through `readPreview`, so the GLM retry reuses it) followed by the text block; a preview that cannot be read fails the turn with `Could not read pasted image <id>: ...` and no fallback. Every run gets: `cwd` (`<dataDir>/chat`), `settingSources: []`, `strictMcpConfig: true`, one MCP server `notes` of type `http` at `mcpUrl()` (read at run start, with `alwaysLoad`), built-in `tools` limited to WebSearch/WebFetch, `allowedTools` from `allowedChatTools()`, `permissionMode: 'dontAsk'`, `includePartialMessages`, `maxTurns: chat.maxTurns`, a fresh `buildChatSystemPrompt(now())` as the whole system prompt, `persistSession: false` (phase 7; `resume` is never set), and `pathToClaudeCodeExecutable` from `resolveExecutable(chat.claudeBin, PATH)` (resolved once at construction). A Claude run uses `claudeEnv` (the daemon env minus every key, base URL, model override and parent-Claude-Code marker, so it runs on the owner's OAuth login; `CLAUDE_CONFIG_DIR` is kept). A GLM run uses `glmEnv` (same base plus `ANTHROPIC_BASE_URL`/`AUTH_TOKEN`/`MODEL`/`DEFAULT_*_MODEL` from `chat.glm`) and `model: glm.model`.
 
-Streaming: only top-level messages count (`parent_tool_use_id === null`). `stream_event` `text_delta`s become `delta` events. A top-level assistant `tool_use` block becomes a `status` caption from `captionForToolUse` (`searching notes`, `finding related notes`, `finding similar photos`, `reading 3 notes`, `looking at a photo`, `attaching a photo`, `removing a photo`, `restoring a photo`, `searching sessions`, `reading a session`, `reading a session transcript`, `counting session tokens` (the four session tools, project-session-graph phase 7), `searching the web`, `saving a note`, ...; any of a system's connector tools from `CONNECTOR_TOOL_NAMES` gives that system's `CONNECTOR_CAPTIONS` entry, an unknown `mcp__notes__*` name gives null; repeats are not re-sent), and the next text clears it with `status ""`. Text that follows a tool use after earlier text is prefixed with a blank line (leading whitespace trimmed). A `result` of subtype `success` without `is_error` sets `end()` to `{ brain }` (since iteration 8 phase 7 the SDK `session_id` is ignored; the thread id is `chat_threads.id`).
+Streaming: only top-level messages count (`parent_tool_use_id === null`). `stream_event` `text_delta`s become `delta` events. A top-level assistant `tool_use` block becomes a `status` caption from `captionForToolUse` (`searching notes`, `finding related notes`, `finding similar photos`, `reading 3 notes`, `looking at a photo`, `attaching a photo`, `removing a photo`, `restoring a photo`, `searching sessions`, `reading a session`, `reading a session transcript`, `counting session tokens` (the four session tools, project-session-graph phase 7), `looking up a word`, `saving a word`, `checking for a similar saying`, `saving a saying` (the four curated dword tools, dword-connector phase 6; `dword_schema`/`dword_sql` keep `reading daily-words`), `searching the web`, `saving a note`, ...; any of a system's connector tools from `CONNECTOR_TOOL_NAMES` gives that system's `CONNECTOR_CAPTIONS` entry, an unknown `mcp__notes__*` name gives null; repeats are not re-sent), and the next text clears it with `status ""`. Text that follows a tool use after earlier text is prefixed with a blank line (leading whitespace trimmed). A `result` of subtype `success` without `is_error` sets `end()` to `{ brain }` (since iteration 8 phase 7 the SDK `session_id` is ignored; the thread id is `chat_threads.id`).
 
 Guardrails: one run in flight per backend (a new `reply()` stops the previous one, `superseded`); the request `signal` (`client`), a `chat.timeoutMs` wall-clock timer (`timeout`, unref'd) and `close()` (`closed`, called by daemon `stop()`) all abort the SDK child. A stopped run throws `Chat stopped: ...` from `events`. `error_max_turns` throws `Chat stopped: the agent hit its N-turn cap ...` and never falls back.
 
 Fallback: with `chat.brain = 'claude'` and `chat.glm` set, a Claude attempt that fails before any `delta` went out, was not stopped, and whose failure is fallbackable (an assistant `error` in `FALLBACK_ERRORS`, or result/exception text matching `FALLBACK_TEXT`) is retried once on GLM with the identical composed turn (before phase 7: the same `resume` id); a shown caption is cleared first and one line is logged (`notesd chat: claude failed before answering (...); retrying once on glm`). Once text has streamed a failure is final. `chat.brain = 'glm'` runs GLM only and never falls back; with `glm` null it fails with `CHAT_BRAIN=glm needs LLM_BASE_URL, LLM_API_KEY and LLM_MODEL.` A CLI that exits non-zero after a successful result is treated as success.
 
 The system prompt states today's weekday, ISO and long date, time and timezone; says the owner is the only user; requires every used note id quoted as `A-B32` (the panel highlights by id); allows edits only when asked (get before update, never save the answer as a note); explains `view_images`; and asks for plain prose (no headings, tables, bold or code blocks unless asked). Iteration 5 phase 5 added the three read-only apps (expense-tracking `expenses_*`, run-insights `runs_*`, Seer and Sera `seer_*`) with curated tools first, `_schema` before writing SQL and `_sql` last; dates for the apps' tools as YYYY-MM-DD in the daemon timezone; data answers that say what the data shows plus an opinion (patterns, comparison with the previous period, what stands out, one concrete suggestion, the dates looked at) in the apps' units (Rp 38.500 whole rupiah, km, m:ss /km, bpm, Seer in USD); and, when an app's tool errors, naming the app instead of guessing its numbers. Iteration 8 phase 7 added two paragraphs: the turn layout (`<chat_history>` oldest first, with the `[earlier messages omitted]` line when trimmed; `<reply_to>`; `<message>` is what to answer; one `[msg:ID] role (YYYY-MM-DD HH:mm WIB): ...` line per message; only answer text of earlier turns is visible, so call tools again; pictures of the current and replied-to message are visible, earlier ones only as `[image upload:ID]`), and the optional reply marker: start the answer with `[msg:ID] ` to reply to one specific earlier message, never the current one, never invented, no labels elsewhere.
+
+dword-connector phase 6 (P1-NOTES-A079) added a daily-words paragraph after the read-only apps one: daily-words is the one app the chat may write to, through `dword_*` tools (curated first, `dword_sql`/`dword_schema` only as fallback). A message that reads as a vocabulary request ("what does X mean", "add the word X", "X as in <sentence>", a bare word) goes to `dword_vocab_lookup` first: found shows the stored entry (and, given a sentence and no origin yet, re-calls `dword_vocab_add` so the one-time origin attach runs); candidates are shown and the owner asked; a miss means the brain writes the entry itself (part of speech from the tool's list, British RP IPA, one-clause definition under 60 chars / ceiling 80 without the term, exactly three examples containing the term under 100 / ceiling 120; non-English input goes in `origin` with English in `term`, an English term with a sentence passes `context`, never both) and calls `dword_vocab_add`. A saying, wise words or a journal-style insight goes to `dword_journal_find_similar` first: `duplicate` shows the existing entry and inserts nothing unless the owner says to save anyway (`force: true`); `none` means the brain writes the insight (meaning under 220 chars, 2-3 `whenItApplies` situations under 120 chars) and calls `dword_journal_add`. There is no slash parser: `/v` and `/j` are only read as their plain-language meaning. Argument names follow the shipped tools and `claude/skills/{v,j}/SKILL.md`. Tests: `tests/unit/chat-prompt.test.ts`, `tests/unit/chat-status.test.ts` (captions, no duplicate allow-list entries).
 
 ### Chat images: src/chat/images.ts, src/chat/compose.ts, src/http/chatImages.ts (iteration 8 phase 3)
 
@@ -2205,7 +2338,7 @@ Idempotent; re-run after every pull. Flags: `--skip-hooks` (leave `~/.claude/set
 6. `loginctl enable-linger $USER` (tries plain, then `sudo -n`; otherwise warns with the command to run).
 7. Poll `GET http://127.0.0.1:7317/health` for up to 30 s; on timeout dumps `journalctl` and fails.
 8. `claude mcp remove --scope user notes` (ignored), then `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`.
-9. `ln -sfn <checkout>/claude/skills/n ~/.claude/skills/n`.
+9. `ln -sfn <checkout>/claude/skills/<name> ~/.claude/skills/<name>` for every name in `SKILL_NAMES` (`n migrate check-seer-adversarial-nightly redo v j`; `v` and `j` added by dword-connector phase 5); the same list drives the preconditions and the verify step (`uninstall.sh` still removes only `~/.claude/skills/n`).
 10. `register_hooks` (iteration 8 phase 8, unless skipped): `node scripts/claude-hooks.mjs install` merges the `notes-capture` (Stop), `notes-paste` (PreToolUse) and `notes-prompt` (UserPromptSubmit, P1-NOTES-A047) entries into `~/.claude/settings.json`, pointing at this checkout's `claude/hooks/` and the resolved node. A failure only warns; the daemon install is not undone. Preconditions also check the three hook scripts and the helper exist and that `NOTES_PASTE_STRATEGY` is valid.
 11. Verify: unit `active`, `/health` answers, `claude mcp list` shows `notes:` as Connected, the skill links, `claude hook:` lines from `claude-hooks.mjs status` (or `claude hooks: skipped`), prints the chat claude path and version, and a chat smoke check: one read-only message (`POST /api/chat`, 200 s curl limit) whose SSE stream must end in `event: done`; it prints the answering brain and warns if it is not `claude`. Exits non-zero otherwise. Warns when the checkout (unit, skill and hooks) is under `~/.worktrees/`.
 
@@ -2441,7 +2574,7 @@ Session ingest (project-session-graph phase 3) reads at most `concurrency` (4) f
 - Since iteration 8 phase 7 chat threads are `chat_threads` rows, not SDK sessions: the run uses `persistSession: false` and never `resume`. A `thread_id` the server does not know (including a pre-phase-7 SDK session id still held by an open page) silently starts a new thread. Any AppDeps built by hand (tests, harnesses) must include `chat: new ChatService({ db })`.
 - The model sees only the text of earlier answers (no tool results), trimmed to `CONTEXT_CHAR_BUDGET`; a long thread loses its oldest lines first.
 - Chat message ids are only 4 characters and are not note ids: always write them as `[msg:K7F2]`. A `[msg:ID]` anywhere but the start of an answer is kept as plain text.
-- The agent's allowed tools are hard-coded in `src/chat/status.ts`; a new notes MCP tool is invisible to the chat brain until it is added to `NOTES_TOOL_NAMES` (and given a caption). Connector tools are taken from `ALL_CONNECTOR_TOOL_NAMES` and captioned from `SYSTEM_META`, so a connector tool added to `CONNECTOR_TOOL_NAMES` is allowed and captioned automatically.
+- The agent's allowed tools are hard-coded in `src/chat/status.ts`; a new notes MCP tool is invisible to the chat brain until it is added to `NOTES_TOOL_NAMES` (and given a caption). Connector tools are taken from `ALL_CONNECTOR_TOOL_NAMES` and captioned from `SYSTEM_META`, so a connector tool added to `CONNECTOR_TOOL_NAMES` is allowed and captioned automatically. A bespoke caption (as for the four curated dword tools) is a `captionForToolUse` case only; never also spread its names into `allowedChatTools`, which would duplicate them.
 - `staticRoutes` must stay last and must 404 reserved prefixes itself, or unknown `/api/*` paths would get `index.html`.
 - Ids are canonical upper-case with the dash. Store `normalizeId`/`parseId` output, never raw user input.
 - Integration tests truncate tables. Never point `TEST_DATABASE_URL` at Neon (the setup helper also refuses it). The container port 55433 avoids `seer-pg` on 55432.
@@ -2478,3 +2611,5 @@ Iteration 4 plan: `docs/plans/CHAT_BAR_BRAIN_PLAN.md` (4 phases, the chat bar br
 Iteration 5 plan: `docs/plans/CONNECTORS_PLAN.md` (6 phases, read-only connectors to expense-tracking, run-insights and Seer). Phase 1 (P1-NOTES-A012, plan `.workflows/plan/P1-NOTES-A012.md`) landed the connector core in `src/connectors/`, the six generic `<system>_schema`/`<system>_sql` tools, the single-SELECT guard, the instructions paragraph, the compact/`ConnectorError` changes in `src/mcp/tools.ts`, the `mcp-notes-pg-connectors` Docker harness and `npm run test:live:connectors`. Phase 2 (P1-NOTES-A013, plan `.workflows/plan/P1-NOTES-A013.md`) filled the expenses curated tools (`src/connectors/expenses/{curated,categories,dates,queries}.ts`). Phase 3 (P1-NOTES-A014, plan `.workflows/plan/P1-NOTES-A014.md`) filled the runs curated tools (`src/connectors/runs/{curated,format,periods,queries}.ts`). Phase 4 (P1-NOTES-A015, plan `.workflows/plan/P1-NOTES-A015.md`) filled the Seer curated tools (`src/connectors/seer/{curated,rows,ranking,leaderboard,positions,sera}.ts`). Phase 5 (P1-NOTES-A016, plan `.workflows/plan/P1-NOTES-A016.md`) landed the chat bar side: `allowedChatTools()` adds the 15 connector tools, `captionForToolUse` captions them per system, the chat system prompt covers the three apps, and the `/n` skill routes spending, runs and Seer questions to the connector tools. Phase 6 (P2-NOTES-C506) landed readable links in the web answer panel.
 
 Seer Adversarial plan set: `docs/plans/2026-11-05-seer-adversarial-design.md`, `.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (7 phases across Seer and mcp-notes). Phase 1 landed Seer's migration 027 (the `adversary_*` tables) on the seer repo. Phase 4 (P1-NOTES-A070) landed the reviewer in `src/adversary/`, `Config.adversary`, `AppDeps.adversary` and migration 0011 `adversary_reviews`. Phase 5 adds the HTTP routes and SSE `adversary` events; phase 7 the README / CLAUDE.md docs.
+
+dword-connector plan set: `docs/plans/` design for connecting notesd to daily-words (`/v` vocabulary, `/j` journal), plan `.workflows/plan/P1-NOTES-A074.md` .. `A079.md` (6 phases). Phase 1 (P1-NOTES-A074) added `dword` as the fourth connector system (`src/connectors/dword/{index,user}.ts`, `DAILY_WORDS_DIR`, generic `dword_schema`/`dword_sql`), `Config.dword` from `DWORD_USER_EMAIL`, and `resolveDwordUserId`. No curated dword tools, skill or chat wiring yet. Phase 2 (P1-NOTES-A075) added `src/dword/rules.ts` (limits mirrored from daily-words, with a drift test) and `src/dword/writer.ts` (`DwordWriter`, the allow-listed write path); nothing calls the writer until the vocab/journal tools of phases 3 and 4. Phase 3 (P1-NOTES-A076) added `src/mcp/dwordVocabTools.ts` (`dword_vocab_lookup`, `dword_vocab_add`) and their names in `CONNECTOR_TOOL_NAMES.dword`. Phase 4 (P1-NOTES-A077) added `src/dword/journalSimilarity.ts`, `src/mcp/dwordJournalTools.ts` (`dword_journal_find_similar`, `dword_journal_add`) and `src/mcp/dwordTools.ts` (`registerDwordCurated`), which `registerConnectorTools` now calls, so all four curated dword tools are live. Phase 5 (P1-NOTES-A078) added the `/v` and `/j` skills (`claude/skills/{v,j}/SKILL.md`, linked by `install.sh` via `SKILL_NAMES`), the `dword` entry in the verify-notesd feature map (`.claude/skills/verify-notesd/features/dword.md`), and `DwordWriter.insertUnembeddedJournalEntry`, so `dword_journal_add` writes dword's 'failed' sibling row when no vector is available. Phase 6 (P1-NOTES-A079) wired the wall chat bar: a daily-words vocab/journal paragraph in `buildChatSystemPrompt` (`src/chat/prompt.ts`) and `DWORD_TOOL_NAMES` in `src/chat/status.ts` for the four tools' own status captions (the allow list already carried them via `ALL_CONNECTOR_TOOL_NAMES`), plus the chat entries in the verify-notesd `dword` feature map.

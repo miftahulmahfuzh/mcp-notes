@@ -925,7 +925,8 @@ part of `npm test` or `test:int`.
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | — | The GLM fallback endpoint (z.ai). |
 | `OPENROUTER_API_KEY` | — | OpenRouter key for note embeddings (`openai/text-embedding-3-small`). Unset: notes save as usual, `search` is full text only and says so, `related` answers only for notes that already have a vector. |
 | `TEST_DATABASE_URL` | set by `test:int` | Integration test database. |
-| `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer` | Where the connectors find each repo and its `.env.local`. Read on every call. |
+| `EXPENSE_TRACKING_DIR`, `RUN_INSIGHTS_DIR`, `SEER_DIR`, `DAILY_WORDS_DIR` | `~/expense-tracking`, `~/run-insights`, `~/seer`, `~/daily-words` | Where the connectors find each repo and its `.env.local`. Read on every call. |
+| `DWORD_USER_EMAIL` | — | The owner's `users.email` in daily-words, resolved fresh to a `users.id` on every dword write. Unset or no matching row: `dword_vocab_add`/`dword_journal_add` refuse with a clear error and write nothing; `dword_schema`/`dword_sql` are unaffected. |
 | `CONNECTOR_TIMEOUT_MS` | `10000` | Statement timeout per connector query. |
 | `TEST_CONNECTORS_URL` | set by `test:int` | Connector test container (admin URL). |
 | `NOTESD_ADVERSARY` | on | `off` stops the Seer Adversarial reviewer on this machine: no reviews, no `paused` marks, no leases. It is the deploy-free kill switch. The ON/OFF toggle on the wall's `/adversary` page is a different switch, kept in the shared database, which both machines obey; while it is off the reviewer still writes `paused` marks. |

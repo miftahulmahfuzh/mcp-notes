@@ -10,7 +10,7 @@ import { CONNECTOR_DEFAULT_TIMEOUT_MS } from './types.js';
 /** mcp-notes' own .env.local: connector settings may live there, like every other notesd setting. */
 export const CONNECTOR_SETTINGS_FILE = path.join(REPO_ROOT, '.env.local');
 
-const SETTING_KEYS = ['EXPENSE_TRACKING_DIR', 'RUN_INSIGHTS_DIR', 'SEER_DIR', 'CONNECTOR_TIMEOUT_MS'] as const;
+const SETTING_KEYS = ['EXPENSE_TRACKING_DIR', 'RUN_INSIGHTS_DIR', 'SEER_DIR', 'DAILY_WORDS_DIR', 'CONNECTOR_TIMEOUT_MS'] as const;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 300_000;
 

@@ -52,8 +52,8 @@ describe('fail-soft connectors', () => {
   });
 
   it('tools return isError results and the server keeps answering', async () => {
-    const missing = (id: 'expenses' | 'runs' | 'seer') => createConnector(id, { repoDir: path.join(root, `none-${id}`), settings });
-    const connectors: Connectors = { expenses: missing('expenses'), runs: missing('runs'), seer: missing('seer') };
+    const missing = (id: 'expenses' | 'runs' | 'seer' | 'dword') => createConnector(id, { repoDir: path.join(root, `none-${id}`), settings });
+    const connectors: Connectors = { expenses: missing('expenses'), runs: missing('runs'), seer: missing('seer'), dword: missing('dword') };
     const server = new McpServer({ name: 't', version: '0' });
     registerConnectorTools(server, connectors);
     const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -67,11 +67,14 @@ describe('fail-soft connectors', () => {
       const write = (await client.callTool({ name: 'seer_sql', arguments: { sql: 'insert into t values (1)' } })) as CallToolResult;
       expect(write.isError).toBe(true);
       expect(textOf(write)).toMatch(/^seer query failed: refused before reaching the database: only SELECT/);
-      // Robust to phases 2-4 landing in any order: the generic six are always there, and every
-      // registered tool is one of the 15 contract names (curated ones appear as each phase lands).
+      const dwordSchema = (await client.callTool({ name: 'dword_schema', arguments: {} })) as CallToolResult;
+      expect(dwordSchema.isError).toBe(true);
+      expect(textOf(dwordSchema)).toMatch(/^daily-words is not reachable: /);
+      // Robust to phases 2-4 landing in any order: the generic eight are always there, and every
+      // registered tool is one of the contract names (curated ones appear as each phase lands).
       const names = (await client.listTools()).tools.map((t) => t.name);
       expect(names).toEqual(
-        expect.arrayContaining(['expenses_schema', 'expenses_sql', 'runs_schema', 'runs_sql', 'seer_schema', 'seer_sql']),
+        expect.arrayContaining(['expenses_schema', 'expenses_sql', 'runs_schema', 'runs_sql', 'seer_schema', 'seer_sql', 'dword_schema', 'dword_sql']),
       );
       for (const name of names) expect(ALL_CONNECTOR_TOOL_NAMES).toContain(name);
       expect(new Set(names).size).toBe(names.length);
