@@ -19,6 +19,8 @@ export const DETAIL_MAX_PROMPTS = 200;
 export const DETAIL_MAX_CHILDREN = 500;
 export const DETAIL_MAX_NOTES = 50;
 export const NOTE_EXCERPT_CHARS = 200;
+/** A reply excerpt in search hits (via_replies) is cut to this many characters. */
+export const REPLY_EXCERPT_CHARS = 300;
 export const CONTEXT_NODE_MAX_CHARS = 4000;
 export const CONTEXT_MAX_COMMITS = 10;
 export const CONTEXT_MAX_PLAN_DOCS = 10;
@@ -214,10 +216,20 @@ export interface SearchNoteMatch {
   excerpt: string;
 }
 
+/** One of Claude's replies in a search hit's session that matched the query. */
+export interface SearchReplyMatch {
+  /** The number of the prompt the reply answered (cc_session_prompts.seq, 1-based). */
+  seq: number;
+  /** The passage of the reply around the match (its start for a meaning-only match). */
+  excerpt: string;
+}
+
 export interface SearchHit extends GraphNode {
   score: number;
   /** The session's notes that matched the query, best first; empty when it matched on its own text. */
   via_notes: SearchNoteMatch[];
+  /** Claude's replies in the session that matched the query, best first, at most 3; empty when none did. */
+  via_replies: SearchReplyMatch[];
 }
 
 export interface SearchPayload {

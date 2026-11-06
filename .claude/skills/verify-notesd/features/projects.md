@@ -5,10 +5,20 @@
 - Per-project sessions: graph, tree, timeline views; node ids like `A0-3G`.
 - Session search, usage (tokens), transcript (owning host only), resume (NOT driven here).
 - Session search matches a session's notes too (made ∪ linked, live notes only): a word or meaning
-  only a session's note has finds that session, ranked by the better of its own and its best note's
-  text rank / similarity, and the hit lists those notes in `via_notes` (`[{ id, excerpt }]`, best
-  first, at most 3; `[]` when the session matched on its own text). Same in text mode. MCP
+  only a session's note has finds that session, and the hit lists those notes in `via_notes`
+  (`[{ id, excerpt }]`, best first, at most 3; `[]` when no note matched). Same in text mode. MCP
   `sessions_search` and `GET /api/sessions/search` both carry `via_notes`.
+- Session search matches Claude's replies too (`cc_session_replies`, one per prompt: what Claude
+  said after the turn's last tool call). A word or meaning only a reply has finds that session, and
+  the hit lists those replies in `via_replies` (`[{ seq, excerpt }]`, where `seq` is the number of the
+  prompt the reply answered and `excerpt` is the passage around the match; best first, at most 3;
+  `[]` when none matched). Words work in every mode, including without a key. Meaning needs the reply's
+  current vector (`cc_session_reply_embeddings`, filled in the background by the owning host). Note
+  and reply evidence counts `BLEND.related` (0.6) times the session's own, so a session whose own
+  summary or prompts answer ranks above one that only repeats the words in a long reply. MCP
+  `sessions_search` and `GET /api/sessions/search` carry `via_replies`; the Projects chat agent is
+  told to quote a reply excerpt with its node id and prompt number. No UI change (R5): there is no
+  search box on `/projects`; the Projects chat (query pill bar) is the way in.
 - Session search matches a session's commit messages: every commit subject (not the sha) is in the
   session's full-text index (`cc_sessions.search_tsv`, migration 0013) and in the text its vector
   is made from, so a word or meaning only a commit has finds that session, in text and hybrid
@@ -116,6 +126,25 @@ With `--embed` (billed, a few embeddings) the vectors carry the version:
 `$V sql RUN "select count(*) filter (where text_version = 1) as cur, count(*) as all from cc_session_embeddings where embedding is not null"`
 → `cur = all`. "Rebuilt once, then never again" needs a daemon restart, which `verify.sh` has no
 command for: it is proven by `tests/integration/sessions.commitSearch.int.test.ts`.
+
+Replies in search. Seed one reply with a word nothing else has (fixture replies are real ingest
+output, but a seeded row keeps the word unique). Prompt 9001 is far past any fixture prompt:
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+SID=5e55a001-0000-4000-8000-000000000001
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r --arg s "$SID" '.nodes[] | select(.session_id==$s) | .node_id' <<<"$S")
+$V exec RUN "insert into cc_session_prompts (session_id, seq, at, text, truncated) values ('$SID', 9001, now(), 'why is the cache stale?', false) on conflict do nothing"
+$V exec RUN "insert into cc_session_replies (session_id, seq, at, text, truncated) values ('$SID', 9001, now(), 'The wombat cache was stale because its key ignored the repo. I keyed it by repo and node id, and the stale entries are gone.', false)"
+$V mcp RUN sessions_search '{"query":"wombat"}'     # hits[0].node_id NODE, via_replies [{seq: 9001, excerpt "…wombat…"}], mode "text"
+$V api RUN GET '/api/sessions/search?q=wombat'      # same via_replies
+$V sql RUN "select session_id, seq, left(text, 60) from cc_session_replies order by session_id, seq"
+```
+With `--embed` (billed, a few embeddings) the reply worker gives row 9001 a vector within about a
+minute (`select embedding is not null from cc_session_reply_embeddings where seq = 9001`). A
+meaning-only query such as `"why did lookups return outdated data for another project"` then lists
+NODE with `via_replies` seq 9001 in `mode: "hybrid"`. The weight itself is proven by
+`tests/integration/sessions.relatedEvidence.int.test.ts`, not on a run.
 
 Summary requests. Start the run with the summarizer off so nothing is billed and the request stays
 visible (`NOTESD_CLAUDE_BIN` pointing nowhere turns summaries off; the daemon log says so):

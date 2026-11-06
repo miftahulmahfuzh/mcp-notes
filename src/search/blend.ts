@@ -13,6 +13,7 @@ export interface BlendTuning {
   recency: number;
   recencyHalfLifeDays: number;
   exactId: number;
+  related: number;
   textCandidates: number;
   vectorCandidates: number;
 }
@@ -26,13 +27,19 @@ export interface BlendTuning {
  *       + tag * tagMatch              (0..1)
  *       + recency * 0.5^(age / half-life)
  *
+ * A candidate with related items (a session's notes and Claude's replies in it) competes with
+ * the better of its own evidence and `related` times its related items' best, per signal: rank =
+ * max(own rank, related * related rank) before the best-rank normalization; meaning =
+ * max(score(own similarity), related * score(related similarity)). A related literal match keeps
+ * the whole textFloor.
+ *
  * Two invariants are asserted in tests/unit/search.blend.test.ts and must survive any retune:
  *   textFloor + text > vector + tag + recency          the best literal hit beats every meaning-only note
  *   exactId > textFloor + text + vector + tag + recency a named id beats everything
  *
  * Tuned on tests/fixtures/semantic/labelled.ts with the concept-bag fake embedder; phase 6's
  * live test re-checks them against openai/text-embedding-3-small and may change the numbers
- * (never the names).
+ * (never the names). `related` is tuned on tests/fixtures/semantic/sessionsLabelled.ts.
  */
 export const BLEND: BlendTuning = {
   // Any full-text match starts here. Together with `text` it outweighs everything a
@@ -65,6 +72,16 @@ export const BLEND: BlendTuning = {
   recencyHalfLifeDays: 90,
   // The note whose id appears in the query goes first, above any sum of the other signals.
   exactId: 2,
+  // Evidence a session borrows from an item related to it (a note saved from or linked to it,
+  // a reply Claude wrote in it) counts this many times the same evidence in the session's own
+  // text and vector. Below 1: a long reply repeats words and wanders into side topics the session
+  // was not about. Above 0: a reply is often the only place a session's fix is written down.
+  // Tuned on tests/fixtures/semantic/sessionsLabelled.ts (real ts_rank, fake vectors;
+  // tests/integration/sessions.relatedEvidence.int.test.ts): every answer ranks first for
+  // 0.46..0.76. At 1, a chatty reply beats the session whose own summary answers ("photo
+  // delete"). At 0.45 and below, a loosely related session beats the only one whose reply
+  // answers ("connection problems after waking the laptop"). 0.6 sits inside with room on both sides.
+  related: 0.6,
   // Full-text matches considered per query, best ts_rank first (text mode's order). Bounds the
   // work per search; text mode stays the exhaustive option.
   textCandidates: 500,
@@ -153,6 +170,25 @@ export function similarityScore(similarity: number | null, tuning: BlendTuning =
   return clamp01((similarity - tuning.minSimilarity) / (1 - tuning.minSimilarity));
 }
 
+/**
+ * The best of a candidate's related items (a session's notes and Claude's replies in it), on the
+ * same scales as its own textRank and similarity. Null when no related item had that signal.
+ */
+export interface RelatedSignals {
+  textRank: number | null;
+  similarity: number | null;
+}
+
+/**
+ * The literal rank a candidate competes with: its own, or its related items' best times
+ * `tuning.related`, whichever is higher. Null when neither matched by words.
+ */
+export function literalRank(own: number | null, related: number | null, tuning: BlendTuning = BLEND): number | null {
+  if (related === null) return own;
+  const weighted = tuning.related * related;
+  return own === null ? weighted : Math.max(own, weighted);
+}
+
 /** One candidate's signals, every one already on its 0..1 scale (except similarity, raw cosine). */
 export interface BlendInput {
   exactId: boolean;
@@ -162,22 +198,33 @@ export interface BlendInput {
   similarity: number | null;
   tagMatch: number;
   recency: number;
+  /** Related items' best (textRank on the same normalized scale); absent for a candidate with none. */
+  related?: RelatedSignals;
 }
 
 export function blendScore(x: BlendInput, tuning: BlendTuning = BLEND): number {
+  const text = literalRank(x.textRank, x.related?.textRank ?? null, tuning);
+  const meaning = Math.max(
+    similarityScore(x.similarity, tuning),
+    tuning.related * similarityScore(x.related?.similarity ?? null, tuning),
+  );
   return (
     (x.exactId ? tuning.exactId : 0) +
-    (x.textRank === null ? 0 : tuning.textFloor + tuning.text * clamp01(x.textRank)) +
-    tuning.vector * similarityScore(x.similarity, tuning) +
+    (text === null ? 0 : tuning.textFloor + tuning.text * clamp01(text)) +
+    tuning.vector * meaning +
     tuning.tag * clamp01(x.tagMatch) +
     tuning.recency * clamp01(x.recency)
   );
 }
 
-/** A meaning-only candidate must clear minSimilarity; a literal or id match always stays. */
+function clearsSimilarityFloor(similarity: number | null, tuning: BlendTuning): boolean {
+  return similarity !== null && Number.isFinite(similarity) && similarity >= tuning.minSimilarity;
+}
+
+/** A meaning-only candidate must clear minSimilarity (own or related); a literal or id match always stays. */
 export function isEligible(x: BlendInput, tuning: BlendTuning = BLEND): boolean {
-  if (x.exactId || x.textRank !== null) return true;
-  return x.similarity !== null && Number.isFinite(x.similarity) && x.similarity >= tuning.minSimilarity;
+  if (x.exactId || x.textRank !== null || (x.related?.textRank ?? null) !== null) return true;
+  return clearsSimilarityFloor(x.similarity, tuning) || clearsSimilarityFloor(x.related?.similarity ?? null, tuning);
 }
 
 /** A candidate as the repo (or phase 6's live test) hands it over. */
@@ -192,13 +239,16 @@ export interface BlendCandidate {
   updatedAt: Date;
   /** The query names this note's id. */
   exactId?: boolean;
+  /** Raw best rank and similarity of the candidate's related items; absent when it has none (notes). */
+  related?: RelatedSignals;
 }
 
 export type Ranked<T> = T & { score: number };
 
 /**
  * Scores and orders candidates, best first: score desc, then updated_at desc, then id desc
- * (text mode's tie-break). Ineligible candidates are removed.
+ * (text mode's tie-break). Ineligible candidates are removed. The best rank that normalizes
+ * text ranks is the best literalRank, so a related rank counts at its weighted value there too.
  */
 export function rankCandidates<T extends BlendCandidate>(
   candidates: readonly T[],
@@ -207,17 +257,22 @@ export function rankCandidates<T extends BlendCandidate>(
   const tuning = opts.tuning ?? BLEND;
   let best = 0;
   for (const c of candidates) {
-    if (c.textRank !== null && Number.isFinite(c.textRank) && c.textRank > best) best = c.textRank;
+    const r = literalRank(c.textRank, c.related?.textRank ?? null, tuning);
+    if (r !== null && Number.isFinite(r) && r > best) best = r;
   }
+  const normalize = (rank: number | null): number | null => (rank === null ? null : best > 0 ? rank / best : 1);
   const out: Ranked<T>[] = [];
   for (const c of candidates) {
     const input: BlendInput = {
       exactId: c.exactId === true,
-      textRank: c.textRank === null ? null : best > 0 ? c.textRank / best : 1,
+      textRank: normalize(c.textRank),
       similarity: c.similarity,
       tagMatch: c.tagMatch,
       recency: recencyScore(c.updatedAt, opts.now, tuning),
     };
+    if (c.related !== undefined) {
+      input.related = { textRank: normalize(c.related.textRank), similarity: c.related.similarity };
+    }
     if (!isEligible(input, tuning)) continue;
     out.push({ ...c, score: blendScore(input, tuning) });
   }

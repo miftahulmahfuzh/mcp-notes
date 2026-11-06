@@ -36,6 +36,8 @@ describe('<project> block', () => {
     expect(block).toContain('sessions_search');
     expect(block).toContain('session_get');
     expect(block).toContain('repo "mcp-notes"');
+    expect(block).toContain('via_notes');
+    expect(block).toContain('via_replies');
   });
 
   it('comes first in a project turn and is absent from a wall turn', () => {
@@ -64,5 +66,7 @@ describe('system prompt', () => {
     expect(prompt).toContain('sessions_search');
     expect(prompt).toContain('session_get');
     expect(prompt).toContain('A0-3G');
+    expect(prompt).toContain('via_replies');
+    expect(prompt).toContain('prompt 4');
   });
 });
