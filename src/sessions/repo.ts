@@ -1,9 +1,9 @@
 import { randomInt } from 'node:crypto';
-import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
 import { ingestChatImage, type ChatImageStoreDeps } from '../chat/images.js';
-import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPromptImages, ccSessionPrompts, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
+import { appSettings, ccPendingSpawns, ccSessionEmbeddings, ccSessionPromptImages, ccSessionPrompts, ccSessionReplies, ccSessions, ccSubagentTranscripts } from '../db/schema.js';
 import { EMBEDDING_DIMENSIONS } from '../embeddings/constants.js';
 import { toVectorLiteral } from '../embeddings/repo.js';
 import { clampError, retryDelayMs } from '../embeddings/state.js';
@@ -16,11 +16,15 @@ import {
   mergeCommits,
   mergeModels,
   mergeTranscriptPatch,
+  nextLeadingReply,
   normalizeCwd,
   redactedPromptColumns,
   replacedPromptColumns,
+  sameReply,
+  storedLeadingReply,
   storedPrompts,
   storedPromptsFromExcerpts,
+  storedReplies,
   subtractModels,
 } from './merge.js';
 import {
@@ -33,6 +37,7 @@ import {
   PENDING_SPAWN_WINDOW_MS,
   PROMPTS_VERSION,
   PROMPTS_VERSION_EXCERPTS,
+  REPLIES_VERSION,
   SELECTED_PROJECT_KEY,
   type HookStart,
   type HookStartResult,
@@ -47,6 +52,7 @@ import {
   type PromptsReplacement,
   type RedactStoredPromptsResult,
   type ReplacePromptsResult,
+  type ReplyContent,
   type SessionEmbeddingFailure,
   type SessionEmbeddingInput,
   type SessionListItem,
@@ -55,7 +61,9 @@ import {
   type SetParentResult,
   type SpawnClaim,
   type SpawnClaimResult,
+  type StoredLeadingReply,
   type StoredPrompt,
+  type StoredReply,
   type SubagentTotals,
   type SubagentTranscriptPatch,
   type SubagentUpsertResult,
@@ -121,6 +129,9 @@ const MAX_SESSION_ID_CHARS = 128;
 const PROMPT_INSERT_ROWS = 200;
 const PROMPT_INSERT_CHARS = 4 * 1024 * 1024;
 
+/** Rows per insert into cc_session_replies; each is at most MAX_REPLY_STORE_CHARS, so a statement stays under ~3.2 MB. */
+const REPLY_INSERT_ROWS = 200;
+
 /** `prompts` in insert-sized groups, in order. */
 function promptBatches(prompts: readonly StoredPrompt[]): StoredPrompt[][] {
   const batches: StoredPrompt[][] = [];
@@ -171,10 +182,10 @@ function clampLimit(limit: number | undefined): number {
 }
 
 /**
- * The only writer of `cc_sessions`, `cc_session_prompts`, `cc_subagent_transcripts`,
- * `cc_session_embeddings`, `cc_pending_spawns` and `app_settings`. Ingest, the heuristic linker,
- * the hook endpoints, the summary worker, the Summarize request route and the read API all go
- * through it; nothing else writes these tables.
+ * The only writer of `cc_sessions`, `cc_session_prompts`, `cc_session_replies`,
+ * `cc_subagent_transcripts`, `cc_session_embeddings`, `cc_pending_spawns` and `app_settings`.
+ * Ingest, the heuristic linker, the hook endpoints, the summary worker, the Summarize request route
+ * and the read API all go through it; nothing else writes these tables.
  */
 export class SessionsRepo {
   private readonly random: (max: number) => number;
@@ -289,30 +300,36 @@ export class SessionsRepo {
   }
 
   /**
-   * Writes a session's `cc_session_prompts` rows and their `cc_session_prompt_images` links. The
-   * caller holds the cc_sessions row lock, which every writer of a session's prompt rows takes, so
-   * seq cannot race. `replace`: the rows become exactly `prompts`, seq 1..n (their old images are
-   * dropped by the FK cascade; `images` relinks them, free of charge when the same bytes dedupe).
-   * Otherwise `prompts` are appended after the highest seq. `images[i]` are prompts[i]'s images.
+   * Writes a session's `cc_session_prompts` rows, their `cc_session_prompt_images` links and their
+   * `cc_session_replies` rows. The caller holds the cc_sessions row lock, which every writer of a
+   * session's prompt rows takes, so seq cannot race. `replace`: the rows become exactly `prompts`,
+   * seq 1..n (their old images are dropped by the FK cascade; `images` relinks them, free of charge
+   * when the same bytes dedupe), and the replies exactly `replies`. Otherwise `leading` is applied
+   * to the reply of the highest stored seq, then `prompts` are appended after it. `images[i]` are
+   * prompts[i]'s images; `replies[j].prompt` indexes `prompts`.
    */
   private async writePromptRows(
     tx: Tx,
     sessionId: string,
     prompts: readonly StoredPrompt[],
     images: readonly PromptImageLink[][],
+    replies: readonly StoredReply[],
+    leading: StoredLeadingReply | null,
     replace: boolean,
   ): Promise<void> {
     let next = 1;
     if (replace) {
       await tx.delete(ccSessionPrompts).where(eq(ccSessionPrompts.sessionId, sessionId));
     } else {
-      if (prompts.length === 0) return;
+      if (prompts.length === 0 && leading === null) return;
       const top = await tx
         .select({ max: sql<number>`coalesce(max(${ccSessionPrompts.seq}), 0)`.mapWith(Number) })
         .from(ccSessionPrompts)
         .where(eq(ccSessionPrompts.sessionId, sessionId));
       next = (top[0]?.max ?? 0) + 1;
+      if (leading !== null && next > 1) await this.writeLeadingReply(tx, sessionId, next - 1, leading);
     }
+    const first = next;
     let index = 0;
     for (const batch of promptBatches(prompts)) {
       const values = batch.map((p, i) => ({ sessionId, seq: next + i, at: p.at, text: p.text, truncated: p.truncated }));
@@ -324,6 +341,60 @@ export class SessionsRepo {
       next += batch.length;
       index += batch.length;
     }
+    await this.writeReplyRows(tx, sessionId, first, replies, replace);
+  }
+
+  /**
+   * `cc_session_replies` for prompts written from seq `first`. Upserts by (session_id, seq) and
+   * rewrites a row only when its content changed, so a from-byte-0 replace that finds the same
+   * reply keeps the row and its `cc_session_reply_embeddings` row (which cascades only on delete).
+   * `replace`: replies of every other seq of the session are deleted.
+   */
+  private async writeReplyRows(tx: Tx, sessionId: string, first: number, replies: readonly StoredReply[], replace: boolean): Promise<void> {
+    const rows = replies.map((r) => ({ sessionId, seq: first + r.prompt, at: r.at, text: r.text, truncated: r.truncated }));
+    if (replace) {
+      const keep = rows.map((r) => r.seq);
+      await tx
+        .delete(ccSessionReplies)
+        .where(
+          keep.length === 0
+            ? eq(ccSessionReplies.sessionId, sessionId)
+            : and(eq(ccSessionReplies.sessionId, sessionId), notInArray(ccSessionReplies.seq, keep)),
+        );
+    }
+    for (let i = 0; i < rows.length; i += REPLY_INSERT_ROWS) {
+      await tx
+        .insert(ccSessionReplies)
+        .values(rows.slice(i, i + REPLY_INSERT_ROWS))
+        .onConflictDoUpdate({
+          target: [ccSessionReplies.sessionId, ccSessionReplies.seq],
+          set: { at: sql`excluded.at`, text: sql`excluded.text`, truncated: sql`excluded.truncated` },
+          setWhere: sql`${ccSessionReplies.text} is distinct from excluded.text or ${ccSessionReplies.truncated} is distinct from excluded.truncated or ${ccSessionReplies.at} is distinct from excluded.at`,
+        });
+    }
+  }
+
+  /** Applies a read's `leading` to the reply of prompt `seq`, the last one stored before the read. */
+  private async writeLeadingReply(tx: Tx, sessionId: string, seq: number, leading: StoredLeadingReply): Promise<void> {
+    const where = and(eq(ccSessionReplies.sessionId, sessionId), eq(ccSessionReplies.seq, seq));
+    const found = await tx
+      .select({ text: ccSessionReplies.text, at: ccSessionReplies.at, truncated: ccSessionReplies.truncated })
+      .from(ccSessionReplies)
+      .where(where);
+    const stored: ReplyContent | null = found[0] ?? null;
+    const next = nextLeadingReply(stored, leading);
+    if (next === null) {
+      if (stored !== null) await tx.delete(ccSessionReplies).where(where);
+      return;
+    }
+    if (stored !== null && sameReply(stored, next)) return;
+    await tx
+      .insert(ccSessionReplies)
+      .values({ sessionId, seq, at: next.at, text: next.text, truncated: next.truncated })
+      .onConflictDoUpdate({
+        target: [ccSessionReplies.sessionId, ccSessionReplies.seq],
+        set: { at: next.at, text: next.text, truncated: next.truncated },
+      });
   }
 
   // ---------- transcript ingest (Phase 3) ----------
@@ -333,11 +404,14 @@ export class SessionsRepo {
    * a patch is a no-op (`offset_mismatch`); the caller then resumes from `storedOffset`.
    *
    * The pass's prompts go to `cc_session_prompts` in the same transaction, redacted: appended after
-   * the highest seq, or replacing every row on fromOffset 0. Only a read from byte 0 has seen every
-   * prompt, so only it marks the row `prompts_version = PROMPTS_VERSION`. An append to a row below
-   * it (0: written before full prompts existed; PROMPTS_VERSION_EXCERPTS: rebuilt from excerpts)
-   * adds its prompts but leaves the version, so the prompts backfill still replaces that row's
-   * side rows whole.
+   * the highest seq, or replacing every row on fromOffset 0. Their replies go to
+   * `cc_session_replies` in the same transaction, redacted and capped, keyed to the prompt's seq;
+   * an appending pass first applies `leadingReply` to the reply of the last prompt stored before
+   * it. Only a read from byte 0 has seen every prompt and reply, so only it marks the row
+   * `prompts_version = PROMPTS_VERSION` and `replies_version = REPLIES_VERSION`. An append to a row
+   * below PROMPTS_VERSION (0: written before full prompts existed; PROMPTS_VERSION_EXCERPTS:
+   * rebuilt from excerpts) adds its prompts but leaves the versions, so the prompts backfill still
+   * replaces that row's side rows whole.
    */
   async upsertFromTranscript(patch: TranscriptPatch): Promise<TranscriptUpsertResult> {
     assertSessionId(patch.sessionId);
@@ -348,6 +422,8 @@ export class SessionsRepo {
     if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
     await this.ensureSession(patch.sessionId, patch.host);
     const prompts = storedPrompts(patch.prompts);
+    const replies = storedReplies(patch.prompts, patch.replies);
+    const leading = patch.fromOffset === 0 ? null : storedLeadingReply(patch.leadingReply);
     const promptImages = await this.ingestPromptImages(prompts);
     return this.db.transaction(async (tx) => {
       const row = await this.lock(tx, patch.sessionId);
@@ -359,11 +435,15 @@ export class SessionsRepo {
       }
       const reset = patch.fromOffset === 0;
       const set = mergeTranscriptPatch(row, patch, reset ? await this.subagentTotals(tx, patch.sessionId) : null);
-      await this.writePromptRows(tx, patch.sessionId, prompts, promptImages, reset);
+      await this.writePromptRows(tx, patch.sessionId, prompts, promptImages, replies, leading, reset);
       const now = this.now();
       const updated = await tx
         .update(ccSessions)
-        .set(reset ? { ...set, promptsVersion: PROMPTS_VERSION, updatedAt: now } : { ...set, updatedAt: now })
+        .set(
+          reset
+            ? { ...set, promptsVersion: PROMPTS_VERSION, repliesVersion: REPLIES_VERSION, updatedAt: now }
+            : { ...set, updatedAt: now },
+        )
         .where(eq(ccSessions.sessionId, patch.sessionId))
         .returning(SESSION_COLUMNS);
       const next = updated[0];
@@ -386,12 +466,12 @@ export class SessionsRepo {
     return new Map(rows.map((r) => [r.sessionId, { offset: r.offset, size: r.size, path: r.path }]));
   }
 
-  // ---------- full prompts backfill ----------
+  // ---------- full prompts (and replies) backfill ----------
 
   /**
-   * Rows of `host` below PROMPTS_VERSION, most recently active first: legacy rows (0) and rows
-   * redacted in place from excerpts (PROMPTS_VERSION_EXCERPTS), which upgrade if their transcript
-   * is readable again.
+   * Rows of `host` below PROMPTS_VERSION or below REPLIES_VERSION, most recently active first:
+   * legacy rows (0), rows redacted in place from excerpts (PROMPTS_VERSION_EXCERPTS), which upgrade
+   * if their transcript is readable again, and rows ingested before replies were stored.
    */
   async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
     assertHost(host);
@@ -400,16 +480,18 @@ export class SessionsRepo {
         sessionId: ccSessions.sessionId,
         transcriptPath: ccSessions.transcriptPath,
         transcriptOffset: ccSessions.transcriptOffset,
+        promptsVersion: ccSessions.promptsVersion,
       })
       .from(ccSessions)
-      .where(and(eq(ccSessions.host, host), lt(ccSessions.promptsVersion, PROMPTS_VERSION)))
+      .where(and(eq(ccSessions.host, host), or(lt(ccSessions.promptsVersion, PROMPTS_VERSION), lt(ccSessions.repliesVersion, REPLIES_VERSION))))
       .orderBy(desc(sql`coalesce(${ccSessions.lastActiveAt}, ${ccSessions.createdAt})`), asc(ccSessions.sessionId));
   }
 
   /**
-   * Replaces a session's prompts with those of its transcript re-read from byte 0 to `upToOffset`.
-   * Compare-and-set on transcript_offset and host, under the row lock. Writes `cc_session_prompts`
-   * (redacted, seq 1..n), the excerpt list, first_prompt, last_prompt, prompts_version and
+   * Replaces a session's prompts and replies with those of its transcript re-read from byte 0 to
+   * `upToOffset`. Compare-and-set on transcript_offset and host, under the row lock. Writes
+   * `cc_session_prompts` (redacted, seq 1..n), `cc_session_replies` (redacted, capped, unchanged
+   * rows kept), the excerpt list, first_prompt, last_prompt, prompts_version, replies_version and
    * updated_at, and no other column.
    */
   async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {
@@ -417,16 +499,17 @@ export class SessionsRepo {
     assertHost(host);
     assertOffset(input.upToOffset, 'upToOffset');
     const prompts = storedPrompts(input.prompts);
+    const replies = storedReplies(input.prompts, input.replies);
     const promptImages = await this.ingestPromptImages(prompts);
     return this.db.transaction(async (tx): Promise<ReplacePromptsResult> => {
       const row = await this.lockIfExists(tx, sessionId);
       if (row === null) return { status: 'missing' };
       if (row.host !== host) return { status: 'other_host' };
       if (row.transcriptOffset !== input.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
-      await this.writePromptRows(tx, sessionId, prompts, promptImages, true);
+      await this.writePromptRows(tx, sessionId, prompts, promptImages, replies, null, true);
       await tx
         .update(ccSessions)
-        .set({ ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION, updatedAt: this.now() })
+        .set({ ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION, repliesVersion: REPLIES_VERSION, updatedAt: this.now() })
         .where(eq(ccSessions.sessionId, sessionId));
       return { status: 'applied' };
     });
@@ -435,10 +518,12 @@ export class SessionsRepo {
   /**
    * For a row of `host` whose transcript is gone: redacts the stored excerpts, first_prompt and
    * last_prompt in place, rebuilds `cc_session_prompts` from the redacted excerpts (the full text
-   * cannot be recovered; `truncated` where an excerpt ends in `…`) and marks the row
-   * PROMPTS_VERSION_EXCERPTS, never PROMPTS_VERSION: the list is not complete. Same columns as
-   * replacePrompts. A row already at PROMPTS_VERSION_EXCERPTS or above is left alone ('current'),
-   * so a pruned transcript costs one locked read per daemon start, not a rewrite.
+   * cannot be recovered; `truncated` where an excerpt ends in `…`), deletes the session's replies
+   * (their seqs pointed at the old prompt rows, and a pruned transcript keeps none), and marks the
+   * row PROMPTS_VERSION_EXCERPTS, never PROMPTS_VERSION: the list is not complete. replies_version
+   * is left as it was. Same columns as replacePrompts. A row already at PROMPTS_VERSION_EXCERPTS or
+   * above is left alone ('current'), so a pruned transcript costs one locked read per daemon start,
+   * not a rewrite.
    */
   async redactStoredPrompts(sessionId: string, host: string): Promise<RedactStoredPromptsResult> {
     assertSessionId(sessionId);
@@ -454,6 +539,8 @@ export class SessionsRepo {
         sessionId,
         prompts,
         prompts.map(() => []),
+        [],
+        null,
         true,
       );
       await tx

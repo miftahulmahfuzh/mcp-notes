@@ -8,11 +8,17 @@ import {
   MAX_PLAN_DOCS,
   MAX_PROMPT_CHARS,
   MAX_PROMPTS,
+  MAX_REPLY_STORE_CHARS,
   MAX_TITLE_CHARS,
+  type LeadingReply,
   type PatchPrompt,
+  type PatchReply,
   type PromptsReplacement,
+  type ReplyContent,
   type SessionRow,
+  type StoredLeadingReply,
   type StoredPrompt,
+  type StoredReply,
   type SubagentTotals,
   type TranscriptPatch,
   type TranscriptSet,
@@ -155,6 +161,75 @@ export function storedPromptsFromExcerpts(excerpts: readonly SessionPrompt[]): S
       const text = redactSecrets(p.text);
       return { text, at: parseAt(p.at), truncated: text.endsWith('…'), images: [] };
     });
+}
+
+/** `text` cut to MAX_REPLY_STORE_CHARS, never through a surrogate pair. No ellipsis: `truncated` records the cut. */
+export function replyCut(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_REPLY_STORE_CHARS) return { text, truncated: false };
+  let end = MAX_REPLY_STORE_CHARS;
+  const code = text.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return { text: text.slice(0, end), truncated: true };
+}
+
+/** Already-redacted reply text as a row's content: capped. */
+function replyContent(redacted: string, at: Date | null): ReplyContent {
+  const cut = replyCut(redacted);
+  return { text: cut.text, at, truncated: cut.truncated };
+}
+
+/**
+ * `cc_session_replies` content for one read's replies: redacted, then capped (redacting first, so a
+ * cut never leaves the head of a secret too short to match). This is the one place reply text is
+ * redacted. `prompt` is re-indexed onto `storedPrompts(prompts)`, which drops blank prompts; a reply
+ * to a dropped prompt (or a blank reply) is dropped too.
+ */
+export function storedReplies(prompts: readonly PatchPrompt[] | undefined, replies: readonly PatchReply[] | undefined): StoredReply[] {
+  const position = new Map<number, number>();
+  let kept = 0;
+  (prompts ?? []).forEach((p, i) => {
+    if (p.text.trim().length === 0) return;
+    position.set(i, kept);
+    kept += 1;
+  });
+  const out: StoredReply[] = [];
+  for (const r of replies ?? []) {
+    const prompt = position.get(r.prompt);
+    if (prompt === undefined || r.text.trim().length === 0) continue;
+    out.push({ prompt, ...replyContent(redactSecrets(r.text), parseAt(r.at)) });
+  }
+  return out;
+}
+
+/** A read's LeadingReply, redacted. An `append` is capped later, once joined to the stored reply. */
+export function storedLeadingReply(leading: LeadingReply | null | undefined): StoredLeadingReply | null {
+  if (leading === null || leading === undefined) return null;
+  if (leading.kind === 'replace') {
+    const r = leading.reply;
+    return { kind: 'replace', reply: r === null || r.text.trim().length === 0 ? null : replyContent(redactSecrets(r.text), parseAt(r.at)) };
+  }
+  if (leading.text.trim().length === 0) return null;
+  return { kind: 'append', text: redactSecrets(leading.text), at: parseAt(leading.at) };
+}
+
+/**
+ * The reply the last prompt stored before a read holds after it. `stored`: that prompt's reply row
+ * (null: none). A null result means the prompt has no reply. An append joins with a blank line, the
+ * separator one read uses between text blocks, so a turn split across reads stores what one read
+ * of the whole file stores (redaction is per pattern match, so redacting the halves equals
+ * redacting the whole).
+ */
+export function nextLeadingReply(stored: ReplyContent | null, leading: StoredLeadingReply): ReplyContent | null {
+  if (leading.kind === 'replace') return leading.reply;
+  const at = leading.at ?? stored?.at ?? null;
+  if (stored === null) return replyContent(leading.text, at);
+  if (stored.truncated) return { ...stored, at };
+  return replyContent(`${stored.text}\n\n${leading.text}`, at);
+}
+
+/** True when two reply contents would store the same row. */
+export function sameReply(a: ReplyContent, b: ReplyContent): boolean {
+  return a.text === b.text && a.truncated === b.truncated && (a.at?.getTime() ?? null) === (b.at?.getTime() ?? null);
 }
 
 /** The three `cc_sessions` columns that hold prompt text. */

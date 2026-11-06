@@ -4,21 +4,28 @@ import {
   mergeCommits,
   mergeModels,
   mergeTranscriptPatch,
+  nextLeadingReply,
   redactedPromptColumns,
   replacedPromptColumns,
+  storedLeadingReply,
   storedPrompts,
   storedPromptsFromExcerpts,
+  storedReplies,
   subtractModels,
 } from '../../src/sessions/merge.js';
 import {
   PROMPTS_VERSION,
   PROMPTS_VERSION_EXCERPTS,
+  REPLIES_VERSION,
   type PromptsBackfillCandidate,
   type PromptsReplacement,
   type RedactStoredPromptsResult,
   type ReplacePromptsResult,
+  type ReplyContent,
   type SessionRow,
+  type StoredLeadingReply,
   type StoredPrompt,
+  type StoredReply,
   type SubagentTotals,
   type SubagentTranscriptPatch,
   type SubagentUpsertResult,
@@ -75,6 +82,7 @@ export function blankSessionRow(sessionId: string, host: string, over: Partial<S
     summarizedAt: null,
     summaryRequestedAt: null,
     promptsVersion: 0,
+    repliesVersion: 0,
     createdAt: at,
     updatedAt: at,
     ...over,
@@ -93,6 +101,8 @@ export class MemoryIngestStore implements IngestStore {
   readonly subagents = new Map<string, MemorySubagentRow>();
   /** `cc_session_prompts` by session id, in seq order. */
   readonly sidePrompts = new Map<string, StoredPrompt[]>();
+  /** `cc_session_replies` by session id, then seq. */
+  readonly sideReplies = new Map<string, Map<number, ReplyContent>>();
 
   async subagentOffsets(host: string): Promise<Map<string, number>> {
     return new Map([...this.subagents].filter(([, r]) => r.host === host).map(([file, r]) => [file, r.offset]));
@@ -172,20 +182,40 @@ export class MemoryIngestStore implements IngestStore {
     const reset = patch.fromOffset === 0;
     const subagents = reset ? this.subagentTotals(patch.sessionId) : null;
     const added = storedPrompts(patch.prompts);
-    this.sidePrompts.set(patch.sessionId, reset ? added : [...(this.sidePrompts.get(patch.sessionId) ?? []), ...added]);
+    const before = reset ? [] : (this.sidePrompts.get(patch.sessionId) ?? []);
+    this.writeReplies(
+      patch.sessionId,
+      before.length + 1,
+      storedReplies(patch.prompts, patch.replies),
+      reset ? null : storedLeadingReply(patch.leadingReply),
+      reset,
+    );
+    this.sidePrompts.set(patch.sessionId, [...before, ...added]);
     const next: SessionRow = {
       ...row,
       ...mergeTranscriptPatch(row, patch, subagents),
-      ...(reset ? { promptsVersion: PROMPTS_VERSION } : {}),
+      ...(reset ? { promptsVersion: PROMPTS_VERSION, repliesVersion: REPLIES_VERSION } : {}),
     };
     this.rows.set(patch.sessionId, next);
     return { applied: true, row: next };
   }
 
+  /** The repo's writeLeadingReply + writeReplyRows over a Map, with the same pure helpers. */
+  private writeReplies(sessionId: string, first: number, replies: readonly StoredReply[], leading: StoredLeadingReply | null, replace: boolean): void {
+    const map = replace ? new Map<number, ReplyContent>() : new Map(this.sideReplies.get(sessionId) ?? []);
+    if (leading !== null && first > 1) {
+      const next = nextLeadingReply(map.get(first - 1) ?? null, leading);
+      if (next === null) map.delete(first - 1);
+      else map.set(first - 1, next);
+    }
+    for (const r of replies) map.set(first + r.prompt, { text: r.text, at: r.at, truncated: r.truncated });
+    this.sideReplies.set(sessionId, map);
+  }
+
   async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
     return [...this.rows.values()]
-      .filter((r) => r.host === host && r.promptsVersion < PROMPTS_VERSION)
-      .map((r) => ({ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset }));
+      .filter((r) => r.host === host && (r.promptsVersion < PROMPTS_VERSION || r.repliesVersion < REPLIES_VERSION))
+      .map((r) => ({ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset, promptsVersion: r.promptsVersion }));
   }
 
   async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {
@@ -194,7 +224,8 @@ export class MemoryIngestStore implements IngestStore {
     if (row.host !== host) return { status: 'other_host' };
     if (row.transcriptOffset !== input.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
     this.sidePrompts.set(sessionId, storedPrompts(input.prompts));
-    this.rows.set(sessionId, { ...row, ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION });
+    this.writeReplies(sessionId, 1, storedReplies(input.prompts, input.replies), null, true);
+    this.rows.set(sessionId, { ...row, ...replacedPromptColumns(row, input), promptsVersion: PROMPTS_VERSION, repliesVersion: REPLIES_VERSION });
     return { status: 'applied' };
   }
 
@@ -204,6 +235,7 @@ export class MemoryIngestStore implements IngestStore {
     if (row.host !== host) return 'other_host';
     if (row.promptsVersion >= PROMPTS_VERSION_EXCERPTS) return 'current';
     this.sidePrompts.set(sessionId, storedPromptsFromExcerpts(row.prompts));
+    this.sideReplies.delete(sessionId);
     this.rows.set(sessionId, { ...row, ...redactedPromptColumns(row), promptsVersion: PROMPTS_VERSION_EXCERPTS });
     return 'applied';
   }
