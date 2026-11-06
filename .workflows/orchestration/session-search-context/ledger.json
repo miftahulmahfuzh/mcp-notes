@@ -13,29 +13,29 @@
       "note": null,
       "package": "src/sessions",
       "plan": ".workflows/plan/session-search-context/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T16:10:38+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "running",
+      "task_id": "P1-NOTES-A080",
       "title": "Candidate-source refactor of searchSessions"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "da1a33e",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "proof: verified-first-pass (verify-notesd journeys 1-3, typecheck, npm test 2143/2143, test:int 660/660). Carries the set's task bookkeeping A080-A084 (coordinator decision: phase 1 drops its duplicate). Co-Authored-By says Haiku 5.5 \u2014 left, no force-push on shared branch.",
       "package": "src/db`, `src/sessions`, `drizzle",
       "plan": ".workflows/plan/session-search-context/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T16:10:38+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A081",
       "title": "Commit subjects in search_tsv and the session embedding"
     },
     {
@@ -53,7 +53,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Persist Claude's replies (cc_session_replies), tail + backfill"
     },
@@ -102,6 +102,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/orchestration/session-search-context/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-search-context",
-  "updated": "2026-11-06T15:29:35+07:00",
+  "updated": "2026-11-06T16:10:39+07:00",
+  "verified_at": "2026-11-06T16:10:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-search-context"
 }
