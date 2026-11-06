@@ -5,9 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.4.0] - 2026-11-06
+
+Seer Adversarial, the daily-words connector (`/v`, `/j`), session note links and
+on-demand summaries, and the `verify-notesd` skill.
 
 ### Added
+
+- **Seer Adversarial** (`/adversary`): a background reviewer reads Seer's `strategy_candidates`, has Claude gather news, filings and prices (`ADVERSARY_GATHER_MODEL`, default sonnet) and give a verdict (`agree`, `object`, `unsure`; `ADVERSARY_VERDICT_MODEL`, default opus) on each pick, and writes verdicts, `paused` marks and leases into Seer's DB through an allow-listed writer (`seerWriter.ts`). Only verdicts decided before the session's 09:30 New York open count; later ones are marked `late`. Each method gets a Claude twin book that skips objected picks, compared against the original and SPY. Attempts and usage are logged in `adversary_reviews` (migration 0011). `ADVERSARY_DAILY_CAP` (15 a day), turn and time limits, `NOTESD_ADVERSARY=off` as the per-machine kill switch, and a shared ON/OFF toggle on the page.
+- **Adversary wall page**: roster, per-method curves and stats, verdict cards with reasons and sources, the daily A / C / Claude three-way, the objection scorecard, both go-live checklists, "Review now", a sword rail button and Alt+Z focus. API under `/api/adversary/*` (`overview`, `methods/:id`, `decisions/:session`, `daily/:id`, `scorecard/:id`, `toggle`, `review-now`), `event: adversary` on `/api/events`, and MCP tools `adversary_overview`, `adversary_verdicts`, `adversary_scorecard`.
+- **Seer nightly dispatch**: each automatic pass starts Seer's GitHub nightly (`gh workflow run nightly.yml`) once New York midnight + 5 minutes has passed, because GitHub's own cron fires after the US open. At most 3 tries a day, state shared by both machines; `NOTESD_SEER_DISPATCH=off`, `NOTESD_GH_BIN`.
+- **`/redo <method> <TICKER>` skill** with `adversary_redo_context` / `adversary_redo_submit`: redoes one pick's review with real web search, only while that session has not opened.
+- **`/check-seer-adversarial-nightly` skill**: checks Seer's nightly, saves one note per problem linked to the session, and says when (in WIB) today's Adversarial results will land.
+- **daily-words connector** (`dword`): `dword_schema` and `dword_sql` (read-only), plus `dword_vocab_lookup`, `dword_vocab_add`, `dword_journal_find_similar` and `dword_journal_add`, which write through an allow-listed writer as the user named by `DWORD_USER_EMAIL`. Vocabulary lookups match exact terms, original words, inflected forms and near spellings; journal saves are refused as duplicates (exact after normalizing, or cosine distance below 0.25) unless `force: true`, and a failed embedding never blocks a save. `DAILY_WORDS_DIR` (default `~/daily-words`).
+- **`/v` and `/j` skills** for adding or looking up a word, phrase or saying in daily-words from any Claude Code session (`/v term > sentence` keeps the sentence as context); the wall chat runs the same flow with its own status captions.
+- **Session note links**: `link_note` / `unlink_note` (MCP) attach an existing note to a session (`note_session_links`, migration 0009); `session_get` lists a session's notes with `kind: "made" | "linked"`. Session notes open in the big editor, and linked notes carry a link icon.
+- **Summarize on demand**: `POST /api/sessions/:nodeId/summarize` records a request that the owning machine's summary worker serves first, idle or not (migration 0010); the node panel shows why a session has no summary yet and a Summarize button.
+- **Full session prompts**: every prompt is stored redacted in `cc_session_prompts`, backfilled per host, and read with `GET /api/sessions/:nodeId/prompts` (`complete: false` with `incomplete_reason` when only excerpts exist); the node panel's Expand prompts modal shows them with copy. Images pasted into a prompt are shown with it (migration 0012).
 - **`verify-notesd` skill** (`.claude/skills/verify-notesd/`): `verify.sh up` starts a
   throwaway daemon from the current checkout. Each run gets its own database in the
   `mcp-notes-pg-verify` container (127.0.0.1:55436), its own port, data dir and empty
@@ -19,9 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chat. Each entry says how a user reaches the feature, how to drive it, and the end state that
   proves it works. Plans cite these entries in their Proof sections
 - `playwright` 1.62.1 as a dev dependency, for the wall drives
+- Projects page: Alt+Z toggles focus mode; note ids in node summaries are links; a cross-repo parent opens in its own repo.
+- Wall: clicking a note card's cover image opens the lightbox.
 
 ### Changed
+
+- `scripts/install.sh` also links the `check-seer-adversarial-nightly`, `redo`, `v` and `j` skills. Re-run it after updating, and run `npm run db:migrate` once for migrations 0009-0012.
+- The `/n` skill and MCP instructions cover the dword connector, session note links and the adversary tools.
 - `.claude/settings.local.json` is ignored by git; `CLAUDE.md` points at the verify skill
+
+### Fixed
+
+- Session commits are linked to the clone that holds them, also when the session's worktree was removed, and commits printed only by `git log --oneline` after a quiet `git commit` are counted.
+- A bare skill call is kept as a session's first prompt.
+- The nightly dispatch finds `gh` outside the systemd unit's `PATH` and retries a failed dispatch after 15 minutes.
+- Projects: the graph view fills the window with the pill at the bottom, chat history opens with the pill at the bottom, the bar floats while scrolling, and its tooltips show below the buttons instead of being cut off.
+- The sidebar's "n photos" count, which made it scroll sideways, is gone.
+- Adversary page: the query pill is anchored to the window bottom, roster cadence and dates moved into tooltips, and the go-live checklist boxes fill their row without wrapping values.
 
 ## [v0.3.0] - 2026-11-02
 
@@ -130,6 +158,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.4.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.1.0
