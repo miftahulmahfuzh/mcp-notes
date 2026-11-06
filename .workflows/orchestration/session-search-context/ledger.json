@@ -59,21 +59,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6e18bf8",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "proof: verified-first-pass (verify-notesd 1106-164654-1011529 + 1106-164643-1010655; npm test 2170; test:int 682/682 on the integrated tree). Decision rung 2: int-test seeds marked ingested so phase 3's backfill doesn't prune their replies; no prod code change.",
       "package": "src/sessions`, `src/embeddings`, `src/background.ts",
       "plan": ".workflows/plan/session-search-context/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T16:55:20+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A083",
       "title": "Reply embedding worker"
     },
     {
@@ -94,7 +94,7 @@
         "R3",
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Replies as a search source, related-evidence weight, wiring and docs"
     }
@@ -102,7 +102,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/orchestration/session-search-context/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-search-context",
-  "updated": "2026-11-06T16:32:17+07:00",
+  "updated": "2026-11-06T16:55:20+07:00",
   "verified_at": "2026-11-06T16:10:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-search-context"
 }
