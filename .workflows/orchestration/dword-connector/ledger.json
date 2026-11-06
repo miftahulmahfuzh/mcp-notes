@@ -45,24 +45,24 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "efda408",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "dword_vocab_lookup/dword_vocab_add + int test (9 cases); decision: test-only writer?: DwordWriter option on registerDwordVocabCurated so tests never write via ~/daily-words/.env.local (invariant 6) - phase 4 journal test likely needs the same; proof: verified-first-pass tests/integration/connectors/dword.vocab.curated.int.test.ts",
       "package": "src/mcp`, `tests/integration/connectors",
       "plan": ".workflows/plan/dword-connector/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T13:09:55+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R5"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A076",
       "title": "Vocab tools"
     },
     {
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T12:59:30+07:00",
+  "updated": "2026-11-06T13:09:55+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
