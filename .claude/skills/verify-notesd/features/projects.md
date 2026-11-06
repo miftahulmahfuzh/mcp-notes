@@ -4,6 +4,11 @@
 - Projects list (repo, session count, live count, last active), selected project.
 - Per-project sessions: graph, tree, timeline views; node ids like `A0-3G`.
 - Session search, usage (tokens), transcript (owning host only), resume (NOT driven here).
+- Session search matches a session's notes too (made ∪ linked, live notes only): a word or meaning
+  only a session's note has finds that session, ranked by the better of its own and its best note's
+  text rank / similarity, and the hit lists those notes in `via_notes` (`[{ id, excerpt }]`, best
+  first, at most 3; `[]` when the session matched on its own text). Same in text mode. MCP
+  `sessions_search` and `GET /api/sessions/search` both carry `via_notes`.
 - Link an existing note to a session (MCP `link_note` / `unlink_note`; Phase 1). Session notes =
   made ∪ linked, deduped (a note both made and linked is listed once as `made`), newest first, at most 50.
   Links live in `note_session_links`; purging a note from the bin (hard delete) drops its link rows
@@ -76,6 +81,7 @@ MADE=$($V mcp RUN create "{\"body\":\"made in a fixture session #verify\",\"orig
 LINKED=$($V mcp RUN create '{"body":"saved elsewhere #verify"}' | sed 1d | jq -r .note.id)
 $V mcp RUN link_note "{\"note_id\":\"$LINKED\",\"node_id\":\"$NODE\"}"
 $V mcp RUN session_get "{\"node_id\":\"$NODE\"}"     # notes: MADE kind "made", LINKED kind "linked"
+$V mcp RUN sessions_search '{"query":"saved elsewhere"}'   # NODE first, via_notes lists LINKED
 # Only after the UI steps below (it removes LINKED from the panel):
 $V mcp RUN unlink_note "{\"note_id\":\"$LINKED\",\"node_id\":\"$NODE\"}"   # {linked:false, changed:true}; again -> changed:false
 $V sql RUN "select note_id, session_id from note_session_links"   # read-only check of the link table

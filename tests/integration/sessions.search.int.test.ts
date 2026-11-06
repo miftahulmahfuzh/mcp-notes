@@ -105,3 +105,62 @@ describe('searchSessions', () => {
     await expect(searchSessions({ db, embedder, host: HOST }, '   ')).rejects.toThrow(/non-empty/);
   });
 });
+
+describe('searchSessions: notes of a session count as its text', () => {
+  async function insertNote(v: { id: string; body: string; madeIn?: string; linkTo?: string; embed?: boolean; deleted?: boolean }): Promise<void> {
+    const origin = v.madeIn !== undefined ? JSON.stringify({ claude_session: v.madeIn }) : null;
+    await db.execute(sql`
+      insert into notes (id, body, origin, created_at, updated_at, deleted_at)
+      values (${v.id}, ${v.body}, ${origin}::jsonb, now(), now(), ${v.deleted === true ? sql`now()` : sql`null`})
+    `);
+    if (v.linkTo !== undefined) {
+      await db.execute(sql`insert into note_session_links (note_id, session_id) values (${v.id}, ${v.linkTo})`);
+    }
+    if (v.embed !== false) {
+      await db.execute(sql`
+        insert into note_embeddings (note_id, embedding, body_sha256, model, embedded_at, updated_at)
+        values (${v.id}, ${toVectorLiteral(embedder.vectorFor(v.body))}::vector,
+          encode(sha256(convert_to(${v.body}, 'UTF8')), 'hex'), ${embedder.model}, now(), now())
+      `);
+    }
+  }
+
+  it('hybrid: a word only a linked note has finds its session, listed in via_notes', async () => {
+    await insertNote({ id: 'Z-001', body: 'Adversarial shows zero trades, suspect the cutoff', linkTo: 's-other' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'adversarial trades');
+    expect(page.mode).toBe('hybrid');
+    expect(page.sessions[0]?.session_id).toBe('s-other');
+    expect(page.sessions[0]?.via_notes).toEqual([{ id: 'Z-001', excerpt: 'Adversarial shows zero trades, suspect the cutoff' }]);
+  });
+
+  it('a note saved from a session (origin) counts as well, and respects the repo filter', async () => {
+    await insertNote({ id: 'Z-002', body: 'quokka migration plan', madeIn: 's-literal' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'quokka');
+    expect(page.sessions.map((s) => s.session_id)).toEqual(['s-literal']);
+    const other = await searchSessions({ db, embedder, host: HOST }, 'quokka', { repo: 'seer' });
+    expect(other.sessions).toEqual([]);
+  });
+
+  it('text mode: note words rank the session too', async () => {
+    await insertNote({ id: 'Z-003', body: 'quokka migration plan', linkTo: 's-meaning', embed: false });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'quokka', {}, { mode: 'text' });
+    expect(page.sessions.map((s) => s.session_id)).toEqual(['s-meaning']);
+    expect(page.sessions[0]?.via_notes.map((n) => n.id)).toEqual(['Z-003']);
+  });
+
+  it('hybrid: a session matched through its note lists that note even when another session matches on its own text', async () => {
+    await insertNote({ id: 'Z-004', body: 'Leaderboard ranking tweaks.', linkTo: 's-literal' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'leaderboard ranking tweaks');
+    expect(page.sessions.map((s) => s.session_id)).toContain('s-literal');
+    expect(page.sessions.find((s) => s.session_id === 's-literal')?.via_notes.map((n) => n.id)).toEqual(['Z-004']);
+  });
+
+  it('deleted notes and notes of no session are ignored; own-text hits keep an empty via_notes', async () => {
+    await insertNote({ id: 'Z-005', body: 'quokka deleted', linkTo: 's-literal', deleted: true });
+    await insertNote({ id: 'Z-006', body: 'quokka loose note' });
+    const page = await searchSessions({ db, embedder, host: HOST }, 'quokka');
+    expect(page.sessions).toEqual([]);
+    const own = await searchSessions({ db, embedder, host: HOST }, 'photo delete');
+    expect(own.sessions[0]?.via_notes).toEqual([]);
+  });
+});

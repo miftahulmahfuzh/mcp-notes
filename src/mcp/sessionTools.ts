@@ -50,8 +50,9 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Search Claude Code sessions',
       description:
-        "Find the user's past Claude Code sessions (both laptops) by meaning and words in their summaries, names, titles and prompts, e.g. \"when did I fix photo delete in the wall?\". " +
-        'Optional repo narrows to one repository (e.g. "mcp-notes"). Returns { query, mode, fallback, hits: [{ node_id, repo, title, started_at, last_active_at, host, available, live, status, parent_node_id, summary, score, url }] }, best first. ' +
+        "Find the user's past Claude Code sessions (both laptops) by meaning and words in their summaries, names, titles and prompts, and in the notes saved from or linked to each session, e.g. \"when did I fix photo delete in the wall?\". " +
+        'Optional repo narrows to one repository (e.g. "mcp-notes"). Returns { query, mode, fallback, hits: [{ node_id, repo, title, started_at, last_active_at, host, available, live, status, parent_node_id, summary, via_notes, score, url }] }, best first. ' +
+        'via_notes lists the session\'s notes that matched ({ id, excerpt }, note ids like A-B32); empty when the session matched on its own text. ' +
         'fallback set means meaning search was unavailable and only word matches came back. Then call session_get(node_id) for the full record.',
       inputSchema: {
         query: z.string().min(1).describe('What the session was about, in plain words.'),
@@ -93,6 +94,7 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
               status: h.status,
               parent_node_id: h.parent_node_id,
               summary: h.summary_excerpt,
+              via_notes: h.via_notes,
               score: h.score,
             }),
           ),

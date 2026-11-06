@@ -208,8 +208,16 @@ export interface ContextPayload {
   context: string;
 }
 
+/** A note saved from or linked to a search hit's session that matched the query. */
+export interface SearchNoteMatch {
+  id: string;
+  excerpt: string;
+}
+
 export interface SearchHit extends GraphNode {
   score: number;
+  /** The session's notes that matched the query, best first; empty when it matched on its own text. */
+  via_notes: SearchNoteMatch[];
 }
 
 export interface SearchPayload {

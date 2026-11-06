@@ -41,6 +41,7 @@ import {
   type NoteRefRow,
   type ProjectsPayload,
   type PromptsPayload,
+  type SearchNoteMatch,
   type SearchPayload,
   type SessionDetail,
   type StoredPromptImageRow,
@@ -71,6 +72,8 @@ export interface SettingsStore {
 export interface SessionSearchHit {
   sessionId: string;
   score: number;
+  /** The session's notes that matched the query (src/sessions/search.ts via_notes). Absent: none. */
+  viaNotes?: SearchNoteMatch[];
 }
 
 export interface SessionSearchOutcome {
@@ -151,7 +154,7 @@ function phase6Search(db: Db, embedder: Embedder | null): SessionSearchFn {
     return {
       mode: res.mode,
       fallback: res.fallback ?? null,
-      hits: res.sessions.map((h) => ({ sessionId: h.session_id, score: h.score })),
+      hits: res.sessions.map((h) => ({ sessionId: h.session_id, score: h.score, viaNotes: h.via_notes })),
     };
   };
 }
@@ -577,7 +580,9 @@ export async function searchNodes(
   const ctx = await nodeContext(rd);
   const hits = outcome.hits.flatMap((h) => {
     const row = bySession.get(h.sessionId);
-    return row === undefined ? [] : [{ ...toGraphNode(row, ctx), score: Math.round(h.score * 10_000) / 10_000 }];
+    return row === undefined
+      ? []
+      : [{ ...toGraphNode(row, ctx), score: Math.round(h.score * 10_000) / 10_000, via_notes: h.viaNotes ?? [] }];
   });
   return { query: q.query, mode: outcome.mode, fallback: outcome.fallback, hits };
 }
