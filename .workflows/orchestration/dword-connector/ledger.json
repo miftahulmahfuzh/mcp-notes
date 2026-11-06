@@ -25,22 +25,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "0cb7feb",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "src/dword/rules.ts + writer.ts (allow-listed, parameterised), drift test vs real ~/daily-words; proof: verified-first-pass (unit 2119, int 626, dword.writer 6/6)",
       "package": "src/dword",
       "plan": ".workflows/plan/dword-connector/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T12:59:30+07:00",
       "satisfies": [
         "R1",
         "R4"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A075",
       "title": "Writer and rules"
     },
     {
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T12:49:45+07:00",
+  "updated": "2026-11-06T12:59:30+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
