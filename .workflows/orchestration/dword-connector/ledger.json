@@ -1,0 +1,139 @@
+{
+  "branch": "feature/dword-connector",
+  "coordinator": "orch-dword-connector",
+  "coordinator_session_id": "dac02714-fcee-4130-aeed-fbd6c4aeb15c",
+  "created": "2026-11-06T12:19:46+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": "d532900",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": "connector plumbing for dword system; fixed a plan-doc-comment */ syntax bug and a stale pre-existing adversary.int.test.ts tool-count assertion to keep test:int green",
+      "package": "src/connectors`, `src/config.ts",
+      "plan": ".workflows/plan/dword-connector/phase-1.md",
+      "reported_at": "2026-11-06T12:49:45+07:00",
+      "satisfies": [
+        "R1",
+        "R3",
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A074",
+      "title": "Connector plumbing"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/dword",
+      "plan": ".workflows/plan/dword-connector/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Writer and rules"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/mcp`, `tests/integration/connectors",
+      "plan": ".workflows/plan/dword-connector/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Vocab tools"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2,
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "src/mcp`, `tests/integration/connectors",
+      "plan": ".workflows/plan/dword-connector/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Journal tools"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "claude/skills`, `.claude/skills/verify-notesd",
+      "plan": ".workflows/plan/dword-connector/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Skills `/v` and `/j"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3,
+        4,
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 6,
+      "note": null,
+      "package": "src/chat`, `.claude/skills/verify-notesd",
+      "plan": ".workflows/plan/dword-connector/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Wall chat"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "dword-connector",
+  "updated": "2026-11-06T12:49:45+07:00",
+  "verified_at": "2026-11-06T12:40:04+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
+}
