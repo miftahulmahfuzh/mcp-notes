@@ -90,22 +90,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "cf0fea4",
       "depends_on": [
         3,
         4
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "skills /v /j + verify-notesd dword.md; fixed phase-4 bug: unembedded journal saves now write a 'failed' norm_sha sibling row (mirrors dword) so Layer 1 finds exact dups without a key, per invariant 2/D3; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1106-133559-149948/evidence",
       "package": "claude/skills`, `.claude/skills/verify-notesd",
       "plan": ".workflows/plan/dword-connector/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T13:38:25+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A078",
       "title": "Skills `/v` and `/j"
     },
     {
@@ -133,7 +133,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/dword-connector/.workflows/orchestration/dword-connector/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "dword-connector",
-  "updated": "2026-11-06T13:19:45+07:00",
+  "updated": "2026-11-06T13:38:25+07:00",
   "verified_at": "2026-11-06T12:40:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/dword-connector"
 }
