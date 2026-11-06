@@ -3,6 +3,12 @@
   "coordinator": "orch-session-search-context",
   "coordinator_session_id": "fbc086ef-d3c2-4a06-be87-f45bad1bdd2b",
   "created": "2026-11-06T15:29:35+07:00",
+  "landed": {
+    "at": "2026-11-06T17:10:39+07:00",
+    "base": "main",
+    "commit": "e6a4b64ebfe10c7aeb4df52f0e3c6b32eee094f7",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -78,7 +84,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e4b23bb",
       "depends_on": [
         1,
         3,
@@ -86,23 +92,23 @@
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "proof: verified (verify-notesd 1106-170530-1091184, J3 billed 1106-170614-1094393; golden holds at related=1; labelled 5/5, pass range 0.46..0.76; npm test 2178; test:int 694/694; web/ diff empty). Feature 50b91b7 + golden regen e4b23bb + bookkeeping c413c4d. Decision: fixed the plan's J3 wait loop (grepped echoed SQL) to read the count row; assertion unchanged.",
       "package": "src/sessions`, `src/search`, `src/mcp`, `src/chat`, `src/http`, docs",
       "plan": ".workflows/plan/session-search-context/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-06T17:09:42+07:00",
       "satisfies": [
         "R3",
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A084",
       "title": "Replies as a search source, related-evidence weight, wiring and docs"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/session-search-context/.workflows/orchestration/session-search-context/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-search-context",
-  "updated": "2026-11-06T16:55:20+07:00",
+  "updated": "2026-11-06T17:10:39+07:00",
   "verified_at": "2026-11-06T16:10:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-search-context"
 }
