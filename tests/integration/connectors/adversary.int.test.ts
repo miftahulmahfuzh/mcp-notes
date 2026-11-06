@@ -249,8 +249,9 @@ describeWithRepo('seer', 'Seer Adversarial read model, API and MCP on a seeded S
     await client.connect(ct);
     try {
       const tools = (await client.listTools()).tools;
-      expect(tools.map((t) => t.name).sort()).toEqual(['adversary_overview', 'adversary_scorecard', 'adversary_verdicts']);
-      for (const t of tools) expect(t.annotations?.readOnlyHint).toBe(true);
+      const readOnlyNames = ['adversary_overview', 'adversary_scorecard', 'adversary_verdicts'];
+      expect(tools.map((t) => t.name).sort()).toEqual(expect.arrayContaining(readOnlyNames));
+      for (const t of tools.filter((t) => readOnlyNames.includes(t.name))) expect(t.annotations?.readOnlyHint).toBe(true);
       const text = (r: CallToolResult): string => (r.content[0] as { text: string }).text;
       const overview = JSON.parse(text((await client.callTool({ name: 'adversary_overview', arguments: {} })) as CallToolResult)) as OverviewPayload;
       expect(overview.methods.map((x) => x.strategy_id)).toEqual(['A-GT', 'RAW35-FR-GT']);

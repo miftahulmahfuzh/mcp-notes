@@ -7,6 +7,7 @@ import {
   ConfigError,
   DEFAULT_ADVERSARY_CONFIG,
   DEFAULT_CHAT_CONFIG,
+  DEFAULT_DWORD_CONFIG,
   DEFAULT_EMBEDDINGS_CONFIG,
   DEFAULT_PORT,
   DEFAULT_SESSIONS_CONFIG,
@@ -45,9 +46,11 @@ describe('loadConfig', () => {
       embeddings: DEFAULT_EMBEDDINGS_CONFIG,
       sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true, swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py') },
       adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true, dispatchNightly: true },
+      dword: DEFAULT_DWORD_CONFIG,
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
+    expect(cfg.dword).toEqual({ userEmail: null })
   })
 
   it('reads the env file and lets the real environment win', () => {
@@ -204,6 +207,26 @@ describe('loadConfig embeddings', () => {
 
   it('keeps DEFAULT_EMBEDDINGS_CONFIG off', () => {
     expect(DEFAULT_EMBEDDINGS_CONFIG).toEqual({ apiKey: null })
+  })
+})
+
+describe('loadConfig dword', () => {
+  function dword(env: Record<string, string>) {
+    return loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).dword
+  }
+
+  it('is unconfigured without DWORD_USER_EMAIL, or with a blank one', () => {
+    expect(dword({})).toEqual({ userEmail: null })
+    expect(dword({ DWORD_USER_EMAIL: '' })).toEqual({ userEmail: null })
+    expect(dword({ DWORD_USER_EMAIL: '   ' })).toEqual({ userEmail: null })
+  })
+
+  it('trims DWORD_USER_EMAIL', () => {
+    expect(dword({ DWORD_USER_EMAIL: '  owner@example.com \n' })).toEqual({ userEmail: 'owner@example.com' })
+  })
+
+  it('keeps DEFAULT_DWORD_CONFIG unconfigured', () => {
+    expect(DEFAULT_DWORD_CONFIG).toEqual({ userEmail: null })
   })
 })
 

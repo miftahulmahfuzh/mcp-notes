@@ -62,6 +62,16 @@ export interface EmbeddingsConfig {
 /** What `loadConfig` returns for `embeddings` without OPENROUTER_API_KEY. Tests build `Config` literals with it. */
 export const DEFAULT_EMBEDDINGS_CONFIG: EmbeddingsConfig = { apiKey: null }
 
+/** The dword (daily-words) connector's write identity: src/connectors/dword/user.ts resolves it. */
+export interface DwordConfig {
+  /** `DWORD_USER_EMAIL`, trimmed; null when unset or blank. Every dword tool then refuses with
+   * "daily-words user not configured" instead of writing. Never logged. */
+  userEmail: string | null
+}
+
+/** What `loadConfig` returns for `dword` without DWORD_USER_EMAIL. Tests build `Config` literals with it. */
+export const DEFAULT_DWORD_CONFIG: DwordConfig = { userEmail: null }
+
 export const DEFAULT_CLAUDE_HOME = '~/.claude'
 export const DEFAULT_WORKTREES_DIR = '~/.worktrees'
 /** Relative to `claudeHome`: where the swarm skill installs its script (`install.sh` in ~/claude-commands). */
@@ -150,6 +160,8 @@ export interface Config {
   sessions: SessionsConfig
   /** Seer Adversarial reviewer. `enabled: false` starts nothing (DEFAULT_ADVERSARY_CONFIG in tests). */
   adversary: AdversaryConfig
+  /** The dword (daily-words) connector's write identity. `userEmail: null` means every dword write refuses. */
+  dword: DwordConfig
 }
 
 export interface LoadConfigOptions {
@@ -281,6 +293,11 @@ function parseEmbeddings(env: Record<string, string | undefined>): EmbeddingsCon
   return { apiKey: apiKey === '' ? null : apiKey }
 }
 
+function parseDword(env: Record<string, string | undefined>): DwordConfig {
+  const userEmail = env.DWORD_USER_EMAIL?.trim() ?? ''
+  return { userEmail: userEmail === '' ? null : userEmail }
+}
+
 function parseSwitch(name: string, raw: string | undefined): boolean {
   const value = raw?.trim().toLowerCase() ?? ''
   if (value === '' || value === 'on' || value === '1' || value === 'true' || value === 'yes') return true
@@ -334,8 +351,10 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS,
  * NOTESD_SWARM_SCRIPT. Adversary keys: NOTESD_ADVERSARY, ADVERSARY_DAILY_CAP,
  * ADVERSARY_GATHER_MODEL, ADVERSARY_VERDICT_MODEL, ADVERSARY_GATHER_MAX_TURNS,
- * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Other keys are ignored.
- * Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
+ * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Dword key: DWORD_USER_EMAIL
+ * (unset or blank: every dword_vocab_add / dword_journal_add write tool refuses with "daily-words
+ * user not configured"; dword_schema/dword_sql are unaffected, since they need no user id). Other
+ * keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
  */
@@ -363,5 +382,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     embeddings: parseEmbeddings(env),
     sessions: parseSessions(env),
     adversary: parseAdversary(env),
+    dword: parseDword(env),
   }
 }

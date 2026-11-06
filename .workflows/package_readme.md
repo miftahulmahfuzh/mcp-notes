@@ -78,7 +78,7 @@ src/mcp/imageTools.ts  registerImageTools: create_image, view_images, attach_ima
 src/mcp/similarTools.ts registerSimilarTools: similar_images (iteration 8 phase 6); countSources, bodySnippet, IMAGE_SEARCH_OFF, PASTED_IMAGE_NEEDS_HOOK
 src/mcp/sessionTools.ts registerSessionTools (project-session-graph phase 7): sessions_search, session_get, session_transcript, sessions_usage, link_note, unlink_note (session-note-links phase 1) (+ session_resume, phase 9: registerSessionResumeTool, resumeToolResult); SESSIONS_OFF, SESSIONS_{SEARCH,USAGE}_{DEFAULT,MAX}_LIMIT
 src/mcp/server.ts      createMcpServer (notes, image, similar, session and connector tools), handleMcpRequest (stateless, JSON responses)
-src/connectors/names.ts     CONNECTOR_SYSTEMS, CONNECTOR_TOOL_NAMES (all 15), ALL_CONNECTOR_TOOL_NAMES, SYSTEM_META, schemaToolName/sqlToolName
+src/connectors/names.ts     CONNECTOR_SYSTEMS (4, + dword), CONNECTOR_TOOL_NAMES (17: 15 + dword_schema/dword_sql), ALL_CONNECTOR_TOOL_NAMES, SYSTEM_META, schemaToolName/sqlToolName
 src/connectors/types.ts     QueryResult, QueryOptions, ReadOnlySource, Connector(s), SystemAbout, ConnectorError, row/timeout limits
 src/connectors/errors.ts    scrub, reasonOf, unreachable, queryFailed (secret-free ConnectorError messages)
 src/connectors/env.ts       per-call settings, repo dir resolution, sibling .env.local parse, direct-URL pick, secretsOf
@@ -92,6 +92,8 @@ src/connectors/sql.ts       registerSqlTool (<id>_sql)
 src/connectors/register.ts  defaultConnectors, registerConnectorTools
 src/connectors/{expenses,runs,seer}/index.ts    <ID>_ABOUT texts, create<Id>Connector
 src/connectors/{expenses,runs,seer}/curated.ts  register<Id>Curated (3 curated tools per system: expenses phase 2, runs phase 3, seer phase 4)
+src/connectors/dword/index.ts   DWORD_ABOUT, createDwordConnector (dword-connector phase 1; generic _schema/_sql only, no curated tools yet)
+src/connectors/dword/user.ts    resolveDwordUserId(connector, email), dwordUserNotConfiguredMessage, dwordUserNotFoundMessage
 src/connectors/expenses/categories.ts  EXPENSE_CATEGORIES (17 slugs), EXPENSE_CATEGORY_LABELS, EATING_CATEGORIES, toExpenseCategory, categoryLabel
 src/connectors/expenses/dates.ts       pure WIB calendar helpers: DATE_RE/MONTH_RE, addDays, daysInclusive, isoWeekMonday/Key, todayWib, addMonths
 src/connectors/expenses/queries.ts     curated SQL, row builders, fetchSpending / fetchGroup / fetchMonths, limits
@@ -232,6 +234,7 @@ web/dist/              build output, gitignored, served by staticRoutes
 - `DEFAULT_SESSIONS_CONFIG: SessionsConfig`: `{ claudeHome: <home>/.claude, worktreesDir: <home>/.worktrees, enabled: false, swarmScript: null }`. Off, unlike `loadConfig`'s default, so a test that builds a `Config` literal never reads the real `~/.claude`. Every hand-built test `Config` carries `sessions: DEFAULT_SESSIONS_CONFIG`.
 - `DEFAULT_ADVERSARY_DAILY_CAP = 15`, `DEFAULT_ADVERSARY_GATHER_MODEL = 'sonnet'`, `DEFAULT_ADVERSARY_VERDICT_MODEL = 'opus'`, `DEFAULT_ADVERSARY_GATHER_MAX_TURNS = 20`, `DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS = 420_000`, `DEFAULT_ADVERSARY_POLL_MS = 600_000` (Seer Adversarial phase 4)
 - `DEFAULT_ADVERSARY_CONFIG: AdversaryConfig`: those defaults with `enabled: false`, unlike `loadConfig` (on by default), so no hand-built test `Config` ever reviews. Every hand-built test `Config` carries `adversary: DEFAULT_ADVERSARY_CONFIG`.
+- `DEFAULT_DWORD_CONFIG: DwordConfig`: `{ userEmail: null }`, what `loadConfig` returns without `DWORD_USER_EMAIL` (dword-connector phase 1). Every hand-built test `Config` carries `dword: DEFAULT_DWORD_CONFIG`.
 
 #### Config
 ```ts
@@ -244,6 +247,10 @@ interface Config {
   embeddings: EmbeddingsConfig // note embeddings via OpenRouter (iteration 6)
   sessions: SessionsConfig     // Claude Code session ingest (project-session-graph phase 3)
   adversary: AdversaryConfig   // Seer Adversarial reviewer (phase 4)
+  dword: DwordConfig           // daily-words connector write identity (dword-connector phase 1)
+}
+interface DwordConfig {
+  userEmail: string | null     // DWORD_USER_EMAIL, trimmed; null when unset or blank = every dword write tool refuses; never logged
 }
 interface AdversaryConfig {
   enabled: boolean             // NOTESD_ADVERSARY on/off (parseSwitch), default on; off = deps.adversary null
@@ -288,6 +295,8 @@ Merges the dotenv file under the real environment (real env wins). Database URL 
 Throws `ConfigError` when no database URL is set, on a non-integer or >65535 port, when `NOTESD_HOST` is anything but empty or `127.0.0.1`, when `CHAT_BRAIN` is not `claude`/`glm`, when `CHAT_MAX_TURNS`/`CHAT_TIMEOUT_MS` is not a positive integer, or when `CHAT_BRAIN=glm` and any `LLM_*` key is missing (the message names the missing keys). With `CHAT_BRAIN=claude` and incomplete `LLM_*`, `glm` is null and Claude runs have no fallback. `OPENROUTER_API_KEY` fills `embeddings.apiKey` (unset or blank gives null and never throws; note writes are unaffected). `parseSessions(env)` (exported) fills `sessions` from `CLAUDE_HOME`, `NOTES_WORKTREES_DIR` (both `~`-expanded and made absolute), `NOTESD_SESSIONS` and `NOTESD_SWARM_SCRIPT` (phase 13; blank falls back under the resolved `claudeHome`, never throws), and throws `ConfigError` on a `NOTESD_SESSIONS` value other than the on/off words. Other unknown keys are ignored. Synchronous file read; no other side effects.
 
 `parseAdversary(env)` (exported) builds `AdversaryConfig`; it throws `ConfigError` on a `NOTESD_ADVERSARY` other than on/off, a non-positive-integer cap/turns/timeout/poll, or a model name outside the pattern.
+
+`parseDword(env)` (private) fills `dword.userEmail` from `DWORD_USER_EMAIL`; it never throws. The email is only stored here; it is resolved to a `users.id` per call by `resolveDwordUserId` (`src/connectors/dword/user.ts`), never cached in `Config`.
 
 #### isPooledUrl
 ```ts
@@ -881,17 +890,18 @@ The server is stateless. Each POST gets a fresh `McpServer` and a `WebStandardSt
 
 ### Connectors: src/connectors/ (iteration 5 phase 1)
 
-Read-only access to the owner's three sibling apps. One `Connector` per system; no state is held between calls.
+Read-only access to the owner's four sibling apps (dword added by dword-connector phase 1). One `Connector` per system; no state is held between calls.
 
 ```ts
 // names.ts
-const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer'] as const; type SystemId
-const CONNECTOR_TOOL_NAMES   // per system: <id>_schema, <id>_sql, then 3 curated names (expenses_spending/get/months, runs_list/get/review, seer_leaderboard/positions/sera_best)
-const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[]   // all 15, for the chat bar allow list (phase 5)
+const CONNECTOR_SYSTEMS = ['expenses', 'runs', 'seer', 'dword'] as const; type SystemId
+const CONNECTOR_TOOL_NAMES   // per system: <id>_schema, <id>_sql, then 3 curated names (expenses_spending/get/months, runs_list/get/review, seer_leaderboard/positions/sera_best); dword: generic pair only (curated vocab/journal names arrive in phases 3 and 4)
+const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[]   // all 17, for the chat bar allow list (phase 5)
 interface SystemMeta { id; label; repoDirEnv; defaultRepoDir; caption; hasLab }
 const SYSTEM_META            // expenses: 'expense-tracking', EXPENSE_TRACKING_DIR, ~/expense-tracking
                              // runs: 'run-insights', RUN_INSIGHTS_DIR, ~/run-insights
                              // seer: 'seer', SEER_DIR, ~/seer, hasLab
+                             // dword: 'daily-words', DAILY_WORDS_DIR, ~/daily-words, caption 'reading daily-words'
 function schemaToolName(id), sqlToolName(id)
 
 // types.ts
@@ -912,7 +922,7 @@ function queryFailed(label, reason, secrets?)      // "<label> query failed: <re
 
 // env.ts
 const CONNECTOR_SETTINGS_FILE                      // mcp-notes' own .env.local
-function connectorSettings(source?: SettingsSource) // EXPENSE_TRACKING_DIR, RUN_INSIGHTS_DIR, SEER_DIR, CONNECTOR_TIMEOUT_MS; env over file, read per call
+function connectorSettings(source?: SettingsSource) // EXPENSE_TRACKING_DIR, RUN_INSIGHTS_DIR, SEER_DIR, DAILY_WORDS_DIR, CONNECTOR_TIMEOUT_MS; env over file, read per call
 function expandHome, displayPath, resolveRepoDir(id, settings), connectorTimeoutMs(settings)   // timeout 100..300000 else default
 function pickDirectUrl(vars), prepareUrl(url), secretsOf(url)
 function loadDatabaseTarget(id, repoDir): DatabaseTarget   // { url, secrets }; reads <repo>/.env.local every call
@@ -944,9 +954,16 @@ function describePgSchema(source, only?): Promise<TableInfo[]>   // public table
 function describeLabSchema(lab, only?): Promise<TableInfo[]>
 function registerSchemaTool(server, connector, about), registerSqlTool(server, connector, about)
 function defaultConnectors(): Connectors
-function registerConnectorTools(server, connectors): void   // _schema + _sql for every system, then each register<Id>Curated
-// per system: EXPENSES_ABOUT/RUNS_ABOUT/SEER_ABOUT, create{Expenses,Runs,Seer}Connector, register{Expenses,Runs,Seer}Curated
+function registerConnectorTools(server, connectors): void   // _schema + _sql for every system, then each register<Id>Curated (none for dword yet)
+// per system: EXPENSES_ABOUT/RUNS_ABOUT/SEER_ABOUT/DWORD_ABOUT, create{Expenses,Runs,Seer,Dword}Connector, register{Expenses,Runs,Seer}Curated
+
+// dword/user.ts (dword-connector phase 1)
+function resolveDwordUserId(connector, email: string | null): Promise<string>   // SELECT id FROM users WHERE email = $1, fresh every call, never cached
+function dwordUserNotConfiguredMessage(): string   // "daily-words user not configured: set DWORD_USER_EMAIL in .env.local"
+function dwordUserNotFoundMessage(email): string   // "daily-words user <email> not found"
 ```
+
+The dword (daily-words) connector reads `~/daily-words` (or `DAILY_WORDS_DIR`) and its `.env.local` like the others; `dword_schema` / `dword_sql` are the generic read-only pair. `DWORD_ABOUT` summarises `users`, `vocab_entries`, `journal_entries` and `journal_entry_embeddings`. `resolveDwordUserId` maps `config.dword.userEmail` to `users.id` for the later write tools: it throws a `ConnectorError` with `dwordUserNotConfiguredMessage()` when the email is null and `dwordUserNotFoundMessage(email)` when no row matches, before any write is attempted. Phase 2's writer (`src/dword/writer.ts`) does its own lookup on a raw `pg.Client` but reuses the same two message builders. Writes never go through `dword_sql`.
 
 | tool | input | returns |
 |---|---|---|
@@ -1141,8 +1158,8 @@ const NOTES_TOOL_NAMES: readonly [18 names from mcp/tools + mcp/imageTools + mcp
 type NotesToolName
 const SESSION_TOOL_NAMES = ['sessions_search', 'session_get', 'session_transcript', 'sessions_usage', 'session_resume']   // project-session-graph phase 7; session_resume appended in phase 9 (caption 'opening a session in tmux'); type SessionToolName
 const WEB_TOOL_NAMES = ['WebSearch', 'WebFetch']
-const CONNECTOR_CAPTIONS: Record<SystemId, string>                     // from SYSTEM_META[id].caption: 'reading expenses' / 'reading runs' / 'reading seer'
-function allowedChatTools(): string[]                                  // mcp__notes__<name> x19 + mcp__notes__<session tool> x5 (phase 7, + session_resume in phase 9) + mcp__notes__<connector> x15 (ALL_CONNECTOR_TOOL_NAMES) + WebSearch, WebFetch = 41
+const CONNECTOR_CAPTIONS: Record<SystemId, string>                     // from SYSTEM_META[id].caption: 'reading expenses' / 'reading runs' / 'reading seer' / 'reading daily-words'
+function allowedChatTools(): string[]                                  // mcp__notes__<name> x19 + mcp__notes__<session tool> x5 (phase 7, + session_resume in phase 9) + mcp__notes__<connector> x17 (ALL_CONNECTOR_TOOL_NAMES; was 15 before dword-connector phase 1) + WebSearch, WebFetch
 function captionForToolUse(name: string, input: unknown): string | null
 ```
 `createAgentChatBackend` runs one stateless SDK `query` per `reply()` (since iteration 8 phase 7: no `resume`, `persistSession: false`, so nothing is written under `~/.claude/projects`; continuity comes only from `request.turn.text`, which claude and the GLM fallback both get verbatim). Its `prompt` comes from `toSdkPrompt(composeUserTurn({ message: turn.text, images: turn.images }, previews))` (`src/chat/compose.ts`), built once per run: the plain string for a turn without images, else a one-message stream whose content is one base64 image block per pasted image (its `preview` file read once per run through `readPreview`, so the GLM retry reuses it) followed by the text block; a preview that cannot be read fails the turn with `Could not read pasted image <id>: ...` and no fallback. Every run gets: `cwd` (`<dataDir>/chat`), `settingSources: []`, `strictMcpConfig: true`, one MCP server `notes` of type `http` at `mcpUrl()` (read at run start, with `alwaysLoad`), built-in `tools` limited to WebSearch/WebFetch, `allowedTools` from `allowedChatTools()`, `permissionMode: 'dontAsk'`, `includePartialMessages`, `maxTurns: chat.maxTurns`, a fresh `buildChatSystemPrompt(now())` as the whole system prompt, `persistSession: false` (phase 7; `resume` is never set), and `pathToClaudeCodeExecutable` from `resolveExecutable(chat.claudeBin, PATH)` (resolved once at construction). A Claude run uses `claudeEnv` (the daemon env minus every key, base URL, model override and parent-Claude-Code marker, so it runs on the owner's OAuth login; `CLAUDE_CONFIG_DIR` is kept). A GLM run uses `glmEnv` (same base plus `ANTHROPIC_BASE_URL`/`AUTH_TOKEN`/`MODEL`/`DEFAULT_*_MODEL` from `chat.glm`) and `model: glm.model`.
@@ -2478,3 +2495,5 @@ Iteration 4 plan: `docs/plans/CHAT_BAR_BRAIN_PLAN.md` (4 phases, the chat bar br
 Iteration 5 plan: `docs/plans/CONNECTORS_PLAN.md` (6 phases, read-only connectors to expense-tracking, run-insights and Seer). Phase 1 (P1-NOTES-A012, plan `.workflows/plan/P1-NOTES-A012.md`) landed the connector core in `src/connectors/`, the six generic `<system>_schema`/`<system>_sql` tools, the single-SELECT guard, the instructions paragraph, the compact/`ConnectorError` changes in `src/mcp/tools.ts`, the `mcp-notes-pg-connectors` Docker harness and `npm run test:live:connectors`. Phase 2 (P1-NOTES-A013, plan `.workflows/plan/P1-NOTES-A013.md`) filled the expenses curated tools (`src/connectors/expenses/{curated,categories,dates,queries}.ts`). Phase 3 (P1-NOTES-A014, plan `.workflows/plan/P1-NOTES-A014.md`) filled the runs curated tools (`src/connectors/runs/{curated,format,periods,queries}.ts`). Phase 4 (P1-NOTES-A015, plan `.workflows/plan/P1-NOTES-A015.md`) filled the Seer curated tools (`src/connectors/seer/{curated,rows,ranking,leaderboard,positions,sera}.ts`). Phase 5 (P1-NOTES-A016, plan `.workflows/plan/P1-NOTES-A016.md`) landed the chat bar side: `allowedChatTools()` adds the 15 connector tools, `captionForToolUse` captions them per system, the chat system prompt covers the three apps, and the `/n` skill routes spending, runs and Seer questions to the connector tools. Phase 6 (P2-NOTES-C506) landed readable links in the web answer panel.
 
 Seer Adversarial plan set: `docs/plans/2026-11-05-seer-adversarial-design.md`, `.workflows/plan/SEER_ADVERSARIAL_PLAN.md` (7 phases across Seer and mcp-notes). Phase 1 landed Seer's migration 027 (the `adversary_*` tables) on the seer repo. Phase 4 (P1-NOTES-A070) landed the reviewer in `src/adversary/`, `Config.adversary`, `AppDeps.adversary` and migration 0011 `adversary_reviews`. Phase 5 adds the HTTP routes and SSE `adversary` events; phase 7 the README / CLAUDE.md docs.
+
+dword-connector plan set: `docs/plans/` design for connecting notesd to daily-words (`/v` vocabulary, `/j` journal), plan `.workflows/plan/P1-NOTES-A074.md` .. `A079.md` (6 phases). Phase 1 (P1-NOTES-A074) added `dword` as the fourth connector system (`src/connectors/dword/{index,user}.ts`, `DAILY_WORDS_DIR`, generic `dword_schema`/`dword_sql`), `Config.dword` from `DWORD_USER_EMAIL`, and `resolveDwordUserId`. No curated dword tools, skill or chat wiring yet; later phases add the writer (`src/dword/writer.ts`) and the vocab/journal tools.

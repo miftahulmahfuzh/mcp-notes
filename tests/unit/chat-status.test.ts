@@ -5,13 +5,12 @@ import { ADVERSARY_TOOL_NAMES, NOTES_TOOL_NAMES, SESSION_TOOL_NAMES, allowedChat
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 15 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the notes, session, adversary and connector tools, plus WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
-    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(15);
-    expect(tools).toHaveLength(19 + 5 + 3 + 15 + 2);
+    expect(tools).toHaveLength(NOTES_TOOL_NAMES.length + SESSION_TOOL_NAMES.length + ADVERSARY_TOOL_NAMES.length + ALL_CONNECTOR_TOOL_NAMES.length + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -106,7 +105,7 @@ describe('captionForToolUse', () => {
 
   it('captions every connector tool in the contract', () => {
     for (const name of ALL_CONNECTOR_TOOL_NAMES) {
-      expect(captionForToolUse(n(name), {})).toMatch(/^reading (expenses|runs|seer)$/);
+      expect(captionForToolUse(n(name), {})).toMatch(/^reading (expenses|runs|seer|daily-words)$/);
     }
   });
 

@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-05
-**Total Active Tasks**: 1
+**Last Updated**: 2026-11-06
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 1
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 74
+- Completed: 75
 
 ---
 
@@ -40,6 +40,51 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
+- [ ] **P1-NOTES-A075** Phase 2: Writer and rules
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/dword/rules.ts` (every mirrored dword limit, each constant commented with its dword source file — including `JOURNAL_TEXT_MIN/MAX` and `JOURNAL_SOURCE_NOTE_MAX` from dword's `src/lib/journal/limits.ts`, added during reconciliation after phase 4's draft needed them and phase 2's original draft never enumerated that file — Reconciliation Log #15 — plus a drift test that compares them to dword's real source when `~/daily-words` is present and skips otherwise); new `src/dword/writer.ts` (the allow-listed SQL writer: exact statements for `INSERT INTO vocab_entries`, `UPDATE vocab_entries SET origin_term/origin_language/origin_context … WHERE origin_term IS NULL`, `INSERT INTO journal_entries`, `INSERT INTO journal_entry_embeddings`; `assertWritable`-shaped allow-list rejecting anything else, reusing `loadDatabaseTarget`, `CONNECTOR_PG_TYPES`, `scrub` from `src/connectors/*`, and phase 1's two refusal-message builders for its own pg.Client-based user-id lookup, since it cannot reuse phase 1's `Connector`-based `resolveDwordUserId` directly (Reconciliation Log #1)). Exit criteria: unit tests prove `assertWritable` refuses every statement outside the allow-list (including a second statement, a `DELETE`, any other table, an `UPDATE` without the `origin_term IS NULL` guard); the drift test passes against real `~/daily-words` when present and skips cleanly when absent.
+  - **Status**: open
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1, R4 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Exact parameterised SQL for every write, and the `assertWritable` allow-list rules
+  - **Depends on**: P1-NOTES-A074
+  - **Plan**: `.workflows/plan/P1-NOTES-A075.md`
+- [ ] **P1-NOTES-A076** Phase 3: Vocab tools
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/mcp/dwordVocabTools.ts` (`dword_vocab_lookup`, `dword_vocab_add`); the curated names added to `CONNECTOR_TOOL_NAMES.dword` and wired into `registerDwordCurated` (owned jointly with phase 4 — see phase 4's note on `register.ts`'s curated call); `tests/integration/connectors/dword.vocab.curated.int.test.ts`. Implements the 5.7 resolution (`origin_language = 'English'` case) and the D4 conditional origin-attach. Exit criteria: lookup hit/miss, add with unique-index collision (returns existing row), add with origin attach (only when no prior origin), daily-limit refusal — all proven against the throwaway Postgres harness; never touches production Neon.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
+  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075
+  - **Plan**: `.workflows/plan/P1-NOTES-A076.md`
+- [ ] **P1-NOTES-A077** Phase 4: Journal tools
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/mcp/dwordJournalTools.ts` (`dword_journal_find_similar`, `dword_journal_add`); new `src/dword/journalSimilarity.ts` (ported Layer 1 hashing from dword's `similarity.ts`, plus `NEAR_DUPLICATE_MAX_DISTANCE` — reconciled to live here, not in phase 2's `rules.ts`; see Reconciliation Log #5); the curated names appended to `CONNECTOR_TOOL_NAMES.dword` after phase 3's own two (reconciled ownership: phase 3 appends its two first, this phase appends its two after, landing on the final six-name array — Reconciliation Log #2); the new `src/mcp/dwordTools.ts` barrel and the one `registerDwordCurated(server, connectors.dword)` call added to `src/connectors/register.ts` (this phase's job unconditionally, not "whichever phase lands second" — Reconciliation Log #2); `tests/integration/connectors/dword.journal.curated.int.test.ts`. Implements the 5.3 resolution (Layer 2 via OpenRouter at the 0.25 threshold, strict `<` comparison confirmed against dword's real source — Reconciliation Log #6 — never blocking a save on a failed embedding call). Exit criteria: duplicate found → shown, nothing inserted; `force: true` → inserted; no duplicate → inserted with `insight_status = 'ready'`; a simulated embedding failure still inserts the entry (no embeddings row, no block) — all against the throwaway Postgres harness.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R1, R2, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Settle 5.3 (journal similarity) and 5.7 (English term + sentence) by measurement/reading; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
+  - **Depends on**: P1-NOTES-A074, P1-NOTES-A075, P1-NOTES-A076
+  - **Plan**: `.workflows/plan/P1-NOTES-A077.md`
+- [ ] **P1-NOTES-A078** Phase 5: Skills `/v` and `/j`
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: new `claude/skills/v/SKILL.md`, `claude/skills/j/SKILL.md` (format per `check-seer-adversarial-nightly/SKILL.md`: `name`/`description`/`argument-hint` frontmatter, H1, short "what this does", numbered steps — lookup/find-similar first, add on a miss, reply stating found vs. added); confirms (does not assume) whether `scripts/install.sh`'s skill-symlink step is glob-based over `claude/skills/*`, adding the two new directories explicitly if it is not; new `.claude/skills/verify-notesd/features/dword.md` (or an extension, following the four-section contract) covering the Claude Code skill path. Exit criteria: `/v <term> > <sentence>` and `/j <text>` work end to end in a real Claude Code session against the throwaway daemon; `verify-notesd`'s `$V` commands for this entry are copy-pasteable and pass.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
+  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077
+  - **Plan**: `.workflows/plan/P1-NOTES-A078.md`
+- [ ] **P1-NOTES-A079** Phase 6: Wall chat
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/chat/status.ts` (`DWORD_TOOL_NAMES`, the four curated tool names, added only for bespoke status captions and this file's own tests — not spliced into `allowedChatTools()`, since `dword` is already a `CONNECTOR_SYSTEMS` member from phase 1 and all six of its tool names already reach the allow-list through `ALL_CONNECTOR_TOOL_NAMES`; phase 6's own plan corrects this draft's original phrasing — see its "Load-bearing finding" and Principles Applied sections); `src/chat/prompt.ts` (a new paragraph in `buildChatSystemPrompt`'s `sections`, since the chat agent has no skill-loading and no slash-command parsing — natural-language triggers only, matching the existing connectors' paragraph style); confirms `/v`/`/j`-equivalent wall-chat exchanges are captured into chat history (the existing `POST /api/chat` route already captures every exchange unconditionally — this phase verifies, not builds, unless a gap is found); the `verify-notesd` `dword.md` entry gains its wall-chat section (`## Wall chat (phase 6)`, appended after phase 5's `## Claude Code skills (phase 5)` — confirmed matching, no heading mismatch). Exit criteria: a wall-chat message like "add the word perch, as in..." runs the same lookup/find-similar-then-add flow as the skill, through `verify-notesd`'s Playwright driving of the wall; the exchange appears in chat history.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R6 — `/v`/`/j` skill texts, wall chat prompt/allow-list, `verify-notesd` feature-map entries
+  - **Depends on**: P1-NOTES-A076, P1-NOTES-A077, P1-NOTES-A078
+  - **Plan**: `.workflows/plan/P1-NOTES-A079.md`
 
 ### [P2] Medium
 
@@ -51,6 +96,25 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A074** Phase 1: Connector plumbing
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/connectors/names.ts` (`dword` added to `CONNECTOR_SYSTEMS`, `CONNECTOR_TOOL_NAMES` (generic schema/sql names only — curated names are added by phases 3/4), `SYSTEM_META`); `src/connectors/env.ts` (`DAILY_WORDS_DIR` added to `SETTING_KEYS`); `src/connectors/register.ts` (`DWORD_ABOUT` in `ABOUT`, `dword: createDwordConnector()` in `defaultConnectors()`); new `src/connectors/dword/index.ts` (thin wrapper, mirrors `seer/index.ts`); `src/config.ts` (`DWORD_USER_EMAIL` parsing, added to `loadConfig()`); `README.md` env table rows; the test harness (`tests/integration/connectors/siblings.ts`/`harness.ts`) gains `'dword'` as a `SystemId`, with the resolver for dword's `users.id` (`SELECT id FROM users WHERE email = $1`, resolved fresh per call, refusal on missing/unmatched email) plus the two refusal-message builder functions phase 2's writer re-uses for its own, pg.Client-based equivalent (Reconciliation Log #1). Exit criteria: `dword_schema` and `dword_sql` work end to end against a throwaway dword-shaped Postgres; `DWORD_USER_EMAIL` resolves to a real `users.id` or refuses clearly; `npm run typecheck` and `npm test` pass.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/orchestration/dword-connector/PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R1, R3, R5 — Verify design §3 against `~/daily-words` and §4 against mcp-notes; correct what's wrong; Decide `DWORD_USER_EMAIL` resolution and missing/unknown behavior; Tests against a throwaway Postgres from dword's migrations, skip when `~/daily-words` missing, never touch production/`~/.claude`
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A074.md`
+  - **Completed**: 2026-11-06 12:47
+  - **Method**: /do
+  - **Files**: .workflows/orchestration/dword-connector/PLAN.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A074.md, .workflows/plan/P1-NOTES-A075.md, .workflows/plan/P1-NOTES-A076.md, .workflows/plan/P1-NOTES-A077.md, .workflows/plan/P1-NOTES-A078.md, .workflows/plan/P1-NOTES-A079.md, README.md, src/config.ts, src/connectors/env.ts, src/connectors/names.ts, src/connectors/register.ts, src/connectors/dword/index.ts, src/connectors/dword/user.ts, tests/integration/connectors/adversary.int.test.ts, tests/integration/connectors/generic.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/unit/chat-status.test.ts, tests/unit/config.test.ts, tests/unit/connectors/failsoft.test.ts, tests/unit/connectors/names.test.ts, tests/unit/connectors/dword.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts
+  - **Drift**:
+    - Plan's loadConfig doc comment contained a literal `*/` inside `dword_vocab_*/dword_journal_*`, ending the JSDoc block early and breaking the TypeScript parse; reworded to `dword_vocab_add / dword_journal_add`.
+    - Integration/unit test files outside phase 1's Files table build `Config` literals by hand and needed `dword: DEFAULT_DWORD_CONFIG` (plus import) once `dword` became a required `Config` field: connectors/mcp.int, daemon.int, embeddings.worker.int, helpers/api-harness, imageHarness, images.int (two literals), mcp.tools.int, related.int, sessions.ingest.int, unit/embeddings/embedBackfillCli.
+    - Pre-existing failure in tests/integration/connectors/adversary.int.test.ts ('MCP: three read-only tools answer from the same read model') asserted exactly 3 adversary tools, stale since 2df19b9 added adversary_redo_context/adversary_redo_submit; fixed so test:int is green at phase end.
+  - **Decided**:
+    - loadConfig doc comment's literal `*/` → reworded to `dword_vocab_add / dword_journal_add` (rung 6: fix the code, never relax the check; doc-comment typo, not a rung-3 code block).
+    - adversary.int.test.ts stale 3-tool assertion → scoped to the three read-only tools under test via arrayContaining/filter, leaving the two non-read-only redo tools out of that check (rung 6: correcting a stale fact is not relaxing a check).
 - [x] **P1-NOTES-A072** Phase 6: Wall page `/adversary`
   - **Difficulty**: HARD
   - **Type**: Feature

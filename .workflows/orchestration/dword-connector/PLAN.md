@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/dword-connector`
 **Branch:** `feature/dword-connector` (base: `origin/main` @ `2df19b9`)
 **Phases:** 6
-**Status:** planned
+**Status:** phase 1/6 complete
 **Coordinator:** —
 
 ---
@@ -95,12 +95,12 @@ is added unless a later phase finds dedup/audit actually requires one, which non
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Connector plumbing | R1, R3, R5 | `src/connectors`, `src/config.ts` | ~8 | — | NORMAL | `.workflows/plan/dword-connector/phase-1.md` | — | — |
-| 2 | Writer and rules | R1, R4 | `src/dword` | ~4 | 1 | HARD | `.workflows/plan/dword-connector/phase-2.md` | — | — |
-| 3 | Vocab tools | R1, R2, R5 | `src/mcp`, `tests/integration/connectors` | ~4 | 1, 2 | HARD | `.workflows/plan/dword-connector/phase-3.md` | — | — |
-| 4 | Journal tools | R1, R2, R5 | `src/mcp`, `tests/integration/connectors` | ~4 | 1, 2, 3 | HARD | `.workflows/plan/dword-connector/phase-4.md` | — | — |
-| 5 | Skills `/v` and `/j` | R6 | `claude/skills`, `.claude/skills/verify-notesd` | ~5 | 3, 4 | NORMAL | `.workflows/plan/dword-connector/phase-5.md` | — | — |
-| 6 | Wall chat | R6 | `src/chat`, `.claude/skills/verify-notesd` | ~4 | 3, 4, 5 | NORMAL | `.workflows/plan/dword-connector/phase-6.md` | — | — |
+| 1 | Connector plumbing (done 2026-11-06) | R1, R3, R5 | `src/connectors`, `src/config.ts` | ~8 | — | NORMAL | `.workflows/plan/dword-connector/phase-1.md` | P1-NOTES-A074 | — |
+| 2 | Writer and rules | R1, R4 | `src/dword` | ~4 | 1 | HARD | `.workflows/plan/dword-connector/phase-2.md` | P1-NOTES-A075 | — |
+| 3 | Vocab tools | R1, R2, R5 | `src/mcp`, `tests/integration/connectors` | ~4 | 1, 2 | HARD | `.workflows/plan/dword-connector/phase-3.md` | P1-NOTES-A076 | — |
+| 4 | Journal tools | R1, R2, R5 | `src/mcp`, `tests/integration/connectors` | ~4 | 1, 2, 3 | HARD | `.workflows/plan/dword-connector/phase-4.md` | P1-NOTES-A077 | — |
+| 5 | Skills `/v` and `/j` | R6 | `claude/skills`, `.claude/skills/verify-notesd` | ~5 | 3, 4 | NORMAL | `.workflows/plan/dword-connector/phase-5.md` | P1-NOTES-A078 | — |
+| 6 | Wall chat | R6 | `src/chat`, `.claude/skills/verify-notesd` | ~4 | 3, 4, 5 | NORMAL | `.workflows/plan/dword-connector/phase-6.md` | P1-NOTES-A079 | — |
 
 Phases 3 and 4 share depends-on (1, 2) but touch disjoint files (per the Decisions split above) and
 may run concurrently.
