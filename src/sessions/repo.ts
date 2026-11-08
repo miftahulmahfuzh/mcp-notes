@@ -72,6 +72,7 @@ import {
   type SummaryRequest,
   type TranscriptOffset,
   type TranscriptPatch,
+  type SessionRef,
   type TranscriptUpsertResult,
 } from './types.js';
 
@@ -88,6 +89,19 @@ function sessionColumns() {
   return rest;
 }
 const SESSION_COLUMNS = sessionColumns();
+
+/** What a transcript write returns: enough for the ingester's next offset and host check (see SessionRef). */
+const REF_COLUMNS = {
+  sessionId: ccSessions.sessionId,
+  nodeId: ccSessions.nodeId,
+  host: ccSessions.host,
+  transcriptOffset: ccSessions.transcriptOffset,
+  transcriptSize: ccSessions.transcriptSize,
+};
+
+function toRef(row: SessionRow): SessionRef {
+  return { sessionId: row.sessionId, nodeId: row.nodeId, host: row.host, transcriptOffset: row.transcriptOffset, transcriptSize: row.transcriptSize };
+}
 
 const LIST_COLUMNS = {
   sessionId: ccSessions.sessionId,
@@ -230,6 +244,15 @@ export class SessionsRepo {
       }
     }
     throw new Error(`could not find a free node id for session ${sessionId} after ${NODE_ID_ATTEMPTS} attempts`);
+  }
+
+  /** Makes sure a row exists without reading it back. Hot path of the ingester: the row is read once, under the lock. */
+  async ensureSessionRow(sessionId: string, host: string): Promise<void> {
+    assertSessionId(sessionId);
+    assertHost(host);
+    const found = await this.db.execute<{ one: number }>(sql`select 1 as one from cc_sessions where session_id = ${sessionId} limit 1`);
+    if (found.rows.length > 0) return;
+    await this.ensureSession(sessionId, host); // first sighting only: existing loop (node id retry)
   }
 
   async getBySessionId(sessionId: string): Promise<SessionRow | null> {
@@ -421,7 +444,7 @@ export class SessionsRepo {
     assertOffset(patch.toOffset, 'toOffset');
     assertOffset(patch.size, 'size');
     if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
-    await this.ensureSession(patch.sessionId, patch.host);
+    await this.ensureSessionRow(patch.sessionId, patch.host);
     const prompts = storedPrompts(patch.prompts);
     const replies = storedReplies(patch.prompts, patch.replies);
     const leading = patch.fromOffset === 0 ? null : storedLeadingReply(patch.leadingReply);
@@ -429,10 +452,10 @@ export class SessionsRepo {
     return this.db.transaction(async (tx) => {
       const row = await this.lock(tx, patch.sessionId);
       if (row.host !== patch.host) {
-        return { applied: false, reason: 'other_host', storedOffset: row.transcriptOffset, row } as const;
+        return { applied: false, reason: 'other_host', storedOffset: row.transcriptOffset, row: toRef(row) } as const;
       }
       if (patch.fromOffset !== 0 && row.transcriptOffset !== patch.fromOffset) {
-        return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row } as const;
+        return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row: toRef(row) } as const;
       }
       const reset = patch.fromOffset === 0;
       const set = mergeTranscriptPatch(row, patch, reset ? await this.subagentTotals(tx, patch.sessionId) : null);
@@ -446,7 +469,7 @@ export class SessionsRepo {
             : { ...set, updatedAt: now },
         )
         .where(eq(ccSessions.sessionId, patch.sessionId))
-        .returning(SESSION_COLUMNS);
+        .returning(REF_COLUMNS);
       const next = updated[0];
       if (!next) throw new Error(`cc_sessions row ${patch.sessionId} disappeared`);
       return { applied: true, row: next } as const;
@@ -596,7 +619,21 @@ export class SessionsRepo {
     assertOffset(patch.size, 'size');
     if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
     return this.db.transaction(async (tx) => {
-      const parents = await tx.select(SESSION_COLUMNS).from(ccSessions).where(eq(ccSessions.sessionId, patch.sessionId)).for('update');
+      const parents = await tx
+        .select({
+          sessionId: ccSessions.sessionId,
+          host: ccSessions.host,
+          inputTokens: ccSessions.inputTokens,
+          outputTokens: ccSessions.outputTokens,
+          cacheReadTokens: ccSessions.cacheReadTokens,
+          cacheWriteTokens: ccSessions.cacheWriteTokens,
+          models: ccSessions.models,
+          commits: ccSessions.commits,
+          lastActiveAt: ccSessions.lastActiveAt,
+        })
+        .from(ccSessions)
+        .where(eq(ccSessions.sessionId, patch.sessionId))
+        .for('update');
       const parent = parents[0];
       const subs = await tx
         .select()
