@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { startAdaptivePoll } from '../lib/pageActive';
 import { fetchProjects, fetchSelectedProject, saveSelectedProject } from '../sessionsApi';
 import type { ProjectSummary } from '../types';
 
-/** The repo list changes slowly; no SSE event exists for sessions (phase 7), so poll. */
-export const PROJECTS_POLL_MS = 60_000;
+/** The repo list changes slowly; no SSE event exists for sessions (phase 7), so poll (every 2 min, visible tab only). */
+export const PROJECTS_POLL_MS = 120_000;
 
 export interface ProjectsStore {
   /** Repos with sessions; null until the first load. */
@@ -56,10 +57,17 @@ export function useProjects(enabled: boolean): ProjectsStore {
         if (alive) setSelectedLoaded(true);
       }
     })();
-    const poll = window.setInterval(() => void loadList(), PROJECTS_POLL_MS);
+    const poll = startAdaptivePoll({
+      baseMs: PROJECTS_POLL_MS,
+      staleMs: 60_000,
+      run: async () => {
+        await loadList();
+        return true;
+      },
+    });
     return () => {
       alive = false;
-      window.clearInterval(poll);
+      poll.stop();
     };
   }, [enabled]);
 
