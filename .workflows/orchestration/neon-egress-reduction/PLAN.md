@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction`
 **Branch:** `feature/neon-egress-reduction` (base: `HEAD` = main @ `f03583f`, checkout was clean and not ahead of origin)
 **Phases:** 5
-**Status:** phase 1/5 complete
+**Status:** phases 1-4/5 complete
 **Coordinator:** —
 
 ---
@@ -58,9 +58,9 @@ The second machine runs the same loops on the same database, so every figure sca
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | Web pollers: visible-only, slower, adaptive | R1 | `web/` | 6 (+tests) | — | NORMAL | `.workflows/plan/neon-egress-reduction/phase-1.md` | P1-NOTES-A085 | — |
-| 2 | Fingerprint 304s for notes and graph | R2 | `src/notes`, `src/sessions`, `src/http` | 6 (+tests) | — | HARD | `.workflows/plan/neon-egress-reduction/phase-2.md` | P1-NOTES-A086 | — |
+| 2 | Fingerprint 304s for notes and graph | R2 | `src/notes`, `src/sessions`, `src/http` | 6 (+tests) | — | HARD | `.workflows/plan/neon-egress-reduction/phase-2.md` | P1-NOTES-E202 | — |
 | 3 | Ingest write path: one row read per append | R3 | `src/sessions` | 3 (+tests) | — | HARD | `.workflows/plan/neon-egress-reduction/phase-3.md` | P1-NOTES-A087 | — |
-| 4 | Summary worker scan gating and settled-row exclusion | R4 | `src/sessions` | 1 (+tests) | — | NORMAL | `.workflows/plan/neon-egress-reduction/phase-4.md` | P1-NOTES-A088 | — |
+| 4 | Summary worker scan gating and settled-row exclusion | R4 | `src/sessions` | 1 (+tests) | — | NORMAL | `.workflows/plan/neon-egress-reduction/phase-4.md` | P1-NOTES-A085 (plan `.workflows/plan/P1-NOTES-A085-p4.md`) | — |
 | 5 | Egress meter and quota circuit breaker | R5 | `src/db`, `src/http`, `src/config.ts` | 6 (+tests, README) | — | NORMAL | `.workflows/plan/neon-egress-reduction/phase-5.md` | P1-NOTES-A089 | — |
 
 ### Phase 1 — Web pollers

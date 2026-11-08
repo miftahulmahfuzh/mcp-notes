@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 86
+- Completed: 87
 
 ---
 
@@ -117,6 +117,23 @@
   - **Drift**: none: the audit of cc_sessions writers and notes/image/file writers found every graph/list-visible write already moves a fingerprinted column, so no writer was changed; fingerprint timestamps are cast ::text to keep microseconds
   - **Decided**: fingerprint timestamps cast to text so sub-ms writes still move it (rung 3, exit criteria: every write invalidates)
     added GraphCache.clear() and exported GRAPH_CACHE_MAX_ENTRIES beyond the plan code, for resetGraphCache() (rung 3)
+
+- [x] **P1-NOTES-A085** Phase 4: Summary worker scan gating and settled-row exclusion
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns scan gating, fingerprint/changedSince/excludeIds on SummaryStore, settled-row exclusion, tests in src/sessions/summaryWorker.ts. Exit: idle scan at most every 5 min unless host sessions changed, a retry is due or a kick arrived; summaries/embeddings produced as before.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R4 — Backoff for perpetually-pending rows (summary worker scan)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A085-p4.md`
+  - **Completed**: 2026-11-08 09:28
+  - **Method**: /do
+  - **Files**: src/sessions/summaryWorker.ts, tests/unit/sessions/summaryWorker.test.ts, tests/integration/sessions.summaries.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A085-p4.md, .workflows/orchestration/neon-egress-reduction/PLAN.md
+  - **Decided**:
+    - changedSince looks back 30 s before last scan (SCAN_SINCE_MARGIN_MS) → tolerates DB/app clock skew, only removes more ids from the settled list (rung 3/tie-break: reversible)
+    - fingerprint fetched on every drain when the store supports it (~100 B) so lastFingerprint stays fresh even when a scan was forced by another reason → plan design item 2
+    - kick() sets forceScan; the 60 s interval timer does not → plan design item 1(e)
 
 - [x] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
   - **Difficulty**: HARD
