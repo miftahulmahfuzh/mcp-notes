@@ -1,0 +1,98 @@
+{
+  "branch": "feature/neon-egress-reduction",
+  "coordinator": "orch-neon-egress-reduction",
+  "coordinator_session_id": "88a7f374-83a1-406b-97c2-61ad09584514",
+  "created": "2026-11-08T08:43:38+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "web/",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web pollers: visible-only, slower, adaptive"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/notes`, `src/sessions`, `src/http",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Fingerprint 304s for notes and graph"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Ingest write path: one row read per append"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Summary worker scan gating and settled-row exclusion"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/db`, `src/http`, `src/config.ts",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Egress meter and quota circuit breaker"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "neon-egress-reduction",
+  "updated": "2026-11-08T08:43:38+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction"
+}
