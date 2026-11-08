@@ -3,6 +3,12 @@
   "coordinator": "orch-neon-egress-reduction",
   "coordinator_session_id": "88a7f374-83a1-406b-97c2-61ad09584514",
   "created": "2026-11-08T08:43:38+07:00",
+  "landed": {
+    "at": "2026-11-08T10:19:48+07:00",
+    "base": "main",
+    "commit": "36ddcbbc9d2c2d717a7710c85483f22b38125822",
+    "machine": "GPD"
+  },
   "phases": [
     {
       "card": null,
@@ -93,7 +99,7 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "neon-egress-reduction",
-  "updated": "2026-11-08T10:07:53+07:00",
+  "updated": "2026-11-08T10:19:48+07:00",
   "verified_at": "2026-11-08T10:07:53+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction"
 }
