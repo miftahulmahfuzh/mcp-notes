@@ -1,0 +1,99 @@
+{
+  "branch": "feature/neon-egress-reduction",
+  "coordinator": "orch-neon-egress-reduction",
+  "coordinator_session_id": "88a7f374-83a1-406b-97c2-61ad09584514",
+  "created": "2026-11-08T08:43:38+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": "167bffab3034efe5b30e29dc94c656d63398279b",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": "pollers visible-only via startAdaptivePoll (notes 300s, graph 30->120s, projects/adversary 120s); proof: inconclusive (jsdom hidden-tab tests only, no verify-notesd browser run)",
+      "package": "web/",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-1.md",
+      "reported_at": "2026-11-08T08:51:54+07:00",
+      "satisfies": [
+        "R1"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A085",
+      "title": "Web pollers: visible-only, slower, adaptive"
+    },
+    {
+      "card": null,
+      "commit": "76720117610d98d87b3d116157d157ce3dad6cca",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": "notes/tags 304 via aggregate fingerprint + graph snapshot cache keyed by repo fingerprint; fingerprint timestamps cast ::text (decision, rung 3); shared test DB truncated by sibling phases so integration run on a private DB; proof: inconclusive (no verify-notesd journey run; covered by integration test egress.fingerprint)",
+      "package": "src/notes`, `src/sessions`, `src/http",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-2.md",
+      "reported_at": "2026-11-08T09:35:02+07:00",
+      "satisfies": [
+        "R2"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-E202",
+      "title": "Fingerprint 304s for notes and graph"
+    },
+    {
+      "card": null,
+      "commit": "127ebd4",
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": "ingest append reads full row once (ensureSessionRow + light SessionRef + narrow subagent parent); links.ts LINK_COLUMNS skipped; proof: verified-first-pass sessions int suites 18 files/178 tests on own DB mcp_notes_p3 (shared test DB gives false reds with concurrent peers); self-verified, no verify-notesd daemon journey run",
+      "package": "src/sessions",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-3.md",
+      "reported_at": "2026-11-08T09:35:53+07:00",
+      "satisfies": [
+        "R3"
+      ],
+      "status": "done",
+      "task_id": null,
+      "title": "Ingest write path: one row read per append"
+    },
+    {
+      "card": null,
+      "commit": "bac2c2fea771a4d77088d35e4a24d4fad3e29c09",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": "idle scan gated (fingerprint, 5 min floor, retry/kick), settled rows excluded 30 min via excludeIds+changedSince; changedSince 30s margin for clock skew; proof: verified-first-pass (unit 2186, int 695 on private DB mcp_notes_p4 since peers share the default test DB and truncate it; no journeys beyond tests)",
+      "package": "src/sessions",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-4.md",
+      "reported_at": "2026-11-08T09:29:52+07:00",
+      "satisfies": [
+        "R4"
+      ],
+      "status": "done",
+      "task_id": "P1-NOTES-A085",
+      "title": "Summary worker scan gating and settled-row exclusion"
+    },
+    {
+      "card": null,
+      "commit": "23247b0",
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": "meter+breaker+/api/debug/egress+hourly log; unit 2190 green, int subset green (full int contaminated by peers sharing the docker pg); proof: inconclusive (verify-notesd journey not run; covered by egress.debug.int test)",
+      "package": "src/db`, `src/http`, `src/config.ts",
+      "plan": ".workflows/plan/neon-egress-reduction/phase-5.md",
+      "reported_at": "2026-11-08T09:32:19+07:00",
+      "satisfies": [
+        "R5"
+      ],
+      "status": "done",
+      "task_id": "P5-egress-meter",
+      "title": "Egress meter and quota circuit breaker"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "neon-egress-reduction",
+  "updated": "2026-11-08T10:07:53+07:00",
+  "verified_at": "2026-11-08T10:07:53+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/neon-egress-reduction"
+}

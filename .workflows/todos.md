@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-06
-**Total Active Tasks**: 4
+**Last Updated**: 2026-11-08
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 2
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 84
+- Completed: 87
 
 ---
 
@@ -40,6 +40,42 @@
   - **Satisfies**: R7 — Make it live: config, README, land Seer, rebuild/restart notesd, first live review
   - **Depends on**: P1-ROOT-O4FB, P1-ROOT-BXVQ, P1-NOTES-A072
   - **Plan**: `.workflows/plan/P1-NOTES-A073.md`
+- [ ] **P1-NOTES-A086** Phase 2: Fingerprint 304s for notes and graph
+  - **Difficulty**: HARD
+  - **Type**: Refactor
+  - **Context**: Owns: `src/notes/fingerprint.ts`, `src/sessions/graphCache.ts`, the `/api/notes` and `/api/tags` handlers in `src/http/api.ts`, `graphForRepo`/`repoFingerprint` in `src/sessions/readModel.ts`, and the `updatedAt` audit of `cc_sessions` writers (set clauses only). Exit criteria: an unchanged poll of the three endpoints issues one aggregate query; every write invalidates; payloads unchanged; all suites green.
+  - **Status**: pending
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R2 — Lighter "changed since" checks instead of full re-reads (graph, notes list)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A086.md`
+- [ ] **P1-NOTES-A087** Phase 3: Ingest write path: one row read per append
+  - **Difficulty**: HARD
+  - **Type**: Refactor
+  - **Context**: Owns: `ensureSessionRow`, `SessionRef`/`REF_COLUMNS` and the narrow `RETURNING`, the narrow parent select in `upsertFromSubagentTranscript`, optionally `LINK_COLUMNS` in `links.ts`. Exit criteria: one full-row read per main-transcript append; stored data identical; all suites green.
+  - **Status**: pending
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 3 of 5)
+  - **Satisfies**: R3 — Verify finding 4 and the ingest path; fix what re-reads bodies/rows
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A087.md`
+- [ ] **P1-NOTES-A088** Phase 4: Summary worker scan gating and settled-row exclusion
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns: scan gating, `fingerprint`/`changedSince`/`excludeIds` on `SummaryStore`, settled-row exclusion, tests. Exit criteria: idle scan at most every 5 min unless the host's sessions changed, a retry is due or a kick arrived; summaries and embeddings produced as before.
+  - **Status**: pending
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R4 — Backoff for perpetually-pending rows (summary worker scan)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A088.md`
+- [ ] **P1-NOTES-A089** Phase 5: Egress meter and quota circuit breaker
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns: `src/db/meter.ts`, `src/db/quota.ts`, `src/db/client.ts` instrumentation, `src/http/debugApi.ts` and its mount, hourly log line in `src/background.ts`, README rows. Exit criteria: `/api/debug/egress` shows rows/bytes per query shape; a 53000 answer pauses queries for 30 min; env switch restores old behaviour.
+  - **Status**: pending
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 5 of 5)
+  - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
 ### [P2] Medium
 
 ### [P3] Low
@@ -49,6 +85,55 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A085** Phase 1: Web pollers: visible-only, slower, adaptive
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns: `web/src/lib/pageActive.ts` (new), `useNotes`, `useSessionGraph`, `useProjects`, `useAdversary` and their tests. Exit criteria: no `setInterval` in the four hooks; hidden tabs make zero requests; cadences 300 s / 30→120 s / 120 s / 120 s; web tests and typecheck green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 1 of 5)
+  - **Satisfies**: R1 — Poll only on change / visibility (web pollers: graph, notes, projects, adversary)
+  - **Depends on**: none
+  - **Plan**: `.workflows/plan/P1-NOTES-A085.md`
+  - **Completed**: 2026-11-08 08:49
+  - **Method**: /do
+  - **Files**: web/src/lib/pageActive.ts, web/src/lib/pageActive.test.tsx, web/src/hooks/pollers.test.tsx, web/src/hooks/useNotes.ts, web/src/hooks/useSessionGraph.ts, web/src/hooks/useProjects.ts, web/src/hooks/useAdversary.ts, .workflows/todos.md, .workflows/orchestration/neon-egress-reduction/PLAN.md, .workflows/plan/P1-NOTES-A085.md, .workflows/plan/P1-NOTES-A086.md, .workflows/plan/P1-NOTES-A087.md, .workflows/plan/P1-NOTES-A088.md, .workflows/plan/P1-NOTES-A089.md
+  - **Drift**: none; tests for hook cadences were new (no existing timer tests existed) so added pollers.test.tsx + pageActive.test.tsx
+    useNotes: on show, skip the extra debounced refetch when the poll's stale-on-show load is already in flight (avoids a double fetch)
+  - **Decided**: Proof journeys (verify-notesd browser visibility) not run → inconclusive, covered by jsdom hidden-tab tests (rung 2: exit criteria met by unit tests)
+
+- [x] **P1-NOTES-E202** Phase 2: Fingerprint 304s for notes and graph
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/notes/fingerprint.ts`, `src/sessions/graphCache.ts`, the `/api/notes` and `/api/tags` handlers in `src/http/api.ts`, `graphForRepo`/`repoFingerprint` in `src/sessions/readModel.ts`, and the `updatedAt` audit of `cc_sessions` writers (set clauses only). Does not touch `web/`, migrations, or phase 3's write-path read narrowing. Exit criteria: an unchanged poll of the three endpoints issues one aggregate query; every write invalidates; payloads unchanged; all suites green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R2 — Lighter "changed since" checks instead of full re-reads (graph, notes list)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-E202.md`
+  - **Completed**: 2026-11-08 09:33
+  - **Method**: /do
+  - **Files**: src/notes/fingerprint.ts, src/sessions/graphCache.ts, src/sessions/readModel.ts, src/http/api.ts, tests/unit/notes.fingerprint.test.ts, tests/unit/sessions.graphCache.test.ts, tests/integration/egress.fingerprint.int.test.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.unfinished.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-E202.md
+  - **Drift**: none: the audit of cc_sessions writers and notes/image/file writers found every graph/list-visible write already moves a fingerprinted column, so no writer was changed; fingerprint timestamps are cast ::text to keep microseconds
+  - **Decided**: fingerprint timestamps cast to text so sub-ms writes still move it (rung 3, exit criteria: every write invalidates)
+    added GraphCache.clear() and exported GRAPH_CACHE_MAX_ENTRIES beyond the plan code, for resetGraphCache() (rung 3)
+
+- [x] **P1-NOTES-A085** Phase 4: Summary worker scan gating and settled-row exclusion
+  - **Difficulty**: NORMAL
+  - **Type**: Update
+  - **Context**: Owns scan gating, fingerprint/changedSince/excludeIds on SummaryStore, settled-row exclusion, tests in src/sessions/summaryWorker.ts. Exit: idle scan at most every 5 min unless host sessions changed, a retry is due or a kick arrived; summaries/embeddings produced as before.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 4 of 5)
+  - **Satisfies**: R4 — Backoff for perpetually-pending rows (summary worker scan)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A085-p4.md`
+  - **Completed**: 2026-11-08 09:28
+  - **Method**: /do
+  - **Files**: src/sessions/summaryWorker.ts, tests/unit/sessions/summaryWorker.test.ts, tests/integration/sessions.summaries.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-A085-p4.md, .workflows/orchestration/neon-egress-reduction/PLAN.md
+  - **Decided**:
+    - changedSince looks back 30 s before last scan (SCAN_SINCE_MARGIN_MS) → tolerates DB/app clock skew, only removes more ids from the settled list (rung 3/tie-break: reversible)
+    - fingerprint fetched on every drain when the store supports it (~100 B) so lastFingerprint stays fresh even when a scan was forced by another reason → plan design item 2
+    - kick() sets forceScan; the 60 s interval timer does not → plan design item 1(e)
 
 - [x] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
   - **Difficulty**: HARD

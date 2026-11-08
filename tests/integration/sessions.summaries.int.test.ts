@@ -89,6 +89,31 @@ describe('session summary worker (Postgres)', () => {
     expect(embedder2.calls).toHaveLength(0);
   });
 
+  it('listIdle leaves out excludeIds, and fingerprint / changedSince track this host only', async () => {
+    const A = '88888888-8888-8888-8888-888888888881';
+    const B = '88888888-8888-8888-8888-888888888882';
+    const C = '88888888-8888-8888-8888-888888888883';
+    await insertSession({ sessionId: A, nodeId: 'A0-3G', lastActiveMinutesAgo: 60, prompts: ['one'] });
+    await insertSession({ sessionId: B, nodeId: 'B1-4H', lastActiveMinutesAgo: 61, prompts: ['two'] });
+    await insertSession({ sessionId: C, nodeId: 'C2-5J', host: 'other-host', lastActiveMinutesAgo: 60, prompts: ['elsewhere'] });
+    const store = dbSummaryStore(db, new SessionsRepo(db));
+    const base = { host: HOST, idleBefore: new Date(), limit: 100, wantSummary: true, embeddingModel: null };
+    const ids = async (excludeIds?: readonly string[]): Promise<string[]> =>
+      (await store.listIdle({ ...base, excludeIds })).map((c) => c.sessionId).sort();
+    expect(await ids()).toEqual([A, B]);
+    expect(await ids([])).toEqual([A, B]);
+    expect(await ids([A])).toEqual([B]);
+    expect(await ids([A, B, C])).toEqual([]);
+
+    const fp1 = await store.fingerprint!(HOST);
+    expect(fp1.startsWith('2|')).toBe(true);
+    expect(await store.fingerprint!(HOST)).toBe(fp1);
+    await db.execute(sql`update cc_sessions set updated_at = now() + interval '1 minute' where session_id = ${B}`);
+    expect(await store.fingerprint!(HOST)).not.toBe(fp1);
+    expect(await store.changedSince!({ host: HOST, since: new Date(Date.now() + 30_000) })).toEqual([B]);
+    expect(await store.changedSince!({ host: HOST, since: new Date(Date.now() + 120_000) })).toEqual([]);
+  });
+
   it('serves this host\'s requests first (fresh ones too), clears them, and leaves another host\'s request alone', async () => {
     const A = '44444444-4444-4444-4444-444444444444';
     const B = '55555555-5555-5555-5555-555555555555';

@@ -1005,6 +1005,7 @@ part of `npm test` or `test:int`.
 | `ADVERSARY_STOCK_TIMEOUT_MS` | `420000` | Wall-clock limit for one stock, both stages together. A stock that times out gets no verdict, so its twin copies the original. |
 | `ADVERSARY_POLL_MS` | `600000` | Pause between automatic review passes (10 minutes). "Review now" on the wall starts a pass at once. |
 | `NOTESD_SEER_DISPATCH` | on | While the reviewer is on and its ON/OFF toggle is on, each automatic pass starts Seer's GitHub nightly (`gh workflow run nightly.yml`, repo read from `SEER_DIR`'s `origin`) once New York midnight + 5 minutes has passed (12:05 WIB in US winter, 11:05 in summer), on New York Tue-Sat, and only if no successful nightly has finished since. GitHub's own cron fires hours late, often after the 14:30 UTC open, so a verdict could never count. Retried after 90 minutes, at most 3 times a day; the state is shared by both machines (`app_settings` key `adversary.nightly_dispatch`). Needs `gh` logged in on this machine; the daemon finds it on `PATH`, in `~/.local/bin`, `/usr/local/bin` or `/usr/bin`, or at `NOTESD_GH_BIN`. A failed attempt is retried after 15 minutes. A duplicate is harmless (the workflow queues runs and a finished session is a no-op). `off` leaves the nightly to GitHub's cron. |
+| `NOTESD_EGRESS_METER` | on | `off` disables the query meter (`GET /api/debug/egress`, the hourly `[notesd] egress` log line) and the Neon quota breaker, restoring plain database behaviour. |
 | `NOTESD_SESSIONS` | on | `off` stops the daemon reading Claude Code transcripts. The session graph then shows only what is already in the database. |
 | `CLAUDE_HOME` | `~/.claude` | Where Claude Code keeps `projects/` (transcripts) and `sessions/` (which sessions are running). |
 | `NOTES_WORKTREES_DIR` | `~/.worktrees` | Root of the `<repo>/<slug>` worktrees; sessions run in one are filed under its repo, even after it is deleted. |
@@ -1139,6 +1140,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/sessions/:nodeId` | One session in full: summary, prompts, commits, plan docs, files, notes saved from it, tokens, children |
 | `GET /api/sessions/:nodeId/transcript?query=` | Matching passages of the transcript; 404 `not_on_this_machine` when it lives on the other machine |
 | `GET /api/sessions/:nodeId/prompts` | Every stored prompt of a session, numbered, in full. Read from the database, so it works for either machine's sessions. `complete: false` with `incomplete_reason` (`not_backfilled`, `transcript_pruned`) when only excerpts are kept |
+| `GET /api/debug/egress` | Rows and approximate bytes returned per query shape since the daemon started (top 25 by bytes), plus the Neon quota breaker state (`quota.tripped`, `quota.resumes_at`). `{ enabled: false }` when `NOTESD_EGRESS_METER=off`. Loopback only |
 | `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback`; each hit carries `via_notes` and `via_replies` like the MCP tool |
@@ -1155,6 +1157,10 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/adversary/review-now` | `{strategy_id?}`: start one review pass now, even while automatic reviews are off; 202 `{started, reason}` before it finishes. Same-origin only |
 | `/full/:imageId` | The full-screen photo page |
 | `/projects?repo=&node=&focus=1` | The project session graph, opened on that repo and node; `focus=1` shows only the graph (or project chat), toolbar and pill. With `node` and no `repo` (how Claude Code links a session) the node's own repo is looked up |
+
+#### When Neon says quota exceeded
+
+If Neon answers `53000 ... exceeded the quota` (the free plan's monthly network transfer), notesd stops sending queries for 30 minutes and logs `[notesd] Neon quota exceeded; pausing database queries for 30 min` once, instead of retrying from every background loop on every machine. The first query after the pause is the probe. Nothing is lost: the wall and tools report the database error meanwhile. To see what spent the quota, read `GET /api/debug/egress` on `127.0.0.1` or the hourly `[notesd] egress since ...` log line; both list the query shapes that returned the most bytes (an estimate from the row JSON, within about 30 %). Set `NOTESD_EGRESS_METER=off` to disable both the meter and the breaker.
 
 ### Where things are stored
 

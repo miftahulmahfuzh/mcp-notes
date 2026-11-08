@@ -330,9 +330,12 @@ export type TranscriptSet = Pick<
   | 'transcriptSize'
 >;
 
+/** What the ingester needs back from a transcript write. */
+export type SessionRef = Pick<SessionRow, 'sessionId' | 'nodeId' | 'host' | 'transcriptOffset' | 'transcriptSize'>;
+
 export type TranscriptUpsertResult =
-  | { applied: true; row: SessionRow }
-  | { applied: false; reason: 'offset_mismatch' | 'other_host'; storedOffset: number; row: SessionRow };
+  | { applied: true; row: SessionRef }
+  | { applied: false; reason: 'offset_mismatch' | 'other_host'; storedOffset: number; row: SessionRef };
 
 /**
  * One read of a subagent transcript (`<dir>/<session uuid>/subagents/agent-<id>.jsonl`). Same

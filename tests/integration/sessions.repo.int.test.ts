@@ -142,7 +142,9 @@ describe('SessionsRepo', () => {
       })
       const second = await repo.upsertFromTranscript(append)
       expect(second.applied).toBe(true)
-      expect(second.row).toMatchObject({
+      expect(second.row).toMatchObject({ transcriptOffset: 250, transcriptSize: 250 })
+      const stored = (await repo.getBySessionId('s-1'))!
+      expect(stored).toMatchObject({
         transcriptOffset: 250,
         transcriptSize: 250,
         inputTokens: 13,
@@ -155,8 +157,8 @@ describe('SessionsRepo', () => {
         lastActiveAt: at(5),
         costUsd: 0.42,
       })
-      expect(second.row.prompts.map((p) => p.text)).toEqual(['hello', 'second'])
-      expect(second.row.models['claude-opus']?.inputTokens).toBe(13)
+      expect(stored.prompts.map((p) => p.text)).toEqual(['hello', 'second'])
+      expect(stored.models['claude-opus']?.inputTokens).toBe(13)
 
       const replay = await repo.upsertFromTranscript(append)
       expect(replay).toMatchObject({ applied: false, reason: 'offset_mismatch', storedOffset: 250 })
@@ -167,14 +169,15 @@ describe('SessionsRepo', () => {
       await repo.upsertFromTranscript(patch('s-1', { tokens: { inputTokens: 50 }, prompts: [{ text: 'a', at: null }] }))
       const again = await repo.upsertFromTranscript(patch('s-1', { tokens: { inputTokens: 50 }, prompts: [{ text: 'a', at: null }] }))
       expect(again.applied).toBe(true)
-      expect(again.row.inputTokens).toBe(50)
-      expect(again.row.prompts).toHaveLength(1)
+      const stored = (await repo.getBySessionId('s-1'))!
+      expect(stored.inputTokens).toBe(50)
+      expect(stored.prompts).toHaveLength(1)
     })
 
     it('keeps the hook-reported name and tmux when the transcript has none', async () => {
       await repo.upsertFromHook({ sessionId: 's-1', host: HOST, name: 'impl-x-p1', tmux: 'note:@0.%7', cwd: '/w' })
-      const r = await repo.upsertFromTranscript(patch('s-1', { name: null, cwd: '/w', entrypoint: 'cli' }))
-      expect(r.row).toMatchObject({ name: 'impl-x-p1', tmux: 'note:@0.%7', cwd: '/w' })
+      await repo.upsertFromTranscript(patch('s-1', { name: null, cwd: '/w', entrypoint: 'cli' }))
+      expect(await repo.getBySessionId('s-1')).toMatchObject({ name: 'impl-x-p1', tmux: 'note:@0.%7', cwd: '/w' })
     })
 
     it('refuses a patch for a row held by another host', async () => {

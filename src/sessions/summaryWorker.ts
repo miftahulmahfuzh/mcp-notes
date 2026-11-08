@@ -31,6 +31,17 @@ export const DEFAULT_SUMMARY_BATCH = 20;
 export const SUMMARY_SCAN_LIMIT = 5_000;
 /** Most requested sessions one sweep serves (each still waits for the summary rate limiter). */
 export const SUMMARY_REQUEST_LIMIT = 100;
+/**
+ * The idle scan runs at most this often unless the host's sessions changed, a retry is due or a
+ * kick arrived: idleness crosses its threshold with no row change, so the scan cannot be dropped.
+ */
+export const SUMMARY_SCAN_FLOOR_MS = 5 * 60_000;
+/** A session the worker finished is left out of the idle scan this long (unless it changes). */
+export const SUMMARY_SETTLED_TTL_MS = 30 * 60_000;
+/** Most settled ids one scan excludes in SQL. */
+const SETTLED_EXCLUDE_MAX = 2_000;
+/** changedSince looks back this much before the last scan, so DB/app clock skew cannot hide a write. */
+const SCAN_SINCE_MARGIN_MS = 30_000;
 /** close() waits this long for the in-flight call, like the embedding workers. */
 export const DEFAULT_SUMMARY_CLOSE_GRACE_MS = 5_000;
 /** Consecutive summarizer failures before summaries pause globally (usage limit, logged out). */
@@ -63,7 +74,16 @@ export interface SummaryStore {
     wantSummary: boolean;
     /** Include rows whose embedding for this model may be stale; null = no embedder. */
     embeddingModel: string | null;
+    /** Session ids to leave out of the result (settled in this process, unchanged since). */
+    excludeIds?: readonly string[];
   }): Promise<SummaryCandidate[]>;
+  /**
+   * A tiny change marker for `host`'s sessions (count and newest updated/active time). Optional:
+   * a store without it is scanned on every sweep.
+   */
+  fingerprint?(host: string): Promise<string>;
+  /** Ids of `host`'s sessions written after `since`. Optional, like `fingerprint`. */
+  changedSince?(opts: { host: string; since: Date }): Promise<string[]>;
   /**
    * Sessions of `host` someone asked to summarize (`summary_requested_at` set; the wall's
    * Summarize button), oldest request first. Not filtered by idleness or liveness.
@@ -149,6 +169,10 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
         o.embeddingModel !== null
           ? sql`(e.session_id is null or e.embedding is null or e.embedded_at is null or e.model <> ${o.embeddingModel} or e.text_version < ${SESSION_EMBED_TEXT_VERSION}::integer or e.embedded_at < s.last_active_at or (s.summarized_at is not null and e.embedded_at < s.summarized_at))`
           : sql`false`;
+      const exclude =
+        o.excludeIds !== undefined && o.excludeIds.length > 0
+          ? sql`and s.session_id <> all(array(select jsonb_array_elements_text(${JSON.stringify(o.excludeIds)}::jsonb)))`
+          : sql``;
       const res = await db.execute<CandidateDbRow>(sql`
         select s.session_id, s.last_active_at, s.summary_sha, s.summarized_at,
                e.sha as embedding_sha, e.model as embedding_model, e.text_version as embedding_text_version
@@ -158,10 +182,28 @@ export function dbSummaryStore(db: Db, repo: SessionsRepo): SummaryStore {
           and s.last_active_at is not null
           and s.last_active_at < ${o.idleBefore.toISOString()}::timestamptz
           and (${needSummary} or ${needEmbedding})
+          ${exclude}
         order by s.last_active_at desc, s.session_id asc
         limit ${Math.max(1, Math.trunc(o.limit))}
       `);
       return toCandidates(res.rows);
+    },
+    async fingerprint(host) {
+      const res = await db.execute<{ n: number; u: Date | string | null; a: Date | string | null }>(sql`
+        select count(*)::int as n, max(updated_at) as u, max(last_active_at) as a
+        from cc_sessions
+        where host = ${host}
+      `);
+      const r = res.rows[0];
+      const iso = (v: Date | string | null | undefined): string => toDate(v)?.toISOString() ?? '';
+      return `${r?.n ?? 0}|${iso(r?.u)}|${iso(r?.a)}`;
+    },
+    async changedSince(o) {
+      const res = await db.execute<{ session_id: string }>(sql`
+        select session_id from cc_sessions
+        where host = ${o.host} and updated_at > ${o.since.toISOString()}::timestamptz
+      `);
+      return res.rows.map((r) => r.session_id);
     },
     async listRequested(o) {
       // last_active_at can be null on a row that has only just been created; the request time
@@ -296,6 +338,13 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
   let closed = false;
   let running: Promise<void> | null = null;
   let again = false;
+  // Idle-scan gating (see drainOnce). settledAt: ids finished in this process, left out of the SQL
+  // scan for SUMMARY_SETTLED_TTL_MS unless changedSince reports a write. In memory on purpose: a
+  // persisted marker needs a migration, so a restart costs one load per stuck row.
+  let lastScanAt = 0;
+  let lastFingerprint: string | null = null;
+  let forceScan = true;
+  const settledAt = new Map<string, number>();
 
   const summariesPaused = (): boolean => summarizer !== null && clock.now() < pausedUntil;
 
@@ -314,6 +363,7 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
     const n = (attempts.get(sessionId) ?? 0) + 1;
     attempts.set(sessionId, n);
     retryAt.set(sessionId, clock.now() + retryDelayMs(n));
+    settledAt.delete(sessionId);
   }
 
   /**
@@ -401,6 +451,7 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
     // A row whose summary step was skipped by the pause is picked up again after it.
     if (deferred) return;
     seen.set(id, c.lastActiveAt.getTime());
+    settledAt.set(id, clock.now());
     attempts.delete(id);
     retryAt.delete(id);
   }
@@ -436,13 +487,46 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
       // summarizer nothing can serve them, so they wait for a daemon that has one.
       const requested = summarizer === null ? [] : await store.listRequested({ host, limit: SUMMARY_REQUEST_LIMIT });
       const live = await liveSet();
-      const candidates = await store.listIdle({
-        host,
-        idleBefore: new Date(started - idleMs),
-        limit: SUMMARY_SCAN_LIMIT,
-        wantSummary: summarizer !== null,
-        embeddingModel: embedder?.model ?? null,
-      });
+      // The idle scan re-reads up to SUMMARY_SCAN_LIMIT rows from Neon, so it only runs when
+      // something may have changed: first drain, a kick, a due retry, the host's sessions changed
+      // (fingerprint), or the floor passed (idleness crosses its threshold with no row change).
+      const scanNow = clock.now();
+      let scan =
+        forceScan ||
+        scanNow - lastScanAt >= SUMMARY_SCAN_FLOOR_MS ||
+        [...retryAt.values()].some((t) => t <= scanNow);
+      if (store.fingerprint) {
+        const fp = await store.fingerprint(host);
+        if (fp !== lastFingerprint) {
+          scan = true;
+          lastFingerprint = fp;
+        }
+      } else {
+        scan = true; // no cheap change marker: scan every sweep
+      }
+      let candidates: SummaryCandidate[] = [];
+      if (scan) {
+        if (store.changedSince && lastScanAt > 0) {
+          for (const id of await store.changedSince({ host, since: new Date(lastScanAt - SCAN_SINCE_MARGIN_MS) })) {
+            settledAt.delete(id);
+          }
+        }
+        const excludeIds = [...settledAt.entries()]
+          .filter(([, t]) => scanNow - t < SUMMARY_SETTLED_TTL_MS)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, SETTLED_EXCLUDE_MAX)
+          .map(([id]) => id);
+        candidates = await store.listIdle({
+          host,
+          idleBefore: new Date(started - idleMs),
+          limit: SUMMARY_SCAN_LIMIT,
+          wantSummary: summarizer !== null,
+          embeddingModel: embedder?.model ?? null,
+          excludeIds,
+        });
+        lastScanAt = scanNow;
+        forceScan = false;
+      }
       const now = clock.now();
       const requestedIds = new Set(requested.map((c) => c.sessionId));
       const dueRequested = requested.filter((c) => (retryAt.get(c.sessionId) ?? 0) <= now);
@@ -484,7 +568,10 @@ export function startSummaryWorker(opts: SummaryWorkerOptions): SummaryWorker {
   drain();
 
   return {
-    kick: drain,
+    kick(): void {
+      forceScan = true;
+      drain();
+    },
     async idle(): Promise<void> {
       for (;;) {
         const current = running;

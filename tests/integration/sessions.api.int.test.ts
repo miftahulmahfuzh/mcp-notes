@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/http/app.js';
 import { sessionsApiRoutes } from '../../src/http/sessionsApi.js';
-import type { SessionsReadOverrides } from '../../src/sessions/readModel.js';
+import { resetGraphCache, type SessionsReadOverrides } from '../../src/sessions/readModel.js';
 import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS } from '../../src/sessions/types.js';
 import type {
   ContextPayload,
@@ -54,6 +54,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  resetGraphCache();
   await clearSessions(h.deps.db);
   await seedGraph(h.deps.db, transcript.file);
 });
