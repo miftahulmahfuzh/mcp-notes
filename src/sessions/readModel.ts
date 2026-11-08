@@ -6,6 +6,7 @@ import type { ModelUsage } from '../db/schema.js';
 import type { AppDeps } from '../deps.js';
 import type { Embedder } from '../embeddings/embedder.js';
 import { DEFAULT_WALL_URL, localTimeZone, wallUrlForPort } from '../mcp/instructions.js';
+import { GraphCache } from './graphCache.js';
 import { createCommitLinker, type CommitLinker } from './commitLinks.js';
 import { normalizeNodeId } from './ids.js';
 import { mergeModels } from './merge.js';
@@ -295,6 +296,25 @@ export async function repoExists(rd: SessionsReadDeps, repo: string): Promise<bo
   return res.rows.length > 0;
 }
 
+/** Aggregates only. Any ingest, hook, summary, link or title write moves one of these. */
+export async function repoFingerprint(rd: SessionsReadDeps, repo: string): Promise<string> {
+  const res = await rd.db.execute<Record<string, unknown>>(sql`
+    select count(*)::int as n,
+           max(updated_at)::text as u,
+           max(last_active_at)::text as a,
+           max(summarized_at)::text as s,
+           count(*) filter (where parent_session_id is not null)::int as p
+    from cc_sessions where repo = ${repo}`);
+  return JSON.stringify(res.rows[0] ?? {});
+}
+
+const graphCache = new GraphCache<NodeRow>();
+
+/** Tests only: forget every cached graph snapshot. */
+export function resetGraphCache(): void {
+  graphCache.clear();
+}
+
 export async function listProjects(rd: SessionsReadDeps): Promise<ProjectsPayload> {
   const live = await liveMap(rd);
   const res = await rd.db.execute<ProjectRow>(sql`
@@ -332,22 +352,29 @@ export interface GraphQuery {
 export async function graphForRepo(rd: SessionsReadDeps, repo: string, q: GraphQuery): Promise<GraphPayload> {
   const ctx = await nodeContext(rd);
   const beforeCond = q.before === null ? sql`` : sql`and s.started_at < ${q.before}::timestamptz`;
-  const [rows, count] = await Promise.all([
-    rd.db.execute<NodeRow>(sql`
-      select ${NODE_SELECT} from ${NODE_FROM}
-      where s.repo = ${repo} ${beforeCond}
-      order by s.started_at desc nulls last, s.session_id desc
-      limit ${q.limit + 1}`),
-    rd.db.execute<{ n: number | string }>(sql`select count(*)::int as n from cc_sessions where repo = ${repo}`),
-  ]);
-  const more = rows.rows.length > q.limit;
-  const nodes = rows.rows.slice(0, q.limit).map((r) => toGraphNode(r, ctx));
+  const cacheKey = `${repo}|${q.before ?? ''}|${q.limit}`;
+  const fp = await repoFingerprint(rd, repo);
+  let snap = graphCache.get(cacheKey, fp, Date.now());
+  if (snap === null) {
+    const [rows, count] = await Promise.all([
+      rd.db.execute<NodeRow>(sql`
+        select ${NODE_SELECT} from ${NODE_FROM}
+        where s.repo = ${repo} ${beforeCond}
+        order by s.started_at desc nulls last, s.session_id desc
+        limit ${q.limit + 1}`),
+      rd.db.execute<{ n: number | string }>(sql`select count(*)::int as n from cc_sessions where repo = ${repo}`),
+    ]);
+    snap = { fingerprint: fp, at: Date.now(), rows: rows.rows, more: rows.rows.length > q.limit, total: num(count.rows[0]?.n) };
+    graphCache.set(cacheKey, snap);
+  }
+  const more = snap.more;
+  const nodes = snap.rows.slice(0, q.limit).map((r) => toGraphNode(r, ctx));
   const last = nodes.at(-1);
   return {
     repo,
     host: rd.host,
     generated_at: new Date().toISOString(),
-    total: num(count.rows[0]?.n),
+    total: snap.total,
     truncated: more,
     next_before: more && last !== undefined ? last.started_at : null,
     nodes,

@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-06
+**Last Updated**: 2026-11-08
 **Total Active Tasks**: 4
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 84
+- Completed: 85
 
 ---
 
@@ -49,6 +49,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-E202** Phase 2: Fingerprint 304s for notes and graph
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/notes/fingerprint.ts`, `src/sessions/graphCache.ts`, the `/api/notes` and `/api/tags` handlers in `src/http/api.ts`, `graphForRepo`/`repoFingerprint` in `src/sessions/readModel.ts`, and the `updatedAt` audit of `cc_sessions` writers (set clauses only). Does not touch `web/`, migrations, or phase 3's write-path read narrowing. Exit criteria: an unchanged poll of the three endpoints issues one aggregate query; every write invalidates; payloads unchanged; all suites green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction/.workflows/orchestration/neon-egress-reduction/PLAN.md` (phase 2 of 5)
+  - **Satisfies**: R2 — Lighter "changed since" checks instead of full re-reads (graph, notes list)
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-E202.md`
+  - **Completed**: 2026-11-08 09:33
+  - **Method**: /do
+  - **Files**: src/notes/fingerprint.ts, src/sessions/graphCache.ts, src/sessions/readModel.ts, src/http/api.ts, tests/unit/notes.fingerprint.test.ts, tests/unit/sessions.graphCache.test.ts, tests/integration/egress.fingerprint.int.test.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.unfinished.int.test.ts, .workflows/todos.md, .workflows/plan/P1-NOTES-E202.md
+  - **Drift**: none: the audit of cc_sessions writers and notes/image/file writers found every graph/list-visible write already moves a fingerprinted column, so no writer was changed; fingerprint timestamps are cast ::text to keep microseconds
+  - **Decided**: fingerprint timestamps cast to text so sub-ms writes still move it (rung 3, exit criteria: every write invalidates)
+    added GraphCache.clear() and exported GRAPH_CACHE_MAX_ENTRIES beyond the plan code, for resetGraphCache() (rung 3)
 
 - [x] **P1-NOTES-A084** Phase 5: Replies as a search source, related-evidence weight, wiring and docs
   - **Difficulty**: HARD

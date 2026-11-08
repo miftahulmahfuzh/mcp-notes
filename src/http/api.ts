@@ -21,6 +21,7 @@ import { imageDeps } from '../images/ingest.js';
 import type { AppDeps } from '../deps.js';
 import type { AdversaryChange } from '../adversary/events.js';
 import type { NoteEvent } from '../notes/events.js';
+import { notesFingerprint, listEtag } from '../notes/fingerprint.js';
 import { normalizeId } from '../notes/ids.js';
 import { MAX_LIMIT } from '../notes/repo.js';
 import { NoteError } from '../notes/types.js';
@@ -151,6 +152,24 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
   const backend = options.chat ?? createStubChatBackend();
   const heartbeatMs = options.sseHeartbeatMs ?? SSE_HEARTBEAT_MS;
 
+  /**
+   * One aggregate query decides whether a poll can be answered 304. Sets the ETag and returns the
+   * 304 response on a match; null otherwise. A failing fingerprint query falls through to the
+   * unconditional path (no ETag header), never breaks the endpoint.
+   */
+  async function fingerprintGate(c: Context, requestShape: string): Promise<Response | null> {
+    let etag: string;
+    try {
+      etag = listEtag(await notesFingerprint(deps.db), requestShape);
+    } catch {
+      return null;
+    }
+    c.header('ETag', etag);
+    c.header('Cache-Control', 'no-cache');
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+    return null;
+  }
+
   api.get('/api/notes', async (c) => {
     const parsed = listQuerySchema.safeParse({
       limit: c.req.query('limit'),
@@ -160,6 +179,8 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
     if (!parsed.success) return badRequest(c, describeIssues(parsed.error));
     const { limit, cursor, has_image } = parsed.data;
     const tags = parseTagParams(c.req.queries('tag'));
+    const notModified = await fingerprintGate(c, c.req.url.split('?')[1] ?? '');
+    if (notModified) return notModified;
     try {
       const page = await service.list({
         limit,
@@ -266,6 +287,8 @@ export function apiRoutes(deps: AppDeps, options: ApiOptions = {}): Hono {
   });
 
   api.get('/api/tags', async (c) => {
+    const notModified = await fingerprintGate(c, 'tags');
+    if (notModified) return notModified;
     return c.json(await service.tags());
   });
 

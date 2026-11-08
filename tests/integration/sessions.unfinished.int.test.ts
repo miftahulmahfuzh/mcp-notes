@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/http/app.js';
 import { SessionsRepo } from '../../src/sessions/repo.js';
+import { resetGraphCache } from '../../src/sessions/readModel.js';
 import { createUnfinishedChecker, type SwarmRunner } from '../../src/sessions/unfinished.js';
 import { startHarness, type Harness } from './imageHarness.js';
 
@@ -34,6 +35,7 @@ describe('unfinished badge field', () => {
     await h.close();
   });
   beforeEach(async () => {
+    resetGraphCache();
     await h.reset();
     runner.mockClear();
   });
