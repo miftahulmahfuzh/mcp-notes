@@ -351,7 +351,8 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * unaffected). Sessions keys: CLAUDE_HOME, NOTES_WORKTREES_DIR, NOTESD_SESSIONS,
  * NOTESD_SWARM_SCRIPT. Adversary keys: NOTESD_ADVERSARY, ADVERSARY_DAILY_CAP,
  * ADVERSARY_GATHER_MODEL, ADVERSARY_VERDICT_MODEL, ADVERSARY_GATHER_MAX_TURNS,
- * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Dword key: DWORD_USER_EMAIL
+ * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Egress key: NOTESD_EGRESS_METER
+ * (read by src/db/client.ts; `off` disables the query meter and the Neon quota breaker). Dword key: DWORD_USER_EMAIL
  * (unset or blank: every dword_vocab_add / dword_journal_add write tool refuses with "daily-words
  * user not configured"; dword_schema/dword_sql are unaffected, since they need no user id). Other
  * keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,

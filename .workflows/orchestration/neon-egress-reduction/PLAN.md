@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/neon-egress-reduction`
 **Branch:** `feature/neon-egress-reduction` (base: `HEAD` = main @ `f03583f`, checkout was clean and not ahead of origin)
 **Phases:** 5
-**Status:** phases 1-4/5 complete
+**Status:** phases 1-5/5 complete (wave 1 integrated)
 **Coordinator:** —
 
 ---
