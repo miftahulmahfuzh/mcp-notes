@@ -33,7 +33,12 @@ export function dbInstruments(db: Db): DbInstruments | undefined {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function instrument(pool: pg.Pool | NeonPool, meter: EgressMeter, breaker: QuotaBreaker): void {
   const wrap = (target: { query: (...a: any[]) => any }): void => {
-    const original = target.query.bind(target)
+    // Resolved per call, not bound once: a spy installed on the prototype later still sees every query.
+    const own = target.query.bind(target)
+    const original = (...a: any[]) => {
+      const proto = Object.getPrototypeOf(target)?.query
+      return typeof proto === 'function' ? proto.apply(target, a) : own(...a)
+    }
     target.query = (...args: any[]) => {
       if (typeof args[args.length - 1] === 'function') return original(...args) // callback style: untouched
       try {
