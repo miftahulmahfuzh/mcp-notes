@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Clock } from '../../../src/embeddings/backfill.js';
 import { SESSION_EMBED_TEXT_VERSION, type SessionSummarySource } from '../../../src/sessions/summarize.js';
 import {
+  SUMMARY_SETTLED_TTL_MS,
   startSummaryWorker,
   type SummaryCandidate,
   type SummaryStore,
@@ -440,6 +441,142 @@ describe('summary requests', () => {
     const w = start(store, { summarizer: null });
     await w.idle();
     expect(store.rows.get('s-1')?.requestedAt).not.toBeNull();
+    await w.close();
+  });
+});
+
+/** A store with the optional change markers, counting scans and recording what each excluded. */
+class GatedStore extends MemoryStore {
+  fp = 'v1';
+  changed: string[] = [];
+  scans: Array<readonly string[]> = [];
+  loads: string[][] = [];
+  override async listIdle(o: Parameters<SummaryStore['listIdle']>[0]): Promise<SummaryCandidate[]> {
+    this.scans.push(o.excludeIds ?? []);
+    const skip = new Set(o.excludeIds ?? []);
+    return (await super.listIdle(o)).filter((c) => !skip.has(c.sessionId));
+  }
+  override async load(ids: readonly string[]): Promise<SessionSummarySource[]> {
+    this.loads.push([...ids]);
+    return super.load(ids);
+  }
+  async fingerprint(): Promise<string> {
+    return this.fp;
+  }
+  async changedSince(): Promise<string[]> {
+    return this.changed;
+  }
+}
+
+describe('summary scan gating', () => {
+  const SWEEP = 60_000;
+  const tick = async (ms: number): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(ms);
+  };
+  const gated = (store: GatedStore): SummaryWorker => start(store, { sweepMs: SWEEP });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('scans at start and then only at the 5 minute floor while nothing changes', async () => {
+    const store = new GatedStore();
+    const w = gated(store);
+    await tick(0);
+    expect(store.scans).toHaveLength(1);
+    await tick(SWEEP * 4);
+    expect(store.scans).toHaveLength(1);
+    await tick(SWEEP);
+    expect(store.scans).toHaveLength(2);
+    await tick(SWEEP * 5);
+    expect(store.scans).toHaveLength(3);
+    await w.close();
+  });
+
+  it('scans at the next sweep when the fingerprint changes', async () => {
+    const store = new GatedStore();
+    const w = gated(store);
+    await tick(SWEEP * 2);
+    expect(store.scans).toHaveLength(1);
+    store.fp = 'v2';
+    await tick(SWEEP);
+    expect(store.scans).toHaveLength(2);
+    await tick(SWEEP);
+    expect(store.scans).toHaveLength(2);
+    await w.close();
+  });
+
+  it('kick() forces a scan', async () => {
+    const store = new GatedStore();
+    const w = gated(store);
+    await tick(0);
+    w.kick();
+    await tick(0);
+    expect(store.scans).toHaveLength(2);
+    await w.close();
+  });
+
+  it('a due retry forces a scan before the floor', async () => {
+    const store = new GatedStore();
+    store.add({ sessionId: 's-1' });
+    const summarizer = createFakeSummarizer();
+    summarizer.failNext(1);
+    const w = start(store, { sweepMs: SWEEP, summarizer });
+    await tick(0);
+    expect(store.scans).toHaveLength(1);
+    await tick(SWEEP);
+    expect(store.scans).toHaveLength(2);
+    await w.close();
+  });
+
+  it('a store without fingerprint is scanned on every sweep', async () => {
+    const store = new MemoryStore();
+    let scans = 0;
+    const listIdle = store.listIdle.bind(store);
+    store.listIdle = async (o) => {
+      scans += 1;
+      return listIdle(o);
+    };
+    const w = start(store, { sweepMs: SWEEP });
+    await tick(SWEEP * 3);
+    expect(scans).toBe(4);
+    await w.close();
+  });
+
+  it('excludes a settled row from the next scan and never reloads it', async () => {
+    const store = new GatedStore();
+    store.add({ sessionId: 's-1' });
+    const w = gated(store);
+    await tick(0);
+    expect(store.loads).toEqual([['s-1']]);
+    w.kick();
+    await tick(0);
+    expect(store.scans[1]).toEqual(['s-1']);
+    expect(store.loads).toHaveLength(1);
+    await w.close();
+  });
+
+  it('re-checks a settled row after the TTL', async () => {
+    const store = new GatedStore();
+    store.add({ sessionId: 's-1' });
+    const w = gated(store);
+    await tick(SUMMARY_SETTLED_TTL_MS + SWEEP);
+    expect(store.scans[store.scans.length - 1]).toEqual([]);
+    await w.close();
+  });
+
+  it('a row reported by changedSince drops out of the exclude list', async () => {
+    const store = new GatedStore();
+    store.add({ sessionId: 's-1' });
+    const w = gated(store);
+    await tick(0);
+    store.changed = ['s-1'];
+    w.kick();
+    await tick(0);
+    expect(store.scans[1]).toEqual([]);
     await w.close();
   });
 });
