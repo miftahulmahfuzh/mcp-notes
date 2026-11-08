@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api';
 import { fetchMethod, fetchOverview, fetchToggle, postReviewNow, saveToggle, type AdversaryToggle, type MethodPayload, type OverviewPayload, type ReviewNowResult } from '../adversaryApi';
 import { subscribeEvents } from '../lib/events';
+import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageActive';
 
-/** Same cadence as the wall: picks up a verdict or toggle written by the daemon on the other laptop. */
-export const ADVERSARY_POLL_MS = 60_000;
+/** Every 2 min while the tab is visible: picks up a verdict or toggle written by the daemon on the other laptop. */
+export const ADVERSARY_POLL_MS = 120_000;
 
 export interface AdversaryStore {
   overview: OverviewPayload | null;
@@ -33,7 +34,7 @@ function codeOf(e: unknown): string {
 /**
  * Seer Adversarial's data. Fetches only while `enabled` (the page is shown): the overview (the
  * sidebar roster and the header need it on every sub-page), the toggle, and the method of `strategy`.
- * Refreshes on the SSE `adversary` event (phase 5) and every 60 s.
+ * Refreshes on the SSE `adversary` event (phase 5) and every 2 min while the tab is visible.
  */
 export function useAdversary(enabled: boolean, strategy: string | null): AdversaryStore {
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
@@ -43,14 +44,33 @@ export function useAdversary(enabled: boolean, strategy: string | null): Adversa
   const [toggle, setToggle] = useState<AdversaryToggle | null>(null);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+  /** An SSE event arrived while the tab was hidden: refresh once on becoming visible. */
+  const staleRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
-    const off = subscribeEvents('adversary', () => refresh());
-    const poll = window.setInterval(refresh, ADVERSARY_POLL_MS);
+    const off = subscribeEvents('adversary', () => {
+      if (isPageVisible()) refresh();
+      else staleRef.current = true;
+    });
+    const offVisible = onBecameVisible(() => {
+      if (staleRef.current) {
+        staleRef.current = false;
+        refresh();
+      }
+    });
+    const poll = startAdaptivePoll({
+      baseMs: ADVERSARY_POLL_MS,
+      staleMs: 60_000,
+      run: async () => {
+        refresh();
+        return true;
+      },
+    });
     return () => {
       off();
-      window.clearInterval(poll);
+      offVisible();
+      poll.stop();
     };
   }, [enabled, refresh]);
 

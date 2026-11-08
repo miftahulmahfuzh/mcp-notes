@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchNotes, fetchTags } from '../api';
 import { subscribeEvents } from '../lib/events';
+import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageActive';
 import type { Note, TagCount } from '../types';
 
 export interface NotesStore {
@@ -23,7 +24,10 @@ interface State {
 }
 
 const DEBOUNCE_MS = 250;
-const POLL_MS = 60_000;
+/** Safety-net poll while the wall tab is visible; local writes refetch at once through SSE. */
+export const NOTES_POLL_MS = 300_000;
+/** Becoming visible refetches when the last load is older than this. */
+export const NOTES_STALE_MS = 60_000;
 
 export function useNotes(): NotesStore {
   const [state, setState] = useState<State>({ notes: [], tags: [], loaded: false, error: null });
@@ -36,9 +40,15 @@ export function useNotes(): NotesStore {
     let inFlight = false;
     let again = false;
     let timer: number | undefined;
+    /** An SSE event arrived while the tab was hidden: refetch once on becoming visible. */
+    let staleWhileHidden = false;
 
     const schedule = () => {
       window.clearTimeout(timer);
+      if (!isPageVisible()) {
+        staleWhileHidden = true;
+        return;
+      }
       timer = window.setTimeout(() => void load(), DEBOUNCE_MS);
     };
 
@@ -67,7 +77,21 @@ export function useNotes(): NotesStore {
 
     refetchRef.current = schedule;
     void load();
-    const poll = window.setInterval(() => void load(), POLL_MS);
+    const poll = startAdaptivePoll({
+      baseMs: NOTES_POLL_MS,
+      staleMs: NOTES_STALE_MS,
+      run: async () => {
+        await load();
+        return true;
+      },
+    });
+    const offVisible = onBecameVisible(() => {
+      if (staleWhileHidden) {
+        staleWhileHidden = false;
+        // The poll's stale-on-show run (registered first) may already be loading; one fetch covers both.
+        if (!inFlight) schedule();
+      }
+    });
 
     // The page's one /api/events connection (lib/events.ts), shared with the history page.
     const offNote = subscribeEvents('note', schedule);
@@ -77,7 +101,8 @@ export function useNotes(): NotesStore {
     return () => {
       alive = false;
       window.clearTimeout(timer);
-      window.clearInterval(poll);
+      poll.stop();
+      offVisible();
       offNote();
       offOpen();
       refetchRef.current = () => {};
