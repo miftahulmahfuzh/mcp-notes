@@ -1,4 +1,5 @@
 import { hostname } from 'node:os';
+import { dbInstruments } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import { dbEmbeddingStore } from './embeddings/backfill.js';
 import { dbImageEmbeddingStore } from './embeddings/imageBackfill.js';
@@ -155,7 +156,13 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
+  const meter = dbInstruments(deps.db)?.meter;
+  const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
+  egressTimer?.unref();
+
   return async () => {
+    if (egressTimer) clearInterval(egressTimer);
     await inbox.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
     await Promise.all([

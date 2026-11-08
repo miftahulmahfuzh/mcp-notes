@@ -19,6 +19,7 @@ import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
 import { defaultSessionResumer, sessionResumeRoutes } from './sessionResume.js';
+import { debugApiRoutes } from './debugApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -115,6 +116,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', captureRoutes(deps));
   app.route('/', sessionHookRoutes(deps));
   app.route('/', sessionsApiRoutes(deps, { ...options.sessions, unfinished: options.unfinished }));
+  app.route('/', debugApiRoutes(deps));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
   app.route('/', staticRoutes(deps));
