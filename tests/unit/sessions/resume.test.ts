@@ -8,6 +8,7 @@ import {
   NEW_WINDOW_FORMAT,
   parseLatest,
   parseNewWindow,
+  parseTmuxPath,
   parseRegistryTmux,
   promptArgs,
   RECENT_SPAWN_MS,
@@ -270,6 +271,35 @@ describe('resumeNode', () => {
       ),
     );
     expect(t.sub('select-window')).toEqual([]);
+  });
+
+  it('parseTmuxPath reads PATH=..., and is null for an unset or removed PATH', () => {
+    expect(parseTmuxPath('PATH=/opt/nvim/bin:/usr/bin\n')).toBe('/opt/nvim/bin:/usr/bin');
+    expect(parseTmuxPath('-PATH\n')).toBeNull();
+    expect(parseTmuxPath('')).toBeNull();
+    expect(parseTmuxPath('PATH=\n')).toBeNull();
+  });
+
+  it("the window runs claude with tmux's global PATH, not the daemon's", async () => {
+    const t = fakeTmux({ 'show-environment': () => 'PATH=/opt/nvim/bin:/usr/bin\n' });
+    await resumeNode(makeDeps(t.run), node(), {});
+    await resumeNode(makeDeps(t.run), node(), { fresh: true });
+    expect(t.sub('show-environment')[0]).toEqual(['show-environment', '-g', 'PATH']);
+    const [resumed, spawned] = t.sub('new-window');
+    expect(resumed!.slice(-4)).toEqual(['PATH=/opt/nvim/bin:/usr/bin', CLAUDE, '--resume', SID]);
+    expect(spawned).toContain('PATH=/opt/nvim/bin:/usr/bin');
+    expect(spawned).toContain(`CC_PARENT_SESSION=${SID}`);
+  });
+
+  it('a failing show-environment leaves PATH alone and still opens the window', async () => {
+    const t = fakeTmux({
+      'show-environment': () => {
+        throw new Error('unknown variable: PATH');
+      },
+    });
+    const out = await resumeNode(makeDeps(t.run), node(), {});
+    expect(out.status).toBe(200);
+    expect(t.sub('new-window')[0]!.some((a) => a.startsWith('PATH='))).toBe(false);
   });
 
   it('no tmux server: 409 no_tmux', async () => {

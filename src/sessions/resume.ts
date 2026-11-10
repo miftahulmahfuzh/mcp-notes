@@ -328,6 +328,30 @@ export async function pickTmuxSession(deps: ResumeDeps): Promise<string | null> 
   }
 }
 
+/**
+ * `show-environment -g PATH` output -> the PATH value, or null. tmux prints "-PATH" when the
+ * variable is marked for removal and nothing when it is unset.
+ */
+export function parseTmuxPath(stdout: string): string | null {
+  const line = stdout.split('\n')[0]?.replace(/\r$/, '') ?? '';
+  if (!line.startsWith('PATH=')) return null;
+  const value = line.slice('PATH='.length);
+  return value === '' ? null : value;
+}
+
+/**
+ * The tmux server's global PATH, or null. new-window hands the window the environment of the
+ * tmux client that asked for it, which here is the daemon's (a systemd unit with a bare PATH),
+ * so a resumed claude could not find tools like $EDITOR that the user's shell puts on PATH.
+ */
+export async function tmuxGlobalPath(deps: ResumeDeps): Promise<string | null> {
+  try {
+    return parseTmuxPath(await tmux(deps, ['show-environment', '-g', 'PATH']));
+  } catch {
+    return null;
+  }
+}
+
 /** The most recently active client (its tty name), or null. */
 export async function pickClient(deps: ResumeDeps): Promise<string | null> {
   try {
@@ -478,9 +502,14 @@ export async function resumeNode(
     const session = await pickTmuxSession(deps);
     if (session === null) return { status: 409, body: { error: 'no_tmux' } };
     const place = await resolveCwd(deps, node);
+    const path = await tmuxGlobalPath(deps);
+    const pathEnv: Record<string, string> = path !== null ? { PATH: path } : {};
     const argv = fresh
-      ? claudeCommand(deps.claudeBin, promptArgs(freshPrompt(node, prompt)), { CC_PARENT_SESSION: node.sessionId })
-      : claudeCommand(deps.claudeBin, ['--resume', node.sessionId, ...promptArgs(prompt)]);
+      ? claudeCommand(deps.claudeBin, promptArgs(freshPrompt(node, prompt)), {
+          ...pathEnv,
+          CC_PARENT_SESSION: node.sessionId,
+        })
+      : claudeCommand(deps.claudeBin, ['--resume', node.sessionId, ...promptArgs(prompt)], pathEnv);
     const out = await tmux(deps, [
       'new-window',
       '-t',
