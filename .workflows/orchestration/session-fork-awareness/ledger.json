@@ -10,15 +10,15 @@
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "orch decisions: (a) doctor: settings.local.json denies PushNotification, fix = remove from permissions.deny; proceeding. (b) gate on tracked PLAN.md resolved root to main checkout (exit 1); re-ran on worktree index: exit 2, only CONCURRENT collision features/projects.md (phases 2/5 wave1, 3/6 wave2) -> ISOLATE, per-phase worktrees + integrator, append-append kept both sides (rung 3: reconciliation log #12). Integration branch feature/session-fork-awareness.",
       "package": "src/db`, `src/sessions",
       "plan": ".workflows/plan/session-fork-awareness/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T10:15:25+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Fork schema, rank, detection and cut primitives"
     },
@@ -64,18 +64,18 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e8c93e1",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "bg-job resume via claude attach (attached/job_id/prompt_delivered:false), 409 kept for non-bg; task minting skipped (coordinator owns bookkeeping); feature-map node grep anchored (plan snippet matched 01-00 in uuid); proof: verified-first-pass J1-J4+neighbor ~/.local/state/notesd-verify/1111-101724-3563794/evidence",
       "package": "src/sessions`, `src/http`, `src/mcp",
       "plan": ".workflows/plan/session-fork-awareness/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T10:18:48+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "done",
       "task_id": null,
       "title": "Resume and focus of live background jobs"
     },
@@ -125,6 +125,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-fork-awareness",
-  "updated": "2026-11-11T10:14:13+07:00",
+  "updated": "2026-11-11T10:18:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-fork-awareness"
 }
