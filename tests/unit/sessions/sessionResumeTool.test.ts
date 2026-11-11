@@ -51,6 +51,27 @@ describe('session_resume tool', () => {
     await close();
   });
 
+  it('attached: the JSON, then a sentence naming claude attach <jobId> and the undelivered prompt', async () => {
+    const { client, close } = await connect({
+      resume: async () => ({
+        status: 200,
+        body: { action: 'attached', job_id: 'e3650501', window: 'note:5', prompt_delivered: false },
+      }),
+    });
+    const res = await client.callTool({ name: 'session_resume', arguments: { node_id: 'JM-UJ', prompt: 'go' } });
+    expect(res.isError).toBeFalsy();
+    const content = (res as { content: Array<{ text: string }> }).content;
+    expect(JSON.parse(content[0]!.text)).toEqual({
+      action: 'attached',
+      job_id: 'e3650501',
+      window: 'note:5',
+      prompt_delivered: false,
+    });
+    expect(content[1]!.text).toContain('claude attach e3650501');
+    expect(content[1]!.text).toContain('not delivered');
+    await close();
+  });
+
   it('without a resumer the tool says it is unavailable', async () => {
     const { client, close } = await connect(undefined);
     const res = await client.callTool({ name: 'session_resume', arguments: { node_id: 'A0-3G' } });

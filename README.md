@@ -721,6 +721,13 @@ switches to its window (or sends it the prompt) rather than opening it a second 
 whose transcript is on the other laptop asks before doing anything, and usually can only say it
 is not on this machine; nothing else asks for a confirm click.
 
+A session that is running as a Claude Code background job (`claude --bg`, or a fork started from
+the agent view) has no terminal of its own. Resume opens a tmux window running
+`claude attach <job>` for it and answers `attached` with the `job_id`; pressing it again focuses
+that window, and a prompt is typed into it. A prompt given while no attach window is open cannot
+be delivered yet, and the answer says so (`prompt_delivered: false`). A live session outside tmux
+that is not a background job still answers `live_outside_tmux`: switch to its terminal.
+
 `claude --resume` finds a transcript by its session id, not by its directory, so a session whose
 worktree has been deleted still resumes (measured, not assumed). The daemon opens it in the
 session's own directory if that still exists, otherwise in the repo's main checkout (the newest
@@ -1060,7 +1067,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, its notes (saved from it or linked to it, each with `kind: "made" \| "linked"`), tokens and cost, parent and children, `host` and `available` |
 | `session_transcript` | Passages of a session's transcript matching `query`. Only on the laptop that holds the transcript; elsewhere `not_on_this_machine` |
 | `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
-| `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. Same machine only |
+| `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. A live background job opens or focuses a `claude attach <job>` window (`attached`). Same machine only |
 | `link_note`, `unlink_note` | Link an existing note (`note_id`) to a session (`node_id`) so it is listed with that session's notes as `linked`, and remove the link. The note's text and origin never change; both are idempotent; a deleted note cannot be linked |
 | `adversary_overview` | Seer Adversarial: every Seer method with its Claude twin and SPY, returns since the twin started (money-weighted, deposits included), objections, coverage (reviewed · absent · paused · pending), both go-live checklists (Seer's five rules and wording; a twin's backtest "can't be run"), the newest objections and the reviewer's status |
 | `adversary_verdicts` | Claude's verdicts (`agree`, `object`, `unsure`) with reasons, sources, model, prompt version and host; `late: true` when decided after the open. Optional `strategy`, `session` (default: each method's latest decision), `verdict`, `limit` |
@@ -1150,7 +1157,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback`; each hit carries `via_notes` and `via_replies` like the MCP tool |
 | `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
-| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
+| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. A live background job gets a `claude attach <job>` window: `action: "attached"`, `job_id`, and `prompt_delivered: false` when a prompt could not be typed yet. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
 | `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |
 | `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
 | `GET /api/adversary/overview` | Seer Adversarial overview: `roster`, `methods` (returns, objections, coverage, checklists per method), `cause`, `latest`, `last_review`, `reviewer`. 503 `seer_unavailable` (`detail`: `not_reachable`, `not_migrated`, `query_failed`) when Seer cannot be read |

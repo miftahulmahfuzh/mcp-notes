@@ -30,6 +30,10 @@ export interface LiveSession {
   startedAt: Date | null;
   updatedAt: Date | null;
   messagingSocketPath: string | null;
+  /** Registry `kind`: `interactive`, or `bg` for a background job (`claude --bg`, agent view); null when absent. */
+  kind: string | null;
+  /** Registry `jobId` of a background job, e.g. `e3650501` (what `claude attach` takes); null when absent. */
+  jobId: string | null;
 }
 
 export type PidAliveCheck = (pid: number, procStart: string | null) => boolean;
@@ -100,8 +104,23 @@ export function parseLiveEntry(raw: unknown): { session: LiveSession; procStart:
       startedAt: msDate(r.startedAt),
       updatedAt: msDate(r.updatedAt),
       messagingSocketPath: str(r.messagingSocketPath),
+      kind: str(r.kind),
+      jobId: str(r.jobId),
     },
   };
+}
+
+/** A job id safe to pass to `claude attach` and to match in tmux output: no spaces, no leading dash. */
+const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * The job id of a live Claude Code background job (registry `kind: "bg"` with a `jobId`, e.g.
+ * `{"kind":"bg","jobId":"e3650501",...}`, measured 2026-11-11), else null. The only place that
+ * reads `kind`: callers ask this instead of comparing strings themselves.
+ */
+export function backgroundJobId(session: Pick<LiveSession, 'kind' | 'jobId'>): string | null {
+  if (session.kind !== 'bg' || session.jobId === null) return null;
+  return JOB_ID.test(session.jobId) ? session.jobId : null;
 }
 
 /** Live sessions on this machine by session id. A missing registry dir is an empty map. */

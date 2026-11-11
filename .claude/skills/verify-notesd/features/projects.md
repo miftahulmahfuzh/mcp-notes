@@ -3,7 +3,7 @@
 ## Sub-features
 - Projects list (repo, session count, live count, last active), selected project.
 - Per-project sessions: graph, tree, timeline views; node ids like `A0-3G`.
-- Session search, usage (tokens), transcript (owning host only), resume (NOT driven here).
+- Session search, usage (tokens), transcript (owning host only), resume (real tmux NOT driven here; background-job attach driven with a fake tmux, below).
 - Session search matches a session's notes too (made ∪ linked, live notes only): a word or meaning
   only a session's note has finds that session, and the hit lists those notes in `via_notes`
   (`[{ id, excerpt }]`, best first, at most 3; `[]` when no note matched). Same in text mode. MCP
@@ -218,6 +218,43 @@ UI: `panel.getByRole('button', { name: /Open pasted image/ })` inside `li.prm-it
 clicking opens `page.getByRole('dialog', { name: 'Image viewer' })`. `path` need not exist on disk
 for this read-side check (`available` is a host-string compare, not a file probe); the thumbnail
 `<img>` itself will 404 since there is no real file, which is fine for proving the API/DOM wiring.
+
+## Resume of a live background job (fake tmux)
+A session live as a Claude Code background job (registry `kind: "bg"`, `jobId`) resumes by opening
+a tmux window running `claude attach <jobId>` (`action: "attached"`, `job_id`), then focuses that
+pane on the next ask (`focused`/`messaged` + `job_id`). A prompt with no attach pane answers
+`prompt_delivered: false`. A live non-background session outside tmux stays 409 `live_outside_tmux`.
+
+Never run real tmux or claude from a verify run. Point `NOTESD_TMUX_BIN` at a fake that logs argv
+and keeps a pane list, and `NOTESD_CLAUDE_BIN` nowhere; `up` passes the caller's env through:
+```sh
+F=$SCRATCH/faketmux; mkdir -p $F && : >$F/panes && : >$F/calls.log
+cat >$F/tmux <<'EOF'
+#!/usr/bin/env bash
+D="${FAKE_TMUX_DIR:?}"; printf '%s\n' "$*" >>"$D/calls.log"
+[ "$1" = -S ] && shift 2
+case "$1" in
+  list-sessions) echo "100 note" ;;
+  list-clients) echo "1 /dev/pts/9" ;;
+  show-environment) echo "PATH=/usr/bin:/bin" ;;
+  list-panes) if [[ "$*" == *pane_start_command* ]]; then cat "$D/panes"; else cut -d' ' -f1 "$D/panes"; fi ;;
+  new-window) n="%$(( 50 + $(wc -l <"$D/panes") ))"; while [ "$#" -gt 0 ] && [ "$1" != "-F" ]; do shift; done; shift 2
+              echo "$n $*" >>"$D/panes"; echo "note:5 $n" ;;
+  display-message) if [[ "$*" == *pane_in_mode* ]]; then echo 0; else echo note:5; fi ;;
+esac
+EOF
+chmod +x $F/tmux
+FAKE_TMUX_DIR=$F NOTESD_TMUX_BIN=$F/tmux NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+sleep 600 & JOBPID=$!     # stands in for the background job's process (pid must be alive)
+SID=5e55a001-0000-4000-8000-000000000005
+NODE=$($V sql RUN "select node_id from cc_sessions where session_id='$SID'" | grep -oE '^ [0-9A-Z]{2}-[0-9A-Z]{2}$' | tr -d ' ')   # anchored: the echoed query holds the uuid
+echo "{\"pid\":$JOBPID,\"sessionId\":\"$SID\",\"kind\":\"bg\",\"jobId\":\"5e55a001\",\"updatedAt\":9999999999999}" \
+  >~/.local/state/notesd-verify/RUN/claude/sessions/$JOBPID.json
+$V api RUN POST /api/sessions/$NODE/resume '{}'            # attached, job_id 5e55a001; panes gains "%50 ... attach 5e55a001"
+$V api RUN POST /api/sessions/$NODE/resume '{"prompt":"hi"}'  # messaged, job_id; calls.log: paste-buffer ... -t %50
+```
+`kill $JOBPID` afterwards. The same flow is unit-tested in `tests/unit/sessions/resume.test.ts`
+(`background jobs`).
 
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`

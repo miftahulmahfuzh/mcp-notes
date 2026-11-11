@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { normalizeNodeId } from '../sessions/ids.js';
-import { RESUME_PROMPT_MAX_CHARS, type ResumeOutcome } from '../sessions/resume.js';
+import { RESUME_PROMPT_MAX_CHARS, type ResumeOutcome, type ResumeResult } from '../sessions/resume.js';
 import { readTranscript, searchNodes, sessionDetail, usage, type SessionsReadDeps } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
 import { nodeUrl, type NodeRef } from '../sessions/view.js';
@@ -273,9 +273,23 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
   registerSessionResumeTool(server, deps);
 }
 
+type AttachedResult = Extract<ResumeResult, { action: 'attached' }>;
+
+/** The sentence after an `attached` answer: where the job is attached, and an undelivered prompt. */
+function attachedText(r: AttachedResult, nodeId: string): string {
+  const where = r.window !== undefined ? ` in tmux window ${r.window}` : '';
+  const head = `${nodeId} is running as a Claude Code background job; opened \`claude attach ${r.job_id}\`${where}.`;
+  if (r.prompt_delivered !== false) return head;
+  return `${head} The prompt was not delivered: a background job takes input only through its attach window. Call session_resume again with the prompt once that window is up (it is then typed into it), or type it there yourself.`;
+}
+
 /** ResumeOutcome -> the tool's answer: the JSON result on success, a "<code>: <what to do>" error otherwise. */
 export function resumeToolResult(out: ResumeOutcome, nodeId: string): CallToolResult {
-  if (out.status === 200) return jsonResult(out.body);
+  if (out.status === 200) {
+    const result = out.body;
+    if (result.action !== 'attached') return jsonResult(result);
+    return { content: [...jsonResult(result).content, { type: 'text', text: attachedText(result, nodeId) }] };
+  }
   const body = out.body;
   switch (body.error) {
     case 'not_found':
@@ -297,7 +311,7 @@ export function registerSessionResumeTool(server: McpServer, deps: Pick<ToolDeps
     {
       title: 'Resume a Claude Code session',
       description:
-        "Open a Claude Code session from the session graph in the user's tmux, on this machine. node_id is a session node id like A0-3G (two characters, a dash, two characters; not a note id). If that session is already running, its tmux window is focused and prompt (if given) is typed into it; it is never resumed twice. Otherwise a new window in the most recently attached tmux session runs `claude --resume <session> [prompt]` in the session's directory; if that directory is gone (a removed worktree) it runs from the repository checkout and returns original_cwd. fresh=true starts a new session whose first prompt is this node's summary, commits and plan docs (plus prompt) instead of resuming. A session whose transcript lives on the other machine answers not_on_this_machine. Returns { action: focused | messaged | resumed | spawned, window }.",
+        "Open a Claude Code session from the session graph in the user's tmux, on this machine. node_id is a session node id like A0-3G (two characters, a dash, two characters; not a note id). If that session is already running, its tmux window is focused and prompt (if given) is typed into it; it is never resumed twice. If it is running as a Claude Code background job (claude --bg, a forked job), its attach window is focused (prompt typed into it), or, when none is open, a new window runs `claude attach <job>` and the answer is action attached with job_id; a prompt given then is not delivered (prompt_delivered: false), so call again with it once the window is up. Otherwise a new window in the most recently attached tmux session runs `claude --resume <session> [prompt]` in the session's directory; if that directory is gone (a removed worktree) it runs from the repository checkout and returns original_cwd. fresh=true starts a new session whose first prompt is this node's summary, commits and plan docs (plus prompt) instead of resuming. A session whose transcript lives on the other machine answers not_on_this_machine. Returns { action: focused | messaged | resumed | spawned | attached, window, job_id? }.",
       inputSchema: {
         node_id: z.string().min(1).describe('Session node id like A0-3G. Case-insensitive; the dash may be omitted.'),
         prompt: z

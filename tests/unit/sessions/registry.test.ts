@@ -1,7 +1,7 @@
 import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createLiveRegistry, isPidAlive, parseLiveEntry, readLiveRegistry, readLiveSessions } from '../../../src/sessions/registry.js';
+import { backgroundJobId, createLiveRegistry, isPidAlive, parseLiveEntry, readLiveRegistry, readLiveSessions } from '../../../src/sessions/registry.js';
 import { copyFixtureClaudeHome, FIXTURE } from '../../helpers/claudeHome.js';
 
 let home: string;
@@ -95,5 +95,28 @@ describe('createLiveRegistry', () => {
     registry.invalidate();
     await registry.get();
     expect(reads).toBe(afterFirst * 3);
+  });
+});
+
+describe('background jobs in the registry', () => {
+  it('parseLiveEntry keeps kind and jobId (the measured background-job entry)', () => {
+    const entry = parseLiveEntry({
+      pid: 3318108,
+      sessionId: 'e3650501-2a9d-432a-b2c0-f2aeff23fdf8',
+      kind: 'bg',
+      jobId: 'e3650501',
+      messagingSocketPath: '/run/user/1000/cc-socks/3318108.sock',
+    });
+    expect(entry?.session).toMatchObject({ kind: 'bg', jobId: 'e3650501', tmux: null });
+    expect(parseLiveEntry({ pid: 1, sessionId: 'x' })?.session).toMatchObject({ kind: null, jobId: null });
+  });
+
+  it('backgroundJobId is the job id only for kind bg with a plain id', () => {
+    expect(backgroundJobId({ kind: 'bg', jobId: 'e3650501' })).toBe('e3650501');
+    expect(backgroundJobId({ kind: 'interactive', jobId: 'e3650501' })).toBeNull();
+    expect(backgroundJobId({ kind: null, jobId: 'e3650501' })).toBeNull();
+    expect(backgroundJobId({ kind: 'bg', jobId: null })).toBeNull();
+    expect(backgroundJobId({ kind: 'bg', jobId: 'a b' })).toBeNull();
+    expect(backgroundJobId({ kind: 'bg', jobId: '-rf' })).toBeNull();
   });
 });
