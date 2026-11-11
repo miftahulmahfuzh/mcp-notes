@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-11
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 88
+- Completed: 89
 
 ---
 
@@ -85,6 +85,29 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A096** Phase 6: Wall: fork edge, badge, fork point, attach notices
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns web/src/types.ts (ParentLinkSource fork, ForkPoint, SessionNode fork/job_id), new web/src/lib/parentLink.ts, web/src/sessionsApi.ts, web/src/sessionDetailApi.ts (fork/job_id, attached notice naming claude attach <job_id>, prompt_delivered false wording, background-job 409 fallback), web/src/lib/sessionGraph.ts (LaidEdge.style), graph components (fork edge, GitFork badge), NodePanel.tsx (forked from <id> after prompt N, "Attach to the background session"), SessionGraph.css, NodePanel.css, fixtures, jsdom tests, feature-map bullet and block. Exit: typecheck and npm test pass; J1, J2 pass; J3, J4 end result: PASS on a tree with phases 1, 4, 5 merged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R3, R4 — R3: "resume/focus ... should recognise `kind: "bg"` and give an actionable result"; R4: "the wall /projects UI should show a fork as a child of its parent with a fork badge/edge and the fork point" · criteria: R3.5, R4.2
+  - **Depends on**: phase 4 (landed e8c93e1, no TaskID), P1-NOTES-A095 (phase 5)
+  - **Plan**: `.workflows/plan/P1-NOTES-A096.md`
+  - **Completed**: 2026-11-11 11:30
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A096.md, web/src/lib/parentLink.ts, web/src/types.ts, web/src/sessionsApi.ts, web/src/sessionsApi.test.tsx, web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/lib/sessionGraph.ts, web/src/lib/sessionGraph.test.tsx, web/src/components/graph/GraphEdges.tsx, web/src/components/graph/GraphNode.tsx, web/src/components/graph/SessionGraph.css, web/src/components/graph/SessionGraph.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, web/src/testing/sessionFixtures.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p6 (swarm ISOLATE mode).
+    - features/projects.md: phase 5 left a stray ``` fence closing its Sub-features bullet (line 93) that would have turned the rest of the list into a code block; phase 6's bullets replace that stray line.
+    - features/projects.md line 118 and the plan's J3 steps waited on getByTestId('graph'), which exists only in a test mock since 3fda527; replaced with getByRole('group', { name: 'Session graph' }) (the real graph svg). J3 first run failed on that wait only; the UI itself was correct in the failure screenshot.
+  - **Decided**:
+    - Create tasks for all phases vs only phase 6 -> only phase 6 (narrower blast radius, as phases 1 and 5 did).
+    - TaskID A096 (after A095) rather than the next free counter value: phases 2/3 mint concurrently in other worktrees (reversible, avoids an integration collision).
+    - Stale getByTestId('graph') wait in J3 -> wait on the Session graph role instead; assertions unchanged (rung 2: exit criteria demand J3 end result: PASS on the real wall).
+    - Proof: verified-after-fix (journey selector fix, no code change): J3 PASS, J4 PASS; typecheck pass, npm test 200 files / 2273 tests, J1 5 passed, J2 5 passed.
+
 
 - [x] **P1-NOTES-A095** Phase 5: Fork and background-job wording in API, MCP and hook context
   - **Difficulty**: NORMAL

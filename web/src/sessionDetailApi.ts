@@ -1,9 +1,11 @@
 import { ApiError } from './api';
+import { liveJobId, parseForkPoint, parseParentLinkSource } from './lib/parentLink';
+import type { ForkPoint, ParentLinkSource } from './types';
+
+export type { ParentLinkSource } from './types';
 
 const enc = encodeURIComponent;
 const JSON_HEADERS = { 'content-type': 'application/json' };
-
-export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
 
 /** Phase 2's server-computed reason for the Summary section. */
 export type SummaryState = 'ready' | 'empty' | 'requested' | 'idle_wait' | 'other_host';
@@ -76,6 +78,10 @@ export interface SessionDetail {
   parent: { node_id: string; name: string | null; repo: string | null } | null;
   parent_link_source: ParentLinkSource | null;
   transcript_path: string | null;
+  /** Set when this session is a fork: where it left its parent. */
+  fork: ForkPoint | null;
+  /** Claude Code background job id while the session is live as one; null otherwise. */
+  job_id: string | null;
 }
 
 export interface ResumeOptions {
@@ -84,10 +90,16 @@ export interface ResumeOptions {
   prompt?: string;
 }
 
-/** Phase 9's answer: what the daemon did (`resumed`, `spawned`, `focused`, `messaged`) and the tmux window. */
+/**
+ * What the daemon did (`resumed`, `spawned`, `focused`, `messaged`, `attached`) and the tmux window.
+ * `job_id`: the background job behind an `attached` (or a focused/messaged attach pane).
+ * `prompt_delivered`: false when a prompt was given but no attach pane could take it yet.
+ */
 export interface ResumeResult {
   action: string;
   window: string | null;
+  job_id?: string;
+  prompt_delivered?: boolean;
 }
 
 /** `POST /api/sessions/:nodeId/summarize`'s answer. */
@@ -191,8 +203,9 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
   const w = isObj(raw.session) ? raw.session : raw;
   const t = isObj(w.tokens) ? w.tokens : null;
   const parentObj = isObj(raw.parent) ? raw.parent : isObj(w.parent) ? w.parent : null;
-  const parentId = str(parentObj?.node_id) ?? str(w.parent_node_id);
-  const src = w.parent_link_source;
+  const fork = parseForkPoint(w.fork ?? raw.fork);
+  const parentId = str(parentObj?.node_id) ?? str(w.parent_node_id) ?? fork?.parent_node_id ?? null;
+  const live = w.live === true;
   const summary = str(w.summary);
   const state = summaryState(w.summary_state);
   return {
@@ -201,7 +214,7 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     repo: str(w.repo),
     host: str(w.host) ?? '',
     available: w.available !== false,
-    live: w.live === true,
+    live,
     unfinished: typeof w.unfinished === 'boolean' ? w.unfinished : null,
     cwd: str(w.cwd),
     branch: str(w.branch),
@@ -226,8 +239,10 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     subagent_count: num(w.subagent_count),
     subagent_cost_usd: numOrNull(w.subagent_cost_usd),
     parent: parentId === null ? null : { node_id: parentId, name: str(parentObj?.title) ?? str(parentObj?.name), repo: str(parentObj?.repo) },
-    parent_link_source: src === 'env' || src === 'hook' || src === 'heuristic' ? src : null,
+    parent_link_source: parseParentLinkSource(w.parent_link_source),
     transcript_path: str(w.transcript_path),
+    fork,
+    job_id: liveJobId(w.job_id ?? raw.job_id, live),
   };
 }
 
@@ -241,7 +256,7 @@ export async function fetchSessionDetail(nodeId: string, signal?: AbortSignal): 
   return normalizeSessionDetail(j);
 }
 
-/** Phase 9: `POST /api/sessions/:nodeId/resume` `{fresh?, prompt?}` -> `{action, window?}`. Throws `ApiError` (`not_on_this_machine`, 403 from the same-origin guard, ...). */
+/** `POST /api/sessions/:nodeId/resume` `{fresh?, prompt?}` -> `{action, window?, job_id?, prompt_delivered?}`. Throws `ApiError` (`not_on_this_machine`, 403 from the same-origin guard, ...). */
 export async function resumeSession(nodeId: string, opts: ResumeOptions = {}): Promise<ResumeResult> {
   const body: { fresh?: boolean; prompt?: string } = {};
   if (opts.fresh) body.fresh = true;
@@ -251,32 +266,47 @@ export async function resumeSession(nodeId: string, opts: ResumeOptions = {}): P
   if (!res.ok) throw await failure(res);
   const j: unknown = await res.json();
   const o = isObj(j) ? j : {};
-  return { action: str(o.action) ?? 'unknown', window: str(o.window) };
+  const jobId = str(o.job_id);
+  return {
+    action: str(o.action) ?? 'unknown',
+    window: str(o.window),
+    ...(jobId !== null ? { job_id: jobId } : {}),
+    ...(typeof o.prompt_delivered === 'boolean' ? { prompt_delivered: o.prompt_delivered } : {}),
+  };
 }
 
-/** The panel's one-line report of a successful resume / spawn. */
+/** The panel's one-line report of a successful resume / spawn / attach. */
 export function resumeNotice(r: ResumeResult, fresh: boolean): string {
   const where = r.window ? ` in ${r.window}` : '';
+  const attach = r.job_id ? `claude attach ${r.job_id}` : null;
   switch (r.action) {
     case 'resumed':
       return `Resumed${where}`;
     case 'spawned':
     case 'fresh':
       return `Fresh session started${where}`;
+    case 'attached': {
+      const opened = attach ? `Opened ${attach}${where}` : `Attached to the background session${where}`;
+      return r.prompt_delivered === false ? `${opened}; prompt not sent, type it there` : opened;
+    }
     case 'focused':
-      return `Already running, focused${where}`;
+      return attach ? `Background job, focused ${attach}${where}` : `Already running, focused${where}`;
     case 'messaged':
-      return `Already running, prompt sent${where}`;
+      return attach ? `Background job, prompt sent to ${attach}${where}` : `Already running, prompt sent${where}`;
     default:
       return `${fresh ? 'Fresh session' : 'Resume'}: ${r.action}${where}`;
   }
 }
 
-/** The panel's one-line report of a failed resume / spawn. */
-export function resumeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_id' | 'host'>): string {
+/**
+ * The panel's one-line report of a failed resume / spawn. A 409 for a live background job
+ * (`no_tmux`, or `live_outside_tmux` from a daemon without phase 4) names the attach command.
+ */
+export function resumeErrorNotice(err: unknown, d: Pick<SessionDetail, 'node_id' | 'host'> & Partial<Pick<SessionDetail, 'job_id'>>): string {
   if (err instanceof ApiError) {
     if (err.message === 'not_on_this_machine') return `${d.node_id} is not on this machine${d.host ? ` (it ran on ${d.host})` : ''}`;
     if (err.status === 403) return 'Resume only works from the wall on this machine';
+    if (err.status === 409 && d.job_id) return `${d.node_id} is background job ${d.job_id}: run claude attach ${d.job_id}`;
     return `Could not resume ${d.node_id}: ${err.message}`;
   }
   return `Could not resume ${d.node_id}`;

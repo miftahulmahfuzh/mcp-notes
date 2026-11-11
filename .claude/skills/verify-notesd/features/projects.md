@@ -90,7 +90,18 @@
   (registry `kind: "bg"`) carries `job_id`. Its hook context reads `Transcript: <path> (attach
   with: claude attach <jobId>)`, and `session_get` gives `session.resume_command: "claude attach
   <jobId>"` (otherwise `claude --resume <session id>`, and null for another host's session).
-```
+- Forks (session-fork-awareness R4.2): a Claude Code fork (`--fork-session`, background jobs) is
+  its own node and a child of the session it was forked from (`parent_link_source: "fork"`). The
+  graph draws its edge as round dots in the id colour (`path.gedge.fork`, `data-edge=<fork session id>`)
+  and marks its row with an icon-only GitFork badge left of the node id (`data-testid="fork-badge"`,
+  aria-label `fork of <parent>`, hover text `forked from <parent> after prompt N`). The node panel's
+  parent line reads `forked from <parent> after prompt N · <fork time> · <parent title>`. API: graph
+  nodes and session detail carry `fork: { parent_node_id, forked_at, prompt_count } | null`.
+- Background jobs (R3.5): a session live as a Claude Code background job (`job_id` set, live only)
+  shows the resume button as "Attach to the background session". An `attached` answer shows
+  `Opened claude attach <jobId> in <window>` (plus `; prompt not sent, type it there` when
+  `prompt_delivered` is false). A focused/messaged attach pane names the job too. A 409 for a live job
+  shows `<NODE> is background job <jobId>: run claude attach <jobId>`, never the raw code.
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
@@ -104,7 +115,7 @@ $V api RUN GET /api/projects      # both repos listed
 $V api RUN GET /api/projects/mcp-notes/sessions
 $V mcp RUN sessions_usage '{}'
 ```
-UI: `page.goto(base + '/projects')`, wait for `getByTestId('graph')`, toggle with `project-view-toggle`.
+UI: `page.goto(base + '/projects')`, wait for `getByRole('group', { name: 'Session graph' })`, toggle with `project-view-toggle`.
 
 Session notes. Node ids and session ids are generated at ingest, so read them from the run; never
 type one in. `URL` is what `up` printed.
@@ -293,6 +304,28 @@ $V mcp RUN session_get "{\"node_id\":\"$FN\"}"        # session.job_id "5e55a005
 kill $JOBPID
 ```
 The same checks with assertions are `tests/integration/sessions.forkWording.int.test.ts`.
+
+Forks and background jobs in the wall. The fixtures hold no fork, so seed one after ingest settles:
+fixture `…0005` becomes a fork of `…0001` that copied 3 prompts. A live background job is a registry
+file in the run's own CLAUDE_HOME whose pid is a `sleep` you started (never the real `~/.claude`).
+Resume is never driven: the steps file answers the resume POST itself with `page.route`.
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions --web
+P=5e55a001-0000-4000-8000-000000000001; F=5e55a001-0000-4000-8000-000000000005
+for i in $(seq 60); do S=$(curl -sf "$URL/api/projects/mcp-notes/sessions") && [ "$(jq --arg f $F '[.nodes[]|select(.session_id==$f)]|length' <<<"$S")" = 1 ] && break; sleep 1; done
+PARENT=$(jq -r --arg s $P '.nodes[]|select(.session_id==$s)|.node_id' <<<"$S"); FORK=$(jq -r --arg s $F '.nodes[]|select(.session_id==$s)|.node_id' <<<"$S")
+for i in $(seq 20); do $V sql RUN "select key from app_settings where key like 'sessions.forks.backfill.%'" | grep -q 'sessions.forks.backfill.' && break; sleep 1; done   # with phase 3 in the tree: seed after the fork backfill
+$V exec RUN "update cc_sessions set parent_session_id='$P', parent_link_source='fork', forked_at='2026-10-01T12:30:00Z', fork_prompt_count=3, fork_cut_offset=0, fork_detected_by='job' where session_id='$F'"
+$V api RUN GET /api/projects/mcp-notes/sessions     # FORK: parent_node_id PARENT, parent_link_source "fork", fork.prompt_count 3
+sleep 900 & JOBPID=$!
+echo "{\"pid\":$JOBPID,\"sessionId\":\"$F\",\"cwd\":\"/home/u/mcp-notes\",\"kind\":\"bg\",\"jobId\":\"5e55a005\",\"status\":\"idle\"}" > "$HOME/.local/state/notesd-verify/RUN/claude/sessions/$JOBPID.json"
+$V api RUN GET /api/sessions/$FORK                   # session.live true, session.job_id "5e55a005" (registry cache: up to 2 s)
+kill $JOBPID
+```
+UI selectors: row `g[data-node="<FORK>"]`, badge `getByTestId('fork-badge')` in it, edge
+`path[data-edge="<fork session id>"]` (class `gedge fork`), panel `aside.np[data-node="<FORK>"]`,
+parent line `.np-parent`, resume button `getByRole('button', { name: 'Attach to the background session' })`,
+notice `getByRole('status')`.
 
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`

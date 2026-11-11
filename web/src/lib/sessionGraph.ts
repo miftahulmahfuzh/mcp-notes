@@ -10,6 +10,8 @@ export const LANE_W = 20;
 export const GUTTER_W = 84;
 /** Gap between the rightmost lane and the label column. */
 export const LABEL_GAP = 16;
+/** The fork badge (Phosphor GitFork) sits in the LABEL_GAP just left of the node id: it must stay narrower. */
+export const FORK_ICON = 12;
 /** Rows rendered above and below the viewport. */
 export const OVERSCAN = 8;
 /** Label column: node id, `+N` chip, phase 13 badge slot (when filled), other-host mark (when remote), title. */
@@ -53,6 +55,9 @@ export interface LaidNode {
   firstOfDay: boolean;
 }
 
+/** How an edge is drawn: from its child's parent link source. */
+export type EdgeStyle = 'plain' | 'heuristic' | 'fork';
+
 export interface LaidEdge {
   /** Session ids. */
   parent: string;
@@ -64,7 +69,12 @@ export interface LaidEdge {
   /** Row span the edge's lane is occupied over (inclusive). */
   top: number;
   bottom: number;
-  heuristic: boolean;
+  style: EdgeStyle;
+}
+
+function edgeStyle(n: SessionNode): EdgeStyle {
+  if (n.parent_link_source === 'fork') return 'fork';
+  return n.parent_link_source === 'heuristic' ? 'heuristic' : 'plain';
 }
 
 export interface GraphLayout {
@@ -294,7 +304,7 @@ export function layoutGraph(nodes: readonly SessionNode[], expanded: ReadonlySet
       toLane: laid.lane,
       top: Math.min(fromRow, laid.row),
       bottom: Math.max(fromRow, laid.row),
-      heuristic: laid.node.parent_link_source === 'heuristic',
+      style: edgeStyle(laid.node),
     });
   }
 

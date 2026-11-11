@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { childOf, makeSession } from '../testing/sessionFixtures';
+import { childOf, forkOf, makeSession } from '../testing/sessionFixtures';
 import {
   ancestorsOf,
   buildForest,
@@ -107,7 +107,18 @@ describe('layoutGraph', () => {
     const h = childOf(R1, 'H0-00', 30, { parent_link_source: 'heuristic' });
     const l = layoutGraph([R1, h], new Set([R1.session_id]));
     expect(l.edges).toHaveLength(1);
-    expect(l.edges[0]!.heuristic).toBe(true);
+    expect(l.edges[0]!.style).toBe('heuristic');
+  });
+
+  it('lays a fork out as a child of its parent, on a fork edge', () => {
+    const f = forkOf(R1, 'F0-00', 31);
+    const l = layoutGraph([R1, P1, f], new Set([R1.session_id]));
+    expect(at(l, 'F0-00').root).toBe(false);
+    expect(at(l, 'F0-00').depth).toBe(1);
+    const edge = l.edges.find((e) => e.child === f.session_id)!;
+    expect(edge.parent).toBe(R1.session_id);
+    expect(edge.style).toBe('fork');
+    expect(l.edges.find((e) => e.child === P1.session_id)!.style).toBe('plain');
   });
 });
 

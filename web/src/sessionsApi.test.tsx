@@ -39,7 +39,32 @@ describe('sessionsApi', () => {
       summary_excerpt: null,
       child_count: 0,
       unfinished: null,
+      fork: null,
+      job_id: null,
     });
+  });
+
+  it('reads a fork node and keeps a background job id only while live', async () => {
+    const fork = { parent_node_id: 'DM-OV', forked_at: '2026-11-11T01:37:02.342Z', prompt_count: 12 };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          repo: 'r',
+          nodes: [
+            { session_id: 's1', node_id: 'JM-UJ', parent_link_source: 'fork', parent_node_id: 'DM-OV', fork, live: true, job_id: 'e3650501' },
+            { session_id: 's2', node_id: 'A0-3G', parent_link_source: 'fork', fork: { forked_at: null }, live: false, job_id: 'e3650501' },
+          ],
+        }),
+      ),
+    );
+    const { payload } = await fetchSessionGraph('r');
+    const [a, b] = payload!.nodes;
+    expect(a!.parent_link_source).toBe('fork');
+    expect(a!.fork).toEqual(fork);
+    expect(a!.job_id).toBe('e3650501');
+    expect(b!.fork).toBeNull();
+    expect(b!.job_id).toBeNull();
   });
 
   it('sends If-None-Match and keeps nothing new on 304', async () => {
