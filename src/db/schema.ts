@@ -461,9 +461,24 @@ export const chatMessageAttachments = pgTable(
   ],
 )
 
-/** How a session's parent link was learned, best first. src/sessions/repo.ts enforces the order. */
-export const PARENT_LINK_SOURCES = ['env', 'hook', 'heuristic'] as const
+/**
+ * How a session's parent link was learned, best first. src/sessions/types.ts PARENT_LINK_RANK
+ * ranks them (fork 4 > env 3 > hook 2 > heuristic 1) and src/sessions/repo.ts enforces the order.
+ * `fork`: Claude Code's own fork record (a background job's state.json, or the copied transcript
+ * prefix) names the parent, so nothing else may replace it.
+ */
+export const PARENT_LINK_SOURCES = ['fork', 'env', 'hook', 'heuristic'] as const
 export type ParentLinkSource = (typeof PARENT_LINK_SOURCES)[number]
+
+/**
+ * How a fork's parent and cut were found (`cc_sessions.fork_detected_by`, migration 0015).
+ * `job`: the background job's `<claudeHome>/jobs/<short>/state.json` named the parent and a
+ * copied-uuid set gave the cut. `uuid`: no job state; the parent shares the fork's head uuid and
+ * the longest copied prefix. `time`: the job named the parent but only its `forkBoundaryAt` was
+ * readable for the cut.
+ */
+export const FORK_DETECTED_BY = ['job', 'uuid', 'time'] as const
+export type ForkDetectedBy = (typeof FORK_DETECTED_BY)[number]
 
 /** One human prompt of a Claude Code session (`cc_sessions.prompts`). `at` is the record's ISO timestamp. */
 export interface SessionPrompt {
@@ -539,6 +554,24 @@ export const ccSessions = pgTable(
     transcriptOffset: bigint('transcript_offset', { mode: 'number' }).notNull().default(0),
     transcriptSize: bigint('transcript_size', { mode: 'number' }),
     /**
+     * uuid of the transcript's first record that carries one (migration 0015). A fork's transcript
+     * begins with a copy of its parent's records, so it shares this value with its parent: the
+     * cheap key fork detection looks candidates up by (`cc_sessions_host_head_uuid_idx`).
+     */
+    headUuid: text('head_uuid'),
+    /**
+     * Fork metadata (migration 0015, src/sessions/types.ts ForkInfo); all null for a session that
+     * is not a fork, and cc_sessions_fork_info_check keeps `fork_detected_by`, `fork_cut_offset`
+     * and `fork_prompt_count` together. `fork_cut_offset`: byte offset of the fork's first own
+     * record that has a uuid; every reader skips uuid records before it and always reads records
+     * without one. `forked_at`: the fork point's time. `fork_prompt_count`: human prompts among the
+     * copied records ("after prompt N" of the parent).
+     */
+    forkCutOffset: bigint('fork_cut_offset', { mode: 'number' }),
+    forkedAt: timestamp('forked_at', { withTimezone: true, mode: 'date' }),
+    forkPromptCount: integer('fork_prompt_count'),
+    forkDetectedBy: text('fork_detected_by').$type<ForkDetectedBy>(),
+    /**
      * Human prompts, oldest first: the excerpt list, capped and redacted (src/sessions/types.ts
      * MAX_PROMPTS / MAX_PROMPT_CHARS). The full list is `cc_session_prompts`.
      */
@@ -585,12 +618,18 @@ export const ccSessions = pgTable(
     index('cc_sessions_repo_started_idx').on(t.repo, t.startedAt.desc()),
     index('cc_sessions_parent_idx').on(t.parentSessionId),
     index('cc_sessions_host_idx').on(t.host),
+    index('cc_sessions_host_head_uuid_idx').on(t.host, t.headUuid),
     index('cc_sessions_name_idx').on(t.name),
     index('cc_sessions_last_active_idx').on(t.lastActiveAt),
     index('cc_sessions_search_gin').using('gin', t.searchTsv),
     check('cc_sessions_node_id_check', sql`${t.nodeId} ~ '^[0-9A-Z]{2}-[0-9A-Z]{2}$'`),
-    check('cc_sessions_parent_link_source_check', sql`${t.parentLinkSource} in ('env', 'hook', 'heuristic')`),
+    check('cc_sessions_parent_link_source_check', sql`${t.parentLinkSource} in ('fork', 'env', 'hook', 'heuristic')`),
     check('cc_sessions_parent_pair_check', sql`(${t.parentSessionId} is null) = (${t.parentLinkSource} is null)`),
+    check('cc_sessions_fork_detected_by_check', sql`${t.forkDetectedBy} in ('job', 'uuid', 'time')`),
+    check(
+      'cc_sessions_fork_info_check',
+      sql`(${t.forkDetectedBy} is null) = (${t.forkCutOffset} is null) and (${t.forkDetectedBy} is null) = (${t.forkPromptCount} is null)`,
+    ),
   ],
 )
 

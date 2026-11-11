@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-08
-**Total Active Tasks**: 8
+**Last Updated**: 2026-11-11
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 5
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 87
+- Completed: 88
 
 ---
 
@@ -85,6 +85,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A090** Phase 1: Fork schema, rank, detection and cut primitives
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns migration drizzle/0015_session_forks.sql (+ drizzle meta), src/db/schema.ts (PARENT_LINK_SOURCES fork, FORK_DETECTED_BY), src/sessions/types.ts (PARENT_LINK_RANK.fork=4, ForkInfo), src/sessions/repo.ts (STORED_RANK from PARENT_LINK_RANK, LIST_COLUMNS), view.ts/search.ts linkSource, transcript.ts (readJsonlFrom onLine lineStart, isCopiedRecord), new src/sessions/fork.ts, fixture rows. Exit: typecheck, npm test, npm run test:int green; drizzle-kit check no drift; R1.3 proven (fork link survives env/hook/heuristic writes and replaces each); fork.ts unit tests on JM-UJ-shaped fixtures incl. multi-byte text before the cut.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R1, R2 — R1: "i think it is correct that a fork is considered a new node." (fork parent link source in the precedence); R2: copied prefix must not be double counted · criteria: R1.3
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A090.md`
+  - **Completed**: 2026-11-11 10:24
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A090.md, drizzle/0015_session_forks.sql, drizzle/meta/0015_snapshot.json, drizzle/meta/_journal.json, src/db/schema.ts, src/sessions/fork.ts, src/sessions/repo.ts, src/sessions/search.ts, src/sessions/transcript.ts, src/sessions/types.ts, src/sessions/view.ts, tests/helpers/memoryIngestStore.ts, tests/integration/sessions.repo.int.test.ts, tests/integration/sessions.schema.int.test.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions/fork.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/schema.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p1 (swarm ISOLATE mode).
+    - drizzle-kit emitted the 0015 statements in a different order than the plan listed (plan allows this); content identical.
+  - **Decided**:
+    - Create tasks for all phases vs only phase 1 -> only phase 1 (P1-NOTES-A090): phases run in isolated worktrees, creating all six in each would collide at integration (tie-break: narrower blast radius).
+    - Rebase onto origin/feature/session-fork-awareness (phase 4 landed there) -> not done: coordinator integrates waves and said not to merge into the feature branch; phase 4 touches no phase-1 file (rung 5: coordinator task text).
 
 - [x] **P1-NOTES-A085** Phase 1: Web pollers: visible-only, slower, adaptive
   - **Difficulty**: NORMAL

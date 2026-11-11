@@ -127,6 +127,9 @@ const LIST_COLUMNS = {
   tmux: ccSessions.tmux,
   transcriptPath: ccSessions.transcriptPath,
   summary: ccSessions.summary,
+  forkedAt: ccSessions.forkedAt,
+  forkPromptCount: ccSessions.forkPromptCount,
+  forkDetectedBy: ccSessions.forkDetectedBy,
 };
 
 /** Terminal sessions, plus hook-created rows the ingester has not filled yet. */
@@ -135,8 +138,16 @@ const CLI_ONLY: SQL = sql`coalesce(${ccSessions.entrypoint}, 'cli') = 'cli'`;
 /** Listing order key. */
 const ORDER_AT: SQL = sql`coalesce(${ccSessions.startedAt}, ${ccSessions.createdAt})`;
 
-/** `case parent_link_source ... end`: the stored link's rank, 0 when there is none. */
-const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} when 'env' then 3 when 'hook' then 2 when 'heuristic' then 1 else 0 end)`;
+/**
+ * `case parent_link_source ... end`: the stored link's rank, 0 when there is none. Generated from
+ * PARENT_LINK_RANK so the SQL and the TypeScript order cannot drift (the values are compile-time
+ * constants, so sql.raw is safe).
+ */
+const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} ${sql.raw(
+  Object.entries(PARENT_LINK_RANK)
+    .map(([source, rank]) => `when '${source}' then ${rank}`)
+    .join(' '),
+)} else 0 end)`;
 
 const MAX_SESSION_ID_CHARS = 128;
 

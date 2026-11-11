@@ -95,6 +95,7 @@ describe('toGraphNode', () => {
 
   it('keeps only known link sources', () => {
     expect(toGraphNode(row({ parent_link_source: 'env' }), { host: 'x', live: noLive }).parent_link_source).toBe('env');
+    expect(toGraphNode(row({ parent_link_source: 'fork' }), { host: 'x', live: noLive }).parent_link_source).toBe('fork');
     expect(toGraphNode(row({ parent_link_source: 'bogus' }), { host: 'x', live: noLive }).parent_link_source).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
+import { FORK_DETECTED_BY, PARENT_LINK_SOURCES } from '../../src/db/schema.js'
 import { MIGRATIONS_DIR, closeTestDb, openTestDb, truncateAll } from './setup.js'
 
 function pgErrorCode(err: unknown): string | undefined {
@@ -117,5 +118,70 @@ describe('migration 0007 (cc_sessions)', () => {
     await db.execute(sql`delete from cc_sessions where session_id = 's-1'`)
     const n = await db.execute<{ n: number }>(sql`select count(*)::int as n from cc_session_embeddings`)
     expect(n.rows[0]?.n).toBe(0)
+  })
+})
+
+describe('migration 0015 (session forks)', () => {
+  let db: Db
+
+  beforeAll(() => {
+    db = openTestDb()
+  })
+  afterAll(async () => {
+    await closeTestDb(db)
+  })
+  beforeEach(async () => {
+    await truncateAll(db)
+  })
+
+  it('is journal entry 15', () => {
+    const journal = JSON.parse(readFileSync(path.join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string }>
+    }
+    expect(journal.entries.find((e) => e.idx === 15)?.tag).toBe('0015_session_forks')
+  })
+
+  it('adds nullable fork columns and the head uuid index', async () => {
+    const cols = await db.execute<{ column_name: string; is_nullable: string; data_type: string }>(sql`
+      select column_name, is_nullable, data_type from information_schema.columns
+      where table_schema = 'public' and table_name = 'cc_sessions'
+        and column_name in ('head_uuid', 'fork_cut_offset', 'forked_at', 'fork_prompt_count', 'fork_detected_by')
+      order by column_name
+    `)
+    expect(cols.rows).toEqual([
+      { column_name: 'fork_cut_offset', is_nullable: 'YES', data_type: 'bigint' },
+      { column_name: 'fork_detected_by', is_nullable: 'YES', data_type: 'text' },
+      { column_name: 'fork_prompt_count', is_nullable: 'YES', data_type: 'integer' },
+      { column_name: 'forked_at', is_nullable: 'YES', data_type: 'timestamp with time zone' },
+      { column_name: 'head_uuid', is_nullable: 'YES', data_type: 'text' },
+    ])
+    const idx = await db.execute<{ indexdef: string }>(sql`select indexdef from pg_indexes where indexname = 'cc_sessions_host_head_uuid_idx'`)
+    expect(idx.rows[0]?.indexdef).toContain('(host, head_uuid)')
+  })
+
+  it('accepts every parent link source and every fork detection kind, nothing else', async () => {
+    let n = 0
+    for (const source of PARENT_LINK_SOURCES) {
+      n += 1
+      await db.execute(sql`insert into cc_sessions (session_id, node_id, host, parent_session_id, parent_link_source)
+        values (${`s-${n}`}, ${`A0-0${n}`}, 'h', 'p', ${source})`)
+    }
+    for (const by of FORK_DETECTED_BY) {
+      n += 1
+      await db.execute(sql`insert into cc_sessions (session_id, node_id, host, fork_detected_by, fork_cut_offset, fork_prompt_count)
+        values (${`s-${n}`}, ${`A0-0${n}`}, 'h', ${by}, 10, 2)`)
+    }
+    expect(
+      await codeOf(db.execute(sql`insert into cc_sessions (session_id, node_id, host, fork_detected_by, fork_cut_offset, fork_prompt_count) values ('s-x', 'A0-1X', 'h', 'guess', 10, 2)`)),
+    ).toBe('23514')
+  })
+
+  it('keeps detected_by, cut offset and prompt count together', async () => {
+    expect(await codeOf(db.execute(sql`insert into cc_sessions (session_id, node_id, host, fork_detected_by) values ('s-1', 'A0-1A', 'h', 'job')`))).toBe('23514')
+    expect(await codeOf(db.execute(sql`insert into cc_sessions (session_id, node_id, host, fork_cut_offset) values ('s-2', 'A0-1B', 'h', 10)`))).toBe('23514')
+    expect(
+      await codeOf(db.execute(sql`insert into cc_sessions (session_id, node_id, host, fork_detected_by, fork_cut_offset) values ('s-3', 'A0-1C', 'h', 'uuid', 10)`)),
+    ).toBe('23514')
+    await db.execute(sql`insert into cc_sessions (session_id, node_id, host, forked_at) values ('s-4', 'A0-1D', 'h', now())`)
   })
 })
