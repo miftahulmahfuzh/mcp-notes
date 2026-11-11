@@ -142,6 +142,17 @@ describe('normalizeSessionDetail', () => {
     expect(d.prompts).toEqual([]);
     expect(d.notes).toEqual([]);
   });
+
+  it('reads a fork: source, fork point, and the fork parent when no parent object came', () => {
+    const fork = { parent_node_id: 'DM-OV', forked_at: '2026-11-11T01:37:02.342Z', prompt_count: 12 };
+    const d = normalizeSessionDetail({ session: { node_id: 'JM-UJ', parent_link_source: 'fork', fork, live: true, job_id: 'e3650501' } });
+    expect(d.parent_link_source).toBe('fork');
+    expect(d.fork).toEqual(fork);
+    expect(d.parent).toEqual({ node_id: 'DM-OV', name: null, repo: null });
+    expect(d.job_id).toBe('e3650501');
+    expect(normalizeSessionDetail({ session: { node_id: 'JM-UJ', live: false, job_id: 'e3650501' } }).job_id).toBeNull();
+    expect(normalizeSessionDetail({ session: { node_id: 'A0-3G', parent_link_source: 'nope' } })).toMatchObject({ parent_link_source: null, fork: null, job_id: null });
+  });
 });
 
 describe('fetchSessionDetail', () => {
@@ -179,6 +190,11 @@ describe('resumeSession', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).message).toBe('not_on_this_machine');
   });
+
+  it('carries the background job and whether the prompt was delivered', async () => {
+    stub(200, { action: 'attached', window: 'note:6', job_id: 'e3650501', prompt_delivered: false });
+    expect(await resumeSession('JM-UJ', { prompt: 'go on' })).toEqual({ action: 'attached', window: 'note:6', job_id: 'e3650501', prompt_delivered: false });
+  });
 });
 
 describe('notices', () => {
@@ -197,6 +213,19 @@ describe('notices', () => {
     expect(resumeErrorNotice(new ApiError(403, 'forbidden'), d)).toBe('Resume only works from the wall on this machine');
     expect(resumeErrorNotice(new ApiError(500, 'tmux_failed'), d)).toBe('Could not resume A0-3G: tmux_failed');
     expect(resumeErrorNotice(new Error('x'), d)).toBe('Could not resume A0-3G');
+  });
+
+  it('names the background job instead of an error code', () => {
+    expect(resumeNotice({ action: 'attached', window: 'note:6', job_id: 'e3650501' }, false)).toBe('Opened claude attach e3650501 in note:6');
+    expect(resumeNotice({ action: 'attached', window: 'note:6', job_id: 'e3650501', prompt_delivered: false }, false)).toBe(
+      'Opened claude attach e3650501 in note:6; prompt not sent, type it there',
+    );
+    expect(resumeNotice({ action: 'attached', window: null }, false)).toBe('Attached to the background session');
+    expect(resumeNotice({ action: 'focused', window: 'note:6', job_id: 'e3650501' }, false)).toBe('Background job, focused claude attach e3650501 in note:6');
+    expect(resumeNotice({ action: 'messaged', window: null, job_id: 'e3650501' }, false)).toBe('Background job, prompt sent to claude attach e3650501');
+    const bg = { node_id: 'JM-UJ', host: 'lenovo', job_id: 'e3650501' };
+    expect(resumeErrorNotice(new ApiError(409, 'live_outside_tmux'), bg)).toBe('JM-UJ is background job e3650501: run claude attach e3650501');
+    expect(resumeErrorNotice(new ApiError(409, 'live_outside_tmux'), { ...bg, job_id: null })).toBe('Could not resume JM-UJ: live_outside_tmux');
   });
 });
 

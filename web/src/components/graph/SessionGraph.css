@@ -5,6 +5,10 @@
 .gtrunk { stroke: var(--fg); stroke-width: 6; stroke-linecap: round; opacity: .85; }
 .gedge { fill: none; stroke: var(--line-25); stroke-width: 2; }
 .gedge.heur { stroke-dasharray: 3 4; }
+/* A fork: round dots in the id colour, distinct from the heuristic dashes. */
+.gedge.fork { stroke: var(--id); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0 5; }
+.gnode-fork { color: var(--id); }
+.gnode.sel .gnode-fork { color: var(--fg); }
 
 .gnode { cursor: pointer; outline: none; }
 .gnode-hit { fill: transparent; }

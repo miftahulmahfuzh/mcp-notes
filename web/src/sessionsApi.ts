@@ -1,4 +1,5 @@
 import { ApiError } from './api';
+import { liveJobId, parseForkPoint, parseParentLinkSource } from './lib/parentLink';
 import type { ProjectSummary, SessionGraphPayload, SessionNode } from './types';
 
 const enc = encodeURIComponent;
@@ -23,15 +24,16 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
 
 /** Defensive copy of a phase 7 `GraphNode`: the layout never sees `undefined`. */
 export function normalizeSessionNode(n: SessionNode): SessionNode {
-  const src = n.parent_link_source;
+  const wire = n as SessionNode & { fork?: unknown; job_id?: unknown };
   const t: Partial<SessionNode['tokens']> = n.tokens ?? {};
+  const live = n.live === true;
   return {
     session_id: n.session_id,
     node_id: n.node_id,
     repo: str(n.repo),
     parent_session_id: str(n.parent_session_id),
     parent_node_id: str(n.parent_node_id),
-    parent_link_source: src === 'env' || src === 'hook' || src === 'heuristic' ? src : null,
+    parent_link_source: parseParentLinkSource(n.parent_link_source),
     title: typeof n.title === 'string' && n.title !== '' ? n.title : n.node_id,
     name: str(n.name),
     custom_title: str(n.custom_title),
@@ -43,7 +45,7 @@ export function normalizeSessionNode(n: SessionNode): SessionNode {
     last_active_at: str(n.last_active_at),
     host: typeof n.host === 'string' ? n.host : '',
     available: n.available !== false,
-    live: n.live === true,
+    live,
     status: str(n.status),
     tmux: str(n.tmux),
     tokens: { input: num(t.input), output: num(t.output), cache_read: num(t.cache_read), cache_write: num(t.cache_write), total: num(t.total) },
@@ -51,6 +53,8 @@ export function normalizeSessionNode(n: SessionNode): SessionNode {
     summary_excerpt: str(n.summary_excerpt),
     child_count: num(n.child_count),
     unfinished: typeof n.unfinished === 'boolean' ? n.unfinished : null,
+    fork: parseForkPoint(wire.fork),
+    job_id: liveJobId(wire.job_id, live),
   };
 }
 

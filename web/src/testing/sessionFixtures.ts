@@ -32,12 +32,24 @@ export function makeSession(nodeId: string, minute: number, opts: Partial<Sessio
     summary_excerpt: null,
     child_count: 0,
     unfinished: null,
+    fork: null,
+    job_id: null,
     ...opts,
   };
 }
 
 export function childOf(parent: SessionNode, nodeId: string, minute: number, opts: Partial<SessionNode> = {}): SessionNode {
   return makeSession(nodeId, minute, { parent_session_id: parent.session_id, parent_node_id: parent.node_id, parent_link_source: 'env', ...opts });
+}
+
+/** A fork of `parent` that copied `promptCount` of its prompts, forked at its own start time. */
+export function forkOf(parent: SessionNode, nodeId: string, minute: number, promptCount = 3, opts: Partial<SessionNode> = {}): SessionNode {
+  const at = new Date(SESSION_BASE + minute * 60_000).toISOString();
+  return childOf(parent, nodeId, minute, {
+    parent_link_source: 'fork',
+    fork: { parent_node_id: parent.node_id, forked_at: at, prompt_count: promptCount },
+    ...opts,
+  });
 }
 
 /** Distinct node ids for bulk fixtures: 0 → `00-00`, 37 → `00-11`. */
