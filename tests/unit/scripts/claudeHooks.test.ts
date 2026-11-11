@@ -78,7 +78,7 @@ describe('mergeHooks / removeHooks', () => {
     expect(merged.hooks.PostToolUse).toEqual([
       {
         matcher: 'mcp__notes__(create|create_image|update|append|attach_image)',
-        hooks: [{ type: 'command', command: cmd('notes-link.mjs'), async: true, timeout: 10 }],
+        hooks: [{ type: 'command', command: cmd('notes-link.mjs'), timeout: 10 }],
       },
     ]);
     expect(merged.hooks.UserPromptSubmit).toEqual([{ hooks: [{ type: 'command', command: cmd('notes-prompt.mjs'), timeout: 20 }] }]);

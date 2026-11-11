@@ -10,8 +10,13 @@
  * never changes the note itself.
  *
  * Skipped: other tools, failed calls, non-`cli` sessions, inputs without a session id or note id.
- * It never decides anything: it prints nothing and always exits 0. Problems go to
- * ${XDG_STATE_HOME:-~/.local/state}/notes-capture/link.log. Node >= 22 built-ins only.
+ * It never decides anything and always exits 0. A link that succeeded prints nothing. A link that
+ * FAILED is told to the model as PostToolUse additionalContext, naming the retry (`link_note`), and
+ * is logged to ${XDG_STATE_HOME:-~/.local/state}/notes-capture/link.log. Node >= 22 built-ins only.
+ *
+ * Why it speaks up (2026-11-11): failures used to go to the log alone, and the hook ran async, so a
+ * model could not tell a linked note from an unlinked one -- and the /n skill told it to report
+ * "Linked to session ..." regardless. A claim nothing confirmed is worse than no claim.
  */
 import { daemonBaseUrl, errorText, isMainModule, readStdin, stateDir, writeLog } from './lib/state.mjs';
 import { isCliSession, sessionIdOf } from './notes-session.mjs';
@@ -75,7 +80,23 @@ export function noteIdOf(input) {
   return null;
 }
 
-/** Links the note one PostToolUse input wrote to this session. Always resolves to null (no hook output). */
+/** The hook output that tells the model a link failed and how to retry it. */
+export function failureOutput(note, why) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PostToolUse',
+      additionalContext:
+        `notes-link: note ${note} was saved but NOT linked to this session's node (${why}). ` +
+        `Retry with link_note(note_id: "${note}", node_id: <this session's node id>) and report ` +
+        `the result; do not say the note is linked until a call returns linked: true.`,
+    },
+  };
+}
+
+/**
+ * Links the note one PostToolUse input wrote to this session. Resolves to null when there is
+ * nothing to say (not ours, or linked), else to the hook output for a failed link.
+ */
 export async function runLink({ input, env, fetchImpl = globalThis.fetch }) {
   const note = noteIdOf(input);
   if (note === null || !isCliSession(env)) return null;
@@ -92,9 +113,11 @@ export async function runLink({ input, env, fetchImpl = globalThis.fetch }) {
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       await log(`link ${note} to ${session}: HTTP ${res.status} ${detail.slice(0, 200)}`);
+      return failureOutput(note, `HTTP ${res.status} ${detail.slice(0, 120)}`.trim());
     }
   } catch (err) {
     await log(`hook: ${errorText(err)}`);
+    return failureOutput(note, errorText(err));
   }
   return null;
 }
@@ -102,7 +125,8 @@ export async function runLink({ input, env, fetchImpl = globalThis.fetch }) {
 async function main() {
   try {
     const input = JSON.parse(await readStdin());
-    await runLink({ input, env: process.env });
+    const out = await runLink({ input, env: process.env });
+    if (out !== null) process.stdout.write(JSON.stringify(out));
   } catch (err) {
     await writeLog(stateDir(process.env), LOG_FILE, `hook: ${errorText(err)}`);
   }

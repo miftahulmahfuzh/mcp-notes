@@ -62,11 +62,37 @@ description for parameter names and formats; they win over anything written here
   (`#bug`, `#decision`, `#howto`) when that helps finding it later. Reuse existing tags: call
   `tags` first when unsure what the user already uses, and prefer their spelling.
 - Never put secrets in a note: tokens, passwords, API keys, connection strings.
-- Every note you write here is linked to this session's node for you: the notes-link hook runs
-  after each successful `create`, `create_image`, `update`, `append` and `attach_image` and links
-  the note to the session that made the call. Do not call `link_note` for that. Call it only when
-  the user names another node ("link it to 5U-I7"), and `unlink_note` when they say this note
-  should not be linked here. The reply then names the session as well (see Sessions).
+- The notes-link hook links every note you write here to this session's node: it runs after each
+  successful `create`, `create_image`, `update`, `append` and `attach_image`. **Never take that on
+  faith — verify it.** See "Verify the link" below. Call `link_note` for another node only when the
+  user names one ("link it to 5U-I7"), and `unlink_note` when they say this note should not be
+  linked here.
+
+### Verify the link, every write
+
+A link is reported only when a call in this turn returned `linked: true`. MEASURED 2026-11-11: a
+session whose notes tools were hidden by a settings deny list wrote a note by another route, the
+hook never ran, and the reply said "Linked to session" anyway because this skill told it to.
+
+1. After the write, call `link_note` with the note id and this session's node id (the one the
+   SessionStart context names). It is idempotent, so this is the check and the retry in one call:
+   `linked: true, changed: false` means the hook had linked it; `changed: true` means the hook had
+   not and this call did — say so in one line. A hook message "notes-link: note X was saved but NOT
+   linked" means the same: this call is the retry.
+2. If `link_note` is not available in this session or fails, retry another way: POST to the
+   daemon, `curl -s -m 5 -X POST <wall>/api/sessions/hook/link-note -H 'content-type:
+   application/json' -H 'x-notes-capture: 1' -d '{"session":"<session uuid>","note":"<id>"}'` (the
+   session uuid is in the SessionStart context or the transcript path; the answer carries
+   `node_id` and `changed`). A note whose `origin.claude_session` is this session is listed under
+   its node as `made` even without the link, so pass the real session id in `origin` whenever you
+   know it.
+3. If every route fails, say plainly that the note is saved but not linked, with the note id, the
+   node id and the error, so it can be linked later. Never write a "Linked to session" line that no
+   call confirmed.
+
+If the notes write tools are missing altogether while `claude mcp get notes` says Connected, look
+for a `permissions.deny` list in the repo's `.claude/settings.local.json` or `.claude/settings.json`
+naming `mcp__notes__*` before anything else.
 
 ### "Save this session's insights"
 
@@ -265,11 +291,13 @@ either.
   stays listed there; say so.
 - Reply with both ids as links (the note as described under Replies, the session with the
   `url` that `session_get` returns) and whether anything changed.
-- Notes saved in this session are linked to it automatically (see Saving), so "write this as a
-  new note" needs no "and link it to this node". After a save, add one short line such as
+- Notes saved in this session are linked to it by the hook and verified by you (see "Verify the
+  link"), so "write this as a new note" needs no "and link it to this node". After a save whose
+  link a call confirmed (`linked: true`), add one short line such as
   "Linked to session [A0-3G](<wall>/projects?repo=REPO&node=A0-3G)." with this session's node id
   (the one the SessionStart context names; never invent one, and leave the line out when it names
-  none) and the `repo` you passed in `origin` as REPO, so skip `session_get`.
+  none) and the `repo` you passed in `origin` as REPO. With no confirmation, say it is not linked
+  instead.
 
 ## Deleting
 

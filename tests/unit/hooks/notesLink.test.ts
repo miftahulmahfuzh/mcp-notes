@@ -83,14 +83,18 @@ describe('runLink', () => {
     expect(existsSync(path.join(tmp, 'state'))).toBe(false);
   });
 
-  it('logs an HTTP failure or a daemon that is down, and still returns null', async () => {
+  it('logs an HTTP failure or a daemon that is down, and tells the model to retry', async () => {
     const input = call('append', { id: 'A-B32', text: 'y' }, ok({ note: { id: 'A-B32' } }));
     const { fetchImpl } = fake(() => new Response('{"error":"unknown_session"}', { status: 404 }));
-    expect(await runLink({ input, env, fetchImpl })).toBeNull();
+    const http: any = await runLink({ input, env, fetchImpl });
+    expect(http.hookSpecificOutput.hookEventName).toBe('PostToolUse');
+    expect(http.hookSpecificOutput.additionalContext).toMatch(/A-B32 was saved but NOT linked .*HTTP 404/);
+    expect(http.hookSpecificOutput.additionalContext).toMatch(/link_note\(note_id: "A-B32"/);
     const down: FetchLike = async () => {
       throw new TypeError('fetch failed');
     };
-    expect(await runLink({ input, env, fetchImpl: down })).toBeNull();
+    const gone: any = await runLink({ input, env, fetchImpl: down });
+    expect(gone.hookSpecificOutput.additionalContext).toMatch(/NOT linked .*fetch failed/);
     const log = await readFile(path.join(tmp, 'state', 'notes-capture', 'link.log'), 'utf8');
     expect(log).toMatch(/HTTP 404 .*unknown_session/);
     expect(log).toMatch(/fetch failed/);

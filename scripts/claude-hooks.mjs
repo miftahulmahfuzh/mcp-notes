@@ -10,7 +10,8 @@
  *   node scripts/claude-hooks.mjs retention --settings FILE [--min-days N]
  *
  * The hooks: Stop -> notes-capture.mjs (async), PreToolUse mcp__notes__(...) -> notes-paste.mjs,
- * PreToolUse Bash -> notes-spawn.mjs, PostToolUse mcp__notes__(create|...) -> notes-link.mjs (async),
+ * PreToolUse Bash -> notes-spawn.mjs, PostToolUse mcp__notes__(create|...) -> notes-link.mjs (sync,
+ * so a failed link reaches the model),
  * UserPromptSubmit -> notes-prompt.mjs, SessionStart ->
  * notes-session.mjs. Our handlers are recognised by the script name in their command, so an entry
  * left by another checkout is replaced, never duplicated. install is idempotent: a second run leaves
@@ -132,7 +133,8 @@ export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' })
           {
             type: 'command',
             command: hookCommand(nodeBin, path.join(hooksDir, 'notes-link.mjs')),
-            async: true,
+            // Not async: an async hook's output never reaches the model, and a failed link has
+            // to. The POST is one local request with a 3s cap.
             timeout: LINK_TIMEOUT_S,
           },
         ],
