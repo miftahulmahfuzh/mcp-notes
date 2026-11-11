@@ -3,6 +3,12 @@
   "coordinator": "orch-session-fork-awareness",
   "coordinator_session_id": "8ab6e304-3ad2-4262-8ec5-dba7255a6ca6",
   "created": "2026-11-11T10:14:05+07:00",
+  "landed": {
+    "at": "2026-11-11T11:38:22+07:00",
+    "base": "main",
+    "commit": "13c84f95795cc448ec394978d120845d0ab88419",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -44,22 +50,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "9b0d8a5",
       "depends_on": [
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "proof: verified-first-pass J1-J6+neighbor. Decision: 4 prompts-backfill unit tests await first start's promptsBackfill (timing only, assertions unchanged). Final set e012360: typecheck ok, npm test 2292/2292, test:int 726/726 (leased), drizzle-kit check clean.",
       "package": "src/sessions`, `src/background.ts",
       "plan": ".workflows/plan/session-fork-awareness/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T11:37:40+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A097",
       "title": "Re-readers honour the cut, plus the one-time fork backfill"
     },
     {
@@ -125,6 +131,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-fork-awareness",
-  "updated": "2026-11-11T11:27:04+07:00",
+  "updated": "2026-11-11T11:38:22+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-fork-awareness"
 }
