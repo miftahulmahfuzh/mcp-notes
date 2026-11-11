@@ -289,6 +289,10 @@ function unionStrings(prev: string[], next: string[] | undefined, reset: boolean
  * replaces tokens, models and commits, starting from `subagents` (the session's subagent share,
  * which lives in other files) instead of from zero. Every prompt text written (excerpts, first and
  * last prompt) is redacted, so a row written before redaction existed is cleaned on its next write.
+ *
+ * Forks: a re-read from byte 0 carrying `patch.fork` writes the fork columns, and leaves out what
+ * an earlier read without the cut stored from the parent's copied records: a `started_at` at or
+ * before the fork point, and a first prompt or final message this read does not replace.
  */
 export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, subagents: SubagentTotals | null = null): TranscriptSet {
   const reset = patch.fromOffset === 0;
@@ -308,6 +312,10 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
   const tokens = patch.tokens ?? {};
   const firstPrompt = excerptOrKeep(patch.firstPrompt);
   const storedFirst = redactStored(row.firstPrompt);
+  const fork = reset ? (patch.fork ?? null) : null;
+  const copiedStart =
+    fork !== null && fork.forkedAt !== null && row.startedAt !== null && row.startedAt.getTime() <= fork.forkedAt.getTime();
+  const headUuid = reset && patch.headUuid !== undefined && patch.headUuid !== null ? patch.headUuid : row.headUuid;
   return {
     repo: patch.repo ?? row.repo,
     cwd: patch.cwd ?? row.cwd,
@@ -315,12 +323,12 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
     name: clipOrKeep(patch.name, MAX_TITLE_CHARS) ?? row.name,
     customTitle: clipOrKeep(patch.customTitle, MAX_TITLE_CHARS) ?? row.customTitle,
     aiTitle: clipOrKeep(patch.aiTitle, MAX_TITLE_CHARS) ?? row.aiTitle,
-    firstPrompt: reset ? (firstPrompt ?? storedFirst) : (storedFirst ?? firstPrompt ?? null),
+    firstPrompt: reset ? (firstPrompt ?? (fork !== null ? null : storedFirst)) : (storedFirst ?? firstPrompt ?? null),
     lastPrompt: excerptOrKeep(patch.lastPrompt) ?? redactStored(row.lastPrompt),
     entrypoint: patch.entrypoint ?? row.entrypoint,
     version: patch.version ?? row.version,
-    finalMessage: clipOrKeep(patch.finalMessage, MAX_FINAL_MESSAGE_CHARS) ?? row.finalMessage,
-    startedAt: earliest(row.startedAt, patch.startedAt),
+    finalMessage: clipOrKeep(patch.finalMessage, MAX_FINAL_MESSAGE_CHARS) ?? (fork !== null ? null : row.finalMessage),
+    startedAt: earliest(copiedStart ? null : row.startedAt, patch.startedAt),
     lastActiveAt: latest(row.lastActiveAt, patch.lastActiveAt),
     inputTokens: (reset && !keep ? 0 : row.inputTokens) + count(tokens.inputTokens),
     outputTokens: (reset && !keep ? 0 : row.outputTokens) + count(tokens.outputTokens),
@@ -338,5 +346,10 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
     transcriptPath: patch.transcriptPath,
     transcriptOffset: patch.toOffset,
     transcriptSize: patch.size,
+    headUuid,
+    forkCutOffset: fork === null ? row.forkCutOffset : fork.cutOffset,
+    forkedAt: fork === null ? row.forkedAt : fork.forkedAt,
+    forkPromptCount: fork === null ? row.forkPromptCount : fork.promptCount,
+    forkDetectedBy: fork === null ? row.forkDetectedBy : fork.detectedBy,
   };
 }

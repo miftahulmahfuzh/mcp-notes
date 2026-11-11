@@ -77,6 +77,20 @@
   longer on <host>" (`prompts_version` 1, `incomplete_reason: transcript_pruned`). Fixture:
   session `5e55a001-…-000000000005` (106 prompts, #50 over 2000 chars, #60 with a fake key shown
   as `[redacted]`); it adds a third node to the mcp-notes graph.
+- Forks at ingest (`claude --resume X --fork-session`, background jobs): a fork is its own node,
+  linked to the session it was copied from with parent link source `fork`, which no other source
+  replaces. The parent comes from `<CLAUDE_HOME>/jobs/<first 8 of the fork's id>/state.json`
+  (`fork_detected_by` `job`; `time` when only the job's `forkBoundaryAt` could cut it) or, with no
+  job, from the rows of this host whose transcript starts with the same uuid (`uuid`; the longest
+  shared prefix wins, so a fork of a fork links to that fork). The records the fork copied from its
+  parent count nowhere in it: tokens, models, commits, files edited, plan docs, prompts, replies,
+  first prompt, final message and start all come from its own records (`fork_cut_offset` is the
+  byte its own records start at; `forked_at` and `fork_prompt_count` say where it split). A fork
+  that so far holds only the copy shows 0 tokens and no prompts until its own records arrive. A
+  session whose source cannot be found is an ordinary unlinked node. Proof:
+  `tests/unit/sessions/ingestForks.test.ts`, `tests/integration/sessions.forks.int.test.ts`, and
+  the "Forks at ingest" drive below. Fixture: `tests/fixtures/claude-home-forks` (generator
+  `tests/fixtures/make-fork-fixtures.mjs`), a separate home so the main fixture's counts stay put.
 - Forks and background jobs in the session tools (session-fork-awareness phase 5). A fork (a
   session Claude Code copied from another with `--fork-session`, or a background job forked from
   one) has `parent_link_source: "fork"` and `fork: { parent_node_id, forked_at, prompt_count }` on
@@ -281,6 +295,24 @@ $V api RUN POST /api/sessions/$NODE/resume '{"prompt":"hi"}'  # messaged, job_id
 `kill $JOBPID` afterwards. The same flow is unit-tested in `tests/unit/sessions/resume.test.ts`
 (`background jobs`).
 
+Forks at ingest. The fork fixtures are copied into the run's `CLAUDE_HOME` in order, parent first,
+because a fork without a job record is found through its parent's row:
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions      # note RUN and URL
+CH="$HOME/.local/state/notesd-verify/$RUN/claude"; FX=tests/fixtures/claude-home-forks; PD=projects/-home-u-mcp-notes
+P=f0a0a001-0000-4000-8000-000000000001; J=f0b0b001-0000-4000-8000-000000000002; T=f0c0c001-0000-4000-8000-000000000003
+TT=f0d0d001-0000-4000-8000-000000000004; PEND=f0f0f001-0000-4000-8000-000000000005; U=f0e0e001-0000-4000-8000-000000000006
+seen() { for i in $(seq 90); do curl -sf "$URL/api/projects/mcp-notes/sessions" | jq -e --arg s "$1" '.nodes[] | select(.session_id == $s)' >/dev/null && return 0; sleep 1; done; echo "timed out: $1"; return 1; }
+cp "$FX/$PD/$P.jsonl" "$CH/$PD/" && seen $P
+cp -r "$FX/jobs" "$CH/" && cp "$FX/$PD/$J.jsonl" "$FX/$PD/$T.jsonl" "$FX/$PD/$PEND.jsonl" "$FX/$PD/$U.jsonl" "$CH/$PD/" && seen $J && seen $T && seen $PEND && seen $U
+cp "$FX/$PD/$TT.jsonl" "$CH/$PD/" && seen $TT
+$V sql $RUN "select session_id, parent_session_id, parent_link_source, fork_detected_by, fork_prompt_count, input_tokens, output_tokens, jsonb_path_query_array(commits, '\$[*].sha')::text as shas from cc_sessions where session_id like 'f0%' order by session_id"
+```
+Expected: `f0b0…` (job) → parent `f0a0…`, `fork`, `job`, 2, 130/13, `["0d0e0f1"]`; `f0c0…` (terminal) → `f0a0…`,
+`fork`, `uuid`, 2, 50/5, `[]`; `f0d0…` (fork of a fork) → `f0c0…`, `fork`, `uuid`, 3, 7/7; `f0f0…` (pending) →
+`f0a0…`, `fork`, `job`, 2, 0/0, `[]`; `f0e0…` (unrelated, unreadable job record) → no parent, 9/9; `f0a0…`
+(parent) → no parent, 1000/100, `["a1b2c3d"]`. Then give the pending fork its own records:
+`cat "$FX/appends/$PEND.own.jsonl" >> "$CH/$PD/$PEND.jsonl"` and its node's `tokens.input` becomes 11.
 Forks and background jobs in the tools and hook context. The fixtures hold no fork, so the run
 seeds one. It makes fixture `…0005` a fork of `…0001` cut after its first copied prompt/reply pair
 (lines 2-3), and makes it a live background job by writing a registry entry for a running `sleep`.

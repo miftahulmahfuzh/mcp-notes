@@ -223,6 +223,32 @@ export interface TranscriptPatch {
   filesEdited?: string[];
   /** Union, first-seen order, capped to MAX_PLAN_DOCS. */
   planDocs?: string[];
+  /**
+   * uuid of the transcript's first record that has one (src/sessions/fork.ts headUuid). Honoured
+   * only on fromOffset 0; undefined or null keeps the stored value.
+   */
+  headUuid?: string | null;
+  /**
+   * The read is of a fork (src/sessions/forkDetect.ts scanFork). Honoured only on fromOffset 0:
+   * the repo writes the fork columns and links the parent with source `fork` in the same
+   * transaction (the parent row is created if missing), and the merge drops a stored start, first
+   * prompt and final message that an earlier, uncut read took from the copy. Undefined or null
+   * keeps the stored fork columns.
+   */
+  fork?: ForkInfo | null;
+}
+
+/**
+ * A row that may be a fork's parent (SessionsRepo.forkCandidates): same host, same head uuid, not
+ * the fork itself, not one of its descendants, created no later than it, with a transcript path.
+ */
+export interface ForkCandidateRow {
+  sessionId: string;
+  transcriptPath: string;
+  startedAt: Date | null;
+  createdAt: Date;
+  /** Non-null when the candidate is itself a known fork (it loses a ranking tie to an original). */
+  forkDetectedBy: ForkDetectedBy | null;
 }
 
 /** One image pasted on a prompt, as ingest read it from the transcript's base64 content block. */
@@ -357,13 +383,19 @@ export type TranscriptSet = Pick<
   | 'transcriptPath'
   | 'transcriptOffset'
   | 'transcriptSize'
+  | 'headUuid'
+  | 'forkCutOffset'
+  | 'forkedAt'
+  | 'forkPromptCount'
+  | 'forkDetectedBy'
 >;
 
 /** What the ingester needs back from a transcript write. */
 export type SessionRef = Pick<SessionRow, 'sessionId' | 'nodeId' | 'host' | 'transcriptOffset' | 'transcriptSize'>;
 
+/** `forkLink`: what linking the fork's parent did (only for an applied 0-read that carried `fork`). */
 export type TranscriptUpsertResult =
-  | { applied: true; row: SessionRef }
+  | { applied: true; row: SessionRef; forkLink?: SetParentResult | null }
   | { applied: false; reason: 'offset_mismatch' | 'other_host'; storedOffset: number; row: SessionRef };
 
 /**
@@ -478,6 +510,11 @@ export interface TranscriptOffset {
   offset: number;
   size: number | null;
   path: string | null;
+  /**
+   * The row's `fork_cut_offset` (null: not a fork). At or past `offset` the fork's cut is still
+   * pending, so the ingester reads it from byte 0 again (forkDetect.ts isPendingCut).
+   */
+  forkCutOffset?: number | null;
 }
 
 export interface SummaryInput {

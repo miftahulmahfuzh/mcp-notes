@@ -7,9 +7,11 @@ import type { SessionsRepo } from './repo.js';
 import { PROMPTS_VERSION_EXCERPTS, type PromptsBackfillCandidate, type PromptsReplacement, type RedactStoredPromptsResult, type ReplacePromptsResult } from './types.js';
 import { createGitRangeLog, withRangeCommits, type GitRangeLog } from './gitRange.js';
 import { createRepoResolver, type RepoResolver } from './repoResolve.js';
+import { isPendingCut, scanFork, type ForkScan } from './forkDetect.js';
 import {
   buildTranscriptPatch,
   EXCLUDED_ENTRYPOINTS,
+  isCopiedRecord,
   parseRecord,
   readJsonlFrom,
   TranscriptAccumulator,
@@ -42,7 +44,18 @@ import {
  * - Excluded: project dirs ending `-data-chat` (the wall chat agent's cwd), files whose
  *   entrypoint is `sdk-ts`/`sdk-cli`, and anything else.
  * - Rows are written only through `SessionsRepo.upsertFromTranscript` (phase 1), with
- *   `host = os.hostname()`. Ingest never writes parent links, tmux or summaries.
+ *   `host = os.hostname()`. Ingest writes no tmux or summaries, and one kind of parent link only:
+ *   `fork`, in the same transaction as the fork's row (see Forks).
+ * - Forks: every read from byte 0 runs fork detection first (forkDetect.ts scanFork: a background
+ *   job's state.json, else the rows of this host that share the file's head uuid). In a fork,
+ *   records that have a uuid and start before the cut (transcript.ts isCopiedRecord) are the
+ *   parent's copied history: they feed only cwd, entry point, branch and version, and are left out
+ *   of the row's counts and of the observers' batch records. Records without a uuid are always
+ *   read. While a fork holds only copied records its cut is pending: the read stops where
+ *   detection stopped and every later read starts at byte 0 again until its first own record
+ *   arrives (after a restart, a stored `fork_cut_offset >= transcript_offset` says so). Detection
+ *   never fails a read: an error reads the file as an ordinary session and is logged once, except
+ *   for a fork whose cut is pending, which waits for its next change.
  *
  * - Full prompts and replies: every write carries every prompt of the bytes it read and Claude's
  *   reply to each (SessionsRepo stores them, redacted, in `cc_session_prompts` and
@@ -82,13 +95,18 @@ const CHAT_PROJECT_DIR = /-data-chat$/;
 /**
  * The `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation; one without
  * the subagent methods leaves subagent transcripts unread; one without the three prompts methods
- * skips the prompts backfill.
+ * skips the prompts backfill; one without `forkCandidates` finds forks from job state only.
  */
 export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'> &
   Partial<
     Pick<
       SessionsRepo,
-      'subagentOffsets' | 'upsertFromSubagentTranscript' | 'promptsBackfillCandidates' | 'replacePrompts' | 'redactStoredPrompts'
+      | 'subagentOffsets'
+      | 'upsertFromSubagentTranscript'
+      | 'promptsBackfillCandidates'
+      | 'replacePrompts'
+      | 'redactStoredPrompts'
+      | 'forkCandidates'
     >
   >;
 
@@ -359,6 +377,11 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const subCarries = new Map<string, TranscriptCarry>();
   /** Files with no entry point yet and no row: size at the last look, re-read only when it changes. */
   const deferred = new Map<string, number>();
+  /** Forks whose cut is not final yet (only copied records read so far): every read starts at byte 0. */
+  const pendingCuts = new Set<string>();
+  /** Sessions whose failed fork detection was already logged (once each). */
+  const forkErrorsLogged = new Set<string>();
+  const forkCandidates = options.store.forkCandidates?.bind(options.store);
   /** Per-file serialization: the running read, and whether another was asked for meanwhile. */
   const inflight = new Map<string, Promise<number>>();
   const again = new Set<string>();
@@ -397,7 +420,11 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const seed = (): Promise<void> => {
     seeded ??= Promise.all([options.store.offsets(host), options.store.subagentOffsets?.(host)]).then(
       ([stored, storedSubs]) => {
-        for (const [sessionId, entry] of stored) offsets.set(sessionId, entry.offset);
+        for (const [sessionId, entry] of stored) {
+          offsets.set(sessionId, entry.offset);
+          const cut = entry.forkCutOffset ?? null;
+          if (cut !== null && entry.offset > 0 && isPendingCut(cut, entry.offset)) pendingCuts.add(sessionId);
+        }
         for (const [file, offset] of storedSubs ?? []) subOffsets.set(file, offset);
       },
       (err: unknown) => {
@@ -471,8 +498,31 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   };
 
   /**
+   * Fork detection for a read from byte 0 (forkDetect.ts scanFork). Never throws. Null: the head
+   * uuid could not be read (logged once per session). A scan with `error` set: the head uuid is
+   * known, the fork is not (logged once per session). Phase 3's backfill asks the same question
+   * through this function.
+   */
+  const scanForkSafely = async (file: string, sessionId: string): Promise<ForkScan | null> => {
+    const failed = (message: string): void => {
+      if (forkErrorsLogged.has(sessionId)) return;
+      forkErrorsLogged.add(sessionId);
+      log(`[notesd] sessions: fork detection for ${sessionId} failed, reading it as an ordinary session: ${message.slice(0, LOG_ERROR_CHARS)}`);
+    };
+    try {
+      const scan = await scanFork(file, sessionId, { claudeHome: options.claudeHome, host, ...(forkCandidates !== undefined ? { forkCandidates } : {}) });
+      if (scan.error !== null) failed(scan.error);
+      return scan;
+    } catch (err) {
+      failed(errorMessage(err));
+      return null;
+    }
+  };
+
+  /**
    * Reads what is new in one file and writes the row. Returns the bytes consumed (0: nothing
    * written). A compare-and-set miss (`offset_mismatch`) adopts the repo's offset and reads once more.
+   * A read from byte 0 runs fork detection first and leaves a fork's copied records out (header, Forks).
    */
   const readFile = async (file: string): Promise<number> => {
     const subagent = subagentFromPath(file);
@@ -489,20 +539,39 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       }
       const known = offsets.get(sessionId) ?? 0;
       if (size === known || deferred.get(file) === size) return 0;
-      const fromOffset = size < known ? 0 : known;
+      // A fork whose cut is pending is read whole again: the bytes after its stored offset may be
+      // the rest of the copy rather than its own records.
+      const fromOffset = size < known || pendingCuts.has(sessionId) ? 0 : known;
+      let scan: ForkScan | null = null;
+      if (fromOffset === 0) {
+        scan = await scanForkSafely(file, sessionId);
+        // Read without its cut, a pending fork would count the copy: wait for the next change or sweep.
+        if ((scan === null || scan.error !== null) && pendingCuts.has(sessionId)) return 0;
+      }
+      const fork = scan?.fork ?? null;
+      const cutOffset = fork?.cutOffset ?? null;
       const acc = new TranscriptAccumulator(sessionId, fromOffset === 0 ? undefined : carries.get(sessionId));
       const keepRecords = [...observers].some((o) => o.onBatch !== undefined);
       const records: TranscriptRecord[] = [];
       const read = await readJsonlFrom(
         file,
         fromOffset,
-        (line) => {
+        (line, lineStart) => {
           const record = parseRecord(line);
           if (record === null) return;
+          if (isCopiedRecord(record, lineStart, cutOffset)) {
+            acc.addCopied(record);
+            return;
+          }
           acc.add(record);
           if (keepRecords) records.push(record);
         },
-        { shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
+        {
+          shouldStop: () => closed,
+          // A pending cut ends where detection stopped reading: what follows may be more of the copy.
+          ...(fork !== null && !fork.final ? { until: fork.cutOffset } : {}),
+          ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}),
+        },
       );
       if (read.endOffset <= fromOffset) {
         if (size < known) offsets.set(sessionId, read.endOffset);
@@ -524,11 +593,20 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       }
       const patch = buildTranscriptPatch(delta, { host, transcriptPath: file, fromOffset, toOffset: read.endOffset, size: read.size, repo });
       patch.commits = await withRangeCommits(delta.commits, delta.commitRanges, gitLog);
+      if (scan !== null && scan.headUuid !== null) patch.headUuid = scan.headUuid;
+      if (fork !== null) patch.fork = fork;
       const result = await options.store.upsertFromTranscript(patch);
       if (result.applied) {
         offsets.set(sessionId, read.endOffset);
         carries.set(sessionId, acc.carry());
         deferred.delete(file);
+        if (fromOffset === 0) {
+          if (fork !== null && isPendingCut(fork.cutOffset, read.endOffset)) pendingCuts.add(sessionId);
+          else pendingCuts.delete(sessionId);
+        }
+        if (fork !== null && (result.forkLink === 'cycle' || result.forkLink === 'missing')) {
+          log(`[notesd] sessions: fork ${sessionId} not linked to ${fork.parentSessionId}: ${result.forkLink}`);
+        }
         notifyBatch({ sessionId, host, transcriptPath: file, fromOffset, toOffset: read.endOffset, records });
         return Math.max(1, read.endOffset - fromOffset);
       }
