@@ -26,6 +26,13 @@ CONNECTORS_IMAGE=pgvector/pgvector:pg16
 CONNECTORS_PORT=55435
 CONNECTORS_DB=postgres
 
+# Both containers hold test data only, so they run without durability. Every integration
+# file truncates every table, and each truncate waited on a disk sync: MEASURED 2026-11-11 on
+# session-fork-awareness, the truncates sat in DataFileImmediateSync, and three suites on one
+# WSL disk took ~30 minutes where one alone takes ~5. A container started without these
+# settings is recreated, the same way as one on the wrong image.
+PG_FAST=(-c fsync=off -c synchronous_commit=off -c full_page_writes=off)
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "test-int: docker is not on PATH; integration tests need it." >&2
   exit 1
@@ -47,6 +54,10 @@ ensure_container() {
       echo "test-int: $name runs $current, not $image; recreating it (it holds test data only)"
       docker rm -f "$name" >/dev/null
       state=missing
+    elif [ "$(docker inspect -f '{{join .Config.Cmd " "}}' "$name")" != "postgres ${PG_FAST[*]}" ]; then
+      echo "test-int: $name runs with durability on; recreating it with fsync off (test data only)"
+      docker rm -f "$name" >/dev/null
+      state=missing
     fi
   fi
   case "$state" in
@@ -63,7 +74,7 @@ ensure_container() {
         -e POSTGRES_PASSWORD="$PG_PASSWORD" \
         -e POSTGRES_DB="$db" \
         -p "127.0.0.1:$port:5432" \
-        "$image" >/dev/null
+        "$image" postgres "${PG_FAST[@]}" >/dev/null
       ;;
     *)
       echo "test-int: unexpected state '$state' for $name" >&2
