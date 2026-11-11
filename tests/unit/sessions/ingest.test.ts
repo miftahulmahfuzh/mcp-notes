@@ -463,7 +463,7 @@ describe('startSessionIngest: prompts backfill', () => {
   });
 
   it("replaces a legacy row's prompts from its transcript and changes nothing else", async () => {
-    await start().ready;
+    await start().promptsBackfill; // the first start's one-time backfills are done before the row is aged
     const row = store.rows.get(FIXTURE.manyPrompts);
     if (!row) throw new Error('no row');
     store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: 0, prompts: [{ text: `legacy ${KEY}`, at: null }], lastPrompt: `legacy ${KEY}` });
@@ -481,7 +481,7 @@ describe('startSessionIngest: prompts backfill', () => {
   });
 
   it('retries once with the stored offset after a compare-and-set miss', async () => {
-    await start().ready;
+    await start().promptsBackfill; // the first start's one-time backfills are done before the row is aged
     const row = store.rows.get(FIXTURE.manyPrompts);
     if (!row) throw new Error('no row');
     store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: 0 });
@@ -516,7 +516,7 @@ describe('startSessionIngest: prompts backfill', () => {
   });
 
   it('fills a row redacted in place once its transcript is readable again', async () => {
-    await start().ready;
+    await start().promptsBackfill; // the first start's one-time backfills are done before the row is aged
     const row = store.rows.get(FIXTURE.manyPrompts);
     if (!row) throw new Error('no row');
     store.rows.set(FIXTURE.manyPrompts, { ...row, promptsVersion: PROMPTS_VERSION_EXCERPTS });
@@ -536,5 +536,27 @@ describe('startSessionIngest: prompts backfill', () => {
     expect(await ingester.promptsBackfill).toMatchObject({ candidates: 1, deferred: 1 });
     expect(store.rows.get('5e55a001-0000-4000-8000-0000000000de')?.promptsVersion).toBe(0);
     expect(store.rows.get('5e55a001-0000-4000-8000-0000000000df')?.prompts[0]?.text).toBe(`b ${KEY}`);
+  });
+});
+
+describe('startSessionIngest: prompts backfill honours the fork cut (R2.2)', () => {
+  it('re-reads a fork row without the records copied before fork_cut_offset', async () => {
+    const sid = 'f0f0f0f0-0000-4000-8000-00000000f0f0';
+    const file = path.join(home, 'projects/-home-u-mcp-notes', `${sid}.jsonl`);
+    const base = { sessionId: sid, cwd: '/home/u/mcp-notes', entrypoint: 'cli', version: '2.1.0' };
+    const copied = line({ ...base, type: 'user', uuid: 'cp-1', parentUuid: null, timestamp: '2026-11-11T01:00:00.000Z', message: { role: 'user', content: 'copied parent prompt' } });
+    const loose = line({ type: 'custom-title', sessionId: sid, customTitle: 'forked work' });
+    const own = line({ ...base, type: 'user', uuid: 'own-1', parentUuid: 'cp-1', timestamp: '2026-11-11T01:20:00.000Z', message: { role: 'user', content: 'the fork own prompt' } });
+    await writeFile(file, copied + loose + own);
+    await start().promptsBackfill; // the first start's one-time backfills are done before the row is aged
+    const row = store.rows.get(sid);
+    if (!row) throw new Error('no row');
+    // A fork row as phase 2 stores it, left below PROMPTS_VERSION so the backfill re-reads it.
+    store.rows.set(sid, { ...row, promptsVersion: 0, forkCutOffset: Buffer.byteLength(copied + loose) });
+    const second = start();
+    await second.ready;
+    expect(await second.promptsBackfill).toMatchObject({ candidates: 1, filled: 1, failed: 0 });
+    expect(store.sidePrompts.get(sid)?.map((p) => p.text)).toEqual(['the fork own prompt']);
+    expect(store.rows.get(sid)?.firstPrompt).toBe('the fork own prompt');
   });
 });

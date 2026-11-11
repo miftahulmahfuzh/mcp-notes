@@ -208,3 +208,63 @@ describe('startLinkWorker live path', () => {
     expect(() => w.onBatch({ sessionId: 's', records: [null, 7, 'x', { type: 'assistant', message: 'nope' }] })).not.toThrow();
   });
 });
+
+describe('fork cut (R2.2)', () => {
+  const SPAWN = (n: number): string => `python3 ~/.claude/skills/swarm/swarm.py spawn --slug x --phase ${n}`;
+
+  /** header (no uuid) + a copied spawn of p1 (uuid) + a uuid-less spawn of p3 + the fork's own spawn of p2 (cut lands here). */
+  async function forkTranscript(): Promise<{ file: string; cut: number }> {
+    const header = { type: 'ai-title', aiTitle: 'fork', sessionId: 'fork' };
+    const copied = { ...bash('fork', 0, SPAWN(1)), uuid: 'c-1', parentUuid: null };
+    const loose = bash('fork', 1_000, SPAWN(3));
+    const own = { ...bash('fork', 2_000, SPAWN(2)), uuid: 'o-1', parentUuid: 'c-1' };
+    const file = await writeTranscript('fork', [header, copied, loose, own]);
+    const cut = Buffer.byteLength([header, copied, loose].map((r) => `${JSON.stringify(r)}\n`).join(''));
+    return { file, cut };
+  }
+
+  it('scanTranscriptForIntents skips records with a uuid before the cut and reads every other record', async () => {
+    const { file, cut } = await forkTranscript();
+    const names = async (forkCutOffset: number | null) =>
+      (await scanTranscriptForIntents(file, 'fork', { home: HOME, forkCutOffset })).map((i) => i.name);
+    expect(await names(cut)).toEqual(['impl-x-p3', 'impl-x-p2']);
+    expect(await names(null)).toEqual(['impl-x-p1', 'impl-x-p3', 'impl-x-p2']);
+  });
+
+  it("the backfill links no child from a fork's copied history", async () => {
+    const { file, cut } = await forkTranscript();
+    const sessions = [
+      session({ sessionId: 'fork', name: 'orch-x', startedAt: at(-60_000) }),
+      session({ sessionId: 'c1', name: 'impl-x-p1', startedAt: at(3_000) }),
+      session({ sessionId: 'c2', name: 'impl-x-p2', startedAt: at(5_000) }),
+    ];
+    const { store, calls } = fakeStore(sessions, [{ sessionId: 'fork', transcriptPath: file, forkCutOffset: cut }]);
+    await start(store).onPassComplete({ initial: true });
+    expect(calls.setParent).toEqual([['c2', 'fork']]);
+  });
+
+  it('the backfill scan waits for backfillAfter, then reads the cut it left', async () => {
+    const { file, cut } = await forkTranscript();
+    const sessions = [
+      session({ sessionId: 'fork', name: 'orch-x', startedAt: at(-60_000) }),
+      session({ sessionId: 'c1', name: 'impl-x-p1', startedAt: at(3_000) }),
+      session({ sessionId: 'c2', name: 'impl-x-p2', startedAt: at(5_000) }),
+    ];
+    // The fork backfill stores the cut only when it settles; before that the ref has none.
+    const refs = [{ sessionId: 'fork', transcriptPath: file, forkCutOffset: null as number | null }];
+    const { store, calls } = fakeStore(sessions, refs);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = () => {
+        refs[0]!.forkCutOffset = cut;
+        resolve();
+      };
+    });
+    const pass = start(store, { backfillAfter: () => gate }).onPassComplete({ initial: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.setParent).toEqual([]);
+    release();
+    await pass;
+    expect(calls.setParent).toEqual([['c2', 'fork']]);
+  });
+});

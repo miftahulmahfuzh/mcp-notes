@@ -91,6 +91,9 @@
   `tests/unit/sessions/ingestForks.test.ts`, `tests/integration/sessions.forks.int.test.ts`, and
   the "Forks at ingest" drive below. Fixture: `tests/fixtures/claude-home-forks` (generator
   `tests/fixtures/make-fork-fixtures.mjs`), a separate home so the main fixture's counts stay put.
+  Forks ingested before fork handling are linked and cut once per host on the first daemon start
+  with it (the fork backfill, marker `sessions.forks.backfill.<host>` in `app_settings`; proof
+  `tests/integration/sessions.forkBackfill.int.test.ts`).
 - Forks and background jobs in the session tools (session-fork-awareness phase 5). A fork (a
   session Claude Code copied from another with `--fork-session`, or a background job forked from
   one) has `parent_link_source: "fork"` and `fork: { parent_node_id, forked_at, prompt_count }` on

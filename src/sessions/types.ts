@@ -330,6 +330,24 @@ export interface PromptsBackfillCandidate {
   transcriptOffset: number;
   /** The row's prompts_version when listed: a gone transcript at PROMPTS_VERSION_EXCERPTS or above is skipped without a write. */
   promptsVersion: number;
+  /** cc_sessions.fork_cut_offset: the re-read skips records with a uuid before it (copied from the fork's parent). Null: not a fork. */
+  forkCutOffset: number | null;
+}
+
+/** One row of this host as the one-time fork backfill sees it (`SessionsRepo.forkBackfillRows`). */
+export interface ForkBackfillRow {
+  sessionId: string;
+  transcriptPath: string;
+  headUuid: string | null;
+  parentLinkSource: ParentLinkSource | null;
+  /** Non-null: the row has a summary made from the uncut records, so a re-ingested fork asks for a new one. */
+  summarizedAt: Date | null;
+}
+
+/** A head uuid read from a transcript, for a row that has none yet (`SessionsRepo.fillHeadUuids`). */
+export interface HeadUuidFill {
+  sessionId: string;
+  headUuid: string;
 }
 
 /** The prompts (and replies) of a transcript re-read from byte 0 up to `upToOffset` (the row's stored offset). */

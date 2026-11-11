@@ -667,19 +667,28 @@ HTTP routes also accept lower case and a missing dash (`a03g`).
 
 ### Who started whom
 
-Links between sessions come from three places, best first, and a better one always wins:
+Links between sessions come from four places, best first, and a better one always wins:
 
-1. **env:** `swarm.py` (in `~/claude-commands`) starts each child with
+1. **fork:** a session made with `claude --resume X --fork-session`, or a background job forked
+   from X, starts with a copy of X's conversation. notesd links it to X from Claude Code's job
+   record (`~/.claude/jobs/<id>/state.json`) or, without one, from the message ids it shares with
+   X's transcript; a fork of a fork is linked to the fork it was copied from. The copied messages
+   are not counted again: the fork's tokens, commits, prompts, replies, title and start time are
+   only what it added after the fork point. Forks ingested before notesd knew about forks are found
+   once, the first time the daemon starts with fork handling, and re-read from the start with the
+   copy cut.
+2. **env:** `swarm.py` (in `~/claude-commands`) starts each child with
    `CC_PARENT_SESSION=<its own session id>` in the child's environment, and the notes-session hook
    reports it. A tmux child does not inherit its parent's environment, which is why this has to
    be passed by hand.
-2. **hook:** a child started by a Bash command that runs `claude` in a new tmux window, without
+3. **hook:** a child started by a Bash command that runs `claude` in a new tmux window, without
    `swarm.py`, claims the record the notes-spawn hook left when its parent ran that command
    (within 30 seconds, same directory, on a fresh start only: a resumed or cleared session claims
    nothing).
-3. **heuristic:** sessions from before these hooks existed are linked by reading the parent's
+4. **heuristic:** sessions from before these hooks existed are linked by reading the parent's
    transcript for `swarm.py launch|spawn --name X` and `SendMessage {to: X}`, and matching a
-   child by name, time and directory. These links are marked "(guessed)" in the panel.
+   child by name, time and directory. A fork's copied messages are not read for this. These links
+   are marked "(guessed)" in the panel.
 
 Sessions in a git worktree (`~/.worktrees/<repo>/<slug>`, `NOTES_WORKTREES_DIR`) are filed under
 their repo, even after the worktree has been deleted, from the path alone.
