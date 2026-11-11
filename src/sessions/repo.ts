@@ -42,7 +42,9 @@ import {
   SELECTED_PROJECT_KEY,
   type HookStart,
   type HookStartResult,
+  type ForkBackfillRow,
   type ForkCandidateRow,
+  type HeadUuidFill,
   type ListByNameOptions,
   type ListForRepoOptions,
   type ParentLinkSource,
@@ -577,6 +579,7 @@ export class SessionsRepo {
         transcriptPath: ccSessions.transcriptPath,
         transcriptOffset: ccSessions.transcriptOffset,
         promptsVersion: ccSessions.promptsVersion,
+        forkCutOffset: ccSessions.forkCutOffset,
       })
       .from(ccSessions)
       .where(and(eq(ccSessions.host, host), or(lt(ccSessions.promptsVersion, PROMPTS_VERSION), lt(ccSessions.repliesVersion, REPLIES_VERSION))))
@@ -645,6 +648,47 @@ export class SessionsRepo {
         .where(eq(ccSessions.sessionId, sessionId));
       return 'applied';
     });
+  }
+
+  // ---------- one-time fork backfill ----------
+
+  /**
+   * Every row of `host` with a transcript path, oldest first: what the one-time fork backfill looks
+   * at. Rows already linked as forks are listed too: their head uuid is what groups an original
+   * with a fork ingested before fork handling.
+   */
+  async forkBackfillRows(host: string): Promise<ForkBackfillRow[]> {
+    assertHost(host);
+    const rows = await this.db
+      .select({
+        sessionId: ccSessions.sessionId,
+        transcriptPath: ccSessions.transcriptPath,
+        headUuid: ccSessions.headUuid,
+        parentLinkSource: ccSessions.parentLinkSource,
+        summarizedAt: ccSessions.summarizedAt,
+      })
+      .from(ccSessions)
+      .where(and(eq(ccSessions.host, host), isNotNull(ccSessions.transcriptPath)))
+      .orderBy(asc(ORDER_AT), asc(ccSessions.sessionId));
+    return rows.flatMap((r) => (r.transcriptPath === null ? [] : [{ ...r, transcriptPath: r.transcriptPath }]));
+  }
+
+  /**
+   * Sets head_uuid on rows of `host` that have none yet, in one statement; never overwrites a stored
+   * one. Writes no other column, not even updated_at: the head uuid is a lookup key, shown nowhere.
+   * Returns how many rows changed.
+   */
+  async fillHeadUuids(host: string, entries: readonly HeadUuidFill[]): Promise<number> {
+    assertHost(host);
+    if (entries.length === 0) return 0;
+    const values = JSON.stringify(entries.map((e) => ({ session_id: e.sessionId, head_uuid: e.headUuid })));
+    const res = await this.db.execute<{ session_id: string }>(sql`
+      update cc_sessions s set head_uuid = v.head_uuid
+      from jsonb_to_recordset(${values}::jsonb) as v(session_id text, head_uuid text)
+      where s.session_id = v.session_id and s.host = ${host} and s.head_uuid is null
+      returning s.session_id
+    `);
+    return res.rows.length;
   }
 
   /** What the session's subagent transcripts add up to (zeros and no commits when it has none). */

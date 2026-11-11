@@ -274,7 +274,13 @@ export class MemoryIngestStore implements IngestStore {
   async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
     return [...this.rows.values()]
       .filter((r) => r.host === host && (r.promptsVersion < PROMPTS_VERSION || r.repliesVersion < REPLIES_VERSION))
-      .map((r) => ({ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset, promptsVersion: r.promptsVersion }));
+      .map((r) => ({
+        sessionId: r.sessionId,
+        transcriptPath: r.transcriptPath,
+        transcriptOffset: r.transcriptOffset,
+        promptsVersion: r.promptsVersion,
+        forkCutOffset: r.forkCutOffset,
+      }));
   }
 
   async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {

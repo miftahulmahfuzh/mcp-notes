@@ -86,6 +86,26 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A097** Phase 3: Re-readers honour the cut, plus the one-time fork backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns ingest.ts backfillSession (stored cut via isCopiedRecord), rereadFromZero, backfillForks (FORK_BACKFILL_VERSION, marker sessions.forks.backfill.<host>, head_uuid fill, job-state then shared-head-uuid candidates, only forks re-read, gone transcripts skipped without a write), SessionIngester.forkBackfill, prompts backfill after it; repo.ts forkBackfillRows, fillHeadUuids, promptsBackfillCandidates.forkCutOffset; links.ts (scan streams with readJsonlFrom and skips copied records, transcriptsOnHost carries fork_cut_offset, backfillAfter gate); background.ts backfillAfter wiring; README "Who started whom"; CLAUDE.md sessions paragraph; one sentence in the "Forks at ingest" feature-map bullet. Exit: typecheck, npm test, npm run test:int green; R2.2, R5.1, R5.2 proven (J1-J6).
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R2, R5 — R2: the copied prefix is not double counted (prompts backfill and link worker skip copied records); R5: "Existing data needs a backfill (already-ingested forks get re-linked and their copied prefix removed from their counts)." · criteria: R2.2, R5.1, R5.2
+  - **Depends on**: P1-NOTES-F902 (phase 2)
+  - **Plan**: `.workflows/plan/P1-NOTES-A097.md`
+  - **Completed**: 2026-11-11
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A097.md, .claude/skills/verify-notesd/features/projects.md, CLAUDE.md, README.md, src/background.ts, src/sessions/ingest.ts, src/sessions/links.ts, src/sessions/repo.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/ingest.test.ts, tests/unit/sessions/linkWorker.test.ts, tests/integration/sessions.forkBackfill.int.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p3 (swarm ISOLATE mode). No code drift: every anchor matched.
+    - ingest.ts already had a "Forks:" header bullet (phase 2); the plan's new header bullet is titled "Forks in the backfills:" so the two do not read as duplicates.
+  - **Decided**:
+    - Task bookkeeping -> only phase 3's task, minted A097 (after A096) inline; last phase, no peer minting concurrently (narrower blast radius, as phases 1, 2, 5, 6 did).
+    - Four existing prompts-backfill unit tests aged a row right after `await start().ready`, which now races the first ingester's prompts backfill (it starts after forkBackfill, a few microtasks later) -> they await the first start's `promptsBackfill` instead; assertions unchanged (rung 3: Change 4i's sequencing is the plan's code; the tests' intent is "after the first start's backfills").
+    - Proof: verified-first-pass; J1-J5 tests green on first run, J6 + neighbor check PASS on a throwaway daemon.
+
 - [x] **P1-NOTES-A096** Phase 6: Wall: fork edge, badge, fork point, attach notices
   - **Difficulty**: NORMAL
   - **Type**: Feature
