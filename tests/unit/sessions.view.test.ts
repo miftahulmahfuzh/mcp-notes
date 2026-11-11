@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_NODE_MAX_CHARS,
   excerpt,
+  forkPointText,
   formatContext,
   formatLocalTime,
   iso,
@@ -9,9 +10,11 @@ import {
   normalizeCommits,
   normalizePaths,
   normalizePrompts,
+  resumeCommand,
   sessionTitle,
   summaryState,
   toGraphNode,
+  toNodeRef,
   toNoteRef,
   toSessionInfo,
   type DetailRow,
@@ -41,6 +44,8 @@ function row(over: Partial<NodeRow> = {}): NodeRow {
     parent_session_id: null,
     parent_link_source: null,
     tmux: null,
+    forked_at: null,
+    fork_prompt_count: null,
     summary_head: null,
     parent_node_id: null,
     child_count: '2',
@@ -86,7 +91,7 @@ describe('toGraphNode', () => {
   });
 
   it('marks live only for this host, and takes status and tmux from the registry', () => {
-    const live = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'busy', tmux: 'note:@0.%7' }]]);
+    const live = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'busy', tmux: 'note:@0.%7', jobId: null }]]);
     const here = toGraphNode(row(), { host: 'lenovo', live });
     expect(here).toMatchObject({ live: true, status: 'busy', tmux: 'note:@0.%7', available: true });
     const there = toGraphNode(row({ host: 'gpd' }), { host: 'lenovo', live });
@@ -225,7 +230,7 @@ describe('summaryState', () => {
   });
 
   it('toSessionInfo carries summary_requested_at as ISO and the state', () => {
-    const live = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'busy', tmux: null }]]);
+    const live = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'busy', tmux: null, jobId: null }]]);
     expect(toSessionInfo(detail(), { host: 'lenovo', live })).toMatchObject({ summary_requested_at: null, summary_state: 'idle_wait' });
     expect(toSessionInfo(detail({ summary: '   ' }), { host: 'lenovo', live: noLive }).summary_state).toBe('idle_wait');
     expect(toSessionInfo(detail({ summary: 'Built it.' }), { host: 'lenovo', live: noLive }).summary_state).toBe('ready');
@@ -237,5 +242,65 @@ describe('summaryState', () => {
       toSessionInfo(detail({ input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 }), { host: 'lenovo', live: noLive })
         .summary_state,
     ).toBe('empty');
+  });
+});
+
+describe('forks and background jobs', () => {
+  const opts = { timeZone: 'Asia/Jakarta', wallUrl: 'http://localhost:7317' };
+  const ctx = { host: 'lenovo', live: noLive };
+  // JM-UJ-shaped: forked from DM-OV after its 12th prompt, at the job's forkBoundaryAt.
+  const forkCols = {
+    parent_session_id: 'sess-0',
+    parent_node_id: 'DM-OV',
+    parent_link_source: 'fork',
+    forked_at: '2026-11-11T01:37:02.342Z',
+    fork_prompt_count: '12',
+  };
+  const bgLive = new Map<string, LiveEntry>([['sess-1', { sessionId: 'sess-1', status: 'idle', tmux: null, jobId: 'e3650501' }]]);
+
+  it('a fork node carries its fork point on the node and its ref; any other link carries none', () => {
+    const n = toGraphNode(row(forkCols), ctx);
+    expect(n.parent_link_source).toBe('fork');
+    expect(n.fork).toEqual({ parent_node_id: 'DM-OV', forked_at: '2026-11-11T01:37:02.342Z', prompt_count: 12 });
+    expect(toNodeRef(n).fork).toEqual(n.fork);
+    expect(toGraphNode(row({ ...forkCols, parent_link_source: 'env' }), ctx).fork).toBeNull();
+    expect(toGraphNode(row({ ...forkCols, parent_node_id: null }), ctx).fork).toBeNull();
+    expect(toGraphNode(row(), ctx).fork).toBeNull();
+  });
+
+  it('job_id comes from a live background entry on this host only', () => {
+    expect(toGraphNode(row(), { host: 'lenovo', live: bgLive })).toMatchObject({ live: true, job_id: 'e3650501' });
+    expect(toNodeRef(toGraphNode(row(), { host: 'lenovo', live: bgLive })).job_id).toBe('e3650501');
+    expect(toGraphNode(row({ host: 'gpd' }), { host: 'lenovo', live: bgLive }).job_id).toBeNull();
+    expect(toGraphNode(row(), ctx).job_id).toBeNull();
+  });
+
+  it('forkPointText names the parent, the prompts copied and the local fork time', () => {
+    expect(forkPointText({ parent_node_id: 'DM-OV', forked_at: '2026-11-11T01:37:02.342Z', prompt_count: 12 }, 'Asia/Jakarta')).toBe(
+      'DM-OV (after prompt 12, 2026-11-11 08:37 Asia/Jakarta)',
+    );
+    expect(forkPointText({ parent_node_id: 'DM-OV', forked_at: null, prompt_count: 0 }, 'Asia/Jakarta')).toBe('DM-OV (before its first prompt)');
+    expect(forkPointText({ parent_node_id: 'DM-OV', forked_at: null, prompt_count: null }, 'Asia/Jakarta')).toBe('DM-OV');
+  });
+
+  it('the hook context says "Fork of <parent>" with the fork point instead of a Parent line', () => {
+    const session = toSessionInfo(detail(forkCols), ctx);
+    const text = formatContext({ session, commits: [], plan_docs: [], children_node_ids: [] }, opts);
+    expect(text).toContain('Fork of DM-OV (after prompt 12, 2026-11-11 08:37 Asia/Jakarta)');
+    expect(text).not.toContain('Parent:');
+    expect(text).toContain('Transcript: /home/m/.claude/projects/x/sess-1.jsonl (resume with: claude --resume sess-1)');
+  });
+
+  it('a live background job is attached, never resumed', () => {
+    const session = toSessionInfo(detail(), { host: 'lenovo', live: bgLive });
+    const text = formatContext({ session, commits: [], plan_docs: [], children_node_ids: [] }, opts);
+    expect(text).toContain('Transcript: /home/m/.claude/projects/x/sess-1.jsonl (attach with: claude attach e3650501)');
+    expect(text).not.toContain('claude --resume');
+    expect(resumeCommand(session)).toBe('claude attach e3650501');
+  });
+
+  it('resumeCommand is claude --resume for an ordinary local session and null on another host', () => {
+    expect(resumeCommand(toSessionInfo(detail(), ctx))).toBe('claude --resume sess-1');
+    expect(resumeCommand(toSessionInfo(detail({ host: 'gpd' }), ctx))).toBeNull();
   });
 });

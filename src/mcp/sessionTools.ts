@@ -5,7 +5,7 @@ import { normalizeNodeId } from '../sessions/ids.js';
 import { RESUME_PROMPT_MAX_CHARS, type ResumeOutcome, type ResumeResult } from '../sessions/resume.js';
 import { readTranscript, searchNodes, sessionDetail, usage, type SessionsReadDeps } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
-import { nodeUrl, type NodeRef } from '../sessions/view.js';
+import { forkPointText, nodeUrl, resumeCommand, type ForkPoint, type NodeRef } from '../sessions/view.js';
 import type { SessionLinkResult } from '../notes/service.js';
 import { errorResult, jsonResult, type ToolDeps } from './tools.js';
 
@@ -42,6 +42,11 @@ function withUrl<T extends { node_id: string; repo: string | null }>(rd: Session
   return { ...item, url: nodeUrl(rd.wallUrl, item.repo, item.node_id) };
 }
 
+/** "fork of DM-OV (after prompt 12, 2026-11-11 08:37 Asia/Jakarta)" for a fork, null otherwise. */
+function forkOf(rd: SessionsReadDeps, fork: ForkPoint | null): string | null {
+  return fork === null ? null : `fork of ${forkPointText(fork, rd.timeZone)}`;
+}
+
 export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
   const rd = deps.sessions;
 
@@ -51,7 +56,8 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
       title: 'Search Claude Code sessions',
       description:
         "Find the user's past Claude Code sessions (both laptops) by meaning and words in their summaries, names, titles, prompts and commit messages, in the notes saved from or linked to each session, and in what Claude replied to each prompt, e.g. \"when did I fix photo delete in the wall?\". " +
-        'Optional repo narrows to one repository (e.g. "mcp-notes"). Returns { query, mode, fallback, hits: [{ node_id, repo, title, started_at, last_active_at, host, available, live, status, parent_node_id, summary, via_notes, via_replies, score, url }] }, best first. ' +
+        'Optional repo narrows to one repository (e.g. "mcp-notes"). Returns { query, mode, fallback, hits: [{ node_id, repo, title, started_at, last_active_at, host, available, live, status, parent_node_id, fork_of, summary, via_notes, via_replies, score, url }] }, best first. ' +
+        'fork_of is set when the session is a fork Claude Code copied from another session: "fork of <parent node id> (after prompt N, <local time>)", i.e. the parent and how many of its prompts the fork copied; null otherwise. ' +
         'via_notes lists the session\'s notes that matched ({ id, excerpt }, note ids like A-B32). via_replies lists Claude\'s replies in that session that matched ({ seq, excerpt }: seq is the number of the prompt the reply answered, excerpt the passage around the match). Both are best first, at most 3, and empty when the session matched on its own text. A match through a note or a reply counts a little less than the same match in the session\'s own summary or prompts. ' +
         'fallback set means meaning search was unavailable and only word matches came back. Then call session_get(node_id) for the full record.',
       inputSchema: {
@@ -93,6 +99,7 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
               live: h.live,
               status: h.status,
               parent_node_id: h.parent_node_id,
+              fork_of: forkOf(rd, h.fork),
               summary: h.summary_excerpt,
               via_notes: h.via_notes,
               via_replies: h.via_replies,
@@ -115,8 +122,10 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Get a Claude Code session',
       description:
-        'One Claude Code session by node id (like A0-3G): { session: { node_id, session_id, repo, title, name, branch, cwd, started_at, last_active_at, host, available, live, status, tokens, cost_usd, summary, first_prompt, last_prompt, final_message, transcript_path, url, ... }, ' +
+        'One Claude Code session by node id (like A0-3G): { session: { node_id, session_id, repo, title, name, branch, cwd, started_at, last_active_at, host, available, live, status, job_id, parent_node_id, parent_link_source, fork, fork_of, resume_command, tokens, cost_usd, summary, first_prompt, last_prompt, final_message, transcript_path, url, ... }, ' +
         'prompts, commits, files_edited, plan_docs, notes, parent, children (sessions it spawned) }. notes are the notes saved from that session and the notes linked to it with link_note, newest first, each { id, excerpt, tags, created_at, kind: "made" | "linked" }; a note that is both is listed once as "made". ' +
+        'A fork (parent_link_source "fork") is a session Claude Code copied from its parent with --fork-session or as a background job: fork is { parent_node_id, forked_at, prompt_count } and fork_of says "fork of <parent node id> (after prompt N, <local time>)"; both are null for any other session. ' +
+        'resume_command is the way back into the session from a terminal on this machine: "claude attach <job_id>" while it runs as a Claude Code background job (job_id set), else "claude --resume <session_id>"; null when it ran on the other machine. ' +
         'available: false means it ran on the other machine (host).',
       inputSchema: { node_id: nodeIdField },
       annotations: { readOnlyHint: true },
@@ -130,7 +139,11 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
         if (detail === null) return notFound(nodeId);
         return jsonResult({
           ...detail,
-          session: withUrl(rd, detail.session),
+          session: {
+            ...withUrl(rd, detail.session),
+            fork_of: forkOf(rd, detail.session.fork),
+            resume_command: resumeCommand(detail.session),
+          },
           parent: detail.parent === null ? null : withUrl(rd, detail.parent),
           children: detail.children.map((c: NodeRef) => withUrl(rd, c)),
         });
@@ -145,8 +158,10 @@ export function registerSessionTools(server: McpServer, deps: ToolDeps): void {
     {
       title: 'Search a session transcript',
       description:
-        "Search one Claude Code session's own transcript for words and get the matching messages: { node_id, session_id, query, transcript_path, matches: [{ line, at, role, excerpt }], total_matches, truncated }. " +
-        'Every word must appear; "quoted phrases" stay together. Without query, the last messages come back. Works only on the machine that ran the session; elsewhere it answers not_on_this_machine (use session_get there).',
+        "Search one Claude Code session's own transcript for words and get the matching messages: { node_id, session_id, query, transcript_path, starts_at_fork_point, matches: [{ line, at, role, excerpt }], total_matches, truncated }. " +
+        'Every word must appear; "quoted phrases" stay together. Without query, the last messages come back. line is the line number in the transcript file. ' +
+        'On a fork (session_get shows fork_of), only what the fork added is searched: the history it copied from its parent is skipped and starts_at_fork_point is true; search the parent node for that history. ' +
+        'Works only on the machine that ran the session; elsewhere it answers not_on_this_machine (use session_get there).',
       inputSchema: {
         node_id: nodeIdField,
         query: z.string().optional().describe('Words to find in the transcript. Omit for the last messages.'),

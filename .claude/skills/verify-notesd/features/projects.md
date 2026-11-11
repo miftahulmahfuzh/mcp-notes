@@ -77,6 +77,20 @@
   longer on <host>" (`prompts_version` 1, `incomplete_reason: transcript_pruned`). Fixture:
   session `5e55a001-…-000000000005` (106 prompts, #50 over 2000 chars, #60 with a fake key shown
   as `[redacted]`); it adds a third node to the mcp-notes graph.
+- Forks and background jobs in the session tools (session-fork-awareness phase 5). A fork (a
+  session Claude Code copied from another with `--fork-session`, or a background job forked from
+  one) has `parent_link_source: "fork"` and `fork: { parent_node_id, forked_at, prompt_count }` on
+  every API node shape (graph `nodes[]`, detail `session` / `parent` / `children[]`, search `hits[]`);
+  every other node has `fork: null`. MCP `session_get` (`session.fork_of`) and `sessions_search`
+  (`hits[].fork_of`) say `fork of <parent node id> (after prompt N, <YYYY-MM-DD HH:mm> <zone>)`,
+  and the prompt hook's context block prints `Fork of …` instead of `Parent: … (fork link)`.
+  `session_transcript` and `GET /api/sessions/:nodeId/transcript` on a fork search only what the
+  fork added: records copied from the parent are skipped, `starts_at_fork_point: true`, and `line`
+  stays the file's line number. A session live on this host as a Claude Code background job
+  (registry `kind: "bg"`) carries `job_id`. Its hook context reads `Transcript: <path> (attach
+  with: claude attach <jobId>)`, and `session_get` gives `session.resume_command: "claude attach
+  <jobId>"` (otherwise `claude --resume <session id>`, and null for another host's session).
+```
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
@@ -255,6 +269,30 @@ $V api RUN POST /api/sessions/$NODE/resume '{"prompt":"hi"}'  # messaged, job_id
 ```
 `kill $JOBPID` afterwards. The same flow is unit-tested in `tests/unit/sessions/resume.test.ts`
 (`background jobs`).
+
+Forks and background jobs in the tools and hook context. The fixtures hold no fork, so the run
+seeds one. It makes fixture `…0005` a fork of `…0001` cut after its first copied prompt/reply pair
+(lines 2-3), and makes it a live background job by writing a registry entry for a running `sleep`.
+Nothing is billed:
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions
+P=5e55a001-0000-4000-8000-000000000001; F=5e55a001-0000-4000-8000-000000000005
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+PN=$(jq -r --arg s $P '.nodes[] | select(.session_id==$s) | .node_id' <<<"$S"); FN=$(jq -r --arg s $F '.nodes[] | select(.session_id==$s) | .node_id' <<<"$S")
+CUT=$(head -n 3 tests/fixtures/claude-home/projects/-home-u-mcp-notes/$F.jsonl | wc -c)
+for i in $(seq 20); do $V sql RUN "select key from app_settings where key like 'sessions.forks.backfill.%'" | grep -q 'sessions.forks.backfill.' && break; sleep 1; done   # with phase 3 in the tree: seed after the fork backfill
+$V exec RUN "update cc_sessions set parent_session_id='$P', parent_link_source='fork', forked_at='2026-10-20T01:02:30Z', fork_prompt_count=1, fork_cut_offset=$CUT, fork_detected_by='uuid', updated_at=now() where session_id='$F'"
+$V mcp RUN session_transcript "$(jq -nc --arg n $FN '{node_id:$n, query:"\"step 1 of\""}')"   # total_matches 0, starts_at_fork_point true
+$V mcp RUN session_transcript "$(jq -nc --arg n $FN '{node_id:$n, query:"\"step 2 of\""}')"   # 1 match, line 4
+$V mcp RUN session_get "{\"node_id\":\"$FN\"}"        # session.fork_of "fork of $PN (after prompt 1, 2026-10-20 …)"
+curl -sf "$URL/api/sessions/context?ids=$FN" | jq -r .context   # "Fork of $PN (after prompt 1, …)"
+sleep 900 >/dev/null 2>&1 & JOBPID=$!
+printf '{"pid":%d,"sessionId":"%s","kind":"bg","jobId":"5e55a005","status":"idle"}\n' $JOBPID $F > "$(dirname "$EVIDENCE")/claude/sessions/$JOBPID.json"
+curl -sf "$URL/api/sessions/context?ids=$FN" | jq -r .context   # "(attach with: claude attach 5e55a005)"
+$V mcp RUN session_get "{\"node_id\":\"$FN\"}"        # session.job_id "5e55a005", resume_command "claude attach 5e55a005"
+kill $JOBPID
+```
+The same checks with assertions are `tests/integration/sessions.forkWording.int.test.ts`.
 
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`
