@@ -11,7 +11,7 @@ import { createCommitLinker, type CommitLinker } from './commitLinks.js';
 import { normalizeNodeId } from './ids.js';
 import { mergeModels } from './merge.js';
 import { estimateCostUsd } from './pricing.js';
-import { readLiveSessions } from './registry.js';
+import { backgroundJobId, readLiveSessions } from './registry.js';
 import { SessionsRepo } from './repo.js';
 import { searchSessions } from './search.js';
 import { searchTranscript } from './transcriptSearch.js';
@@ -122,11 +122,19 @@ export interface SessionsReadOverrides {
 
 // ---- Cross-phase seams: the only places this phase calls phase 1/3/6 runtime code. ----
 
-/** Phase 3's live registry reduced to {sessionId, status, tmux}. A missing or unreadable registry means nothing is live. */
+/**
+ * Phase 3's live registry reduced to {sessionId, status, tmux, jobId}. jobId is kept only for a
+ * Claude Code background job (registry kind "bg"). A missing or unreadable registry means nothing is live.
+ */
 async function liveFromRegistry(claudeHome: string): Promise<LiveEntry[]> {
   try {
     const entries = await readLiveSessions(claudeHome);
-    return entries.map((e) => ({ sessionId: e.sessionId, status: e.status ?? null, tmux: e.tmux ?? null }));
+    return entries.map((e) => ({
+      sessionId: e.sessionId,
+      status: e.status ?? null,
+      tmux: e.tmux ?? null,
+      jobId: backgroundJobId(e),
+    }));
   } catch {
     return [];
   }
@@ -230,6 +238,7 @@ const NODE_SELECT = sql.raw(`
   coalesce(s.cache_write_tokens, 0)::float8 as cache_write_tokens,
   s.cost_usd::float8 as cost_usd,
   s.parent_session_id, s.parent_link_source, s.tmux,
+  s.forked_at, s.fork_prompt_count,
   left(s.summary, 600) as summary_head,
   p.node_id as parent_node_id,
   (select count(*)::int from cc_sessions c where c.parent_session_id = s.session_id) as child_count`);
@@ -738,22 +747,32 @@ function isNotFound(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'ENOENT';
 }
 
-/** Transcript search on the owning host only (invariant 7). */
+/**
+ * Transcript search on the owning host only (invariant 7). On a fork with a known cut
+ * (fork_cut_offset), the records copied from the parent are skipped: only what the fork added is searched.
+ */
 export async function readTranscript(
   rd: SessionsReadDeps,
   nodeId: string,
   opts: { query: string | null; limit: number },
 ): Promise<TranscriptOutcome> {
-  const res = await rd.db.execute<{ session_id: string; node_id: string; host: string; transcript_path: string | null }>(sql`
-    select session_id, node_id, host, transcript_path from cc_sessions where node_id = ${nodeId} limit 1`);
+  const res = await rd.db.execute<{
+    session_id: string;
+    node_id: string;
+    host: string;
+    transcript_path: string | null;
+    fork_cut_offset: number | string | null;
+  }>(sql`
+    select session_id, node_id, host, transcript_path, fork_cut_offset from cc_sessions where node_id = ${nodeId} limit 1`);
   const row = res.rows[0];
   if (row === undefined) return { ok: false, error: 'not_found', node_id: nodeId };
   if (row.host !== rd.host) return { ok: false, error: 'not_on_this_machine', node_id: row.node_id, host: row.host };
   const file = row.transcript_path;
   if (file === null || file.trim() === '') return { ok: false, error: 'transcript_missing', node_id: row.node_id };
   const query = opts.query === null || opts.query.trim() === '' ? null : opts.query.trim();
+  const cut = num(row.fork_cut_offset);
   try {
-    const r = await searchTranscript(file, { query, limit: opts.limit });
+    const r = await searchTranscript(file, { query, limit: opts.limit, startOffset: cut });
     return {
       ok: true,
       payload: {
@@ -761,6 +780,7 @@ export async function readTranscript(
         session_id: row.session_id,
         query,
         transcript_path: file,
+        starts_at_fork_point: cut > 0,
         matches: r.matches,
         total_matches: r.total_matches,
         truncated: r.truncated,

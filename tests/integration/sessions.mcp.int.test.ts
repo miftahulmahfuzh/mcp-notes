@@ -16,7 +16,7 @@ const overrides: SessionsReadOverrides = {
   timeZone: 'Asia/Jakarta',
   // Never the real clones: every known sha links to a fake forge.
   commitLinks: async ({ shas }) => new Map(shas.map((sha) => [sha.toLowerCase(), `https://forge.test/r/-/commit/${sha}`])),
-  live: async () => [{ sessionId: 'sess-b1', status: 'idle', tmux: null }],
+  live: async () => [{ sessionId: 'sess-b1', status: 'idle', tmux: null, jobId: null }],
   search: async () => ({ mode: 'hybrid', fallback: null, hits: [{ sessionId: 'sess-root', score: 0.7 }] }),
 };
 

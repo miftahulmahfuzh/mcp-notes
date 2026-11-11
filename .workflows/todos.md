@@ -86,6 +86,26 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A095** Phase 5: Fork and background-job wording in API, MCP and hook context
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns src/sessions/view.ts (ForkPoint, fork/job_id on GraphNode and NodeRef, starts_at_fork_point, forkPointText, resumeCommand, formatContext "Fork of" / "attach with"), src/sessions/readModel.ts (liveFromRegistry via backgroundJobId, NODE_SELECT fork columns, readTranscript passes fork_cut_offset), src/sessions/transcriptSearch.ts (startOffset, isCopiedRecord), src/mcp/sessionTools.ts lines 8-186 (sessions_search fork_of, session_get fork_of/resume_command, session_transcript text), README rows, feature-map bullet and block. Exit: typecheck, npm test, npm run test:int green; phase5-proof.sh prints J4/J5/J6/NEIGHBOR PASS.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R2, R4 — R2: copied prefix must not be double counted (session_transcript searches only what the fork added); R4: "MCP session tools (session_get, sessions_search, hook context lines) should say "fork of <node>"" · criteria: R2.4, R4.1, R4.3
+  - **Depends on**: P1-NOTES-A090 (phase 1), phase 4 (landed e8c93e1, no TaskID)
+  - **Plan**: `.workflows/plan/P1-NOTES-A095.md`
+  - **Completed**: 2026-11-11 10:45
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A095.md, .claude/skills/verify-notesd/features/projects.md, README.md, src/mcp/sessionTools.ts, src/sessions/readModel.ts, src/sessions/transcriptSearch.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.mcp.int.test.ts, tests/integration/sessions.forkWording.int.test.ts, tests/unit/sessions.transcriptSearch.test.ts, tests/unit/sessions.view.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p5 (swarm ISOLATE mode).
+    - features/projects.md: phase 4 added its own "## Resume of a live background job" section before Gotchas; the phase 5 driving block went after it (fixed order 4, 2, 5, 6).
+  - **Decided**:
+    - Create tasks for all phases vs only phase 5 -> only phase 5, as phase 1 did (tie-break: narrower blast radius).
+    - TaskID A091 (next in sequence) vs A095 -> A095: phase 2 runs concurrently in another worktree and would mint A091 too (tie-break: reversible, avoids an integration collision).
+    - Proof: verified-first-pass; no separate verifier dispatched (coordinator owns the wave verifier).
+
 - [x] **P1-NOTES-A090** Phase 1: Fork schema, rank, detection and cut primitives
   - **Difficulty**: NORMAL
   - **Type**: Feature
