@@ -5,10 +5,12 @@
  * contract the web (phases 10-13) and the prompt hook (phase 8) plan against.
  */
 
-import type { ModelUsage } from '../db/schema.js';
+import { PARENT_LINK_SOURCES, type ModelUsage, type ParentLinkSource } from '../db/schema.js';
 import { estimateCostUsd } from './pricing.js';
 
-export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
+export type { ParentLinkSource };
+
+const LINK_SOURCES: ReadonlySet<string> = new Set(PARENT_LINK_SOURCES);
 
 export const SUMMARY_EXCERPT_CHARS = 280;
 export const FIRST_PROMPT_EXCERPT_CHARS = 200;
@@ -448,7 +450,7 @@ export function sessionTitle(row: {
 }
 
 export function linkSource(value: unknown): ParentLinkSource | null {
-  return value === 'env' || value === 'hook' || value === 'heuristic' ? value : null;
+  return typeof value === 'string' && LINK_SOURCES.has(value) ? (value as ParentLinkSource) : null;
 }
 
 export function tokenCounts(row: Pick<NodeRow, 'input_tokens' | 'output_tokens' | 'cache_read_tokens' | 'cache_write_tokens'>): TokenCounts {

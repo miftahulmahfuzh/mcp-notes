@@ -1,6 +1,7 @@
 import type {
   CcPendingSpawnRow,
   CcSessionRow,
+  ForkDetectedBy,
   ModelUsage,
   ParentLinkSource,
   SessionCommit,
@@ -11,13 +12,14 @@ export type {
   CcSessionPromptRow,
   CcSessionReplyEmbeddingRow,
   CcSessionReplyRow,
+  ForkDetectedBy,
   ModelUsage,
   NewCcSessionPromptRow,
   ParentLinkSource,
   SessionCommit,
   SessionPrompt,
 } from '../db/schema.js';
-export { PARENT_LINK_SOURCES } from '../db/schema.js';
+export { FORK_DETECTED_BY, PARENT_LINK_SOURCES } from '../db/schema.js';
 
 /** A `cc_sessions` row as the app sees it: every column except the generated `search_tsv`. */
 export type SessionRow = Omit<CcSessionRow, 'searchTsv'>;
@@ -48,6 +50,9 @@ export type SessionListItem = Pick<
   | 'tmux'
   | 'transcriptPath'
   | 'summary'
+  | 'forkedAt'
+  | 'forkPromptCount'
+  | 'forkDetectedBy'
 >;
 
 export type PendingSpawnRow = CcPendingSpawnRow;
@@ -60,8 +65,32 @@ export const PENDING_SPAWN_WINDOW_MS = 30_000;
 /** Tolerated clock skew: a spawn recorded up to this long AFTER the claim time still matches. */
 export const PENDING_SPAWN_SKEW_MS = 5_000;
 
-/** Parent-link precedence. A link is replaced only by a source of equal or higher rank. */
-export const PARENT_LINK_RANK: Readonly<Record<ParentLinkSource, number>> = { env: 3, hook: 2, heuristic: 1 };
+/**
+ * Parent-link precedence. A link is replaced only by a source of equal or higher rank. `fork` is
+ * highest: Claude Code's own fork record is ground truth, while a background fork's
+ * `CC_PARENT_SESSION` comes from whichever session started Claude Code's background daemon.
+ * src/sessions/repo.ts STORED_RANK is generated from this table.
+ */
+export const PARENT_LINK_RANK: Readonly<Record<ParentLinkSource, number>> = { fork: 4, env: 3, hook: 2, heuristic: 1 };
+
+/**
+ * What fork detection (src/sessions/fork.ts) learned about one session; Phase 2 stores it in the
+ * cc_sessions fork columns (migration 0015). `cutOffset` is the byte offset of the fork's first
+ * own record that carries a uuid: every reader skips uuid records before it and always reads
+ * records without one. While the transcript holds only copied records the cut is not `final`, and
+ * `cutOffset` is the end of the last complete line read, so a stored `fork_cut_offset` equal to
+ * `transcript_offset` means the cut is still pending. `forkedAt` is the job's `forkBoundaryAt`,
+ * else the latest timestamp among the copied records. `promptCount` counts the human prompts
+ * among the copied records: the fork continues "after prompt N" of its parent.
+ */
+export interface ForkInfo {
+  parentSessionId: string;
+  detectedBy: ForkDetectedBy;
+  cutOffset: number;
+  final: boolean;
+  forkedAt: Date | null;
+  promptCount: number;
+}
 
 /** Inserts tried before ensureSession gives up on finding a free node id. */
 export const NODE_ID_ATTEMPTS = 8;
