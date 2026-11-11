@@ -1,0 +1,130 @@
+{
+  "branch": "feature/session-fork-awareness",
+  "coordinator": "orch-session-fork-awareness",
+  "coordinator_session_id": "8ab6e304-3ad2-4262-8ec5-dba7255a6ca6",
+  "created": "2026-11-11T10:14:05+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `src/sessions",
+      "plan": ".workflows/plan/session-fork-awareness/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Fork schema, rank, detection and cut primitives"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/sessions",
+      "plan": ".workflows/plan/session-fork-awareness/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Ingest detects forks and cuts the copied prefix"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions`, `src/background.ts",
+      "plan": ".workflows/plan/session-fork-awareness/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Re-readers honour the cut, plus the one-time fork backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/sessions`, `src/http`, `src/mcp",
+      "plan": ".workflows/plan/session-fork-awareness/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Resume and focus of live background jobs"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        4
+      ],
+      "difficulty": "NORMAL",
+      "n": 5,
+      "note": null,
+      "package": "src/sessions`, `src/mcp",
+      "plan": ".workflows/plan/session-fork-awareness/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Fork and background-job wording in API, MCP and hook context"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 6,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/session-fork-awareness/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Wall: fork edge, badge, fork point, attach notices"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "session-fork-awareness",
+  "updated": "2026-11-11T10:14:13+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/session-fork-awareness"
+}
