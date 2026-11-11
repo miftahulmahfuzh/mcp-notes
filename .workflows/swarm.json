@@ -1,0 +1,14 @@
+{
+  "resources": {
+    "pg-test": {
+      "match": [
+        "npm run test:int",
+        "scripts/test-int\\.sh"
+      ],
+      "isolate": "per-checkout",
+      "max_concurrent": 2,
+      "probe": "docker exec mcp-notes-pg-test psql -U postgres -tAc \"select 'pid '||pid||' on '||datname||' waits on '||wait_event_type||'/'||wait_event||' for '||extract(epoch from now()-query_start)::int||'s' from pg_stat_activity where datname like 'mcp_notes%' and state = 'active' and wait_event_type in ('Lock','IO','IPC') order by query_start limit 1\" 2>/dev/null",
+      "notes": "Docker Postgres mcp-notes-pg-test (55433) and mcp-notes-pg-connectors (55435). scripts/test-int.sh gives each worktree its own databases (TEST_DB_SUFFIX), so runs never collide; the cap of 2 bounds disk load, which is what stretched a ~5 minute suite to ~30 on 2026-11-11. verify-notesd needs no entry: every run gets its own database, port and data dir."
+    }
+  }
+}
