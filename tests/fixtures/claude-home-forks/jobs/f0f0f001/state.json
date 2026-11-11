@@ -1,0 +1,19 @@
+{
+  "state": "working",
+  "template": "bg",
+  "forkSourceAlive": true,
+  "forkBoundaryAt": "2026-11-01T01:05:05.000Z",
+  "forkSessionId": "f0f0f001-0000-4000-8000-000000000005",
+  "forkParentSessionId": "f0a0a001-0000-4000-8000-000000000001",
+  "interactiveLineage": true,
+  "intent": "(forked)",
+  "name": "fork-parent ⑂",
+  "nameSource": "auto",
+  "sessionId": "f0f0f001-0000-4000-8000-000000000005",
+  "resumeSessionId": "f0f0f001-0000-4000-8000-000000000005",
+  "daemonShort": "f0f0f001",
+  "cwd": "/home/u/mcp-notes",
+  "createdAt": "2026-11-01T01:10:00.000Z",
+  "updatedAt": "2026-11-01T01:10:01.000Z",
+  "backend": "daemon"
+}

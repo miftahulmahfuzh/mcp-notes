@@ -554,6 +554,24 @@ export class TranscriptAccumulator {
     }
   }
 
+  /**
+   * A record a fork copied from its parent (`isCopiedRecord`). It fills only what identifies the
+   * session itself: the launch cwd and entry point (first seen), and branch and version (the
+   * fork's own records come after the copy and overwrite them). Tokens, models, prompts, replies,
+   * commits, files, plan docs, the final message and the time range ignore it.
+   */
+  addCopied(record: TranscriptRecord): void {
+    if (record.isSidechain === true && !this.sidechain) return;
+    const cwd = nonEmpty(record.cwd);
+    if (cwd !== null && this.cwd === null) this.cwd = cwd;
+    const entrypoint = nonEmpty(record.entrypoint);
+    if (entrypoint !== null && this.entrypoint === null) this.entrypoint = entrypoint;
+    const branch = nonEmpty(record.gitBranch);
+    if (branch !== null) this.branch = branch;
+    const version = nonEmpty(record.version);
+    if (version !== null) this.version = version;
+  }
+
   delta(): TranscriptDelta {
     const models: Record<string, ModelUsage> = {};
     for (const [model, usage] of this.models) models[model] = { ...usage };

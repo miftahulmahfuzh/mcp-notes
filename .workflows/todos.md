@@ -86,6 +86,25 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-F902** Phase 2: Ingest detects forks and cuts the copied prefix
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns new src/sessions/forkDetect.ts (scanFork, isPendingCut, ForkScan); TranscriptAccumulator.addCopied; ingest.ts readFile 0-read path (scanForkSafely, pending cuts, copied records left out of counts and observer batches; IngestStore gains forkCandidates); repo.ts forkCandidates + fork link/columns in upsertFromTranscript + offsets.forkCutOffset; merge.ts (fork 0-read drops copied started_at/first prompt/final message); types.ts; memoryIngestStore mirrors; fixture home tests/fixtures/claude-home-forks + generator; unit and int tests; features/projects.md "Forks at ingest". Exit: R1.1, R1.2, R1.4, R1.5, R2.1, R2.3 proven (J1-J7); non-fork ingest tests unchanged and green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1, R2 — R1: "i think it is correct that a fork is considered a new node." (fork link from job state.json or shared-uuid prefix, fork of a fork); R2: the copied prefix is not double counted · criteria: R1.1, R1.2, R1.4, R1.5, R2.1, R2.3
+  - **Depends on**: P1-NOTES-A090
+  - **Plan**: `.workflows/plan/P1-NOTES-F902.md`
+  - **Completed**: 2026-11-11
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-F902.md, .claude/skills/verify-notesd/features/projects.md, src/sessions/forkDetect.ts, src/sessions/ingest.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/transcript.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/helpers/forkFixtures.ts, tests/fixtures/make-fork-fixtures.mjs, tests/fixtures/claude-home-forks/**, tests/unit/sessions/transcriptCut.test.ts, tests/unit/sessions/ingestForks.test.ts, tests/integration/sessions.forks.int.test.ts, tests/integration/sessions.repo.int.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p2 (swarm ISOLATE mode). No code drift: every anchor matched.
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm -> mint only phase 2's task as P1-NOTES-F902 (non-sequential, so peers minting from the shared counter cannot collide) (tie-break: narrower blast radius; convention of P2-NOTES-H202 / P2-NOTES-C506).
+    - sessions.repo.int.test.ts 'lists offsets for one host only' pinned the old offsets() shape -> expectation gains `forkCutOffset: null` (rung 3: Step 6d code block makes offsets carry the cut; the exit criteria's no-edit list names only the two ingest test files).
+    - readme-updater skipped: README and CLAUDE.md are Phase 3's in this set (index File ownership) (rung 2/3: phase Owns).
+
 - [x] **P1-NOTES-A090** Phase 1: Fork schema, rank, detection and cut primitives
   - **Difficulty**: NORMAL
   - **Type**: Feature

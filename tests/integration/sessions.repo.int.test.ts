@@ -196,7 +196,7 @@ describe('SessionsRepo', () => {
       await repo.upsertFromTranscript(patch('s-2', { host: 'host-b' }))
       const offsets = await repo.offsets(HOST)
       expect([...offsets.keys()]).toEqual(['s-1'])
-      expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl' })
+      expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl', forkCutOffset: null })
     })
   })
 
