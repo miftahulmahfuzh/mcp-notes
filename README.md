@@ -987,6 +987,10 @@ image is recreated): `mcp-notes-pg-test` (port 55433) for the notes, and
 `mcp-notes-pg-connectors` (port 55435), where it rebuilds one
 database per connector from that repo's own migration files (read, never imported; a repo that is
 not there is skipped with a message). Neither suite touches a Neon database.
+Each git worktree gets its own databases in those containers (`mcp_notes_test_wt_<hash>`,
+`connectors_<id>_wt_<hash>`; the main checkout keeps the plain names, `TEST_DB_SUFFIX`
+overrides), so two checkouts can run `test:int` at once. A worktree's databases are dropped by
+the next run after the worktree is gone.
 Embeddings in `npm test` and `test:int` come from a deterministic fake, so neither makes a network
 call. `test:live` (chat), `test:live:connectors` and `test:live:embeddings` are opt-in and never
 part of `npm test` or `test:int`.
