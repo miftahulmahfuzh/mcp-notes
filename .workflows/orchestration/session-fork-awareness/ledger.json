@@ -24,22 +24,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "ad19ed4",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "wave 1 integrated d2cada1: typecheck ok, npm test 2288/2288, test:int 721/721 in 1m33s (fsync=off containers, own DB). Wave verifier skipped: self-verified per owner memory swarm-verifier-cost (p2 first-pass, p5 first-pass, p6 after journey fix).",
       "package": "src/sessions",
       "plan": ".workflows/plan/session-fork-awareness/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T11:27:04+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-F902",
       "title": "Ingest detects forks and cuts the copied prefix"
     },
     {
@@ -58,7 +58,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Re-readers honour the cut, plus the one-time fork backfill"
     },
@@ -81,50 +81,50 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2884c42",
       "depends_on": [
         1,
         4
       ],
       "difficulty": "NORMAL",
       "n": 5,
-      "note": null,
+      "note": "proof: verified-first-pass (J4-J6+neighbor). TaskID A095 (skipped A091 to avoid colliding with p2). merged f0c661a.",
       "package": "src/sessions`, `src/mcp",
       "plan": ".workflows/plan/session-fork-awareness/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T11:17:52+07:00",
       "satisfies": [
         "R2",
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A095",
       "title": "Fork and background-job wording in API, MCP and hook context"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b9a6259",
       "depends_on": [
         4,
         5
       ],
       "difficulty": "NORMAL",
       "n": 6,
-      "note": null,
+      "note": "proof: verified-after-fix (J3 journey waited on testid 'graph' that only exists in a mock since 3fda527; journey changed to getByRole group 'Session graph', assertions unchanged). Fixed stray fence in features/projects.md from p5 and stale 'graph' testid line 118. merged 7f2a511: typecheck ok, npm test 2273/2273.",
       "package": "web/src",
       "plan": ".workflows/plan/session-fork-awareness/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-11T11:17:52+07:00",
       "satisfies": [
         "R3",
         "R4"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A096",
       "title": "Wall: fork edge, badge, fork point, attach notices"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-fork-awareness",
-  "updated": "2026-11-11T10:34:15+07:00",
+  "updated": "2026-11-11T11:27:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-fork-awareness"
 }
