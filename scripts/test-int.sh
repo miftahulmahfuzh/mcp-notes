@@ -26,6 +26,13 @@ CONNECTORS_IMAGE=pgvector/pgvector:pg16
 CONNECTORS_PORT=55435
 CONNECTORS_DB=postgres
 
+# Both containers hold test data only, so they run without durability. Every integration
+# file truncates every table, and each truncate waited on a disk sync: MEASURED 2026-11-11 on
+# session-fork-awareness, the truncates sat in DataFileImmediateSync, and three suites on one
+# WSL disk took ~30 minutes where one alone takes ~5. A container started without these
+# settings is recreated, the same way as one on the wrong image.
+PG_FAST=(-c fsync=off -c synchronous_commit=off -c full_page_writes=off)
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "test-int: docker is not on PATH; integration tests need it." >&2
   exit 1
@@ -47,6 +54,10 @@ ensure_container() {
       echo "test-int: $name runs $current, not $image; recreating it (it holds test data only)"
       docker rm -f "$name" >/dev/null
       state=missing
+    elif [ "$(docker inspect -f '{{join .Config.Cmd " "}}' "$name")" != "postgres ${PG_FAST[*]}" ]; then
+      echo "test-int: $name runs with durability on; recreating it with fsync off (test data only)"
+      docker rm -f "$name" >/dev/null
+      state=missing
     fi
   fi
   case "$state" in
@@ -63,7 +74,7 @@ ensure_container() {
         -e POSTGRES_PASSWORD="$PG_PASSWORD" \
         -e POSTGRES_DB="$db" \
         -p "127.0.0.1:$port:5432" \
-        "$image" >/dev/null
+        "$image" postgres "${PG_FAST[@]}" >/dev/null
       ;;
     *)
       echo "test-int: unexpected state '$state' for $name" >&2
@@ -87,11 +98,68 @@ ensure_container() {
   fi
 }
 
+# One database per checkout. The integration suite truncates every table and the connector
+# setup drops and recreates its databases WITH (FORCE), so two checkouts sharing a database
+# (swarm phases, parallel /task sessions, an integrator's throwaway worktree) fail each other's
+# runs with errors that read like their own regressions. MEASURED 2026-11-11 on
+# session-fork-awareness: phases 2 and 5 ran test:int at the same moment on one database.
+# The main checkout keeps the plain names; a linked worktree gets `_wt_<hash of its path>`,
+# and TEST_DB_SUFFIX overrides both. Each worktree database records its path as its comment,
+# so the ones whose worktree is gone are dropped here, in both containers.
+psql_in() { docker exec -i "$1" psql -q -v ON_ERROR_STOP=1 -U postgres -d postgres -tA "${@:2}"; }
+
+TOP="$(git rev-parse --show-toplevel)"
+MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+if [ -n "${TEST_DB_SUFFIX+x}" ]; then
+  SUFFIX="$TEST_DB_SUFFIX"
+elif [ "$TOP" = "$MAIN" ]; then
+  SUFFIX=""
+else
+  SUFFIX="_wt_$(printf '%s' "$TOP" | sha1sum | cut -c1-10)"
+fi
+if ! [[ "$SUFFIX" =~ ^[a-z0-9_]*$ ]]; then
+  echo "test-int: TEST_DB_SUFFIX must be lower-case letters, digits and _ (got '$SUFFIX')" >&2
+  exit 1
+fi
+export TEST_DB_SUFFIX="$SUFFIX"
+
+# prune_worktree_dbs: drop every _wt_ database whose recorded worktree no longer exists.
+prune_worktree_dbs() {
+  local name path suffix
+  psql_in "$NOTES_CONTAINER" -F '|' -c \
+    "select datname, coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname like '${NOTES_DB}\\_wt\\_%'" |
+  while IFS='|' read -r name path; do
+    [ -n "$name" ] || continue
+    [ -n "$path" ] && [ -d "$path" ] && continue
+    suffix="${name#"$NOTES_DB"}"
+    echo "test-int: dropping $name and its connector databases (worktree ${path:-unknown} is gone)"
+    psql_in "$NOTES_CONTAINER" -c "drop database if exists $name with (force)"
+    if docker inspect "$CONNECTORS_CONTAINER" >/dev/null 2>&1 &&
+       [ "$(docker inspect -f '{{.State.Running}}' "$CONNECTORS_CONTAINER")" = true ]; then
+      psql_in "$CONNECTORS_CONTAINER" -c "select datname from pg_database where datname like 'connectors\\_%${suffix}'" |
+        while read -r db; do
+          [ -n "$db" ] && psql_in "$CONNECTORS_CONTAINER" -c "drop database if exists $db with (force)"
+        done
+    fi
+  done
+}
+
 ensure_container "$NOTES_CONTAINER" "$NOTES_IMAGE" "$NOTES_PORT" "$NOTES_DB"
+prune_worktree_dbs
+NOTES_DB="${NOTES_DB}${SUFFIX}"
+if [ -z "$(psql_in "$NOTES_CONTAINER" -c "select 1 from pg_database where datname = '$NOTES_DB'")" ]; then
+  echo "test-int: creating database $NOTES_DB for $TOP"
+  psql_in "$NOTES_CONTAINER" -c "create database $NOTES_DB"
+fi
+if [ -n "$SUFFIX" ]; then
+  psql_in "$NOTES_CONTAINER" -c "comment on database $NOTES_DB is '${TOP//\'/\'\'}'"
+fi
 export TEST_DATABASE_URL="postgres://postgres:${PG_PASSWORD}@127.0.0.1:${NOTES_PORT}/${NOTES_DB}"
 
 if [ "${CHAT_LIVE_TEST:-}" != 1 ]; then
   ensure_container "$CONNECTORS_CONTAINER" "$CONNECTORS_IMAGE" "$CONNECTORS_PORT" "$CONNECTORS_DB"
+  # The admin URL stays on `postgres`; tests/integration/connectors/siblings.ts appends
+  # TEST_DB_SUFFIX to each connector database it rebuilds.
   export TEST_CONNECTORS_URL="postgres://postgres:${PG_PASSWORD}@127.0.0.1:${CONNECTORS_PORT}/${CONNECTORS_DB}"
 fi
 

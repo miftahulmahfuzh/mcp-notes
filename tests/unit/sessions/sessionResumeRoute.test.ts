@@ -1,7 +1,10 @@
+import { rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppDeps } from '../../../src/deps.js';
-import { sessionResumeRoutes } from '../../../src/http/sessionResume.js';
+import { registryLive, sessionResumeRoutes } from '../../../src/http/sessionResume.js';
 import type { ResumeOutcome, ResumeRequest, SessionResumer } from '../../../src/sessions/resume.js';
+import { copyFixtureClaudeHome, FIXTURE } from '../../helpers/claudeHome.js';
 
 const OWN = 'http://localhost';
 
@@ -61,6 +64,7 @@ describe('POST /api/sessions/:nodeId/resume', () => {
   });
 
   it.each([
+    [{ status: 200, body: { action: 'attached', job_id: 'e3650501', window: 'note:5', prompt_delivered: false } }],
     [{ status: 404, body: { error: 'not_found' } }],
     [{ status: 404, body: { error: 'not_on_this_machine', host: 'GPD' } }],
     [{ status: 409, body: { error: 'no_tmux' } }],
@@ -70,5 +74,31 @@ describe('POST /api/sessions/:nodeId/resume', () => {
     const res = await post(sessionResumeRoutes(NO_DEPS, { resumer: fakeResumer(out) }), '{}');
     expect(res.status).toBe(out.status);
     expect(await res.json()).toEqual(out.body);
+  });
+});
+
+describe('registryLive (registry -> LiveEntry)', () => {
+  it('gives a live background job its jobId, and an interactive session none', async () => {
+    const home = await copyFixtureClaudeHome();
+    try {
+      const sid = 'e3650501-2a9d-432a-b2c0-f2aeff23fdf8';
+      await writeFile(
+        path.join(home, 'sessions', '3318108.json'),
+        JSON.stringify({
+          pid: 3318108,
+          sessionId: sid,
+          kind: 'bg',
+          jobId: 'e3650501',
+          messagingSocketPath: '/run/user/1000/cc-socks/3318108.sock',
+          updatedAt: 1793585600000,
+        }),
+      );
+      const live = registryLive(home, (pid) => pid === 4242 || pid === 3318108);
+      expect(await live(sid)).toEqual({ pid: 3318108, tmux: null, jobId: 'e3650501' });
+      expect(await live(FIXTURE.main)).toEqual({ pid: 4242, tmux: 'note:@0.%7', jobId: null });
+      expect(await live('not-live')).toBeNull();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

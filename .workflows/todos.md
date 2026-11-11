@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-08
-**Total Active Tasks**: 8
+**Last Updated**: 2026-11-11
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 4
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 87
+- Completed: 89
 
 ---
 
@@ -85,6 +85,106 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A097** Phase 3: Re-readers honour the cut, plus the one-time fork backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns ingest.ts backfillSession (stored cut via isCopiedRecord), rereadFromZero, backfillForks (FORK_BACKFILL_VERSION, marker sessions.forks.backfill.<host>, head_uuid fill, job-state then shared-head-uuid candidates, only forks re-read, gone transcripts skipped without a write), SessionIngester.forkBackfill, prompts backfill after it; repo.ts forkBackfillRows, fillHeadUuids, promptsBackfillCandidates.forkCutOffset; links.ts (scan streams with readJsonlFrom and skips copied records, transcriptsOnHost carries fork_cut_offset, backfillAfter gate); background.ts backfillAfter wiring; README "Who started whom"; CLAUDE.md sessions paragraph; one sentence in the "Forks at ingest" feature-map bullet. Exit: typecheck, npm test, npm run test:int green; R2.2, R5.1, R5.2 proven (J1-J6).
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R2, R5 — R2: the copied prefix is not double counted (prompts backfill and link worker skip copied records); R5: "Existing data needs a backfill (already-ingested forks get re-linked and their copied prefix removed from their counts)." · criteria: R2.2, R5.1, R5.2
+  - **Depends on**: P1-NOTES-F902 (phase 2)
+  - **Plan**: `.workflows/plan/P1-NOTES-A097.md`
+  - **Completed**: 2026-11-11
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A097.md, .claude/skills/verify-notesd/features/projects.md, CLAUDE.md, README.md, src/background.ts, src/sessions/ingest.ts, src/sessions/links.ts, src/sessions/repo.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/unit/sessions/ingest.test.ts, tests/unit/sessions/linkWorker.test.ts, tests/integration/sessions.forkBackfill.int.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p3 (swarm ISOLATE mode). No code drift: every anchor matched.
+    - ingest.ts already had a "Forks:" header bullet (phase 2); the plan's new header bullet is titled "Forks in the backfills:" so the two do not read as duplicates.
+  - **Decided**:
+    - Task bookkeeping -> only phase 3's task, minted A097 (after A096) inline; last phase, no peer minting concurrently (narrower blast radius, as phases 1, 2, 5, 6 did).
+    - Four existing prompts-backfill unit tests aged a row right after `await start().ready`, which now races the first ingester's prompts backfill (it starts after forkBackfill, a few microtasks later) -> they await the first start's `promptsBackfill` instead; assertions unchanged (rung 3: Change 4i's sequencing is the plan's code; the tests' intent is "after the first start's backfills").
+    - Proof: verified-first-pass; J1-J5 tests green on first run, J6 + neighbor check PASS on a throwaway daemon.
+
+- [x] **P1-NOTES-A096** Phase 6: Wall: fork edge, badge, fork point, attach notices
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns web/src/types.ts (ParentLinkSource fork, ForkPoint, SessionNode fork/job_id), new web/src/lib/parentLink.ts, web/src/sessionsApi.ts, web/src/sessionDetailApi.ts (fork/job_id, attached notice naming claude attach <job_id>, prompt_delivered false wording, background-job 409 fallback), web/src/lib/sessionGraph.ts (LaidEdge.style), graph components (fork edge, GitFork badge), NodePanel.tsx (forked from <id> after prompt N, "Attach to the background session"), SessionGraph.css, NodePanel.css, fixtures, jsdom tests, feature-map bullet and block. Exit: typecheck and npm test pass; J1, J2 pass; J3, J4 end result: PASS on a tree with phases 1, 4, 5 merged.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R3, R4 — R3: "resume/focus ... should recognise `kind: "bg"` and give an actionable result"; R4: "the wall /projects UI should show a fork as a child of its parent with a fork badge/edge and the fork point" · criteria: R3.5, R4.2
+  - **Depends on**: phase 4 (landed e8c93e1, no TaskID), P1-NOTES-A095 (phase 5)
+  - **Plan**: `.workflows/plan/P1-NOTES-A096.md`
+  - **Completed**: 2026-11-11 11:30
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/projects.md, .workflows/todos.md, .workflows/plan/P1-NOTES-A096.md, web/src/lib/parentLink.ts, web/src/types.ts, web/src/sessionsApi.ts, web/src/sessionsApi.test.tsx, web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/lib/sessionGraph.ts, web/src/lib/sessionGraph.test.tsx, web/src/components/graph/GraphEdges.tsx, web/src/components/graph/GraphNode.tsx, web/src/components/graph/SessionGraph.css, web/src/components/graph/SessionGraph.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.css, web/src/components/graph/NodePanel.test.tsx, web/src/testing/sessionFixtures.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p6 (swarm ISOLATE mode).
+    - features/projects.md: phase 5 left a stray ``` fence closing its Sub-features bullet (line 93) that would have turned the rest of the list into a code block; phase 6's bullets replace that stray line.
+    - features/projects.md line 118 and the plan's J3 steps waited on getByTestId('graph'), which exists only in a test mock since 3fda527; replaced with getByRole('group', { name: 'Session graph' }) (the real graph svg). J3 first run failed on that wait only; the UI itself was correct in the failure screenshot.
+  - **Decided**:
+    - Create tasks for all phases vs only phase 6 -> only phase 6 (narrower blast radius, as phases 1 and 5 did).
+    - TaskID A096 (after A095) rather than the next free counter value: phases 2/3 mint concurrently in other worktrees (reversible, avoids an integration collision).
+    - Stale getByTestId('graph') wait in J3 -> wait on the Session graph role instead; assertions unchanged (rung 2: exit criteria demand J3 end result: PASS on the real wall).
+    - Proof: verified-after-fix (journey selector fix, no code change): J3 PASS, J4 PASS; typecheck pass, npm test 200 files / 2273 tests, J1 5 passed, J2 5 passed.
+
+
+- [x] **P1-NOTES-A095** Phase 5: Fork and background-job wording in API, MCP and hook context
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns src/sessions/view.ts (ForkPoint, fork/job_id on GraphNode and NodeRef, starts_at_fork_point, forkPointText, resumeCommand, formatContext "Fork of" / "attach with"), src/sessions/readModel.ts (liveFromRegistry via backgroundJobId, NODE_SELECT fork columns, readTranscript passes fork_cut_offset), src/sessions/transcriptSearch.ts (startOffset, isCopiedRecord), src/mcp/sessionTools.ts lines 8-186 (sessions_search fork_of, session_get fork_of/resume_command, session_transcript text), README rows, feature-map bullet and block. Exit: typecheck, npm test, npm run test:int green; phase5-proof.sh prints J4/J5/J6/NEIGHBOR PASS.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R2, R4 — R2: copied prefix must not be double counted (session_transcript searches only what the fork added); R4: "MCP session tools (session_get, sessions_search, hook context lines) should say "fork of <node>"" · criteria: R2.4, R4.1, R4.3
+  - **Depends on**: P1-NOTES-A090 (phase 1), phase 4 (landed e8c93e1, no TaskID)
+  - **Plan**: `.workflows/plan/P1-NOTES-A095.md`
+  - **Completed**: 2026-11-11 10:45
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A095.md, .claude/skills/verify-notesd/features/projects.md, README.md, src/mcp/sessionTools.ts, src/sessions/readModel.ts, src/sessions/transcriptSearch.ts, src/sessions/view.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.mcp.int.test.ts, tests/integration/sessions.forkWording.int.test.ts, tests/unit/sessions.transcriptSearch.test.ts, tests/unit/sessions.view.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p5 (swarm ISOLATE mode).
+    - features/projects.md: phase 4 added its own "## Resume of a live background job" section before Gotchas; the phase 5 driving block went after it (fixed order 4, 2, 5, 6).
+  - **Decided**:
+    - Create tasks for all phases vs only phase 5 -> only phase 5, as phase 1 did (tie-break: narrower blast radius).
+    - TaskID A091 (next in sequence) vs A095 -> A095: phase 2 runs concurrently in another worktree and would mint A091 too (tie-break: reversible, avoids an integration collision).
+    - Proof: verified-first-pass; no separate verifier dispatched (coordinator owns the wave verifier).
+- [x] **P1-NOTES-F902** Phase 2: Ingest detects forks and cuts the copied prefix
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns new src/sessions/forkDetect.ts (scanFork, isPendingCut, ForkScan); TranscriptAccumulator.addCopied; ingest.ts readFile 0-read path (scanForkSafely, pending cuts, copied records left out of counts and observer batches; IngestStore gains forkCandidates); repo.ts forkCandidates + fork link/columns in upsertFromTranscript + offsets.forkCutOffset; merge.ts (fork 0-read drops copied started_at/first prompt/final message); types.ts; memoryIngestStore mirrors; fixture home tests/fixtures/claude-home-forks + generator; unit and int tests; features/projects.md "Forks at ingest". Exit: R1.1, R1.2, R1.4, R1.5, R2.1, R2.3 proven (J1-J7); non-fork ingest tests unchanged and green.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1, R2 — R1: "i think it is correct that a fork is considered a new node." (fork link from job state.json or shared-uuid prefix, fork of a fork); R2: the copied prefix is not double counted · criteria: R1.1, R1.2, R1.4, R1.5, R2.1, R2.3
+  - **Depends on**: P1-NOTES-A090
+  - **Plan**: `.workflows/plan/P1-NOTES-F902.md`
+  - **Completed**: 2026-11-11
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-F902.md, .claude/skills/verify-notesd/features/projects.md, src/sessions/forkDetect.ts, src/sessions/ingest.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/transcript.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/helpers/forkFixtures.ts, tests/fixtures/make-fork-fixtures.mjs, tests/fixtures/claude-home-forks/**, tests/unit/sessions/transcriptCut.test.ts, tests/unit/sessions/ingestForks.test.ts, tests/integration/sessions.forks.int.test.ts, tests/integration/sessions.repo.int.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p2 (swarm ISOLATE mode). No code drift: every anchor matched.
+  - **Decided**:
+    - Task bookkeeping in a per-phase-worktree swarm -> mint only phase 2's task as P1-NOTES-F902 (non-sequential, so peers minting from the shared counter cannot collide) (tie-break: narrower blast radius; convention of P2-NOTES-H202 / P2-NOTES-C506).
+    - sessions.repo.int.test.ts 'lists offsets for one host only' pinned the old offsets() shape -> expectation gains `forkCutOffset: null` (rung 3: Step 6d code block makes offsets carry the cut; the exit criteria's no-edit list names only the two ingest test files).
+    - readme-updater skipped: README and CLAUDE.md are Phase 3's in this set (index File ownership) (rung 2/3: phase Owns).
+
+- [x] **P1-NOTES-A090** Phase 1: Fork schema, rank, detection and cut primitives
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns migration drizzle/0015_session_forks.sql (+ drizzle meta), src/db/schema.ts (PARENT_LINK_SOURCES fork, FORK_DETECTED_BY), src/sessions/types.ts (PARENT_LINK_RANK.fork=4, ForkInfo), src/sessions/repo.ts (STORED_RANK from PARENT_LINK_RANK, LIST_COLUMNS), view.ts/search.ts linkSource, transcript.ts (readJsonlFrom onLine lineStart, isCopiedRecord), new src/sessions/fork.ts, fixture rows. Exit: typecheck, npm test, npm run test:int green; drizzle-kit check no drift; R1.3 proven (fork link survives env/hook/heuristic writes and replaces each); fork.ts unit tests on JM-UJ-shaped fixtures incl. multi-byte text before the cut.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R1, R2 — R1: "i think it is correct that a fork is considered a new node." (fork parent link source in the precedence); R2: copied prefix must not be double counted · criteria: R1.3
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A090.md`
+  - **Completed**: 2026-11-11 10:24
+  - **Method**: /do
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A090.md, drizzle/0015_session_forks.sql, drizzle/meta/0015_snapshot.json, drizzle/meta/_journal.json, src/db/schema.ts, src/sessions/fork.ts, src/sessions/repo.ts, src/sessions/search.ts, src/sessions/transcript.ts, src/sessions/types.ts, src/sessions/view.ts, tests/helpers/memoryIngestStore.ts, tests/integration/sessions.repo.int.test.ts, tests/integration/sessions.schema.int.test.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions/fork.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/schema.test.ts
+  - **Drift**:
+    - Plan paths name the integration worktree .../session-fork-awareness; applied in the per-phase worktree .../session-fork-awareness-p1 (swarm ISOLATE mode).
+    - drizzle-kit emitted the 0015 statements in a different order than the plan listed (plan allows this); content identical.
+  - **Decided**:
+    - Create tasks for all phases vs only phase 1 -> only phase 1 (P1-NOTES-A090): phases run in isolated worktrees, creating all six in each would collide at integration (tie-break: narrower blast radius).
+    - Rebase onto origin/feature/session-fork-awareness (phase 4 landed there) -> not done: coordinator integrates waves and said not to merge into the feature branch; phase 4 touches no phase-1 file (rung 5: coordinator task text).
 
 - [x] **P1-NOTES-A085** Phase 1: Web pollers: visible-only, slower, adaptive
   - **Difficulty**: NORMAL

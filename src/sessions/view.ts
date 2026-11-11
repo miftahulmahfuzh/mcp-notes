@@ -5,10 +5,12 @@
  * contract the web (phases 10-13) and the prompt hook (phase 8) plan against.
  */
 
-import type { ModelUsage } from '../db/schema.js';
+import { PARENT_LINK_SOURCES, type ModelUsage, type ParentLinkSource } from '../db/schema.js';
 import { estimateCostUsd } from './pricing.js';
 
-export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
+export type { ParentLinkSource };
+
+const LINK_SOURCES: ReadonlySet<string> = new Set(PARENT_LINK_SOURCES);
 
 export const SUMMARY_EXCERPT_CHARS = 280;
 export const FIRST_PROMPT_EXCERPT_CHARS = 200;
@@ -39,6 +41,18 @@ export interface TokenCounts {
   total: number;
 }
 
+/**
+ * Where a fork left its parent: set on a node whose parent link source is `fork` (Claude Code
+ * copied the parent's history into it with --fork-session, or as a background job). `forked_at`
+ * is the fork boundary (cc_sessions.forked_at, ISO UTC); `prompt_count` is how many of the
+ * parent's prompts the fork copied ("after prompt N"), 0 when it forked before any prompt.
+ */
+export interface ForkPoint {
+  parent_node_id: string;
+  forked_at: string | null;
+  prompt_count: number | null;
+}
+
 export interface GraphNode {
   session_id: string;
   node_id: string;
@@ -46,6 +60,8 @@ export interface GraphNode {
   parent_session_id: string | null;
   parent_node_id: string | null;
   parent_link_source: ParentLinkSource | null;
+  /** Non-null exactly when parent_link_source is "fork" (and the parent row exists). */
+  fork: ForkPoint | null;
   title: string;
   name: string | null;
   custom_title: string | null;
@@ -60,6 +76,8 @@ export interface GraphNode {
   live: boolean;
   status: string | null;
   tmux: string | null;
+  /** Claude Code background job id (registry kind "bg") while the session is live on this host as one; else null. */
+  job_id: string | null;
   tokens: TokenCounts;
   cost_usd: number | null;
   summary_excerpt: string | null;
@@ -144,7 +162,9 @@ export interface NodeRef {
   available: boolean;
   live: boolean;
   status: string | null;
+  job_id: string | null;
   parent_link_source: ParentLinkSource | null;
+  fork: ForkPoint | null;
 }
 
 /**
@@ -276,6 +296,11 @@ export interface TranscriptPayload {
   session_id: string;
   query: string | null;
   transcript_path: string;
+  /**
+   * True on a fork with a known cut (cc_sessions.fork_cut_offset > 0): the records it copied from
+   * its parent were skipped, so only what the fork added is searched. `line` stays the file's line.
+   */
+  starts_at_fork_point: boolean;
   matches: Array<{ line: number; at: string | null; role: 'user' | 'assistant'; excerpt: string }>;
   total_matches: number;
   truncated: boolean;
@@ -307,6 +332,8 @@ export type NodeRow = {
   parent_session_id: string | null;
   parent_link_source: string | null;
   tmux: string | null;
+  forked_at: Date | string | null;
+  fork_prompt_count: number | string | null;
   summary_head: string | null;
   parent_node_id: string | null;
   child_count: number | string | null;
@@ -335,6 +362,8 @@ export interface LiveEntry {
   sessionId: string;
   status: string | null;
   tmux: string | null;
+  /** The background job id when the registry entry is `kind: "bg"`; null for any other session. */
+  jobId: string | null;
 }
 
 export interface NodeContext {
@@ -448,7 +477,7 @@ export function sessionTitle(row: {
 }
 
 export function linkSource(value: unknown): ParentLinkSource | null {
-  return value === 'env' || value === 'hook' || value === 'heuristic' ? value : null;
+  return typeof value === 'string' && LINK_SOURCES.has(value) ? (value as ParentLinkSource) : null;
 }
 
 export function tokenCounts(row: Pick<NodeRow, 'input_tokens' | 'output_tokens' | 'cache_read_tokens' | 'cache_write_tokens'>): TokenCounts {
@@ -459,17 +488,34 @@ export function tokenCounts(row: Pick<NodeRow, 'input_tokens' | 'output_tokens' 
   return { input, output, cache_read: cacheRead, cache_write: cacheWrite, total: input + output + cacheRead + cacheWrite };
 }
 
-/** A row becomes a graph node. `available`/`live` are relative to `ctx.host`; `unfinished` stays null (phase 13). */
+/**
+ * The fork point of a node, or null. Only a `fork` parent link with a parent row makes one, so
+ * `fork` is never set on a node whose link says otherwise.
+ */
+function forkPoint(
+  source: ParentLinkSource | null,
+  parentNodeId: string | null,
+  row: Pick<NodeRow, 'forked_at' | 'fork_prompt_count'>,
+): ForkPoint | null {
+  if (source !== 'fork' || parentNodeId === null) return null;
+  const count = numOrNull(row.fork_prompt_count);
+  return { parent_node_id: parentNodeId, forked_at: iso(row.forked_at), prompt_count: count === null ? null : Math.trunc(count) };
+}
+
+/** A row becomes a graph node. `available`/`live`/`job_id` are relative to `ctx.host`; `unfinished` stays null (phase 13). */
 export function toGraphNode(row: NodeRow, ctx: NodeContext): GraphNode {
   const available = row.host === ctx.host;
   const live = available ? ctx.live.get(row.session_id) : undefined;
+  const parentNodeId = nonEmpty(row.parent_node_id);
+  const parentLinkSource = linkSource(row.parent_link_source);
   return {
     session_id: row.session_id,
     node_id: row.node_id,
     repo: nonEmpty(row.repo),
     parent_session_id: nonEmpty(row.parent_session_id),
-    parent_node_id: nonEmpty(row.parent_node_id),
-    parent_link_source: linkSource(row.parent_link_source),
+    parent_node_id: parentNodeId,
+    parent_link_source: parentLinkSource,
+    fork: forkPoint(parentLinkSource, parentNodeId, row),
     title: sessionTitle(row),
     name: nonEmpty(row.name),
     custom_title: nonEmpty(row.custom_title),
@@ -484,6 +530,7 @@ export function toGraphNode(row: NodeRow, ctx: NodeContext): GraphNode {
     live: live !== undefined,
     status: live?.status ?? null,
     tmux: live?.tmux ?? nonEmpty(row.tmux),
+    job_id: live?.jobId ?? null,
     tokens: tokenCounts(row),
     cost_usd: numOrNull(row.cost_usd),
     summary_excerpt: excerpt(row.summary_head, SUMMARY_EXCERPT_CHARS),
@@ -504,7 +551,9 @@ export function toNodeRef(node: GraphNode): NodeRef {
     available: node.available,
     live: node.live,
     status: node.status,
+    job_id: node.job_id,
     parent_link_source: node.parent_link_source,
+    fork: node.fork,
   };
 }
 
@@ -755,6 +804,29 @@ export function formatLocalTime(value: string | null, timeZone: string): string 
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
+/**
+ * "DM-OV (after prompt 12, 2026-11-11 08:37 Asia/Jakarta)": the parent and where the fork left it.
+ * Callers prefix "fork of " / "Fork of ". The prompt part reads "before its first prompt" for 0 and
+ * is left out when unknown; the time is left out when unknown.
+ */
+export function forkPointText(fork: ForkPoint, timeZone: string): string {
+  const parts: string[] = [];
+  if (fork.prompt_count !== null) parts.push(fork.prompt_count === 0 ? 'before its first prompt' : `after prompt ${fork.prompt_count}`);
+  const at = formatLocalTime(fork.forked_at, timeZone);
+  if (at !== null) parts.push(`${at} ${timeZone}`);
+  return parts.length === 0 ? fork.parent_node_id : `${fork.parent_node_id} (${parts.join(', ')})`;
+}
+
+/**
+ * How to get back into a session from a terminal on this machine: `claude attach <job>` while it is
+ * live as a Claude Code background job (resuming it would start a second copy), else
+ * `claude --resume <session>`. Null when the session ran on another host.
+ */
+export function resumeCommand(s: Pick<GraphNode, 'available' | 'job_id' | 'session_id'>): string | null {
+  if (!s.available) return null;
+  return s.job_id !== null ? `claude attach ${s.job_id}` : `claude --resume ${s.session_id}`;
+}
+
 function span(start: string | null, end: string | null, timeZone: string): string | null {
   const a = formatLocalTime(start, timeZone);
   const b = formatLocalTime(end, timeZone);
@@ -770,9 +842,10 @@ function listed(items: readonly string[], max: number, sep: string): string {
 }
 
 /**
- * The block the prompt hook (phase 8) injects for one node id: who/where/when, parent and
- * children, summary (or first prompt), plan docs, commits, transcript path or the host that holds
- * it, and the wall link. At most CONTEXT_NODE_MAX_CHARS.
+ * The block the prompt hook (phase 8) injects for one node id: who/where/when, parent (or, for a
+ * fork, "Fork of <parent> (after prompt N, <time>)") and children, summary (or first prompt), plan
+ * docs, commits, transcript path with the way back in (`claude attach <job>` for a live background
+ * job, else `claude --resume`) or the host that holds it, and the wall link. At most CONTEXT_NODE_MAX_CHARS.
  */
 export function formatContext(input: ContextInput, opts: { timeZone: string; wallUrl: string }): string {
   const s = input.session;
@@ -782,7 +855,9 @@ export function formatContext(input: ContextInput, opts: { timeZone: string; wal
   const when = span(s.started_at, s.last_active_at, opts.timeZone);
   const state = s.live ? `; running now${s.status !== null ? ` (${s.status})` : ''}` : '';
   const lines: string[] = [`Session ${s.node_id} "${s.title}" (${where}${when !== null ? `; ${when}` : ''}${state})`];
-  if (s.parent_node_id !== null) {
+  if (s.fork !== null) {
+    lines.push(`Fork of ${forkPointText(s.fork, opts.timeZone)}`);
+  } else if (s.parent_node_id !== null) {
     lines.push(`Parent: ${s.parent_node_id}${s.parent_link_source !== null ? ` (${s.parent_link_source} link)` : ''}`);
   }
   if (input.children_node_ids.length > 0) {
@@ -799,10 +874,12 @@ export function formatContext(input: ContextInput, opts: { timeZone: string; wal
     const commits = input.commits.map((c) => [c.sha?.slice(0, 7) ?? null, c.subject].filter((x) => x !== null).join(' '));
     lines.push(`Commits: ${listed(commits, CONTEXT_MAX_COMMITS, '; ')}`);
   }
-  if (!s.available) {
+  // Null exactly when the session ran on another host.
+  const command = resumeCommand(s);
+  if (command === null) {
     lines.push(`Transcript: on ${s.host}, not readable from this machine.`);
   } else if (s.transcript_path !== null) {
-    lines.push(`Transcript: ${s.transcript_path} (resume with: claude --resume ${s.session_id})`);
+    lines.push(`Transcript: ${s.transcript_path} (${s.job_id !== null ? 'attach' : 'resume'} with: ${command})`);
   } else {
     lines.push('Transcript: not recorded.');
   }

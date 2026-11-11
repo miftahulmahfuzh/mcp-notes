@@ -188,8 +188,18 @@ export interface ProjectsPayload {
   projects: ProjectSummary[];
 }
 
-/** How a parent link was found: swarm env var, SessionStart/Bash hook, or transcript heuristic. */
-export type ParentLinkSource = 'env' | 'hook' | 'heuristic';
+/** How a parent link was found: Claude Code fork record, swarm env var, SessionStart/Bash hook, or transcript heuristic. */
+export type ParentLinkSource = 'fork' | 'env' | 'hook' | 'heuristic';
+
+/**
+ * Where a fork left its parent (session-fork-awareness phase 5 wire `fork`). `prompt_count` is how
+ * many of the parent's prompts the fork copied ("after prompt N"); `forked_at` is the fork boundary.
+ */
+export interface ForkPoint {
+  parent_node_id: string;
+  forked_at: string | null;
+  prompt_count: number | null;
+}
 
 export interface SessionTokens {
   input: number;
@@ -237,6 +247,10 @@ export interface SessionNode {
   child_count: number;
   /** Phase 13: orch node with pending ledger phases and no live session. Null until phase 13. */
   unfinished: boolean | null;
+  /** Set when this session is a fork of another (its parent link source is then `fork`). */
+  fork: ForkPoint | null;
+  /** Claude Code background job id while the session is live as one (`claude attach <job_id>`); null otherwise. */
+  job_id: string | null;
 }
 
 /** Phase 7 wire: `GET /api/projects/:repo/sessions` (`GraphPayload`). */

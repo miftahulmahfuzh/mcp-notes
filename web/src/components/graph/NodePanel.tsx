@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, GitFork, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
 import { ChatInline, NoteLinkContext, type NoteLinks } from '../ChatText';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
@@ -9,6 +9,7 @@ import { chatTime, chatTimeTitle } from '../../lib/chatTime';
 import { hostsLabel } from '../../lib/remote';
 import { formatCost, formatCount } from '../../lib/sessionFormat';
 import { subtreeRows, type SubtreeNode, type SubtreeRow } from '../../lib/subtree';
+import { forkAfter } from '../../lib/parentLink';
 import { ApiError } from '../../api';
 import {
   fetchSessionDetail,
@@ -175,7 +176,7 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
     else setConfirm({ fresh });
   };
 
-  const resumeTip = detail?.live ? 'Focus the running session' : 'Resume in tmux';
+  const resumeTip = detail?.live ? (detail.job_id ? 'Attach to the background session' : 'Focus the running session') : 'Resume in tmux';
 
   return (
     <aside className="np" aria-label={`Session ${shownId}`} data-node={shownId}>
@@ -277,6 +278,8 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
             <ParentLine
               parent={detail.parent}
               source={detail.parent_link_source}
+              fork={detail.fork}
+              now={now}
               onSelect={() => {
                 const p = detail.parent;
                 if (!p) return;
@@ -498,19 +501,30 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
 function ParentLine({
   parent,
   source,
+  fork,
+  now,
   onSelect,
 }: {
-  parent: { node_id: string; name: string | null; repo: string | null };
+  parent: NonNullable<SessionDetail['parent']>;
   source: SessionDetail['parent_link_source'];
+  fork: SessionDetail['fork'];
+  now: Date;
   onSelect: () => void;
 }) {
   return (
     <p className="np-parent">
-      from{' '}
+      {fork && <GitFork className="np-fork" weight="duotone" aria-hidden="true" />}
+      {fork ? 'forked from ' : 'from '}
       <button type="button" className="np-link" aria-label={`Open parent ${parent.node_id}`} onClick={onSelect}>
         {parent.node_id}
       </button>
-      {parent.name ? ` ${parent.name}` : ''}
+      {fork ? forkAfter(fork) : ''}
+      {fork?.forked_at && (
+        <time className="np-src" dateTime={fork.forked_at} title={chatTimeTitle(fork.forked_at)}>
+          {` · ${chatTime(fork.forked_at, now)}`}
+        </time>
+      )}
+      {parent.name ? `${fork ? ' · ' : ' '}${parent.name}` : ''}
       {source === 'heuristic' && <span className="np-src" data-tip="Linked by matching names in the parent's transcript"> (guessed)</span>}
     </p>
   );

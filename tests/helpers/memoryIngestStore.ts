@@ -14,15 +14,19 @@ import {
   subtractModels,
 } from '../../src/sessions/merge.js';
 import {
+  PARENT_LINK_RANK,
   PROMPTS_VERSION,
   PROMPTS_VERSION_EXCERPTS,
   REPLIES_VERSION,
+  type ForkCandidateRow,
+  type ParentLinkSource,
   type PromptsBackfillCandidate,
   type PromptsReplacement,
   type RedactStoredPromptsResult,
   type ReplacePromptsResult,
   type ReplyContent,
   type SessionRow,
+  type SetParentResult,
   type StoredLeadingReply,
   type StoredPrompt,
   type StoredReply,
@@ -83,6 +87,11 @@ export function blankSessionRow(sessionId: string, host: string, over: Partial<S
     summaryRequestedAt: null,
     promptsVersion: 0,
     repliesVersion: 0,
+    headUuid: null,
+    forkCutOffset: null,
+    forkedAt: null,
+    forkPromptCount: null,
+    forkDetectedBy: null,
     createdAt: at,
     updatedAt: at,
     ...over,
@@ -166,7 +175,9 @@ export class MemoryIngestStore implements IngestStore {
   async offsets(host: string): Promise<Map<string, TranscriptOffset>> {
     const out = new Map<string, TranscriptOffset>();
     for (const row of this.rows.values()) {
-      if (row.host === host) out.set(row.sessionId, { offset: row.transcriptOffset, size: row.transcriptSize, path: row.transcriptPath });
+      if (row.host === host) {
+        out.set(row.sessionId, { offset: row.transcriptOffset, size: row.transcriptSize, path: row.transcriptPath, forkCutOffset: row.forkCutOffset });
+      }
     }
     return out;
   }
@@ -180,6 +191,10 @@ export class MemoryIngestStore implements IngestStore {
       return { applied: false, reason: 'offset_mismatch', storedOffset: row.transcriptOffset, row };
     }
     const reset = patch.fromOffset === 0;
+    const fork = reset ? (patch.fork ?? null) : null;
+    if (fork !== null && fork.parentSessionId !== patch.sessionId && !this.rows.has(fork.parentSessionId)) {
+      this.rows.set(fork.parentSessionId, blankSessionRow(fork.parentSessionId, patch.host));
+    }
     const subagents = reset ? this.subagentTotals(patch.sessionId) : null;
     const added = storedPrompts(patch.prompts);
     const before = reset ? [] : (this.sidePrompts.get(patch.sessionId) ?? []);
@@ -197,7 +212,51 @@ export class MemoryIngestStore implements IngestStore {
       ...(reset ? { promptsVersion: PROMPTS_VERSION, repliesVersion: REPLIES_VERSION } : {}),
     };
     this.rows.set(patch.sessionId, next);
-    return { applied: true, row: next };
+    const forkLink = fork === null ? null : this.setParent(patch.sessionId, fork.parentSessionId, 'fork');
+    return { applied: true, row: next, forkLink };
+  }
+
+  /** SessionsRepo.forkCandidates over the Map: same host and head, no descendants, none created later. */
+  async forkCandidates(host: string, headUuid: string, excludeSessionId: string): Promise<ForkCandidateRow[]> {
+    const descendants = new Set<string>();
+    let frontier = [excludeSessionId];
+    for (let depth = 0; depth < 64 && frontier.length > 0; depth += 1) {
+      const next: string[] = [];
+      for (const r of this.rows.values()) {
+        if (r.parentSessionId !== null && frontier.includes(r.parentSessionId) && !descendants.has(r.sessionId)) {
+          descendants.add(r.sessionId);
+          next.push(r.sessionId);
+        }
+      }
+      frontier = next;
+    }
+    const selfCreated = (this.rows.get(excludeSessionId)?.createdAt ?? new Date()).getTime();
+    return [...this.rows.values()].flatMap((r) =>
+      r.host === host &&
+      r.headUuid === headUuid &&
+      r.sessionId !== excludeSessionId &&
+      r.transcriptPath !== null &&
+      !descendants.has(r.sessionId) &&
+      r.createdAt.getTime() <= selfCreated
+        ? [{ sessionId: r.sessionId, transcriptPath: r.transcriptPath, startedAt: r.startedAt, createdAt: r.createdAt, forkDetectedBy: r.forkDetectedBy }]
+        : [],
+    );
+  }
+
+  /** SessionsRepo.setParentIn over the Map: self and cycles refused, a better stored source kept. */
+  setParent(childId: string, parentId: string, source: ParentLinkSource): SetParentResult {
+    if (childId === parentId) return 'self';
+    let id: string | null = parentId;
+    for (let depth = 0; id !== null && depth <= 64; depth += 1) {
+      if (id === childId) return 'cycle';
+      id = this.rows.get(id)?.parentSessionId ?? null;
+    }
+    const child = this.rows.get(childId);
+    if (child === undefined) return 'missing';
+    const stored = child.parentLinkSource === null ? 0 : PARENT_LINK_RANK[child.parentLinkSource];
+    if (stored > PARENT_LINK_RANK[source]) return 'kept';
+    this.rows.set(childId, { ...child, parentSessionId: parentId, parentLinkSource: source });
+    return 'set';
   }
 
   /** The repo's writeLeadingReply + writeReplyRows over a Map, with the same pure helpers. */
@@ -215,7 +274,13 @@ export class MemoryIngestStore implements IngestStore {
   async promptsBackfillCandidates(host: string): Promise<PromptsBackfillCandidate[]> {
     return [...this.rows.values()]
       .filter((r) => r.host === host && (r.promptsVersion < PROMPTS_VERSION || r.repliesVersion < REPLIES_VERSION))
-      .map((r) => ({ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset, promptsVersion: r.promptsVersion }));
+      .map((r) => ({
+        sessionId: r.sessionId,
+        transcriptPath: r.transcriptPath,
+        transcriptOffset: r.transcriptOffset,
+        promptsVersion: r.promptsVersion,
+        forkCutOffset: r.forkCutOffset,
+      }));
   }
 
   async replacePrompts(sessionId: string, host: string, input: PromptsReplacement): Promise<ReplacePromptsResult> {

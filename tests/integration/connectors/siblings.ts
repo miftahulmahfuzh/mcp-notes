@@ -29,8 +29,9 @@ export function siblingRepo(id: SystemId): string | null {
   return existsSync(migrationsMarker(id, repo)) ? repo : null;
 }
 
+/** `connectors_<id>`, plus this checkout's TEST_DB_SUFFIX so two worktrees never rebuild one database. */
 export function systemDbName(id: SystemId): string {
-  return `connectors_${id}`;
+  return `connectors_${id}${process.env.TEST_DB_SUFFIX ?? ''}`;
 }
 
 /** WRITABLE admin URL of that system's database: seed with it. Only the connector's own client is read-only. */

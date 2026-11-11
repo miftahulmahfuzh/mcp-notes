@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
+import { isCopiedRecord } from './transcript.js';
 
 export const TRANSCRIPT_DEFAULT_LIMIT = 20;
 export const TRANSCRIPT_MAX_LIMIT = 100;
@@ -28,6 +29,12 @@ export interface TranscriptSearchOptions {
   /** Null or blank: no filter, the last `limit` messages come back. */
   query: string | null;
   limit: number;
+  /**
+   * A fork's cut (cc_sessions.fork_cut_offset): a record that carries a uuid and whose line starts
+   * before this byte was copied from the parent and is skipped. Records without a uuid are always
+   * read. Default 0: nothing is skipped.
+   */
+  startOffset?: number;
   /** Tests lower it. Default TRANSCRIPT_MAX_SCAN_BYTES. */
   maxScanBytes?: number;
 }
@@ -108,14 +115,16 @@ export function excerptAround(text: string, terms: readonly string[], max: numbe
 
 /**
  * Scans `file` once. A message matches when it contains every query term (case-insensitive).
- * Keeps the LAST `limit` matches in file order. Throws ENOENT when the file is gone (the caller
- * maps it to transcript_missing).
+ * Keeps the LAST `limit` matches in file order. With `startOffset`, uuid records whose line starts
+ * before it are skipped (a fork's copied prefix); `line` stays the file's own 1-based line number.
+ * Throws ENOENT when the file is gone (the caller maps it to transcript_missing).
  */
 export async function searchTranscript(file: string, options: TranscriptSearchOptions): Promise<TranscriptSearchResult> {
   await stat(file);
   const terms = queryTerms(options.query === null || options.query.trim() === '' ? null : options.query);
   const limit = Math.min(Math.max(Math.trunc(options.limit), 1), TRANSCRIPT_MAX_LIMIT);
   const maxScan = options.maxScanBytes ?? TRANSCRIPT_MAX_SCAN_BYTES;
+  const cut = options.startOffset !== undefined && options.startOffset > 0 ? options.startOffset : null;
   const kept: TranscriptMatch[] = [];
   let total = 0;
   let scanned = 0;
@@ -126,6 +135,8 @@ export async function searchTranscript(file: string, options: TranscriptSearchOp
   try {
     for await (const raw of rl) {
       line += 1;
+      // Byte offset where this line starts (transcripts are LF-terminated JSONL).
+      const lineStart = scanned;
       const size = Buffer.byteLength(raw, 'utf8') + 1;
       if (scanned + size > maxScan) {
         capped = true;
@@ -139,6 +150,8 @@ export async function searchTranscript(file: string, options: TranscriptSearchOp
       } catch {
         continue;
       }
+      // Invariant 7, one rule for every reader (transcript.ts isCopiedRecord, phase 1).
+      if (isRecord(record) && isCopiedRecord(record, lineStart, cut)) continue;
       const msg = messageText(record);
       if (msg === null) continue;
       if (terms.length > 0) {

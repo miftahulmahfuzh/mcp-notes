@@ -93,7 +93,11 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
   } else {
     const sessionsHost = hostname();
     const sessionsRepo = new SessionsRepo(deps.db, { dataDir: deps.config.dataDir, hostname: () => sessionsHost });
-    sessionLinks = startLinkWorker({ store: dbLinkStore(deps.db, sessionsRepo), host: sessionsHost });
+    sessionLinks = startLinkWorker({
+      store: dbLinkStore(deps.db, sessionsRepo),
+      host: sessionsHost,
+      backfillAfter: () => sessionIngest?.forkBackfill,
+    });
     sessionIngest = startSessionIngest({
       claudeHome: deps.config.sessions.claudeHome,
       worktreesDir: deps.config.sessions.worktreesDir,

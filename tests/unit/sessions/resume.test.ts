@@ -4,10 +4,13 @@ import {
   clipUtf8,
   createSessionResumer,
   freshPrompt,
+  isAttachCommand,
   isUnder,
   NEW_WINDOW_FORMAT,
+  PANE_COMMAND_FORMAT,
   parseLatest,
   parseNewWindow,
+  parsePaneCommands,
   parseTmuxPath,
   parseRegistryTmux,
   promptArgs,
@@ -328,6 +331,147 @@ describe('resumeNode', () => {
     await resumeNode(makeDeps(t.run, { tmuxSocket: '/run/tmux.sock' }), node(), {});
     expect(t.calls.length).toBeGreaterThan(0);
     for (const call of t.calls) expect(call.slice(0, 2)).toEqual(['-S', '/run/tmux.sock']);
+  });
+});
+
+describe('background jobs (registry kind "bg")', () => {
+  const JOB = 'e3650501';
+  const bgEntry: LiveEntry = { pid: 3318108, tmux: null, jobId: JOB };
+
+  /** A tmux whose pane list grows when a window opens, with each pane's start command, like the real server. */
+  function jobTmux(initial: string[] = ['%1 -zsh']) {
+    const panes = [...initial];
+    const t = fakeTmux({
+      'list-panes': (a) =>
+        a.includes(PANE_COMMAND_FORMAT)
+          ? `${panes.join('\n')}\n`
+          : `${panes.map((p) => p.split(' ')[0]).join('\n')}\n`,
+      'new-window': (a) => {
+        const id = `%${12 + panes.length - initial.length}`;
+        panes.push(`${id} ${a.slice(a.indexOf(NEW_WINDOW_FORMAT) + 1).join(' ')}`);
+        return `note:3 ${id}\n`;
+      },
+    });
+    return { ...t, panes };
+  }
+
+  it('isAttachCommand reads the command line tmux prints for a pane (tmux 3.4)', () => {
+    expect(isAttachCommand('env -u FOO PATH=/usr/bin sh -c "sleep 30" attach e3650501', JOB)).toBe(true);
+    expect(isAttachCommand(`/opt/claude/claude.exe attach "${JOB}"`, JOB)).toBe(true);
+    expect(isAttachCommand('claude attach 3fa61d8c', JOB)).toBe(false);
+    expect(isAttachCommand(`claude --resume ${JOB}`, JOB)).toBe(false);
+    expect(isAttachCommand('', JOB)).toBe(false);
+    expect(parsePaneCommands('%1 -zsh\n%9\n\njunk\n')).toEqual([
+      { paneId: '%1', command: '-zsh' },
+      { paneId: '%9', command: '' },
+    ]);
+  });
+
+  it('R3.1: no attach pane -> a new window runs claude attach <jobId>; answer attached', async () => {
+    const t = jobTmux();
+    const out = await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), {});
+    expect(out).toEqual({ status: 200, body: { action: 'attached', job_id: JOB, window: 'note:3' } });
+    expect(t.sub('new-window')).toEqual([
+      newWindowArgv('/home/u/mcp-notes', 'impl-x-p1', claudeCommand(CLAUDE, ['attach', JOB])),
+    ]);
+    expect(t.sub('switch-client')).toEqual([['switch-client', '-c', '/dev/pts/2', '-t', '%12']]);
+    expect(t.sub('select-window')).toEqual([]);
+  });
+
+  it("R3.1: the attach window gets tmux's global PATH, like a resume", async () => {
+    const t = fakeTmux({ 'show-environment': () => 'PATH=/opt/nvim/bin:/usr/bin\n' });
+    await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), {});
+    expect(t.sub('new-window')[0]!.slice(-4)).toEqual(['PATH=/opt/nvim/bin:/usr/bin', CLAUDE, 'attach', JOB]);
+  });
+
+  it('R3.2: asked again while its attach pane is alive -> focus it, type a prompt into it, never a second window', async () => {
+    const t = jobTmux();
+    const r = createSessionResumer({
+      normalize: () => 'A0-3G',
+      lookup: async () => node(),
+      deps: makeDeps(t.run, { liveEntry: bgEntry }),
+    });
+    expect((await r.resume('A0-3G', {})).body).toEqual({ action: 'attached', job_id: JOB, window: 'note:3' });
+    expect(await r.resume('A0-3G', {})).toEqual({
+      status: 200,
+      body: { action: 'focused', window: 'note:1', job_id: JOB },
+    });
+    expect(t.sub('select-pane')).toEqual([['select-pane', '-t', '%12']]);
+    expect(await r.resume('A0-3G', { prompt: 'status?' })).toEqual({
+      status: 200,
+      body: { action: 'messaged', window: 'note:1', job_id: JOB },
+    });
+    const [set] = t.sub('set-buffer');
+    expect(set!.slice(3)).toEqual(['--', 'status?']);
+    expect(t.sub('paste-buffer')[0]!.slice(-2)).toEqual(['-t', '%12']);
+    expect(t.sub('new-window')).toHaveLength(1);
+  });
+
+  it('R3.2: an attach window the user opened by hand is found by its command and focused', async () => {
+    const t = jobTmux(['%1 -zsh', `%9 claude attach ${JOB}`]);
+    const out = await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), {});
+    expect(out).toEqual({ status: 200, body: { action: 'focused', window: 'note:1', job_id: JOB } });
+    expect(t.sub('select-pane')).toEqual([['select-pane', '-t', '%9']]);
+    expect(t.sub('new-window')).toEqual([]);
+  });
+
+  it('R3.2: once the attach pane is gone, the next ask opens a new one', async () => {
+    const t = jobTmux();
+    const r = createSessionResumer({
+      normalize: () => 'A0-3G',
+      lookup: async () => node(),
+      deps: makeDeps(t.run, { liveEntry: bgEntry }),
+    });
+    await r.resume('A0-3G', {});
+    t.panes.splice(1); // the user closed the attach window
+    expect((await r.resume('A0-3G', {})).body).toMatchObject({ action: 'attached', job_id: JOB });
+    expect(t.sub('new-window')).toHaveLength(2);
+  });
+
+  it('R3.3: a prompt with no attach pane opens the window and answers prompt_delivered false; nothing is typed', async () => {
+    const t = jobTmux();
+    const out = await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), { prompt: 'run the tests' });
+    expect(out).toEqual({
+      status: 200,
+      body: { action: 'attached', job_id: JOB, window: 'note:3', prompt_delivered: false },
+    });
+    expect(t.sub('new-window')[0]!.slice(-2)).toEqual(['attach', JOB]);
+    expect(t.sub('set-buffer')).toEqual([]);
+    expect(t.sub('paste-buffer')).toEqual([]);
+  });
+
+  it('R3.4: live outside tmux and not a background job still answers 409 live_outside_tmux', async () => {
+    const t = jobTmux();
+    const entries: LiveEntry[] = [
+      { pid: 42, tmux: null },
+      { pid: 42, tmux: null, jobId: null },
+    ];
+    for (const entry of entries) {
+      expect(await resumeNode(makeDeps(t.run, { liveEntry: entry }), node(), {})).toEqual({
+        status: 409,
+        body: { error: 'live_outside_tmux', pid: 42 },
+      });
+    }
+    expect(t.sub('new-window')).toEqual([]);
+    expect(t.calls.some((c) => c.includes(PANE_COMMAND_FORMAT))).toBe(false);
+  });
+
+  it('a background job with no tmux server answers 409 no_tmux', async () => {
+    const down = () => {
+      throw new Error('no server running on /tmp/tmux-1000/default');
+    };
+    const t = fakeTmux({ 'list-sessions': down, 'list-panes': down });
+    expect(await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), {})).toEqual({
+      status: 409,
+      body: { error: 'no_tmux' },
+    });
+  });
+
+  it('fresh on a live background job still spawns a new session with the node context', async () => {
+    const t = jobTmux();
+    const out = await resumeNode(makeDeps(t.run, { liveEntry: bgEntry }), node(), { fresh: true });
+    expect(out.body).toMatchObject({ action: 'spawned' });
+    expect(t.sub('new-window')[0]).toContain(`CC_PARENT_SESSION=${SID}`);
   });
 });
 

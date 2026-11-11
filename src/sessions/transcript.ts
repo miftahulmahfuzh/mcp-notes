@@ -240,6 +240,18 @@ export function parseRecord(line: string): TranscriptRecord | null {
   }
 }
 
+/**
+ * True for a record a fork copied from its parent (invariant 7): it has a `uuid` and its line
+ * starts before the fork's cut (`forkCutOffset`, the byte offset of the fork's first own record
+ * with a uuid). Records without a uuid (`ai-title`, `agent-name`, `custom-title`, `last-prompt`,
+ * `cost-state`, ...) are the fork's own even before the cut: Claude Code writes them for the new
+ * session. A null cut (not a fork) never matches. `lineStart` must be `readJsonlFrom`'s raw byte
+ * offset (or counted the same way).
+ */
+export function isCopiedRecord(record: TranscriptRecord, lineStart: number, forkCutOffset: number | null): boolean {
+  return forkCutOffset !== null && lineStart < forkCutOffset && typeof record.uuid === 'string' && record.uuid !== '';
+}
+
 export interface ReadJsonlOptions {
   /** Bytes per read() call. Default DEFAULT_READ_CHUNK_BYTES (1 MiB). Lines may be longer. */
   chunkBytes?: number;
@@ -267,12 +279,14 @@ export interface ReadJsonlResult {
  * Streams the complete lines of `file` from byte `start` to the size it had when opened (or to
  * `options.until`, if smaller), in fixed chunks (memory stays O(chunk + longest line), whatever the
  * file size). A trailing line without its `\n` is still being written: it is not handed out and
- * `endOffset` stops before it.
+ * `endOffset` stops before it. `onLine` also gets the byte offset the line starts at (counted in
+ * raw file bytes), which fork-aware readers compare with a stored `fork_cut_offset`
+ * (`isCopiedRecord`).
  */
 export async function readJsonlFrom(
   file: string,
   start: number,
-  onLine: (line: string) => void,
+  onLine: (line: string, lineStart: number) => void,
   options: ReadJsonlOptions = {},
 ): Promise<ReadJsonlResult> {
   const chunkBytes = options.chunkBytes ?? DEFAULT_READ_CHUNK_BYTES;
@@ -301,7 +315,8 @@ export async function readJsonlFrom(
         const piece = chunk.subarray(from, newline);
         const line = pending.length > 0 ? Buffer.concat([...pending, piece]) : piece;
         pending.length = 0;
-        onLine(line.toString('utf8'));
+        // endOffset still points just past the previous line: the start of this one.
+        onLine(line.toString('utf8'), endOffset);
         lines += 1;
         endOffset = position + newline + 1;
         from = newline + 1;
@@ -537,6 +552,24 @@ export class TranscriptAccumulator {
       default:
         return;
     }
+  }
+
+  /**
+   * A record a fork copied from its parent (`isCopiedRecord`). It fills only what identifies the
+   * session itself: the launch cwd and entry point (first seen), and branch and version (the
+   * fork's own records come after the copy and overwrite them). Tokens, models, prompts, replies,
+   * commits, files, plan docs, the final message and the time range ignore it.
+   */
+  addCopied(record: TranscriptRecord): void {
+    if (record.isSidechain === true && !this.sidechain) return;
+    const cwd = nonEmpty(record.cwd);
+    if (cwd !== null && this.cwd === null) this.cwd = cwd;
+    const entrypoint = nonEmpty(record.entrypoint);
+    if (entrypoint !== null && this.entrypoint === null) this.entrypoint = entrypoint;
+    const branch = nonEmpty(record.gitBranch);
+    if (branch !== null) this.branch = branch;
+    const version = nonEmpty(record.version);
+    if (version !== null) this.version = version;
   }
 
   delta(): TranscriptDelta {

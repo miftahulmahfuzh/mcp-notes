@@ -3,13 +3,14 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { normalizeNodeId } from '../sessions/ids.js';
-import { readLiveSessions } from '../sessions/registry.js';
+import { backgroundJobId, readLiveSessions, type PidAliveCheck } from '../sessions/registry.js';
 import { SessionsRepo } from '../sessions/repo.js';
 import {
   createSessionResumer,
   defaultResumeDeps,
   RESUME_PROMPT_MAX_CHARS,
   toResumeNode,
+  type ResumeDeps,
   type ResumeNode,
   type SessionResumer,
 } from '../sessions/resume.js';
@@ -35,6 +36,17 @@ export function sessionLookup(repo: Pick<SessionsRepo, 'getByNodeId'>): (nodeId:
   };
 }
 
+/**
+ * ResumeDeps.live from Claude Code's registry under `claudeHome`: the pid, the tmux pane, and the
+ * job id when the session is a live background job (`kind: "bg"`). `isAlive` is for tests.
+ */
+export function registryLive(claudeHome: string, isAlive?: PidAliveCheck): ResumeDeps['live'] {
+  return async (sessionId) => {
+    const entry = (await readLiveSessions(claudeHome, isAlive)).find((s) => s.sessionId === sessionId);
+    return entry === undefined ? null : { pid: entry.pid, tmux: entry.tmux, jobId: backgroundJobId(entry) };
+  };
+}
+
 /** The daemon's resumer: cc_sessions via SessionsRepo, live status via the registry, real tmux. */
 export function defaultSessionResumer(deps: AppDeps): SessionResumer {
   let sessions: SessionsRepo | undefined;
@@ -50,10 +62,7 @@ export function defaultSessionResumer(deps: AppDeps): SessionResumer {
       defaultResumeDeps({
         claudeBin: deps.config.chat.claudeBin,
         worktreesDir: deps.config.sessions.worktreesDir,
-        live: async (sessionId) => {
-          const entry = (await readLiveSessions(deps.config.sessions.claudeHome)).find((s) => s.sessionId === sessionId);
-          return entry === undefined ? null : { pid: entry.pid, tmux: entry.tmux ?? null };
-        },
+        live: registryLive(deps.config.sessions.claudeHome),
         repoCwds: async (name) =>
           (await repo().listForRepo(name, { limit: 200 }))
             .filter((item) => item.host === host && item.cwd !== null)
@@ -75,7 +84,9 @@ async function readBody(c: Context): Promise<{ ok: true; value: unknown } | { ok
 
 /**
  * POST /api/sessions/:nodeId/resume {prompt?, fresh?} (own Origin only)
- * -> 200 {action: focused|messaged|resumed|spawned, window?, cwd?, original_cwd?}
+ * -> 200 {action: focused|messaged|resumed|spawned|attached, window?, cwd?, original_cwd?, job_id?, prompt_delivered?}
+ *    (attached: a live background job got a new `claude attach <job_id>` window; prompt_delivered:false
+ *    when a prompt was given, since that window cannot take it yet)
  * | 404 not_found | 404 not_on_this_machine {host} | 409 no_tmux | 409 live_outside_tmux {pid}
  * | 500 spawn_failed {message} | 400 invalid_json | 400 invalid_body {message} | 403 forbidden_origin.
  */

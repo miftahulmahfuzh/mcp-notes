@@ -42,6 +42,9 @@ import {
   SELECTED_PROJECT_KEY,
   type HookStart,
   type HookStartResult,
+  type ForkBackfillRow,
+  type ForkCandidateRow,
+  type HeadUuidFill,
   type ListByNameOptions,
   type ListForRepoOptions,
   type ParentLinkSource,
@@ -127,6 +130,9 @@ const LIST_COLUMNS = {
   tmux: ccSessions.tmux,
   transcriptPath: ccSessions.transcriptPath,
   summary: ccSessions.summary,
+  forkedAt: ccSessions.forkedAt,
+  forkPromptCount: ccSessions.forkPromptCount,
+  forkDetectedBy: ccSessions.forkDetectedBy,
 };
 
 /** Terminal sessions, plus hook-created rows the ingester has not filled yet. */
@@ -135,10 +141,20 @@ const CLI_ONLY: SQL = sql`coalesce(${ccSessions.entrypoint}, 'cli') = 'cli'`;
 /** Listing order key. */
 const ORDER_AT: SQL = sql`coalesce(${ccSessions.startedAt}, ${ccSessions.createdAt})`;
 
-/** `case parent_link_source ... end`: the stored link's rank, 0 when there is none. */
-const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} when 'env' then 3 when 'hook' then 2 when 'heuristic' then 1 else 0 end)`;
+/**
+ * `case parent_link_source ... end`: the stored link's rank, 0 when there is none. Generated from
+ * PARENT_LINK_RANK so the SQL and the TypeScript order cannot drift (the values are compile-time
+ * constants, so sql.raw is safe).
+ */
+const STORED_RANK: SQL = sql`(case ${ccSessions.parentLinkSource} ${sql.raw(
+  Object.entries(PARENT_LINK_RANK)
+    .map(([source, rank]) => `when '${source}' then ${rank}`)
+    .join(' '),
+)} else 0 end)`;
 
 const MAX_SESSION_ID_CHARS = 128;
+/** At most this many rows share a head uuid in practice (a session and its forks); more is noise. */
+const FORK_CANDIDATE_LIMIT = 16;
 
 /** Rows and characters per insert into cc_session_prompts, so one statement stays small. */
 const PROMPT_INSERT_ROWS = 200;
@@ -436,6 +452,11 @@ export class SessionsRepo {
    * below PROMPTS_VERSION (0: written before full prompts existed; PROMPTS_VERSION_EXCERPTS:
    * rebuilt from excerpts) adds its prompts but leaves the versions, so the prompts backfill still
    * replaces that row's side rows whole.
+   *
+   * A read from byte 0 of a fork (`patch.fork`) also writes the fork columns and links the parent
+   * with source `fork` through setParentIn (self and cycle checks, rank) in the same transaction.
+   * The parent row is created first when missing, as the hook path does: a fork may be read
+   * before its parent.
    */
   async upsertFromTranscript(patch: TranscriptPatch): Promise<TranscriptUpsertResult> {
     assertSessionId(patch.sessionId);
@@ -444,7 +465,13 @@ export class SessionsRepo {
     assertOffset(patch.toOffset, 'toOffset');
     assertOffset(patch.size, 'size');
     if (patch.toOffset < patch.fromOffset) throw new RangeError('toOffset is before fromOffset');
+    const fork = patch.fromOffset === 0 ? (patch.fork ?? null) : null;
+    if (fork !== null) {
+      assertSessionId(fork.parentSessionId, 'fork parent session id');
+      assertOffset(fork.cutOffset, 'fork cutOffset');
+    }
     await this.ensureSessionRow(patch.sessionId, patch.host);
+    if (fork !== null && fork.parentSessionId !== patch.sessionId) await this.ensureSessionRow(fork.parentSessionId, patch.host);
     const prompts = storedPrompts(patch.prompts);
     const replies = storedReplies(patch.prompts, patch.replies);
     const leading = patch.fromOffset === 0 ? null : storedLeadingReply(patch.leadingReply);
@@ -472,11 +499,12 @@ export class SessionsRepo {
         .returning(REF_COLUMNS);
       const next = updated[0];
       if (!next) throw new Error(`cc_sessions row ${patch.sessionId} disappeared`);
-      return { applied: true, row: next } as const;
+      const forkLink = fork === null ? null : await this.setParentIn(tx, patch.sessionId, fork.parentSessionId, 'fork');
+      return { applied: true, row: next, forkLink } as const;
     });
   }
 
-  /** session_id -> stored offset/size/path, for every row of `host`. The ingester's resume point. */
+  /** session_id -> stored offset/size/path and fork cut, for every row of `host`. The ingester's resume point. */
   async offsets(host: string): Promise<Map<string, TranscriptOffset>> {
     const rows = await this.db
       .select({
@@ -484,10 +512,56 @@ export class SessionsRepo {
         offset: ccSessions.transcriptOffset,
         size: ccSessions.transcriptSize,
         path: ccSessions.transcriptPath,
+        forkCutOffset: ccSessions.forkCutOffset,
       })
       .from(ccSessions)
       .where(eq(ccSessions.host, host));
-    return new Map(rows.map((r) => [r.sessionId, { offset: r.offset, size: r.size, path: r.path }]));
+    return new Map(rows.map((r) => [r.sessionId, { offset: r.offset, size: r.size, path: r.path, forkCutOffset: r.forkCutOffset }]));
+  }
+
+  /**
+   * Rows that may be the parent of the fork `excludeSessionId`: same host, a transcript whose first
+   * uuid record is `headUuid`, a transcript path, never the session itself or one of its
+   * descendants (a later fork of this session holds all of its records too), and created no later
+   * than it (or than now, before it has a row). The last rule keeps an original that is read from
+   * byte 0 again from turning into a fork of a fork made from it that was ingested without a link:
+   * the original's row is always the older one on a host whose daemon saw both start. Oldest
+   * first; src/sessions/fork.ts rankForkCandidates decides.
+   */
+  async forkCandidates(host: string, headUuid: string, excludeSessionId: string): Promise<ForkCandidateRow[]> {
+    assertHost(host);
+    assertSessionId(excludeSessionId);
+    if (headUuid.length === 0) return [];
+    const now = this.now().toISOString();
+    const rows = await this.db
+      .select({
+        sessionId: ccSessions.sessionId,
+        transcriptPath: ccSessions.transcriptPath,
+        startedAt: ccSessions.startedAt,
+        createdAt: ccSessions.createdAt,
+        forkDetectedBy: ccSessions.forkDetectedBy,
+      })
+      .from(ccSessions)
+      .where(
+        and(
+          eq(ccSessions.host, host),
+          eq(ccSessions.headUuid, headUuid),
+          ne(ccSessions.sessionId, excludeSessionId),
+          isNotNull(ccSessions.transcriptPath),
+          sql`${ccSessions.sessionId} not in (
+            with recursive down(id, depth) as (
+              select d.session_id, 1 from cc_sessions d where d.parent_session_id = ${excludeSessionId}
+              union all
+              select s.session_id, down.depth + 1 from cc_sessions s join down on s.parent_session_id = down.id where down.depth < 64
+            )
+            select id from down
+          )`,
+          sql`${ccSessions.createdAt} <= coalesce((select c.created_at from cc_sessions c where c.session_id = ${excludeSessionId}), ${now}::timestamptz)`,
+        ),
+      )
+      .orderBy(asc(ORDER_AT), asc(ccSessions.sessionId))
+      .limit(FORK_CANDIDATE_LIMIT);
+    return rows.flatMap((r) => (r.transcriptPath === null ? [] : [{ ...r, transcriptPath: r.transcriptPath }]));
   }
 
   // ---------- full prompts (and replies) backfill ----------
@@ -505,6 +579,7 @@ export class SessionsRepo {
         transcriptPath: ccSessions.transcriptPath,
         transcriptOffset: ccSessions.transcriptOffset,
         promptsVersion: ccSessions.promptsVersion,
+        forkCutOffset: ccSessions.forkCutOffset,
       })
       .from(ccSessions)
       .where(and(eq(ccSessions.host, host), or(lt(ccSessions.promptsVersion, PROMPTS_VERSION), lt(ccSessions.repliesVersion, REPLIES_VERSION))))
@@ -573,6 +648,47 @@ export class SessionsRepo {
         .where(eq(ccSessions.sessionId, sessionId));
       return 'applied';
     });
+  }
+
+  // ---------- one-time fork backfill ----------
+
+  /**
+   * Every row of `host` with a transcript path, oldest first: what the one-time fork backfill looks
+   * at. Rows already linked as forks are listed too: their head uuid is what groups an original
+   * with a fork ingested before fork handling.
+   */
+  async forkBackfillRows(host: string): Promise<ForkBackfillRow[]> {
+    assertHost(host);
+    const rows = await this.db
+      .select({
+        sessionId: ccSessions.sessionId,
+        transcriptPath: ccSessions.transcriptPath,
+        headUuid: ccSessions.headUuid,
+        parentLinkSource: ccSessions.parentLinkSource,
+        summarizedAt: ccSessions.summarizedAt,
+      })
+      .from(ccSessions)
+      .where(and(eq(ccSessions.host, host), isNotNull(ccSessions.transcriptPath)))
+      .orderBy(asc(ORDER_AT), asc(ccSessions.sessionId));
+    return rows.flatMap((r) => (r.transcriptPath === null ? [] : [{ ...r, transcriptPath: r.transcriptPath }]));
+  }
+
+  /**
+   * Sets head_uuid on rows of `host` that have none yet, in one statement; never overwrites a stored
+   * one. Writes no other column, not even updated_at: the head uuid is a lookup key, shown nowhere.
+   * Returns how many rows changed.
+   */
+  async fillHeadUuids(host: string, entries: readonly HeadUuidFill[]): Promise<number> {
+    assertHost(host);
+    if (entries.length === 0) return 0;
+    const values = JSON.stringify(entries.map((e) => ({ session_id: e.sessionId, head_uuid: e.headUuid })));
+    const res = await this.db.execute<{ session_id: string }>(sql`
+      update cc_sessions s set head_uuid = v.head_uuid
+      from jsonb_to_recordset(${values}::jsonb) as v(session_id text, head_uuid text)
+      where s.session_id = v.session_id and s.host = ${host} and s.head_uuid is null
+      returning s.session_id
+    `);
+    return res.rows.length;
   }
 
   /** What the session's subagent transcripts add up to (zeros and no commits when it has none). */

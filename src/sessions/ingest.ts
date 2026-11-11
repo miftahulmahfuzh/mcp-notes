@@ -4,12 +4,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { SessionsRepo } from './repo.js';
-import { PROMPTS_VERSION_EXCERPTS, type PromptsBackfillCandidate, type PromptsReplacement, type RedactStoredPromptsResult, type ReplacePromptsResult } from './types.js';
+import { headUuid, jobStateFor } from './fork.js';
+import {
+  PROMPTS_VERSION_EXCERPTS,
+  type ForkBackfillRow,
+  type HeadUuidFill,
+  type PromptsBackfillCandidate,
+  type PromptsReplacement,
+  type RedactStoredPromptsResult,
+  type ReplacePromptsResult,
+} from './types.js';
 import { createGitRangeLog, withRangeCommits, type GitRangeLog } from './gitRange.js';
 import { createRepoResolver, type RepoResolver } from './repoResolve.js';
+import { isPendingCut, scanFork, type ForkScan } from './forkDetect.js';
 import {
   buildTranscriptPatch,
   EXCLUDED_ENTRYPOINTS,
+  isCopiedRecord,
+  isObject,
   parseRecord,
   readJsonlFrom,
   TranscriptAccumulator,
@@ -42,7 +54,18 @@ import {
  * - Excluded: project dirs ending `-data-chat` (the wall chat agent's cwd), files whose
  *   entrypoint is `sdk-ts`/`sdk-cli`, and anything else.
  * - Rows are written only through `SessionsRepo.upsertFromTranscript` (phase 1), with
- *   `host = os.hostname()`. Ingest never writes parent links, tmux or summaries.
+ *   `host = os.hostname()`. Ingest writes no tmux or summaries, and one kind of parent link only:
+ *   `fork`, in the same transaction as the fork's row (see Forks).
+ * - Forks: every read from byte 0 runs fork detection first (forkDetect.ts scanFork: a background
+ *   job's state.json, else the rows of this host that share the file's head uuid). In a fork,
+ *   records that have a uuid and start before the cut (transcript.ts isCopiedRecord) are the
+ *   parent's copied history: they feed only cwd, entry point, branch and version, and are left out
+ *   of the row's counts and of the observers' batch records. Records without a uuid are always
+ *   read. While a fork holds only copied records its cut is pending: the read stops where
+ *   detection stopped and every later read starts at byte 0 again until its first own record
+ *   arrives (after a restart, a stored `fork_cut_offset >= transcript_offset` says so). Detection
+ *   never fails a read: an error reads the file as an ordinary session and is logged once, except
+ *   for a fork whose cut is pending, which waits for its next change.
  *
  * - Full prompts and replies: every write carries every prompt of the bytes it read and Claude's
  *   reply to each (SessionsRepo stores them, redacted, in `cc_session_prompts` and
@@ -57,6 +80,14 @@ import {
  *   write (or a lock) while the file is missing, and is filled if the file is readable again. Only
  *   transcripts under `<claudeHome>/projects` are read. One log line, only when a row changed,
  *   was deferred or failed.
+ * - Forks in the backfills: a fork's row stores `fork_cut_offset`. The prompts backfill skips the records with a
+ *   uuid before it (`isCopiedRecord`), as the tail ingester did, so a fork never gets its parent's
+ *   prompts or replies back. Before the prompts backfill, `forkBackfill` runs once per host
+ *   (FORK_BACKFILL_VERSION, app_settings `${FORK_MARKER_PREFIX}${host}`): it fills head_uuid for rows
+ *   ingested before it existed, checks every row that shares a head uuid with another row or has a
+ *   background-job record with the fork detector, and re-reads each fork from byte 0 under the
+ *   per-file hold, which links it (`fork`) and cuts the copied prefix. A transcript that is gone is
+ *   skipped without a write; the marker is written once nothing was deferred or failed.
  *
  * EXTENSION POINT (phase 4 heuristic links; any later consumer): `IngestObserver`, passed as
  * `observers` or added with `addObserver`. `onBatch` runs after each committed write with the
@@ -82,13 +113,24 @@ const CHAT_PROJECT_DIR = /-data-chat$/;
 /**
  * The `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation; one without
  * the subagent methods leaves subagent transcripts unread; one without the three prompts methods
- * skips the prompts backfill.
+ * skips the prompts backfill; one without `forkCandidates` finds forks from job state only; one
+ * without forkBackfillRows, fillHeadUuids, getSetting or putSetting skips the fork backfill.
  */
 export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'> &
   Partial<
     Pick<
       SessionsRepo,
-      'subagentOffsets' | 'upsertFromSubagentTranscript' | 'promptsBackfillCandidates' | 'replacePrompts' | 'redactStoredPrompts'
+      | 'subagentOffsets'
+      | 'upsertFromSubagentTranscript'
+      | 'promptsBackfillCandidates'
+      | 'replacePrompts'
+      | 'redactStoredPrompts'
+      | 'forkCandidates'
+      | 'forkBackfillRows'
+      | 'fillHeadUuids'
+      | 'getSetting'
+      | 'putSetting'
+      | 'requestSummary'
     >
   >;
 
@@ -156,6 +198,37 @@ function emptyPromptsReport(): PromptsBackfillReport {
   return { candidates: 0, filled: 0, redacted: 0, skipped: 0, deferred: 0, failed: 0, ms: 0 };
 }
 
+/** Bump to make every host run the fork backfill once more (e.g. after detection improves). */
+export const FORK_BACKFILL_VERSION = 1;
+/** app_settings key prefix; the full key is `${FORK_MARKER_PREFIX}${host}`. */
+export const FORK_MARKER_PREFIX = 'sessions.forks.backfill.';
+
+/** What the one-time fork backfill did. */
+export interface ForkBackfillReport {
+  /** False when the marker says it already ran at FORK_BACKFILL_VERSION, or the store lacks the methods. */
+  ran: boolean;
+  /** Rows of this host with a transcript path. */
+  rows: number;
+  /** Rows given a head uuid they did not have. */
+  headsFilled: number;
+  /** Rows the fork detector looked at: a head uuid shared with another row, or a background-job record. */
+  candidates: number;
+  /** Rows the detector called a fork. */
+  forks: number;
+  /** Forks re-read from byte 0 (linked `fork`, copied prefix cut). */
+  reingested: number;
+  /** Transcript gone, or outside this Claude home: skipped without a write. */
+  missing: number;
+  /** A fork whose re-read wrote nothing (the file changed under it): left for the next start. */
+  deferred: number;
+  failed: number;
+  ms: number;
+}
+
+function emptyForkReport(): ForkBackfillReport {
+  return { ran: false, rows: 0, headsFilled: 0, candidates: 0, forks: 0, reingested: 0, missing: 0, deferred: 0, failed: 0, ms: 0 };
+}
+
 async function fileSize(file: string): Promise<number | null> {
   try {
     return (await stat(file)).size;
@@ -205,7 +278,9 @@ export interface SessionIngestOptions {
 export interface SessionIngester {
   /** Settles when the startup backfill pass has finished (never rejects). */
   ready: Promise<IngestReport>;
-  /** Settles once the one-time prompts backfill that follows `ready` is done (never rejects). */
+  /** Settles once the one-time fork backfill that follows `ready` is done (never rejects). */
+  forkBackfill: Promise<ForkBackfillReport>;
+  /** Settles once the one-time prompts backfill that follows `forkBackfill` is done (never rejects). */
   promptsBackfill: Promise<PromptsBackfillReport>;
   /** Adds an observer (see EXTENSION POINT above). Returns the function that removes it. */
   addObserver(observer: IngestObserver): () => void;
@@ -359,6 +434,11 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const subCarries = new Map<string, TranscriptCarry>();
   /** Files with no entry point yet and no row: size at the last look, re-read only when it changes. */
   const deferred = new Map<string, number>();
+  /** Forks whose cut is not final yet (only copied records read so far): every read starts at byte 0. */
+  const pendingCuts = new Set<string>();
+  /** Sessions whose failed fork detection was already logged (once each). */
+  const forkErrorsLogged = new Set<string>();
+  const forkCandidates = options.store.forkCandidates?.bind(options.store);
   /** Per-file serialization: the running read, and whether another was asked for meanwhile. */
   const inflight = new Map<string, Promise<number>>();
   const again = new Set<string>();
@@ -397,7 +477,11 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   const seed = (): Promise<void> => {
     seeded ??= Promise.all([options.store.offsets(host), options.store.subagentOffsets?.(host)]).then(
       ([stored, storedSubs]) => {
-        for (const [sessionId, entry] of stored) offsets.set(sessionId, entry.offset);
+        for (const [sessionId, entry] of stored) {
+          offsets.set(sessionId, entry.offset);
+          const cut = entry.forkCutOffset ?? null;
+          if (cut !== null && entry.offset > 0 && isPendingCut(cut, entry.offset)) pendingCuts.add(sessionId);
+        }
         for (const [file, offset] of storedSubs ?? []) subOffsets.set(file, offset);
       },
       (err: unknown) => {
@@ -471,8 +555,31 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
   };
 
   /**
+   * Fork detection for a read from byte 0 (forkDetect.ts scanFork). Never throws. Null: the head
+   * uuid could not be read (logged once per session). A scan with `error` set: the head uuid is
+   * known, the fork is not (logged once per session). Phase 3's backfill asks the same question
+   * through this function.
+   */
+  const scanForkSafely = async (file: string, sessionId: string): Promise<ForkScan | null> => {
+    const failed = (message: string): void => {
+      if (forkErrorsLogged.has(sessionId)) return;
+      forkErrorsLogged.add(sessionId);
+      log(`[notesd] sessions: fork detection for ${sessionId} failed, reading it as an ordinary session: ${message.slice(0, LOG_ERROR_CHARS)}`);
+    };
+    try {
+      const scan = await scanFork(file, sessionId, { claudeHome: options.claudeHome, host, ...(forkCandidates !== undefined ? { forkCandidates } : {}) });
+      if (scan.error !== null) failed(scan.error);
+      return scan;
+    } catch (err) {
+      failed(errorMessage(err));
+      return null;
+    }
+  };
+
+  /**
    * Reads what is new in one file and writes the row. Returns the bytes consumed (0: nothing
    * written). A compare-and-set miss (`offset_mismatch`) adopts the repo's offset and reads once more.
+   * A read from byte 0 runs fork detection first and leaves a fork's copied records out (header, Forks).
    */
   const readFile = async (file: string): Promise<number> => {
     const subagent = subagentFromPath(file);
@@ -489,20 +596,39 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       }
       const known = offsets.get(sessionId) ?? 0;
       if (size === known || deferred.get(file) === size) return 0;
-      const fromOffset = size < known ? 0 : known;
+      // A fork whose cut is pending is read whole again: the bytes after its stored offset may be
+      // the rest of the copy rather than its own records.
+      const fromOffset = size < known || pendingCuts.has(sessionId) ? 0 : known;
+      let scan: ForkScan | null = null;
+      if (fromOffset === 0) {
+        scan = await scanForkSafely(file, sessionId);
+        // Read without its cut, a pending fork would count the copy: wait for the next change or sweep.
+        if ((scan === null || scan.error !== null) && pendingCuts.has(sessionId)) return 0;
+      }
+      const fork = scan?.fork ?? null;
+      const cutOffset = fork?.cutOffset ?? null;
       const acc = new TranscriptAccumulator(sessionId, fromOffset === 0 ? undefined : carries.get(sessionId));
       const keepRecords = [...observers].some((o) => o.onBatch !== undefined);
       const records: TranscriptRecord[] = [];
       const read = await readJsonlFrom(
         file,
         fromOffset,
-        (line) => {
+        (line, lineStart) => {
           const record = parseRecord(line);
           if (record === null) return;
+          if (isCopiedRecord(record, lineStart, cutOffset)) {
+            acc.addCopied(record);
+            return;
+          }
           acc.add(record);
           if (keepRecords) records.push(record);
         },
-        { shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
+        {
+          shouldStop: () => closed,
+          // A pending cut ends where detection stopped reading: what follows may be more of the copy.
+          ...(fork !== null && !fork.final ? { until: fork.cutOffset } : {}),
+          ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}),
+        },
       );
       if (read.endOffset <= fromOffset) {
         if (size < known) offsets.set(sessionId, read.endOffset);
@@ -524,11 +650,20 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       }
       const patch = buildTranscriptPatch(delta, { host, transcriptPath: file, fromOffset, toOffset: read.endOffset, size: read.size, repo });
       patch.commits = await withRangeCommits(delta.commits, delta.commitRanges, gitLog);
+      if (scan !== null && scan.headUuid !== null) patch.headUuid = scan.headUuid;
+      if (fork !== null) patch.fork = fork;
       const result = await options.store.upsertFromTranscript(patch);
       if (result.applied) {
         offsets.set(sessionId, read.endOffset);
         carries.set(sessionId, acc.carry());
         deferred.delete(file);
+        if (fromOffset === 0) {
+          if (fork !== null && isPendingCut(fork.cutOffset, read.endOffset)) pendingCuts.add(sessionId);
+          else pendingCuts.delete(sessionId);
+        }
+        if (fork !== null && (result.forkLink === 'cycle' || result.forkLink === 'missing')) {
+          log(`[notesd] sessions: fork ${sessionId} not linked to ${fork.parentSessionId}: ${result.forkLink}`);
+        }
         notifyBatch({ sessionId, host, transcriptPath: file, fromOffset, toOffset: read.endOffset, records });
         return Math.max(1, read.endOffset - fromOffset);
       }
@@ -590,6 +725,24 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     return result;
   };
 
+  /**
+   * Re-reads `file` from byte 0 under the per-file hold: the in-memory offset is set to 0 in the
+   * same tick the hold is taken, so this read takes `readFile`'s 0-read path (fork detection, the
+   * `fork` link and the cut, written in one upsert that replaces the row's counters) and no tail read
+   * can slip in first. A read that writes nothing puts the old offset back, so memory keeps matching
+   * the row. Returns the bytes written (0: nothing written).
+   */
+  const rereadFromZero = (file: string, sessionId: string): Promise<number> =>
+    withFileHeld(file, async () => {
+      const before = offsets.get(sessionId);
+      offsets.set(sessionId, 0);
+      carries.delete(sessionId);
+      deferred.delete(file);
+      const bytes = await readFile(file);
+      if (bytes === 0 && offsets.get(sessionId) === 0 && before !== undefined) offsets.set(sessionId, before);
+      return bytes;
+    });
+
   interface PromptsFill {
     replace: (sessionId: string, host: string, input: PromptsReplacement) => Promise<ReplacePromptsResult>;
     redact: (sessionId: string, host: string) => Promise<RedactStoredPromptsResult>;
@@ -622,9 +775,10 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       const read = await readJsonlFrom(
         file,
         0,
-        (line) => {
+        (line, lineStart) => {
           const record = parseRecord(line);
-          if (record !== null) acc.add(record);
+          // A fork's copied records were left out by the read that wrote the row; leave them out here too.
+          if (record !== null && !isCopiedRecord(record, lineStart, c.forkCutOffset)) acc.add(record);
         },
         { until: upTo, shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
       );
@@ -674,6 +828,109 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     report.ms = Date.now() - started;
     // Rows redacted in place stay candidates and are skipped on every start: say nothing then.
     if (report.filled + report.redacted + report.deferred + report.failed > 0) log(formatPromptsReport(report));
+    return report;
+  };
+
+  /** The one-time fork backfill for this host (see the header). */
+  const backfillForks = async (): Promise<ForkBackfillReport> => {
+    const started = Date.now();
+    const report = emptyForkReport();
+    const store = options.store;
+    const getSetting = store.getSetting?.bind(store);
+    const putSetting = store.putSetting?.bind(store);
+    const listRows = store.forkBackfillRows?.bind(store);
+    const fillHeads = store.fillHeadUuids?.bind(store);
+    if (getSetting === undefined || putSetting === undefined || listRows === undefined || fillHeads === undefined || closed) return report;
+    const key = `${FORK_MARKER_PREFIX}${host}`;
+    const marker = await getSetting(key);
+    if (isObject(marker) && marker.version === FORK_BACKFILL_VERSION) return report;
+    report.ran = true;
+    const rows = await listRows(host);
+    report.rows = rows.length;
+
+    // 1. Head uuids. Rows ingested before head_uuid existed have none, so the detector's lookup
+    //    could not find them as originals. A transcript that is gone is skipped without a write.
+    const heads = new Map<string, string | null>();
+    const fills: HeadUuidFill[] = [];
+    await forEachLimit(rows, concurrency, async (row) => {
+      if (closed) return;
+      if (!isUnder(projectsDir, row.transcriptPath) || (await fileSize(row.transcriptPath)) === null) {
+        report.missing += 1;
+        return;
+      }
+      if (row.headUuid !== null) {
+        heads.set(row.sessionId, row.headUuid);
+        return;
+      }
+      try {
+        const head = await headUuid(row.transcriptPath);
+        heads.set(row.sessionId, head);
+        if (head !== null) fills.push({ sessionId: row.sessionId, headUuid: head });
+      } catch (err) {
+        report.failed += 1;
+        log(`[notesd] sessions: fork backfill ${row.sessionId}: ${errorMessage(err)}`);
+      }
+    });
+    if (closed) return report;
+    report.headsFilled = await fillHeads(host, fills);
+
+    // 2. Candidates: rows not already linked as forks that have a background-job record, or that
+    //    share their head uuid with another row of this host. Only the detector decides. Job-state
+    //    candidates go first (index Decisions): every row here was ingested before the cut, so a
+    //    parent and its forks share one polluted started_at; linking the job forks first makes them
+    //    descendants, which forkCandidates then leaves out when an original is examined.
+    const sharing = new Map<string, number>();
+    for (const head of heads.values()) if (head !== null) sharing.set(head, (sharing.get(head) ?? 0) + 1);
+    const jobCandidates: ForkBackfillRow[] = [];
+    const uuidCandidates: ForkBackfillRow[] = [];
+    for (const row of rows) {
+      if (closed) return report;
+      if (!heads.has(row.sessionId) || row.parentLinkSource === 'fork') continue;
+      const job = await jobStateFor(options.claudeHome, row.sessionId).catch(() => null);
+      if (job !== null) {
+        jobCandidates.push(row);
+        continue;
+      }
+      const head = heads.get(row.sessionId) ?? null;
+      if (head !== null && (sharing.get(head) ?? 0) > 1) uuidCandidates.push(row);
+    }
+    const candidates = [...jobCandidates, ...uuidCandidates];
+    report.candidates = candidates.length;
+
+    // 3. Detect, then re-read each fork from byte 0. Originals are never re-read: a 0-read
+    //    recomputes push/merge range commits with `git log`, which loses them once a worktree is gone.
+    for (const row of candidates) {
+      if (closed) return report;
+      try {
+        if (((await scanForkSafely(row.transcriptPath, row.sessionId))?.fork ?? null) === null) continue;
+        report.forks += 1;
+        const bytes = await rereadFromZero(row.transcriptPath, row.sessionId);
+        if (bytes === 0) {
+          report.deferred += 1;
+          continue;
+        }
+        report.reingested += 1;
+        // Its summary was written from the parent's copied prompts: ask the summary worker for a new one.
+        if (row.summarizedAt !== null) await store.requestSummary?.(row.sessionId);
+      } catch (err) {
+        report.failed += 1;
+        log(`[notesd] sessions: fork backfill ${row.sessionId}: ${errorMessage(err)}`);
+      }
+    }
+    report.ms = Date.now() - started;
+    if (closed) return report; // no marker: the next start runs it again (every step is idempotent)
+    if (report.deferred === 0 && report.failed === 0) {
+      await putSetting(key, {
+        version: FORK_BACKFILL_VERSION,
+        finishedAt: new Date().toISOString(),
+        rows: report.rows,
+        headsFilled: report.headsFilled,
+        forks: report.forks,
+        reingested: report.reingested,
+        missing: report.missing,
+      });
+    }
+    if (report.headsFilled + report.forks + report.deferred + report.failed > 0) log(formatForkReport(report));
     return report;
   };
 
@@ -777,8 +1034,20 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     },
   );
 
+  let forkSettled = false;
+  const forkBackfill: Promise<ForkBackfillReport> = ready
+    .then(() => backfillForks())
+    .catch((err: unknown) => {
+      log(`[notesd] sessions: fork backfill failed: ${errorMessage(err)}`);
+      return { ...emptyForkReport(), ran: true, failed: 1 };
+    })
+    .finally(() => {
+      forkSettled = true;
+    });
+
+  // After the fork backfill: re-read forks are current and drop out of the prompts candidates.
   let promptsSettled = false;
-  const promptsBackfill: Promise<PromptsBackfillReport> = ready
+  const promptsBackfill: Promise<PromptsBackfillReport> = forkBackfill
     .then(() => backfillPrompts())
     .catch((err: unknown) => {
       log(`[notesd] sessions: prompts backfill failed: ${errorMessage(err)}`);
@@ -804,6 +1073,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
 
   return {
     ready,
+    forkBackfill,
     promptsBackfill,
     addObserver(observer) {
       observers.add(observer);
@@ -818,7 +1088,13 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
           clearTimeout(watchTimer);
           drainWatch();
         }
-        const pending = [sweeping, watchDrain, promptsSettled ? null : promptsBackfill, ...inflight.values()].filter((p) => p !== null);
+        const pending = [
+          sweeping,
+          watchDrain,
+          forkSettled ? null : forkBackfill,
+          promptsSettled ? null : promptsBackfill,
+          ...inflight.values(),
+        ].filter((p) => p !== null);
         if (pending.length === 0) return;
         await Promise.allSettled(pending);
       }
@@ -830,7 +1106,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       if (watchTimer !== null) clearTimeout(watchTimer);
       watchTimer = null;
       const closing = watcher?.close().catch(() => undefined);
-      const pending = Promise.allSettled([closing, sweeping, watchDrain, promptsBackfill, ...inflight.values()]);
+      const pending = Promise.allSettled([closing, sweeping, watchDrain, forkBackfill, promptsBackfill, ...inflight.values()]);
       let grace: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         pending,
@@ -853,4 +1129,9 @@ export function formatReport(report: IngestReport): string {
 /** e.g. `[notesd] sessions: prompts backfill 640 sessions, 612 filled, 25 redacted in place, 0 already done, 3 deferred, 0 failed, 4210ms` */
 export function formatPromptsReport(r: PromptsBackfillReport): string {
   return `[notesd] sessions: prompts backfill ${r.candidates} sessions, ${r.filled} filled, ${r.redacted} redacted in place, ${r.skipped} already done, ${r.deferred} deferred, ${r.failed} failed, ${r.ms}ms`;
+}
+
+/** e.g. `[notesd] sessions: fork backfill 640 sessions, 612 head uuids filled, 6 checked, 3 forks, 3 re-read from byte 0, 25 transcripts gone, 0 deferred, 0 failed, 812ms` */
+export function formatForkReport(r: ForkBackfillReport): string {
+  return `[notesd] sessions: fork backfill ${r.rows} sessions, ${r.headsFilled} head uuids filled, ${r.candidates} checked, ${r.forks} forks, ${r.reingested} re-read from byte 0, ${r.missing} transcripts gone, ${r.deferred} deferred, ${r.failed} failed, ${r.ms}ms`;
 }

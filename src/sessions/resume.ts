@@ -40,7 +40,7 @@ export const SCRUBBED_ENV = [
 /** What `new-window -P` prints: "<session>:<index> <pane id>". */
 export const NEW_WINDOW_FORMAT = '#{session_name}:#{window_index} #{pane_id}';
 
-export type ResumeAction = 'focused' | 'messaged' | 'resumed' | 'spawned';
+export type ResumeAction = 'focused' | 'messaged' | 'resumed' | 'spawned' | 'attached';
 
 export interface ResumeRequest {
   /** Typed into a live session, or passed to `claude --resume <sid> <prompt>`, or appended to a fresh session's context. */
@@ -71,17 +71,37 @@ export interface LiveEntry {
   pid: number;
   /** Registry `tmux` field, e.g. "note:@0.%7"; null when the session is not in tmux. */
   tmux: string | null;
+  /**
+   * Set only when the session is a live Claude Code background job: the id `claude attach` takes
+   * (built with registry.ts `backgroundJobId`). Absent or null: not a background job.
+   */
+  jobId?: string | null;
 }
 
-export interface ResumeResult {
-  action: ResumeAction;
-  /** "<tmux session>:<window index>" the session is in. */
-  window?: string;
-  /** resumed / spawned: the directory claude runs in. */
-  cwd?: string;
-  /** Present only when the node's own cwd is gone and `cwd` is a fallback. */
-  original_cwd?: string;
-}
+/** What a successful resume did. `job_id` names the background job when the pane is its attach pane. */
+export type ResumeResult =
+  | {
+      action: 'focused' | 'messaged';
+      /** "<tmux session>:<window index>" the session is in. */
+      window?: string;
+      job_id?: string;
+    }
+  | {
+      action: 'resumed' | 'spawned';
+      window?: string;
+      /** The directory claude runs in. */
+      cwd?: string;
+      /** Present only when the node's own cwd is gone and `cwd` is a fallback. */
+      original_cwd?: string;
+    }
+  | {
+      /** A live background job had no attach pane: a new window runs `claude attach <job_id>`. */
+      action: 'attached';
+      job_id: string;
+      window?: string;
+      /** Present (always false) when a prompt was given: the new attach window cannot take it yet. */
+      prompt_delivered?: false;
+    };
 
 export type ResumeOutcome =
   | { status: 200; body: ResumeResult }
@@ -409,6 +429,64 @@ export async function messagePane(deps: ResumeDeps, paneId: string, text: string
   await tmux(deps, ['send-keys', '-t', paneId, 'Enter']);
 }
 
+/** `list-panes -a` format for the attach lookup: the pane id, then the command the pane started with. */
+export const PANE_COMMAND_FORMAT = '#{pane_id} #{pane_start_command}';
+
+/** RecentSpawns key of a background job's attach pane (session ids are uuids, so this cannot collide). */
+export function attachKey(jobId: string): string {
+  return `attach:${jobId}`;
+}
+
+/**
+ * True when a pane's `#{pane_start_command}` runs `... attach <jobId>`: some word is `attach` and
+ * the next word is the job id. tmux joins the words with spaces and double-quotes a word that holds
+ * a space (tmux 3.4: `env -u FOO PATH=/usr/bin sh -c "sleep 30" attach e3650501`).
+ */
+export function isAttachCommand(command: string, jobId: string): boolean {
+  const words = command
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/^"(.*)"$/, '$1'));
+  for (let i = 0; i + 1 < words.length; i += 1) {
+    if (words[i] === 'attach' && words[i + 1] === jobId) return true;
+  }
+  return false;
+}
+
+/** `list-panes -a -F PANE_COMMAND_FORMAT` output -> pane id and start command, in listed order. */
+export function parsePaneCommands(stdout: string): Array<{ paneId: string; command: string }> {
+  const out: Array<{ paneId: string; command: string }> = [];
+  for (const raw of stdout.split('\n')) {
+    const line = raw.replace(/\r$/, '').trim();
+    if (!line.startsWith('%')) continue;
+    const sp = line.indexOf(' ');
+    out.push(sp < 0 ? { paneId: line, command: '' } : { paneId: line.slice(0, sp), command: line.slice(sp + 1) });
+  }
+  return out;
+}
+
+/**
+ * The live pane attached to background job `jobId`, or null. The pane this resumer opened for it
+ * comes first while tmux still lists it (and its command is empty or still the attach); else the
+ * first pane started as `... attach <jobId>`. One tmux call; no tmux server means no pane.
+ */
+export async function findAttachPane(deps: ResumeDeps, jobId: string, recent: RecentSpawns): Promise<string | null> {
+  let panes: Array<{ paneId: string; command: string }>;
+  try {
+    panes = parsePaneCommands(await tmux(deps, ['list-panes', '-a', '-F', PANE_COMMAND_FORMAT]));
+  } catch {
+    return null;
+  }
+  const key = attachKey(jobId);
+  const opened = recent.get(key)?.paneId;
+  if (opened !== undefined) {
+    const listed = panes.find((p) => p.paneId === opened);
+    if (listed !== undefined && (listed.command === '' || isAttachCommand(listed.command, jobId))) return opened;
+    recent.delete(key);
+  }
+  return panes.find((p) => isAttachCommand(p.command, jobId))?.paneId ?? null;
+}
+
 /**
  * Where claude runs: the node's cwd when it still exists; else the newest existing cwd of the
  * repo's sessions outside the worktrees root (the main checkout), else ~/<repo>, else $HOME.
@@ -439,16 +517,45 @@ export async function resolveCwd(
   return { cwd: deps.homeDir, missing };
 }
 
+/**
+ * A new window in tmux session `session` at `cwd`, named `name`, running claude with `claudeArgs`,
+ * tmux's global PATH and `extraEnv`; shown on the most recently active client.
+ */
+async function openClaudeWindow(
+  deps: ResumeDeps,
+  session: string,
+  cwd: string,
+  name: string,
+  claudeArgs: readonly string[],
+  extraEnv: Readonly<Record<string, string>> = {},
+): Promise<{ window: string; paneId: string | null }> {
+  const globalPath = await tmuxGlobalPath(deps);
+  const argv = claudeCommand(deps.claudeBin, claudeArgs, {
+    ...(globalPath !== null ? { PATH: globalPath } : {}),
+    ...extraEnv,
+  });
+  const out = await tmux(deps, ['new-window', '-t', `=${session}:`, '-c', cwd, '-n', name, '-P', '-F', NEW_WINDOW_FORMAT, ...argv]);
+  const created = parseNewWindow(out);
+  if (created.paneId !== null) await switchMostRecentClient(deps, created.paneId);
+  return created;
+}
+
 /** Pane of a session spawned moments ago, keyed by session id (registry may not list it yet). */
 export type RecentSpawns = Map<string, { at: number; paneId: string }>;
 
-type LiveTarget = { kind: 'none' } | { kind: 'pane'; paneId: string } | { kind: 'outside'; pid: number };
+type LiveTarget =
+  | { kind: 'none' }
+  | { kind: 'pane'; paneId: string }
+  | { kind: 'outside'; pid: number }
+  | { kind: 'job'; jobId: string; paneId: string | null };
 
 async function liveTarget(deps: ResumeDeps, node: ResumeNode, recent: RecentSpawns): Promise<LiveTarget> {
   const entry = await deps.live(node.sessionId);
   if (entry !== null) {
     const paneId = entry.tmux !== null ? (parseRegistryTmux(entry.tmux)?.paneId ?? null) : null;
     if (paneId !== null && (await paneAlive(deps, paneId))) return { kind: 'pane', paneId };
+    const jobId = entry.jobId ?? null;
+    if (jobId !== null) return { kind: 'job', jobId, paneId: await findAttachPane(deps, jobId, recent) };
     return { kind: 'outside', pid: entry.pid };
   }
   const spawned = recent.get(node.sessionId);
@@ -468,7 +575,10 @@ function ok(body: ResumeResult): ResumeOutcome {
 /**
  * The whole decision for one node:
  * other host -> 404 not_on_this_machine (no tmux call at all);
- * not fresh and live in a reachable pane -> focus it (and message it with a prompt);
+ * not fresh and live in a reachable pane (its registry pane, or a background job's attach pane)
+ *   -> focus it (and message it with a prompt);
+ * not fresh, a live background job with no attach pane -> a new window running
+ *   `claude attach <jobId>`, answer attached (+ prompt_delivered false when a prompt was given);
  * not fresh and live elsewhere -> 409 live_outside_tmux (never resume twice);
  * otherwise a new window in the most recently attached tmux session (409 no_tmux without one):
  * `claude --resume <sid> [prompt]`, or with fresh a new claude whose first prompt is the node's context.
@@ -487,47 +597,46 @@ export async function resumeNode(
     if (!fresh) {
       const target = await liveTarget(deps, node, recent);
       if (target.kind === 'outside') return { status: 409, body: { error: 'live_outside_tmux', pid: target.pid } };
-      if (target.kind === 'pane') {
-        await focusPane(deps, target.paneId);
-        const window = await windowLabel(deps, target.paneId);
+      const paneId = target.kind === 'pane' || target.kind === 'job' ? target.paneId : null;
+      const job = target.kind === 'job' ? { job_id: target.jobId } : {};
+      if (paneId !== null) {
+        await focusPane(deps, paneId);
+        const window = await windowLabel(deps, paneId);
         const where = window !== null ? { window } : {};
         if (prompt !== undefined) {
-          await messagePane(deps, target.paneId, prompt);
-          return ok({ action: 'messaged', ...where });
+          await messagePane(deps, paneId, prompt);
+          return ok({ action: 'messaged', ...where, ...job });
         }
-        return ok({ action: 'focused', ...where });
+        return ok({ action: 'focused', ...where, ...job });
+      }
+      if (target.kind === 'job') {
+        const session = await pickTmuxSession(deps);
+        if (session === null) return { status: 409, body: { error: 'no_tmux' } };
+        const place = await resolveCwd(deps, node);
+        const created = await openClaudeWindow(deps, session, place.cwd, windowName(node, false), ['attach', target.jobId]);
+        if (created.paneId !== null) recent.set(attachKey(target.jobId), { at: deps.now(), paneId: created.paneId });
+        return ok({
+          action: 'attached',
+          job_id: target.jobId,
+          ...(created.window !== '' ? { window: created.window } : {}),
+          ...(prompt !== undefined ? { prompt_delivered: false as const } : {}),
+        });
       }
     }
 
     const session = await pickTmuxSession(deps);
     if (session === null) return { status: 409, body: { error: 'no_tmux' } };
     const place = await resolveCwd(deps, node);
-    const path = await tmuxGlobalPath(deps);
-    const pathEnv: Record<string, string> = path !== null ? { PATH: path } : {};
-    const argv = fresh
-      ? claudeCommand(deps.claudeBin, promptArgs(freshPrompt(node, prompt)), {
-          ...pathEnv,
+    const created = fresh
+      ? await openClaudeWindow(deps, session, place.cwd, windowName(node, true), promptArgs(freshPrompt(node, prompt)), {
           CC_PARENT_SESSION: node.sessionId,
         })
-      : claudeCommand(deps.claudeBin, ['--resume', node.sessionId, ...promptArgs(prompt)], pathEnv);
-    const out = await tmux(deps, [
-      'new-window',
-      '-t',
-      `=${session}:`,
-      '-c',
-      place.cwd,
-      '-n',
-      windowName(node, fresh),
-      '-P',
-      '-F',
-      NEW_WINDOW_FORMAT,
-      ...argv,
-    ]);
-    const created = parseNewWindow(out);
-    if (created.paneId !== null) {
-      if (!fresh) recent.set(node.sessionId, { at: deps.now(), paneId: created.paneId });
-      await switchMostRecentClient(deps, created.paneId);
-    }
+      : await openClaudeWindow(deps, session, place.cwd, windowName(node, false), [
+          '--resume',
+          node.sessionId,
+          ...promptArgs(prompt),
+        ]);
+    if (!fresh && created.paneId !== null) recent.set(node.sessionId, { at: deps.now(), paneId: created.paneId });
     return ok({
       action: fresh ? 'spawned' : 'resumed',
       ...(created.window !== '' ? { window: created.window } : {}),

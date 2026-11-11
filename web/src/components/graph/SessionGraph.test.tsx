@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SessionGraph } from './SessionGraph';
 import { buildForest, expandAll, layoutGraph, OVERSCAN, ROW_H } from '../../lib/sessionGraph';
-import { childOf, makeSession, nodeIdAt } from '../../testing/sessionFixtures';
+import { childOf, forkOf, makeSession, nodeIdAt } from '../../testing/sessionFixtures';
 import type { SessionNode } from '../../types';
 
 afterEach(cleanup);
@@ -106,5 +106,20 @@ describe('SessionGraph rows', () => {
     const far = layout.rows[700]!.node.node_id;
     const { container } = render(<SessionGraph layout={layout} selected={far} focus={far} onSelect={vi.fn()} onToggle={vi.fn()} />);
     expect(mounted(container)).toContain(far);
+  });
+
+  it('draws a fork on a fork edge with a fork badge; a plain child gets neither', () => {
+    const fork = forkOf(root, 'F0-00', 7, 12);
+    const plain = childOf(root, 'C0-00', 8);
+    const { container } = draw([root, fork, plain], new Set([root.session_id]));
+    expect(container.querySelector(`[data-edge="${fork.session_id}"]`)!.getAttribute('class')).toBe('gedge fork');
+    expect(container.querySelector(`[data-edge="${plain.session_id}"]`)!.getAttribute('class')).toBe('gedge');
+    const row = container.querySelector('[data-node="F0-00"]') as Element;
+    const badge = row.querySelector('[data-testid="fork-badge"]') as Element;
+    expect(badge.getAttribute('aria-label')).toBe('fork of A0-3G');
+    expect(badge.querySelector('title')!.textContent).toBe('forked from A0-3G after prompt 12');
+    expect(row.getAttribute('aria-label')).toContain('fork of A0-3G');
+    expect(container.querySelector('[data-node="C0-00"] [data-testid="fork-badge"]')).toBeNull();
+    expect(container.querySelector('[data-node="A0-3G"] [data-testid="fork-badge"]')).toBeNull();
   });
 });

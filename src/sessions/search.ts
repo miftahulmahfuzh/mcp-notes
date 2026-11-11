@@ -11,7 +11,7 @@ import { BLEND, queryTerms, rankCandidates, tagMatch, type BlendTuning, type Rel
 import { QUERY_EMBED_TIMEOUT_MS, QueryVectorCache, embedQuery } from '../search/queryVector.js';
 import { findNodeIdCandidates } from './ids.js';
 import { isCurrentReplyEmbeddingSql } from './replyEmbeddings.js';
-import { NOTE_EXCERPT_CHARS, REPLY_EXCERPT_CHARS, excerpt, type SearchReplyMatch } from './view.js';
+import { NOTE_EXCERPT_CHARS, REPLY_EXCERPT_CHARS, excerpt, linkSource, type ParentLinkSource, type SearchReplyMatch } from './view.js';
 
 export const SESSION_SEARCH_DEFAULT_LIMIT = 20;
 export const SESSION_SEARCH_MAX_LIMIT = 200;
@@ -88,7 +88,7 @@ export interface SessionSearchHit {
   started_at: string | null;
   last_active_at: string | null;
   parent_session_id: string | null;
-  parent_link_source: 'env' | 'hook' | 'heuristic' | null;
+  parent_link_source: ParentLinkSource | null;
   /**
    * Notes saved from (origin.claude_session) or linked to this session that matched the query,
    * best first, at most VIA_NOTES_MAX. Empty when the session matched on its own text only.
@@ -729,7 +729,6 @@ function withWeightedText(c: MergedCandidate, tuning: BlendTuning): MergedCandid
 
 function toHit(c: MergedCandidate, thisHost: string, score: number, replyExcerpts: ReadonlyMap<string, string>): SessionSearchHit {
   const r = c.row;
-  const source = r.parent_link_source;
   return {
     session_id: r.session_id,
     node_id: r.node_id,
@@ -745,7 +744,7 @@ function toHit(c: MergedCandidate, thisHost: string, score: number, replyExcerpt
     started_at: toDate(r.started_at)?.toISOString() ?? null,
     last_active_at: toDate(r.last_active_at)?.toISOString() ?? null,
     parent_session_id: r.parent_session_id,
-    parent_link_source: source === 'env' || source === 'hook' || source === 'heuristic' ? source : null,
+    parent_link_source: linkSource(r.parent_link_source),
     via_notes: toViaNotes(c.related.note?.items),
     via_replies: toViaReplies(r.session_id, c.related.reply?.items, replyExcerpts),
     score,

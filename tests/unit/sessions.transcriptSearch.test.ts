@@ -86,3 +86,30 @@ describe('searchTranscript', () => {
     await expect(searchTranscript(path.join(dir, 'gone.jsonl'), { query: null, limit: 5 })).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
+
+describe('searchTranscript from a fork cut', () => {
+  it('skips uuid records before the cut, keeps uuid-less records and the file line numbers', async () => {
+    const forkFile = path.join(dir, 'fork.jsonl');
+    const beforeCut = [
+      { type: 'user', uuid: 'u-1', timestamp: '2026-11-01T01:00:00Z', message: { role: 'user', content: 'copied photo question' } },
+      { type: 'assistant', uuid: 'a-1', timestamp: '2026-11-01T01:01:00Z', message: { role: 'assistant', content: [{ type: 'text', text: 'copied photo answer' }] } },
+      // No uuid: written by Claude Code for the fork itself, so it is read even before the cut.
+      { type: 'user', timestamp: '2026-11-01T01:01:30Z', message: { role: 'user', content: 'uuid-less photo line' } },
+    ];
+    const own = [{ type: 'user', uuid: 'u-2', timestamp: '2026-11-01T02:00:00Z', message: { role: 'user', content: 'own photo question' } }];
+    const head = beforeCut.map((l) => `${JSON.stringify(l)}\n`).join('');
+    await writeFile(forkFile, head + own.map((l) => `${JSON.stringify(l)}\n`).join(''));
+    const cut = Buffer.byteLength(head, 'utf8');
+
+    const whole = await searchTranscript(forkFile, { query: 'photo', limit: 10 });
+    expect(whole.total_matches).toBe(4);
+
+    const fromCut = await searchTranscript(forkFile, { query: 'photo', limit: 10, startOffset: cut });
+    expect(fromCut.total_matches).toBe(2);
+    expect(fromCut.matches.map((m) => [m.line, m.excerpt])).toEqual([
+      [3, 'uuid-less photo line'],
+      [4, 'own photo question'],
+    ]);
+    expect((await searchTranscript(forkFile, { query: 'copied', limit: 10, startOffset: cut })).total_matches).toBe(0);
+  });
+});

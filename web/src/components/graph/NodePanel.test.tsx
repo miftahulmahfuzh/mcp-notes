@@ -353,6 +353,48 @@ describe('NodePanel', () => {
     expect(within(made).queryByRole('img', { name: 'Linked note' })).toBeNull();
     expect(screen.getAllByRole('img', { name: 'Linked note' })).toHaveLength(1);
   });
+
+  it('says a fork was forked from its parent after prompt N, with the fork time, and opens the parent', async () => {
+    const fork = { parent_node_id: 'B1-11', forked_at: '2026-11-01T02:00:00.000Z', prompt_count: 12 };
+    stubFetch({ ...WIRE, parent: { node_id: 'B1-11', name: 'trunk' }, parent_link_source: 'fork', fork });
+    const { props, container } = renderPanel();
+    const open = await screen.findByRole('button', { name: 'Open parent B1-11' });
+    const line = container.querySelector('.np-parent') as HTMLElement;
+    expect(line.textContent).toMatch(/^forked from B1-11 after prompt 12 · .+ · trunk$/);
+    expect(line.querySelector('time')!.getAttribute('dateTime')).toBe('2026-11-01T02:00:00.000Z');
+    expect(screen.queryByText('(guessed)')).toBeNull();
+    fireEvent.click(open);
+    expect(props.onSelectNode).toHaveBeenCalledWith('B1-11');
+  });
+
+  it('shows the fork parent even when the detail carries no parent object', async () => {
+    stubFetch({ ...WIRE, parent: null, parent_link_source: 'fork', fork: { parent_node_id: 'B1-11', forked_at: null, prompt_count: 0 } });
+    const { container } = renderPanel();
+    await screen.findByRole('button', { name: 'Open parent B1-11' });
+    expect((container.querySelector('.np-parent') as HTMLElement).textContent).toBe('forked from B1-11 before its first prompt');
+  });
+
+  it('offers to attach to a live background job and names claude attach in the notice', async () => {
+    const calls = stubFetch({ ...WIRE, live: true, job_id: 'e3650501' }, { status: 200, body: { action: 'attached', window: 'note:6', job_id: 'e3650501' } });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Attach to the background session' }));
+    expect(await screen.findByText('Opened claude attach e3650501 in note:6')).toBeTruthy();
+    expect(posts(calls)).toEqual([{ url: '/api/sessions/A0-3G/resume', method: 'POST', body: {} }]);
+  });
+
+  it('turns a 409 for a live background job into the attach command, not the error code', async () => {
+    stubFetch({ ...WIRE, live: true, job_id: 'e3650501' }, { status: 409, body: { error: 'live_outside_tmux', pid: 7 } });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Attach to the background session' }));
+    expect(await screen.findByText('A0-3G is background job e3650501: run claude attach e3650501')).toBeTruthy();
+    expect(screen.queryByText(/live_outside_tmux/)).toBeNull();
+  });
+
+  it('ignores a background job id on a session that is not running', async () => {
+    stubFetch({ ...WIRE, live: false, job_id: 'e3650501' });
+    renderPanel();
+    expect(await screen.findByRole('button', { name: 'Resume in tmux' })).toBeTruthy();
+  });
 });
 
 describe('NodePanel summary', () => {

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ROW_H, edgePath, edgesInRange, laneX, rowY, type GraphLayout } from '../../lib/sessionGraph';
+import { ROW_H, edgePath, edgesInRange, laneX, rowY, type EdgeStyle, type GraphLayout } from '../../lib/sessionGraph';
 
 export interface GraphEdgesProps {
   layout: GraphLayout;
@@ -7,6 +7,8 @@ export interface GraphEdgesProps {
   first: number;
   last: number;
 }
+
+const EDGE_CLASS: Record<EdgeStyle, string> = { plain: 'gedge', heuristic: 'gedge heur', fork: 'gedge fork' };
 
 /** The thick trunk (clipped to the window, reaching the top row) and the edges crossing the window. */
 export const GraphEdges = memo(function GraphEdges({ layout, first, last }: GraphEdgesProps) {
@@ -25,7 +27,7 @@ export const GraphEdges = memo(function GraphEdges({ layout, first, last }: Grap
     <g className="gedges">
       {trunkLine}
       {edgesInRange(layout, first, last).map((e) => (
-        <path key={e.child} className={e.heuristic ? 'gedge heur' : 'gedge'} d={edgePath(e)} data-edge={e.child} />
+        <path key={e.child} className={EDGE_CLASS[e.style]} d={edgePath(e)} data-edge={e.child} />
       ))}
     </g>
   );

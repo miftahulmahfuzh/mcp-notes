@@ -18,13 +18,13 @@
  *
  * Naming mirrors ~/claude-commands/skills/swarm/swarm.py (slugify, child_name, MAX_NAME).
  */
-import { open, type FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
 import { sql } from 'drizzle-orm';
 
 import type { Db } from '../db/client.js';
+import { isCopiedRecord, parseRecord, readJsonlFrom } from './transcript.js';
 
 /** Bump to make every host re-run the backfill scan once (e.g. after the matching rules improve). */
 export const LINKS_BACKFILL_VERSION = 1;
@@ -95,6 +95,8 @@ export interface LinkPlan {
 export interface TranscriptRef {
   sessionId: string;
   transcriptPath: string;
+  /** cc_sessions.fork_cut_offset: records with a uuid before it were copied from the fork's parent. Absent or null: not a fork. */
+  forkCutOffset?: number | null;
 }
 
 /** Everything the linker needs from the database; dbLinkStore is the real one, tests fake it. */
@@ -148,6 +150,12 @@ export interface LinkWorkerOptions {
   store: LinkStore;
   /** This daemon's host, as written in cc_sessions.host by the ingester. */
   host: string;
+  /**
+   * Awaited once before the one-time backfill scan: background.ts passes the ingester's
+   * `forkBackfill`, so the scan reads every fork's `fork_cut_offset` after the fork backfill wrote
+   * it and plans no link from a fork's copied history (R2.2). Absent or null: the scan starts at once.
+   */
+  backfillAfter?: () => Promise<unknown> | null | undefined;
   /** Home used to expand `~` and `$HOME` in commands. Default os.homedir(). */
   home?: string;
   now?: () => Date;
@@ -632,36 +640,41 @@ function mightCarryIntent(line: string): boolean {
   return line.includes('"tool_use"') && (line.includes('"SendMessage"') || line.includes('swarm.py'));
 }
 
+const UNREADABLE = new Set(['ENOENT', 'EACCES', 'EISDIR', 'ENOTDIR']);
+
+/** An error opening a transcript that means "nothing to read", not "the scan failed". */
+function isUnreadable(err: unknown): boolean {
+  return isObject(err) && typeof err.code === 'string' && UNREADABLE.has(err.code);
+}
+
 /**
  * Streams one transcript and returns its spawn intents. A missing or unreadable file yields [];
- * a trailing partial line fails JSON.parse and is skipped. `shouldStop` aborts between lines.
+ * a trailing partial line is not read. Records copied from a fork's parent (a uuid, on a line that
+ * starts before `forkCutOffset`) are skipped, so a fork plans no links from its parent's history.
+ * `shouldStop` aborts between chunks.
  */
 export async function scanTranscriptForIntents(
   file: string,
   parentSessionId: string,
-  opts: { home: string; shouldStop?: () => boolean },
+  opts: { home: string; forkCutOffset?: number | null; shouldStop?: () => boolean },
 ): Promise<SpawnIntent[]> {
-  let handle: FileHandle;
-  try {
-    handle = await open(file, 'r');
-  } catch {
-    return [];
-  }
+  const cut = opts.forkCutOffset ?? null;
   const out: SpawnIntent[] = [];
   try {
-    for await (const line of handle.readLines({ encoding: 'utf8' })) {
-      if (opts.shouldStop?.()) break;
-      if (!mightCarryIntent(line)) continue;
-      let record: unknown;
-      try {
-        record = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      out.push(...extractIntents(record, { parentSessionId, home: opts.home }));
-    }
-  } finally {
-    await handle.close().catch(() => undefined);
+    await readJsonlFrom(
+      file,
+      0,
+      (line, lineStart) => {
+        if (!mightCarryIntent(line)) return;
+        const record = parseRecord(line);
+        if (record === null || isCopiedRecord(record, lineStart, cut)) return;
+        out.push(...extractIntents(record, { parentSessionId, home: opts.home }));
+      },
+      opts.shouldStop === undefined ? {} : { shouldStop: opts.shouldStop },
+    );
+  } catch (err) {
+    if (isUnreadable(err)) return [];
+    throw err;
   }
   return out;
 }
@@ -681,7 +694,7 @@ type SessionRow = {
   parent_session_id: string | null;
   parent_link_source: string | null;
 };
-type TranscriptRow = { session_id: string; transcript_path: string };
+type TranscriptRow = { session_id: string; transcript_path: string; fork_cut_offset: string | number | null };
 
 const SESSION_COLUMNS = sql.raw(
   'session_id, host, repo, cwd, name, custom_title, started_at, parent_session_id, parent_link_source',
@@ -727,11 +740,15 @@ export function dbLinkStore(db: Db, writer: HeuristicParentWriter): LinkStore {
     },
     async transcriptsOnHost(host) {
       const res = await db.execute<TranscriptRow>(sql`
-        select session_id, transcript_path from cc_sessions
+        select session_id, transcript_path, fork_cut_offset from cc_sessions
         where host = ${host} and transcript_path is not null
         order by started_at asc nulls last, session_id asc
       `);
-      return res.rows.map((r) => ({ sessionId: r.session_id, transcriptPath: r.transcript_path }));
+      return res.rows.map((r) => ({
+        sessionId: r.session_id,
+        transcriptPath: r.transcript_path,
+        forkCutOffset: r.fork_cut_offset === null ? null : Number(r.fork_cut_offset),
+      }));
     },
     async setParent(childSessionId, parentSessionId) {
       await writer.setParent(childSessionId, parentSessionId, 'heuristic');
@@ -844,7 +861,11 @@ export function startLinkWorker(opts: LinkWorkerOptions): LinkWorker {
       for (const ref of refs) {
         if (closed) return null;
         intents.push(
-          ...(await scanTranscriptForIntents(ref.transcriptPath, ref.sessionId, { home, shouldStop: () => closed })),
+          ...(await scanTranscriptForIntents(ref.transcriptPath, ref.sessionId, {
+            home,
+            forkCutOffset: ref.forkCutOffset ?? null,
+            shouldStop: () => closed,
+          })),
         );
       }
       if (closed) return null;
@@ -887,6 +908,8 @@ export function startLinkWorker(opts: LinkWorkerOptions): LinkWorker {
       passes += 1;
       if (!backfillDone) {
         try {
+          // Not inside enqueue(): a pending wait must not hold up drains of live batches.
+          await opts.backfillAfter?.();
           await backfill();
           backfillDone = true;
         } catch (err) {

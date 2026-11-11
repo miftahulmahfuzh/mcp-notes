@@ -25,8 +25,8 @@ const overrides: SessionsReadOverrides = {
   commitLinks: async ({ shas }) => new Map(shas.map((sha) => [sha.toLowerCase(), `https://forge.test/r/-/commit/${sha}`])),
   // sess-c2 is "live" in the registry but on the other host: it must not show as live.
   live: async () => [
-    { sessionId: 'sess-b1', status: 'busy', tmux: 'note:@0.%7' },
-    { sessionId: 'sess-c2', status: 'busy', tmux: null },
+    { sessionId: 'sess-b1', status: 'busy', tmux: 'note:@0.%7', jobId: null },
+    { sessionId: 'sess-c2', status: 'busy', tmux: null, jobId: null },
   ],
 };
 

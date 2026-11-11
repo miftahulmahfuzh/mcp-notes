@@ -1,6 +1,7 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
-import { Devices } from '@phosphor-icons/react';
-import { CHIP_W, GUTTER_W, ID_W, ROW_H, fmtDay, fmtTime, nodeTitle, titleOffset, type LaidNode } from '../../lib/sessionGraph';
+import { Devices, GitFork } from '@phosphor-icons/react';
+import { forkLabel } from '../../lib/parentLink';
+import { CHIP_W, FORK_ICON, GUTTER_W, ID_W, ROW_H, fmtDay, fmtTime, nodeTitle, titleOffset, type LaidNode } from '../../lib/sessionGraph';
 
 export interface GraphNodeProps {
   laid: LaidNode;
@@ -39,7 +40,7 @@ export const GraphNode = memo(function GraphNode({ laid, x, y, labelX, width, se
   const badgeX = chipX + CHIP_W;
   const remoteX = labelX + titleOffset(hasBadge, false);
   const titleX = labelX + titleOffset(hasBadge, remote);
-  const label = `${node.node_id} ${title}${node.live ? ', running' : ''}${remote ? `, on ${node.host || 'another device'}` : ''}`;
+  const label = `${node.node_id} ${title}${node.fork ? `, fork of ${node.fork.parent_node_id}` : ''}${node.live ? ', running' : ''}${remote ? `, on ${node.host || 'another device'}` : ''}`;
 
   const select = () => onSelect(node.node_id);
   const onKey = (e: KeyboardEvent<SVGGElement>) => {
@@ -79,6 +80,12 @@ export const GraphNode = memo(function GraphNode({ laid, x, y, labelX, width, se
       )}
       {node.live && <circle className="gnode-halo" cx={x} cy={y} r={r + 4} />}
       <circle className="gnode-dot" cx={x} cy={y} r={r} />
+      {node.fork && (
+        <g className="gnode-fork" data-testid="fork-badge" role="img" aria-label={`fork of ${node.fork.parent_node_id}`}>
+          <title>{forkLabel(node.fork)}</title>
+          <GitFork x={labelX - FORK_ICON - 2} y={y - FORK_ICON / 2} size={FORK_ICON} weight="bold" aria-hidden="true" />
+        </g>
+      )}
       <text className="gnode-id" x={labelX} y={y + 4}>
         {node.node_id}
       </text>

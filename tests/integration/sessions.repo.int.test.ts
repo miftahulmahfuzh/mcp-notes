@@ -196,7 +196,7 @@ describe('SessionsRepo', () => {
       await repo.upsertFromTranscript(patch('s-2', { host: 'host-b' }))
       const offsets = await repo.offsets(HOST)
       expect([...offsets.keys()]).toEqual(['s-1'])
-      expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl' })
+      expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl', forkCutOffset: null })
     })
   })
 
@@ -261,6 +261,35 @@ describe('SessionsRepo', () => {
       expect(await repo.setParent('c', 'p3', 'env')).toBe('set')
       expect(await repo.setParent('c', 'p1', 'hook')).toBe('kept')
       expect(await repo.getBySessionId('c')).toMatchObject({ parentSessionId: 'p3', parentLinkSource: 'env' })
+    })
+
+    it('ranks fork above env, hook and heuristic', async () => {
+      for (const id of ['c', 'p1', 'p2', 'p3']) await repo.ensureSession(id, HOST)
+      expect(await repo.setParent('c', 'p1', 'env')).toBe('set')
+      expect(await repo.setParent('c', 'p2', 'fork')).toBe('set')
+      for (const source of ['env', 'hook', 'heuristic'] as const) {
+        expect(await repo.setParent('c', 'p3', source), source).toBe('kept')
+      }
+      expect(await repo.getBySessionId('c')).toMatchObject({ parentSessionId: 'p2', parentLinkSource: 'fork' })
+    })
+
+    it('a fork link replaces a hook or heuristic link, and a later fork link refines it', async () => {
+      for (const id of ['c1', 'c2', 'p1', 'p2', 'p3']) await repo.ensureSession(id, HOST)
+      await repo.setParent('c1', 'p1', 'hook')
+      await repo.setParent('c2', 'p1', 'heuristic')
+      expect(await repo.setParent('c1', 'p2', 'fork')).toBe('set')
+      expect(await repo.setParent('c2', 'p2', 'fork')).toBe('set')
+      expect(await repo.setParent('c1', 'p3', 'fork')).toBe('set')
+      expect(await repo.getBySessionId('c1')).toMatchObject({ parentSessionId: 'p3', parentLinkSource: 'fork' })
+      expect(await repo.getBySessionId('c2')).toMatchObject({ parentSessionId: 'p2', parentLinkSource: 'fork' })
+    })
+
+    it('the SessionStart hook keeps a fork link', async () => {
+      for (const id of ['c', 'p1']) await repo.ensureSession(id, HOST)
+      await repo.setParent('c', 'p1', 'fork')
+      const res = await repo.upsertFromHook({ sessionId: 'c', host: HOST, parentSessionId: 'p2' })
+      expect(res.parentLink).toBe('kept')
+      expect(res.session).toMatchObject({ parentSessionId: 'p1', parentLinkSource: 'fork' })
     })
 
     it('lets an equal-rank heuristic link be refined', async () => {
