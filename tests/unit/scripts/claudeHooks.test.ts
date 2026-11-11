@@ -22,7 +22,7 @@ const EXISTING = {
   },
 };
 
-const EVENTS = ['Stop', 'PreToolUse', 'UserPromptSubmit', 'SessionStart'];
+const EVENTS = ['Stop', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SessionStart'];
 
 let home: string;
 let settings: string;
@@ -58,7 +58,7 @@ describe('mergeHooks / removeHooks', () => {
   const opts = { nodeBin: '/opt/node/bin/node', hooksDir: '/home/u/mcp-notes/claude/hooks' };
   const cmd = (script: string): string => `'/opt/node/bin/node' '/home/u/mcp-notes/claude/hooks/${script}'`;
 
-  it('adds our five handlers in four events and keeps everything else', () => {
+  it('adds our six handlers in five events and keeps everything else', () => {
     const merged = mergeHooks(EXISTING, opts) as typeof EXISTING & { hooks: Record<string, unknown[]> };
     expect(merged.env).toEqual(EXISTING.env);
     expect(merged.enabledPlugins).toEqual(EXISTING.enabledPlugins);
@@ -74,6 +74,12 @@ describe('mergeHooks / removeHooks', () => {
         hooks: [{ type: 'command', command: cmd('notes-paste.mjs'), timeout: 30 }],
       },
       { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('notes-spawn.mjs'), timeout: 5 }] },
+    ]);
+    expect(merged.hooks.PostToolUse).toEqual([
+      {
+        matcher: 'mcp__notes__(create|create_image|update|append|attach_image)',
+        hooks: [{ type: 'command', command: cmd('notes-link.mjs'), async: true, timeout: 10 }],
+      },
     ]);
     expect(merged.hooks.UserPromptSubmit).toEqual([{ hooks: [{ type: 'command', command: cmd('notes-prompt.mjs'), timeout: 20 }] }]);
     expect(merged.hooks.SessionStart).toEqual([{ hooks: [{ type: 'command', command: cmd('notes-session.mjs'), timeout: 10 }] }]);
@@ -138,6 +144,7 @@ describe('mergeHooks / removeHooks', () => {
 
   it('ourHandlers keys each handler by event and script', () => {
     expect(Object.keys(ourHandlers(mergeHooks(EXISTING, opts))).sort()).toEqual([
+      'PostToolUse notes-link',
       'PreToolUse notes-paste',
       'PreToolUse notes-spawn',
       'SessionStart notes-session',
@@ -194,12 +201,13 @@ describe('scripts/claude-hooks.mjs against a temp HOME', () => {
     expect(await readFile(settings, 'utf8')).toBe('{ not json');
   });
 
-  it('status reports all five hooks and cleanupPeriodDays', async () => {
+  it('status reports all six hooks and cleanupPeriodDays', async () => {
     cli('install', '--settings', settings, '--node', NODE, '--hooks-dir', HOOKS_DIR);
     const out = cli('status', '--settings', settings);
     expect(out).toMatch(/Stop notes-capture: .*notes-capture\.mjs/);
     expect(out).toMatch(/PreToolUse notes-paste: .*notes-paste\.mjs/);
     expect(out).toMatch(/PreToolUse notes-spawn: .*notes-spawn\.mjs/);
+    expect(out).toMatch(/PostToolUse notes-link: .*notes-link\.mjs/);
     expect(out).toMatch(/UserPromptSubmit notes-prompt: .*notes-prompt\.mjs/);
     expect(out).toMatch(/SessionStart notes-session: .*notes-session\.mjs/);
     expect(out).toMatch(/cleanupPeriodDays: unset/);

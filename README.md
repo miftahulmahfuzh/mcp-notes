@@ -324,13 +324,18 @@ folder into one new image note, tags it, checks the note holds them all, then de
 /migrate C:\Users\GPD\Downloads\Telegram Desktop\sun27 #ai_image
 ```
 
-`install.sh` also registers five Claude Code hooks in `~/.claude/settings.json` (every repo; pass
+`install.sh` also registers six Claude Code hooks in `~/.claude/settings.json` (every repo; pass
 `--skip-hooks` to leave the file alone):
 
 - **notes-capture** (Stop, runs in the background): after every `/n` turn it saves the prompt as
   you typed it, Claude's final answer and any pasted images to the chat history, as a
   single-turn thread badged "claude code". If the daemon is down the exchange waits in
   `~/.local/state/notes-capture/outbox/` and goes in on a later turn. Saving twice is harmless.
+- **notes-link** (after `create`, `create_image`, `update`, `append` and `attach_image`, in the
+  background): links the note just written to the Claude Code session that wrote it, so it is
+  listed under that session's node on the Projects page. `/n write this as a new note` needs no
+  "and link it to this node". Linking twice is harmless; problems go to
+  `~/.local/state/notes-capture/link.log`.
 - **notes-paste** (before `similar_images`, `create_image` and `attach_image`): paste an image and
   ask `/n find photos like this`, or `/n make this a note` with the picture in that same prompt.
   Claude calls the tool with `pasted_image: 1`; the hook uploads `[Image #1]` and hands the call on
@@ -919,7 +924,7 @@ scripts/install.sh
    `notes` connected.
 
 Then open `http://localhost:7317` in the Windows browser. Logs: `journalctl --user -u notesd -f`.
-Undo with `scripts/uninstall.sh` (it keeps your data and removes only our five hook entries; it leaves `cleanupPeriodDays` as it is).
+Undo with `scripts/uninstall.sh` (it keeps your data and removes only our six hook entries; it leaves `cleanupPeriodDays` as it is).
 
 ### Keep WSL running from Windows
 

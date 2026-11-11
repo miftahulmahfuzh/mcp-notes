@@ -62,6 +62,11 @@ description for parameter names and formats; they win over anything written here
   (`#bug`, `#decision`, `#howto`) when that helps finding it later. Reuse existing tags: call
   `tags` first when unsure what the user already uses, and prefer their spelling.
 - Never put secrets in a note: tokens, passwords, API keys, connection strings.
+- Every note you write here is linked to this session's node for you: the notes-link hook runs
+  after each successful `create`, `create_image`, `update`, `append` and `attach_image` and links
+  the note to the session that made the call. Do not call `link_note` for that. Call it only when
+  the user names another node ("link it to 5U-I7"), and `unlink_note` when they say this note
+  should not be linked here. The reply then names the session as well (see Sessions).
 
 ### "Save this session's insights"
 
@@ -260,6 +265,11 @@ either.
   stays listed there; say so.
 - Reply with both ids as links (the note as described under Replies, the session with the
   `url` that `session_get` returns) and whether anything changed.
+- Notes saved in this session are linked to it automatically (see Saving), so "write this as a
+  new note" needs no "and link it to this node". After a save, add one short line such as
+  "Linked to session [A0-3G](<wall>/projects?repo=REPO&node=A0-3G)." with this session's node id
+  (the one the SessionStart context names; never invent one, and leave the line out when it names
+  none) and the `repo` you passed in `origin` as REPO, so skip `session_get`.
 
 ## Deleting
 

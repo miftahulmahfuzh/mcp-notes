@@ -28,6 +28,11 @@
   made ∪ linked, deduped (a note both made and linked is listed once as `made`), newest first, at most 50.
   Links live in `note_session_links`; purging a note from the bin (hard delete) drops its link rows
   (`on delete cascade`), a soft delete keeps them.
+- Auto-link: the `notes-link` PostToolUse hook links every note a Claude Code session writes
+  (`create`, `create_image`, `update`, `append`, `attach_image`) to that session through
+  `POST /api/sessions/hook/link-note {session, note}` (loopback + X-Notes-Capture; 404
+  unknown_session / not_found, 409 deleted). Proof: `tests/unit/hooks/notesLink.test.ts` and the
+  link-note block of `tests/integration/sessionHooks.int.test.ts` (route plus hook end to end).
 - A session's "Notes made": notes saved from it (`kind: "made"`) plus notes linked to it with MCP
   `link_note` (`kind: "linked"`, shown with a link icon labelled "Linked note"). A plain click on a
   note id opens it in the big editor (bigger-view-on-note) over `/projects`, or over the chat node

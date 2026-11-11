@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install or refresh notesd as a systemd user service, register it with Claude Code as the
 # `notes` MCP server (user scope), link the /n skill into ~/.claude/skills/n, and register the
-# five mcp-notes Claude Code hooks in ~/.claude/settings.json: notes-capture (Stop, saves /n
-# exchanges to the chat history), notes-paste (PreToolUse on similar_images, uploads a pasted
+# six mcp-notes Claude Code hooks in ~/.claude/settings.json: notes-capture (Stop, saves /n
+# exchanges to the chat history), notes-link (PostToolUse on the notes write tools, links each
+# note written in a session to that session's node), notes-paste (PreToolUse on similar_images, uploads a pasted
 # image), notes-prompt (UserPromptSubmit on /n prompts, stores the session's pasted images and
 # names their ids), notes-session (SessionStart, reports the session to the session graph and
 # tells it its node id) and notes-spawn (PreToolUse on Bash, records a hand-rolled tmux `claude`
@@ -253,7 +254,7 @@ link_skill() {
   done
 }
 
-# Merge the five hook entries into ~/.claude/settings.json (user scope: every repo). Everything
+# Merge the six hook entries into ~/.claude/settings.json (user scope: every repo). Everything
 # else in the file is kept; a copy of the original is kept once at settings.json.bak-notes-hooks.
 # A failure here warns and leaves the file alone: the daemon install is not undone for it.
 register_hooks() {
@@ -261,7 +262,7 @@ register_hooks() {
     log "skipping Claude Code hooks (--skip-hooks / NOTES_SKIP_HOOKS=1)"
     return 0
   fi
-  log "registering the five Claude Code hooks (notes-capture, notes-paste, notes-prompt, notes-session, notes-spawn) in $CLAUDE_SETTINGS"
+  log "registering the six Claude Code hooks (notes-capture, notes-link, notes-paste, notes-prompt, notes-session, notes-spawn) in $CLAUDE_SETTINGS"
   "$NODE_BIN" "$HOOKS_HELPER" install \
     --settings "$CLAUDE_SETTINGS" \
     --node "$NODE_BIN" \

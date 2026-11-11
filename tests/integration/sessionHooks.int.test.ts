@@ -4,8 +4,9 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runSession } from '../../claude/hooks/notes-session.mjs';
+import { runLink } from '../../claude/hooks/notes-link.mjs';
 import { runSpawn } from '../../claude/hooks/notes-spawn.mjs';
-import { SESSION_HOOK_SPAWN_PATH, SESSION_HOOK_START_PATH, type SessionHookStartReply } from '../../src/http/sessionHooks.js';
+import { SESSION_HOOK_LINK_NOTE_PATH, SESSION_HOOK_SPAWN_PATH, SESSION_HOOK_START_PATH, type SessionHookStartReply } from '../../src/http/sessionHooks.js';
 import { SessionsRepo } from '../../src/sessions/repo.js';
 import { startHarness, type Harness } from './imageHarness.js';
 import { truncateAll } from './setup.js';
@@ -208,5 +209,41 @@ describe('hooks end to end against a listening daemon', () => {
     });
     expect(out!.hookSpecificOutput.additionalContext).toMatch(/spawned by node [0-9A-Z]{2}-[0-9A-Z]{2} \(exact link/);
     expect(await repo.getBySessionId(CHILD)).toMatchObject({ parentSessionId: ORCH, parentLinkSource: 'env' });
+  });
+});
+
+describe('POST /api/sessions/hook/link-note', () => {
+  it('links a note to the session node once, and the notes-link hook drives it end to end', async () => {
+    const node = (await start({ session: ORCH })).node_id;
+    const note = await h.deps.service.create({ body: 'written in a session #x' });
+    const first = await post(SESSION_HOOK_LINK_NOTE_PATH, { session: ORCH, note: note.id.toLowerCase() });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ note_id: note.id, node_id: node, changed: true, made: false });
+    const again = await post(SESSION_HOOK_LINK_NOTE_PATH, { session: ORCH, note: note.id });
+    expect(await again.json()).toMatchObject({ changed: false });
+
+    const other = await h.deps.service.create({ body: 'second' });
+    const port = new URL(await h.listen()).port;
+    await runLink({
+      input: {
+        session_id: ORCH,
+        tool_name: 'mcp__notes__create',
+        tool_input: { body: 'second' },
+        tool_response: [{ type: 'text', text: JSON.stringify({ note: other }) }],
+      },
+      env: { NOTESD_PORT: port, CLAUDE_CODE_ENTRYPOINT: 'cli' },
+    });
+    const links = await h.deps.db.execute<{ note_id: string }>(sql`select note_id from note_session_links`);
+    expect(links.rows.map((r) => r.note_id).sort()).toEqual([note.id, other.id].sort());
+  });
+
+  it('answers 404 for an unknown session or note, 409 for a deleted note, 403 without the header', async () => {
+    await start({ session: ORCH });
+    const note = await h.deps.service.create({ body: 'gone' });
+    expect((await post(SESSION_HOOK_LINK_NOTE_PATH, { session: OTHER, note: note.id })).status).toBe(404);
+    expect((await post(SESSION_HOOK_LINK_NOTE_PATH, { session: ORCH, note: 'Z-ZZZ' })).status).toBe(404);
+    await h.deps.service.delete(note.id);
+    expect((await post(SESSION_HOOK_LINK_NOTE_PATH, { session: ORCH, note: note.id })).status).toBe(409);
+    expect((await post(SESSION_HOOK_LINK_NOTE_PATH, { session: ORCH, note: note.id }, { 'x-notes-capture': '' })).status).toBe(403);
   });
 });

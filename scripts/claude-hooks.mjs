@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Adds, removes or reports the five mcp-notes Claude Code hooks in a settings.json (normally
+ * Adds, removes or reports the six mcp-notes Claude Code hooks in a settings.json (normally
  * ~/.claude/settings.json), leaving every other key and every other hook as it was, and raises
  * `cleanupPeriodDays` so Claude Code keeps the transcripts the session graph ingests.
  *
@@ -10,7 +10,8 @@
  *   node scripts/claude-hooks.mjs retention --settings FILE [--min-days N]
  *
  * The hooks: Stop -> notes-capture.mjs (async), PreToolUse mcp__notes__(...) -> notes-paste.mjs,
- * PreToolUse Bash -> notes-spawn.mjs, UserPromptSubmit -> notes-prompt.mjs, SessionStart ->
+ * PreToolUse Bash -> notes-spawn.mjs, PostToolUse mcp__notes__(create|...) -> notes-link.mjs (async),
+ * UserPromptSubmit -> notes-prompt.mjs, SessionStart ->
  * notes-session.mjs. Our handlers are recognised by the script name in their command, so an entry
  * left by another checkout is replaced, never duplicated. install is idempotent: a second run leaves
  * the file byte-identical. `retention` sets cleanupPeriodDays to N (default 3650) when it is missing
@@ -25,17 +26,19 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
-export const OUR_SCRIPT = /notes-(?:capture|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
-const OUR_SCRIPT_NAME = /notes-(capture|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
-export const HOOK_SCRIPTS = ['notes-capture.mjs', 'notes-paste.mjs', 'notes-prompt.mjs', 'notes-session.mjs', 'notes-spawn.mjs'];
+export const OUR_SCRIPT = /notes-(?:capture|link|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
+const OUR_SCRIPT_NAME = /notes-(capture|link|paste|prompt|session|spawn)\.mjs(?=['"\s]|$)/;
+export const HOOK_SCRIPTS = ['notes-capture.mjs', 'notes-link.mjs', 'notes-paste.mjs', 'notes-prompt.mjs', 'notes-session.mjs', 'notes-spawn.mjs'];
 export const PASTE_MATCHER = 'mcp__notes__(similar_images|create_image|attach_image)';
 export const SPAWN_MATCHER = 'Bash';
+export const LINK_MATCHER = 'mcp__notes__(create|create_image|update|append|attach_image)';
 export const BACKUP_SUFFIX = '.bak-notes-hooks';
 export const STOP_TIMEOUT_S = 60;
 export const PASTE_TIMEOUT_S = 30;
 export const PROMPT_TIMEOUT_S = 20;
 export const SESSION_TIMEOUT_S = 10;
 export const SPAWN_TIMEOUT_S = 5;
+export const LINK_TIMEOUT_S = 10;
 export const DEFAULT_RETENTION_DAYS = 3650;
 export const PASTE_STRATEGIES = ['updatedInput', 'deny'];
 /** What `status` reports, in order: [event, script without .mjs]. */
@@ -43,6 +46,7 @@ export const STATUS_ROWS = [
   ['Stop', 'notes-capture'],
   ['PreToolUse', 'notes-paste'],
   ['PreToolUse', 'notes-spawn'],
+  ['PostToolUse', 'notes-link'],
   ['UserPromptSubmit', 'notes-prompt'],
   ['SessionStart', 'notes-session'],
 ];
@@ -117,6 +121,19 @@ export function ourGroups({ nodeBin, hooksDir, pasteStrategy = 'updatedInput' })
             type: 'command',
             command: hookCommand(nodeBin, path.join(hooksDir, 'notes-spawn.mjs')),
             timeout: SPAWN_TIMEOUT_S,
+          },
+        ],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: LINK_MATCHER,
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(nodeBin, path.join(hooksDir, 'notes-link.mjs')),
+            async: true,
+            timeout: LINK_TIMEOUT_S,
           },
         ],
       },

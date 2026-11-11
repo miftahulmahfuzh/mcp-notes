@@ -5,12 +5,14 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { SessionsRepo } from '../sessions/repo.js';
 import { PENDING_SPAWN_WINDOW_MS } from '../sessions/types.js';
+import { NoteError } from '../notes/types.js';
 import { captureGuard } from './capture.js';
 
 /** Phase 1's constant (brief: "within ~30s"), re-exported for the tests; never redefined here. */
 export { PENDING_SPAWN_WINDOW_MS };
 export const SESSION_HOOK_START_PATH = '/api/sessions/hook/start';
 export const SESSION_HOOK_SPAWN_PATH = '/api/sessions/hook/spawn';
+export const SESSION_HOOK_LINK_NOTE_PATH = '/api/sessions/hook/link-note';
 export const MAX_SESSION_HOOK_BODY_BYTES = 64 * 1024;
 /** Pending spawns older than this are deleted when a new one is recorded (claimed or not). */
 export const PENDING_SPAWN_RETAIN_MS = 24 * 60 * 60 * 1000;
@@ -72,6 +74,11 @@ const spawnSchema = z.object({
   host: optionalText(255),
 });
 
+const linkNoteSchema = z.object({
+  session: sessionIdField,
+  note: z.string().trim().min(1).max(16),
+});
+
 export interface SessionHookOptions {
   /** Host recorded when the hook sends none. Defaults to os.hostname(). */
   hostname?: () => string;
@@ -108,6 +115,10 @@ function describeIssues(error: z.ZodError): string {
  * POST /api/sessions/hook/spawn — notes-spawn (Bash PreToolUse). Records a pending spawn
  * {parent, cwd, name, host}, then prunes spawns older than PENDING_SPAWN_RETAIN_MS (the only
  * scheduler cc_pending_spawns has: a cheap indexed delete on the write path). 201 {recorded: true}.
+ *
+ * POST /api/sessions/hook/link-note — notes-link (PostToolUse on the notes write tools). Links note
+ * {note} to the node of session {session} (notes service linkSession: idempotent, never touches the
+ * note). 200 {note_id, node_id, changed, made}; 404 unknown_session / not_found; 409 deleted.
  *
  * 400 bad JSON / validation, 403 guard, 413 too large, 415 not JSON.
  */
@@ -204,6 +215,30 @@ export function sessionHookRoutes(deps: AppDeps, options: SessionHookOptions = {
     });
     await repo.prunePendingSpawns(new Date(now() - PENDING_SPAWN_RETAIN_MS));
     return c.json({ recorded: true }, 201);
+  });
+
+  r.post(SESSION_HOOK_LINK_NOTE_PATH, captureGuard, limit, async (c) => {
+    let json: unknown;
+    try {
+      json = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    const parsed = linkNoteSchema.safeParse(json);
+    if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
+    const session = await repo.getBySessionId(parsed.data.session);
+    if (session === null) return c.json({ error: 'unknown_session' }, 404);
+    try {
+      const linked = await deps.service.linkSession(parsed.data.note, session.nodeId);
+      if (linked === null) return c.json({ error: 'unknown_session' }, 404);
+      return c.json({ note_id: linked.note_id, node_id: linked.node_id, changed: linked.changed, made: linked.made }, 200);
+    } catch (err) {
+      if (err instanceof NoteError) {
+        const status = err.code === 'deleted' ? 409 : err.code === 'not_found' ? 404 : 400;
+        return c.json({ error: err.code, message: err.message }, status);
+      }
+      throw err;
+    }
   });
 
   return r;
