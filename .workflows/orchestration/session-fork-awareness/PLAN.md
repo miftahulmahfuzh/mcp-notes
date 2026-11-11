@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/session-fork-awareness`
 **Branch:** `feature/session-fork-awareness` (base: `origin/main` @ `8040a46`)
 **Phases:** 6
-**Status:** planned
+**Status:** phase 1/6 complete
 **Coordinator:** —
 
 ---
@@ -71,7 +71,7 @@ The full `/analyze` arguments, with the measured findings (job `state.json`, 104
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Fork schema, rank, detection and cut primitives | R1, R2 | `src/db`, `src/sessions` | 16 | — | NORMAL | `.workflows/plan/session-fork-awareness/phase-1.md` | — | — |
+| 1 | Fork schema, rank, detection and cut primitives | R1, R2 | `src/db`, `src/sessions` | 16 | — | NORMAL | `.workflows/plan/session-fork-awareness/phase-1.md` | P1-NOTES-A090 | — |
 | 2 | Ingest detects forks and cuts the copied prefix | R1, R2 | `src/sessions` | 14 | 1 | HARD | `.workflows/plan/session-fork-awareness/phase-2.md` | — | — |
 | 3 | Re-readers honour the cut, plus the one-time fork backfill | R2, R5 | `src/sessions`, `src/background.ts` | 12 | 2 | HARD | `.workflows/plan/session-fork-awareness/phase-3.md` | — | — |
 | 4 | Resume and focus of live background jobs | R3 | `src/sessions`, `src/http`, `src/mcp` | 10 | — | NORMAL | `.workflows/plan/session-fork-awareness/phase-4.md` | — | — |

@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "421e3fd",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": "orch decisions: (a) doctor: settings.local.json denies PushNotification, fix = remove from permissions.deny; proceeding. (b) gate on tracked PLAN.md resolved root to main checkout (exit 1); re-ran on worktree index: exit 2, only CONCURRENT collision features/projects.md (phases 2/5 wave1, 3/6 wave2) -> ISOLATE, per-phase worktrees + integrator, append-append kept both sides (rung 3: reconciliation log #12). Integration branch feature/session-fork-awareness.",
+      "note": "proof: verified-first-pass (J1-J3). Wave 0 integrated at 2da8b67 (merge, typecheck ok, npm test 2255/2255, test:int 713/713). Wave verifier skipped: self-verified (owner memory swarm-verifier-cost: skip verifier when phases carry proof); p4 J1-J4 evidence 1111-101724-3563794, p1 evidence 1111-102415-3583932. p4 decision: feature-map node-id grep anchored. orch decisions: doctor PushNotification denied in settings.local.json; gate ISOLATE projects.md.",
       "package": "src/db`, `src/sessions",
       "plan": ".workflows/plan/session-fork-awareness/phase-1.md",
-      "reported_at": "2026-11-11T10:15:25+07:00",
+      "reported_at": "2026-11-11T10:34:15+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A090",
       "title": "Fork schema, rank, detection and cut primitives"
     },
     {
@@ -38,7 +38,7 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Ingest detects forks and cuts the copied prefix"
     },
@@ -96,7 +96,7 @@
         "R2",
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Fork and background-job wording in API, MCP and hook context"
     },
@@ -125,6 +125,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/session-fork-awareness/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-fork-awareness",
-  "updated": "2026-11-11T10:18:48+07:00",
+  "updated": "2026-11-11T10:34:15+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-fork-awareness"
 }
