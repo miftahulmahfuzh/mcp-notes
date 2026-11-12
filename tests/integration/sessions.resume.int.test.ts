@@ -37,6 +37,7 @@ interface InsertOptions {
   first?: number | null;
   /** Marks the row a fork (fork_detected_by = 'job', with the cut and prompt count cc_sessions_fork_info_check requires); the baseline leaves it out. */
   fork?: boolean;
+  firstPrompt?: string;
   exchanges?: number;
   chars?: number;
 }
@@ -61,6 +62,7 @@ async function insert(opts: InsertOptions): Promise<{ sessionId: string; nodeId:
     commits: [{ sha: 'abc123def4567890', subject: 'feat: resume', at: null }],
     planDocs: ['docs/plans/PROJECT_SESSION_GRAPH_PLAN.md'],
     entrypoint: 'cli',
+    firstPrompt: opts.firstPrompt ?? null,
     startedAt: new Date(),
     promptsVersion: exchanges > 0 ? PROMPTS_VERSION : 0,
   });
@@ -258,6 +260,9 @@ describe('session resume against cc_sessions', () => {
     for (const first of [30_000, 40_000, 50_000]) await insert({ host: 'GPD', repo: repoName, first });
     // Forks carry their parent's history in their first message: two big ones must not move the median.
     for (const first of [400_000, 500_000]) await insert({ host: 'GPD', repo: repoName, first, fork: true });
+    // A skill's first prompt (/implement) and a handoff spawn start heavier than a fresh spawn would.
+    await insert({ host: 'GPD', repo: repoName, first: 66_000, firstPrompt: '/implement -f PLAN.md --phase 1' });
+    await insert({ host: 'GPD', repo: repoName, first: 90_000, firstPrompt: `${HANDOFF_MARKER}\nContinue A0-3G.` });
     const n = await insert({ host: 'GPD', repo: repoName, model: 'claude-opus-5-5', peak: 300_000, exchanges: 12, chars: 500 });
     const estDir = await mkdtemp(path.join(os.tmpdir(), 'handoff-est-'));
     try {

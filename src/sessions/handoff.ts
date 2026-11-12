@@ -407,6 +407,10 @@ function toNumberOrNull(value: unknown): number | null {
  * Median `context_first_tokens` of the repo's latest BASELINE_SAMPLE_SESSIONS non-fork sessions that
  * have one (any host), else the default. Forks (`fork_detected_by is not null`) are left out: a
  * fork's first own message already holds the copied parent history, so it is not a start-up cost.
+ * Sessions whose first prompt is a slash command or a handoff are left out too: a skill such as
+ * /implement or /analyze-orchestrator loads ~15-35k tokens with the prompt, and a handoff spawn
+ * carries its handoff in the system prompt, so neither is the start-up cost of a fresh spawn, whose
+ * own first prompt is a short HANDOFF_MARKER line. One swarm run would otherwise lift the median.
  */
 export async function repoBaseline(db: Db, repo: string | null): Promise<number> {
   if (repo === null || repo === '') return DEFAULT_BASELINE_TOKENS;
@@ -417,6 +421,8 @@ export async function repoBaseline(db: Db, repo: string | null): Promise<number>
       where repo = ${repo} and context_first_tokens is not null and context_first_tokens > 0
         and coalesce(entrypoint, 'cli') = 'cli'
         and fork_detected_by is null
+        and coalesce(first_prompt, '') not like '/%'
+        and coalesce(first_prompt, '') not like ${HANDOFF_MARKER + '%'}
       order by coalesce(started_at, created_at) desc
       limit ${BASELINE_SAMPLE_SESSIONS}
     ) recent`);

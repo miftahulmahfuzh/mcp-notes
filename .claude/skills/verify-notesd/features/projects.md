@@ -137,7 +137,7 @@
   repo, transcript path, summary + age, plan docs, commits, `git status --porcelain=v1 -b`,
   `git diff --stat` or "Git state unavailable for <cwd>: <reason>", then every stored prompt with
   Claude's reply when they fit `0.5 × window − baseline` (baseline = median `context_first_tokens`
-  of the repo's latest 20 non-fork sessions, else 48,000; tokens ≈ chars / 4), otherwise prompt 1 plus
+  of the repo's latest 20 non-fork sessions whose first prompt is not a slash command or a handoff, else 48,000; tokens ≈ chars / 4), otherwise prompt 1 plus
   the newest exchanges that fit and "N exchanges were left out"), prunes handoffs older than 14 days,
   and starts claude with `--append-system-prompt-file <file>` and a first prompt whose first line is
   `[notesd handoff]` (the notes-prompt hook adds no node-id block for it).

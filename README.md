@@ -643,6 +643,8 @@ reads "Unknown". On a session running on this machine the bar moves with each re
 `GET /api/sessions/:nodeId/context/stream`; a session of the other laptop refreshes every 60
 seconds. A second bar estimates where "Spawn fresh with this context" would start and how many
 prompt→reply exchanges it would carry, which is the choice between resuming and starting fresh.
+When a fresh session would start no lighter than this one is now (a short session barely past its
+own start-up cost), the bar keeps the true estimate, dims, and says "no saving: resume is as cheap".
 The panel remembers the last view you picked.
 
 ![The Timeline view of an orchestrator's subtree: eight phases in four waves. Below, the wall-editing swarm's links are dashed because they were guessed](docs/readme/sessions-timeline.png)
@@ -750,7 +752,9 @@ on a 1M-token window is nearly always, otherwise the first prompt and the newest
 fit, with a line saying how many were left out and where the transcript is. The budget is
 0.5 × the old session's inferred window minus a fresh session's usual start: the median
 first-reply context of the repo's latest 20 sessions on either machine (forks left out, since a
-fork's first reply already holds its parent's history), or 48,000 tokens when there is none. Tokens
+fork's first reply already holds its parent's history; sessions that opened with a slash command
+or a handoff left out too, since a skill or a handoff loads far more than a fresh spawn's short
+first prompt), or 48,000 tokens when there is none. Tokens
 are estimated as characters / 4. Handoff files older than 14 days are deleted when the next one is
 written. The Context Rot view shows the estimate before you click. If the session is still running, the button
 switches to its window (or sends it the prompt) rather than opening it a second time. A session

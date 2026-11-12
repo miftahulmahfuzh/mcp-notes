@@ -100,6 +100,26 @@ describe('ContextBars', () => {
     expect(screen.getByText('older ones left out')).toBeTruthy();
   });
 
+  it('keeps the true estimate but says resume when a fresh spawn would start at or above the current context', () => {
+    // 1N-PE on 2026-11-12: 56.2k used; the estimate was 65.3k start-up + 472 handoff tokens.
+    const { container } = render(
+      <ContextBars
+        context={ctx({ tokens: 56_160, percent: 5.6, band: 'green' })}
+        estimate={{ ...EST, tokens: 472, baseline: 65_279, percent: 6.6, exchanges_included: 1, exchanges_total: 1 }}
+      />,
+    );
+    expect(screen.getByText('Fresh session would start at ~7%')).toBeTruthy();
+    expect(screen.getByText('no saving: resume is as cheap')).toBeTruthy();
+    expect(screen.queryByText(/carries 1 of 1/)).toBeNull();
+    expect(container.querySelector('.cr-no-saving')).not.toBeNull();
+  });
+
+  it('shows no resume hint when a fresh spawn starts lighter', () => {
+    const { container } = render(<ContextBars context={ctx()} estimate={EST} />);
+    expect(screen.queryByText(/no saving/)).toBeNull();
+    expect(container.querySelector('.cr-no-saving')).toBeNull();
+  });
+
   it('shows the estimate under an unknown context too', () => {
     render(<ContextBars context={null} estimate={EST} />);
     expect(screen.getByText('Unknown')).toBeTruthy();

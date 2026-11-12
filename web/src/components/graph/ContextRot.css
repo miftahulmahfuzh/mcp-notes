@@ -10,6 +10,8 @@
 .cr-amber { background: var(--band-amber); }
 .cr-red { background: var(--band-red); }
 .cr-fresh { background: var(--muted); }
+.cr-no-saving .cr-fill { opacity: .45; }
+.cr-no-saving .cr-main { color: var(--dim); }
 .cr-text { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .cr-main { font-size: 13px; color: var(--fg); }
 .cr-note { color: var(--dim); }

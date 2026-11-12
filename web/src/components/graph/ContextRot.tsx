@@ -14,6 +14,15 @@ export function percentLabel(percent: number): string {
   return `${Math.floor(Number.isFinite(percent) ? Math.max(0, percent) : 0)}%`;
 }
 
+/**
+ * True when a fresh spawn would start at or above the session's current context: a session barely
+ * past its own start-up cost gains nothing from a handoff, since the new session pays that cost
+ * again plus the handoff. The bar keeps the true estimate; the caption says resume instead.
+ */
+export function freshSavesNothing(context: SessionContext | null, estimate: HandoffEstimate): boolean {
+  return context !== null && estimate.baseline + estimate.tokens >= context.tokens;
+}
+
 export interface ContextRotProps {
   nodeId: string;
   live: boolean;
@@ -71,7 +80,7 @@ export function ContextBars({ context, estimate }: ContextBarsProps) {
         </div>
       )}
       {estimate !== null && (
-        <div className="cr-row">
+        <div className={freshSavesNothing(context, estimate) ? 'cr-row cr-no-saving' : 'cr-row'}>
           <div
             className="cr-track"
             role="meter"
@@ -84,7 +93,16 @@ export function ContextBars({ context, estimate }: ContextBarsProps) {
           </div>
           <p className="cr-text">
             <span className="cr-main">{`Fresh session would start at ~${Math.round(fillPercent(estimate.percent))}%`}</span>
-            <span className="cr-note">{`carries ${estimate.exchanges_included} of ${estimate.exchanges_total} exchanges`}</span>
+            {freshSavesNothing(context, estimate) ? (
+              <span
+                className="cr-note"
+                data-tip="A fresh session pays the start-up cost again plus the handoff, so it would not start lighter than this one is now"
+              >
+                no saving: resume is as cheap
+              </span>
+            ) : (
+              <span className="cr-note">{`carries ${estimate.exchanges_included} of ${estimate.exchanges_total} exchanges`}</span>
+            )}
             {estimate.truncated && (
               <span className="cr-note" data-tip="The first prompt and the newest exchanges that fit; the handoff points at the transcript for the rest">
                 older ones left out
