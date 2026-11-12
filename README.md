@@ -859,7 +859,7 @@ data. Three are read-only. daily-words also takes new vocabulary and journal ent
 | `runs_review` | The app's latest `week` or `month` review (`key` like `2026-W44`, `2026-10` or any day in it; default the current one) with that period's totals and runs |
 | `seer_schema` | Tables and columns of the Seer database and of `lab.sqlite` |
 | `seer_sql` | One read-only SELECT against `source` `db` or `lab` |
-| `seer_leaderboard` | The leaderboard ranked as the app ranks it, over the common window; the benchmark, retired and too-new strategies listed apart |
+| `seer_leaderboard` | The leaderboard ranked as the app ranks it, over the common window; the benchmark, retired and too-new strategies listed apart. Returns, drawdowns and Sharpe exclude the owner's monthly top-ups; `current_equity_usd` is the real balance |
 | `seer_positions` | Open bracket orders and book positions with marks and unrealised P&L, in USD. Optional `strategy` and `include_pending` |
 | `seer_sera_best` | The best dev variant of each Sera method by MAR, with the lab's metrics, hurdles and test trials; eligibility is as of the run date. Optional `status`, `only_eligible`, `limit` |
 | `dword_schema` | Tables, columns, types and what they mean |

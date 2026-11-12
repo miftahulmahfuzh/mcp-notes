@@ -15,7 +15,9 @@ const LEADERBOARD_DESCRIPTION =
   'and since_start figures over the whole record (total_return, max_drawdown, win_rate, profit_factor where "infinite" means ' +
   'no losing trade, trades, months), plus sessions, days, paper_start and current_equity_usd. not_ranked[] holds the benchmark ' +
   '(SPY, the yardstick, with its figures over the same window), retired strategies (record kept, never ranked) and strategies ' +
-  'too new to share 63 sessions, each with not_ranked_reason. Returns are fractions (0.12 = +12%); money is USD. Always name the ' +
+  'too new to share 63 sessions, each with not_ranked_reason. Returns are fractions (0.12 = +12%); money is USD. Every return, ' +
+  "drawdown and Sharpe excludes the owner's monthly top-ups (deposits are not performance), as the Seer app does; " +
+  'current_equity_usd is the real balance, top-ups included. Always name the ' +
   'window when you say which strategy leads. If window is null nothing is ranked yet: say so, and use shared_sessions to say how ' +
   'far off a ranking is.';
 

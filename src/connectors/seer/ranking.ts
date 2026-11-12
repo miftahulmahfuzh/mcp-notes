@@ -1,7 +1,7 @@
 /**
  * Seer's leaderboard ranking, ported to TypeScript from the Seer web app (read, never imported):
  *   ~/seer/web/app/(app)/leaderboard/view.ts   compare(), selectRanked(), windowed(), rankCmp()
- *   ~/seer/web/lib/metrics.ts                  strategyMetrics()
+ *   ~/seer/web/lib/metrics.ts                  strategyMetrics(), withoutDeposits()
  * which are themselves a port of ~/seer/engine/src/seer_engine/paper/compare.py. Keep the
  * constants and rules equal to those files; if Seer changes them, change these. Pure: no I/O.
  */
@@ -239,6 +239,27 @@ export interface SinceStart {
   profitFactor: number | null;
   trades: number;
   months: number;
+}
+
+/**
+ * metrics.ts withoutDeposits: the curve with the owner's deposits taken out, so it grows only by
+ * what the strategy earned. Every paper strategy is handed the monthly top-up (Rp 5,000,000, $275.30
+ * on 2026-10-26), and a raw curve counts it as performance: every book read about +40% that month
+ * while losing money. The engine's rule (paper/compare.py _returns): a session that received a
+ * deposit returns (equity - deposit) / previous - 1, chained from the opening equity, so the result
+ * keeps the first value and only its ratios mean anything. deposits maps a session date to the
+ * dollars credited at that session's open; one on the first snapshot is opening money. Ascending curve.
+ */
+export function withoutDeposits(curve: Snapshot[], deposits: ReadonlyMap<string, number>): Snapshot[] {
+  if (deposits.size === 0 || curve.length < 2) return curve;
+  const out: Snapshot[] = [curve[0]!];
+  for (let i = 1; i < curve.length; i++) {
+    const prev = curve[i - 1]!.equity;
+    const s = curve[i]!;
+    const growth = prev > 0 ? (s.equity - (deposits.get(s.date) ?? 0)) / prev : 1;
+    out.push({ date: s.date, equity: out[i - 1]!.equity * growth });
+  }
+  return out;
 }
 
 /** metrics.ts strategyMetrics over a strategy's whole record, with trades pre-aggregated. */

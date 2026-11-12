@@ -10,6 +10,7 @@ import {
   sinceStartMetrics,
   spanDays,
   windowed,
+  withoutDeposits,
   type CompareRow,
   type RankIn,
   type Snapshot,
@@ -188,6 +189,21 @@ describe('sinceStartMetrics', () => {
   });
 });
 
+describe('withoutDeposits', () => {
+  const d = sessions(4);
+  it('removes a deposit from the session it landed in', () => {
+    // 1000 -> 990 (-1%), then 275 lands and the book gains 1%: 990 * 1.01 + 275.
+    const raw = curveOf(d, (i) => [1000, 990, 1274.9, 1287.649][i]!);
+    const clean = withoutDeposits(raw, new Map([[d[2]!, 275]]));
+    expect(clean.map((s) => s.equity)).toEqual([1000, 990, expect.closeTo(999.9, 6), expect.closeTo(1009.899, 6)]);
+  });
+  it('treats a deposit on the first snapshot as opening money, and is a no-op without deposits', () => {
+    const raw = curveOf(d.slice(0, 2), (i) => [1275, 1287.75][i]!);
+    expect(withoutDeposits(raw, new Map([[d[0]!, 275]]))[1]!.equity).toBeCloseTo(1287.75, 6);
+    expect(withoutDeposits(raw, new Map())).toBe(raw);
+  });
+});
+
 describe('engineOf / countsFor', () => {
   it('match the app', () => {
     expect(engineOf('book', false)).toBe('book');
@@ -232,6 +248,22 @@ describe('buildLeaderboard', () => {
     expect(b.not_ranked[0]!.window?.total_return).toBeCloseTo(0.069, 4);
     expect(b.not_ranked[0]!.not_ranked_reason).toMatch(/^benchmark/);
     expect(b.not_ranked[1]!.not_ranked_reason).toMatch(/^retired/);
+  });
+
+  it("takes the owner's deposits out of every return, and keeps the real balance", () => {
+    // SPY gets $275 at session 40, invested: every later balance is scaled up by 1 + 275 / balance.
+    const base = curves.get('SPY')!;
+    const lift = 1 + 275 / base[40]!.equity;
+    const funded = base.map((s, i) => ({ date: s.date, equity: i >= 40 ? s.equity * lift : s.equity }));
+    const withDeposit = new Map(curves).set('SPY', funded);
+    const plain = buildLeaderboard(strategies, curves, trades).not_ranked[0]!;
+    const b = buildLeaderboard(strategies, withDeposit, trades, new Map([['SPY', new Map([[d[40]!, 275]])]])).not_ranked[0]!;
+    expect(b.since_start.total_return).toBe(plain.since_start.total_return);
+    expect(b.since_start.max_drawdown).toBe(plain.since_start.max_drawdown);
+    expect(b.window).toEqual(plain.window);
+    expect(b.current_equity_usd).toBeCloseTo(funded[69]!.equity, 2);
+    // Without the deposits the top-up reads as performance.
+    expect(buildLeaderboard(strategies, withDeposit, trades).not_ranked[0]!.since_start.total_return).toBeGreaterThan(0.09);
   });
 
   it('keeps an infinite profit factor readable through JSON', () => {

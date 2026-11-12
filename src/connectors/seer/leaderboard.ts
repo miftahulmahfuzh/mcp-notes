@@ -11,6 +11,7 @@ import {
   spanDays,
   statusOf,
   windowed,
+  withoutDeposits,
   type CompareWindow,
   type Engine,
   type RankIn,
@@ -47,6 +48,11 @@ FROM (
 ) x
 GROUP BY x.src, x.strategy_id`;
 
+/** The owner's credited deposits (paper_contributions, applied rows only, as the app and compare.py read them). */
+export const DEPOSITS_SQL = `SELECT strategy_id, session_date::text AS date, amount_usd
+FROM paper_contributions
+WHERE applied_at IS NOT NULL`;
+
 export const RANK_RULE =
   `Ranked like the Seer app: only over the dates every ranked strategy has an equity snapshot (the common window); ` +
   `a ranking needs at least ${MIN_COMMON_SESSIONS} shared sessions, and strategies that overlap too little are dropped ` +
@@ -77,6 +83,7 @@ export interface BoardEntry {
   days: number;
   /** Date of the last own snapshot. */
   as_of: string | null;
+  /** The real dollar balance, top-ups included. Every return and drawdown here excludes them. */
   current_equity_usd: number | null;
   /** Over the common window: ranked strategies, and the benchmark when it covers the window. */
   window: { total_return: number | null; cagr: number | null; max_drawdown: number | null; sharpe: number | null } | null;
@@ -148,21 +155,29 @@ function windowFigures(w: Windowed | null): BoardEntry['window'] {
   };
 }
 
-/** Pure: ranks and shapes the board from the roster, the curves and the trade stats. */
+/**
+ * Pure: ranks and shapes the board from the roster, the curves, the trade stats and the owner's
+ * deposits (strategy id -> session date -> dollars). Every return, drawdown and Sharpe is measured
+ * on the curve with the deposits taken out (withoutDeposits), as the Seer app does since
+ * 2026-11-12; current_equity_usd stays the real balance.
+ */
 export function buildLeaderboard(
   strategies: BoardStrategy[],
   curves: Map<string, Snapshot[]>,
   trades: Map<string, TradeStats>,
+  deposits: Map<string, ReadonlyMap<string, number>> = new Map(),
 ): SeerLeaderboard {
   const roster = [...strategies].sort(rosterOrder);
-  const curveOf = (id: string): Snapshot[] => [...(curves.get(id) ?? [])].sort(byDate);
+  const rawOf = (id: string): Snapshot[] => [...(curves.get(id) ?? [])].sort(byDate);
+  const curveOf = (id: string): Snapshot[] => withoutDeposits(rawOf(id), deposits.get(id) ?? new Map());
   const cmp = compareStrategies(roster.map((strategy) => ({ strategy, curve: curveOf(strategy.id) })));
   const rowById = new Map(cmp.rows.map((r) => [r.strategy.id, r] as const));
 
   const entry = (st: BoardStrategy, rank: number | null, w: Windowed | null, reason?: string): BoardEntry => {
     const curve = curveOf(st.id);
     const since = sinceStartMetrics(curve, trades.get(st.id) ?? NO_TRADES);
-    const last = curve[curve.length - 1];
+    const raw = rawOf(st.id);
+    const last = raw[raw.length - 1];
     const e: BoardEntry = {
       rank,
       id: st.id,
@@ -228,12 +243,13 @@ export function buildLeaderboard(
   };
 }
 
-/** seer_leaderboard: three read-only queries, then the pure ranking. */
+/** seer_leaderboard: four read-only queries, then the pure ranking. */
 export async function seerLeaderboard(db: ReadOnlySource): Promise<SeerLeaderboard> {
-  const [s, c, t] = await Promise.all([
+  const [s, c, t, dep] = await Promise.all([
     db.query(BOARD_STRATEGIES_SQL, [], { maxRows: 1000 }),
     db.query(CURVES_SQL, [], { maxRows: 1000 }),
     db.query(TRADES_SQL, [], { maxRows: 1000 }),
+    db.query(DEPOSITS_SQL, [], { maxRows: 1000 }),
   ]);
   const strategies = toObjects(s).map(toBoardStrategy);
 
@@ -257,5 +273,14 @@ export async function seerLeaderboard(db: ReadOnlySource): Promise<SeerLeaderboa
     });
   }
 
-  return buildLeaderboard(strategies, curves, trades);
+  const deposits = new Map<string, Map<string, number>>();
+  for (const r of toObjects(dep)) {
+    const id = str(r.strategy_id);
+    const date = str(r.date).slice(0, 10);
+    const byDate = deposits.get(id) ?? new Map<string, number>();
+    byDate.set(date, (byDate.get(date) ?? 0) + num(r.amount_usd));
+    deposits.set(id, byDate);
+  }
+
+  return buildLeaderboard(strategies, curves, trades, deposits);
 }
