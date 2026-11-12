@@ -3,6 +3,12 @@
   "coordinator": "orch-session-context-rot",
   "coordinator_session_id": "2aa303e1-349a-429a-aa73-ae43b9ec97a5",
   "created": "2026-11-12T10:00:57+07:00",
+  "landed": {
+    "at": "2026-11-12T10:28:27+07:00",
+    "base": "main",
+    "commit": "b556b4b2dd8b9516d59c3a9fed2b3cd8082e49f3",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -62,30 +68,30 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "0ea06b7",
       "depends_on": [
         2,
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "Context Rot view (gauge left of Tree, band bar, live SSE, 60s other-host poll, fresh-spawn estimate bar) + README/CLAUDE.md/feature map; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1112-102438-835541/evidence",
       "package": "web/`, docs (`README.md`, `CLAUDE.md`, feature map)",
       "plan": ".workflows/plan/session-context-rot/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-12T10:27:45+07:00",
       "satisfies": [
         "R1",
         "R3",
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A101",
       "title": "Context Rot view in the node panel"
     }
   ],
   "plan": "/home/miftah/.worktrees/mcp-notes/session-context-rot/.workflows/orchestration/session-context-rot/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-context-rot",
-  "updated": "2026-11-12T10:22:11+07:00",
+  "updated": "2026-11-12T10:28:27+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-context-rot"
 }
