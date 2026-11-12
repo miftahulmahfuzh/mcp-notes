@@ -7,6 +7,9 @@ import type { SessionsRepo } from './repo.js';
 import { headUuid, jobStateFor } from './fork.js';
 import {
   PROMPTS_VERSION_EXCERPTS,
+  type ContextBackfillRow,
+  type ContextFill,
+  type FillContextResult,
   type ForkBackfillRow,
   type HeadUuidFill,
   type PromptsBackfillCandidate,
@@ -21,6 +24,7 @@ import {
   buildTranscriptPatch,
   EXCLUDED_ENTRYPOINTS,
   isCopiedRecord,
+  isLongContextRequestLine,
   isObject,
   parseRecord,
   readJsonlFrom,
@@ -88,6 +92,18 @@ import {
  *   background-job record with the fork detector, and re-reads each fork from byte 0 under the
  *   per-file hold, which links it (`fork`) and cuts the copied prefix. A transcript that is gone is
  *   skipped without a write; the marker is written once nothing was deferred or failed.
+ * - Context (migration 0016): every session-file read also gathers the session's context evidence
+ *   (TranscriptAccumulator: the latest main-chain assistant message's input + cache + output
+ *   tokens, its model and time, the peak, the first own message's context) and, from the raw text
+ *   of `api-request` lines that parseRecord drops unparsed, whether a main-thread request listed a
+ *   `context-1m-*` beta (transcript.ts isLongContextRequestLine). SessionsRepo merges it
+ *   (merge.ts mergeContext). Subagent transcripts never feed it. Rows ingested before it existed
+ *   are filled once per host by `contextBackfill` (CONTEXT_BACKFILL_VERSION, app_settings
+ *   `${CONTEXT_MARKER_PREFIX}${host}`), after the prompts backfill: each row's transcript is re-read
+ *   from 0 to its stored offset under the per-file hold, a fork's copied records feed only the
+ *   snapshot and peak as in a tail read, and `SessionsRepo.fillContext` writes the six columns (a
+ *   compare-and-set on the offset; no observers, no updated_at). A transcript that is gone is
+ *   skipped without a write; the marker is written once nothing was deferred or failed.
  *
  * EXTENSION POINT (phase 4 heuristic links; any later consumer): `IngestObserver`, passed as
  * `observers` or added with `addObserver`. `onBatch` runs after each committed write with the
@@ -114,7 +130,8 @@ const CHAT_PROJECT_DIR = /-data-chat$/;
  * The `SessionsRepo` methods ingest uses. Unit tests pass an in-memory implementation; one without
  * the subagent methods leaves subagent transcripts unread; one without the three prompts methods
  * skips the prompts backfill; one without `forkCandidates` finds forks from job state only; one
- * without forkBackfillRows, fillHeadUuids, getSetting or putSetting skips the fork backfill.
+ * without forkBackfillRows, fillHeadUuids, getSetting or putSetting skips the fork backfill; one
+ * without contextBackfillRows, fillContext, getSetting or putSetting skips the context backfill.
  */
 export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'> &
   Partial<
@@ -128,6 +145,8 @@ export type IngestStore = Pick<SessionsRepo, 'offsets' | 'upsertFromTranscript'>
       | 'forkCandidates'
       | 'forkBackfillRows'
       | 'fillHeadUuids'
+      | 'contextBackfillRows'
+      | 'fillContext'
       | 'getSetting'
       | 'putSetting'
       | 'requestSummary'
@@ -229,6 +248,34 @@ function emptyForkReport(): ForkBackfillReport {
   return { ran: false, rows: 0, headsFilled: 0, candidates: 0, forks: 0, reingested: 0, missing: 0, deferred: 0, failed: 0, ms: 0 };
 }
 
+/** Bump to make every host run the context backfill once more (e.g. after the capture rules change). */
+export const CONTEXT_BACKFILL_VERSION = 1;
+/** app_settings key prefix; the full key is `${CONTEXT_MARKER_PREFIX}${host}`. */
+export const CONTEXT_MARKER_PREFIX = 'sessions.context_backfill.';
+
+/** What the one-time context backfill did. */
+export interface ContextBackfillReport {
+  /** False when the marker says it already ran at CONTEXT_BACKFILL_VERSION, or the store lacks the methods. */
+  ran: boolean;
+  /** Rows of this host with a transcript path. */
+  rows: number;
+  /** Re-read and written (or found already current). */
+  filled: number;
+  /** Transcript gone, outside this Claude home, or the row gone or moved host: skipped without a write. */
+  missing: number;
+  /** Left for the next daemon start: closing, a file shorter than its offset, a second offset miss. */
+  deferred: number;
+  failed: number;
+  ms: number;
+}
+
+type ContextBackfillOutcome = 'filled' | 'missing' | 'deferred';
+type FillContext = (sessionId: string, host: string, fill: ContextFill) => Promise<FillContextResult>;
+
+function emptyContextReport(): ContextBackfillReport {
+  return { ran: false, rows: 0, filled: 0, missing: 0, deferred: 0, failed: 0, ms: 0 };
+}
+
 async function fileSize(file: string): Promise<number | null> {
   try {
     return (await stat(file)).size;
@@ -282,6 +329,8 @@ export interface SessionIngester {
   forkBackfill: Promise<ForkBackfillReport>;
   /** Settles once the one-time prompts backfill that follows `forkBackfill` is done (never rejects). */
   promptsBackfill: Promise<PromptsBackfillReport>;
+  /** Settles once the one-time context backfill that follows `promptsBackfill` is done (never rejects). */
+  contextBackfill: Promise<ContextBackfillReport>;
   /** Adds an observer (see EXTENSION POINT above). Returns the function that removes it. */
   addObserver(observer: IngestObserver): () => void;
   /** One full sweep now. Concurrent calls share the running sweep. */
@@ -614,6 +663,9 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
         file,
         fromOffset,
         (line, lineStart) => {
+          // parseRecord drops api-request lines unparsed; the one fact a row takes from them, a
+          // main-thread 1M beta, is read from the raw text.
+          if (isLongContextRequestLine(line)) acc.noteLongContextBeta();
           const record = parseRecord(line);
           if (record === null) return;
           if (isCopiedRecord(record, lineStart, cutOffset)) {
@@ -934,6 +986,87 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     return report;
   };
 
+  /**
+   * One row of the context backfill. Re-reads the transcript from 0 to the stored offset, a fork's
+   * copied records through addCopied (snapshot and peak only, as the tail read did), and writes the
+   * six context columns. An offset miss (a tail write landed first) retries once with the stored
+   * offset; a second miss waits for the next start.
+   */
+  const backfillContextSession = async (r: ContextBackfillRow, fill: FillContext): Promise<ContextBackfillOutcome> => {
+    let upTo = r.transcriptOffset;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (closed) return 'deferred';
+      if (!isUnder(projectsDir, r.transcriptPath)) return 'missing';
+      const size = await fileSize(r.transcriptPath);
+      if (size === null) return 'missing';
+      // A file shorter than its offset is re-read from 0 by the tail ingester, which writes the context.
+      if (size < upTo) return 'deferred';
+      const acc = new TranscriptAccumulator(r.sessionId);
+      const read = await readJsonlFrom(
+        r.transcriptPath,
+        0,
+        (line, lineStart) => {
+          if (isLongContextRequestLine(line)) acc.noteLongContextBeta();
+          const record = parseRecord(line);
+          if (record === null) return;
+          if (isCopiedRecord(record, lineStart, r.forkCutOffset)) acc.addCopied(record);
+          else acc.add(record);
+        },
+        { until: upTo, shouldStop: () => closed, ...(options.chunkBytes !== undefined ? { chunkBytes: options.chunkBytes } : {}) },
+      );
+      if (read.stopped || read.endOffset !== upTo) return 'deferred';
+      const result = await fill(r.sessionId, host, { upToOffset: upTo, ...acc.delta().context });
+      if (result.status === 'applied') return 'filled';
+      if (result.status !== 'offset_mismatch') return 'missing';
+      upTo = result.storedOffset;
+    }
+    return 'deferred';
+  };
+
+  /** The one-time context backfill for this host (see the header). Never notifies observers. */
+  const backfillContext = async (): Promise<ContextBackfillReport> => {
+    const started = Date.now();
+    const report = emptyContextReport();
+    const store = options.store;
+    const getSetting = store.getSetting?.bind(store);
+    const putSetting = store.putSetting?.bind(store);
+    const listRows = store.contextBackfillRows?.bind(store);
+    const fill = store.fillContext?.bind(store);
+    if (getSetting === undefined || putSetting === undefined || listRows === undefined || fill === undefined || closed) return report;
+    const key = `${CONTEXT_MARKER_PREFIX}${host}`;
+    const marker = await getSetting(key);
+    if (isObject(marker) && marker.version === CONTEXT_BACKFILL_VERSION) return report;
+    report.ran = true;
+    const rows = await listRows(host);
+    report.rows = rows.length;
+    await forEachLimit(rows, concurrency, async (r) => {
+      if (closed) {
+        report.deferred += 1;
+        return;
+      }
+      try {
+        const outcome = await withFileHeld(r.transcriptPath, () => backfillContextSession(r, fill));
+        report[outcome] += 1;
+      } catch (err) {
+        report.failed += 1;
+        log(`[notesd] sessions: context backfill ${r.sessionId}: ${errorMessage(err)}`);
+      }
+    });
+    report.ms = Date.now() - started;
+    if (closed) return report; // no marker: the next start runs it again (every write is idempotent)
+    if (report.deferred === 0 && report.failed === 0) {
+      await putSetting(key, {
+        version: CONTEXT_BACKFILL_VERSION,
+        finishedAt: new Date().toISOString(),
+        rows: report.rows,
+        filled: report.filled,
+        missing: report.missing,
+      });
+    }
+    if (report.filled + report.deferred + report.failed > 0) log(formatContextReport(report));
+    return report;
+  };
+
   const pass = async (files: string[], reason: IngestReason): Promise<{ report: IngestReport; written: string[] } | null> => {
     const started = Date.now();
     const report: IngestReport = { reason, files: files.length, upserted: 0, bytes: 0, failed: 0, ms: 0 };
@@ -1057,6 +1190,18 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       promptsSettled = true;
     });
 
+  // After the prompts backfill, so the one-time re-reads of a host run one after another.
+  let contextSettled = false;
+  const contextBackfill: Promise<ContextBackfillReport> = promptsBackfill
+    .then(() => backfillContext())
+    .catch((err: unknown) => {
+      log(`[notesd] sessions: context backfill failed: ${errorMessage(err)}`);
+      return { ...emptyContextReport(), ran: true, failed: 1 };
+    })
+    .finally(() => {
+      contextSettled = true;
+    });
+
   let timer: ReturnType<typeof setInterval> | null = null;
   if (sweepMs > 0) {
     timer = setInterval(() => {
@@ -1075,6 +1220,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
     ready,
     forkBackfill,
     promptsBackfill,
+    contextBackfill,
     addObserver(observer) {
       observers.add(observer);
       return () => {
@@ -1093,6 +1239,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
           watchDrain,
           forkSettled ? null : forkBackfill,
           promptsSettled ? null : promptsBackfill,
+          contextSettled ? null : contextBackfill,
           ...inflight.values(),
         ].filter((p) => p !== null);
         if (pending.length === 0) return;
@@ -1106,7 +1253,7 @@ export function startSessionIngest(options: SessionIngestOptions): SessionIngest
       if (watchTimer !== null) clearTimeout(watchTimer);
       watchTimer = null;
       const closing = watcher?.close().catch(() => undefined);
-      const pending = Promise.allSettled([closing, sweeping, watchDrain, forkBackfill, promptsBackfill, ...inflight.values()]);
+      const pending = Promise.allSettled([closing, sweeping, watchDrain, forkBackfill, promptsBackfill, contextBackfill, ...inflight.values()]);
       let grace: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         pending,
@@ -1134,4 +1281,9 @@ export function formatPromptsReport(r: PromptsBackfillReport): string {
 /** e.g. `[notesd] sessions: fork backfill 640 sessions, 612 head uuids filled, 6 checked, 3 forks, 3 re-read from byte 0, 25 transcripts gone, 0 deferred, 0 failed, 812ms` */
 export function formatForkReport(r: ForkBackfillReport): string {
   return `[notesd] sessions: fork backfill ${r.rows} sessions, ${r.headsFilled} head uuids filled, ${r.candidates} checked, ${r.forks} forks, ${r.reingested} re-read from byte 0, ${r.missing} transcripts gone, ${r.deferred} deferred, ${r.failed} failed, ${r.ms}ms`;
+}
+
+/** e.g. `[notesd] sessions: context backfill 640 sessions, 612 filled, 25 transcripts gone, 0 deferred, 0 failed, 3810ms` */
+export function formatContextReport(r: ContextBackfillReport): string {
+  return `[notesd] sessions: context backfill ${r.rows} sessions, ${r.filled} filled, ${r.missing} transcripts gone, ${r.deferred} deferred, ${r.failed} failed, ${r.ms}ms`;
 }

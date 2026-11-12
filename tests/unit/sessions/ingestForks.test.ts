@@ -1,6 +1,6 @@
 import { appendFile, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { startSessionIngest, type IngestBatch, type SessionIngester, type SessionIngestOptions } from '../../../src/sessions/ingest.js';
+import { CONTEXT_MARKER_PREFIX, startSessionIngest, type IngestBatch, type SessionIngester, type SessionIngestOptions } from '../../../src/sessions/ingest.js';
 import { createRepoResolver } from '../../../src/sessions/repoResolve.js';
 import type { SessionRow } from '../../../src/sessions/types.js';
 import {
@@ -15,7 +15,7 @@ import {
   PARENT_HEAD_UUID,
   stageForks,
 } from '../../helpers/forkFixtures.js';
-import { MemoryIngestStore } from '../../helpers/memoryIngestStore.js';
+import { MemoryIngestStore, MemorySettingsIngestStore } from '../../helpers/memoryIngestStore.js';
 
 const HOST = 'test-host';
 const PLAN = '/home/u/mcp-notes/docs/plans/fork-plan.md';
@@ -299,5 +299,54 @@ describe('ingest: fork source not determinable', () => {
     const batch = batches.find((b) => b.sessionId === FORKS.unrelated);
     if (batch === undefined) throw new Error('no batch for the unrelated session');
     expect(uuidsOf(batch)).toEqual(['f6000000-0000-4000-8000-000000000001', 'f6000000-0000-4000-8000-000000000002']);
+  });
+});
+
+describe('ingest: fork context', () => {
+  it('a fork reports the context it copied until its own first message replaces it (R1.4)', async () => {
+    const ingester = await startWithParent();
+    await stageForks(home, FORKS.job, FORKS.pending);
+    expect((await ingester.sweep()).failed).toBe(0);
+    // Parent: msg_p4 (400 + 40) last, msg_p1 (100 + 1,000 + 50 + 10) first, msg_p2 (200 + 2,000 + 20) largest.
+    expect(row(FORKS.parent)).toMatchObject({ contextTokens: 440, contextModel: 'claude-haiku-4-5', contextFirstTokens: 1_160, contextPeakTokens: 2_220 });
+    // Job fork: copied p1-p3, then its own j1 (66) and j2 (77).
+    expect(row(FORKS.job)).toMatchObject({ contextTokens: 77, contextModel: 'claude-opus-5-5', contextFirstTokens: 66, contextPeakTokens: 2_220 });
+    // Pending fork: only the copy so far: the last copied message (msg_p3, 300 + 30).
+    expect(row(FORKS.pending)).toMatchObject({
+      contextTokens: 330,
+      contextModel: 'claude-haiku-4-5',
+      contextAt: FORK_BOUNDARY,
+      contextFirstTokens: null,
+      contextPeakTokens: 2_220,
+      inputTokens: 0,
+    });
+
+    await appendPendingOwn(home);
+    await ingester.sweep();
+    expect(row(FORKS.pending)).toMatchObject({
+      contextTokens: 12,
+      contextModel: 'claude-opus-5-5',
+      contextAt: new Date('2026-11-01T01:50:05.000Z'),
+      contextFirstTokens: 12,
+      contextPeakTokens: 2_220,
+      inputTokens: 11,
+    });
+  });
+
+  it('the context backfill re-reads a fork with its cut: the copied snapshot, never a copied first message (R1.4, R1.5)', async () => {
+    const s = new MemorySettingsIngestStore();
+    store = s;
+    const first = await startWithParent();
+    await stageForks(home, FORKS.pending);
+    await first.sweep();
+    await first.contextBackfill;
+    await first.close();
+    const pending = row(FORKS.pending);
+    s.rows.set(FORKS.pending, { ...pending, contextTokens: null, contextModel: null, contextAt: null, contextPeakTokens: null, contextFirstTokens: null });
+    await s.putSetting(`${CONTEXT_MARKER_PREFIX}${HOST}`, null);
+
+    const second = start();
+    expect(await second.contextBackfill).toMatchObject({ ran: true, failed: 0, deferred: 0 });
+    expect(row(FORKS.pending)).toMatchObject({ contextTokens: 330, contextModel: 'claude-haiku-4-5', contextFirstTokens: null, contextPeakTokens: 2_220, inputTokens: 0 });
   });
 });

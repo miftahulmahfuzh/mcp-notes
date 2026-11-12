@@ -189,4 +189,20 @@ describe('fork ingest into cc_sessions', () => {
     expect((await ingester.sweep()).failed).toBe(0);
     expect(await row(FORKS.terminal)).toMatchObject({ parentSessionId: null, forkDetectedBy: null, inputTokens: 650, outputTokens: 65 });
   });
+
+  it('stores each fork the context it copied until its own first message replaces it (R1.4)', async () => {
+    const ingester = await ingestChain();
+    await stageForks(home, FORKS.pending);
+    expect((await ingester.sweep()).failed).toBe(0);
+    expect(await row(FORKS.parent)).toMatchObject({ contextTokens: 440, contextModel: 'claude-haiku-4-5', contextFirstTokens: 1_160, contextPeakTokens: 2_220 });
+    expect(await row(FORKS.job)).toMatchObject({ contextTokens: 77, contextModel: 'claude-opus-5-5', contextFirstTokens: 66, contextPeakTokens: 2_220 });
+    expect(await row(FORKS.terminal)).toMatchObject({ contextTokens: 55, contextFirstTokens: 55, contextPeakTokens: 2_220 });
+    // The fork of the terminal fork copied t1 (55) too; its own ff1 is 14.
+    expect(await row(FORKS.forkOfFork)).toMatchObject({ contextTokens: 14, contextFirstTokens: 14, contextPeakTokens: 2_220 });
+    expect(await row(FORKS.pending)).toMatchObject({ contextTokens: 330, contextModel: 'claude-haiku-4-5', contextAt: FORK_BOUNDARY, contextFirstTokens: null, contextPeakTokens: 2_220 });
+
+    await appendPendingOwn(home);
+    await ingester.sweep();
+    expect(await row(FORKS.pending)).toMatchObject({ contextTokens: 12, contextModel: 'claude-opus-5-5', contextFirstTokens: 12, contextPeakTokens: 2_220 });
+  });
 });

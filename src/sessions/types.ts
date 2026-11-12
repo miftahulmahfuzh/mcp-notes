@@ -164,6 +164,34 @@ export interface TokenCounts {
 }
 
 /**
+ * The context of one main-chain assistant message (R1.2): what the next request starts from.
+ * `tokens` = input + cache read + cache write + output tokens of its `message.usage`
+ * (transcript.ts contextTokensOf).
+ */
+export interface ContextSnapshot {
+  tokens: number;
+  /** Its `message.model`; null when the record carried none. Never `<synthetic>`. */
+  model: string | null;
+  /** The record's timestamp; null when it had none or it did not parse. */
+  at: Date | null;
+}
+
+/**
+ * What a read of a session transcript learned about its context (migration 0016 columns). Main
+ * chain only: sidechain records and subagent transcripts never feed it.
+ */
+export interface ContextEvidence {
+  /** The read's latest main-chain assistant message with usage (a fork's copied ones included); null when the read had none. */
+  latest: ContextSnapshot | null;
+  /** The largest `tokens` of the read (a fork's copied messages included); null when the read had none. */
+  peakTokens: number | null;
+  /** `tokens` of the read's first own main-chain assistant message (never a copied one); null when it had none. */
+  firstTokens: number | null;
+  /** A main-thread `api-request` line of the read listed a `context-1m-*` beta (transcript.ts isLongContextRequestLine). */
+  longBeta: boolean;
+}
+
+/**
  * What one ingest pass read from a transcript, from byte `fromOffset` to `toOffset` (both on
  * line boundaries). `fromOffset === 0` means the patch describes the whole file so far:
  * accumulators are replaced. Otherwise the stored offset must equal `fromOffset` and
@@ -199,6 +227,14 @@ export interface TranscriptPatch {
   models?: Record<string, Partial<ModelUsage>>;
   /** Absolute total from the latest `cost-state` record in this patch. */
   costUsd?: number | null;
+  /**
+   * Context evidence of the read (transcript.ts). fromOffset 0 replaces the six context columns
+   * with it (undefined clears them). An append: a non-null `latest` replaces the snapshot (tokens,
+   * model, at), so a smaller context after a compaction wins, and a null one keeps it; the peak is
+   * the max; the first message's context is kept once set; the long-context flag is ORed.
+   * Undefined on an append keeps all six (merge.ts mergeContext).
+   */
+  context?: ContextEvidence;
   /**
    * Every human prompt of the read, full text (cut only at MAX_PROMPT_STORE_CHARS), not yet
    * redacted: SessionsRepo redacts before writing. Appended to `cc_session_prompts` (replacing it on
@@ -350,6 +386,30 @@ export interface HeadUuidFill {
   headUuid: string;
 }
 
+/** One row of this host as the one-time context backfill sees it (`SessionsRepo.contextBackfillRows`). */
+export interface ContextBackfillRow {
+  sessionId: string;
+  transcriptPath: string;
+  transcriptOffset: number;
+  /** cc_sessions.fork_cut_offset: records with a uuid before it are the parent's copy (isCopiedRecord). Null: not a fork. */
+  forkCutOffset: number | null;
+}
+
+/**
+ * The context of a transcript re-read from byte 0 to `upToOffset` (the row's stored offset),
+ * written whole by `SessionsRepo.fillContext`.
+ */
+export interface ContextFill extends ContextEvidence {
+  /** Must equal the stored transcript_offset when the write happens (compare-and-set). */
+  upToOffset: number;
+}
+
+export type FillContextResult =
+  | { status: 'applied' }
+  | { status: 'offset_mismatch'; storedOffset: number }
+  | { status: 'other_host' }
+  | { status: 'missing' };
+
 /** The prompts (and replies) of a transcript re-read from byte 0 up to `upToOffset` (the row's stored offset). */
 export interface PromptsReplacement {
   /** Must equal the stored transcript_offset when the write happens (compare-and-set). */
@@ -406,6 +466,12 @@ export type TranscriptSet = Pick<
   | 'forkedAt'
   | 'forkPromptCount'
   | 'forkDetectedBy'
+  | 'contextTokens'
+  | 'contextModel'
+  | 'contextAt'
+  | 'contextPeakTokens'
+  | 'contextFirstTokens'
+  | 'contextLongBeta'
 >;
 
 /** What the ingester needs back from a transcript write. */

@@ -6,6 +6,7 @@ import {
   accumulateText,
   buildTranscriptPatch,
   extractImages,
+  isLongContextRequestLine,
   parseCommitLines,
   parseCommitRanges,
   parseRecord,
@@ -335,5 +336,85 @@ describe('buildTranscriptPatch', () => {
     expect(later.entrypoint).toBeNull();
     expect(later.repo).toBeNull();
     expect(later.name).toBeNull();
+  });
+});
+
+describe('context capture', () => {
+  const at = (s: number): string => `2026-11-02T00:00:${String(s).padStart(2, '0')}.000Z`;
+  const msg = (id: string, usage: Record<string, number>, s: number, extra: Record<string, unknown> = {}, model = 'claude-opus-5-5'): string =>
+    JSON.stringify({ type: 'assistant', timestamp: at(s), ...extra, message: { id, model, role: 'assistant', content: [{ type: 'text', text: id }], usage } });
+  const request = (querySource: string, betas: string[], tail: unknown[] = []): string =>
+    JSON.stringify({ type: 'api-request', sessionId: 's', timestamp: at(0), querySource, params: { model: 'claude-sonnet-4-6', betas }, tail });
+  const EMPTY = { latest: null, peakTokens: null, firstTokens: null, longBeta: false };
+
+  it('sums input, cache read, cache write and output of the latest main-chain message (R1.2)', () => {
+    const d = accumulateText(
+      's',
+      [
+        msg('m1', { input_tokens: 2, cache_read_input_tokens: 29_065, cache_creation_input_tokens: 20_795, output_tokens: 544 }, 1),
+        msg('m2', { input_tokens: 1, cache_read_input_tokens: 32_000, output_tokens: 20 }, 2),
+      ].join('\n'),
+    ).delta();
+    expect(d.context).toEqual({ latest: { tokens: 32_021, model: 'claude-opus-5-5', at: new Date(at(2)) }, peakTokens: 50_406, firstTokens: 50_406, longBeta: false });
+  });
+
+  it('ignores sidechain records, zero-usage and <synthetic> messages (R1.2)', () => {
+    const d = accumulateText(
+      's',
+      [
+        msg('m1', { input_tokens: 1_000 }, 1),
+        msg('side', { input_tokens: 900_000 }, 2, { isSidechain: true }),
+        msg('zero', { input_tokens: 0, output_tokens: 0 }, 3),
+        msg('none', {}, 4),
+        msg('synth', { input_tokens: 5_000 }, 5, {}, '<synthetic>'),
+      ].join('\n'),
+    ).delta();
+    expect(d.context).toEqual({ latest: { tokens: 1_000, model: 'claude-opus-5-5', at: new Date(at(1)) }, peakTokens: 1_000, firstTokens: 1_000, longBeta: false });
+  });
+
+  it('keeps the later, smaller context after a compaction (R1.3)', () => {
+    const d = accumulateText('s', [msg('m1', { cache_read_input_tokens: 300_000 }, 1), msg('m2', { cache_read_input_tokens: 40_000 }, 2)].join('\n')).delta();
+    expect(d.context).toMatchObject({ latest: { tokens: 40_000 }, peakTokens: 300_000, firstTokens: 300_000 });
+  });
+
+  it('a sidechain accumulator never gathers context, whatever it reads (R1.2)', () => {
+    const acc = new TranscriptAccumulator('s', undefined, { sidechain: true });
+    const record = parseRecord(msg('sub', { input_tokens: 5_000 }, 1, { isSidechain: true }));
+    if (record === null) throw new Error('unparsed');
+    acc.add(record);
+    acc.noteLongContextBeta();
+    expect(acc.delta().context).toEqual(EMPTY);
+  });
+
+  it('copied records set the snapshot and peak, never the first message (R1.4)', () => {
+    const acc = new TranscriptAccumulator('s');
+    const rec = (line: string) => {
+      const r = parseRecord(line);
+      if (r === null) throw new Error('unparsed');
+      return r;
+    };
+    acc.addCopied(rec(msg('p2', { input_tokens: 200, cache_read_input_tokens: 2_000, output_tokens: 20 }, 1, {}, 'claude-haiku-4-5')));
+    acc.addCopied(rec(msg('p3', { input_tokens: 300, output_tokens: 30 }, 2, {}, 'claude-haiku-4-5')));
+    expect(acc.delta().context).toEqual({ latest: { tokens: 330, model: 'claude-haiku-4-5', at: new Date(at(2)) }, peakTokens: 2_220, firstTokens: null, longBeta: false });
+    acc.add(rec(msg('own', { input_tokens: 11, output_tokens: 1 }, 3)));
+    expect(acc.delta().context).toEqual({ latest: { tokens: 12, model: 'claude-opus-5-5', at: new Date(at(3)) }, peakTokens: 2_220, firstTokens: 12, longBeta: false });
+  });
+
+  it('flags a context-1m beta only on a main-thread api-request line (R2.3)', () => {
+    expect(isLongContextRequestLine(request('repl_main_thread', ['claude-code-20250219', 'context-1m-2025-08-07']))).toBe(true);
+    expect(isLongContextRequestLine(request('repl_main_thread:outputStyle:Explanatory', ['context-1m-2025-08-07']))).toBe(true);
+    expect(isLongContextRequestLine(request('agent:builtin:Explore', ['context-1m-2025-08-07']))).toBe(false);
+    expect(isLongContextRequestLine(request('repl_main_thread', ['claude-code-20250219']))).toBe(false);
+    expect(isLongContextRequestLine(request('repl_main_thread', ['claude-code-20250219'], [{ role: 'user', content: 'why is "context-1m-2025-08-07" set?' }]))).toBe(false);
+    expect(isLongContextRequestLine(request('repl_main_thread', ['context-1m-2025-08-07']).replace('"type":"api-request"', '"type":"api-request-blob"'))).toBe(false);
+    expect(isLongContextRequestLine(user('turn on "context-1m-2025-08-07"'))).toBe(false);
+    expect(parseRecord(request('repl_main_thread', ['context-1m-2025-08-07']))).toBeNull();
+    expect(accumulateText('s', request('repl_main_thread', ['context-1m-2025-08-07'])).delta().context).toEqual({ ...EMPTY, longBeta: true });
+  });
+
+  it('buildTranscriptPatch sends the context evidence', () => {
+    const d = accumulateText('s', msg('m1', { input_tokens: 7 }, 1)).delta();
+    const p = buildTranscriptPatch(d, { host: 'h', transcriptPath: '/x/s.jsonl', fromOffset: 40, toOffset: 100, size: 100, repo: null });
+    expect(p.context).toEqual(d.context);
   });
 });

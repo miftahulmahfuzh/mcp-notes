@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-11
-**Total Active Tasks**: 6
+**Last Updated**: 2026-11-12
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 4
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
-- Completed: 89
+- Blocked: 1
+- Completed: 90
 
 ---
 
@@ -76,6 +76,33 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
+- [ ] **P1-NOTES-A099** Phase 2: Context read API and live stream
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `SessionInfo.context` (`{tokens, window, percent, band, model, at, window_source, peak_tokens}` or null; `percent` = phase 1's `contextPercent`, `band` = `contextBand(percent)`, no local arithmetic) in `src/sessions/view.ts` + the detail SQL in `src/sessions/readModel.ts`; `GET /api/sessions/:nodeId/context` (any host; 400 `invalid_node_id`, 404 `not_found`) and `GET /api/sessions/:nodeId/context/stream` (SSE: an initial `context` event, then one per change, heartbeat, closes on abort) in `src/http/sessionsApi.ts`; new `src/sessions/events.ts` `SessionEvents` bus (`emitContext(sessionId)`, `on`), optional `AppDeps.sessionEvents`, created in `src/daemon.ts`, fed by an ingest `onBatch` observer in `src/background.ts` that emits when the batch holds a main-chain assistant record with usage or is a read from byte 0 (phase 1's backfill notifies no observer: accepted, in phase 2's Risks); stream debounce and change check (re-read the row, send only when tokens/model/window changed); tests. Exit criteria: detail and JSON route carry the context; an SSE client sees the initial event and a new event after an ingested append; unit + integration green.
+  - **Status**: open
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 2 of 4)
+  - **Satisfies**: R3 — R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that? · criteria: R3.2, R3.3
+  - **Depends on**: P1-NOTES-A098
+  - **Plan**: `.workflows/plan/P1-NOTES-A099.md`
+- [ ] **P1-NOTES-A100** Phase 3: Handoff carry-over for "Spawn fresh"
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/sessions/handoff.ts`: `loadHandoffSource` (row + paired prompts/replies from `cc_session_prompts`/`cc_session_replies`, summary + `summarized_at`, plan docs, commits, context evidence, repo baseline = median `context_first_tokens` of the repo's latest 20 non-fork (`fork_detected_by is null`) cli sessions on any host, default 48,000), pure `buildHandoff(source, opts) -> {text, estimate:{tokens, window, percent, exchanges_included, exchanges_total, truncated}}` (budget = `HANDOFF_WINDOW_SHARE` 0.5 × window − baseline, tokens ≈ ceil(chars/4), `percent` = phase 1's `contextPercent(baseline + tokens, window)`; keeps the first prompt always, then newest exchanges that fit; header says what was left out and points at the transcript), `gitState(run, cwd)` (`git status --porcelain=v1 -b`, `git diff --stat`, timeout, failure noted in the text), `writeHandoff(dataDir, nodeId, text)` → `<dataDir>/handoffs/<NODE>-<yyyymmddThhmmss>.md`, prune files older than 14 days; `resume.ts` fresh branch: build + write the handoff, start claude with `['--append-system-prompt-file', file, firstPrompt]`, first prompt short, starts with the marker line `[notesd handoff]`, names node id, title and file, and appends the user's task; `freshPrompt` replaced or reduced to that first prompt; `ResumeDeps` gains `dataDir` (injectable); `GET /api/sessions/:nodeId/handoff` dry-run estimate in `src/http/sessionResume.ts` (any host, no file, no git); `session_resume` tool description in `src/mcp/sessionTools.ts` updated to say what fresh carries; `claude/hooks/notes-prompt.mjs` skips node-id resolution when the prompt's first line is the marker (pure string test); tests (unit for builder/budget/git failure/hook marker, resume argv, route; integration through `sessions.resume.int.test.ts`). Exit criteria: a fresh spawn against a fake tmux writes a handoff holding every exchange for a 1M node and a budgeted tail for a 200k node, and the tmux argv carries `--append-system-prompt-file <that file>`; the estimate route answers without writing; the hook adds nothing for a marker prompt; suites green.
+  - **Status**: open
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R4 — R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R4.1, R4.2, R4.3, R4.4, R4.5, R4.6, R4.7
+  - **Depends on**: P1-NOTES-A098
+  - **Plan**: `.workflows/plan/P1-NOTES-A100.md`
+- [ ] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `NodePanel.tsx` Subtree toggle becomes `'context' | 'tree' | 'timeline'` with an icon-only "Context Rot" button left of Tree (Phosphor icon, `data-tip="Context Rot"`), view remembered in `localStorage` (try/catch), default `tree`; new `web/src/components/graph/ContextRot.tsx` (+ CSS): current bar (fill = percent, band colour, text "<tokens> / <window> · <pct>%", model, "window assumed" note when `window_source` is `default`, "unknown" state for null), second bar "Fresh session would start at ~X%" with "carries N of M exchanges" from the estimate route; new `web/src/hooks/useSessionContext.ts`: live + available → `EventSource` on the stream (closed on unmount/node change/view change), available not live → one fetch and a refetch on the panel's stamp, other host → poll every 60 s; `web/src/sessionDetailApi.ts` types and fetchers (`fetchSessionContext`, `fetchHandoffEstimate`, `SessionDetail.context`; shapes field-for-field phase 2's `SessionContext` / `SessionContextPayload` and phase 3's `HandoffEstimateBody`); tests (`NodePanel.test.tsx`, `ContextRot.test.tsx`, hook test with a fake EventSource, normalizer tests); `README.md` Context Rot tour paragraph, fresh-spawn paragraph (numbers = phase 3's constants: 0.5 × window − baseline, latest 20 non-fork sessions, 48,000, chars/4, 14-day prune, `[notesd handoff]`), MCP `session_resume` row, `POST …/resume` row and HTTP API rows for the three new routes; `.claude/skills/verify-notesd/features/projects.md` sub-features Context Rot and Spawn fresh handoff with driving sections (the handoff one repeats phase 3's `NOTESD_TMUX_BIN` fake + `NOTESD_CLAUDE_BIN=/bin/true` safety gate) and the resume gotcha; `CLAUDE.md` one sentence in the Claude Code sessions bullet. Exit criteria: clicking Context Rot shows both bars; a fake stream event updates the bar; other-host node polls; band colours by threshold; verify-notesd drive (Playwright) shows the bar update after appending an assistant record to the throwaway daemon's fake transcript.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R1, R3, R4 — R1: can we put a "Context Rot" button on the left of Tree button? Context Rot button basically track the session token consumption against the maximum tokens a session can receive (maybe 1M tokens max?) maybe we show a horizontal bar, and it will progrees to full seiring dengan banyaknya token yang dikonsumsi over the session life.; R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that?; R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R1.1, R1.6, R1.7, R3.1, R3.4, R4.8
+  - **Depends on**: P1-NOTES-A099, P1-NOTES-A100
+  - **Plan**: `.workflows/plan/P1-NOTES-A101.md`
 ### [P2] Medium
 
 ### [P3] Low
@@ -85,6 +112,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A098** Phase 1: Context capture, window inference, backfill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: migration `drizzle/0016_session_context.sql` (+ drizzle meta via `npm run db:generate`) and `src/db/schema.ts` columns on `cc_sessions`: `context_tokens bigint null`, `context_model text null`, `context_at timestamptz null`, `context_peak_tokens bigint null`, `context_first_tokens bigint null`, `context_long_beta boolean not null default false`; `TranscriptAccumulator` capture (main chain only, latest wins, `addCopied` sets the snapshot and peak but not `first`, output tokens included, zero-usage and `<synthetic>` messages skipped); raw-line `context-1m-` detection on main-thread `api-request` lines in the ingest read loop (no `JSON.parse` of those lines); `TranscriptPatch` / `buildTranscriptPatch` / `mergeTranscriptPatch` rules (reset replaces; append keeps stored values when the read had no assistant message, peak = max, beta = or, first kept once set); `SessionsRepo.upsertFromTranscript` writes them; a one-time per-host context backfill in ingest (marker `sessions.context_backfill.<host>`, `CONTEXT_BACKFILL_VERSION`, after `promptsBackfill`, under the per-file hold, skips copied records per fork cut except for the snapshot rule, skips missing files without a write); new pure module `src/sessions/contextWindow.ts` (`contextWindowFor({model, peakTokens, longBeta}) -> {window, source: 'model'|'peak'|'beta'|'default'}`, `contextBand(percent)`, `CONTEXT_BANDS`, `contextPercent(tokens, window)` one decimal, 0..100; types `ContextWindowInput`, `ContextBand`, `ContextWindowSource`), tests. Exit criteria: ingesting a fixture transcript stores the latest main-chain context (sidechain/subagent ignored, compaction lowers it, a fork without own messages shows its copied context); window inference unit tests cover every R2 criterion; the backfill fills pre-existing rows once and writes its marker; unit + integration suites green.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 1 of 4)
+  - **Satisfies**: R1, R2 — R1: can we put a "Context Rot" button on the left of Tree button? Context Rot button basically track the session token consumption against the maximum tokens a session can receive (maybe 1M tokens max?) maybe we show a horizontal bar, and it will progrees to full seiring dengan banyaknya token yang dikonsumsi over the session life.; R2: it would be more robust if we infer it automatically instead of setting a static value. the truth is, i always use Opus 5.5 (1M) and Sonnet 5.5 (1M) anyway, but i prefer us to be able to handle special circumstances as well. · criteria: R1.2, R1.3, R1.4, R1.5, R2.1, R2.2, R2.3, R2.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A098.md`
+  - **Completed**: 2026-11-12 10:09
+  - **Method**: /do
+  - **Files**: drizzle/0016_session_context.sql, drizzle/meta/0016_snapshot.json, drizzle/meta/_journal.json, src/db/schema.ts, src/sessions/contextWindow.ts, src/sessions/ingest.ts, src/sessions/merge.ts, src/sessions/repo.ts, src/sessions/transcript.ts, src/sessions/types.ts, tests/helpers/memoryIngestStore.ts, tests/integration/sessions.forks.int.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.repo.int.test.ts, tests/integration/sessions.schema.int.test.ts, tests/unit/sessions/contextWindow.test.ts, tests/unit/sessions/ingest.test.ts, tests/unit/sessions/ingestForks.test.ts, tests/unit/sessions/merge.test.ts, tests/unit/sessions/transcript.test.ts
 
 - [x] **P1-NOTES-A097** Phase 3: Re-readers honour the cut, plus the one-time fork backfill
   - **Difficulty**: HARD

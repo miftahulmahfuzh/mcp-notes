@@ -2,6 +2,8 @@ import { appendFile, mkdir, rm, stat, truncate, writeFile } from 'node:fs/promis
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  CONTEXT_BACKFILL_VERSION,
+  CONTEXT_MARKER_PREFIX,
   isIgnoredWatchPath,
   listTranscripts,
   sessionIdFromPath,
@@ -12,10 +14,11 @@ import {
   type SessionIngester,
   type SessionIngestOptions,
 } from '../../../src/sessions/ingest.js';
+import { contextWindowFor } from '../../../src/sessions/contextWindow.js';
 import { createRepoResolver } from '../../../src/sessions/repoResolve.js';
 import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS, type SessionRow } from '../../../src/sessions/types.js';
 import { copyFixtureClaudeHome, FIXTURE, MANY_PROMPTS } from '../../helpers/claudeHome.js';
-import { MemoryIngestStore } from '../../helpers/memoryIngestStore.js';
+import { MemoryIngestStore, MemorySettingsIngestStore } from '../../helpers/memoryIngestStore.js';
 
 let home: string;
 let store: MemoryIngestStore;
@@ -558,5 +561,139 @@ describe('startSessionIngest: prompts backfill honours the fork cut (R2.2)', () 
     expect(await second.promptsBackfill).toMatchObject({ candidates: 1, filled: 1, failed: 0 });
     expect(store.sidePrompts.get(sid)?.map((p) => p.text)).toEqual(['the fork own prompt']);
     expect(store.rows.get(sid)?.firstPrompt).toBe('the fork own prompt');
+  });
+});
+
+/** The main fixture's context as ingest reads it: msg_D (1 + 32,000 + 0 + 20) is the latest, msg_A (2 + 29,065 + 20,795 + 544) the first and largest. */
+const MAIN_CONTEXT = {
+  contextTokens: 32_021,
+  contextModel: 'claude-opus-5-5',
+  contextAt: new Date('2026-11-02T02:23:10.000Z'),
+  contextPeakTokens: 50_406,
+  contextFirstTokens: 50_406,
+  contextLongBeta: false,
+};
+const NO_CONTEXT = { contextTokens: null, contextModel: null, contextAt: null, contextPeakTokens: null, contextFirstTokens: null, contextLongBeta: false };
+
+function mainAssistant(id: string, usage: Record<string, number>, at: string, model = 'claude-opus-5-5'): string {
+  return line({
+    type: 'assistant',
+    sessionId: FIXTURE.main,
+    uuid: `u-${id}`,
+    timestamp: at,
+    message: { id, model, role: 'assistant', content: [{ type: 'text', text: `reply ${id}` }], usage },
+  });
+}
+
+function apiRequest(querySource: string, betas: string[]): string {
+  return line({ type: 'api-request', sessionId: FIXTURE.main, id: `req-${querySource}`, timestamp: '2026-11-02T03:00:00.000Z', querySource, params: { model: 'claude-sonnet-4-6', betas }, tail: [] });
+}
+
+describe('startSessionIngest: context capture', () => {
+  const main = (): SessionRow => {
+    const r = store.rows.get(FIXTURE.main);
+    if (r === undefined) throw new Error('no main row');
+    return r;
+  };
+
+  it('stores the latest main-chain context; sidechain records and subagent transcripts never move it (R1.2)', async () => {
+    const ingester = start();
+    await ingester.ready;
+    expect(main()).toMatchObject(MAIN_CONTEXT);
+    const inputBefore = main().inputTokens;
+    await appendFile(mainPath(), subagentWork(7, 'aaaa111', '2026-11-02T03:00:00.000Z'));
+    await appendFile(subPath(), subagentWork(8, 'bbbb222', '2026-11-02T03:00:01.000Z'));
+    await ingester.sweep();
+    expect(main().inputTokens).toBe(inputBefore + 1); // the subagent transcript was read
+    expect(main()).toMatchObject(MAIN_CONTEXT);
+  });
+
+  it('stores the later, smaller context after a compaction and keeps the peak and the first message (R1.3)', async () => {
+    const ingester = start();
+    await ingester.ready;
+    await appendFile(mainPath(), mainAssistant('msg_E', { input_tokens: 1, cache_read_input_tokens: 4_000, output_tokens: 10 }, '2026-11-02T03:10:00.000Z'));
+    await ingester.sweep();
+    expect(main()).toMatchObject({ ...MAIN_CONTEXT, contextTokens: 4_011, contextAt: new Date('2026-11-02T03:10:00.000Z') });
+  });
+
+  it('keeps a peak above 200,000 after the context falls, which infers a 1M window (R2.2)', async () => {
+    const ingester = start();
+    await ingester.ready;
+    await appendFile(
+      mainPath(),
+      mainAssistant('msg_F', { input_tokens: 1, cache_read_input_tokens: 249_000, cache_creation_input_tokens: 999 }, '2026-11-02T03:20:00.000Z', 'claude-sonnet-4-6') +
+        mainAssistant('msg_G', { input_tokens: 5_000 }, '2026-11-02T03:21:00.000Z', 'claude-sonnet-4-6'),
+    );
+    await ingester.sweep();
+    const r = main();
+    expect(r).toMatchObject({ contextTokens: 5_000, contextModel: 'claude-sonnet-4-6', contextPeakTokens: 250_000, contextLongBeta: false });
+    expect(contextWindowFor({ model: r.contextModel, peakTokens: r.contextPeakTokens, longBeta: r.contextLongBeta })).toEqual({ window: 1_000_000, source: 'peak' });
+  });
+
+  it('flags a context-1m beta from a main-thread api-request line only, without parsing it into the batch (R2.3)', async () => {
+    const batches: IngestBatch[] = [];
+    const ingester = start({ observers: [{ onBatch: (b) => batches.push(b) }] });
+    await ingester.ready;
+    await appendFile(
+      mainPath(),
+      apiRequest('agent:builtin:Explore', ['claude-code-20250219', 'context-1m-2025-08-07']) +
+        line({ type: 'user', sessionId: FIXTURE.main, uuid: 'u-q', timestamp: '2026-11-02T03:30:00.000Z', cwd: '/home/u/mcp-notes', entrypoint: 'cli', message: { role: 'user', content: 'what does "context-1m-2025-08-07" do?' } }) +
+        apiRequest('repl_main_thread', ['claude-code-20250219']) +
+        mainAssistant('msg_H', { input_tokens: 92_484 }, '2026-11-02T03:30:05.000Z', 'claude-sonnet-4-6'),
+    );
+    await ingester.sweep();
+    expect(main()).toMatchObject({ contextTokens: 92_484, contextLongBeta: false });
+    expect(contextWindowFor({ model: main().contextModel, peakTokens: main().contextPeakTokens, longBeta: main().contextLongBeta })).toEqual({ window: 200_000, source: 'model' });
+
+    await appendFile(mainPath(), apiRequest('repl_main_thread:outputStyle:Explanatory', ['claude-code-20250219', 'context-1m-2025-08-07']));
+    await ingester.sweep();
+    const r = main();
+    expect(r).toMatchObject({ contextTokens: 92_484, contextLongBeta: true });
+    expect(contextWindowFor({ model: r.contextModel, peakTokens: r.contextPeakTokens, longBeta: r.contextLongBeta })).toEqual({ window: 1_000_000, source: 'beta' });
+    expect(batches.flatMap((b) => b.records).some((rec) => rec.type === 'api-request')).toBe(false);
+  });
+});
+
+describe('startSessionIngest: context backfill', () => {
+  const marker = `${CONTEXT_MARKER_PREFIX}test-host`;
+  const age = (s: MemorySettingsIngestStore): void => {
+    for (const [id, r] of s.rows) s.rows.set(id, { ...r, ...NO_CONTEXT });
+  };
+
+  it("fills each of the host's rows once from its transcript and writes its marker (R1.5)", async () => {
+    const s = new MemorySettingsIngestStore();
+    store = s;
+    const first = start();
+    expect(await first.contextBackfill).toMatchObject({ ran: true, failed: 0, deferred: 0 });
+    await first.close();
+    age(s); // what a daemon without context capture left behind
+    await s.putSetting(marker, null);
+
+    const second = start();
+    expect(await second.contextBackfill).toMatchObject({ ran: true, rows: 3, filled: 3, missing: 0, deferred: 0, failed: 0 });
+    expect(s.rows.get(FIXTURE.main)).toMatchObject(MAIN_CONTEXT);
+    expect(s.rows.get(FIXTURE.worktreeChild)).toMatchObject({ contextTokens: 370, contextFirstTokens: 370, contextPeakTokens: 370 });
+    expect(await s.getSetting(marker)).toMatchObject({ version: CONTEXT_BACKFILL_VERSION, rows: 3, filled: 3 });
+    await second.close();
+
+    age(s);
+    expect(await start().contextBackfill).toMatchObject({ ran: false });
+    expect(s.rows.get(FIXTURE.main)?.contextTokens).toBeNull(); // once per host: the marker stops a second run
+  });
+
+  it('skips a transcript that is gone without a write, and still writes the marker', async () => {
+    const s = new MemorySettingsIngestStore();
+    store = s;
+    const first = start();
+    await first.contextBackfill;
+    await first.close();
+    age(s);
+    await s.putSetting(marker, null);
+    await rm(mainPath());
+
+    const second = start();
+    expect(await second.contextBackfill).toMatchObject({ ran: true, rows: 3, filled: 2, missing: 1, failed: 0 });
+    expect(s.rows.get(FIXTURE.main)).toMatchObject(NO_CONTEXT);
+    expect(await s.getSetting(marker)).toMatchObject({ version: CONTEXT_BACKFILL_VERSION, missing: 1 });
   });
 });

@@ -185,3 +185,45 @@ describe('migration 0015 (session forks)', () => {
     await db.execute(sql`insert into cc_sessions (session_id, node_id, host, forked_at) values ('s-4', 'A0-1D', 'h', now())`)
   })
 })
+
+describe('migration 0016 (session context)', () => {
+  let db: Db
+
+  beforeAll(() => {
+    db = openTestDb()
+  })
+  afterAll(async () => {
+    await closeTestDb(db)
+  })
+  beforeEach(async () => {
+    await truncateAll(db)
+  })
+
+  it('is journal entry 16', () => {
+    const journal = JSON.parse(readFileSync(path.join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string }>
+    }
+    expect(journal.entries.find((e) => e.idx === 16)?.tag).toBe('0016_session_context')
+  })
+
+  it('adds five nullable context columns and a long-context flag that defaults to false', async () => {
+    const cols = await db.execute<{ column_name: string; is_nullable: string; data_type: string }>(sql`
+      select column_name, is_nullable, data_type from information_schema.columns
+      where table_schema = 'public' and table_name = 'cc_sessions' and column_name like 'context\_%'
+      order by column_name
+    `)
+    expect(cols.rows).toEqual([
+      { column_name: 'context_at', is_nullable: 'YES', data_type: 'timestamp with time zone' },
+      { column_name: 'context_first_tokens', is_nullable: 'YES', data_type: 'bigint' },
+      { column_name: 'context_long_beta', is_nullable: 'NO', data_type: 'boolean' },
+      { column_name: 'context_model', is_nullable: 'YES', data_type: 'text' },
+      { column_name: 'context_peak_tokens', is_nullable: 'YES', data_type: 'bigint' },
+      { column_name: 'context_tokens', is_nullable: 'YES', data_type: 'bigint' },
+    ])
+    await db.execute(sql`insert into cc_sessions (session_id, node_id, host) values ('s-1', 'A0-1A', 'h')`)
+    const row = await db.execute<{ context_long_beta: boolean; context_tokens: string | null }>(
+      sql`select context_long_beta, context_tokens from cc_sessions where session_id = 's-1'`,
+    )
+    expect(row.rows[0]).toEqual({ context_long_beta: false, context_tokens: null })
+  })
+})
