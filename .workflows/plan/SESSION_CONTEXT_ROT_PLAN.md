@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/session-context-rot`
 **Branch:** `feature/session-context-rot` (base: `origin/main` @ `81fd619`)
 **Phases:** 4
-**Status:** phase 3/4 complete (phases 1, 2 and 3 done; phase 4 open)
+**Status:** complete
 **Coordinator:** —
 
 ---
@@ -92,7 +92,7 @@
 | 1 | [x] Context capture, window inference, backfill | R1, R2 | `src/sessions`, `src/db`, `drizzle` | 20 | — | HARD | `.workflows/plan/session-context-rot/phase-1.md` | P1-NOTES-A098 | — |
 | 2 | [x] Context read API and live stream | R3 | `src/http`, `src/sessions`, root wiring | 12 | 1 | NORMAL | `.workflows/plan/session-context-rot/phase-2.md` | P1-NOTES-A099 | — |
 | 3 | [x] Handoff carry-over for "Spawn fresh" | R4 | `src/sessions`, `src/http`, `src/mcp`, `claude/hooks` | 11 | 1 | HARD | `.workflows/plan/session-context-rot/phase-3.md` | P1-NOTES-A100 | — |
-| 4 | Context Rot view in the node panel | R1, R3, R4 | `web/`, docs (`README.md`, `CLAUDE.md`, feature map) | 13 | 2, 3 | NORMAL | `.workflows/plan/session-context-rot/phase-4.md` | P1-NOTES-A101 | — |
+| 4 | [x] Context Rot view in the node panel | R1, R3, R4 | `web/`, docs (`README.md`, `CLAUDE.md`, feature map) | 13 | 2, 3 | NORMAL | `.workflows/plan/session-context-rot/phase-4.md` | P1-NOTES-A101 | — |
 
 Phase 1 serves R1 and R2 together: one accumulator change and one migration produce both the context value (R1) and the window evidence (R2); splitting them would edit the same lines twice. Phase 4 serves R1, R3 and R4: one view component shows the bar, keeps it live and shows the estimate. Phases 2 and 3 run in parallel after phase 1 and share no file (checked by the reconciler); every doc file (`README.md`, `CLAUDE.md`, `features/projects.md`) is phase 4's alone.
 

@@ -3,7 +3,7 @@
 ## Sub-features
 - Projects list (repo, session count, live count, last active), selected project.
 - Per-project sessions: graph, tree, timeline views; node ids like `A0-3G`.
-- Session search, usage (tokens), transcript (owning host only), resume (real tmux NOT driven here; background-job attach driven with a fake tmux, below).
+- Session search, usage (tokens), transcript (owning host only), resume (real tmux NOT driven here; background-job attach and the fresh-spawn handoff driven with a fake tmux behind a safety gate, below).
 - Session search matches a session's notes too (made ∪ linked, live notes only): a word or meaning
   only a session's note has finds that session, and the hit lists those notes in `via_notes`
   (`[{ id, excerpt }]`, best first, at most 3; `[]` when no note matched). Same in text mode. MCP
@@ -119,11 +119,36 @@
   `Opened claude attach <jobId> in <window>` (plus `; prompt not sent, type it there` when
   `prompt_delivered` is false). A focused/messaged attach pane names the job too. A 409 for a live job
   shows `<NODE> is background job <jobId>: run claude attach <jobId>`, never the raw code.
+- Context Rot (session-context-rot): the node panel's Subtree toggle has an icon-only `Context Rot`
+  button (Gauge) left of `Tree`; the view is kept in `localStorage` (`mcp-notes:projects:panel-view`,
+  default Tree) and the section (`region` named after its heading) reads `Context Rot`. Bar 1
+  (`role="meter"`, name `Current context`, `data-band` green|amber|red, `aria-valuenow` = percent
+  clamped to 0..100) is the latest main-chain reply's context over the inferred window; text
+  `<tokens> / <window> · <pct>%` (e.g. `390k / 1M · 39%`, percent rounded down), the model, and
+  `window assumed` when `window_source` is `default`. No reply with usage: `Unknown`, no meter.
+  A live session of this host updates over `GET /api/sessions/:nodeId/context/stream` (events
+  `context`, data `{node_id, host, available, context}`) within seconds; another host's session
+  polls `GET /api/sessions/:nodeId/context` every 60 s and opens no stream; an idle local one follows
+  the session detail. Bar 2 (`role="meter"`, name `Fresh session estimate`, neutral fill):
+  `Fresh session would start at ~X%` and `carries N of M exchanges` (+ `older ones left out` when
+  truncated) from `GET /api/sessions/:nodeId/handoff` (dry run); hidden when that route fails.
+- Spawn fresh handoff (session-context-rot phase 3): `POST /api/sessions/:nodeId/resume
+  {"fresh":true}` writes `<dataDir>/handoffs/<NODE>-<yyyymmddThhmmss>.md` (node id, title, cwd,
+  repo, transcript path, summary + age, plan docs, commits, `git status --porcelain=v1 -b`,
+  `git diff --stat` or "Git state unavailable for <cwd>: <reason>", then every stored prompt with
+  Claude's reply when they fit `0.5 × window − baseline` (baseline = median `context_first_tokens`
+  of the repo's latest 20 non-fork sessions, else 48,000; tokens ≈ chars / 4), otherwise prompt 1 plus
+  the newest exchanges that fit and "N exchanges were left out"), prunes handoffs older than 14 days,
+  and starts claude with `--append-system-prompt-file <file>` and a first prompt whose first line is
+  `[notesd handoff]` (the notes-prompt hook adds no node-id block for it).
+  `GET /api/sessions/:nodeId/handoff` is the dry run: `{node_id, tokens, window, percent, baseline,
+  exchanges_included, exchanges_total, truncated}`, any host, no file, no git.
 
 ## How to get to it (user POV)
 Wall sidebar `Projects` → `/projects`, click a node → the node panel (`aside.np`), section
-"Notes made". Claude Code: MCP `sessions_search`, `session_get`, `session_transcript`,
-`sessions_usage`; `/n link 5-BW7 into 5U-I7` (MCP `link_note` / `unlink_note`).
+"Notes made"; the gauge button left of Tree opens the Context Rot view. Claude Code: MCP
+`sessions_search`, `session_get`, `session_transcript`, `sessions_usage`; `/n link 5-BW7 into 5U-I7`
+(MCP `link_note` / `unlink_note`).
 
 ## Driving it with verify.sh
 ```sh
@@ -362,11 +387,72 @@ UI selectors: row `g[data-node="<FORK>"]`, badge `getByTestId('fork-badge')` in 
 parent line `.np-parent`, resume button `getByRole('button', { name: 'Attach to the background session' })`,
 notice `getByRole('status')`.
 
+## Context Rot (fake transcript appends)
+Fixture `…0001` (model `claude-opus-5-5`, a 1M window) ends at 32,021 tokens of context. Append
+main-chain assistant records with known usage to the run's own transcript copy; never the real
+`~/.claude`. Nothing is billed (`NOTESD_CLAUDE_BIN` points nowhere, no `--embed`):
+```sh
+NOTESD_CLAUDE_BIN=/nonexistent/claude $V up --sessions --web     # note RUN and URL
+CH="$HOME/.local/state/notesd-verify/$RUN/claude"; SID=5e55a001-0000-4000-8000-000000000001
+T="$CH/projects/-home-u-mcp-notes/$SID.jsonl"
+S=$(curl -sf --retry 30 --retry-delay 1 --retry-all-errors "$URL/api/projects/mcp-notes/sessions")
+NODE=$(jq -r --arg s $SID '.nodes[]|select(.session_id==$s)|.node_id' <<<"$S")
+asst() { printf '{"parentUuid":"as-5","isSidechain":false,"message":{"model":"claude-opus-5-5","id":"%s","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":%d,"output_tokens":100}},"type":"assistant","uuid":"%s-u","timestamp":"%s","userType":"external","entrypoint":"cli","cwd":"/home/u/mcp-notes","sessionId":"%s","version":"2.1.311","gitBranch":"main"}\n' "$2" $(( $1 - 101 )) "$2" "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" "$SID" >>"$T"; }
+$V api RUN GET /api/sessions/$NODE/context        # context.tokens 32021, window 1000000, band green
+asst 390000 msg_cr_1                              # usage sums to exactly 390,000
+$V api RUN GET /api/sessions/$NODE/context        # within a few seconds: tokens 390000, percent 39, band green
+curl -sN --max-time 8 "$URL/api/sessions/$NODE/context/stream" & sleep 2; asst 400000 msg_cr_2; wait   # initial event, then one with 400000 / amber
+$V api RUN GET /api/sessions/$NODE/handoff         # {tokens, window, percent, exchanges_included, exchanges_total, truncated}; no file under the run's data dir/handoffs
+```
+UI: `page.goto(base + '/projects?repo=mcp-notes&node=' + NODE)`; panel `aside.np[data-node="<NODE>"]`;
+button `getByRole('button', { name: 'Context Rot' })`; section `getByRole('region', { name: 'Context Rot' })`;
+bars `getByRole('meter', { name: 'Current context' })` (`data-band`) and `getByRole('meter', { name: 'Fresh session estimate' })`;
+text by exact string (`'390k / 1M · 39%'`, `'carries N of M exchanges'`, `'Unknown'`).
+Live: make the session live with a registry file for a running `sleep`
+(`{"pid":<pid>,"sessionId":"<SID>","cwd":"/home/u/mcp-notes","kind":"interactive","status":"busy"}` in
+`$CH/sessions/<pid>.json`), open the view, append from the steps file (`node:fs` `appendFileSync`),
+and wait at most 5 s for the new text with no reload. Other host: `$V exec RUN "update cc_sessions set host='GPD' where session_id='$SID'"`;
+the page polls `GET /context` every 60 s and opens no stream; `page.clock.install()` before `goto` and
+`page.clock.fastForward(60_000)` skip the wait. Unknown: a transcript holding only a user record
+(entrypoint `cli`) ingests as a node whose context is `null`. The full steps files are in
+`.workflows/plan/session-context-rot/phase-4.md` (Proof). The bands' thresholds themselves are
+unit-tested server-side (Phase 1 `contextWindow` tests) and in `web/src/components/graph/ContextRot.test.tsx`.
+
+## Spawn fresh handoff (fake tmux, safety-gated)
+The one place a verify run drives `POST /resume` with `fresh: true`. Never against real tmux or a
+real claude: the daemon must run with `NOTESD_TMUX_BIN` = a logging fake and
+`NOTESD_CLAUDE_BIN=/bin/true` (`up` passes the caller's env through).
+```sh
+S=$(mktemp -d)
+cat >"$S/fake-tmux" <<EOF
+#!/usr/bin/env bash
+{ echo "--- call"; printf '%s\n' "\$@"; } >> "$S/tmux.log"
+case "\$1" in list-sessions) echo "100 verify" ;; new-window) echo "verify:1 %99" ;; esac
+exit 0
+EOF
+chmod +x "$S/fake-tmux"
+eval "$(NOTESD_TMUX_BIN="$S/fake-tmux" NOTESD_CLAUDE_BIN=/bin/true $V up | grep -E '^(RUN|URL|EVIDENCE)=')"
+D="$HOME/.local/state/notesd-verify/$RUN"
+# SAFETY GATE: both lines must print. If either prints nothing: $V down "$RUN" and stop; do not POST resume.
+tr '\0' '\n' < /proc/$(cat "$D/pid")/environ | grep -x "NOTESD_TMUX_BIN=$S/fake-tmux"
+tr '\0' '\n' < /proc/$(cat "$D/pid")/environ | grep -x "NOTESD_CLAUDE_BIN=/bin/true"
+```
+Seed nodes with `$V exec` (`cc_sessions` rows on this host with `context_model`,
+`context_peak_tokens`, `context_first_tokens`, plus `cc_session_prompts` / `cc_session_replies`
+rows), then `$V api RUN GET /api/sessions/<NODE>/handoff` (no `handoffs/` dir appears) and
+`$V api RUN POST /api/sessions/<NODE>/resume '{"fresh":true}'` → `$D/data/handoffs/<NODE>-*.md`
+exists and `$S/tmux.log` shows `--append-system-prompt-file <that file>` followed by a prompt whose
+first line is `[notesd handoff]`. The hook check pipes a marker prompt into
+`node claude/hooks/notes-prompt.mjs` with `NOTESD_PORT` set and expects no output. The full seed SQL
+and journeys (1M node carries all 30 exchanges, 200k node truncates, `/tmp` cwd shows "Git state
+unavailable", the hook skip) are in `.workflows/plan/session-context-rot/phase-3.md` (Proof).
+Cleanup: `$V down "$RUN"; rm -rf "$S"`.
+
 ## Gotchas
 - Ingest is a background tail; allow a few seconds after `up` before asserting (the `curl --retry`
   above waits for it; `/api/projects/<repo>/sessions` is 404 until the repo has a session).
 - New ingest behavior needs a new fixture in `tests/fixtures/claude-home`, never the real `~/.claude`.
-- Never drive `resume`: it spawns real Claude sessions.
+- Never drive `resume` against real tmux or claude: it spawns real Claude sessions. The only exceptions are the two fake-tmux sections above, and the fresh-spawn one only after its safety gate printed both lines.
 - The node panel loads session detail when it opens; after `link_note`, reload the page (or reopen
   the node) before asserting the new note is listed. A link change sends no SSE event.
 - A note's row: `notes.locator('li').filter({ has: page.getByRole('link', { name: ID, exact: true }) })`. A `has`

@@ -24,6 +24,10 @@
   --soft: #a9a89f;
   --deep: #55544e;
   --line-45: rgba(236, 235, 228, .45);
+  /* Context Rot bands: amber and red are the hues the unfinished badge and failed chat thumbs already use. */
+  --band-green: #7fb069;
+  --band-amber: #e8b04a;
+  --band-red: #c0473a;
 }
 
 /* font-family on body too: the photo modal is portaled to <body>, outside .app. */

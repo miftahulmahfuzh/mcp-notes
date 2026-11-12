@@ -1,0 +1,18 @@
+/* Context Rot view (session-context-rot phase 4): hairline bars in the panel's mono language, no
+   rounded or shadowed chrome. Band fills use the --band-* tokens on :root (styles.css). The wall is
+   dark-only (index.html color-scheme: dark, one :root palette), so there is no light variant. */
+.cr { display: flex; flex-direction: column; gap: 14px; }
+.cr-row { display: flex; flex-direction: column; gap: 6px; }
+.cr-track { position: relative; height: 8px; border: 1px solid var(--line-25); box-sizing: border-box; background: transparent; overflow: hidden; }
+.cr-unknown { border-style: dashed; }
+.cr-fill { height: 100%; transition: width .4s ease; }
+.cr-green { background: var(--band-green); }
+.cr-amber { background: var(--band-amber); }
+.cr-red { background: var(--band-red); }
+.cr-fresh { background: var(--muted); }
+.cr-text { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.cr-main { font-size: 13px; color: var(--fg); }
+.cr-note { color: var(--dim); }
+@media (prefers-reduced-motion: reduce) {
+  .cr-fill { transition: none; }
+}

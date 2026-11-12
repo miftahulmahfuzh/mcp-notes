@@ -7,12 +7,12 @@
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 5
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 91
+- Blocked: 0
+- Completed: 92
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `NodePanel.tsx` Subtree toggle becomes `'context' | 'tree' | 'timeline'` with an icon-only "Context Rot" button left of Tree (Phosphor icon, `data-tip="Context Rot"`), view remembered in `localStorage` (try/catch), default `tree`; new `web/src/components/graph/ContextRot.tsx` (+ CSS): current bar (fill = percent, band colour, text "<tokens> / <window> · <pct>%", model, "window assumed" note when `window_source` is `default`, "unknown" state for null), second bar "Fresh session would start at ~X%" with "carries N of M exchanges" from the estimate route; new `web/src/hooks/useSessionContext.ts`: live + available → `EventSource` on the stream (closed on unmount/node change/view change), available not live → one fetch and a refetch on the panel's stamp, other host → poll every 60 s; `web/src/sessionDetailApi.ts` types and fetchers (`fetchSessionContext`, `fetchHandoffEstimate`, `SessionDetail.context`; shapes field-for-field phase 2's `SessionContext` / `SessionContextPayload` and phase 3's `HandoffEstimateBody`); tests (`NodePanel.test.tsx`, `ContextRot.test.tsx`, hook test with a fake EventSource, normalizer tests); `README.md` Context Rot tour paragraph, fresh-spawn paragraph (numbers = phase 3's constants: 0.5 × window − baseline, latest 20 non-fork sessions, 48,000, chars/4, 14-day prune, `[notesd handoff]`), MCP `session_resume` row, `POST …/resume` row and HTTP API rows for the three new routes; `.claude/skills/verify-notesd/features/projects.md` sub-features Context Rot and Spawn fresh handoff with driving sections (the handoff one repeats phase 3's `NOTESD_TMUX_BIN` fake + `NOTESD_CLAUDE_BIN=/bin/true` safety gate) and the resume gotcha; `CLAUDE.md` one sentence in the Claude Code sessions bullet. Exit criteria: clicking Context Rot shows both bars; a fake stream event updates the bar; other-host node polls; band colours by threshold; verify-notesd drive (Playwright) shows the bar update after appending an assistant record to the throwaway daemon's fake transcript.
-  - **Status**: blocked
-  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 4 of 4)
-  - **Satisfies**: R1, R3, R4 — R1: can we put a "Context Rot" button on the left of Tree button? Context Rot button basically track the session token consumption against the maximum tokens a session can receive (maybe 1M tokens max?) maybe we show a horizontal bar, and it will progrees to full seiring dengan banyaknya token yang dikonsumsi over the session life.; R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that?; R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R1.1, R1.6, R1.7, R3.1, R3.4, R4.8
-  - **Depends on**: P1-NOTES-A099, P1-NOTES-A100
-  - **Plan**: `.workflows/plan/P1-NOTES-A101.md`
 ### [P2] Medium
 
 ### [P3] Low
@@ -94,6 +85,19 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `NodePanel.tsx` Subtree toggle becomes `'context' | 'tree' | 'timeline'` with an icon-only "Context Rot" button left of Tree (Phosphor icon, `data-tip="Context Rot"`), view remembered in `localStorage` (try/catch), default `tree`; new `web/src/components/graph/ContextRot.tsx` (+ CSS): current bar (fill = percent, band colour, text "<tokens> / <window> · <pct>%", model, "window assumed" note when `window_source` is `default`, "unknown" state for null), second bar "Fresh session would start at ~X%" with "carries N of M exchanges" from the estimate route; new `web/src/hooks/useSessionContext.ts`: live + available → `EventSource` on the stream (closed on unmount/node change/view change), available not live → one fetch and a refetch on the panel's stamp, other host → poll every 60 s; `web/src/sessionDetailApi.ts` types and fetchers (`fetchSessionContext`, `fetchHandoffEstimate`, `SessionDetail.context`; shapes field-for-field phase 2's `SessionContext` / `SessionContextPayload` and phase 3's `HandoffEstimateBody`); tests (`NodePanel.test.tsx`, `ContextRot.test.tsx`, hook test with a fake EventSource, normalizer tests); `README.md` Context Rot tour paragraph, fresh-spawn paragraph (numbers = phase 3's constants: 0.5 × window − baseline, latest 20 non-fork sessions, 48,000, chars/4, 14-day prune, `[notesd handoff]`), MCP `session_resume` row, `POST …/resume` row and HTTP API rows for the three new routes; `.claude/skills/verify-notesd/features/projects.md` sub-features Context Rot and Spawn fresh handoff with driving sections (the handoff one repeats phase 3's `NOTESD_TMUX_BIN` fake + `NOTESD_CLAUDE_BIN=/bin/true` safety gate) and the resume gotcha; `CLAUDE.md` one sentence in the Claude Code sessions bullet. Exit criteria: clicking Context Rot shows both bars; a fake stream event updates the bar; other-host node polls; band colours by threshold; verify-notesd drive (Playwright) shows the bar update after appending an assistant record to the throwaway daemon's fake transcript.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 4 of 4)
+  - **Satisfies**: R1, R3, R4 — R1: can we put a "Context Rot" button on the left of Tree button? Context Rot button basically track the session token consumption against the maximum tokens a session can receive (maybe 1M tokens max?) maybe we show a horizontal bar, and it will progrees to full seiring dengan banyaknya token yang dikonsumsi over the session life.; R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that?; R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R1.1, R1.6, R1.7, R3.1, R3.4, R4.8
+  - **Depends on**: P1-NOTES-A099, P1-NOTES-A100
+  - **Plan**: `.workflows/plan/P1-NOTES-A101.md`
+  - **Completed**: 2026-11-12 10:25
+  - **Method**: /do
+  - **Files**: web/src/sessionDetailApi.ts, web/src/sessionDetailApi.test.tsx, web/src/hooks/useSessionContext.ts, web/src/hooks/useSessionContext.test.tsx, web/src/components/graph/ContextRot.tsx, web/src/components/graph/ContextRot.css, web/src/components/graph/ContextRot.test.tsx, web/src/components/graph/NodePanel.tsx, web/src/components/graph/NodePanel.test.tsx, web/src/styles.css, README.md, CLAUDE.md, .claude/skills/verify-notesd/features/projects.md
 
 - [x] **P1-NOTES-A100** Phase 3: Handoff carry-over for "Spawn fresh"
   - **Difficulty**: HARD
