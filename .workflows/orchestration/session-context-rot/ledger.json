@@ -1,0 +1,91 @@
+{
+  "branch": "feature/session-context-rot",
+  "coordinator": "orch-session-context-rot",
+  "coordinator_session_id": "2aa303e1-349a-429a-aa73-ae43b9ec97a5",
+  "created": "2026-11-12T10:00:57+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/sessions`, `src/db`, `drizzle",
+      "plan": ".workflows/plan/session-context-rot/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Context capture, window inference, backfill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/http`, `src/sessions`, root wiring",
+      "plan": ".workflows/plan/session-context-rot/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Context read API and live stream"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/sessions`, `src/http`, `src/mcp`, `claude/hooks",
+      "plan": ".workflows/plan/session-context-rot/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Handoff carry-over for \"Spawn fresh\""
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "web/`, docs (`README.md`, `CLAUDE.md`, feature map)",
+      "plan": ".workflows/plan/session-context-rot/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R3",
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Context Rot view in the node panel"
+    }
+  ],
+  "plan": "/home/miftah/.worktrees/mcp-notes/session-context-rot/.workflows/orchestration/session-context-rot/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "session-context-rot",
+  "updated": "2026-11-12T10:00:57+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/session-context-rot"
+}
