@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { resolveExecutable } from '../chat/env.js';
+import { buildHandoff, gitState, HANDOFF_MARKER, writeHandoff, type HandoffSource } from './handoff.js';
 
 /*
  * Resume / spawn a Claude Code session into the user's tmux (PROJECT_SESSION_GRAPH phase 9).
@@ -43,9 +44,9 @@ export const NEW_WINDOW_FORMAT = '#{session_name}:#{window_index} #{pane_id}';
 export type ResumeAction = 'focused' | 'messaged' | 'resumed' | 'spawned' | 'attached';
 
 export interface ResumeRequest {
-  /** Typed into a live session, or passed to `claude --resume <sid> <prompt>`, or appended to a fresh session's context. */
+  /** Typed into a live session, or passed to `claude --resume <sid> <prompt>`, or the task line of a fresh session's first prompt. */
   prompt?: string | undefined;
-  /** Start a new session seeded with the node's context instead of resuming it. */
+  /** Start a new session carrying the node's handoff (--append-system-prompt-file) instead of resuming it. */
   fresh?: boolean | undefined;
 }
 
@@ -118,6 +119,7 @@ export type CommandRunner = (cmd: string, args: readonly string[]) => Promise<st
 export interface ResumeDeps {
   /** os.hostname() of this machine; a node with another host is not_on_this_machine. */
   host: string;
+  /** tmux and git go through this (git for the fresh handoff's git state). */
   run: CommandRunner;
   tmuxBin: string;
   /** NOTESD_TMUX_SOCKET: passed as `-S <path>` to every tmux call. Null: tmux's default socket. */
@@ -127,11 +129,15 @@ export interface ResumeDeps {
   homeDir: string;
   /** Root of `<root>/<repo>/<slug>` worktrees; never chosen as a fallback cwd. */
   worktreesDir: string;
+  /** NOTES_DATA_DIR: fresh handoffs are written under `<dataDir>/handoffs/`. */
+  dataDir: string;
   /** The live registry entry of a session on this host, or null. */
   live(sessionId: string): Promise<LiveEntry | null>;
   isDir(p: string): Promise<boolean>;
   /** Cwds of the repo's sessions on this host, newest first (fallback candidates for a deleted cwd). */
   repoCwds(repo: string): Promise<string[]>;
+  /** The node's handoff source (stored prompts, replies, context evidence, baseline). DB access lives here so unit tests stay DB-free. */
+  loadHandoff(node: ResumeNode): Promise<HandoffSource>;
   now(): number;
 }
 
@@ -253,29 +259,20 @@ export function windowName(node: Pick<ResumeNode, 'name' | 'nodeId'>, fresh: boo
 }
 
 /**
- * First prompt of a fresh session: who it continues, where the transcript is, summary (or the
- * first prompt), plan docs, commits, then the user's prompt. Mentions the node id, so Phase 8's
- * prompt hook adds the node's full context too. Clipped to TMUX_TEXT_MAX_BYTES.
+ * First prompt of a fresh session. Its first line is exactly HANDOFF_MARKER, so the notes-prompt
+ * hook adds no node-id context (the handoff in the system prompt already has it). Then the node,
+ * its title and the handoff file, then the user's task. Clipped to TMUX_TEXT_MAX_BYTES.
  */
-export function freshPrompt(node: ResumeNode, userPrompt?: string): string {
-  const lines: string[] = [];
-  lines.push(`Continue the work of Claude Code session ${node.nodeId}${node.title ? ` ("${node.title}")` : ''}.`);
-  if (node.cwd !== null) lines.push(`It ran in ${node.cwd}${node.repo !== null ? ` (repo ${node.repo})` : ''}.`);
-  if (node.transcriptPath !== null) {
-    lines.push(`Its full transcript is ${node.transcriptPath}; read the parts you need, it is the source of truth.`);
-  }
-  if (node.summary !== null && node.summary.trim() !== '') {
-    lines.push('', 'Summary:', node.summary.trim());
-  } else if (node.firstPrompt !== null && node.firstPrompt.trim() !== '') {
-    lines.push('', 'It started with:', clipUtf8(node.firstPrompt.trim(), 2000));
-  }
-  if (node.planDocs.length > 0) lines.push('', 'Plan docs:', ...node.planDocs.slice(0, 20).map((d) => `- ${d}`));
-  if (node.commits.length > 0) lines.push('', 'Commits:', ...node.commits.slice(-20).map((c) => `- ${c}`));
-  const tail = userPrompt !== undefined && userPrompt !== ''
-    ? ['', `Task: ${userPrompt}`]
-    : ['', 'Read the context above, then wait for my next instruction.'];
-  const head = clipUtf8(lines.join('\n'), TMUX_TEXT_MAX_BYTES - Buffer.byteLength(tail.join('\n'), 'utf8') - 16);
-  return clipUtf8(head + tail.join('\n'), TMUX_TEXT_MAX_BYTES);
+export function freshPrompt(node: Pick<ResumeNode, 'nodeId' | 'title'>, handoffFile: string, userPrompt?: string): string {
+  const head = [
+    HANDOFF_MARKER,
+    `You continue Claude Code session ${node.nodeId}${node.title ? ` ("${node.title}")` : ''}.`,
+    "Its full handoff (summary, plan docs, commits, git state, and the stored prompts with Claude's replies) " +
+      `is in your system prompt; the same text is in ${handoffFile}.`,
+  ].join('\n');
+  const tail =
+    userPrompt !== undefined && userPrompt !== '' ? `Task: ${userPrompt}` : 'Read the handoff, then wait for my next instruction.';
+  return clipUtf8(`${head}\n\n${tail}`, TMUX_TEXT_MAX_BYTES);
 }
 
 /** The cc_sessions columns resume reads (structurally matches Phase 1's SessionRow). */
@@ -573,6 +570,17 @@ function ok(body: ResumeResult): ResumeOutcome {
 }
 
 /**
+ * Loads, builds and writes the node's handoff (git state of `cwd`), returning the file path.
+ * Throws only when loading or writing fails; a git failure is written into the handoff.
+ */
+export async function prepareHandoff(deps: ResumeDeps, node: ResumeNode, cwd: string): Promise<string> {
+  const now = new Date(deps.now());
+  const [source, git] = await Promise.all([deps.loadHandoff(node), gitState(deps.run, cwd)]);
+  const handoff = buildHandoff(source, { now, git });
+  return writeHandoff(deps.dataDir, node.nodeId, handoff.text, now);
+}
+
+/**
  * The whole decision for one node:
  * other host -> 404 not_on_this_machine (no tmux call at all);
  * not fresh and live in a reachable pane (its registry pane, or a background job's attach pane)
@@ -581,7 +589,7 @@ function ok(body: ResumeResult): ResumeOutcome {
  *   `claude attach <jobId>`, answer attached (+ prompt_delivered false when a prompt was given);
  * not fresh and live elsewhere -> 409 live_outside_tmux (never resume twice);
  * otherwise a new window in the most recently attached tmux session (409 no_tmux without one):
- * `claude --resume <sid> [prompt]`, or with fresh a new claude whose first prompt is the node's context.
+ * `claude --resume <sid> [prompt]`, or with fresh a new claude carrying the node's handoff (prepareHandoff) via --append-system-prompt-file.
  */
 export async function resumeNode(
   deps: ResumeDeps,
@@ -627,16 +635,25 @@ export async function resumeNode(
     const session = await pickTmuxSession(deps);
     if (session === null) return { status: 409, body: { error: 'no_tmux' } };
     const place = await resolveCwd(deps, node);
-    const created = fresh
-      ? await openClaudeWindow(deps, session, place.cwd, windowName(node, true), promptArgs(freshPrompt(node, prompt)), {
-          CC_PARENT_SESSION: node.sessionId,
-        })
-      : await openClaudeWindow(deps, session, place.cwd, windowName(node, false), [
-          '--resume',
-          node.sessionId,
-          ...promptArgs(prompt),
-        ]);
-    if (!fresh && created.paneId !== null) recent.set(node.sessionId, { at: deps.now(), paneId: created.paneId });
+    let created: { window: string; paneId: string | null };
+    if (fresh) {
+      const file = await prepareHandoff(deps, node, place.cwd);
+      created = await openClaudeWindow(
+        deps,
+        session,
+        place.cwd,
+        windowName(node, true),
+        ['--append-system-prompt-file', file, ...promptArgs(freshPrompt(node, file, prompt))],
+        { CC_PARENT_SESSION: node.sessionId },
+      );
+    } else {
+      created = await openClaudeWindow(deps, session, place.cwd, windowName(node, false), [
+        '--resume',
+        node.sessionId,
+        ...promptArgs(prompt),
+      ]);
+      if (created.paneId !== null) recent.set(node.sessionId, { at: deps.now(), paneId: created.paneId });
+    }
     return ok({
       action: fresh ? 'spawned' : 'resumed',
       ...(created.window !== '' ? { window: created.window } : {}),
@@ -684,8 +701,11 @@ export interface DefaultResumeDepsInput {
   /** config.chat.claudeBin (NOTESD_CLAUDE_BIN); resolved against PATH to an absolute path. */
   claudeBin: string;
   worktreesDir: string;
+  /** config.dataDir (NOTES_DATA_DIR): handoffs go under `<dataDir>/handoffs/`. */
+  dataDir: string;
   live: ResumeDeps['live'];
   repoCwds: ResumeDeps['repoCwds'];
+  loadHandoff: ResumeDeps['loadHandoff'];
   /** Defaults to process.env (NOTESD_TMUX_SOCKET, NOTESD_TMUX_BIN, PATH). */
   env?: Readonly<Record<string, string | undefined>>;
 }
@@ -710,9 +730,11 @@ export function defaultResumeDeps(input: DefaultResumeDepsInput): ResumeDeps {
     claudeBin: resolveExecutable(input.claudeBin, env.PATH),
     homeDir: os.homedir(),
     worktreesDir: input.worktreesDir,
+    dataDir: input.dataDir,
     live: input.live,
     isDir: isDirectory,
     repoCwds: input.repoCwds,
+    loadHandoff: input.loadHandoff,
     now: () => Date.now(),
   };
 }

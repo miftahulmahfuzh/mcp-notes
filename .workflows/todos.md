@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-12
-**Total Active Tasks**: 9
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 1
-- Completed: 90
+- Completed: 91
 
 ---
 
@@ -85,15 +85,6 @@
   - **Satisfies**: R3 — R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that? · criteria: R3.2, R3.3
   - **Depends on**: P1-NOTES-A098
   - **Plan**: `.workflows/plan/P1-NOTES-A099.md`
-- [ ] **P1-NOTES-A100** Phase 3: Handoff carry-over for "Spawn fresh"
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: new `src/sessions/handoff.ts`: `loadHandoffSource` (row + paired prompts/replies from `cc_session_prompts`/`cc_session_replies`, summary + `summarized_at`, plan docs, commits, context evidence, repo baseline = median `context_first_tokens` of the repo's latest 20 non-fork (`fork_detected_by is null`) cli sessions on any host, default 48,000), pure `buildHandoff(source, opts) -> {text, estimate:{tokens, window, percent, exchanges_included, exchanges_total, truncated}}` (budget = `HANDOFF_WINDOW_SHARE` 0.5 × window − baseline, tokens ≈ ceil(chars/4), `percent` = phase 1's `contextPercent(baseline + tokens, window)`; keeps the first prompt always, then newest exchanges that fit; header says what was left out and points at the transcript), `gitState(run, cwd)` (`git status --porcelain=v1 -b`, `git diff --stat`, timeout, failure noted in the text), `writeHandoff(dataDir, nodeId, text)` → `<dataDir>/handoffs/<NODE>-<yyyymmddThhmmss>.md`, prune files older than 14 days; `resume.ts` fresh branch: build + write the handoff, start claude with `['--append-system-prompt-file', file, firstPrompt]`, first prompt short, starts with the marker line `[notesd handoff]`, names node id, title and file, and appends the user's task; `freshPrompt` replaced or reduced to that first prompt; `ResumeDeps` gains `dataDir` (injectable); `GET /api/sessions/:nodeId/handoff` dry-run estimate in `src/http/sessionResume.ts` (any host, no file, no git); `session_resume` tool description in `src/mcp/sessionTools.ts` updated to say what fresh carries; `claude/hooks/notes-prompt.mjs` skips node-id resolution when the prompt's first line is the marker (pure string test); tests (unit for builder/budget/git failure/hook marker, resume argv, route; integration through `sessions.resume.int.test.ts`). Exit criteria: a fresh spawn against a fake tmux writes a handoff holding every exchange for a 1M node and a budgeted tail for a 200k node, and the tmux argv carries `--append-system-prompt-file <that file>`; the estimate route answers without writing; the hook adds nothing for a marker prompt; suites green.
-  - **Status**: open
-  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 3 of 4)
-  - **Satisfies**: R4 — R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R4.1, R4.2, R4.3, R4.4, R4.5, R4.6, R4.7
-  - **Depends on**: P1-NOTES-A098
-  - **Plan**: `.workflows/plan/P1-NOTES-A100.md`
 - [ ] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -112,6 +103,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A100** Phase 3: Handoff carry-over for "Spawn fresh"
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: new `src/sessions/handoff.ts`: `loadHandoffSource` (row + paired prompts/replies from `cc_session_prompts`/`cc_session_replies`, summary + `summarized_at`, plan docs, commits, context evidence, repo baseline = median `context_first_tokens` of the repo's latest 20 non-fork (`fork_detected_by is null`) cli sessions on any host, default 48,000), pure `buildHandoff(source, opts) -> {text, estimate:{tokens, window, percent, exchanges_included, exchanges_total, truncated}}` (budget = `HANDOFF_WINDOW_SHARE` 0.5 × window − baseline, tokens ≈ ceil(chars/4), `percent` = phase 1's `contextPercent(baseline + tokens, window)`; keeps the first prompt always, then newest exchanges that fit; header says what was left out and points at the transcript), `gitState(run, cwd)` (`git status --porcelain=v1 -b`, `git diff --stat`, timeout, failure noted in the text), `writeHandoff(dataDir, nodeId, text)` → `<dataDir>/handoffs/<NODE>-<yyyymmddThhmmss>.md`, prune files older than 14 days; `resume.ts` fresh branch: build + write the handoff, start claude with `['--append-system-prompt-file', file, firstPrompt]`, first prompt short, starts with the marker line `[notesd handoff]`, names node id, title and file, and appends the user's task; `freshPrompt` replaced or reduced to that first prompt; `ResumeDeps` gains `dataDir` (injectable); `GET /api/sessions/:nodeId/handoff` dry-run estimate in `src/http/sessionResume.ts` (any host, no file, no git); `session_resume` tool description in `src/mcp/sessionTools.ts` updated to say what fresh carries; `claude/hooks/notes-prompt.mjs` skips node-id resolution when the prompt's first line is the marker (pure string test); tests (unit for builder/budget/git failure/hook marker, resume argv, route; integration through `sessions.resume.int.test.ts`). Exit criteria: a fresh spawn against a fake tmux writes a handoff holding every exchange for a 1M node and a budgeted tail for a 200k node, and the tmux argv carries `--append-system-prompt-file <that file>`; the estimate route answers without writing; the hook adds nothing for a marker prompt; suites green.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 3 of 4)
+  - **Satisfies**: R4 — R4: what are the contexts that got carried over when user choose "Spawn fresh with this context" ? there is a balance to be considered here: the more context we carry over, the more accurate the new session will perform, but we still need to pay attention to the Context Rot of the new session. [...] for 1M models, i think they could handle ALL prompt-reply pairs from the old session. honestly, i want the new session to be able to carry over as much as information as it needs. · criteria: R4.1, R4.2, R4.3, R4.4, R4.5, R4.6, R4.7
+  - **Depends on**: P1-NOTES-A098
+  - **Plan**: `.workflows/plan/P1-NOTES-A100.md`
+  - **Completed**: 2026-11-12 10:52
+  - **Method**: /do
+  - **Files**: src/sessions/handoff.ts, src/sessions/resume.ts, src/http/sessionResume.ts, src/mcp/sessionTools.ts, claude/hooks/notes-prompt.mjs, claude/hooks/notes-prompt.d.mts, tests/unit/sessions/handoff.test.ts, tests/unit/sessions/resume.test.ts, tests/unit/sessions/sessionResumeRoute.test.ts, tests/unit/hooks/notesPrompt.test.ts, tests/integration/sessions.resume.int.test.ts
+  - **Drift**:
+    - Plan's integration fixture set only fork_detected_by for a fork row; cc_sessions_fork_info_check (0015) requires fork_cut_offset and fork_prompt_count together, so the fixture now sets all three.
+    - Plan said sessions.resume.int.test.ts has 7 tests; the file it specifies defines 6, all passing.
 
 - [x] **P1-NOTES-A098** Phase 1: Context capture, window inference, backfill
   - **Difficulty**: HARD
