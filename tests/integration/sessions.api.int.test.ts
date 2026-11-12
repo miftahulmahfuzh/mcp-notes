@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/http/app.js';
 import { sessionsApiRoutes } from '../../src/http/sessionsApi.js';
 import { resetGraphCache, type SessionsReadOverrides } from '../../src/sessions/readModel.js';
+import { contextBand } from '../../src/sessions/contextWindow.js';
 import { PROMPTS_VERSION, PROMPTS_VERSION_EXCERPTS } from '../../src/sessions/types.js';
 import type {
   ContextPayload,
@@ -11,6 +12,7 @@ import type {
   ProjectsPayload,
   PromptsPayload,
   SearchPayload,
+  SessionContextPayload,
   SessionDetail,
   TranscriptPayload,
   UsagePayload,
@@ -240,6 +242,49 @@ describe('GET /api/sessions/:nodeId', () => {
   it('400 invalid_node_id, 404 not_found', async () => {
     expect((await get<{ error: string }>('/api/sessions/A-B32')).body).toEqual({ error: 'invalid_node_id' });
     const missing = await get<{ error: string }>('/api/sessions/ZZ-ZZ');
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
+  });
+});
+
+describe('GET /api/sessions/:nodeId/context', () => {
+  beforeEach(async () => {
+    await h.deps.db.execute(sql`
+      update cc_sessions
+      set context_tokens = 300000, context_model = 'glm-5.3', context_at = '2026-11-01T02:00:00Z',
+          context_peak_tokens = 300000, context_long_beta = false
+      where session_id = 'sess-b1'`);
+  });
+
+  const b1Context = {
+    tokens: 300_000,
+    window: 1_000_000,
+    percent: 30,
+    band: contextBand(30),
+    model: 'glm-5.3',
+    at: '2026-11-01T02:00:00.000Z',
+    window_source: 'peak',
+    peak_tokens: 300_000,
+  };
+
+  it('answers the stored context with the inferred window, and detail carries the same object', async () => {
+    const { status, body } = await get<SessionContextPayload>('/api/sessions/b122/context');
+    expect(status).toBe(200);
+    expect(body).toEqual({ node_id: 'B1-22', host: THIS_HOST, available: true, context: b1Context });
+    const detail = (await get<SessionDetail>('/api/sessions/B1-22')).body;
+    expect(detail.session.context).toEqual(b1Context);
+  });
+
+  it('another host\'s node answers too; no captured context is null, never 0%', async () => {
+    const { status, body } = await get<SessionContextPayload>('/api/sessions/C2-33/context');
+    expect(status).toBe(200);
+    expect(body).toEqual({ node_id: 'C2-33', host: OTHER_HOST, available: false, context: null });
+    expect((await get<SessionDetail>('/api/sessions/C2-33')).body.session.context).toBeNull();
+  });
+
+  it('400 invalid_node_id, 404 not_found', async () => {
+    expect((await get<{ error: string }>('/api/sessions/A-B32/context')).body).toEqual({ error: 'invalid_node_id' });
+    const missing = await get<{ error: string }>('/api/sessions/ZZ-ZZ/context');
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
   });

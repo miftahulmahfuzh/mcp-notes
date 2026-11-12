@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-12
-**Total Active Tasks**: 9
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 1
-- Completed: 90
+- Completed: 91
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A099** Phase 2: Context read API and live stream
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `SessionInfo.context` (`{tokens, window, percent, band, model, at, window_source, peak_tokens}` or null; `percent` = phase 1's `contextPercent`, `band` = `contextBand(percent)`, no local arithmetic) in `src/sessions/view.ts` + the detail SQL in `src/sessions/readModel.ts`; `GET /api/sessions/:nodeId/context` (any host; 400 `invalid_node_id`, 404 `not_found`) and `GET /api/sessions/:nodeId/context/stream` (SSE: an initial `context` event, then one per change, heartbeat, closes on abort) in `src/http/sessionsApi.ts`; new `src/sessions/events.ts` `SessionEvents` bus (`emitContext(sessionId)`, `on`), optional `AppDeps.sessionEvents`, created in `src/daemon.ts`, fed by an ingest `onBatch` observer in `src/background.ts` that emits when the batch holds a main-chain assistant record with usage or is a read from byte 0 (phase 1's backfill notifies no observer: accepted, in phase 2's Risks); stream debounce and change check (re-read the row, send only when tokens/model/window changed); tests. Exit criteria: detail and JSON route carry the context; an SSE client sees the initial event and a new event after an ingested append; unit + integration green.
-  - **Status**: open
-  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 2 of 4)
-  - **Satisfies**: R3 — R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that? · criteria: R3.2, R3.3
-  - **Depends on**: P1-NOTES-A098
-  - **Plan**: `.workflows/plan/P1-NOTES-A099.md`
 - [ ] **P1-NOTES-A100** Phase 3: Handoff carry-over for "Spawn fresh"
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -112,6 +103,20 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A099** Phase 2: Context read API and live stream
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `SessionInfo.context` (`{tokens, window, percent, band, model, at, window_source, peak_tokens}` or null; `percent` = phase 1's `contextPercent`, `band` = `contextBand(percent)`, no local arithmetic) in `src/sessions/view.ts` + the detail SQL in `src/sessions/readModel.ts`; `GET /api/sessions/:nodeId/context` (any host; 400 `invalid_node_id`, 404 `not_found`) and `GET /api/sessions/:nodeId/context/stream` (SSE: an initial `context` event, then one per change, heartbeat, closes on abort) in `src/http/sessionsApi.ts`; new `src/sessions/events.ts` `SessionEvents` bus (`emitContext(sessionId)`, `on`), optional `AppDeps.sessionEvents`, created in `src/daemon.ts`, fed by an ingest `onBatch` observer in `src/background.ts` that emits when the batch holds a main-chain assistant record with usage or is a read from byte 0 (phase 1's backfill notifies no observer: accepted, in phase 2's Risks); stream debounce and change check (re-read the row, send only when tokens/model/window changed); tests. Exit criteria: detail and JSON route carry the context; an SSE client sees the initial event and a new event after an ingested append; unit + integration green.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/SESSION_CONTEXT_ROT_PLAN.md` (phase 2 of 4)
+  - **Satisfies**: R3 — R3: the hard part is, i want this Context Rot bar to be able to show live usage increase on a running session. can we do that? · criteria: R3.2, R3.3
+  - **Depends on**: P1-NOTES-A098
+  - **Plan**: `.workflows/plan/P1-NOTES-A099.md`
+  - **Completed**: 2026-11-12 10:18
+  - **Method**: /do
+  - **Files**: src/sessions/events.ts, src/sessions/view.ts, src/sessions/readModel.ts, src/http/sessionsApi.ts, src/deps.ts, src/daemon.ts, src/background.ts, tests/unit/sessions.view.test.ts, tests/unit/sessions/sessionEvents.test.ts, tests/unit/sessions/contextRoute.test.ts, tests/integration/sessions.api.int.test.ts, tests/integration/sessions.contextStream.int.test.ts
+  - **Drift**: src/background.ts: the observers line sat at a slightly different line than the plan quoted; applied as written
 
 - [x] **P1-NOTES-A098** Phase 1: Context capture, window inference, backfill
   - **Difficulty**: HARD
