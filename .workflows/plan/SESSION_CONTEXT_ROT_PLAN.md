@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/session-context-rot`
 **Branch:** `feature/session-context-rot` (base: `origin/main` @ `81fd619`)
 **Phases:** 4
-**Status:** phase 1/4 complete
+**Status:** phase 2/4 complete
 **Coordinator:** —
 
 ---
@@ -90,7 +90,7 @@
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | [x] Context capture, window inference, backfill | R1, R2 | `src/sessions`, `src/db`, `drizzle` | 20 | — | HARD | `.workflows/plan/session-context-rot/phase-1.md` | P1-NOTES-A098 | — |
-| 2 | Context read API and live stream | R3 | `src/http`, `src/sessions`, root wiring | 12 | 1 | NORMAL | `.workflows/plan/session-context-rot/phase-2.md` | P1-NOTES-A099 | — |
+| 2 | [x] Context read API and live stream | R3 | `src/http`, `src/sessions`, root wiring | 12 | 1 | NORMAL | `.workflows/plan/session-context-rot/phase-2.md` | P1-NOTES-A099 | — |
 | 3 | Handoff carry-over for "Spawn fresh" | R4 | `src/sessions`, `src/http`, `src/mcp`, `claude/hooks` | 11 | 1 | HARD | `.workflows/plan/session-context-rot/phase-3.md` | P1-NOTES-A100 | — |
 | 4 | Context Rot view in the node panel | R1, R3, R4 | `web/`, docs (`README.md`, `CLAUDE.md`, feature map) | 13 | 2, 3 | NORMAL | `.workflows/plan/session-context-rot/phase-4.md` | P1-NOTES-A101 | — |
 

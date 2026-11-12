@@ -17,10 +17,12 @@ import {
   toNodeRef,
   toNoteRef,
   toSessionInfo,
+  toSessionContext,
   type DetailRow,
   type LiveEntry,
   type NodeRow,
 } from '../../src/sessions/view.js';
+import { contextBand } from '../../src/sessions/contextWindow.js';
 
 function row(over: Partial<NodeRow> = {}): NodeRow {
   return {
@@ -70,6 +72,11 @@ function detail(over: Partial<DetailRow> = {}): DetailRow {
     commits: [],
     files_edited: [],
     plan_docs: [],
+    context_tokens: null,
+    context_model: null,
+    context_at: null,
+    context_peak_tokens: null,
+    context_long_beta: false,
     ...over,
   };
 }
@@ -302,5 +309,49 @@ describe('forks and background jobs', () => {
   it('resumeCommand is claude --resume for an ordinary local session and null on another host', () => {
     expect(resumeCommand(toSessionInfo(detail(), ctx))).toBe('claude --resume sess-1');
     expect(resumeCommand(toSessionInfo(detail({ host: 'gpd' }), ctx))).toBeNull();
+  });
+});
+
+describe('toSessionContext', () => {
+  const none = { context_tokens: null, context_model: null, context_at: null, context_peak_tokens: null, context_long_beta: false };
+
+  it('is null while no context was captured: unknown, not 0%', () => {
+    expect(toSessionContext(none)).toBeNull();
+    expect(toSessionInfo(detail(), { host: 'lenovo', live: noLive }).context).toBeNull();
+  });
+
+  it('an unknown model with no 1M evidence gets the 200k default window', () => {
+    expect(
+      toSessionContext({ ...none, context_tokens: '50000', context_model: 'glm-5.3', context_at: '2026-11-12T02:00:00Z', context_peak_tokens: '50000' }),
+    ).toEqual({
+      tokens: 50_000,
+      window: 200_000,
+      percent: 25,
+      band: contextBand(25),
+      model: 'glm-5.3',
+      at: '2026-11-12T02:00:00.000Z',
+      window_source: 'default',
+      peak_tokens: 50_000,
+    });
+  });
+
+  it('a peak above 200k infers a 1M window, after compaction too', () => {
+    const c = toSessionContext({ ...none, context_tokens: 150_000, context_model: 'glm-5.3', context_peak_tokens: 250_000 });
+    expect(c).toMatchObject({ tokens: 150_000, window: 1_000_000, percent: 15, window_source: 'peak', peak_tokens: 250_000 });
+  });
+
+  it('rounds the percent to one decimal (contextPercent) and bands on that shown percent', () => {
+    const c = toSessionContext({ ...none, context_tokens: 79_990, context_model: 'glm-5.3', context_peak_tokens: 79_990 });
+    expect(c?.percent).toBe(40);
+    expect(c?.band).toBe('amber');
+  });
+
+  it('a missing peak falls back to the tokens', () => {
+    expect(toSessionContext({ ...none, context_tokens: 10, context_model: 'glm-5.3' })?.peak_tokens).toBe(10);
+  });
+
+  it('toSessionInfo carries it', () => {
+    const s = toSessionInfo(detail({ context_tokens: 50_000, context_model: 'glm-5.3', context_peak_tokens: 50_000 }), { host: 'lenovo', live: noLive });
+    expect(s.context).toMatchObject({ tokens: 50_000, window: 200_000, percent: 25 });
   });
 });

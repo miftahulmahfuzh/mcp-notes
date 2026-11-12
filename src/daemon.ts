@@ -20,6 +20,7 @@ import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
+import { SessionEvents } from './sessions/events.js';
 
 /** `<dataDir>/chat`: the fixed cwd of every chat brain run. Sessions are not persisted there (persistSession: false). */
 export const CHAT_SUBDIR = 'chat';
@@ -85,6 +86,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     options.imageEmbedder !== undefined ? options.imageEmbedder : imageEmbedderFromConfig(config.embeddings);
   const db = createDb(config.databaseUrl);
   const events = new NoteEvents();
+  const sessionEvents = new SessionEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
   const chatHistory = new ChatService({ db });
   let adversary: AdversaryService | null = null;
@@ -100,7 +102,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.log(`[notesd] adversary off: claude binary "${config.chat.claudeBin}" not found (set NOTESD_CLAUDE_BIN)`);
     }
   }
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary };
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, sessionEvents };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;
