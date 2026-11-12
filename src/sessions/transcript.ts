@@ -118,7 +118,12 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
 const INTERRUPTED = /^\[Request interrupted by user/;
 /** `/model`, `/clear`, `/exit`: a slash command with no arguments says nothing about the work. */
 const BARE_COMMAND = /^\/[\w:.-]+$/;
-const GIT_COMMIT_COMMAND = /\bgit\b[^\n]*\b(?:commit|push|merge)\b/;
+/** `git [global options] <subcommand>`; global options such as `-C dir`, `-c k=v`, `--no-pager`. */
+const GIT_SUBCOMMAND = (names: string): RegExp =>
+  new RegExp(`\\bgit(?:\\s+(?:-[Cc]\\s+\\S+|--?[\\w-]+(?:=\\S+)?))*\\s+(?:${names})(?![\\w-])`);
+/** Commits, pushes or merges. `git merge-base`, `git log --merges` and `git commit-tree` do not. */
+const GIT_COMMIT_COMMAND = GIT_SUBCOMMAND('commit|push|merge');
+const GIT_LOG_COMMAND = GIT_SUBCOMMAND('log');
 /** A `git log --oneline` line (`sha subject`, optionally graph-prefixed and ref-decorated). */
 const ONELINE_LINE = /^(?:[*|\\/ ]+)?([0-9a-f]{7,40})(?: \([^)]*\))? (\S.*)$/gm;
 const MAX_ONELINE_COMMITS = 20;
@@ -135,6 +140,8 @@ export type TranscriptRecord = Record<string, unknown>;
 export interface TranscriptCarry {
   recentMessageIds: string[];
   pendingCommitIds: string[];
+  /** The subset of pendingCommitIds whose command also ran `git log` (oneline output is trusted). */
+  pendingLogIds: string[];
 }
 
 /** What one read of a transcript (from a byte offset to the last complete line) contributed. */
@@ -465,7 +472,7 @@ export function parseCommitLines(text: string, at: string | null): SessionCommit
 
 /**
  * Every `sha subject` line of `git log --oneline` output. Only trusted for the output of a command
- * that also committed, pushed or merged (`git commit -q -m x && git log --oneline -2`): `-q` leaves
+ * that runs `git log` and also committed, pushed or merged (`git commit -q -m x && git log --oneline -2`): `-q` leaves
  * no `[branch sha]` line, and the log is then the one place the new hashes are printed.
  */
 export function parseOnelineCommits(text: string, at: string | null): SessionCommit[] {
@@ -496,7 +503,7 @@ export function parseCommitRanges(text: string, cwd: string | null, at: string |
 }
 
 export function emptyCarry(): TranscriptCarry {
-  return { recentMessageIds: [], pendingCommitIds: [] };
+  return { recentMessageIds: [], pendingCommitIds: [], pendingLogIds: [] };
 }
 
 /**
@@ -541,6 +548,7 @@ export class TranscriptAccumulator {
   private readonly toolIdsThisRead = new Set<string>();
   private readonly recentMessageIds: string[];
   private readonly pendingCommitIds: string[];
+  private readonly pendingLogIds: string[];
   private readonly sidechain: boolean;
   /** Context evidence of this read (ContextEvidence). Never set by a sidechain accumulator. */
   private contextLatest: ContextSnapshot | null = null;
@@ -557,6 +565,7 @@ export class TranscriptAccumulator {
     this.sidechain = opts.sidechain === true;
     this.recentMessageIds = [...carry.recentMessageIds];
     this.pendingCommitIds = [...carry.pendingCommitIds];
+    this.pendingLogIds = [...carry.pendingLogIds];
   }
 
   /** State to hand to the next read's accumulator. */
@@ -564,6 +573,7 @@ export class TranscriptAccumulator {
     return {
       recentMessageIds: this.recentMessageIds.slice(-RECENT_MESSAGE_IDS),
       pendingCommitIds: this.pendingCommitIds.slice(-PENDING_COMMIT_IDS),
+      pendingLogIds: this.pendingLogIds.slice(-PENDING_COMMIT_IDS),
     };
   }
 
@@ -781,8 +791,10 @@ export class TranscriptAccumulator {
       // Its tool_use was in an earlier read we no longer remember: accept Bash-shaped output only.
       if (!isObject(toolUseResult) || typeof toolUseResult.stdout !== 'string') return;
     }
+    const logIndex = id === null ? -1 : this.pendingLogIds.indexOf(id);
+    if (logIndex >= 0) this.pendingLogIds.splice(logIndex, 1);
     let found = parseCommitLines(text, at);
-    if (found.length === 0 && matched) found = parseOnelineCommits(text, at);
+    if (found.length === 0 && matched && logIndex >= 0) found = parseOnelineCommits(text, at);
     for (const commit of found) {
       if (!this.commits.has(commit.sha)) this.commits.set(commit.sha, commit);
     }
@@ -858,7 +870,10 @@ export class TranscriptAccumulator {
     if (id !== null) this.toolIdsThisRead.add(id);
     if (name === 'Bash') {
       const command = typeof input.command === 'string' ? input.command : '';
-      if (id !== null && GIT_COMMIT_COMMAND.test(command)) this.pendingCommitIds.push(id);
+      if (id !== null && GIT_COMMIT_COMMAND.test(command)) {
+        this.pendingCommitIds.push(id);
+        if (GIT_LOG_COMMAND.test(command)) this.pendingLogIds.push(id);
+      }
       return;
     }
     const file = nonEmpty(input.file_path) ?? nonEmpty(input.notebook_path);

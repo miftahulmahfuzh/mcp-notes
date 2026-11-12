@@ -195,6 +195,28 @@ describe('TranscriptAccumulator on the fixture', () => {
     expect(d.commits.map((c) => `${c.sha} ${c.subject}`)).toEqual(['a91b816 feat(web): Alt+Z', 'b478a2a fix(sessions): bare skill', 'eeeeeee loud commit']);
   });
 
+  it('never reads `sha text` output of a command that only mentions merge, commit or push (merge-base)', () => {
+    const run = (id: string, command: string, output: string): string =>
+      [
+        assistant(`m_${id}`, {}, { type: 'tool_use', id, name: 'Bash', input: { command } }),
+        user('', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] }, toolUseResult: { stdout: output } }),
+      ].join('\n');
+    const d = accumulateText(
+      's',
+      [
+        run(
+          't1',
+          'for c in 9b080c72 803565ed; do if git merge-base --is-ancestor $c a22a3e60; then echo "$c IN prod build"; else echo "$c NOT in prod build ($(git log -1 --format=%s $c))"; fi; done',
+          '9b080c72 IN prod build\n803565ed IN prod build',
+        ),
+        run('t2', 'git log --merges --oneline -2', 'aaaaaaa Merge x\nbbbbbbb Merge y'),
+        run('t3', 'git commit -q -m a && git push -q && echo done', 'ccccccc not a log line'),
+        run('t4', 'git -C /r commit -q -m b && git --no-pager log --oneline -1', 'ddddddd quiet commit'),
+      ].join('\n'),
+    ).delta();
+    expect(d.commits.map((c) => `${c.sha} ${c.subject}`)).toEqual(['ddddddd quiet commit']);
+  });
+
   it('parses a push range only under its To header', () => {
     expect(parseCommitRanges('   aaaaaaa..bbbbbbb  main -> main', null, null)).toEqual([]);
     expect(parseCommitRanges('To x\n   aaaaaaa..bbbbbbb  main -> main\n * [new branch]      f -> f', '/r', null)).toEqual([
