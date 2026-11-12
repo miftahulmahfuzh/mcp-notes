@@ -6,20 +6,20 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "782832a",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "context capture (migration 0016, 6 cc_sessions cols), contextWindow.ts, one-time context backfill; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1112-100813-776998/evidence",
       "package": "src/sessions`, `src/db`, `drizzle",
       "plan": ".workflows/plan/session-context-rot/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-12T10:12:09+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A098",
       "title": "Context capture, window inference, backfill"
     },
     {
@@ -37,7 +37,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Context read API and live stream"
     },
@@ -56,7 +56,7 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Handoff carry-over for \"Spawn fresh\""
     },
@@ -86,6 +86,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-context-rot/.workflows/orchestration/session-context-rot/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-context-rot",
-  "updated": "2026-11-12T10:00:57+07:00",
+  "updated": "2026-11-12T10:12:35+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-context-rot"
 }
