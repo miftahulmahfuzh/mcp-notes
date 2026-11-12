@@ -1,7 +1,9 @@
 import os from 'node:os';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import type { Db } from '../db/client.js';
 import type { AppDeps } from '../deps.js';
+import { handoffEstimateBody, loadHandoffSource, type HandoffSource } from '../sessions/handoff.js';
 import { normalizeNodeId } from '../sessions/ids.js';
 import { backgroundJobId, readLiveSessions, type PidAliveCheck } from '../sessions/registry.js';
 import { SessionsRepo } from '../sessions/repo.js';
@@ -26,6 +28,8 @@ export const resumeBodySchema = z.strictObject({
 export interface SessionResumeRoutesOptions {
   /** Defaults to defaultSessionResumer(deps). createApp passes the one it shares with the MCP tool. */
   resumer?: SessionResumer;
+  /** Canonical node id -> handoff source, or null for an unknown node. Defaults to handoffSourceLookup(deps.db, …). */
+  handoffSource?: (nodeId: string) => Promise<HandoffSource | null>;
 }
 
 /** Node id -> ResumeNode through Phase 1's repo (getByNodeId is case/dash tolerant). */
@@ -33,6 +37,18 @@ export function sessionLookup(repo: Pick<SessionsRepo, 'getByNodeId'>): (nodeId:
   return async (nodeId) => {
     const row = await repo.getByNodeId(nodeId);
     return row === null ? null : toResumeNode(row);
+  };
+}
+
+/** Node id -> HandoffSource from the DB only (any host's node; no git, no file). Null for an unknown node. */
+export function handoffSourceLookup(
+  db: Db,
+  repo: Pick<SessionsRepo, 'getByNodeId'>,
+): (nodeId: string) => Promise<HandoffSource | null> {
+  const lookup = sessionLookup(repo);
+  return async (nodeId) => {
+    const node = await lookup(nodeId);
+    return node === null ? null : loadHandoffSource(db, node);
   };
 }
 
@@ -47,7 +63,7 @@ export function registryLive(claudeHome: string, isAlive?: PidAliveCheck): Resum
   };
 }
 
-/** The daemon's resumer: cc_sessions via SessionsRepo, live status via the registry, real tmux. */
+/** The daemon's resumer: cc_sessions via SessionsRepo, live status via the registry, real tmux and git, handoffs under config.dataDir. */
 export function defaultSessionResumer(deps: AppDeps): SessionResumer {
   let sessions: SessionsRepo | undefined;
   const repo = (): SessionsRepo => {
@@ -62,11 +78,13 @@ export function defaultSessionResumer(deps: AppDeps): SessionResumer {
       defaultResumeDeps({
         claudeBin: deps.config.chat.claudeBin,
         worktreesDir: deps.config.sessions.worktreesDir,
+        dataDir: deps.config.dataDir,
         live: registryLive(deps.config.sessions.claudeHome),
         repoCwds: async (name) =>
           (await repo().listForRepo(name, { limit: 200 }))
             .filter((item) => item.host === host && item.cwd !== null)
             .map((item) => item.cwd as string),
+        loadHandoff: (node) => loadHandoffSource(deps.db, node),
       }),
   });
 }
@@ -86,15 +104,27 @@ async function readBody(c: Context): Promise<{ ok: true; value: unknown } | { ok
  * POST /api/sessions/:nodeId/resume {prompt?, fresh?} (own Origin only)
  * -> 200 {action: focused|messaged|resumed|spawned|attached, window?, cwd?, original_cwd?, job_id?, prompt_delivered?}
  *    (attached: a live background job got a new `claude attach <job_id>` window; prompt_delivered:false
- *    when a prompt was given, since that window cannot take it yet)
+ *    when a prompt was given, since that window cannot take it yet; spawned: a fresh session started
+ *    with the node's handoff file via --append-system-prompt-file)
  * | 404 not_found | 404 not_on_this_machine {host} | 409 no_tmux | 409 live_outside_tmux {pid}
  * | 500 spawn_failed {message} | 400 invalid_json | 400 invalid_body {message} | 403 forbidden_origin.
+ *
+ * GET /api/sessions/:nodeId/handoff (any host, read only: no file, no git)
+ * -> 200 {node_id, tokens, window, percent, baseline, exchanges_included, exchanges_total, truncated}:
+ *    what a fresh spawn would carry and where the new session would start (percent of the old
+ *    session's inferred window, baseline + handoff tokens)
+ * | 400 invalid_node_id | 404 not_found {node_id}.
  */
 export function sessionResumeRoutes(deps: AppDeps, opts: SessionResumeRoutesOptions = {}): Hono {
   let resumer = opts.resumer;
   const getResumer = (): SessionResumer => {
     resumer ??= defaultSessionResumer(deps);
     return resumer;
+  };
+  let handoffSource = opts.handoffSource;
+  const getHandoffSource = (): ((nodeId: string) => Promise<HandoffSource | null>) => {
+    handoffSource ??= handoffSourceLookup(deps.db, new SessionsRepo(deps.db));
+    return handoffSource;
   };
   const r = new Hono();
 
@@ -105,6 +135,14 @@ export function sessionResumeRoutes(deps: AppDeps, opts: SessionResumeRoutesOpti
     if (!parsed.success) return c.json({ error: 'invalid_body', message: describeIssues(parsed.error) }, 400);
     const out = await getResumer().resume(c.req.param('nodeId'), parsed.data);
     return c.json(out.body, out.status);
+  });
+
+  r.get('/api/sessions/:nodeId/handoff', async (c) => {
+    const nodeId = normalizeNodeId(c.req.param('nodeId'));
+    if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
+    const source = await getHandoffSource()(nodeId);
+    if (source === null) return c.json({ error: 'not_found', node_id: nodeId }, 404);
+    return c.json(handoffEstimateBody(source, new Date()));
   });
 
   return r;

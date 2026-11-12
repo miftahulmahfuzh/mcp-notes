@@ -96,6 +96,8 @@ export const MAX_NODE_CONTEXT_CHARS: number;
 export const NODE_CONTEXT_HEADER: string;
 export const NODE_TOOLS_HINT: string;
 
+export const HANDOFF_MARKER: string;
+export function isHandoffPrompt(prompt: unknown): boolean;
 export function nodeIdCandidates(prompt: unknown): string[];
 export function contextUrl(baseUrl: string, ids: string[]): string;
 export function parseNodeContext(body: unknown, asked: string[]): ParsedNodeContext;

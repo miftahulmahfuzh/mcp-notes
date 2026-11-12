@@ -7,7 +7,9 @@
  *    (see the "Node ids" section below for what counts as one) gets that node's summary, plan
  *    docs, commits and transcript path from GET /api/sessions/context?ids=... (CONTEXT_TIMEOUT_MS,
  *    fail soft). Ids the daemon does not know add nothing. Finding candidates is one regex test on
- *    the prompt, so a prompt without one costs nothing.
+ *    the prompt, so a prompt without one costs nothing. A prompt whose first line is exactly
+ *    HANDOFF_MARKER (the first prompt of a "Spawn fresh" session, whose handoff is already in its
+ *    system prompt) gets no node-id context: one string test, no I/O.
  *
  * B. Pasted images (`/n` prompts only). A picture pasted into Claude Code has no file path, and the
  *    Stop hook stores it only after the turn. On a `/n` prompt this hook stores the session's pasted
@@ -313,6 +315,17 @@ export const NODE_TOOLS_HINT =
   'For more about one of them call session_get with node_id, or session_transcript with node_id and a query ' +
   '(only on the machine that holds its transcript).';
 
+/** First line of a "Spawn fresh" first prompt. Same text as src/sessions/handoff.ts HANDOFF_MARKER. */
+export const HANDOFF_MARKER = '[notesd handoff]';
+
+/** True when the prompt's first line is exactly HANDOFF_MARKER (a trailing \r tolerated). Pure: no I/O. */
+export function isHandoffPrompt(prompt) {
+  if (typeof prompt !== 'string' || !prompt.startsWith(HANDOFF_MARKER)) return false;
+  const end = prompt.indexOf('\n');
+  const first = end < 0 ? prompt : prompt.slice(0, end);
+  return first.replace(/\r$/, '') === HANDOFF_MARKER;
+}
+
 /** The distinct node-id candidates in a prompt, in order of first appearance, at most MAX_NODE_IDS. Pure: no I/O. */
 export function nodeIdCandidates(prompt) {
   if (typeof prompt !== 'string' || prompt.length < 5 || !prompt.includes('-')) return [];
@@ -463,6 +476,7 @@ export async function imageContext({ input, env, fetchImpl, readText, sleep, now
 /**
  * The hook output for one UserPromptSubmit input, or null to add nothing. Never throws.
  * Neither `/n` nor a node-id candidate: null before any I/O (no read, no fetch, no clock, no log).
+ * A handoff prompt (isHandoffPrompt) counts as having no node-id candidate.
  */
 export async function runPrompt({
   input,
@@ -474,7 +488,7 @@ export async function runPrompt({
   contextTimeoutMs = CONTEXT_TIMEOUT_MS,
 }) {
   const prompt = input !== null && typeof input === 'object' && typeof input.prompt === 'string' ? input.prompt : '';
-  const nodeIds = nodeIdCandidates(prompt);
+  const nodeIds = isHandoffPrompt(prompt) ? [] : nodeIdCandidates(prompt);
   const notes = isNotesPromptInput(input);
   if (!notes && nodeIds.length === 0) return null;
   const [images, nodes] = await Promise.all([

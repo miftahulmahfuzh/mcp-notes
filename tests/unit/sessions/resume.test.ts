@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { HANDOFF_MARKER, type HandoffSource } from '../../../src/sessions/handoff.js';
 import {
   claudeCommand,
   clipUtf8,
@@ -28,12 +32,29 @@ import {
 
 const SID = '6f1c2d3e-0000-4000-8000-00000000abcd';
 const CLAUDE = '/opt/claude/claude.exe';
+const GIT_STATUS = '## main...origin/main\n M src/sessions/resume.ts\n';
+const GIT_DIFF_STAT = ' src/sessions/resume.ts | 12 ++++++------\n 1 file changed, 6 insertions(+), 6 deletions(-)\n';
+
+let DATA_DIR = '';
+beforeAll(async () => {
+  DATA_DIR = await mkdtemp(path.join(os.tmpdir(), 'resume-handoffs-'));
+});
+afterAll(async () => {
+  await rm(DATA_DIR, { recursive: true, force: true });
+});
 
 type Handler = (args: string[]) => string;
 
-/** A tmux that answers per subcommand; records every call (with any -S stripped in `sub`). */
-function fakeTmux(over: Partial<Record<string, Handler>> = {}) {
+/**
+ * A tmux that answers per subcommand; records every call (with any -S stripped in `sub`).
+ * git calls go to `git` and are recorded apart in `gitCalls`.
+ */
+function fakeTmux(
+  over: Partial<Record<string, Handler>> = {},
+  git: Handler = (a) => (a.includes('status') ? GIT_STATUS : GIT_DIFF_STAT),
+) {
   const calls: string[][] = [];
+  const gitCalls: string[][] = [];
   const handlers: Record<string, Handler> = {
     'list-sessions': () => '100 work\n200 note\n 0 never\n',
     'list-clients': () => '50 /dev/pts/1\n90 /dev/pts/2\n',
@@ -43,6 +64,10 @@ function fakeTmux(over: Partial<Record<string, Handler>> = {}) {
     ...over,
   } as Record<string, Handler>;
   const run: CommandRunner = async (cmd, args) => {
+    if (cmd === 'git') {
+      gitCalls.push([...args]);
+      return git([...args]);
+    }
     expect(cmd).toBe('tmux');
     calls.push([...args]);
     const a = args[0] === '-S' ? args.slice(2) : [...args];
@@ -51,7 +76,22 @@ function fakeTmux(over: Partial<Record<string, Handler>> = {}) {
   };
   const sub = (name: string): string[][] =>
     calls.map((c) => (c[0] === '-S' ? c.slice(2) : c)).filter((c) => c[0] === name);
-  return { run, calls, sub };
+  return { run, calls, sub, gitCalls };
+}
+
+/** Two stored exchanges of a 1M node. */
+function handoffSource(n: ResumeNode): HandoffSource {
+  return {
+    node: n,
+    summarizedAt: new Date(0),
+    promptsComplete: true,
+    exchanges: [
+      { seq: 1, at: null, prompt: 'make photos deletable', promptTruncated: false, reply: 'Photos now have a delete button.', replyTruncated: false },
+      { seq: 2, at: null, prompt: 'add an undo toast', promptTruncated: false, reply: 'Added the undo toast.', replyTruncated: false },
+    ],
+    context: { model: 'claude-opus-5-5', peakTokens: 300_000, longBeta: false },
+    baselineTokens: 48_000,
+  };
 }
 
 function makeDeps(
@@ -68,12 +108,21 @@ function makeDeps(
     claudeBin: CLAUDE,
     homeDir: '/home/u',
     worktreesDir: '/home/u/.worktrees',
+    dataDir: DATA_DIR,
     live: async () => over.liveEntry ?? null,
     isDir: async (p) => dirs.has(p),
     repoCwds: async () => [],
+    loadHandoff: async (n) => handoffSource(n),
     now: () => clock.t,
     ...over,
   };
+}
+
+/** The handoff file named after --append-system-prompt-file in a claude argv. */
+function handoffFileOf(argv: string[]): string {
+  const i = argv.indexOf('--append-system-prompt-file');
+  expect(i).toBeGreaterThan(-1);
+  return argv[i + 1]!;
 }
 
 function node(over: Partial<ResumeNode> = {}): ResumeNode {
@@ -169,17 +218,21 @@ describe('parsers', () => {
     expect(n.planDocs).toEqual(['docs/plans/A.md']);
   });
 
-  it('freshPrompt carries node id, transcript, summary, commits, plan docs and the task, within the byte budget', () => {
-    const p = freshPrompt(node(), 'add tests');
+  it('freshPrompt: marker first line, node, title and handoff file, then the task, within the byte budget', () => {
+    const file = '/data/handoffs/A0-3G-20261112T030000.md';
+    const p = freshPrompt(node(), file, 'add tests');
+    expect(p.split('\n')[0]).toBe('[notesd handoff]');
+    expect(p.split('\n')[0]).toBe(HANDOFF_MARKER);
     expect(p).toContain('A0-3G');
-    expect(p).toContain(`${SID}.jsonl`);
-    expect(p).toContain('Built the photo delete flow.');
-    expect(p).toContain('- abc123def456 feat: delete photos');
-    expect(p).toContain('- docs/plans/WALL_PLAN.md');
+    expect(p).toContain('"wall editing"');
+    expect(p).toContain(file);
+    expect(p).toContain('system prompt');
     expect(p.endsWith('Task: add tests')).toBe(true);
-    const huge = freshPrompt(node({ summary: 'x'.repeat(50_000) }), 'keep me');
+    expect(p).not.toContain('Built the photo delete flow.');
+    expect(freshPrompt(node(), file).endsWith('Read the handoff, then wait for my next instruction.')).toBe(true);
+    const huge = freshPrompt(node(), file, 'x'.repeat(50_000));
     expect(Buffer.byteLength(huge, 'utf8')).toBeLessThanOrEqual(12_000);
-    expect(huge.endsWith('Task: keep me')).toBe(true);
+    expect(huge.startsWith(`${HANDOFF_MARKER}\n`)).toBe(true);
   });
 });
 
@@ -257,7 +310,7 @@ describe('resumeNode', () => {
     expect(t.sub('new-window')).toEqual([]);
   });
 
-  it('fresh: a new claude with the node context, child of the node, even while the node is live', async () => {
+  it('fresh: writes the handoff and starts claude with --append-system-prompt-file and the marker prompt, child of the node, even while live', async () => {
     const t = fakeTmux();
     const out = await resumeNode(makeDeps(t.run, { liveEntry: { pid: 42, tmux: 'note:@0.%7' } }), node(), {
       fresh: true,
@@ -265,15 +318,70 @@ describe('resumeNode', () => {
     });
     expect(out).toEqual({ status: 200, body: { action: 'spawned', window: 'note:3', cwd: '/home/u/mcp-notes' } });
     const [nw] = t.sub('new-window');
-    const expectedPrompt = freshPrompt(node(), 'write the README');
+    const file = handoffFileOf(nw!);
+    expect(path.dirname(file)).toBe(path.join(DATA_DIR, 'handoffs'));
+    expect(path.basename(file)).toBe('A0-3G-19700101T001640.md');
     expect(nw).toEqual(
       newWindowArgv(
         '/home/u/mcp-notes',
         'A0-3G-new',
-        claudeCommand(CLAUDE, [expectedPrompt], { CC_PARENT_SESSION: SID }),
+        claudeCommand(CLAUDE, ['--append-system-prompt-file', file, freshPrompt(node(), file, 'write the README')], {
+          CC_PARENT_SESSION: SID,
+        }),
       ),
     );
     expect(t.sub('select-window')).toEqual([]);
+    const text = await readFile(file, 'utf8');
+    expect(text).toContain('make photos deletable');
+    expect(text).toContain('Added the undo toast.');
+    expect(text).toContain('## main...origin/main');
+    expect(text).toContain('1 file changed');
+    expect(t.gitCalls).toEqual([
+      ['--no-optional-locks', '-C', '/home/u/mcp-notes', 'status', '--porcelain=v1', '-b'],
+      ['--no-optional-locks', '-C', '/home/u/mcp-notes', 'diff', '--stat'],
+    ]);
+  });
+
+  it('fresh: a failing git still spawns, and the handoff says git state is unavailable', async () => {
+    const t = fakeTmux({}, () => {
+      throw new Error('fatal: not a git repository');
+    });
+    const out = await resumeNode(makeDeps(t.run), node(), { fresh: true });
+    expect(out.body).toMatchObject({ action: 'spawned' });
+    const text = await readFile(handoffFileOf(t.sub('new-window')[0]!), 'utf8');
+    expect(text).toContain('Git state unavailable');
+    expect(text).toContain('not a git repository');
+    expect(text).not.toContain('## main...origin/main');
+  });
+
+  it('fresh with no tmux server writes no handoff', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'resume-nohandoff-'));
+    try {
+      const t = fakeTmux({
+        'list-sessions': () => {
+          throw new Error('no server running on /tmp/tmux-1000/default');
+        },
+      });
+      const out = await resumeNode(makeDeps(t.run, { dataDir }), node(), { fresh: true });
+      expect(out).toEqual({ status: 409, body: { error: 'no_tmux' } });
+      expect(await readdir(dataDir)).toEqual([]);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fresh: a failing handoff load is spawn_failed and opens no window', async () => {
+    const t = fakeTmux();
+    const deps = makeDeps(t.run, {
+      loadHandoff: async () => {
+        throw new Error('db down');
+      },
+    });
+    expect(await resumeNode(deps, node(), { fresh: true })).toEqual({
+      status: 500,
+      body: { error: 'spawn_failed', message: 'db down' },
+    });
+    expect(t.sub('new-window')).toEqual([]);
   });
 
   it('parseTmuxPath reads PATH=..., and is null for an unset or removed PATH', () => {
