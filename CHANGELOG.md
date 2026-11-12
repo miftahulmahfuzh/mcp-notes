@@ -5,6 +5,41 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0] - 2026-11-12
+
+Context Rot and a fuller Spawn fresh, Claude Code session forks, Claude's replies and
+commits as session search context, notes auto-linked to their session, and a much
+lighter load on Neon.
+
+### Added
+
+- **Context Rot view** (node panel, Gauge button left of Tree): a bar of the session's current context over its inferred window, coloured by band (with an Unknown state), live over a per-node SSE stream and polled every 60 s for another machine's session. Ingest stores each session's latest and peak main-chain context, its first message's context and the context-1m beta flag (migration 0016, older rows filled once per host by a context backfill); `src/sessions/contextWindow.ts` infers window, percent and band at read time. API: `GET /api/sessions/:nodeId/context` and `/context/stream`; `SessionInfo.context` on node shapes.
+- **Spawn fresh carries a handoff**: every prompt and reply, within a budget, is written to `<dataDir>/handoffs/` and passed to the new `claude` with `--append-system-prompt-file`. `GET /api/sessions/:nodeId/handoff` gives a dry-run estimate, shown as a second bar in the Context Rot view; it dims and says "no saving: resume is as cheap" when a fresh spawn gains nothing.
+- **Session forks** (`--fork-session`, background jobs) get their own node, linked to the parent with a new `fork` link source ranked above `env`/`hook`/`heuristic` (migration 0015). Ingest detects a fork from `jobs/<id>/state.json` or a shared head uuid (a fork of a fork links to that fork) and cuts the copied prefix, so tokens, commits, prompts and replies the parent already had count nowhere. Every re-reader honours the cut, and a one-time fork backfill per host re-reads forks ingested before this.
+- Forks on the wall: dotted fork edge, GitFork badge, "forked from <id> after prompt N" in the node panel; API, MCP (`session_get`, `sessions_search`) and hook context describe forks and background jobs, and `session_get` adds `resume_command`.
+- **Resume attaches to a live background job**: instead of 409 `live_outside_tmux`, resume opens a tmux window running `claude attach <jobId>` and focuses or types into it on the next ask.
+- **Claude's replies as session search context**: the reply to each prompt (the text after the turn's last tool call) is stored redacted in `cc_session_replies` (migration 0014, full-text indexed, filled for older sessions by the prompts backfill) and embedded in the background into `cc_session_reply_embeddings`. `sessions_search` and `GET /api/sessions/search` match on it and list hits in `via_replies`.
+- **Commit subjects in session search**: a session's `search_tsv` (migration 0013) and its embed text include its commits; `SESSION_EMBED_TEXT_VERSION` re-embeds every session once.
+- `sessions_search` matches a session's notes too (`via_notes`). Note and reply evidence counts `BLEND.related` (0.6) times the session's own, proven against a labelled fixture.
+- **Notes auto-link to their session**: the new `notes-link` PostToolUse hook posts each note written in a Claude Code session to `/api/sessions/hook/link-note`, so `/n` saves no longer need "and link it to this node". A failed link is returned to the model, and `/n` verifies every link.
+- **Egress meter and Neon quota breaker**: rows and bytes are counted per query shape, a loopback-only `GET /api/debug/egress` reports them, one summary line is logged per hour, and Neon error 53000 opens a 30 minute circuit breaker. `NOTESD_EGRESS_METER=off` turns the meter off.
+- Wall shortcuts: Alt+B toggles the sidebar, Alt+C switches between the session graph and project chat; tooltips name their chords. README gains a "Keyboard shortcuts" section and a rewritten "Context rot: resume or spawn fresh".
+
+### Changed
+
+- **Less Neon traffic**: hidden tabs make no requests and visible ones poll at slower, adaptive cadences (notes 300 s, graph 30-120 s, projects and adversary 120 s); notes, tags and the session graph answer 304 on an unchanged fingerprint, with a server-side graph cache; ingest reads a session row once per append instead of three times; the summary worker's idle scan runs at most every 5 minutes unless something changed, and skips settled rows.
+- `searchSessions` is built from `CandidateSource`s merged in one place (`mergeCandidates`).
+- `scripts/install.sh` registers six hooks (adds `notes-link`). Re-run it after updating, and run `npm run db:migrate` once for migrations 0013-0016.
+- Integration tests: one test database per git worktree, and the test containers run with durability off (`test:int` ~93 s warm instead of minutes).
+
+### Fixed
+
+- `seer_leaderboard` returns, drawdowns and Sharpe exclude the owner's monthly paper top-up, which made every strategy read about +40% on a losing month; `current_equity_usd` stays the real balance.
+- `git merge-base` output is no longer read as commits; the commit gate needs commit/push/merge as the actual git subcommand.
+- The fresh-spawn estimate leaves sessions that open with a slash command or a handoff out of the repo baseline.
+- Windows opened by "Resume in tmux" get tmux's global `PATH`, not the systemd unit's bare one.
+- The node modal's token stats stay on one row.
+
 ## [v0.4.0] - 2026-11-06
 
 Seer Adversarial, the daily-words connector (`/v`, `/j`), session note links and
@@ -158,6 +193,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.5.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.2.0
