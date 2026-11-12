@@ -2,17 +2,20 @@ import { describe, expect, it } from 'vitest'
 
 import {
   clip,
+  contextColumns,
   earliest,
   latest,
+  mergeContext,
   mergeTranscriptPatch,
   normalizeCwd,
   promptExcerpt,
   redactedPromptColumns,
   replacedPromptColumns,
+  sameContext,
   storedPrompts,
   storedPromptsFromExcerpts,
 } from '../../../src/sessions/merge.js'
-import { MAX_PROMPT_CHARS, MAX_PROMPTS, type SessionRow, type TranscriptPatch } from '../../../src/sessions/types.js'
+import { MAX_PROMPT_CHARS, MAX_PROMPTS, type ContextEvidence, type SessionRow, type TranscriptPatch } from '../../../src/sessions/types.js'
 
 const T = (m: number) => new Date(Date.UTC(2026, 10, 1, 10, m))
 
@@ -61,6 +64,12 @@ function blankRow(over: Partial<SessionRow> = {}): SessionRow {
     forkedAt: null,
     forkPromptCount: null,
     forkDetectedBy: null,
+    contextTokens: null,
+    contextModel: null,
+    contextAt: null,
+    contextPeakTokens: null,
+    contextFirstTokens: null,
+    contextLongBeta: false,
     createdAt: T(0),
     updatedAt: T(0),
     ...over,
@@ -206,5 +215,77 @@ describe('prompt redaction', () => {
       { text: 'whole', at: null, truncated: false, images: [] },
       { text: 'cut [redacted] …', at: new Date('2026-11-01T10:00:00.000Z'), truncated: true, images: [] },
     ])
+  })
+})
+
+describe('context columns', () => {
+  const ev = (tokens: number | null, peak: number | null, first: number | null, longBeta = false, model = 'claude-opus-5-5'): ContextEvidence => ({
+    latest: tokens === null ? null : { tokens, model, at: T(tokens % 50) },
+    peakTokens: peak,
+    firstTokens: first,
+    longBeta,
+  })
+  const stored = blankRow({
+    transcriptOffset: 10,
+    contextTokens: 50_000,
+    contextModel: 'claude-opus-5-5',
+    contextAt: T(1),
+    contextPeakTokens: 60_000,
+    contextFirstTokens: 40_000,
+    contextLongBeta: false,
+  })
+
+  it('a read from byte 0 replaces all six, and no evidence clears them', () => {
+    expect(mergeContext(stored, ev(500, 700, 300, true, 'claude-sonnet-4-6'), true)).toEqual({
+      contextTokens: 500,
+      contextModel: 'claude-sonnet-4-6',
+      contextAt: T(0),
+      contextPeakTokens: 700,
+      contextFirstTokens: 300,
+      contextLongBeta: true,
+    })
+    expect(mergeContext(stored, undefined, true)).toEqual(contextColumns(undefined))
+    expect(contextColumns(undefined)).toEqual({
+      contextTokens: null,
+      contextModel: null,
+      contextAt: null,
+      contextPeakTokens: null,
+      contextFirstTokens: null,
+      contextLongBeta: false,
+    })
+  })
+
+  it('an append stores a later, smaller context, keeps the peak and the first message, and ORs the beta (R1.3)', () => {
+    expect(mergeContext(stored, ev(9_000, 9_000, 9_000, true, 'claude-sonnet-5-5'), false)).toEqual({
+      contextTokens: 9_000,
+      contextModel: 'claude-sonnet-5-5',
+      contextAt: T(0),
+      contextPeakTokens: 60_000,
+      contextFirstTokens: 40_000,
+      contextLongBeta: true,
+    })
+    expect(mergeContext(stored, ev(70_000, 70_000, 70_000), false).contextPeakTokens).toBe(70_000)
+  })
+
+  it('an append with no assistant message keeps the snapshot; no evidence keeps everything', () => {
+    const set = mergeContext(stored, ev(null, null, null, true), false)
+    expect(set).toMatchObject({ contextTokens: 50_000, contextModel: 'claude-opus-5-5', contextPeakTokens: 60_000, contextLongBeta: true })
+    expect(mergeContext(stored, undefined, false)).toEqual(contextColumns({ latest: { tokens: 50_000, model: 'claude-opus-5-5', at: T(1) }, peakTokens: 60_000, firstTokens: 40_000, longBeta: false }))
+  })
+
+  it('an append takes the first message only while none is stored', () => {
+    expect(mergeContext(blankRow({ transcriptOffset: 10 }), ev(1_000, 1_000, 1_000), false).contextFirstTokens).toBe(1_000)
+  })
+
+  it('mergeTranscriptPatch carries the context columns', () => {
+    const set = mergeTranscriptPatch(stored, patch({ fromOffset: 10, toOffset: 20, context: ev(4_011, 4_011, 4_011) }))
+    expect(set).toMatchObject({ contextTokens: 4_011, contextPeakTokens: 60_000, contextFirstTokens: 40_000 })
+    expect(mergeTranscriptPatch(stored, patch({ fromOffset: 10, toOffset: 20 }))).toMatchObject({ contextTokens: 50_000 })
+  })
+
+  it('sameContext compares times by value', () => {
+    const a = contextColumns(ev(10, 10, 10))
+    expect(sameContext(a, { ...a, contextAt: new Date(a.contextAt?.getTime() ?? 0) })).toBe(true)
+    expect(sameContext(a, { ...a, contextLongBeta: true })).toBe(false)
   })
 })

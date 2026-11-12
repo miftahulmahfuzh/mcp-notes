@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseTranscript } from '../../../claude/hooks/lib/transcript.mjs';
 import {
   CONTEXT_HEADER,
+  HANDOFF_MARKER,
   MAX_IMAGE_BYTES,
   MAX_IMAGES,
   MAX_NODE_CONTEXT_CHARS,
@@ -24,6 +25,7 @@ import {
   buildPendingContext,
   buildContext,
   imagesSettled,
+  isHandoffPrompt,
   isNotesPromptInput,
   nodeIdCandidates,
   parseNodeContext,
@@ -663,6 +665,47 @@ describe('runPrompt: node ids', () => {
     };
     const pending = await runPrompt({ input: hookInput('/n save [Image #1] for ZZ-9Q'), env, fetchImpl: daemon.fetchImpl, readText: noFile, ...fakeClock() });
     expect(contextOf(pending)).toBe(buildPendingContext(1));
+  });
+});
+
+describe('runPrompt: a Spawn fresh handoff prompt', () => {
+  const HANDOFF_PROMPT = [
+    HANDOFF_MARKER,
+    'You continue Claude Code session A0-3G ("wall editing").',
+    "Its full handoff (summary, plan docs, commits, git state, and the stored prompts with Claude's replies) is in your system prompt; the same text is in /d/handoffs/A0-3G-20261112T030000.md.",
+    '',
+    'Read the handoff, then wait for my next instruction.',
+  ].join('\n');
+
+  it('isHandoffPrompt takes only an exact first line', () => {
+    expect(isHandoffPrompt(HANDOFF_PROMPT)).toBe(true);
+    expect(isHandoffPrompt(`${HANDOFF_MARKER}\r\ncontinue A0-3G`)).toBe(true);
+    expect(isHandoffPrompt(HANDOFF_MARKER)).toBe(true);
+    expect(isHandoffPrompt(`${HANDOFF_MARKER} A0-3G`)).toBe(false);
+    expect(isHandoffPrompt(` ${HANDOFF_MARKER}\nA0-3G`)).toBe(false);
+    expect(isHandoffPrompt(`continue A0-3G\n${HANDOFF_MARKER}`)).toBe(false);
+    expect(isHandoffPrompt(undefined)).toBe(false);
+  });
+
+  it('R4.5: adds no node-id context and does no I/O for a handoff prompt that names a node', async () => {
+    const daemon = fakeContextDaemon([NODE]);
+    let reads = 0;
+    const readText = async (): Promise<string> => {
+      reads += 1;
+      return '';
+    };
+    const out = await runPrompt({ input: hookInput(HANDOFF_PROMPT), env, fetchImpl: daemon.fetchImpl, readText, ...fakeClock() });
+    expect(out).toBeNull();
+    expect(daemon.urls).toEqual([]);
+    expect(reads).toBe(0);
+    expect(existsSync(path.join(tmp, 'state'))).toBe(false);
+  });
+
+  it('the same text without the marker line still resolves the node', async () => {
+    const daemon = fakeContextDaemon([NODE]);
+    const withoutMarker = HANDOFF_PROMPT.split('\n').slice(1).join('\n');
+    const out = await runPrompt({ input: hookInput(withoutMarker), env, fetchImpl: daemon.fetchImpl, ...fakeClock() });
+    expect(out).toEqual({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: NODE_BLOCK } });
   });
 });
 

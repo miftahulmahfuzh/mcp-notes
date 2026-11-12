@@ -31,9 +31,11 @@ import {
   toNodeRef,
   toNoteRef,
   toPromptsPayload,
+  toSessionContext,
   toSessionInfo,
   type ContextNode,
   type ContextPayload,
+  type ContextRow,
   type DetailRow,
   type GraphPayload,
   type LiveEntry,
@@ -45,6 +47,7 @@ import {
   type SearchNoteMatch,
   type SearchReplyMatch,
   type SearchPayload,
+  type SessionContextPayload,
   type SessionDetail,
   type StoredPromptImageRow,
   type StoredPromptRow,
@@ -243,6 +246,13 @@ const NODE_SELECT = sql.raw(`
   p.node_id as parent_node_id,
   (select count(*)::int from cc_sessions c where c.parent_session_id = s.session_id) as child_count`);
 
+/** Phase 1's context columns. Window and band are inferred from them at read time (toSessionContext). */
+const CONTEXT_COLUMNS = `
+  s.context_tokens::float8 as context_tokens, s.context_model, s.context_at,
+  s.context_peak_tokens::float8 as context_peak_tokens, s.context_long_beta`;
+
+const CONTEXT_SELECT = sql.raw(CONTEXT_COLUMNS);
+
 /** Extra columns for node detail and the context endpoint. */
 const DETAIL_SELECT = sql.raw(`
   s.entrypoint, s.version, s.models, s.transcript_path,
@@ -250,7 +260,7 @@ const DETAIL_SELECT = sql.raw(`
   left(s.last_prompt, 4000) as last_prompt,
   s.summary, s.summarized_at, s.summary_requested_at,
   left(s.final_message, 4000) as final_message,
-  s.prompts, s.commits, s.files_edited, s.plan_docs`);
+  s.prompts, s.commits, s.files_edited, s.plan_docs,${CONTEXT_COLUMNS}`);
 
 const NODE_FROM = sql.raw(`cc_sessions s left join cc_sessions p on p.session_id = s.parent_session_id`);
 
@@ -440,6 +450,32 @@ export async function sessionDetail(rd: SessionsReadDeps, nodeId: string): Promi
     notes: notes.rows.map(toNoteRef),
     parent: parentRow === undefined ? null : toNodeRef(toGraphNode(parentRow, ctx)),
     children: children.rows.map((c) => toNodeRef(toGraphNode(c, ctx))),
+  };
+}
+
+type ContextReadRow = ContextRow & { session_id: string; node_id: string; host: string };
+
+/** One node's context, with the session id the context stream matches SessionEvents against. */
+export interface SessionContextRead {
+  sessionId: string;
+  payload: SessionContextPayload;
+}
+
+/**
+ * GET /api/sessions/:nodeId/context and every re-read of its stream: one indexed read on node_id,
+ * light columns only, any host (the columns live in the shared database). Null: no such node.
+ */
+export async function readSessionContext(rd: SessionsReadDeps, nodeId: string): Promise<SessionContextRead | null> {
+  const res = await rd.db.execute<ContextReadRow>(sql`
+    select s.session_id, s.node_id, s.host, ${CONTEXT_SELECT}
+    from cc_sessions s
+    where s.node_id = ${nodeId}
+    limit 1`);
+  const row = res.rows[0];
+  if (row === undefined) return null;
+  return {
+    sessionId: row.session_id,
+    payload: { node_id: row.node_id, host: row.host, available: row.host === rd.host, context: toSessionContext(row) },
   };
 }
 

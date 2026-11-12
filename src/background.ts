@@ -10,6 +10,7 @@ import { startInboxWatcher } from './images/inbox.js';
 import { reconcileLegacyImages } from './images/legacy.js';
 import { ensureDataDirs } from './images/store.js';
 import { startSessionIngest, type SessionIngester } from './sessions/ingest.js';
+import { sessionContextObserver } from './sessions/events.js';
 import { dbLinkStore, startLinkWorker, type LinkWorker } from './sessions/links.js';
 import { readLiveSessions } from './sessions/registry.js';
 import { dbReplyEmbeddingStore, startReplyEmbeddingWorker } from './sessions/replyEmbeddings.js';
@@ -103,7 +104,8 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       worktreesDir: deps.config.sessions.worktreesDir,
       store: sessionsRepo,
       hostname: () => sessionsHost,
-      observers: [sessionLinks],
+      // The context observer feeds GET /api/sessions/:nodeId/context/stream (src/sessions/events.ts).
+      observers: deps.sessionEvents === undefined ? [sessionLinks] : [sessionLinks, sessionContextObserver(deps.sessionEvents)],
     });
     console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
 

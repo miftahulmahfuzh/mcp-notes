@@ -10,7 +10,7 @@ import type { Db } from '../../src/db/client.js';
 import type { AppDeps } from '../../src/deps.js';
 import { NoteEvents } from '../../src/notes/events.js';
 import { NotesService } from '../../src/notes/service.js';
-import { startSessionIngest, type SessionIngester } from '../../src/sessions/ingest.js';
+import { CONTEXT_BACKFILL_VERSION, CONTEXT_MARKER_PREFIX, startSessionIngest, type SessionIngester } from '../../src/sessions/ingest.js';
 import { SessionsRepo } from '../../src/sessions/repo.js';
 import { createRepoResolver } from '../../src/sessions/repoResolve.js';
 import { copyFixtureClaudeHome, FIXTURE } from '../helpers/claudeHome.js';
@@ -18,6 +18,15 @@ import { closeTestDb, openTestDb, testDatabaseUrl } from './setup.js';
 
 const NODE_ID = /^[0-9A-Z]{2}-[0-9A-Z]{2}$/;
 const IDS = [FIXTURE.main, FIXTURE.worktreeChild, FIXTURE.manyPrompts, FIXTURE.sdkCli, FIXTURE.sdkTs];
+const MARKER = `${CONTEXT_MARKER_PREFIX}test-host`;
+const MAIN_CONTEXT = {
+  contextTokens: 32_021,
+  contextModel: 'claude-opus-5-5',
+  contextAt: new Date('2026-11-02T02:23:10.000Z'),
+  contextPeakTokens: 50_406,
+  contextFirstTokens: 50_406,
+  contextLongBeta: false,
+};
 
 let db: Db;
 let repo: SessionsRepo;
@@ -65,6 +74,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.execute(sql`delete from cc_sessions where session_id in (${sql.join(IDS.map((id) => sql`${id}`), sql`, `)})`);
+  await db.execute(sql`delete from app_settings where key = ${MARKER}`);
   home = await copyFixtureClaudeHome();
 });
 
@@ -135,6 +145,35 @@ describe('session ingest into cc_sessions', () => {
     const report = await second.ready;
     expect(report.upserted).toBe(0);
     expect((await repo.getBySessionId(FIXTURE.worktreeChild))?.updatedAt.getTime()).toBe(after?.updatedAt.getTime());
+  });
+
+  it('stores the latest main-chain context of each session (R1.2)', async () => {
+    await start().ready;
+    expect(await repo.getBySessionId(FIXTURE.main)).toMatchObject(MAIN_CONTEXT);
+    expect(await repo.getBySessionId(FIXTURE.worktreeChild)).toMatchObject({ contextTokens: 370, contextFirstTokens: 370, contextPeakTokens: 370, contextLongBeta: false });
+  });
+
+  it("context backfill fills each of the host's rows once from its transcript, without touching updated_at (R1.5)", async () => {
+    const first = start();
+    await first.contextBackfill;
+    await first.close();
+    // What a daemon without context capture left behind, and no marker yet.
+    await db.execute(sql`update cc_sessions set context_tokens = null, context_model = null, context_at = null,
+      context_peak_tokens = null, context_first_tokens = null, context_long_beta = false
+      where session_id in (${sql.join(IDS.map((id) => sql`${id}`), sql`, `)})`);
+    await db.execute(sql`delete from app_settings where key = ${MARKER}`);
+    const before = await repo.getBySessionId(FIXTURE.main);
+    expect(before?.contextTokens).toBeNull();
+
+    const second = start();
+    expect(await second.contextBackfill).toMatchObject({ ran: true, filled: 3, deferred: 0, failed: 0 });
+    const after = await repo.getBySessionId(FIXTURE.main);
+    expect(after).toMatchObject(MAIN_CONTEXT);
+    expect(after?.updatedAt.getTime()).toBe(before?.updatedAt.getTime());
+    expect(await repo.getSetting(MARKER)).toMatchObject({ version: CONTEXT_BACKFILL_VERSION });
+    await second.close();
+
+    expect(await start().contextBackfill).toMatchObject({ ran: false });
   });
 });
 

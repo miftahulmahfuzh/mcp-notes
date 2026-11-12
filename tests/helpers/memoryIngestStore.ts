@@ -1,5 +1,6 @@
 import type { IngestStore } from '../../src/sessions/ingest.js';
 import {
+  contextColumns,
   latest,
   mergeCommits,
   mergeModels,
@@ -18,6 +19,9 @@ import {
   PROMPTS_VERSION,
   PROMPTS_VERSION_EXCERPTS,
   REPLIES_VERSION,
+  type ContextBackfillRow,
+  type ContextFill,
+  type FillContextResult,
   type ForkCandidateRow,
   type ParentLinkSource,
   type PromptsBackfillCandidate,
@@ -92,6 +96,12 @@ export function blankSessionRow(sessionId: string, host: string, over: Partial<S
     forkedAt: null,
     forkPromptCount: null,
     forkDetectedBy: null,
+    contextTokens: null,
+    contextModel: null,
+    contextAt: null,
+    contextPeakTokens: null,
+    contextFirstTokens: null,
+    contextLongBeta: false,
     createdAt: at,
     updatedAt: at,
     ...over,
@@ -305,8 +315,45 @@ export class MemoryIngestStore implements IngestStore {
     return 'applied';
   }
 
+  /** SessionsRepo.contextBackfillRows over the Map: rows of `host` with a transcript path. */
+  async contextBackfillRows(host: string): Promise<ContextBackfillRow[]> {
+    return [...this.rows.values()].flatMap((r) =>
+      r.host === host && r.transcriptPath !== null
+        ? [{ sessionId: r.sessionId, transcriptPath: r.transcriptPath, transcriptOffset: r.transcriptOffset, forkCutOffset: r.forkCutOffset }]
+        : [],
+    );
+  }
+
+  /** SessionsRepo.fillContext over the Map: the same compare-and-set, the six context columns only. */
+  async fillContext(sessionId: string, host: string, fill: ContextFill): Promise<FillContextResult> {
+    const row = this.rows.get(sessionId);
+    if (!row) return { status: 'missing' };
+    if (row.host !== host) return { status: 'other_host' };
+    if (row.transcriptOffset !== fill.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
+    this.rows.set(sessionId, { ...row, ...contextColumns(fill) });
+    return { status: 'applied' };
+  }
+
   /** A row a hook would have made before the transcript had any message (phase 5's upsertFromHook). */
   seedRow(sessionId: string, host: string, over: Partial<SessionRow> = {}): void {
     this.rows.set(sessionId, blankSessionRow(sessionId, host, over));
+  }
+}
+
+/**
+ * MemoryIngestStore plus app_settings. getSetting/putSetting turn on the one-time context backfill
+ * (the fork backfill stays off: it also needs forkBackfillRows and fillHeadUuids, which neither
+ * store has). Kept separate so the existing ingest tests run without any one-time backfill.
+ */
+export class MemorySettingsIngestStore extends MemoryIngestStore {
+  readonly settings = new Map<string, unknown>();
+
+  async getSetting(key: string): Promise<unknown | null> {
+    return this.settings.get(key) ?? null;
+  }
+
+  async putSetting(key: string, value: unknown): Promise<void> {
+    if (value === null || value === undefined) this.settings.delete(key);
+    else this.settings.set(key, value);
   }
 }

@@ -572,6 +572,23 @@ export const ccSessions = pgTable(
     forkPromptCount: integer('fork_prompt_count'),
     forkDetectedBy: text('fork_detected_by').$type<ForkDetectedBy>(),
     /**
+     * Context occupancy (migration 0016): input + cache read + cache write + output tokens of the
+     * latest main-chain assistant message with usage, its `message.model` and its record time.
+     * Sidechain records and subagent transcripts never feed these; a fork's copied records do,
+     * until the fork's own first message replaces them. Null: no such message yet (readers show
+     * "unknown", never 0%). The window is never stored: src/sessions/contextWindow.ts infers it at
+     * read time from `context_model`, `context_peak_tokens` and `context_long_beta`.
+     */
+    contextTokens: bigint('context_tokens', { mode: 'number' }),
+    contextModel: text('context_model'),
+    contextAt: timestamp('context_at', { withTimezone: true, mode: 'date' }),
+    /** Largest context any main-chain assistant message of the session reported (a fork's copied ones included). */
+    contextPeakTokens: bigint('context_peak_tokens', { mode: 'number' }),
+    /** Context of the session's first own main-chain assistant message: its start-up cost (system prompt, tools, CLAUDE.md, memory). */
+    contextFirstTokens: bigint('context_first_tokens', { mode: 'number' }),
+    /** A main-thread `api-request` record of the session listed a `context-1m-*` beta: it ran on the 1M window. */
+    contextLongBeta: boolean('context_long_beta').notNull().default(false),
+    /**
      * Human prompts, oldest first: the excerpt list, capped and redacted (src/sessions/types.ts
      * MAX_PROMPTS / MAX_PROMPT_CHARS). The full list is `cc_session_prompts`.
      */

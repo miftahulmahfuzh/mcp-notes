@@ -10,6 +10,7 @@ import {
   MAX_PROMPTS,
   MAX_REPLY_STORE_CHARS,
   MAX_TITLE_CHARS,
+  type ContextEvidence,
   type LeadingReply,
   type PatchPrompt,
   type PatchReply,
@@ -283,6 +284,72 @@ function unionStrings(prev: string[], next: string[] | undefined, reset: boolean
   return [...out].slice(0, max);
 }
 
+/** The six `cc_sessions` context columns (migration 0016). */
+export type ContextColumns = Pick<
+  SessionRow,
+  'contextTokens' | 'contextModel' | 'contextAt' | 'contextPeakTokens' | 'contextFirstTokens' | 'contextLongBeta'
+>;
+
+/**
+ * The context columns exactly as `evidence` describes them; undefined clears them. For a read that
+ * covers the whole transcript: a read from byte 0, or the context backfill (`SessionsRepo.fillContext`).
+ */
+export function contextColumns(evidence: ContextEvidence | undefined): ContextColumns {
+  const latest = evidence?.latest ?? null;
+  return {
+    contextTokens: latest?.tokens ?? null,
+    contextModel: latest?.model ?? null,
+    contextAt: latest?.at ?? null,
+    contextPeakTokens: evidence?.peakTokens ?? null,
+    contextFirstTokens: evidence?.firstTokens ?? null,
+    contextLongBeta: evidence?.longBeta === true,
+  };
+}
+
+/**
+ * The context columns after one read (TranscriptPatch.context). `reset` (a read from byte 0)
+ * replaces them. An append: a non-null `latest` replaces the snapshot, so the later, smaller
+ * context after a compaction is stored (R1.3), and a read with no assistant message keeps it; the
+ * peak is the max; the first message's context is kept once set; the long-context flag is ORed.
+ * Undefined evidence on an append keeps every column. A row ingested before migration 0016 that
+ * gets an append before the context backfill reaches it takes that append's first message as its
+ * first-message context; the backfill then rewrites all six from the whole transcript.
+ */
+export function mergeContext(row: ContextColumns, evidence: ContextEvidence | undefined, reset: boolean): ContextColumns {
+  if (reset) return contextColumns(evidence);
+  const kept: ContextColumns = {
+    contextTokens: row.contextTokens,
+    contextModel: row.contextModel,
+    contextAt: row.contextAt,
+    contextPeakTokens: row.contextPeakTokens,
+    contextFirstTokens: row.contextFirstTokens,
+    contextLongBeta: row.contextLongBeta,
+  };
+  if (evidence === undefined) return kept;
+  const latest = evidence.latest;
+  const peak = evidence.peakTokens;
+  return {
+    contextTokens: latest === null ? kept.contextTokens : latest.tokens,
+    contextModel: latest === null ? kept.contextModel : latest.model,
+    contextAt: latest === null ? kept.contextAt : latest.at,
+    contextPeakTokens: peak === null ? kept.contextPeakTokens : Math.max(kept.contextPeakTokens ?? 0, peak),
+    contextFirstTokens: kept.contextFirstTokens ?? evidence.firstTokens,
+    contextLongBeta: kept.contextLongBeta || evidence.longBeta,
+  };
+}
+
+/** True when two sets of context columns hold the same values. */
+export function sameContext(a: ContextColumns, b: ContextColumns): boolean {
+  return (
+    a.contextTokens === b.contextTokens &&
+    a.contextModel === b.contextModel &&
+    (a.contextAt?.getTime() ?? null) === (b.contextAt?.getTime() ?? null) &&
+    a.contextPeakTokens === b.contextPeakTokens &&
+    a.contextFirstTokens === b.contextFirstTokens &&
+    a.contextLongBeta === b.contextLongBeta
+  );
+}
+
 /**
  * The column values `row` takes after applying `patch`. Pure; the caller (SessionsRepo) has
  * already checked the offset precondition. See TranscriptPatch for the rules. A re-read from byte 0
@@ -293,6 +360,9 @@ function unionStrings(prev: string[], next: string[] | undefined, reset: boolean
  * Forks: a re-read from byte 0 carrying `patch.fork` writes the fork columns, and leaves out what
  * an earlier read without the cut stored from the parent's copied records: a `started_at` at or
  * before the fork point, and a first prompt or final message this read does not replace.
+ *
+ * Context (migration 0016): see mergeContext; a fork's 0-read replaces the context like every
+ * other 0-read, with the copied snapshot the read took (transcript.ts addCopied).
  */
 export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, subagents: SubagentTotals | null = null): TranscriptSet {
   const reset = patch.fromOffset === 0;
@@ -351,5 +421,6 @@ export function mergeTranscriptPatch(row: SessionRow, patch: TranscriptPatch, su
     forkedAt: fork === null ? row.forkedAt : fork.forkedAt,
     forkPromptCount: fork === null ? row.forkPromptCount : fork.promptCount,
     forkDetectedBy: fork === null ? row.forkDetectedBy : fork.detectedBy,
+    ...mergeContext(row, patch.context, reset),
   };
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Hono, type MiddlewareHandler } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { normalizeNodeId } from '../sessions/ids.js';
@@ -9,6 +10,7 @@ import {
   knownNodes,
   listProjects,
   readSelected,
+  readSessionContext,
   readTranscript,
   repoExists,
   requestSummaryFor,
@@ -22,7 +24,7 @@ import {
 } from '../sessions/readModel.js';
 import { TRANSCRIPT_DEFAULT_LIMIT, TRANSCRIPT_MAX_LIMIT } from '../sessions/transcriptSearch.js';
 import { createUnfinishedChecker, type UnfinishedChecker } from '../sessions/unfinished.js';
-import type { GraphPayload, SelectedProject } from '../sessions/view.js';
+import type { GraphPayload, SelectedProject, SessionContext, SessionContextPayload } from '../sessions/view.js';
 import { isLoopbackUrl, sameOriginOnly } from './sameOrigin.js';
 
 export const GRAPH_DEFAULT_LIMIT = 2000;
@@ -35,10 +37,18 @@ export const MAX_REPO_CHARS = 200;
 export const MAX_QUERY_CHARS = 500;
 export const MAX_CONTEXT_IDS_CHARS = 2000;
 export const MAX_KNOWN_IDS_CHARS = 1000;
+/** A burst of ingest writes (one per watcher read) becomes one re-read per stream. */
+export const CONTEXT_STREAM_DEBOUNCE_MS = 250;
+/** Same cadence as /api/events (SSE_HEARTBEAT_MS in api.ts), kept here so this module does not load api.ts. */
+export const CONTEXT_STREAM_HEARTBEAT_MS = 25_000;
 
 export interface SessionsApiOptions extends SessionsReadOverrides {
   /** The orch "unfinished" check (phase 13). Omitted: built from config.sessions.swarmScript. */
   unfinished?: UnfinishedChecker;
+  /** Context stream debounce. Defaults to CONTEXT_STREAM_DEBOUNCE_MS. Tests pass a small value. */
+  contextDebounceMs?: number;
+  /** Context stream heartbeat. Defaults to CONTEXT_STREAM_HEARTBEAT_MS. Tests pass a small value. */
+  sseHeartbeatMs?: number;
 }
 
 const repoField = z.string().trim().min(1).max(MAX_REPO_CHARS);
@@ -109,10 +119,19 @@ export function parseIdList(raw: string): string[] {
   return out;
 }
 
+/** What makes a context event worth sending: tokens, model or window moved (percent and band follow). */
+function contextKey(context: SessionContext | null): string {
+  return context === null ? 'null' : `${context.tokens}|${context.model ?? ''}|${context.window}`;
+}
+
 /**
  * The sessions read API (iteration 8, phase 7). The web polls GET /api/projects/:repo/sessions
- * (ETag + If-None-Match) instead of an SSE event: session rows change on every transcript append,
- * and the other laptop's ingest never reaches this daemon's event bus anyway.
+ * (ETag + If-None-Match) for the graph: session rows change on every transcript append, and the
+ * other laptop's ingest never reaches this daemon. The one session SSE is the per-node context
+ * stream: this host's ingest emits on SessionEvents (src/sessions/events.ts) after a write that
+ * can move a session's context, and each open stream re-reads that node's row (debounced) and
+ * sends a `context` event when tokens, model or window changed. Another host's node gets its
+ * first event and heartbeats only, so the web polls GET /api/sessions/:nodeId/context for those.
  *
  * GET  /api/projects                       repo list, counts, live counts, selected repo
  * GET  /api/projects/selected              { repo }
@@ -124,14 +143,18 @@ export function parseIdList(raw: string): string[] {
  * GET  /api/sessions/usage?by=&repo=&month=&limit=
  * GET  /api/sessions/:nodeId/transcript?query=&limit=   owning host only
  * GET  /api/sessions/:nodeId/prompts      every stored prompt (full when backfilled), from the DB, any host
+ * GET  /api/sessions/:nodeId/context      { node_id, host, available, context | null }, any host
+ * GET  /api/sessions/:nodeId/context/stream   SSE: `context` on connect, then one per change; heartbeat
  * POST /api/sessions/:nodeId/summarize     records a summary request   same-origin only
- * GET  /api/sessions/:nodeId
+ * GET  /api/sessions/:nodeId               detail; session.context is the same object as above
  */
 export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {}): Hono {
   const rd = sessionsReadDeps(deps, options);
   const unfinished =
     options.unfinished ?? createUnfinishedChecker({ swarmScript: deps.config.sessions?.swarmScript ?? null, host: rd.host });
   const r = new Hono();
+  const debounceMs = options.contextDebounceMs ?? CONTEXT_STREAM_DEBOUNCE_MS;
+  const heartbeatMs = options.sseHeartbeatMs ?? CONTEXT_STREAM_HEARTBEAT_MS;
 
   r.get('/api/projects', async (c) => c.json(await listProjects(rd)));
 
@@ -225,6 +248,85 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     return c.json(payload);
   });
 
+  r.get('/api/sessions/:nodeId/context', async (c) => {
+    const nodeId = normalizeNodeId(c.req.param('nodeId'));
+    if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
+    const read = await readSessionContext(rd, nodeId);
+    if (read === null) return c.json({ error: 'not_found', node_id: nodeId }, 404);
+    return c.json(read.payload);
+  });
+
+  // One `context` event on connect, then one per change of tokens / model / window. Changes come
+  // from this host's ingest through deps.sessionEvents; without a bus (sessions off, tests) the
+  // stream sends its first event and heartbeats only.
+  r.get('/api/sessions/:nodeId/context/stream', async (c) => {
+    const nodeId = normalizeNodeId(c.req.param('nodeId'));
+    if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
+    const first = await readSessionContext(rd, nodeId);
+    if (first === null) return c.json({ error: 'not_found', node_id: nodeId }, 404);
+    const bus = deps.sessionEvents ?? null;
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      let lastKey = contextKey(first.payload.context);
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let reading = false;
+      let pending = false;
+      const send = (payload: SessionContextPayload): Promise<void> =>
+        stream.writeSSE({ event: 'context', data: JSON.stringify(payload) }).catch(() => undefined);
+      const schedule = (): void => {
+        if (closed || timer !== null) return;
+        timer = setTimeout(() => void refresh(), debounceMs);
+      };
+      const refresh = async (): Promise<void> => {
+        timer = null;
+        if (closed) return;
+        if (reading) {
+          pending = true;
+          return;
+        }
+        reading = true;
+        try {
+          const next = await readSessionContext(rd, nodeId);
+          if (!closed && next !== null) {
+            const key = contextKey(next.payload.context);
+            if (key !== lastKey) {
+              lastKey = key;
+              await send(next.payload);
+            }
+          }
+        } catch {
+          // A failed read sends nothing; the next change re-reads.
+        } finally {
+          reading = false;
+          if (pending) {
+            pending = false;
+            schedule();
+          }
+        }
+      };
+      const unsubscribe =
+        bus === null
+          ? (): void => undefined
+          : bus.on((event) => {
+              if (event.sessionId === first.sessionId) schedule();
+            });
+      await new Promise<void>((resolve) => {
+        const beat = setInterval(() => {
+          if (!closed) void stream.write(': heartbeat\n\n').catch(() => undefined);
+        }, heartbeatMs);
+        stream.onAbort(() => {
+          closed = true;
+          clearInterval(beat);
+          if (timer !== null) clearTimeout(timer);
+          unsubscribe();
+          resolve();
+        });
+        void send(first.payload);
+        // A write committed between the read above and the subscription is caught by this re-read.
+        schedule();
+      });
+    });
+  });
 
   r.get('/api/sessions/:nodeId', async (c) => {
     const nodeId = normalizeNodeId(c.req.param('nodeId'));

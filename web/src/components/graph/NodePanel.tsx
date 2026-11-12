@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, GitFork, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import { ArrowsOut, ChartBarHorizontal, Check, CloudSlash, Copy, Gauge, GitFork, Graph, LinkSimple, MagicWand, Play, Sparkle, TreeStructure, X } from '@phosphor-icons/react';
+import type { Icon } from '@phosphor-icons/react';
 import { ChatInline, NoteLinkContext, type NoteLinks } from '../ChatText';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useCopied } from '../../hooks/useCopied';
@@ -22,12 +23,46 @@ import {
   type SummaryRequest,
 } from '../../sessionDetailApi';
 import { SubtreeTimeline } from './SubtreeTimeline';
+import { ContextRot } from './ContextRot';
 import { SubtreeTree } from './SubtreeTree';
 import { UnfinishedPill } from './UnfinishedBadge';
 import { PromptsModal } from './PromptsModal';
 import './NodePanel.css';
 
-export type SubtreeView = 'tree' | 'timeline';
+export type SubtreeView = 'context' | 'tree' | 'timeline';
+
+const SUBTREE_VIEWS: readonly SubtreeView[] = ['context', 'tree', 'timeline'];
+
+/** localStorage key: the panel's last view (Context Rot, Tree or Timeline), kept across reloads and tabs. */
+export const PANEL_VIEW_KEY = 'mcp-notes:projects:panel-view';
+
+/** The stored view, or Tree when there is none, it is unknown, or storage is blocked. */
+function readView(): SubtreeView {
+  try {
+    const v = window.localStorage.getItem(PANEL_VIEW_KEY);
+    return v !== null && (SUBTREE_VIEWS as readonly string[]).includes(v) ? (v as SubtreeView) : 'tree';
+  } catch {
+    return 'tree';
+  }
+}
+
+function storeView(v: SubtreeView): void {
+  try {
+    window.localStorage.setItem(PANEL_VIEW_KEY, v);
+  } catch {
+    // storage unavailable (private mode, blocked): the toggle still works for this page
+  }
+}
+
+/** The section's toggle, left to right. Icon-only, labels in the tooltip and aria-label. */
+const VIEW_BUTTONS: ReadonlyArray<{ view: SubtreeView; label: string; Icon: Icon }> = [
+  { view: 'context', label: 'Context Rot', Icon: Gauge },
+  { view: 'tree', label: 'Tree', Icon: TreeStructure },
+  { view: 'timeline', label: 'Timeline', Icon: ChartBarHorizontal },
+];
+
+/** The section heading follows the view. */
+const VIEW_TITLE: Record<SubtreeView, string> = { context: 'Context Rot', tree: 'Subtree', timeline: 'Subtree' };
 
 /** Prompts listed before "+N more". */
 const PROMPTS_SHOWN = 20;
@@ -74,7 +109,11 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
   const now = nowProp ?? clock;
   const { copied, copy } = useCopied();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
-  const [view, setView] = useState<SubtreeView>('tree');
+  const [view, setViewState] = useState<SubtreeView>(readView);
+  const setView = (v: SubtreeView): void => {
+    setViewState(v);
+    storeView(v);
+  };
   const [busy, setBusy] = useState<'resume' | 'fresh' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ fresh: boolean } | null>(null);
@@ -442,33 +481,34 @@ export function NodePanel({ nodeId, nodes, onSelectNode, onClose, onShowOnGraph,
             </dl>
           </section>
 
-          <section className="np-sec" aria-label="Subtree">
+          <section className="np-sec" aria-label={VIEW_TITLE[view]}>
             <div className="np-sec-head">
-              <h3>Subtree</h3>
+              <h3>{VIEW_TITLE[view]}</h3>
               <div className="np-toggle">
-                <button
-                  type="button"
-                  className={`ibtn hov${view === 'tree' ? ' on' : ''}`}
-                  data-tip="Tree"
-                  aria-label="Tree"
-                  aria-pressed={view === 'tree'}
-                  onClick={() => setView('tree')}
-                >
-                  <TreeStructure weight="duotone" />
-                </button>
-                <button
-                  type="button"
-                  className={`ibtn hov${view === 'timeline' ? ' on' : ''}`}
-                  data-tip="Timeline"
-                  aria-label="Timeline"
-                  aria-pressed={view === 'timeline'}
-                  onClick={() => setView('timeline')}
-                >
-                  <ChartBarHorizontal weight="duotone" />
-                </button>
+                {VIEW_BUTTONS.map(({ view: v, label, Icon: ViewIcon }) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`ibtn hov${view === v ? ' on' : ''}`}
+                    data-tip={label}
+                    aria-label={label}
+                    aria-pressed={view === v}
+                    onClick={() => setView(v)}
+                  >
+                    <ViewIcon weight="duotone" />
+                  </button>
+                ))}
               </div>
             </div>
-            {view === 'tree' ? (
+            {view === 'context' ? (
+              <ContextRot
+                key={detail.node_id}
+                nodeId={detail.node_id}
+                live={detail.live}
+                available={detail.available}
+                initial={detail.context}
+              />
+            ) : view === 'tree' ? (
               <SubtreeTree rows={rows} current={shownId} onSelect={onSelectNode} />
             ) : (
               <SubtreeTimeline rows={rows} current={shownId} now={now} onSelect={onSelectNode} />

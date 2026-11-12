@@ -12,6 +12,7 @@ import { generateNodeId, normalizeNodeId } from './ids.js';
 import { currentReplySha256Sql } from './replyEmbeddings.js';
 import {
   clip,
+  contextColumns,
   earliest,
   latest,
   mergeCommits,
@@ -21,6 +22,7 @@ import {
   normalizeCwd,
   redactedPromptColumns,
   replacedPromptColumns,
+  sameContext,
   sameReply,
   storedLeadingReply,
   storedPrompts,
@@ -40,6 +42,9 @@ import {
   PROMPTS_VERSION_EXCERPTS,
   REPLIES_VERSION,
   SELECTED_PROJECT_KEY,
+  type ContextBackfillRow,
+  type ContextFill,
+  type FillContextResult,
   type HookStart,
   type HookStartResult,
   type ForkBackfillRow,
@@ -457,6 +462,10 @@ export class SessionsRepo {
    * with source `fork` through setParentIn (self and cycle checks, rank) in the same transaction.
    * The parent row is created first when missing, as the hook path does: a fork may be read
    * before its parent.
+   *
+   * The read's context evidence (`patch.context`) goes to the six context columns through
+   * mergeTranscriptPatch (merge.ts mergeContext): replaced on fromOffset 0, merged on an append.
+   * Subagent writes (upsertFromSubagentTranscript) never touch them.
    */
   async upsertFromTranscript(patch: TranscriptPatch): Promise<TranscriptUpsertResult> {
     assertSessionId(patch.sessionId);
@@ -689,6 +698,50 @@ export class SessionsRepo {
       returning s.session_id
     `);
     return res.rows.length;
+  }
+
+  // ---------- one-time context backfill ----------
+
+  /**
+   * Every row of `host` with a transcript path, most recently active first: what the one-time
+   * context backfill re-reads (rows ingested before migration 0016 have no context columns).
+   */
+  async contextBackfillRows(host: string): Promise<ContextBackfillRow[]> {
+    assertHost(host);
+    const rows = await this.db
+      .select({
+        sessionId: ccSessions.sessionId,
+        transcriptPath: ccSessions.transcriptPath,
+        transcriptOffset: ccSessions.transcriptOffset,
+        forkCutOffset: ccSessions.forkCutOffset,
+      })
+      .from(ccSessions)
+      .where(and(eq(ccSessions.host, host), isNotNull(ccSessions.transcriptPath)))
+      .orderBy(desc(sql`coalesce(${ccSessions.lastActiveAt}, ${ccSessions.createdAt})`), asc(ccSessions.sessionId));
+    return rows.flatMap((r) => (r.transcriptPath === null ? [] : [{ ...r, transcriptPath: r.transcriptPath }]));
+  }
+
+  /**
+   * Sets a row's six context columns to what a re-read of its transcript from byte 0 to
+   * `fill.upToOffset` found (merge.ts contextColumns). Compare-and-set on transcript_offset and
+   * host, under the row lock, so a tail write that landed first wins and the caller re-reads.
+   * Writes no other column, not even updated_at: the context is shown in no listing, and moving
+   * updated_at would make every session look changed to the summary worker and the graph's
+   * fingerprint. Skips the update when the values are already stored.
+   */
+  async fillContext(sessionId: string, host: string, fill: ContextFill): Promise<FillContextResult> {
+    assertSessionId(sessionId);
+    assertHost(host);
+    assertOffset(fill.upToOffset, 'upToOffset');
+    return this.db.transaction(async (tx): Promise<FillContextResult> => {
+      const row = await this.lockIfExists(tx, sessionId);
+      if (row === null) return { status: 'missing' };
+      if (row.host !== host) return { status: 'other_host' };
+      if (row.transcriptOffset !== fill.upToOffset) return { status: 'offset_mismatch', storedOffset: row.transcriptOffset };
+      const next = contextColumns(fill);
+      if (!sameContext(row, next)) await tx.update(ccSessions).set(next).where(eq(ccSessions.sessionId, sessionId));
+      return { status: 'applied' };
+    });
   }
 
   /** What the session's subagent transcripts add up to (zeros and no commits when it has none). */

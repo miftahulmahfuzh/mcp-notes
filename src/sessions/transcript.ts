@@ -7,6 +7,8 @@ import {
   MAX_PLAN_DOCS,
   MAX_PROMPT_STORE_CHARS,
   MAX_TITLE_CHARS,
+  type ContextEvidence,
+  type ContextSnapshot,
   type LeadingReply,
   type ModelUsage,
   type PatchPrompt,
@@ -44,6 +46,12 @@ import {
  *   `type: 'user'` records too; only `origin.kind` `human` or absent counts as a prompt.
  * - `api-request*`, `file-history-*` and a few bookkeeping types are most of the bytes and carry
  *   nothing a session row needs; they are dropped before JSON.parse.
+ * - Context (migration 0016): a main-chain assistant message's `message.usage` input + cache read
+ *   + cache write + output is the context the next turn starts from; the latest one is the
+ *   session's context, so a compaction lowers it with no record-type dependence (no
+ *   `compact_boundary` record exists in measured transcripts). `message.model` never carries a
+ *   `[1m]` suffix; the 1M beta shows only in main-thread `api-request` lines (`querySource:
+ *   repl_main_thread*`, `params.betas`), read raw by isLongContextRequestLine.
  * - Claude's reply to a prompt is the assistant text after the last tool_use of its turn (the same
  *   `segment` that gives finalMessage), taken when the next prompt is recorded or the read ends.
  *   Narration before a tool call and sidechain text are never a reply. A read that starts mid-turn
@@ -87,6 +95,15 @@ const RECENT_MESSAGE_IDS = 16;
 const PENDING_COMMIT_IDS = 32;
 
 const LEADING_TYPE = /^\{"type":"([^"]{1,64})"/;
+/** An `api-request` line (not `-blob` / `-shape`): the request Claude Code sent, with `params.betas`. */
+const API_REQUEST_LINE = /^\s*\{"type":"api-request",/;
+/** `querySource` of the session's own turns (`repl_main_thread`, `repl_main_thread:outputStyle:<name>`); subagent requests are `agent:*`. */
+const MAIN_THREAD_SOURCE = /"querySource":"repl_main_thread[":]/;
+/**
+ * A `context-1m-*` entry inside the `betas` array. `"betas":[` with an unescaped quote can only be
+ * a JSON key (quotes inside strings are escaped), so text in the request's messages never matches.
+ */
+const LONG_CONTEXT_BETA = /"betas":\[[^\]]*"context-1m-/;
 const LOCAL_WRAPPERS = [
   '<local-command-stdout>',
   '<local-command-stderr>',
@@ -167,6 +184,8 @@ export interface TranscriptDelta {
    * does not start at byte 0. Always null for a sidechain accumulator.
    */
   leadingReply: LeadingReply | null;
+  /** Context evidence of this read (main chain only). All empty for a sidechain accumulator. */
+  context: ContextEvidence;
 }
 
 /** `from..to` from push or merge output, with the cwd of the tool result that printed it. */
@@ -226,6 +245,17 @@ function addInto(target: TokenCounts, add: TokenCounts): void {
   target.cacheWriteTokens += add.cacheWriteTokens;
 }
 
+/**
+ * The context one assistant message reports (R1.2): input + cache read + cache write + output
+ * tokens of its `message.usage`, the size the next request starts from (the reply is part of the
+ * next turn's input). 0 for a missing or malformed usage object; a counter that is not a positive
+ * finite number counts 0. This is the one place usage is validated for context.
+ */
+export function contextTokensOf(usage: unknown): number {
+  if (!isObject(usage)) return 0;
+  return count(usage.input_tokens) + count(usage.cache_read_input_tokens) + count(usage.cache_creation_input_tokens) + count(usage.output_tokens);
+}
+
 /** One JSONL line to a record. Blank, torn, non-object and ignored-type lines give null. */
 export function parseRecord(line: string): TranscriptRecord | null {
   const trimmed = line.trim();
@@ -238,6 +268,17 @@ export function parseRecord(line: string): TranscriptRecord | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * True for a raw transcript line that is a main-thread `api-request` record listing a
+ * `context-1m-*` beta (R2.3 evidence). It reads the raw text: these lines (up to ~17 KB) stay
+ * unparsed, since parseRecord drops `api-request` before JSON.parse. Every other line costs one
+ * anchored prefix test. `api-request` records carry no uuid, so a fork's copies of them count as
+ * its own, the isCopiedRecord rule for uuid-less records.
+ */
+export function isLongContextRequestLine(line: string): boolean {
+  return API_REQUEST_LINE.test(line) && line.includes('"context-1m-') && MAIN_THREAD_SOURCE.test(line) && LONG_CONTEXT_BETA.test(line);
 }
 
 /**
@@ -501,6 +542,11 @@ export class TranscriptAccumulator {
   private readonly recentMessageIds: string[];
   private readonly pendingCommitIds: string[];
   private readonly sidechain: boolean;
+  /** Context evidence of this read (ContextEvidence). Never set by a sidechain accumulator. */
+  private contextLatest: ContextSnapshot | null = null;
+  private contextPeak: number | null = null;
+  private contextFirst: number | null = null;
+  private longBeta = false;
 
   /**
    * `opts.sidechain`: the file is a subagent transcript (`<uuid>/subagents/agent-*.jsonl`), where
@@ -519,6 +565,15 @@ export class TranscriptAccumulator {
       recentMessageIds: this.recentMessageIds.slice(-RECENT_MESSAGE_IDS),
       pendingCommitIds: this.pendingCommitIds.slice(-PENDING_COMMIT_IDS),
     };
+  }
+
+  /**
+   * The read met a main-thread `api-request` line listing a `context-1m-*` beta
+   * (isLongContextRequestLine; callers test the raw line, since parseRecord drops it). A sidechain
+   * accumulator ignores it.
+   */
+  noteLongContextBeta(): void {
+    if (!this.sidechain) this.longBeta = true;
   }
 
   add(record: TranscriptRecord): void {
@@ -557,7 +612,9 @@ export class TranscriptAccumulator {
   /**
    * A record a fork copied from its parent (`isCopiedRecord`). It fills only what identifies the
    * session itself: the launch cwd and entry point (first seen), and branch and version (the
-   * fork's own records come after the copy and overwrite them). Tokens, models, prompts, replies,
+   * fork's own records come after the copy and overwrite them), plus the context snapshot and
+   * peak: the copied history really is in the fork's context until its own first message reports
+   * anew (R1.4). It never sets the first-message context. Tokens, models, prompts, replies,
    * commits, files, plan docs, the final message and the time range ignore it.
    */
   addCopied(record: TranscriptRecord): void {
@@ -570,6 +627,7 @@ export class TranscriptAccumulator {
     if (branch !== null) this.branch = branch;
     const version = nonEmpty(record.version);
     if (version !== null) this.version = version;
+    if (record.type === 'assistant') this.observeContext(record, true);
   }
 
   delta(): TranscriptDelta {
@@ -604,6 +662,12 @@ export class TranscriptAccumulator {
       finalMessage: this.segment.length > 0 ? cut(this.segment.join('\n\n').trim(), MAX_FINAL_MESSAGE_CHARS) : null,
       replies,
       leadingReply,
+      context: {
+        latest: this.contextLatest === null ? null : { ...this.contextLatest },
+        peakTokens: this.contextPeak,
+        firstTokens: this.contextFirst,
+        longBeta: this.longBeta,
+      },
     };
   }
 
@@ -733,6 +797,7 @@ export class TranscriptAccumulator {
   private addAssistant(record: TranscriptRecord): void {
     const message = record.message;
     if (!isObject(message)) return;
+    this.observeContext(record, false);
     const rawModel = nonEmpty(message.model);
     const model = rawModel === '<synthetic>' ? null : rawModel;
     const id = nonEmpty(message.id);
@@ -763,6 +828,29 @@ export class TranscriptAccumulator {
     }
   }
 
+  /**
+   * Folds one main-chain assistant record into the context evidence (R1.2): the latest message
+   * with usage wins, so a compaction's smaller context replaces a larger one (R1.3); the peak is
+   * the largest seen; the first own message's context is kept. A message whose usage sums to 0, or
+   * a `<synthetic>` one (Claude Code's local error and interrupt stand-ins), says nothing about the
+   * context and is skipped. Every record of one message repeats its usage, so seeing it twice
+   * changes nothing. A main accumulator never gets here for a sidechain record (`add` and
+   * `addCopied` return first); a sidechain accumulator ignores every record.
+   */
+  private observeContext(record: TranscriptRecord, copied: boolean): void {
+    if (this.sidechain) return;
+    const message = record.message;
+    if (!isObject(message)) return;
+    const model = nonEmpty(message.model);
+    if (model === '<synthetic>') return;
+    const tokens = contextTokensOf(message.usage);
+    if (tokens === 0) return;
+    const ms = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : Number.NaN;
+    this.contextLatest = { tokens, model, at: Number.isFinite(ms) ? new Date(ms) : null };
+    if (this.contextPeak === null || tokens > this.contextPeak) this.contextPeak = tokens;
+    if (!copied && this.contextFirst === null) this.contextFirst = tokens;
+  }
+
   private addToolUse(block: Record<string, unknown>): void {
     const name = typeof block.name === 'string' ? block.name : '';
     const id = typeof block.id === 'string' ? block.id : null;
@@ -785,6 +873,7 @@ export class TranscriptAccumulator {
 export function accumulateText(sessionId: string, text: string, carry?: TranscriptCarry): TranscriptAccumulator {
   const acc = new TranscriptAccumulator(sessionId, carry);
   for (const line of text.split('\n')) {
+    if (isLongContextRequestLine(line)) acc.noteLongContextBeta();
     const record = parseRecord(line);
     if (record !== null) acc.add(record);
   }
@@ -823,6 +912,7 @@ export function buildTranscriptPatch(delta: TranscriptDelta, ctx: PatchContext):
     tokens: delta.tokens,
     models: delta.models,
     costUsd: delta.costUsd,
+    context: delta.context,
     prompts: delta.prompts,
     replies: delta.replies,
     leadingReply: fromStart ? null : delta.leadingReply,

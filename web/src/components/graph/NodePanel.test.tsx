@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SubtreeNode } from '../../lib/subtree';
-import { NodePanel } from './NodePanel';
+import { NodePanel, PANEL_VIEW_KEY } from './NodePanel';
 
 // 2026-11-01 11:00 in Jakarta.
 const NOW = new Date('2026-11-01T04:00:00Z');
@@ -125,6 +125,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'clipboard');
+  window.localStorage.clear();
 });
 
 describe('NodePanel', () => {
@@ -532,5 +533,111 @@ describe('NodePanel: Expand prompts', () => {
     } finally {
       document.removeEventListener('keydown', onDocKey);
     }
+  });
+});
+
+describe('NodePanel Context Rot', () => {
+  const CTX = {
+    tokens: 390_000,
+    window: 1_000_000,
+    percent: 39,
+    band: 'green',
+    model: 'claude-opus-5-5',
+    at: '2026-11-01T03:00:00.000Z',
+    window_source: 'model',
+    peak_tokens: 390_000,
+  };
+  const EST = { node_id: 'A0-3G', tokens: 120_000, window: 1_000_000, percent: 12, baseline: 48_000, exchanges_included: 2, exchanges_total: 2, truncated: false };
+
+  function stubRoutes(context: unknown = CTX): string[] {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.endsWith('/handoff')) return json(200, EST);
+        return json(200, { ...WIRE, context });
+      }),
+    );
+    return urls;
+  }
+
+  const toggleLabels = (): Array<string | null> =>
+    Array.from(screen.getByRole('button', { name: 'Tree' }).parentElement?.querySelectorAll('button') ?? []).map((b) => b.getAttribute('aria-label'));
+
+  it('puts Context Rot left of Tree and shows the bars when clicked', async () => {
+    const urls = stubRoutes();
+    renderPanel();
+    await screen.findByText('Orchestrated the wall editing phases.');
+    expect(toggleLabels()).toEqual(['Context Rot', 'Tree', 'Timeline']);
+    expect(screen.getByRole('heading', { name: 'Subtree' })).toBeTruthy();
+    expect(screen.queryByRole('meter')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Context Rot' }));
+    expect(screen.getByRole('button', { name: 'Context Rot' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Tree' }).getAttribute('aria-pressed')).toBe('false');
+    const region = screen.getByRole('region', { name: 'Context Rot' });
+    expect(within(region).getByRole('heading', { name: 'Context Rot' })).toBeTruthy();
+    expect(within(region).getByText('390k / 1M · 39%')).toBeTruthy();
+    expect(within(region).getByRole('meter', { name: 'Current context' }).getAttribute('data-band')).toBe('green');
+    expect(await within(region).findByText('carries 2 of 2 exchanges')).toBeTruthy();
+    expect(urls).toContain('/api/sessions/A0-3G/handoff');
+    expect(document.querySelector('.np-tree')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
+    expect(screen.getByRole('heading', { name: 'Subtree' })).toBeTruthy();
+    expect(screen.queryByRole('meter')).toBeNull();
+    expect(document.querySelector('.np-tree')).not.toBeNull();
+  });
+
+  it('remembers the view across a remount', async () => {
+    stubRoutes();
+    const first = renderPanel();
+    await screen.findByText('Orchestrated the wall editing phases.');
+    fireEvent.click(screen.getByRole('button', { name: 'Context Rot' }));
+    expect(window.localStorage.getItem(PANEL_VIEW_KEY)).toBe('context');
+    first.unmount();
+    renderPanel();
+    expect((await screen.findByRole('button', { name: 'Context Rot' })).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('390k / 1M · 39%')).toBeTruthy();
+  });
+
+  it('opens on Tree when the stored view is unknown', async () => {
+    window.localStorage.setItem(PANEL_VIEW_KEY, 'gantt');
+    stubRoutes();
+    renderPanel();
+    expect((await screen.findByRole('button', { name: 'Tree' })).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('still toggles when localStorage throws', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    try {
+      stubRoutes();
+      renderPanel();
+      expect((await screen.findByRole('button', { name: 'Tree' })).getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'Context Rot' }));
+      expect(screen.getByRole('button', { name: 'Context Rot' }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByText('390k / 1M · 39%')).toBeTruthy();
+      expect(set).toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it('shows Unknown for a session with no context', async () => {
+    stubRoutes(null);
+    renderPanel();
+    await screen.findByText('Orchestrated the wall editing phases.');
+    fireEvent.click(screen.getByRole('button', { name: 'Context Rot' }));
+    const region = screen.getByRole('region', { name: 'Context Rot' });
+    expect(within(region).getByText('Unknown')).toBeTruthy();
+    expect(within(region).queryByRole('meter', { name: 'Current context' })).toBeNull();
   });
 });

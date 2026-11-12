@@ -9,7 +9,7 @@ import { ccSessionPromptImages, ccSessionPrompts, chatImages } from '../../src/d
 import { EMBEDDING_DIMENSIONS } from '../../src/embeddings/constants.js'
 import { NODE_ID_PATTERN } from '../../src/sessions/ids.js'
 import { SessionsRepo } from '../../src/sessions/repo.js'
-import { PROMPTS_VERSION, SELECTED_PROJECT_KEY, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
+import { PROMPTS_VERSION, SELECTED_PROJECT_KEY, type ContextEvidence, type SubagentTranscriptPatch, type TranscriptPatch } from '../../src/sessions/types.js'
 import { makeImage } from './imageHarness.js'
 import { closeTestDb, openTestDb, truncateAll } from './setup.js'
 
@@ -197,6 +197,79 @@ describe('SessionsRepo', () => {
       const offsets = await repo.offsets(HOST)
       expect([...offsets.keys()]).toEqual(['s-1'])
       expect(offsets.get('s-1')).toEqual({ offset: 40, size: 40, path: '/home/u/.claude/projects/p/s-1.jsonl', forkCutOffset: null })
+    })
+  })
+
+  describe('context columns', () => {
+    const FULL: ContextEvidence = { latest: { tokens: 50_000, model: 'claude-opus-5-5', at: at(1) }, peakTokens: 60_000, firstTokens: 40_000, longBeta: false }
+    const NONE: ContextEvidence = { latest: null, peakTokens: null, firstTokens: null, longBeta: false }
+
+    it('a read from byte 0 writes the six context columns, and the next one replaces them', async () => {
+      await repo.upsertFromTranscript(patch('s-1', { context: FULL }))
+      expect(await repo.getBySessionId('s-1')).toMatchObject({
+        contextTokens: 50_000,
+        contextModel: 'claude-opus-5-5',
+        contextAt: at(1),
+        contextPeakTokens: 60_000,
+        contextFirstTokens: 40_000,
+        contextLongBeta: false,
+      })
+      await repo.upsertFromTranscript(patch('s-1', { toOffset: 120, size: 120, context: NONE }))
+      expect(await repo.getBySessionId('s-1')).toMatchObject({
+        contextTokens: null,
+        contextModel: null,
+        contextAt: null,
+        contextPeakTokens: null,
+        contextFirstTokens: null,
+        contextLongBeta: false,
+      })
+    })
+
+    it('an append keeps the snapshot without an assistant message, stores a later smaller one, keeps peak and first, ORs the beta', async () => {
+      await repo.upsertFromTranscript(patch('s-1', { context: FULL }))
+      await repo.upsertFromTranscript(patch('s-1', { fromOffset: 100, toOffset: 150, size: 150, context: { ...NONE, longBeta: true } }))
+      expect(await repo.getBySessionId('s-1')).toMatchObject({ contextTokens: 50_000, contextLongBeta: true })
+      await repo.upsertFromTranscript(
+        patch('s-1', {
+          fromOffset: 150,
+          toOffset: 200,
+          size: 200,
+          context: { latest: { tokens: 9_000, model: 'claude-sonnet-5-5', at: at(5) }, peakTokens: 9_000, firstTokens: 9_000, longBeta: false },
+        }),
+      )
+      expect(await repo.getBySessionId('s-1')).toMatchObject({
+        contextTokens: 9_000,
+        contextModel: 'claude-sonnet-5-5',
+        contextAt: at(5),
+        contextPeakTokens: 60_000,
+        contextFirstTokens: 40_000,
+        contextLongBeta: true,
+      })
+      await repo.upsertFromTranscript(patch('s-1', { fromOffset: 200, toOffset: 210, size: 210 }))
+      expect(await repo.getBySessionId('s-1')).toMatchObject({ contextTokens: 9_000, contextPeakTokens: 60_000 })
+    })
+
+    it('fillContext writes the six columns under a compare-and-set on the offset and leaves updated_at alone', async () => {
+      await repo.upsertFromTranscript(patch('s-1'))
+      const before = await repo.getBySessionId('s-1')
+      const fill = { upToOffset: 100, ...FULL, longBeta: true }
+      expect(await repo.fillContext('s-1', HOST, { ...fill, upToOffset: 90 })).toEqual({ status: 'offset_mismatch', storedOffset: 100 })
+      expect(await repo.fillContext('s-1', 'host-b', fill)).toEqual({ status: 'other_host' })
+      expect(await repo.fillContext('s-none', HOST, fill)).toEqual({ status: 'missing' })
+      expect((await repo.getBySessionId('s-1'))?.contextTokens).toBeNull()
+      expect(await repo.fillContext('s-1', HOST, fill)).toEqual({ status: 'applied' })
+      const after = await repo.getBySessionId('s-1')
+      expect(after).toMatchObject({ contextTokens: 50_000, contextPeakTokens: 60_000, contextFirstTokens: 40_000, contextLongBeta: true, transcriptOffset: 100 })
+      expect(after?.updatedAt).toEqual(before?.updatedAt)
+    })
+
+    it('contextBackfillRows lists the rows of one host that have a transcript path', async () => {
+      await repo.upsertFromTranscript(patch('s-1'))
+      await repo.upsertFromTranscript(patch('s-2', { host: 'host-b' }))
+      await repo.ensureSession('s-3', HOST)
+      expect(await repo.contextBackfillRows(HOST)).toEqual([
+        { sessionId: 's-1', transcriptPath: '/home/u/.claude/projects/p/s-1.jsonl', transcriptOffset: 100, forkCutOffset: null },
+      ])
     })
   })
 

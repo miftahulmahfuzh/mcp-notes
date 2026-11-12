@@ -6,6 +6,7 @@
  */
 
 import { PARENT_LINK_SOURCES, type ModelUsage, type ParentLinkSource } from '../db/schema.js';
+import { contextBand, contextPercent, contextWindowFor, type ContextBand, type ContextWindowSource } from './contextWindow.js';
 import { estimateCostUsd } from './pricing.js';
 
 export type { ParentLinkSource };
@@ -51,6 +52,39 @@ export interface ForkPoint {
   parent_node_id: string;
   forked_at: string | null;
   prompt_count: number | null;
+}
+
+/** Colour band of a context fill (phase 1's contextBand: green < 40%, amber 40-70%, red >= 70%). */
+export type { ContextBand, ContextWindowSource };
+
+/**
+ * A session's current context fill: the input + cache read + cache write + output tokens of its
+ * latest main-chain assistant message (phase 1 capture) against the inferred window. The window
+ * is computed at read time from the stored model, peak and long-context beta flag (never stored).
+ */
+export interface SessionContext {
+  tokens: number;
+  window: number;
+  /** tokens / window * 100, one decimal. */
+  percent: number;
+  band: ContextBand;
+  /** Model of the latest main-chain assistant message, as the transcript wrote it. */
+  model: string | null;
+  /** ISO time of that message. */
+  at: string | null;
+  window_source: ContextWindowSource;
+  /** The highest context this session ever reported (never below `tokens`). */
+  peak_tokens: number;
+}
+
+/** GET /api/sessions/:nodeId/context, and each `context` event of its stream. Any host. */
+export interface SessionContextPayload {
+  node_id: string;
+  host: string;
+  /** True when the session ran on this daemon's host (its stream can be live). */
+  available: boolean;
+  /** Null while no main-chain assistant message with usage was captured: unknown, not 0%. */
+  context: SessionContext | null;
 }
 
 export interface GraphNode {
@@ -205,6 +239,8 @@ export interface SessionInfo extends GraphNode {
   summary_requested_at: string | null;
   summary_state: SummaryState;
   final_message: string | null;
+  /** Current context fill (see SessionContext); null when none was captured. */
+  context: SessionContext | null;
 }
 
 export interface SessionDetail {
@@ -339,23 +375,33 @@ export type NodeRow = {
   child_count: number | string | null;
 };
 
-/** NODE_SELECT + DETAIL_SELECT. */
-export type DetailRow = NodeRow & {
-  entrypoint: string | null;
-  version: string | null;
-  models: unknown;
-  transcript_path: string | null;
-  first_prompt_full: string | null;
-  last_prompt: string | null;
-  summary: string | null;
-  summarized_at: Date | string | null;
-  summary_requested_at: Date | string | null;
-  final_message: string | null;
-  prompts: unknown;
-  commits: unknown;
-  files_edited: unknown;
-  plan_docs: unknown;
+/** readModel's context columns (phase 1's cc_sessions context_*; bigints cast to float8). */
+export type ContextRow = {
+  context_tokens: number | string | null;
+  context_model: string | null;
+  context_at: Date | string | null;
+  context_peak_tokens: number | string | null;
+  context_long_beta: boolean | null;
 };
+
+/** NODE_SELECT + DETAIL_SELECT (which carries the context columns). */
+export type DetailRow = NodeRow &
+  ContextRow & {
+    entrypoint: string | null;
+    version: string | null;
+    models: unknown;
+    transcript_path: string | null;
+    first_prompt_full: string | null;
+    last_prompt: string | null;
+    summary: string | null;
+    summarized_at: Date | string | null;
+    summary_requested_at: Date | string | null;
+    final_message: string | null;
+    prompts: unknown;
+    commits: unknown;
+    files_edited: unknown;
+    plan_docs: unknown;
+  };
 
 /** One live session from phase 3's registry, as the read model needs it. */
 export interface LiveEntry {
@@ -489,6 +535,30 @@ export function tokenCounts(row: Pick<NodeRow, 'input_tokens' | 'output_tokens' 
 }
 
 /**
+ * The context columns become a SessionContext, or null when no context was captured. Percent is
+ * phase 1's contextPercent (one decimal, 0..100+) and the band is contextBand of that same shown
+ * percent, so the number and the colour always agree (79,990 of 200k prints 40.0 and is amber).
+ */
+export function toSessionContext(row: ContextRow): SessionContext | null {
+  const tokens = numOrNull(row.context_tokens);
+  if (tokens === null) return null;
+  const peak = Math.max(tokens, numOrNull(row.context_peak_tokens) ?? tokens);
+  const model = nonEmpty(row.context_model);
+  const { window, source } = contextWindowFor({ model, peakTokens: peak, longBeta: row.context_long_beta === true });
+  const percent = contextPercent(tokens, window);
+  return {
+    tokens,
+    window,
+    percent,
+    band: contextBand(percent),
+    model,
+    at: iso(row.context_at),
+    window_source: source,
+    peak_tokens: peak,
+  };
+}
+
+/**
  * The fork point of a node, or null. Only a `fork` parent link with a parent row makes one, so
  * `fork` is never set on a node whose link says otherwise.
  */
@@ -607,6 +677,7 @@ export function toSessionInfo(row: DetailRow, ctx: NodeContext, subagents: Subag
       ctx.host,
     ),
     final_message: clip(row.final_message, DETAIL_TEXT_CHARS),
+    context: toSessionContext(row),
   };
 }
 

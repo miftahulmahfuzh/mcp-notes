@@ -4,7 +4,10 @@ import { ApiError } from './api';
 import {
   fetchSessionDetail,
   fetchSessionPrompts,
+  normalizeHandoffEstimate,
+  normalizeSessionContext,
   normalizeSessionDetail,
+  parseContextEvent,
   requestSummary,
   resumeErrorNotice,
   resumeNotice,
@@ -352,5 +355,40 @@ describe('fetchSessionPrompts', () => {
     expect(await fetchSessionPrompts('ZZ-ZZ')).toBeNull();
     stub(500, { error: 'boom' });
     await expect(fetchSessionPrompts('A0-3G')).rejects.toMatchObject({ status: 500, message: 'boom' });
+  });
+});
+
+describe('context wire', () => {
+  const CTX = { tokens: 390_000, window: 1_000_000, percent: 39, band: 'green', model: 'claude-opus-5-5', at: '2026-11-12T02:00:00.000Z', window_source: 'peak', peak_tokens: 410_000 };
+
+  it('carries the detail context and null without one', () => {
+    expect(normalizeSessionDetail({ session: { node_id: 'A0-3G', context: CTX } }).context).toEqual(CTX);
+    expect(normalizeSessionDetail({ session: { node_id: 'A0-3G', context: null } }).context).toBeNull();
+    expect(normalizeSessionDetail({ node_id: 'A0-3G' }).context).toBeNull();
+  });
+
+  it('drops a context it cannot draw', () => {
+    expect(normalizeSessionContext({ ...CTX, band: 'purple' })).toBeNull();
+    expect(normalizeSessionContext({ ...CTX, window: 0 })).toBeNull();
+    expect(normalizeSessionContext({ ...CTX, tokens: 'x' })).toBeNull();
+    expect(normalizeSessionContext({ ...CTX, window_source: 'guess' })?.window_source).toBe('default');
+  });
+
+  it('parses a stream event and rejects anything else', () => {
+    expect(parseContextEvent(JSON.stringify({ node_id: 'A0-3G', host: 'lenovo', available: true, context: CTX }))).toEqual({
+      node_id: 'A0-3G',
+      host: 'lenovo',
+      available: true,
+      context: CTX,
+    });
+    expect(parseContextEvent('not json')).toBeNull();
+    expect(parseContextEvent(JSON.stringify({ context: CTX }))).toBeNull();
+    expect(parseContextEvent(undefined)).toBeNull();
+  });
+
+  it('reads a handoff estimate and rejects an incomplete one', () => {
+    const est = { node_id: 'A0-3G', tokens: 120_000, window: 1_000_000, percent: 12, baseline: 48_000, exchanges_included: 3, exchanges_total: 9, truncated: true };
+    expect(normalizeHandoffEstimate(est)).toEqual(est);
+    expect(normalizeHandoffEstimate({ ...est, exchanges_total: undefined })).toBeNull();
   });
 });

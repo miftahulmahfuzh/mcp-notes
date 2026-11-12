@@ -38,6 +38,49 @@ export interface SessionTokens {
   cache_write: number;
 }
 
+/** Phase 1/2's context band (server `contextBand`): green below 40 %, amber below 70 %, red from 70 %. */
+export type ContextBand = 'green' | 'amber' | 'red';
+
+const CONTEXT_BANDS: readonly ContextBand[] = ['green', 'amber', 'red'];
+
+/** Where the window came from (server `contextWindowFor`). 'default': assumed, the model is unknown and nothing showed a 1M window. */
+export type ContextWindowSource = 'model' | 'peak' | 'beta' | 'default';
+
+const WINDOW_SOURCES: readonly ContextWindowSource[] = ['model', 'peak', 'beta', 'default'];
+
+/** A session's current context: its latest main-chain assistant message against its inferred window. */
+export interface SessionContext {
+  tokens: number;
+  window: number;
+  /** tokens / window × 100 as the server computed it; not clamped. */
+  percent: number;
+  band: ContextBand;
+  model: string | null;
+  at: string | null;
+  window_source: ContextWindowSource;
+  peak_tokens: number | null;
+}
+
+/** `GET /api/sessions/:nodeId/context`, and the data of each `context` event of its stream. */
+export interface SessionContextPayload {
+  node_id: string;
+  host: string;
+  available: boolean;
+  context: SessionContext | null;
+}
+
+/** Phase 3's `GET /api/sessions/:nodeId/handoff`: where a fresh spawn would start, and what it would carry. */
+export interface HandoffEstimate {
+  node_id: string;
+  tokens: number;
+  window: number;
+  percent: number;
+  baseline: number;
+  exchanges_included: number;
+  exchanges_total: number;
+  truncated: boolean;
+}
+
 /** Phase 7's `GET /api/sessions/:nodeId`, normalised. */
 export interface SessionDetail {
   session_id: string;
@@ -82,6 +125,8 @@ export interface SessionDetail {
   fork: ForkPoint | null;
   /** Claude Code background job id while the session is live as one; null otherwise. */
   job_id: string | null;
+  /** Phase 2: the session's current context, or null when no main-chain assistant message with usage was seen. */
+  context: SessionContext | null;
 }
 
 export interface ResumeOptions {
@@ -193,6 +238,61 @@ function noteRef(v: unknown): SessionNoteRef | null {
   return null;
 }
 
+/** A wire context, or null when there is none or it is not a complete one (shown as Unknown). */
+export function normalizeSessionContext(v: unknown): SessionContext | null {
+  if (!isObj(v)) return null;
+  const tokens = numOrNull(v.tokens);
+  const win = numOrNull(v.window);
+  const percent = numOrNull(v.percent);
+  const band = typeof v.band === 'string' && (CONTEXT_BANDS as readonly string[]).includes(v.band) ? (v.band as ContextBand) : null;
+  if (tokens === null || win === null || win <= 0 || percent === null || band === null) return null;
+  const source =
+    typeof v.window_source === 'string' && (WINDOW_SOURCES as readonly string[]).includes(v.window_source)
+      ? (v.window_source as ContextWindowSource)
+      : 'default';
+  return { tokens, window: win, percent, band, model: str(v.model), at: str(v.at), window_source: source, peak_tokens: numOrNull(v.peak_tokens) };
+}
+
+/** `{node_id, host, available, context}`, or null when it has no node id. */
+export function normalizeContextPayload(v: unknown): SessionContextPayload | null {
+  if (!isObj(v)) return null;
+  const nodeId = str(v.node_id);
+  if (nodeId === null) return null;
+  return { node_id: nodeId, host: str(v.host) ?? '', available: v.available !== false, context: normalizeSessionContext(v.context) };
+}
+
+/** One `context` event's `data` (a JSON string), or null when it is not a context payload. */
+export function parseContextEvent(data: unknown): SessionContextPayload | null {
+  if (typeof data !== 'string') return null;
+  try {
+    return normalizeContextPayload(JSON.parse(data));
+  } catch {
+    return null;
+  }
+}
+
+/** A wire estimate, or null when a field the bar needs is missing. */
+export function normalizeHandoffEstimate(v: unknown): HandoffEstimate | null {
+  if (!isObj(v)) return null;
+  const nodeId = str(v.node_id);
+  const tokens = numOrNull(v.tokens);
+  const win = numOrNull(v.window);
+  const percent = numOrNull(v.percent);
+  const included = numOrNull(v.exchanges_included);
+  const total = numOrNull(v.exchanges_total);
+  if (nodeId === null || tokens === null || win === null || win <= 0 || percent === null || included === null || total === null) return null;
+  return {
+    node_id: nodeId,
+    tokens,
+    window: win,
+    percent,
+    baseline: num(v.baseline),
+    exchanges_included: included,
+    exchanges_total: total,
+    truncated: v.truncated === true,
+  };
+}
+
 /**
  * Phase 7's `SessionDetail` wire into `SessionDetail`. Phase 7 sends
  * `{session: GraphNode & {summary, transcript_path, ...}, prompts, commits, files_edited, plan_docs, notes, parent, children}`:
@@ -243,6 +343,7 @@ export function normalizeSessionDetail(raw: Wire): SessionDetail {
     transcript_path: str(w.transcript_path),
     fork,
     job_id: liveJobId(w.job_id ?? raw.job_id, live),
+    context: normalizeSessionContext(w.context),
   };
 }
 
@@ -254,6 +355,26 @@ export async function fetchSessionDetail(nodeId: string, signal?: AbortSignal): 
   const j: unknown = await res.json();
   if (!isObj(j)) throw new ApiError(500, 'bad session detail');
   return normalizeSessionDetail(j);
+}
+
+/** `GET /api/sessions/:nodeId/context` -> the node's context payload, or null on 404. Works for either machine's sessions. */
+export async function fetchSessionContext(nodeId: string, signal?: AbortSignal): Promise<SessionContextPayload | null> {
+  const res = await fetch(`/api/sessions/${enc(nodeId)}/context`, signal ? { signal } : undefined);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await failure(res);
+  const p = normalizeContextPayload(await res.json());
+  if (p === null) throw new ApiError(500, 'bad context payload');
+  return p;
+}
+
+/** `GET /api/sessions/:nodeId/handoff` -> the fresh-spawn estimate (a dry run, nothing written), or null on 404. */
+export async function fetchHandoffEstimate(nodeId: string, signal?: AbortSignal): Promise<HandoffEstimate | null> {
+  const res = await fetch(`/api/sessions/${enc(nodeId)}/handoff`, signal ? { signal } : undefined);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await failure(res);
+  const e = normalizeHandoffEstimate(await res.json());
+  if (e === null) throw new ApiError(500, 'bad handoff estimate');
+  return e;
 }
 
 /** `POST /api/sessions/:nodeId/resume` `{fresh?, prompt?}` -> `{action, window?, job_id?, prompt_delivered?}`. Throws `ApiError` (`not_on_this_machine`, 403 from the same-origin guard, ...). */

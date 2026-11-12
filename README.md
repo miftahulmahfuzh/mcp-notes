@@ -632,6 +632,19 @@ notes it saved with `/n`, its token use and cost, and its node id with a copy bu
 chart of when each one ran, which shows at a glance which phases overlapped and which one ran
 long.
 
+**Context Rot**, the gauge left of **Tree**, shows how full the session's context is. The bar is
+filled to the latest context (what the next turn starts from: input, cache read, cache write and
+output tokens of the latest main-chain reply, subagents left out; not the cumulative tokens above)
+over the session's context window, which is inferred from the model, from a context that ever
+passed 200k, or from a 1M beta in the transcript. It is green below 40 %, amber to 70 % and red
+beyond, and reads `<tokens> / <window> · <percent>`, with the model and "window assumed" when the
+model is unknown and nothing showed a 1M window (200k is used then). A session with no reply yet
+reads "Unknown". On a session running on this machine the bar moves with each reply, over
+`GET /api/sessions/:nodeId/context/stream`; a session of the other laptop refreshes every 60
+seconds. A second bar estimates where "Spawn fresh with this context" would start and how many
+prompt→reply exchanges it would carry, which is the choice between resuming and starting fresh.
+The panel remembers the last view you picked.
+
 ![The Timeline view of an orchestrator's subtree: eight phases in four waves. Below, the wall-editing swarm's links are dashed because they were guessed](docs/readme/sessions-timeline.png)
 
 An orchestrator node whose swarm still has phases to do, and no live session working on them,
@@ -725,7 +738,21 @@ and the prompt number. There is no separate search box: ask in the Projects chat
 The panel's resume button opens a new tmux window, in the tmux session you used most recently, at
 the session's directory, running `claude --resume <session>`. Type a prompt first and it goes in
 as the first message. The button beside it ("Spawn fresh with this context") starts a new session
-instead, with the old one's summary as its context. If the session is still running, the button
+instead and hands it the old one's work. The daemon writes a handoff file under
+`<NOTES_DATA_DIR>/handoffs/<NODE>-<yyyymmddThhmmss>.md` and starts
+`claude --append-system-prompt-file <handoff>` with a short first prompt whose first line is
+`[notesd handoff]` and which names the node and the file (the prompt hook adds no node-id block for
+that prompt). The
+handoff holds the node id, title, directory and repo, the transcript path, the stored summary and
+how old it is, plan docs, commits, the directory's `git status` and `git diff --stat` (or a line
+saying git failed), and the stored prompt→reply exchanges: every one of them when they fit, which
+on a 1M-token window is nearly always, otherwise the first prompt and the newest exchanges that
+fit, with a line saying how many were left out and where the transcript is. The budget is
+0.5 × the old session's inferred window minus a fresh session's usual start: the median
+first-reply context of the repo's latest 20 sessions on either machine (forks left out, since a
+fork's first reply already holds its parent's history), or 48,000 tokens when there is none. Tokens
+are estimated as characters / 4. Handoff files older than 14 days are deleted when the next one is
+written. The Context Rot view shows the estimate before you click. If the session is still running, the button
 switches to its window (or sends it the prompt) rather than opening it a second time. A session
 whose transcript is on the other laptop asks before doing anything, and usually can only say it
 is not on this machine; nothing else asks for a confirm click.
@@ -1080,7 +1107,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `session_get` | One session by node id (`A0-3G`, any case, dash optional): summary, prompts, commits, plan docs, files edited, its notes (saved from it or linked to it, each with `kind: "made" \| "linked"`), tokens and cost, parent and children, `host` and `available`. A fork has `fork` (`{ parent_node_id, forked_at, prompt_count }`) and `fork_of`; `resume_command` is `claude attach <job>` for a live background job (`job_id`), else `claude --resume <session>`, null on the other machine |
 | `session_transcript` | Passages of a session's transcript matching `query`. On a fork only what it added after the fork point is searched (`starts_at_fork_point: true`). Only on the laptop that holds the transcript; elsewhere `not_on_this_machine` |
 | `sessions_usage` | Tokens and cost per session or per month (`by: "node" \| "month"`), optionally for one `repo` |
-| `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. A live background job opens or focuses a `claude attach <job>` window (`attached`). Same machine only |
+| `session_resume` | Open a session again in a new tmux window (`claude --resume`), with an optional first `prompt`, or switch to it when it is still running. `fresh: true` starts a new session instead, carrying the node's handoff (summary and its age, plan docs, commits, git state and the stored prompt→reply exchanges that fit half its context window) through `--append-system-prompt-file`. A live background job opens or focuses a `claude attach <job>` window (`attached`). Same machine only |
 | `link_note`, `unlink_note` | Link an existing note (`note_id`) to a session (`node_id`) so it is listed with that session's notes as `linked`, and remove the link. The note's text and origin never change; both are idempotent; a deleted note cannot be linked |
 | `adversary_overview` | Seer Adversarial: every Seer method with its Claude twin and SPY, returns since the twin started (money-weighted, deposits included), objections, coverage (reviewed · absent · paused · pending), both go-live checklists (Seer's five rules and wording; a twin's backtest "can't be run"), the newest objections and the reviewer's status |
 | `adversary_verdicts` | Claude's verdicts (`agree`, `object`, `unsure`) with reasons, sources, model, prompt version and host; `late: true` when decided after the open. Optional `strategy`, `session` (default: each method's latest decision), `verdict`, `limit` |
@@ -1161,16 +1188,19 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `POST /api/chat/messages/:id/restore` | Bring a deleted message back. Same-origin only |
 | `GET /api/projects` | Repos that have Claude Code sessions, with session counts and last activity |
 | `GET/PUT /api/projects/selected` | The repo picked in the sidebar, stored in the database so both machines agree. `PUT` is same-origin only |
-| `GET /api/projects/:repo/sessions?before=&limit=` | That repo's sessions for the graph: node id, parent and link source (`env`, `hook`, `heuristic`), times, name, `live`, `host`, `available`, `unfinished`. Sends a weak `ETag`; answers `304` to a matching `If-None-Match` (the wall polls it; there is no SSE event for sessions) |
+| `GET /api/projects/:repo/sessions?before=&limit=` | That repo's sessions for the graph: node id, parent and link source (`env`, `hook`, `heuristic`), times, name, `live`, `host`, `available`, `unfinished`. Sends a weak `ETag`; answers `304` to a matching `If-None-Match` (the wall polls it; only a session's context has a stream, below) |
 | `GET /api/sessions/:nodeId` | One session in full: summary, prompts, commits, plan docs, files, notes saved from it, tokens, children |
 | `GET /api/sessions/:nodeId/transcript?query=` | Matching passages of the transcript; on a fork, only the records after the fork point (`starts_at_fork_point: true`). 404 `not_on_this_machine` when it lives on the other machine |
 | `GET /api/sessions/:nodeId/prompts` | Every stored prompt of a session, numbered, in full. Read from the database, so it works for either machine's sessions. `complete: false` with `incomplete_reason` (`not_backfilled`, `transcript_pruned`) when only excerpts are kept |
+| `GET /api/sessions/:nodeId/context` | A session's current context: `{ node_id, host, available, context }`, where `context` is `{ tokens, window, percent, band, model, at, window_source, peak_tokens }`, or `null` when no main-chain reply with token usage was seen. `tokens` is input + cache read + cache write + output of the latest main-chain reply (sidechains and subagents left out); `window` is inferred from the model, the peak and a 1M beta, `window_source: "default"` when assumed (200k); `band` is `green` below 40 %, `amber` below 70 %, `red` from 70 %. Read from the database, so it works for either machine's sessions. 400 `invalid_node_id`, 404 `not_found` |
+| `GET /api/sessions/:nodeId/context/stream` | SSE: a `context` event carrying the same JSON on connect and again whenever ingest stores a new main-chain reply that changes it, plus heartbeats. Only this machine's ingest feeds it, so the wall polls the JSON route every 60 s for the other machine's sessions |
+| `GET /api/sessions/:nodeId/handoff` | Dry run of "Spawn fresh with this context": `{ node_id, tokens, window, percent, baseline, exchanges_included, exchanges_total, truncated }`, the estimated starting context of the new session and how many prompt→reply exchanges it would carry. Writes no file and runs no git; works for either machine's sessions |
 | `GET /api/debug/egress` | Rows and approximate bytes returned per query shape since the daemon started (top 25 by bytes), plus the Neon quota breaker state (`quota.tripped`, `quota.resumes_at`). `{ enabled: false }` when `NOTESD_EGRESS_METER=off`. Loopback only |
 | `GET /api/sessions/context?ids=A0-3G,7K-2Q` | Context for the notes-prompt hook; ids that do not exist are left out. Loopback only |
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback`; each hit carries `via_notes` and `via_replies` like the MCP tool |
 | `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
-| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. A live background job gets a `claude attach <job>` window: `action: "attached"`, `job_id`, and `prompt_delivered: false` when a prompt could not be typed yet. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
+| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. `fresh: true` writes a handoff file under `<NOTES_DATA_DIR>/handoffs/` and starts `claude --append-system-prompt-file <handoff>` with a short `[notesd handoff]` first prompt (see "Resume from the wall"); `GET /api/sessions/:nodeId/handoff` is its dry run. A live background job gets a `claude attach <job>` window: `action: "attached"`, `job_id`, and `prompt_delivered: false` when a prompt could not be typed yet. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
 | `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |
 | `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
 | `GET /api/adversary/overview` | Seer Adversarial overview: `roster`, `methods` (returns, objections, coverage, checklists per method), `cause`, `latest`, `last_review`, `reviewer`. 503 `seer_unavailable` (`detail`: `not_reachable`, `not_migrated`, `query_failed`) when Seer cannot be read |

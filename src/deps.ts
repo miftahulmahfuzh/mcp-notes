@@ -6,6 +6,7 @@ import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
+import type { SessionEvents } from './sessions/events.js';
 
 /** Everything the daemon wires together once at startup and hands to routes and background jobs. */
 export interface AppDeps {
@@ -21,4 +22,10 @@ export interface AppDeps {
   chat: ChatService;
   /** Seer Adversarial reviewer (phase 4). Null when NOTESD_ADVERSARY=off or no claude binary. Phase 5's routes call it. */
   adversary: AdversaryService | null;
+  /**
+   * Session context changes: this host's ingest emits (src/background.ts), each open
+   * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),
+   * a context stream sends its first event and heartbeats only.
+   */
+  sessionEvents?: SessionEvents;
 }

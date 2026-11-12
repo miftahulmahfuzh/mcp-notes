@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppDeps } from '../../../src/deps.js';
 import { registryLive, sessionResumeRoutes } from '../../../src/http/sessionResume.js';
+import { DEFAULT_BASELINE_TOKENS, type HandoffSource } from '../../../src/sessions/handoff.js';
 import type { ResumeOutcome, ResumeRequest, SessionResumer } from '../../../src/sessions/resume.js';
 import { copyFixtureClaudeHome, FIXTURE } from '../../helpers/claudeHome.js';
 
@@ -74,6 +75,73 @@ describe('POST /api/sessions/:nodeId/resume', () => {
     const res = await post(sessionResumeRoutes(NO_DEPS, { resumer: fakeResumer(out) }), '{}');
     expect(res.status).toBe(out.status);
     expect(await res.json()).toEqual(out.body);
+  });
+});
+
+describe('GET /api/sessions/:nodeId/handoff', () => {
+  function source(nodeId: string, baselineTokens = 40_000): HandoffSource {
+    return {
+      node: {
+        sessionId: '6f1c2d3e-0000-4000-8000-00000000abcd',
+        nodeId,
+        host: 'GPD',
+        repo: 'mcp-notes',
+        cwd: '/home/u/mcp-notes',
+        name: null,
+        title: 'estimate',
+        summary: null,
+        firstPrompt: null,
+        transcriptPath: null,
+        commits: [],
+        planDocs: [],
+      },
+      summarizedAt: null,
+      promptsComplete: true,
+      exchanges: [1, 2, 3].map((seq) => ({ seq, at: null, prompt: `p${seq}`, promptTruncated: false, reply: `r${seq}`, replyTruncated: false })),
+      context: { model: 'claude-opus-5-5', peakTokens: 300_000, longBeta: false },
+      baselineTokens,
+    };
+  }
+
+  it('answers the dry-run estimate for any spelling of the id, with no Origin needed', async () => {
+    const asked: string[] = [];
+    const app = sessionResumeRoutes(NO_DEPS, {
+      handoffSource: async (id) => {
+        asked.push(id);
+        return source(id);
+      },
+    });
+    const res = await app.request('/api/sessions/a03g/handoff');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(asked).toEqual(['A0-3G']);
+    expect(Object.keys(body).sort()).toEqual(
+      ['baseline', 'exchanges_included', 'exchanges_total', 'node_id', 'percent', 'tokens', 'truncated', 'window'],
+    );
+    expect(body).toMatchObject({
+      node_id: 'A0-3G',
+      window: 1_000_000,
+      baseline: 40_000,
+      exchanges_included: 3,
+      exchanges_total: 3,
+      truncated: false,
+    });
+    expect(body.percent).toBe(Math.round(((40_000 + (body.tokens as number)) / 1_000_000) * 1000) / 10);
+  });
+
+  it('400 invalid_node_id for a non-id, 404 not_found for an unknown one', async () => {
+    const app = sessionResumeRoutes(NO_DEPS, { handoffSource: async () => null });
+    const bad = await app.request('/api/sessions/not-a-node-id/handoff');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid_node_id' });
+    const missing = await app.request('/api/sessions/ZZ-ZZ/handoff');
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'not_found', node_id: 'ZZ-ZZ' });
+  });
+
+  it('a repo with no baseline sample is estimated at the default baseline', async () => {
+    const app = sessionResumeRoutes(NO_DEPS, { handoffSource: async (id) => source(id, DEFAULT_BASELINE_TOKENS) });
+    expect(((await (await app.request('/api/sessions/A0-3G/handoff')).json()) as { baseline: number }).baseline).toBe(48_000);
   });
 });
 
