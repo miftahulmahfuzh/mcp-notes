@@ -161,6 +161,31 @@ describe('App: projects view', () => {
     expect(chord({ altKey: true, ctrlKey: true }).defaultPrevented).toBe(false);
   });
 
+  it('Alt+C switches graph <-> project chat history; Alt+B toggles the sidebar, not in focus mode', async () => {
+    at('/projects?repo=mcp-notes');
+    render(<App />);
+    await screen.findByText('A0-3G');
+    const chord = (code: string, init: KeyboardEventInit = { altKey: true }) => {
+      const e = new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true, ...init });
+      document.body.dispatchEvent(e);
+      return e;
+    };
+    expect(chord('KeyC').defaultPrevented).toBe(true);
+    await screen.findByTestId('project-chat-history');
+    expect(chord('KeyC').defaultPrevented).toBe(true);
+    await screen.findByText('A0-3G');
+    expect(chord('KeyC', { altKey: true, shiftKey: true }).defaultPrevented).toBe(false);
+
+    expect(screen.getByRole('list', { name: 'Projects' })).toBeTruthy();
+    expect(chord('KeyB').defaultPrevented).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Projects' })).toBeNull());
+    chord('KeyB');
+    await screen.findByRole('list', { name: 'Projects' });
+    chord('KeyZ');
+    await waitFor(() => expect(where()).toBe('/projects?repo=mcp-notes&focus=1'));
+    expect(chord('KeyB').defaultPrevented).toBe(false);
+  });
+
   it('a focus deep link opens in focus mode; with a node selected, Esc clears the node first', async () => {
     at('/projects?repo=mcp-notes&node=A0-3G&focus=1');
     render(<App />);

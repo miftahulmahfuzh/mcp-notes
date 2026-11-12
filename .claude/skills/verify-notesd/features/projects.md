@@ -3,6 +3,7 @@
 ## Sub-features
 - Projects list (repo, session count, live count, last active), selected project.
 - Per-project sessions: graph, tree, timeline views; node ids like `A0-3G`.
+- Keyboard: Alt+C switches the session graph <-> project chat history (toggle tooltip names it); Alt+Z focus mode; Alt+B the sidebar (`useAltShortcut`, capture phase, cancelled).
 - Session search, usage (tokens), transcript (owning host only), resume (real tmux NOT driven here; background-job attach and the fresh-spawn handoff driven with a fake tmux behind a safety gate, below).
 - Session search matches a session's notes too (made ∪ linked, live notes only): a word or meaning
   only a session's note has finds that session, and the hit lists those notes in `via_notes`

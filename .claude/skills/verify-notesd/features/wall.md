@@ -4,7 +4,7 @@
 - Notes grid, newest edited first; `?note=A-B32` scrolls to and highlights a note.
 - Live updates: a write from anywhere (MCP, API) appears without reload (SSE `/api/events`).
 - Big note editor (codename bigger-view-on-note, `NoteEditor.tsx`), tag suggestions, copy id.
-- Sidebar (`Toggle sidebar`), font toggle, Projects link, chat history, recycle bin.
+- Sidebar (`Toggle sidebar`, or Alt+B anywhere but focus mode), font toggle, Projects link, chat history, recycle bin.
 
 ## How to get to it (user POV)
 Open `URL` from `up`. Every control is an icon button with an aria-label.

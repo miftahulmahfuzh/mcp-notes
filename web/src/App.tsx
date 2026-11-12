@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { IconContext } from '@phosphor-icons/react';
 import { ApiError, attachRouted, createNote, deleteNote, DuplicateFileError, DuplicateImageError, fetchBin, fetchImageInfo, fetchNote, removeFile, removeImage, restoreFile, restoreImage, restoreNote, updateNote, type AttachResult } from './api';
 import type { Mode, Note, NoteFile, NoteImage as NoteImageData, View } from './types';
+import { useAltShortcut } from './hooks/useAltShortcut';
 import { useNotes } from './hooks/useNotes';
 import { useChat } from './hooks/useChat';
 import { useChatImages } from './hooks/useChatImages';
@@ -104,6 +105,9 @@ export function App() {
   const resolvingRepo = projectsRoute.repo === null && (awaitingNodeRepo || !projectsStore.selectedLoaded || projectsStore.projects === null);
   // Focus mode: the projects or adversary page alone, no rail, sidebar or header.
   const focus = (view === 'projects' && projectsRoute.focus) || (view === 'adversary' && adversaryRoute.focus);
+  // Rail's sidebar icon and Alt+B. Focus mode hides the sidebar, so the chord does nothing there.
+  const toggleSide = useCallback(() => setSide((s) => !s), []);
+  useAltShortcut('KeyB', focus ? undefined : toggleSide);
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
   // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
   const history = useHistory(view === 'history', { includeDeleted: true });
@@ -813,7 +817,7 @@ export function App() {
                 mode={mode}
                 view={view}
                 active={active}
-                onToggleSide={() => setSide((s) => !s)}
+                onToggleSide={toggleSide}
                 onAdd={() => void addNote()}
                 onCycleMode={() => {
                   setMode(nextMode);

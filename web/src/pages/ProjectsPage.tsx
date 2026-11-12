@@ -6,6 +6,7 @@ import { UnfinishedBadgeSvg } from '../components/graph/UnfinishedBadge';
 import { ProjectChat } from '../components/projectChat/ProjectChat';
 import { ProjectViewToggle, type ProjectView } from '../components/projectChat/ProjectViewToggle';
 import { useSessionGraph } from '../hooks/useSessionGraph';
+import { useAltShortcut } from '../hooks/useAltShortcut';
 import { useFocusShortcut } from '../hooks/useFocusShortcut';
 import { ancestorsOf, buildForest, expandAll, layoutGraph } from '../lib/sessionGraph';
 import { toSubtreeNodes } from '../lib/subtree';
@@ -85,6 +86,9 @@ export function ProjectsPage({ repo, resolving = false, node, onSelectNode, focu
   // In focus mode, Esc with no node selected leaves it (with a node selected, Esc clears that first);
   // Alt+Z toggles focus mode on either view. Shared with the Seer Adversarial page.
   useFocusShortcut(onToggleFocus, { focus, escapeLeaves: node === null });
+  // Alt+C switches between the session graph and the project chat history, like the toolbar toggle.
+  const toggleView = useCallback(() => setView((v) => (v === 'graph' ? 'chat' : 'graph')), []);
+  useAltShortcut('KeyC', repo !== null ? toggleView : undefined);
 
   const layout = useMemo(() => layoutGraph(graph.nodes, expanded, forest), [graph.nodes, expanded, forest]);
 

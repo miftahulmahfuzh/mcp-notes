@@ -21,6 +21,7 @@ its own chat bar.
   - [Deleting and the recycle bin](#deleting-and-the-recycle-bin)
   - [Open file location](#open-file-location)
   - [Links to a note](#links-to-a-note)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Using it from Claude Code](#using-it-from-claude-code)
   - [Summaries and comparisons](#summaries-and-comparisons)
   - [Looking at pictures](#looking-at-pictures)
@@ -35,7 +36,7 @@ its own chat bar.
   - [Node ids](#node-ids)
   - [Who started whom](#who-started-whom)
   - [Summaries and search](#summaries-and-search)
-  - [Resume from the wall](#resume-from-the-wall)
+  - [Context rot: resume or spawn fresh](#context-rot-resume-or-spawn-fresh)
   - [Asking about sessions](#asking-about-sessions)
   - [Chat about one project](#chat-about-one-project)
   - [Running swarms with the graph](#running-swarms-with-the-graph)
@@ -307,6 +308,23 @@ open on the linked note stays open. A note older than the 2000 the wall loads is
 own. A deleted note opens the bin on its card, with a line saying it can be restored there, and an
 unknown id says `no note F-ZH5` in the top right corner. The address is left as it is, so a reload
 selects the note again; changing the hash or moving back and forward selects the new target.
+
+### Keyboard shortcuts
+
+Every shortcut is two keys, Alt and a letter, chosen so none of them is a browser's own: Chrome
+and Firefox keep Alt+F, E, D, H and S for menus and the address bar, and Alt+1 to 9 switch tabs on
+Linux. The wall cancels its chords before the browser sees them, so they work with the cursor in a
+text field too. The tooltip of each button names its chord.
+
+| Keys | Where | What it does |
+|---|---|---|
+| Alt+Z | Projects, Seer Adversarial | Focus mode on and off: only the page, its toolbar and the pill, no rail, sidebar or header (`z` as in vim's zen mode) |
+| Alt+B | Everywhere but focus mode | Expand or collapse the sidebar, like the rail's top icon |
+| Alt+C | Projects | Switch between the session graph and the project's chat history |
+| Esc | Projects, Seer Adversarial | Clear the selected node first, then leave focus mode |
+
+Ctrl, Shift or Meta with the same letter is not the chord and is left to the browser, as is a
+held-down key repeating.
 
 ## Using it from Claude Code
 
@@ -630,22 +648,8 @@ Click a node to open its panel: the summary, your prompts in order, the commits 
 notes it saved with `/n`, its token use and cost, and its node id with a copy button. **Tree** and
 **Timeline** switch the view of everything below it: the tree of who started whom, or a Gantt
 chart of when each one ran, which shows at a glance which phases overlapped and which one ran
-long.
-
-**Context Rot**, the gauge left of **Tree**, shows how full the session's context is. The bar is
-filled to the latest context (what the next turn starts from: input, cache read, cache write and
-output tokens of the latest main-chain reply, subagents left out; not the cumulative tokens above)
-over the session's context window, which is inferred from the model, from a context that ever
-passed 200k, or from a 1M beta in the transcript. It is green below 40 %, amber to 70 % and red
-beyond, and reads `<tokens> / <window> · <percent>`, with the model and "window assumed" when the
-model is unknown and nothing showed a 1M window (200k is used then). A session with no reply yet
-reads "Unknown". On a session running on this machine the bar moves with each reply, over
-`GET /api/sessions/:nodeId/context/stream`; a session of the other laptop refreshes every 60
-seconds. A second bar estimates where "Spawn fresh with this context" would start and how many
-prompt→reply exchanges it would carry, which is the choice between resuming and starting fresh.
-When a fresh session would start no lighter than this one is now (a short session barely past its
-own start-up cost), the bar keeps the true estimate, dims, and says "no saving: resume is as cheap".
-The panel remembers the last view you picked.
+long. **Context Rot**, the gauge left of **Tree**, shows how full the session's context is (see
+[Context rot: resume or spawn fresh](#context-rot-resume-or-spawn-fresh)). The panel remembers the last view you picked.
 
 ![The Timeline view of an orchestrator's subtree: eight phases in four waves. Below, the wall-editing swarm's links are dashed because they were guessed](docs/readme/sessions-timeline.png)
 
@@ -735,31 +739,36 @@ that only repeats its words in a long reply. Each hit lists what it matched thro
 `via_notes` and `via_replies`. The Projects chat quotes those excerpts with the session's node id
 and the prompt number. There is no separate search box: ask in the Projects chat.
 
-### Resume from the wall
+### Context rot: resume or spawn fresh
 
-The panel's resume button opens a new tmux window, in the tmux session you used most recently, at
-the session's directory, running `claude --resume <session>`. Type a prompt first and it goes in
-as the first message. The button beside it ("Spawn fresh with this context") starts a new session
-instead and hands it the old one's work. The daemon writes a handoff file under
-`<NOTES_DATA_DIR>/handoffs/<NODE>-<yyyymmddThhmmss>.md` and starts
-`claude --append-system-prompt-file <handoff>` with a short first prompt whose first line is
-`[notesd handoff]` and which names the node and the file (the prompt hook adds no node-id block for
-that prompt). The
-handoff holds the node id, title, directory and repo, the transcript path, the stored summary and
-how old it is, plan docs, commits, the directory's `git status` and `git diff --stat` (or a line
-saying git failed), and the stored prompt→reply exchanges: every one of them when they fit, which
-on a 1M-token window is nearly always, otherwise the first prompt and the newest exchanges that
-fit, with a line saying how many were left out and where the transcript is. The budget is
-0.5 × the old session's inferred window minus a fresh session's usual start: the median
-first-reply context of the repo's latest 20 sessions on either machine (forks left out, since a
-fork's first reply already holds its parent's history; sessions that opened with a slash command
-or a handoff left out too, since a skill or a handoff loads far more than a fresh spawn's short
-first prompt), or 48,000 tokens when there is none. Tokens
-are estimated as characters / 4. Handoff files older than 14 days are deleted when the next one is
-written. The Context Rot view shows the estimate before you click. If the session is still running, the button
-switches to its window (or sends it the prompt) rather than opening it a second time. A session
-whose transcript is on the other laptop asks before doing anything, and usually can only say it
-is not on this machine; nothing else asks for a confirm click.
+A long session gets worse at its job as its context fills: older instructions blur, earlier
+decisions get missed, and every turn costs more. The node panel shows how far along a session is,
+and gives you two ways back into it: resume it as it is, or start a fresh session that carries
+only what the old one learned.
+
+**The Context Rot gauge.** The bar left of **Tree** is filled to the latest context (what the next
+turn starts from: input, cache read, cache write and output tokens of the latest main-chain reply,
+subagents left out; not the cumulative tokens above it) over the session's context window. The
+window is inferred from the model, from a context that ever passed 200k, or from a 1M beta in the
+transcript. The bar is green below 40 %, amber to 70 % and red beyond, and reads
+`<tokens> / <window> · <percent>`, with the model, and "window assumed" when the model is unknown
+and nothing showed a 1M window (200k is used then). A session with no reply yet reads "Unknown".
+On a session running on this machine the bar moves with each reply, over
+`GET /api/sessions/:nodeId/context/stream`; a session of the other laptop refreshes every 60
+seconds.
+
+A second bar estimates where "Spawn fresh with this context" would start and how many
+prompt→reply exchanges it would carry. Read the two bars together: a red first bar with a short
+second one says spawn fresh; a session still in the green, or one whose fresh start would be no
+lighter, says resume. When a fresh session would start no lighter than this one is now (a short
+session barely past its own start-up cost), the second bar keeps the true estimate, dims, and says
+"no saving: resume is as cheap".
+
+**Resume.** The panel's resume button opens a new tmux window, in the tmux session you used most
+recently, at the session's directory, running `claude --resume <session>`. Type a prompt first and
+it goes in as the first message. The whole old context comes back with it, rot included. If the
+session is still running, the button switches to its window (or sends it the prompt) rather than
+opening it a second time.
 
 A session that is running as a Claude Code background job (`claude --bg`, or a fork started from
 the agent view) has no terminal of its own. Resume opens a tmux window running
@@ -775,7 +784,35 @@ directory another session of that repo used on this laptop outside `~/.worktrees
 `~/<repo>`, then your home folder. It never recreates the deleted directory, and the answer
 reports where the session used to run as `original_cwd`.
 
-The route answers only requests from the wall's own page, like "open file location".
+**Spawn fresh with this context.** The button beside resume starts a new session and hands it the
+old one's work instead of its whole conversation. The daemon writes a handoff file under
+`<NOTES_DATA_DIR>/handoffs/<NODE>-<yyyymmddThhmmss>.md` and starts
+`claude --append-system-prompt-file <handoff>` with a short first prompt whose first line is
+`[notesd handoff]` and which names the node and the file (the prompt hook adds no node-id block for
+that prompt). The handoff holds the node id, title, directory and repo, the transcript path, the
+stored summary and how old it is, plan docs, commits, the directory's `git status` and
+`git diff --stat` (or a line saying git failed), and the stored prompt→reply exchanges: every one
+of them when they fit, which on a 1M-token window is nearly always, otherwise the first prompt and
+the newest exchanges that fit, with a line saying how many were left out and where the transcript
+is. The new session can still open that transcript when it needs a detail the handoff dropped.
+
+The budget is 0.5 × the old session's inferred window minus a fresh session's usual start: the
+median first-reply context of the repo's latest 20 sessions on either machine (forks left out,
+since a fork's first reply already holds its parent's history; sessions that opened with a slash
+command or a handoff left out too, since a skill or a handoff loads far more than a fresh spawn's
+short first prompt), or 48,000 tokens when there is none. Tokens are estimated as characters / 4.
+That is the estimate the gauge's second bar shows before you click. Handoff files older than 14
+days are deleted when the next one is written.
+
+Both buttons work only on the laptop that holds the transcript. A session whose transcript is on
+the other laptop asks before doing anything, and usually can only say it is not on this machine;
+nothing else asks for a confirm click. The route answers only requests from the wall's own page,
+like "open file location". From Claude Code, `session_resume` does the same, with `fresh: true`
+for a fresh spawn:
+
+```
+/n spawn a fresh session from A0-3G, its context is nearly full
+```
 
 ### Asking about sessions
 
@@ -789,6 +826,21 @@ The MCP server and the chat bar have the same five tools for reading sessions (l
 /n resume A0-3G and ask it to rerun the integration tests
 /n link 5-BW7 into A0-3G
 ```
+
+It works on any repo, not only this one. These were asked in a work repo, `agentic_golang`, where
+sessions track Jira tickets and the messages sent about them:
+
+```
+/n summarize what we had done about UATP-5261
+/n can you find the node that write this message: <a DingTalk message Claude wrote>
+/n which node posted on Jira's UATP-5333 page?
+/n which node is talking about novo ai?
+```
+
+The first gathers the sessions whose summary, prompts, commits or replies mention the ticket and
+summarizes them together. The second and third find a session by what Claude wrote in it rather
+than by what you typed, which is what the stored replies are for (hits list them in
+`via_replies`). The last is matched by meaning as well as by words.
 
 A session's notes are the ones saved from it plus the ones linked to it. `link_note` (Claude Code
 only, not the chat bar) links any existing note to a session without changing the note; it then
@@ -1204,7 +1256,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/sessions/known?ids=BE-XU,CI-CD` | Which node ids exist, with their repo: `{ nodes: [{ node_id, repo }] }`. The wall and the note-links mod link only these |
 | `GET /api/sessions/search?q=&repo=` | Session search, blended like note search, with `fallback`; each hit carries `via_notes` and `via_replies` like the MCP tool |
 | `GET /api/sessions/usage?by=node\|month&repo=` | Tokens and cost per session or per month |
-| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. `fresh: true` writes a handoff file under `<NOTES_DATA_DIR>/handoffs/` and starts `claude --append-system-prompt-file <handoff>` with a short `[notesd handoff]` first prompt (see "Resume from the wall"); `GET /api/sessions/:nodeId/handoff` is its dry run. A live background job gets a `claude attach <job>` window: `action: "attached"`, `job_id`, and `prompt_delivered: false` when a prompt could not be typed yet. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
+| `POST /api/sessions/:nodeId/resume` | `{prompt?, fresh?}`: resume (or start fresh from) a session in a new tmux window, or switch to it when it is live. `fresh: true` writes a handoff file under `<NOTES_DATA_DIR>/handoffs/` and starts `claude --append-system-prompt-file <handoff>` with a short `[notesd handoff]` first prompt (see "Context rot: resume or spawn fresh"); `GET /api/sessions/:nodeId/handoff` is its dry run. A live background job gets a `claude attach <job>` window: `action: "attached"`, `job_id`, and `prompt_delivered: false` when a prompt could not be typed yet. Reports `original_cwd` when the session's directory is gone and a fallback was used. 404 `not_on_this_machine` for the other machine's sessions. Same-origin only |
 | `POST /api/sessions/:nodeId/summarize` | Ask for a summary of a session now. Records the request only; the owning machine's summary worker serves it first on its next pass, idle or not. `{ node_id, summary_state, summary_requested_at }`; repeating it is a no-op. 409 `empty_session` for a 0-token session, 400 `invalid_node_id`, 404 `not_found`. Same-origin only |
 | `POST /api/sessions/hook/start` · `/hook/spawn` | From the notes-session and notes-spawn hooks (JSON, header `X-Notes-Capture: 1`, loopback only): a session started, a session is about to start a child |
 | `GET /api/adversary/overview` | Seer Adversarial overview: `roster`, `methods` (returns, objections, coverage, checklists per method), `cause`, `latest`, `last_review`, `reviewer`. 503 `seer_unavailable` (`detail`: `not_reachable`, `not_migrated`, `query_failed`) when Seer cannot be read |

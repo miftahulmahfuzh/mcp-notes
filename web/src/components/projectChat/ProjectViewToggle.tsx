@@ -20,7 +20,7 @@ export function ProjectViewToggle({ view, onToggle }: ProjectViewToggleProps) {
       data-testid="project-view-toggle"
       data-view={view}
       aria-label={label}
-      data-tip={label}
+      data-tip={`${label} (Alt+C)`}
       data-tip-side="below"
       onClick={() => onToggle(toChat ? 'chat' : 'graph')}
     >

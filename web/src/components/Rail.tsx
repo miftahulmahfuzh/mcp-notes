@@ -36,7 +36,7 @@ export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onT
   const ModeIcon = MODE_ICON[mode];
   return (
     <nav className="rail">
-      <button type="button" className="ibtn hov" data-tip="Toggle sidebar" data-tip-side="right" aria-label="Toggle sidebar" onClick={onToggleSide}>
+      <button type="button" className="ibtn hov" data-tip="Toggle sidebar (Alt+B)" data-tip-side="right" aria-label="Toggle sidebar" onClick={onToggleSide}>
         <SidebarSimple weight="duotone" />
       </button>
       <button type="button" className="ibtn hov" data-tip="New note" data-tip-side="right" aria-label="New note" onClick={onAdd}>
