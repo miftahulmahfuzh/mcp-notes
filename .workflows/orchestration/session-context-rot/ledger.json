@@ -24,40 +24,40 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "fc1d829",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "context in detail + GET /context + SSE /context/stream, SessionEvents bus fed by ingest observer; on origin/phase-2-session-context-rot, not merged; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1112-101659-809528/evidence",
       "package": "src/http`, `src/sessions`, root wiring",
       "plan": ".workflows/plan/session-context-rot/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-12T10:18:48+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A099",
       "title": "Context read API and live stream"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "d34c972",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "handoff file + --append-system-prompt-file + estimate route + hook marker; int fixture sets all 3 fork cols (fork_info_check); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1112-101523-802027/evidence",
       "package": "src/sessions`, `src/http`, `src/mcp`, `claude/hooks",
       "plan": ".workflows/plan/session-context-rot/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-12T10:18:15+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A100",
       "title": "Handoff carry-over for \"Spawn fresh\""
     },
     {
@@ -78,7 +78,7 @@
         "R3",
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Context Rot view in the node panel"
     }
@@ -86,6 +86,6 @@
   "plan": "/home/miftah/.worktrees/mcp-notes/session-context-rot/.workflows/orchestration/session-context-rot/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "session-context-rot",
-  "updated": "2026-11-12T10:12:35+07:00",
+  "updated": "2026-11-12T10:22:11+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/session-context-rot"
 }
