@@ -62,6 +62,7 @@ describe('vlcArgs', () => {
       '--no-one-instance-when-started-from-file',
       '--qt-continue=0',
       '--no-qt-privacy-ask',
+      '--fullscreen',
       '--extraintf',
       'http',
       '--http-host',

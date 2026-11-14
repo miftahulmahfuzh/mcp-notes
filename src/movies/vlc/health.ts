@@ -279,7 +279,7 @@ export type HealthOffReason = 'disabled' | 'not_linux' | 'no_interop' | 'no_task
 
 export type HealthDetection = { available: true; env: HealthEnv } | { available: false; reason: HealthOffReason };
 
-async function resolveWindowsExe(probe: DetectProbe, envName: string, fallback: string): Promise<string | null> {
+export async function resolveWindowsExe(probe: DetectProbe, envName: string, fallback: string): Promise<string | null> {
   const value = probe.env[envName]?.trim() || fallback;
   if (value.includes('/')) return (await probe.executable(value)) ? value : null;
   return findOnPath(value, probe.env, probe.executable);

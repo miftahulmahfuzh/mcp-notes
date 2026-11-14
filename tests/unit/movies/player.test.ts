@@ -148,6 +148,20 @@ describe('MoviePlayer.play', () => {
     await vi.waitFor(() => expect(repo.play(started.play_id).endedAt).not.toBeNull());
   });
 
+  it('asks for the new VLC window to be put in front, and a failure there never fails the play', async () => {
+    const raised: number[] = [];
+    const { vlc, player } = setup({ foreground: async (ep) => (raised.push(ep.port), { kind: 'ok', pid: 7, foreground: true }) });
+    await player.play(1);
+    expect(raised).toEqual([PORT]);
+    expect(vlc.launches[0]!.password).toMatch(/^[0-9a-f]{32}$/);
+    await player.close();
+    const logs: string[] = [];
+    const broken = setup({ foreground: async () => Promise.reject(new Error('no powershell')), log: (l) => logs.push(l) });
+    expect(await broken.player.play(1)).toMatchObject({ tracking: true });
+    await vi.waitFor(() => expect(logs.some((l) => l.includes('not brought to the front: no powershell'))).toBe(true));
+    await broken.player.close();
+  });
+
   it('closes the play untracked at the start position when HTTP never answers', async () => {
     const { repo, vlc, player } = setup();
     vlc.httpUp = false;

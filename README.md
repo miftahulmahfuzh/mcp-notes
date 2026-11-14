@@ -1002,7 +1002,8 @@ the page you are on.
 
 **Play and resume.** Play starts the Windows VLC on the file at the second you stopped (from the start
 when you had finished it), so VLC's own "continue?" prompt never comes up, and reads its position every
-five seconds while it plays. A film you open from Explorer counts too: VLC writes its recent list when
+five seconds while it plays. VLC opens full screen and in front of every other window, so one click
+(or "continue the movie" in Claude Code) is all it takes. A film you open from Explorer counts too: VLC writes its recent list when
 it exits, and the next scan reads the positions from it.
 
 **Deleting is not watching.** Files come and go; titles and their history stay. A file is finished
@@ -1195,7 +1196,7 @@ part of `npm test` or `test:int`.
 | `NOTESD_VLC_HEALTH_MS` | `30000` | How often every `vlc.exe` on this machine is sampled into `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl` (pid, working set, private bytes, handles, and for a VLC notesd started its play state and seconds paused); one fsync'd JSON line per VLC, 5 MB plus one previous file. After a crash the next start adds an incident with the last samples and the Windows Application Error / Application Hang events around them. `GET /api/movies/player/health` reads it. `0` turns the log, incidents and hang detection off (so does an empty `NOTESD_MOVIES_ROOTS`); 1-4999 is rejected. |
 | `NOTESD_VLC_EXTRA_ARGS` | — | Extra `vlc.exe` arguments for every VLC notesd starts, split on whitespace (no quoting), placed before the file, e.g. `--avcodec-hw=none`. `--http-*`, `--extraintf`, `--intf` and `-I` are rejected: notesd owns VLC's HTTP interface. |
 | `NOTESD_TASKLIST_EXE` | `/mnt/c/Windows/System32/tasklist.exe` | The Windows tasklist the VLC health log runs each interval. Missing: the health log is off (one startup log line). |
-| `NOTESD_POWERSHELL_EXE` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` | Reads private bytes, handles and the command line of each `vlc.exe` (only while one runs), and the Windows events for a crash incident. Missing: samples keep pid and working set only, and incidents carry no Windows events. |
+| `NOTESD_POWERSHELL_EXE` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` | Reads private bytes, handles and the command line of each `vlc.exe` (only while one runs), and the Windows events for a crash incident; also puts a VLC that notesd starts in front of the other windows. Missing: samples keep pid and working set only, incidents carry no Windows events, and VLC opens behind the window in use. |
 
 ## How it works
 

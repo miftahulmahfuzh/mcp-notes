@@ -154,6 +154,10 @@ wait_launch "S01E01" "$n"
 start="$(tail -1 "$LAUNCHES" | jq -r '.start_time')"
 [ "${start%.*}" -le 1 ] || fail "S01E01 started at $start s, wanted the start"
 ok "fake vlc.exe launched on $(tail -1 "$LAUNCHES" | jq -r .file) at ${start}s"
+tail -1 "$LAUNCHES" | jqb '.argv | index("--fullscreen")' || fail "the launch has no --fullscreen"
+for _ in $(seq 1 20); do [ -s "$DIR/movies/vlc/powershell.log" ] && break; sleep 0.25; done
+[ -s "$DIR/movies/vlc/powershell.log" ] || fail "notesd never asked Windows to put VLC in front"
+ok "VLC launched --fullscreen and notesd asked Windows to put its window in front"
 wait_q "select count(*) from movie_plays where file_id = $E01 and source = 'live' and ended_at is null" 1 20
 vlc at 912
 wait_q "select (coalesce(max(position_s), 0) >= 900)::text from movie_plays where file_id = $E01 and source = 'live'" true 20

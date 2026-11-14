@@ -64,7 +64,7 @@ $V down RUN                                              # keeps movies-tmdb-req
 | 1 sync | 6 present files matched (`Videos/…Pahe.in.mkv`, the MobLand season folder as one `tv-247718` with S01E01-E03, `Done/The_Rivals…` with a done signal, `Telegram Desktop/Oldboy (2003)/Oldboy.mkv`); the 20 s `Done/docker_es` clip `unmatched:too_short`; studios, cast with characters, directors, 3 episode rows; two gone films from the fixture ini as deleted files with recents observations |
 | 2 posters | `GET /api/movies` `poster_url`s on `TMDB_IMAGE_BASE`, one loads as `image/png` |
 | 3 user state | `POST /api/movies/movie-467905/user` stores rating 4 + watched; review is a `#movie` note linked by `review_note_id` |
-| 4 play | `POST …/files/<S01E01>/play` launches the fake VLC at 0; `vlc at 912` is polled into the play; `vlc quit` closes it; S01E01 `finished` |
+| 4 play | `POST …/files/<S01E01>/play` launches the fake VLC at 0 with `--fullscreen` and runs the fake `powershell.exe` (the bring-to-front call); `vlc at 912` is polled into the play; `vlc quit` closes it; S01E01 `finished` |
 | 5 continue | MCP `movies_continue {title:"MobLand"}` -> `started` S01E02; stopped at 300 s -> `in_progress` |
 | 6 continue, no title | `movies_continue {}` -> `resumed` S01E02 at about 300 s (`--start-time` or a `seek`) |
 | 7 delete, move | `rm` S01E03 -> deleted, `removed_unwatched`, title kept; `mv` Oldboy into `Videos/Done` -> same row, new path, done signal, `finished` |

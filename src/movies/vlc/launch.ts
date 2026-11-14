@@ -75,8 +75,9 @@ export interface VlcLaunch {
 
 /**
  * vlc.exe's argv. A separate instance (never the owner's running VLC), no "Continue playback?"
- * question (`qt-continue` is 0 never / 1 ask / 2 always), no first-run privacy dialog, the HTTP
- * interface beside the normal Qt window, and the resume second. Then NOTESD_VLC_EXTRA_ARGS
+ * question (`qt-continue` is 0 never / 1 ask / 2 always), no first-run privacy dialog, full screen
+ * from the first frame (the owner clicks Play and watches; `vlc/foreground.ts` puts the window in
+ * front), the HTTP interface beside the normal Qt window, and the resume second. Then NOTESD_VLC_EXTRA_ARGS
  * (movies phase 9; config.ts rejects any that would set the HTTP interface), and the file last.
  */
 export function vlcArgs(l: VlcLaunch, extraArgs: readonly string[] = []): string[] {
@@ -85,6 +86,7 @@ export function vlcArgs(l: VlcLaunch, extraArgs: readonly string[] = []): string
     '--no-one-instance-when-started-from-file',
     '--qt-continue=0',
     '--no-qt-privacy-ask',
+    '--fullscreen',
     '--extraintf',
     'http',
     '--http-host',

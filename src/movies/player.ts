@@ -18,6 +18,7 @@ import {
 } from './vlc/launch.js';
 import { tmdbResolver } from './sync.js';
 import { nodeRecentsFs, recentsSyncHook, type RecentsFs } from './vlc/recents.js';
+import type { VlcForegrounder } from './vlc/foreground.js';
 import type { HangEvent, HangOutcome, PidCheck, PlayerHealthLink, TrackedVlc } from './vlc/health.js';
 
 type FileRow = typeof movieFiles.$inferSelect;
@@ -100,6 +101,11 @@ export interface MoviePlayerDeps {
    * MAX_READ_ERRORS curl errors end it).
    */
   health?: PlayerHealthLink;
+  /**
+   * Puts the new VLC's window in front once its HTTP interface answers. Not awaited by play(), and
+   * its failure never fails a play. Absent: VLC opens wherever Windows puts it.
+   */
+  foreground?: VlcForegrounder;
   /** Default `new Date()`: the paused and silent clocks. */
   now?: () => Date;
   log?: (line: string) => void;
@@ -312,6 +318,7 @@ export class MoviePlayer {
       this.log(`[movies] VLC on port ${port} never answered; play ${play.id} (${file.name}) kept at ${start} s without tracking`);
       return { ...base, tracking: false, note: 'http_timeout' };
     }
+    this.raise(ep, play.id);
     const status = await this.ensurePlaying(env, ep, ready, start);
     const t: Tracked = {
       playId: play.id,
@@ -360,6 +367,19 @@ export class MoviePlayer {
       if (Date.now() >= deadline) return null;
       await delay(this.deps.readyIntervalMs ?? READY_INTERVAL_MS);
     }
+  }
+
+  /** In the background: bring the VLC of this play in front of the window the owner clicked Play in. */
+  private raise(ep: VlcEndpoint, playId: number): void {
+    const foreground = this.deps.foreground;
+    if (foreground === undefined) return;
+    foreground(ep)
+      .then((r) => {
+        if (r.kind === 'ok' && r.foreground) return;
+        const why = r.kind === 'ok' ? 'Windows kept another window in front' : r.kind === 'error' ? r.message : r.kind;
+        this.log(`[movies] VLC of play ${playId} was not brought to the front: ${why}`);
+      })
+      .catch((err: unknown) => this.log(`[movies] VLC of play ${playId} was not brought to the front: ${message(err)}`));
   }
 
   /** Make sure VLC plays (pl_play when it does not), then seek to the resume point when it is off by more than the tolerance. */
@@ -514,6 +534,8 @@ export interface PlaybackOverrides {
   recentsFs?: RecentsFs;
   /** Movies phase 9: the health monitor (the hang rule). */
   health?: PlayerHealthLink;
+  /** The daemon passes windowsForegrounder(); absent, no window is raised. */
+  foreground?: VlcForegrounder;
 }
 
 /**
@@ -533,6 +555,7 @@ export function buildMoviePlayback(service: PlaybackService, config: MoviesConfi
     reader: overrides.reader ?? curlStatusReader(),
     ...(overrides.wslpath !== undefined ? { wslpath: overrides.wslpath } : {}),
     ...(overrides.health !== undefined ? { health: overrides.health } : {}),
+    ...(overrides.foreground !== undefined ? { foreground: overrides.foreground } : {}),
     // Play start and end only: the web reloads its whole list on every `changed`.
     onChange: (file) => service.events.changed('play', { fileIds: [file.id], titleIds: file.titleId === null ? [] : [file.titleId] }),
   });

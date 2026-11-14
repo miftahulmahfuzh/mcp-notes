@@ -148,7 +148,9 @@ cmd_up() {
     node_bin="$(command -v node)"
     printf '#!/bin/sh\nexec "%s" "%s" vlc --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/vlc.exe"
     printf '#!/bin/sh\nexec "%s" "%s" curl --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/curl.exe"
-    chmod +x "$dir/movies/bin/vlc.exe" "$dir/movies/bin/curl.exe"
+    # The fake powershell.exe: notesd runs it to put VLC's window in front. It logs the call and finds no window.
+    printf '#!/bin/sh\necho "$(date -Is) $#" >>"%s"\necho "{\\"found\\":false}"\n' "$dir/movies/vlc/powershell.log" >"$dir/movies/bin/powershell.exe"
+    chmod +x "$dir/movies/bin/vlc.exe" "$dir/movies/bin/curl.exe" "$dir/movies/bin/powershell.exe"
     setsid node "$HERE/movies/fake-tmdb.mjs" --data "$HERE/movies/tmdb.json" \
       --port-file "$dir/movies/tmdb.port" --log "$dir/movies/tmdb.log" </dev/null >"$dir/movies/tmdb.out" 2>&1 &
     echo $! >"$dir/tmdb.pid"
@@ -198,6 +200,8 @@ cmd_up() {
       # Phase 9: never sample the owner's real vlc.exe into verify evidence; no launch flags from .env.local.
       NOTESD_VLC_HEALTH_MS=0
       NOTESD_VLC_EXTRA_ARGS=
+      # Never raise or touch a real Windows window from a verify run.
+      "NOTESD_POWERSHELL_EXE=$dir/movies/bin/powershell.exe"
     )
   else
     env+=(NOTESD_MOVIES=off)

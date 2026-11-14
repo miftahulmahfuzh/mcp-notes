@@ -20,6 +20,7 @@ import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
 import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
+import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
@@ -115,7 +116,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       ? null
       : buildVlcHealth({ config: config.movies, dataDir: config.dataDir, host: movies.host, tracked: () => moviesPlayer?.healthView() ?? null });
   // Movies phase 5: VLC playback and the [RecentsMRL] hook hang off the movies service.
-  moviesPlayer = movies === null ? null : buildMoviePlayback(movies, config.movies, moviesHealth === null ? {} : { health: moviesHealth });
+  moviesPlayer = movies === null ? null : buildMoviePlayback(movies, config.movies, { foreground: windowsForegrounder(), ...(moviesHealth === null ? {} : { health: moviesHealth }) });
   if (moviesPlayer !== null) {
     try {
       const closed = await moviesPlayer.start();
