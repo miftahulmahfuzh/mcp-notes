@@ -1,9 +1,9 @@
-import { ChatsCircle, Sword, TreeStructure } from '@phosphor-icons/react';
+import { ChatsCircle, FilmSlate, Sword, TreeStructure } from '@phosphor-icons/react';
 import type { Mode, ProjectSummary, TagCount, View } from '../types';
 import type { AdversaryMethod } from '../adversaryApi';
 import { MODE_ORDER, MODE_TIP } from '../lib/filter';
 import { sortProjects } from '../lib/projects';
-import { ADVERSARY_TIP, HISTORY_TIP, MODE_ICON, PROJECTS_TIP } from './Rail';
+import { ADVERSARY_TIP, HISTORY_TIP, MODE_ICON, MOVIES_TIP, PROJECTS_TIP } from './Rail';
 import { RosterList } from './adversary/RosterList';
 
 export interface SidebarProps {
@@ -12,6 +12,7 @@ export interface SidebarProps {
   tags: TagCount[];
   active: string[];
   onMode: (m: Mode) => void;
+  onToggleMovies: () => void;
   onToggleProjects: () => void;
   onToggleHistory: () => void;
   onToggleAdversary: () => void;
@@ -34,6 +35,7 @@ export function Sidebar({
   tags,
   active,
   onMode,
+  onToggleMovies,
   onToggleProjects,
   onToggleHistory,
   onToggleAdversary,
@@ -48,6 +50,7 @@ export function Sidebar({
   const sorted = tags.slice().sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   const inProjects = view === 'projects';
   const inAdversary = view === 'adversary';
+  const inMovies = view === 'movies';
   return (
     <aside className="side">
       <div className="side-modes">
@@ -67,6 +70,17 @@ export function Sidebar({
             </button>
           );
         })}
+        <button
+          type="button"
+          className={inMovies ? 'ibtn on' : 'ibtn'}
+          data-tip={MOVIES_TIP}
+          data-tip-side="below"
+          aria-label={MOVIES_TIP}
+          aria-pressed={inMovies}
+          onClick={onToggleMovies}
+        >
+          <FilmSlate weight="duotone" />
+        </button>
         <button
           type="button"
           className={inProjects ? 'ibtn on' : 'ibtn'}

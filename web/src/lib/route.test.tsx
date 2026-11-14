@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, projectsHref, projectsRouteFromLocation, routeFromLocation } from './route';
+import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, moviesHref, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation } from './route';
 
 const loc = (url: string) => {
   const u = new URL(url, 'http://localhost');
@@ -117,6 +117,34 @@ describe('adversary route', () => {
     expect(hrefForView('wall', null, loc('/adversary/A-GT'))).toBe('/');
     expect(hrefForView('bin', null, loc('/adversary'))).toBe('/');
     expect(hrefForView('projects', null, loc('/adversary'), { repo: 'a', node: null, focus: false })).toBe('/projects?repo=a');
+    expect(hrefForView('wall', null, loc('/?note=A-B32'))).toBeNull();
+  });
+});
+
+describe('movies route', () => {
+  it('reads the grid, a title and the unmatched list', () => {
+    expect(moviesRouteFromLocation(loc('/movies'))).toEqual({ title: null, unmatched: false });
+    expect(moviesRouteFromLocation(loc('/movies/'))).toEqual({ title: null, unmatched: false });
+    expect(moviesRouteFromLocation(loc('/movies/tv-247718'))).toEqual({ title: 'tv-247718', unmatched: false });
+    expect(moviesRouteFromLocation(loc('/movies/unmatched'))).toEqual({ title: null, unmatched: true });
+  });
+
+  it('anything else is not the movies page', () => {
+    expect(moviesRouteFromLocation(loc('/'))).toBeNull();
+    expect(moviesRouteFromLocation(loc('/moviesx'))).toBeNull();
+    expect(moviesRouteFromLocation(loc('/movies/a/b'))).toBeNull();
+    expect(moviesRouteFromLocation(loc('/movies/%E0%A4%A'))).toBeNull();
+  });
+
+  it('builds hrefs and pushes only when the URL disagrees with the view', () => {
+    expect(moviesHref({ title: null, unmatched: false })).toBe('/movies');
+    expect(moviesHref({ title: 'movie-467905', unmatched: false })).toBe('/movies/movie-467905');
+    expect(moviesHref({ title: null, unmatched: true })).toBe('/movies/unmatched');
+    expect(hrefForView('movies', null, loc('/'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, { title: 'tv-1', unmatched: false })).toBe('/movies/tv-1');
+    expect(hrefForView('movies', null, loc('/movies/tv-1'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, { title: 'tv-1', unmatched: false })).toBeNull();
+    expect(hrefForView('movies', null, loc('/movies/tv-1'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, { title: null, unmatched: true })).toBe('/movies/unmatched');
+    expect(hrefForView('wall', null, loc('/movies/tv-1'))).toBe('/');
+    expect(hrefForView('adversary', null, loc('/movies'))).toBe('/adversary');
     expect(hrefForView('wall', null, loc('/?note=A-B32'))).toBeNull();
   });
 });
