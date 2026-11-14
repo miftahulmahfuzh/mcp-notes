@@ -105,22 +105,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b1827abd7f8b0a4adf5ba8cce9e45291d3f54bb2",
       "depends_on": [
         4,
         5
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "Movies page (grid, detail, unmatched+assign, pill) on branch phase-6-movies-library, web/src only; ran in worktree movies-library-p6 not the index's movies-library (swarm launch); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1114-152956-347840/evidence",
       "package": "web/src",
       "plan": ".workflows/plan/movies-library/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T15:34:04+07:00",
       "satisfies": [
         "R5"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A107",
       "title": "Web: Movies page, grid, detail, unmatched, pill"
     },
     {
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:27:17+07:00",
+  "updated": "2026-11-14T15:34:04+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
