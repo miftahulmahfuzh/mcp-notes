@@ -124,6 +124,9 @@ describe('adversary route', () => {
 describe('movies route', () => {
   it('reads the grid, a title and the unmatched list', () => {
     expect(moviesRouteFromLocation(loc('/movies'))).toEqual({ title: null, unmatched: false });
+    // A movie id written as a note link opens the movie; a real note link is not the movies page.
+    expect(moviesRouteFromLocation(loc('/?note=m-vyd0'))).toEqual({ title: 'M-VYD0', unmatched: false });
+    expect(moviesRouteFromLocation(loc('/?note=A-B32'))).toBeNull();
     expect(moviesRouteFromLocation(loc('/movies/'))).toEqual({ title: null, unmatched: false });
     expect(moviesRouteFromLocation(loc('/movies/tv-247718'))).toEqual({ title: 'tv-247718', unmatched: false });
     expect(moviesRouteFromLocation(loc('/movies/unmatched'))).toEqual({ title: null, unmatched: true });

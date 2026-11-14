@@ -92,6 +92,16 @@ export function wallNodeId(href: string, here: string | null = currentHost()): s
   return node === null ? null : canonicalNodeId(node);
 }
 
+/** http(s) on a loopback host or this page's host: the wall itself. */
+function isWall(href: string, here: string | null = currentHost()): boolean {
+  try {
+    const u = new URL(href);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && (LOOPBACK.has(u.hostname) || u.host === here);
+  } catch {
+    return false;
+  }
+}
+
 /** The movie id a link points at when the link is the wall's movies page with a movie id (`/movies/M-23T4`). Else null. */
 export function wallMovieId(href: string, here: string | null = currentHost()): string | null {
   let u: URL;
@@ -103,8 +113,9 @@ export function wallMovieId(href: string, here: string | null = currentHost()): 
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   if (!LOOPBACK.has(u.hostname) && u.host !== here) return null;
   const m = /^\/movies\/([^/]+)\/?$/.exec(u.pathname);
-  if (m === null) return null;
-  const id = decodeURIComponent(m[1]).toUpperCase();
+  // `/?note=M-23T4` or `/#M-23T4`: a movie id written as a note link (a model's slip) is still that movie.
+  const raw = m !== null ? decodeURIComponent(m[1]) : u.pathname === '/' ? (u.searchParams.get('note') ?? decodeURIComponent(u.hash.slice(1))) : '';
+  const id = raw.trim().toUpperCase();
   return MOVIE_ID.test(id) ? id : null;
 }
 
@@ -158,7 +169,9 @@ function codeRanges(s: string, streaming: boolean): Array<[number, number]> {
  *   page knows it, or when it is written in canonical upper case.
  * - A link to the wall's projects page with a node target becomes `{kind:'node', text: <label>, id}`.
  * - A node id in plain text becomes `{kind:'node', text, id}` when `isKnownNode` says it exists.
- * - A link to `/movies/M-23T4` on the wall, and a movie id in plain text, become `{kind:'movie', text, id}`.
+ * - A link to `/movies/M-23T4` on the wall, a wall link labelled with a movie id or carrying one as
+ *   `?note=` (a model's slip: a movie id is never a note), and a movie id in plain text, become
+ *   `{kind:'movie', text, id}`.
  * - Never inside code spans, URLs, longer words or code-ish tokens; never at the very end of a
  *   streaming paragraph.
  */
@@ -168,6 +181,9 @@ export function segmentChat(text: string, opts: ChatSegmentOptions = {}): ChatSe
   const isKnownNode = opts.isKnownNode ?? (() => false);
   const segs = segmentLinks(text, { streaming }).map((s): ChatSegment => {
     if (s.kind !== 'link') return s;
+    // A link whose label is a movie id is that movie wherever it points on the wall.
+    const labelled = MOVIE_ID.test(s.text.trim()) && isWall(s.href) ? s.text.trim() : null;
+    if (labelled !== null) return { kind: 'movie', text: s.text, id: labelled };
     const id = wallNoteId(s.href);
     if (id !== null) return { kind: 'note', text: s.text, id };
     const node = wallNodeId(s.href);

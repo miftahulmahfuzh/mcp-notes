@@ -170,6 +170,14 @@ describe('segmentChat: movie ids', () => {
     expect(movies('watch M-23T4', { streaming: true })).toEqual([]);
   });
 
+  it('a movie id written as a note link is still that movie, never a note or a plain link', () => {
+    expect(movies('How to Make a Killing (2026) [M-VYD0](http://localhost:7317/?note=M-VYD0) is')).toEqual(['M-VYD0:M-VYD0']);
+    expect(movies('[the film](http://localhost:7317/?note=m-vyd0)')).toEqual(['M-VYD0:the film']);
+    expect(movies('[M-VYD0](http://localhost:7317/projects?node=AB-CD)')).toEqual(['M-VYD0:M-VYD0']);
+    expect(movies('[M-VYD0](https://example.com/?note=M-VYD0)')).toEqual([]);
+    expect(segmentChat('[A-B32](http://localhost:7317/?note=A-B32)').map((s) => s.kind)).toEqual(['note']);
+  });
+
   it('a wall link to /movies/<movie id> is a movie link with its label', () => {
     expect(movies('see [the film](http://localhost:7317/movies/M-23T4) and [page](http://localhost:7317/movies/tv-247718)')).toEqual(['M-23T4:the film']);
   });

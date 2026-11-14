@@ -16,7 +16,8 @@
  *
  * Movie ids (`M-23T4`: `M-` and four characters, `src/movies/ids.ts`; a title, or one episode of a
  * series) are linked by shape alone to `<wall>/movies/ID`, where the wall opens the title's page,
- * scrolled to the episode when the id is an episode's.
+ * scrolled to the episode when the id is an episode's. A movie id a model wrote as a note link
+ * (`[M-23T4](<wall>/?note=M-23T4)`) is repaired to the movie link: the one link form that is rewritten.
  */
 
 /** The wall the daemon serves when nothing else is known. */
@@ -38,7 +39,7 @@ const HAS_LETTER = /[A-Z]/
 export const MOVIE_ID_PATTERN = /^M-[0-9A-Z]{4}$/
 
 /** A note or node candidate anywhere in a text: the fast path skips texts without one. */
-const ANY_CANDIDATE = /[0-9A-Z]-[0-9A-Z]{3}|[0-9A-Z]{2}-[0-9A-Z]{2}/ // a movie id starts like a note id
+const ANY_CANDIDATE = /[0-9A-Za-z]-[0-9A-Za-z]{3}|[0-9A-Z]{2}-[0-9A-Z]{2}/ // a movie id starts like a note id; lower case too, for a mislinked `?note=m-23t4`
 
 /** True when `text` holds something id-shaped, before any boundary rule. */
 export function hasCandidate(text: string): boolean {
@@ -238,6 +239,18 @@ function codeSpanEnd(text: string, i: number): number {
   return -1
 }
 
+/**
+ * `[M-23T4](<wall>/?note=M-23T4)`: a movie id written as a note link (a model's slip; a movie id
+ * is never a note). The target becomes `<wall>/movies/M-23T4`; any other link is returned as is.
+ */
+const MISLINKED_MOVIE = /^(\[[^\]]*\]\()(<?)(https?:\/\/[^\s/?#()<>]+)\/?(?:\?note=|#)([Mm]-[0-9A-Za-z]{4})(>?)(\s+(?:"[^"\n]*"|'[^'\n]*'))?(\s*\))$/
+
+export function repairMovieLink(link: string): string {
+  const m = MISLINKED_MOVIE.exec(link)
+  if (m === null) return link
+  return `${m[1]}${m[2]}${movieUrl(m[3]!, m[4]!.toUpperCase())}${m[5]}${m[6] ?? ''}${m[7]}`
+}
+
 /** Which node ids count as existing. */
 export type KnownNodes = { has: (id: string) => boolean }
 
@@ -269,6 +282,11 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
       }
       const link = matchAt(LINK_AT, text, i)
       if (link !== null) {
+        const fixed = repairMovieLink(link)
+        if (fixed !== link) {
+          out += text.slice(plainFrom, i) + fixed
+          plainFrom = i + link.length
+        }
         i += link.length
         continue
       }

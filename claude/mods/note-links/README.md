@@ -13,7 +13,9 @@ A Claude Code mod for mcp-notes. It does two things:
   node ids stay plain text.
 - **Movie ids become links to the title's page.** `M-23T4` (`M-` and four characters, a film, a
   series or one episode) becomes `[M-23T4](http://localhost:7317/movies/M-23T4)`. An episode's id
-  opens its series scrolled to that episode. Linked by shape alone, like note ids.
+  opens its series scrolled to that episode. Linked by shape alone, like note ids. A movie id that
+  Claude wrote as a note link (`[M-23T4](…/?note=M-23T4)`) is redrawn as the movie link: a movie
+  id is never a note (the wall also sends `/?note=M-23T4` to the movie).
 - **`/open <id>` opens a note (or, for `BE-XU`, a session on its graph) on the wall in the browser.** Case and the dash do not matter
   (`/open ab32`, `/open a-b32`, `/open A-B32`). From WSL it runs `explorer.exe <url>`, falling
   back to `/mnt/c/WINDOWS/explorer.exe`, then `powershell.exe Start-Process`, then

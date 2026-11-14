@@ -219,6 +219,14 @@ describe('movie ids', () => {
     expect(linkify(once, WALL)).toBe(once)
   })
 
+  test('a movie id written as a note link is repaired to the movie link', () => {
+    expect(linkify(`film [M-VYD0](${WALL}/?note=M-VYD0) here`, WALL)).toBe(`film ${M('M-VYD0')} here`)
+    expect(linkify(`[the film](${WALL}/?note=m-vyd0)`, WALL)).toBe(`[the film](${WALL}/movies/M-VYD0)`)
+    expect(linkify(`[M-VYD0](${WALL}/#M-VYD0)`, WALL)).toBe(M('M-VYD0'))
+    // A real note link, and a movie link, are left exactly as written.
+    for (const s of [L('A-B32'), M('M-VYD0'), `[x](${WALL}/?note=A-B32)`, '[M-VYD0](https://example.com/page?note=M-VYD0&x=1)']) expect(linkify(s, WALL)).toBe(s)
+  })
+
   test('normalizeMovieId needs the dash', () => {
     expect(normalizeMovieId(' m-23t4 ')).toBe('M-23T4')
     expect(normalizeMovieId('M23T4')).toBe(null)

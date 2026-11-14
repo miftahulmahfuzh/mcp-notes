@@ -127,10 +127,18 @@ export interface MoviesRoute {
 
 export const NO_MOVIES_ROUTE: MoviesRoute = { title: null, unmatched: false };
 
+/** src/movies/ids.ts: `M-` and four of [0-9A-Z]. */
+const MOVIE_ID_IN_NOTE_LINK = /^M-[0-9A-Z]{4}$/;
+
 /** The movies route, or null when the URL is not `/movies[/<title id> | /unmatched]`. A deeper path is not this page. */
 export function moviesRouteFromLocation(loc: Loc): MoviesRoute | null {
   const seg = oneSegment(pathOf(loc), MOVIES_PATH);
-  if (seg === null) return null;
+  if (seg === null) {
+    // `/?note=M-23T4`: a movie id written as a note link (a model's slip). It can never be a note
+    // (those have three characters after the dash), so it opens the movie.
+    const mislinked = pathOf(loc) === '/' ? MOVIE_ID_IN_NOTE_LINK.exec(new URLSearchParams(loc.search).get('note')?.trim().toUpperCase() ?? '') : null;
+    return mislinked === null ? null : { title: mislinked[0], unmatched: false };
+  }
   if (seg === '') return { title: null, unmatched: false };
   if (seg === MOVIES_UNMATCHED_SEGMENT) return { title: null, unmatched: true };
   return { title: seg, unmatched: false };
@@ -161,6 +169,7 @@ export function hrefForView(
   if (view === 'history') return r.history && r.thread === thread ? null : historyHref(thread);
   if (view === 'projects') return p !== null && p.repo === projects.repo && p.node === projects.node && p.focus === projects.focus ? null : projectsHref(projects);
   if (view === 'adversary') return a !== null && a.strategy === adversary.strategy && a.focus === adversary.focus ? null : adversaryHref(adversary);
-  if (view === 'movies') return m !== null && moviesHref(m) === moviesHref(movies) ? null : moviesHref(movies);
+  // A movie id that arrived as `/?note=M-23T4` is the right route at the wrong address: rewrite it.
+  if (view === 'movies') return m !== null && moviesHref(m) === moviesHref(movies) && pathOf(loc).startsWith(MOVIES_PATH) ? null : moviesHref(movies);
   return r.history || p !== null || a !== null || m !== null ? '/' : null;
 }
