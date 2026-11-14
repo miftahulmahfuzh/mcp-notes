@@ -1121,6 +1121,22 @@ part of `npm test` or `test:int`.
 | `NOTESD_TMUX_SOCKET` | unset | A tmux socket path for resume from the wall (`tmux -S`). Unset: the default socket, which the systemd user unit reaches. |
 | `NOTESD_TMUX_BIN` | `tmux` | The tmux binary resume from the wall runs. |
 | `NOTES_CLAUDE_RETENTION_DAYS` | 3650 | Read by `scripts/install.sh`, not the daemon: the minimum `cleanupPeriodDays` it writes to `~/.claude/settings.json`. |
+| `NOTESD_MOVIES` | on | `off` stops the movies library on this machine: no scan, no TMDB calls, no VLC. |
+| `NOTESD_MOVIES_ROOTS` | — | `:`-separated absolute directories scanned recursively for video files (mkv, mp4, avi, m4v, webm). Unset: nothing is scanned. |
+| `NOTESD_MOVIES_DONE_DIRS` | `Done` | `:`-separated folder names (not paths). A file moved into, or first found inside, such a folder below a root counts as finished. |
+| `NOTESD_MOVIES_SCAN_MS` | `120000` | Pause between library sync passes. |
+| `NOTESD_MOVIES_MIN_SECONDS` | `900` | Videos shorter than this stay out of the library (unmatched, `too_short`). |
+| `TMDB_API_READ_ACCESS_TOKEN` | — | TMDB v4 read access token (Bearer), preferred. Without it and `TMDB_API_KEY`, files are recorded as unmatched (`no_tmdb_credentials`). |
+| `TMDB_API_KEY` | — | TMDB v3 API key, used when there is no read access token. |
+| `TMDB_API_BASE` | `https://api.themoviedb.org/3` | TMDB API host. Tests point it at a fixture server. |
+| `TMDB_IMAGE_BASE` | `https://image.tmdb.org/t/p` | Poster host. Posters are linked, not stored, so both machines show them. |
+| `NOTESD_FFPROBE_BIN` | `ffprobe` | The ffprobe that measures each video's duration. |
+| `NOTESD_VLC_BIN` | `/mnt/c/Program Files/VideoLAN/VLC/vlc.exe` | The Windows VLC that Play starts. |
+| `NOTESD_VLC_INI` | — | VLC's `vlc-qt-interface.ini` (e.g. `/mnt/c/Users/<you>/AppData/Roaming/vlc/vlc-qt-interface.ini`). Its recent list backfills plays of films opened outside notesd. Unset: no backfill. |
+| `NOTESD_VLC_HTTP_PORT` | `47318` | Port of the HTTP interface of a VLC that notesd starts (bound to Windows loopback). |
+| `NOTESD_VLC_POLL_MS` | `5000` | How often a playing VLC's position is recorded. |
+| `NOTESD_CURL_EXE` | `/mnt/c/Windows/System32/curl.exe` | The Windows curl that reads VLC's HTTP interface from the Windows side (WSL's NAT network cannot reach Windows loopback). |
+| `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model alias that names a file TMDB could not match from its name. `off`: no fallback (such files stay unmatched). |
 
 ## How it works
 

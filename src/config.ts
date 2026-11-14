@@ -143,6 +143,86 @@ export const DEFAULT_ADVERSARY_CONFIG: AdversaryConfig = {
   dispatchNightly: false,
 }
 
+export const DEFAULT_MOVIES_SCAN_MS = 120_000
+export const DEFAULT_MOVIES_MIN_SECONDS = 900
+export const DEFAULT_MOVIES_DONE_DIRS: readonly string[] = ['Done']
+export const DEFAULT_TMDB_API_BASE = 'https://api.themoviedb.org/3'
+export const DEFAULT_TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p'
+export const DEFAULT_FFPROBE_BIN = 'ffprobe'
+export const DEFAULT_VLC_BIN = '/mnt/c/Program Files/VideoLAN/VLC/vlc.exe'
+export const DEFAULT_VLC_HTTP_PORT = 47318
+export const DEFAULT_VLC_POLL_MS = 5_000
+export const DEFAULT_CURL_EXE = '/mnt/c/Windows/System32/curl.exe'
+export const DEFAULT_MOVIES_FALLBACK_MODEL = 'haiku'
+
+/** TMDB credentials and hosts (src/movies/tmdb.ts). Secrets are never logged. */
+export interface TmdbConfig {
+  /** `TMDB_API_READ_ACCESS_TOKEN` (v4 bearer), trimmed; null when unset or blank. Preferred. */
+  token: string | null
+  /** `TMDB_API_KEY` (v3 `api_key=`), trimmed; null when unset or blank. Used when there is no token. */
+  apiKey: string | null
+  /** `TMDB_API_BASE`, no trailing slash. Tests point it at a fixture server. */
+  apiBase: string
+  /** `TMDB_IMAGE_BASE`, no trailing slash. Poster URLs are `<imageBase>/<size><poster_path>`. */
+  imageBase: string
+}
+
+/** The Windows VLC notesd launches and reads (src/movies/vlc/*). */
+export interface VlcConfig {
+  /** `NOTESD_VLC_BIN`. A bare name is a PATH lookup; a path is ~-expanded and made absolute. */
+  bin: string
+  /** `NOTESD_VLC_INI`: VLC's `vlc-qt-interface.ini`, absolute. Null turns the recents backfill off. */
+  ini: string | null
+  /** `NOTESD_VLC_HTTP_PORT`, 1-65535: the port of the HTTP interface of a VLC notesd starts. */
+  httpPort: number
+  /** `NOTESD_VLC_POLL_MS`: how often a playing VLC is read. */
+  pollMs: number
+  /** `NOTESD_CURL_EXE`: the Windows curl that reaches VLC's loopback-only HTTP interface. */
+  curlExe: string
+}
+
+/** The movies library (src/movies/*). */
+export interface MoviesConfig {
+  /** `NOTESD_MOVIES`, default on. `off` scans nothing and spawns nothing. */
+  enabled: boolean
+  /** `NOTESD_MOVIES_ROOTS`, `:`-separated absolute directories, scanned recursively. Empty: nothing is scanned. */
+  roots: string[]
+  /** `NOTESD_MOVIES_DONE_DIRS`, `:`-separated folder names (not paths), matched case-insensitively below a root. */
+  doneDirs: string[]
+  /** `NOTESD_MOVIES_SCAN_MS`: pause between sync passes. */
+  scanMs: number
+  /** `NOTESD_MOVIES_MIN_SECONDS`: shorter videos stay out of the library (unmatched, too_short). */
+  minSeconds: number
+  tmdb: TmdbConfig
+  /** `NOTESD_FFPROBE_BIN`. A bare name is a PATH lookup; a path is ~-expanded and made absolute. */
+  ffprobeBin: string
+  vlc: VlcConfig
+  /**
+   * `NOTESD_MOVIES_FALLBACK_MODEL`: Agent SDK alias or model id that names a file TMDB could not match.
+   * `off` gives null: no Haiku fallback (phase 3 then builds none; verify.sh pins it off).
+   */
+  fallbackModel: string | null
+}
+
+/** Movies off, no roots, no TMDB credentials, no VLC ini. Tests build `Config` literals with it. */
+export const DEFAULT_MOVIES_CONFIG: MoviesConfig = {
+  enabled: false,
+  roots: [],
+  doneDirs: [...DEFAULT_MOVIES_DONE_DIRS],
+  scanMs: DEFAULT_MOVIES_SCAN_MS,
+  minSeconds: DEFAULT_MOVIES_MIN_SECONDS,
+  tmdb: { token: null, apiKey: null, apiBase: DEFAULT_TMDB_API_BASE, imageBase: DEFAULT_TMDB_IMAGE_BASE },
+  ffprobeBin: DEFAULT_FFPROBE_BIN,
+  vlc: {
+    bin: DEFAULT_VLC_BIN,
+    ini: null,
+    httpPort: DEFAULT_VLC_HTTP_PORT,
+    pollMs: DEFAULT_VLC_POLL_MS,
+    curlExe: DEFAULT_CURL_EXE,
+  },
+  fallbackModel: DEFAULT_MOVIES_FALLBACK_MODEL,
+}
+
 export interface Config {
   /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
   databaseUrl: string
@@ -162,6 +242,8 @@ export interface Config {
   adversary: AdversaryConfig
   /** The dword (daily-words) connector's write identity. `userEmail: null` means every dword write refuses. */
   dword: DwordConfig
+  /** The movies library. `enabled: false` starts nothing (DEFAULT_MOVIES_CONFIG in tests). */
+  movies: MoviesConfig
 }
 
 export interface LoadConfigOptions {
@@ -255,8 +337,8 @@ function parsePositiveInt(name: string, raw: string | undefined, fallback: numbe
   return Number(trimmed)
 }
 
-function parseClaudeBin(raw: string | undefined): string {
-  const value = raw?.trim() || DEFAULT_CLAUDE_BIN
+function parseBin(raw: string | undefined, fallback: string): string {
+  const value = raw?.trim() || fallback
   // A bare command name stays a PATH lookup; anything with a slash is a path.
   return value.includes('/') ? path.resolve(expandHome(value)) : value
 }
@@ -283,7 +365,7 @@ function parseChat(env: Record<string, string | undefined>): ChatConfig {
     brain,
     maxTurns: parsePositiveInt('CHAT_MAX_TURNS', env.CHAT_MAX_TURNS, DEFAULT_CHAT_MAX_TURNS),
     timeoutMs: parsePositiveInt('CHAT_TIMEOUT_MS', env.CHAT_TIMEOUT_MS, DEFAULT_CHAT_TIMEOUT_MS),
-    claudeBin: parseClaudeBin(env.NOTESD_CLAUDE_BIN),
+    claudeBin: parseBin(env.NOTESD_CLAUDE_BIN, DEFAULT_CLAUDE_BIN),
     glm,
   }
 }
@@ -343,6 +425,91 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
   }
 }
 
+function parseSecret(raw: string | undefined): string | null {
+  const value = raw?.trim() ?? ''
+  return value === '' ? null : value
+}
+
+function parseAbsolutePaths(name: string, raw: string | undefined): string[] {
+  const out: string[] = []
+  for (const part of (raw ?? '').split(':')) {
+    const value = part.trim()
+    if (value === '') continue
+    const expanded = expandHome(value)
+    if (!path.isAbsolute(expanded)) throw new ConfigError(`${name} takes absolute paths separated by ":", got "${value}"`)
+    const resolved = path.resolve(expanded)
+    if (!out.includes(resolved)) out.push(resolved)
+  }
+  return out
+}
+
+function parseFolderNames(name: string, raw: string | undefined, fallback: readonly string[]): string[] {
+  const names = (raw ?? '')
+    .split(':')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+  if (names.length === 0) return [...fallback]
+  for (const n of names) {
+    if (n.includes('/') || n === '.' || n === '..') throw new ConfigError(`${name} takes folder names, not paths, got "${n}"`)
+  }
+  return names
+}
+
+function parseOptionalAbsolutePath(name: string, raw: string | undefined): string | null {
+  const value = raw?.trim() ?? ''
+  if (value === '') return null
+  const expanded = expandHome(value)
+  if (!path.isAbsolute(expanded)) throw new ConfigError(`${name} must be an absolute path, got "${raw}"`)
+  return path.resolve(expanded)
+}
+
+function parseHttpBase(name: string, raw: string | undefined, fallback: string): string {
+  const value = raw?.trim() ?? ''
+  if (value === '') return fallback
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ConfigError(`${name} must be an http(s) URL, got "${raw}"`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ConfigError(`${name} must be an http(s) URL, got "${raw}"`)
+  return value.replace(/\/+$/, '')
+}
+
+function parseTcpPort(name: string, raw: string | undefined, fallback: number): number {
+  const port = parsePositiveInt(name, raw, fallback)
+  if (port > 65535) throw new ConfigError(`${name} must be an integer 1-65535, got "${raw}"`)
+  return port
+}
+
+export function parseMovies(env: Record<string, string | undefined>): MoviesConfig {
+  return {
+    enabled: parseSwitch('NOTESD_MOVIES', env.NOTESD_MOVIES),
+    roots: parseAbsolutePaths('NOTESD_MOVIES_ROOTS', env.NOTESD_MOVIES_ROOTS),
+    doneDirs: parseFolderNames('NOTESD_MOVIES_DONE_DIRS', env.NOTESD_MOVIES_DONE_DIRS, DEFAULT_MOVIES_DONE_DIRS),
+    scanMs: parsePositiveInt('NOTESD_MOVIES_SCAN_MS', env.NOTESD_MOVIES_SCAN_MS, DEFAULT_MOVIES_SCAN_MS),
+    minSeconds: parsePositiveInt('NOTESD_MOVIES_MIN_SECONDS', env.NOTESD_MOVIES_MIN_SECONDS, DEFAULT_MOVIES_MIN_SECONDS),
+    tmdb: {
+      token: parseSecret(env.TMDB_API_READ_ACCESS_TOKEN),
+      apiKey: parseSecret(env.TMDB_API_KEY),
+      apiBase: parseHttpBase('TMDB_API_BASE', env.TMDB_API_BASE, DEFAULT_TMDB_API_BASE),
+      imageBase: parseHttpBase('TMDB_IMAGE_BASE', env.TMDB_IMAGE_BASE, DEFAULT_TMDB_IMAGE_BASE),
+    },
+    ffprobeBin: parseBin(env.NOTESD_FFPROBE_BIN, DEFAULT_FFPROBE_BIN),
+    vlc: {
+      bin: parseBin(env.NOTESD_VLC_BIN, DEFAULT_VLC_BIN),
+      ini: parseOptionalAbsolutePath('NOTESD_VLC_INI', env.NOTESD_VLC_INI),
+      httpPort: parseTcpPort('NOTESD_VLC_HTTP_PORT', env.NOTESD_VLC_HTTP_PORT, DEFAULT_VLC_HTTP_PORT),
+      pollMs: parsePositiveInt('NOTESD_VLC_POLL_MS', env.NOTESD_VLC_POLL_MS, DEFAULT_VLC_POLL_MS),
+      curlExe: parseBin(env.NOTESD_CURL_EXE, DEFAULT_CURL_EXE),
+    },
+    fallbackModel:
+      env.NOTESD_MOVIES_FALLBACK_MODEL?.trim().toLowerCase() === 'off'
+        ? null
+        : parseModel('NOTESD_MOVIES_FALLBACK_MODEL', env.NOTESD_MOVIES_FALLBACK_MODEL, DEFAULT_MOVIES_FALLBACK_MODEL),
+  }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
@@ -354,8 +521,13 @@ export function parseSessions(env: Record<string, string | undefined>): Sessions
  * ADVERSARY_STOCK_TIMEOUT_MS, ADVERSARY_POLL_MS, NOTESD_SEER_DISPATCH. Egress key: NOTESD_EGRESS_METER
  * (read by src/db/client.ts; `off` disables the query meter and the Neon quota breaker). Dword key: DWORD_USER_EMAIL
  * (unset or blank: every dword_vocab_add / dword_journal_add write tool refuses with "daily-words
- * user not configured"; dword_schema/dword_sql are unaffected, since they need no user id). Other
- * keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
+ * user not configured"; dword_schema/dword_sql are unaffected, since they need no user id).
+ * Movies keys: NOTESD_MOVIES, NOTESD_MOVIES_ROOTS, NOTESD_MOVIES_DONE_DIRS, NOTESD_MOVIES_SCAN_MS,
+ * NOTESD_MOVIES_MIN_SECONDS, TMDB_API_READ_ACCESS_TOKEN, TMDB_API_KEY, TMDB_API_BASE, TMDB_IMAGE_BASE,
+ * NOTESD_FFPROBE_BIN, NOTESD_VLC_BIN, NOTESD_VLC_INI, NOTESD_VLC_HTTP_PORT, NOTESD_VLC_POLL_MS,
+ * NOTESD_CURL_EXE, NOTESD_MOVIES_FALLBACK_MODEL (relative roots or ini, a path as a Done folder
+ * name, a non-http TMDB base or a port above 65535 throw ConfigError).
+ * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
  */
@@ -384,5 +556,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     sessions: parseSessions(env),
     adversary: parseAdversary(env),
     dword: parseDword(env),
+    movies: parseMovies(env),
   }
 }

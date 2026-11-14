@@ -15,6 +15,8 @@ import { chatImageRoutes } from './chatImages.js';
 import { fileRoutes } from './files.js';
 import { captureRoutes } from './capture.js';
 import { imageRoutes } from './images.js';
+import { moviesApiRoutes } from './moviesApi.js';
+import { moviesPlayRoutes } from './moviesPlayApi.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
@@ -90,8 +92,9 @@ export function mcpToolDeps(
  * and spawn hooks), sessionsApiRoutes (iteration 8 phase 7: projects, session graph, detail,
  * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
  * resume/spawn into tmux, own Origin only), adversaryApiRoutes (seer-adversarial phase 5: the Seer
- * Adversarial read model, toggle and review-now), staticRoutes (P6, last: it owns the SPA fallback; it
- * reserves /api, so the order is for clarity).
+ * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
+ * (movies-library phases 4 and 5: library, user state, sync, playback), staticRoutes (P6, last: it
+ * owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -119,6 +122,8 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', debugApiRoutes(deps));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
+  app.route('/', moviesApiRoutes(deps));
+  app.route('/', moviesPlayRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

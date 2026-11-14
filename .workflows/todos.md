@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-12
+**Last Updated**: 2026-11-14
 **Total Active Tasks**: 8
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 92
+- Completed: 93
 
 ---
 
@@ -86,6 +86,26 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A102** Phase 1: Foundation: schema, repo, state, config, seams
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `drizzle/0017_movies.sql` + `drizzle/meta`; the `movie_*` tables in `src/db/schema.ts`; `src/movies/types.ts` (the one `TitleMetadata` definition), `state.ts`, `repo.ts` (every method any phase calls, `closeOpenPlays` and `findTrackedFile` for phase 5 included; no later phase edits this file); `MoviesConfig`/`parseMovies`/`DEFAULT_MOVIES_CONFIG` in `src/config.ts`; `movies: MoviesService | null` in `AppDeps` as a forward type (a minimal `src/movies/service.ts` exporting only the `MoviesService` interface shape phase 3 will implement, `deps.movies = null` in `src/daemon.ts` and every test builder of `AppDeps`); empty `src/http/moviesApi.ts` and `src/http/moviesPlayApi.ts` routers mounted in `src/http/app.ts`; the README env table rows; unit tests for `state.ts` and config; integration tests for the migration and `MoviesRepo` (including the "company finished in a date range" query of R3.8). Exit criteria: migration applies on the test database; `MoviesRepo` round-trips titles with companies, credits and episodes, files and plays; `fileState` covers every state; `NOTESD_MOVIES_FALLBACK_MODEL=off` parses to `fallbackModel: null`; typecheck and both test suites pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 1 of 9)
+  - **Satisfies**: R3 — DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, season/episode, first_seen, deleted_at), play events (file, started/ended, position, duration). Studios and people are real rows so "Blumhouse films I saw this year" is a plain query. - Series collapse into one title/detail page with per-episode progress and per-episode deleted flag. - Sync detects new files and deleted files. A move (e.g. Telegram Desktop -> Videos/Done, matched by name+size) is NOT a delete. A move into Videos/Done is a "finished" signal (owner: usually, not always). - Deleted is not the same as watched; derive state from last position: deleted at >= 90% or manually flagged = finished; deleted partway = dropped; deleted at 0% = removed unwatched. Detail page shows a deleted flag. - User state: manual "watched" flag (covers the 95%-skipping-credits case), rating 0-5 stars, optional review. Review is a normal note linked to the title (search, revisions, /n for free) shown as one text field on the detail page; rating is a column. - Files and VLC are per-host: Play works only on the owning machine (available:false / not_on_this_machine pattern, same as photos). · criteria: R3.4, R3.8
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A102.md`
+  - **Completed**: 2026-11-14 13:52
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A102.md, README.md, drizzle/0017_movies.sql, drizzle/meta/0017_snapshot.json, drizzle/meta/_journal.json, src/config.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/http/app.ts, src/http/moviesApi.ts, src/http/moviesPlayApi.ts, src/movies/types.ts, src/movies/state.ts, src/movies/repo.ts, src/movies/service.ts, tests/integration/setup.ts, tests/integration/movies.schema.int.test.ts, tests/integration/movies.repo.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.replyEmbeddings.int.test.ts, tests/unit/config.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts, tests/unit/movies/state.test.ts, tests/unit/movies/types.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-135117-116833/evidence
+  - **Drift**:
+    - Applied in the swarm's per-phase worktree movies-library-p1 / branch phase-1-movies-library, not the index's movies-library / feature/movies-library (same base commit 3a11b40).
+    - Generated index SQL reads `"started_at" DESC NULLS LAST` (drizzle-kit's output) where the plan wrote `DESC`; same ordering in Postgres, not hand-edited.
+    - Plan Step 11's sed script relies on shell word-splitting of $FILES; run under bash (zsh does not split). Per-file counts matched the plan.
+  - **Decided**:
+    - Index names worktree movies-library, session was spawned in movies-library-p1 → proceeded in the per-phase worktree (rung 6: swarm ledger convention, wave branches merged by the integrator)
+    - Step 3 creates every phase's task, phase 2 was doing the same concurrently → created only phase 1's task P1-NOTES-A102 here (tie-break: narrower blast radius); coordinator confirmed A102 and resolves the todos.md overlap at integration
 - [x] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
   - **Difficulty**: NORMAL
   - **Type**: Feature
