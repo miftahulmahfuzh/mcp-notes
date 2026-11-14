@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
-import { continueTitle, errorCode, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
+import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
 import { CAST_LIMIT, clock, continueNotice, creditRows, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
 import { FileRow } from './parts';
@@ -39,7 +39,7 @@ export function MovieDetail({ detail: d, player, onChanged, onNotice }: MovieDet
     try {
       onNotice(await action());
     } catch (e) {
-      onNotice(playErrorText(errorCode(e)));
+      onNotice(playErrorText(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
       onChanged();

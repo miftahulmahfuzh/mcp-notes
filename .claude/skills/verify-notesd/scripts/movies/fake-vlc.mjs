@@ -184,9 +184,19 @@ function runCurl() {
   if (get) for (const kv of data) for (const [k, v] of new URLSearchParams(kv)) u.searchParams.append(k, v)
   const port = Number(u.port || 80)
   const s = readState(port)
+  const out = (code, connect) =>
+    writeOut.replace(/%\{(http_code|response_code)\}/g, code).replace(/%\{time_connect\}/g, connect).replace(/\\n/g, '\n')
   if (!s || !alive(s.pid)) {
-    console.error(`curl: (7) Failed to connect to ${u.hostname} port ${port} after 0 ms: Couldn't connect to server`)
-    process.exit(7)
+    // What the real curl.exe does on this Windows (MEASURED 2026-11-14): a closed loopback port is not
+    // refused within the connect timeout, so curl exits 28 with HTTP 000 and time_connect 0, never 7.
+    // FAKE_CURL_REFUSE=1 answers like Linux curl instead (exit 7 at once).
+    if (process.env.FAKE_CURL_REFUSE === '1') {
+      console.error(`curl: (7) Failed to connect to ${u.hostname} port ${port} after 0 ms: Couldn't connect to server`)
+      process.exit(7)
+    }
+    if (writeOut) process.stdout.write(out('000', '0.000000'))
+    console.error(`curl: (28) Connection timed out after 1000 milliseconds`)
+    process.exit(28)
   }
   const pass = user == null ? null : user.slice(user.indexOf(':') + 1)
   let code = 200
@@ -213,7 +223,7 @@ function runCurl() {
     process.stdout.write(body)
   }
   if (writeOut) {
-    process.stdout.write(writeOut.replace(/%\{(http_code|response_code)\}/g, String(code)).replace(/\\n/g, '\n'))
+    process.stdout.write(out(String(code), '0.000512'))
   }
   process.exit(0)
 }

@@ -3,10 +3,13 @@ import type { RoutedFile } from './lib/files';
 
 export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** The server's human sentence for the error (`message` in the body), when it sent one. */
+  readonly detail: string | null;
+  constructor(status: number, message: string, detail: string | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail;
   }
 }
 

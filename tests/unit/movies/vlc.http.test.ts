@@ -9,13 +9,22 @@ describe('interpretCurl', () => {
     expect(interpretCurl({ exitCode: 7, stdout: '' })).toEqual({ kind: 'gone' });
   });
   it('401 means the port is someone else\'s', () => {
-    expect(interpretCurl({ exitCode: 0, stdout: '\n401' })).toEqual({ kind: 'unauthorized' });
+    expect(interpretCurl({ exitCode: 0, stdout: '\n401 0.000512' })).toEqual({ kind: 'unauthorized' });
   });
   it('200 with status.json is a status', () => {
-    expect(interpretCurl({ exitCode: 0, stdout: `${STATUS}\n200` })).toEqual({ kind: 'ok', status: { state: 'playing', time: 1210, length: 7198 } });
+    expect(interpretCurl({ exitCode: 0, stdout: `${STATUS}\n200 0.000512` })).toEqual({ kind: 'ok', status: { state: 'playing', time: 1210, length: 7198 } });
   });
-  it('a timeout or junk is an error, not gone', () => {
+  // MEASURED 2026-11-14: this Windows refuses a closed loopback port only after 1.9-5.2 s, so curl.exe
+  // gives up first: exit 28, HTTP 000, time_connect 0.
+  it('a timeout that never connected means VLC is gone (what curl.exe says on a closed port)', () => {
+    expect(interpretCurl({ exitCode: 28, stdout: '\n000 0.000000' })).toEqual({ kind: 'gone' });
+  });
+  it('a timeout after a connect is a silent listener: an error, not gone', () => {
+    expect(interpretCurl({ exitCode: 28, stdout: '\n000 0.000791' })).toEqual({ kind: 'error', message: 'curl exited 28' });
+  });
+  it('a timeout with no connect time, or junk, is an error, not gone', () => {
     expect(interpretCurl({ exitCode: 28, stdout: '' })).toEqual({ kind: 'error', message: 'curl exited 28' });
+    expect(interpretCurl({ exitCode: 28, stdout: '\n000' })).toEqual({ kind: 'error', message: 'curl exited 28' });
     expect(interpretCurl({ exitCode: 0, stdout: 'nope\n200' })).toEqual({ kind: 'error', message: 'unreadable status.json' });
   });
 });
@@ -39,9 +48,9 @@ describe('curlStatusReader', () => {
     await reader.command('/mnt/c/Windows/System32/curl.exe', EP, { command: 'seek', val: 1200.9 });
     await reader.command('/mnt/c/Windows/System32/curl.exe', EP, { command: 'pl_play' });
     expect(calls).toEqual([
-      ['/mnt/c/Windows/System32/curl.exe', '-s', '-m', '2', '-w', '\\n%{http_code}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json'],
-      ['/mnt/c/Windows/System32/curl.exe', '-s', '-m', '2', '-w', '\\n%{http_code}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json?command=seek&val=1200'],
-      ['/mnt/c/Windows/System32/curl.exe', '-s', '-m', '2', '-w', '\\n%{http_code}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json?command=pl_play'],
+      ['/mnt/c/Windows/System32/curl.exe', '-s', '--connect-timeout', '1', '-m', '2', '-w', '\\n%{http_code} %{time_connect}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json'],
+      ['/mnt/c/Windows/System32/curl.exe', '-s', '--connect-timeout', '1', '-m', '2', '-w', '\\n%{http_code} %{time_connect}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json?command=seek&val=1200'],
+      ['/mnt/c/Windows/System32/curl.exe', '-s', '--connect-timeout', '1', '-m', '2', '-w', '\\n%{http_code} %{time_connect}', '-u', ':pw', 'http://127.0.0.1:47318/requests/status.json?command=pl_play'],
     ]);
   });
 });

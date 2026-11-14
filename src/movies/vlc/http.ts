@@ -16,8 +16,9 @@ export interface VlcEndpoint {
 }
 
 /**
- * One read of VLC's HTTP interface. `gone`: nothing listens on the port (curl exit 7: VLC exited,
- * or not up yet). `unauthorized`: something answers, but not with our password.
+ * One read of VLC's HTTP interface. `gone`: nothing listens on the port (VLC exited, or not up yet;
+ * see interpretCurl). `unauthorized`: something answers, but not with our password. `error`: a
+ * listener took the connection and did not answer in time (a hung VLC), or answered junk.
  */
 export type VlcReply =
   | { kind: 'ok'; status: VlcStatus }
@@ -32,10 +33,23 @@ export interface VlcStatusReader {
   command(curl: string, ep: VlcEndpoint, cmd: VlcCommand): Promise<VlcReply>;
 }
 
-/** curl: "Failed to connect to host" (MEASURED 2026-11-14: what curl.exe returns once VLC exits). */
+/**
+ * curl: "Failed to connect to host". MEASURED 2026-11-14 with curl.exe 8.13 on this Windows: a
+ * closed loopback port is refused only after 1.9-5.2 s, so within CURL_CONNECT_TIMEOUT_S curl.exe
+ * never gets to say 7; it times out (28) with `time_connect` 0. Linux curl answers 7 at once.
+ */
 export const CURL_EXIT_CONNECT_FAILED = 7;
+/** curl: "Operation timed out": the connect limit or the `-m` limit. `time_connect` tells which. */
+export const CURL_EXIT_TIMED_OUT = 28;
 /** curl's own `-m` limit, seconds. */
 export const CURL_MAX_TIME_S = 2;
+/**
+ * curl's `--connect-timeout`, seconds. A loopback listener takes the connection in about 1 ms
+ * (measured, a hung one included), so no connection after this long means nothing listens.
+ */
+export const CURL_CONNECT_TIMEOUT_S = 1;
+/** `-w`: after the body, a newline, the HTTP status and the seconds the connect took (0: never connected). */
+export const CURL_WRITE_OUT = '\\n%{http_code} %{time_connect}';
 /** Node's limit on the curl process (curl.exe startup through interop included). */
 export const CURL_EXEC_TIMEOUT_MS = 5000;
 
@@ -47,7 +61,7 @@ export interface ExecResult {
 
 export type ExecFn = (cmd: string, args: string[], timeoutMs: number) => Promise<ExecResult>;
 
-/** execFile that never rejects: the exit code is data here (7 means "VLC gone"). */
+/** execFile that never rejects: the exit code is data here (7 and 28 can both mean "VLC gone"). */
 export const execCapture: ExecFn = (cmd, args, timeoutMs) =>
   new Promise((resolve) => {
     execFile(cmd, args, { timeout: timeoutMs, encoding: 'utf8', windowsHide: true, maxBuffer: 1 << 20 }, (err, stdout) => {
@@ -67,9 +81,9 @@ export function statusUrl(ep: VlcEndpoint, cmd?: VlcCommand): string {
   return `${base}?command=seek&val=${Math.max(0, Math.floor(cmd.val))}`;
 }
 
-/** Silent, time-limited, HTTP status appended after a newline, Basic auth with an empty user. */
+/** Silent, time-limited, HTTP status and connect time appended after a newline, Basic auth with an empty user. */
 export function curlArgs(ep: VlcEndpoint, url: string): string[] {
-  return ['-s', '-m', String(CURL_MAX_TIME_S), '-w', '\\n%{http_code}', '-u', `:${ep.password}`, url];
+  return ['-s', '--connect-timeout', String(CURL_CONNECT_TIMEOUT_S), '-m', String(CURL_MAX_TIME_S), '-w', CURL_WRITE_OUT, '-u', `:${ep.password}`, url];
 }
 
 /** status.json -> VlcStatus; null when it is not VLC's shape. */
@@ -88,12 +102,18 @@ export function parseStatusJson(text: string): VlcStatus | null {
   return { state, time: seconds(o.time), length: seconds(o.length) };
 }
 
-/** curl's exit code and `<body>\n<http code>` output -> one VlcReply. */
+/**
+ * curl's exit code and `<body>\n<http code> <time_connect>` output -> one VlcReply. Nothing
+ * listening is `gone` however curl learned it: refused (7), or a timeout (28) that never connected.
+ * A timeout after a connect is a listener that does not answer: `error`, which the hang rule needs.
+ */
 export function interpretCurl(r: ExecResult): VlcReply {
   if (r.exitCode === CURL_EXIT_CONNECT_FAILED) return { kind: 'gone' };
-  if (r.exitCode !== 0) return { kind: 'error', message: `curl exited ${r.exitCode}` };
   const cut = r.stdout.lastIndexOf('\n');
-  const code = Number(r.stdout.slice(cut + 1).trim());
+  const [codeText = '', connectText] = r.stdout.slice(cut + 1).trim().split(/\s+/);
+  if (r.exitCode === CURL_EXIT_TIMED_OUT && connectText !== undefined && Number(connectText) === 0) return { kind: 'gone' };
+  if (r.exitCode !== 0) return { kind: 'error', message: `curl exited ${r.exitCode}` };
+  const code = Number(codeText);
   const body = cut < 0 ? '' : r.stdout.slice(0, cut);
   if (code === 401) return { kind: 'unauthorized' };
   if (code !== 200) return { kind: 'error', message: `HTTP ${Number.isFinite(code) ? code : '?'}` };
@@ -101,7 +121,7 @@ export function interpretCurl(r: ExecResult): VlcReply {
   return status === null ? { kind: 'error', message: 'unreadable status.json' } : { kind: 'ok', status };
 }
 
-/** The real reader: one curl.exe run per call (~70 ms measured on this host). */
+/** The real reader: one curl.exe run per call (~70 ms measured on this host; ~1 s when nothing listens). */
 export function curlStatusReader(exec: ExecFn = execCapture): VlcStatusReader {
   return {
     async status(curl, ep) {

@@ -349,15 +349,25 @@ export function errorCode(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** The server's `message` of a failed call (the play route says why the player is unavailable), or null. */
+export function errorDetail(e: unknown): string | null {
+  return e instanceof ApiError ? e.detail : null;
+}
+
 async function failure(res: Response): Promise<ApiError> {
   let msg = `${res.status} ${res.statusText}`.trim();
+  let detail: string | null = null;
   try {
     const j: unknown = await res.json();
-    if (j && typeof j === 'object' && typeof (j as { error?: unknown }).error === 'string') msg = (j as { error: string }).error;
+    if (j && typeof j === 'object') {
+      const o = j as { error?: unknown; message?: unknown };
+      if (typeof o.error === 'string') msg = o.error;
+      if (typeof o.message === 'string' && o.message.trim() !== '') detail = o.message;
+    }
   } catch {
     // not JSON; keep the status line
   }
-  return new ApiError(res.status, msg);
+  return new ApiError(res.status, msg, detail);
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {

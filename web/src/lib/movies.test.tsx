@@ -10,6 +10,8 @@ import {
   moviesChatMessage,
   moviesCountLine,
   NO_MOVIES_FILTER,
+  PLAYER_OFF_LABEL,
+  playErrorText,
   playLabel,
   playPlan,
   reasonText,
@@ -106,5 +108,13 @@ describe('detail text', () => {
     expect(moviesCountLine({ ...base, listError: 'movies_off' }, { title: null, unmatched: false })).toBe('Movies are off on this daemon.');
     expect(emptyLibraryText({ ...STATUS, roots: [] })).toContain('NOTESD_MOVIES_ROOTS');
     expect(emptyLibraryText(STATUS)).toContain('/lib');
+  });
+});
+
+describe('playErrorText', () => {
+  it('shows the server\'s reason for player_unavailable, and the generic label without one', () => {
+    expect(playErrorText('player_unavailable', 'VLC HTTP ports 47318-47327 are all in use.')).toBe('VLC HTTP ports 47318-47327 are all in use.');
+    expect(playErrorText('player_unavailable')).toBe(PLAYER_OFF_LABEL);
+    expect(playErrorText('file_missing', 'A.mkv is no longer on disk.')).toBe('the file is gone from disk; rescan to update the library');
   });
 });

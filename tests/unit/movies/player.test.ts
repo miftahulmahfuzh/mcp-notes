@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MoviePlayer, PlayError, type MoviePlayerDeps, type PlayerRepo } from '../../../src/movies/player.js';
+import { curlStatusReader, type ExecFn } from '../../../src/movies/vlc/http.js';
 import type { PlayerDetection } from '../../../src/movies/vlc/launch.js';
 import { MemVlc } from '../../fixtures/movies/memVlc.js';
 import { fileRow, playRow, T0, type FileRow, type PlayRow } from '../../fixtures/movies/rows.js';
@@ -122,6 +123,29 @@ describe('MoviePlayer.play', () => {
     const second = setup();
     for (let i = 0; i < 10; i++) second.vlc.occupy(PORT + i, 'theirs');
     await expect(second.player.play(1)).rejects.toMatchObject({ code: 'player_unavailable', reason: 'no_free_port' });
+  });
+
+  // The 2026-11-14 bug: on this Windows curl.exe never says "refused" (7) for a closed loopback port
+  // in time; it times out (28) without connecting. Read as "taken", every candidate failed: no_free_port.
+  it('takes the first port when curl.exe times out unconnected on closed ports, as this Windows does', async () => {
+    const mem = new MemVlc();
+    const exec: ExecFn = async (_cmd, args) => {
+      const url = new URL(args[args.length - 1] ?? '');
+      const password = (args[args.indexOf('-u') + 1] ?? '').slice(1);
+      const i = mem.instances.get(Number(url.port));
+      if (i === undefined || !i.up) return { exitCode: 28, stdout: '\n000 0.000000' };
+      if (i.password !== password) return { exitCode: 0, stdout: '<h1>401</h1>\n401 0.000512' };
+      const command = url.searchParams.get('command');
+      if (command === 'pl_play') Object.assign(i, { state: 'playing', length: mem.length });
+      if (command === 'seek') i.time = Number(url.searchParams.get('val'));
+      return { exitCode: 0, stdout: `${JSON.stringify({ state: i.state, time: i.time, length: i.length })}\n200 0.000512` };
+    };
+    const { repo, player } = setup({ launcher: mem, reader: curlStatusReader(exec) });
+    mem.occupy(PORT, 'theirs');
+    const started = await player.play(1);
+    expect(started).toMatchObject({ port: PORT + 1, tracking: true, note: null });
+    mem.exit(PORT + 1);
+    await vi.waitFor(() => expect(repo.play(started.play_id).endedAt).not.toBeNull());
   });
 
   it('closes the play untracked at the start position when HTTP never answers', async () => {

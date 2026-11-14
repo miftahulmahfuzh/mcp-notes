@@ -233,9 +233,10 @@ export function startedNotice(f: FileView): string {
   return f.resume_position_s > 0 ? `resuming at ${clock(f.resume_position_s)}` : 'playing in VLC';
 }
 
-export function playErrorText(code: string): string {
+/** `detail` is the server's sentence: for `player_unavailable` it names the cause (no vlc.exe, no free port, ...). */
+export function playErrorText(code: string, detail: string | null = null): string {
   if (code === 'not_on_this_machine') return 'that file is on another machine';
-  if (code === 'player_unavailable') return PLAYER_OFF_LABEL;
+  if (code === 'player_unavailable') return detail ?? PLAYER_OFF_LABEL;
   if (code === 'file_missing') return 'the file is gone from disk; rescan to update the library';
   if (code === 'not_found') return 'no such file';
   return `could not play (${code})`;

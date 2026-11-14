@@ -81,7 +81,7 @@ $V sql RUN "select id, name, status, reason, title_id, deleted_at, done_at from 
 $V api RUN POST /api/movies/files/<fileId>/play '{}'
 $V vlc RUN args            # what the fake vlc.exe was started with (Windows path, --start-time, port)
 $V vlc RUN at 600          # jump the playing fake VLC to 600 s; the next poll records it
-$V vlc RUN quit            # VLC "exits": curl.exe answers exit 7, the play closes
+$V vlc RUN quit            # VLC "exits": the fake curl.exe times out unconnected (exit 28, like this Windows), the play closes
 $V mcp RUN movies_continue '{"title":"MobLand"}'
 cat "$MOVIES/tmdb.log"     # every TMDB request the daemon made (MOVIES= from up)
 ```

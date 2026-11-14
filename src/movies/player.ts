@@ -34,7 +34,7 @@ export const SEEK_TOLERANCE_S = 5;
 /** Consecutive unreadable polls (curl timeouts etc.) after which the play is ended. */
 export const MAX_READ_ERRORS = 6;
 /**
- * Movies phase 9: silent polls in a row (curl timeout, or exit 7 while the vlc.exe still exists)
+ * Movies phase 9: silent polls in a row (curl timeout, or no listener while the vlc.exe still exists)
  * before a VLC whose process is alive counts as hung. A hung VLC keeps its play open at the last
  * position read, however long it stays silent. Two, not one, so a VLC that is closing (socket shut,
  * process not yet gone) does not log a false hang.
@@ -338,7 +338,10 @@ export class MoviePlayer {
     return { ...base, tracking: true, note: null };
   }
 
-  /** A port is free only when nothing answers on it; any answer (401 included) means taken. */
+  /**
+   * A port is free only when nothing listens on it; any answer (401 included) or a silent listener
+   * means taken. Each free candidate costs one connect timeout (CURL_CONNECT_TIMEOUT_S).
+   */
   private async freePort(env: PlayerEnv, password: string): Promise<number | null> {
     for (let i = 0; i < PORT_CANDIDATES; i++) {
       const port = this.deps.httpPort + i;
