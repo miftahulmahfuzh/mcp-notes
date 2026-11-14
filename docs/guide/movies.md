@@ -490,6 +490,7 @@ Differences between the two places:
 | `/n when did I delete The Dog Stars?` | `movies_get {"title":"The Dog Stars"}`, read `files[].deleted_at` | Both |
 | `Who is the main character?` (pill on a title's page) | `movies_get` with the id on the message's first line, first `cast` entry | Wall chat |
 | `Any trivia about this film?` (pill on a title's page) | `movies_get` for the year, then web search | Wall chat |
+| `/n what is Citizen of a Kind about? who is the woman at the front in the thumbnail?` | `movies_get {"title":"Citizen of a Kind"}`, read `overview`, `cast`; the poster image itself answers who is in front | Both |
 
 - The answer has the title's facts and credits, `seasons[].episodes[]` (each with `movie_id`,
   `state`, `has_file`, `present_here`, `deleted`, `progress`), `files` (every file ever seen, deleted
@@ -501,6 +502,10 @@ Differences between the two places:
   `episode`. `episode` alone matches that number in any season.
 - Words that fit several titles answer `ambiguous` with the candidates and their ids; words that
   fit nothing answer `not_found`; a movie id that names nothing answers `not_found`.
+- **A question about who is pictured is answered from the poster itself, not just the credit
+  list.** The poster is a hotlinked TMDB image (`poster_url`), and Claude can look at it: asked who
+  is at the front of a poster, it reads the image and matches the face to the cast TMDB names, not
+  just reports the cast in credit order.
 
 ### Watch history
 
