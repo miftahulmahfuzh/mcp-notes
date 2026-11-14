@@ -3,6 +3,7 @@ import { ALL_CONNECTOR_TOOL_NAMES } from '../../src/connectors/names.js';
 import {
   ADVERSARY_TOOL_NAMES,
   DWORD_TOOL_NAMES,
+  MOVIE_TOOL_NAMES,
   NOTES_TOOL_NAMES,
   SESSION_TOOL_NAMES,
   allowedChatTools,
@@ -12,13 +13,14 @@ import {
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 21 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 21 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
+    expect(MOVIE_TOOL_NAMES).toHaveLength(6);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(21);
-    expect(tools).toHaveLength(19 + 5 + 3 + 21 + 2);
+    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 21 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -30,6 +32,7 @@ describe('allowedChatTools', () => {
     expect(tools).toContain('mcp__notes__session_resume');
     for (const name of SESSION_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ADVERSARY_TOOL_NAMES) expect(tools).toContain(n(name));
+    for (const name of MOVIE_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of DWORD_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
@@ -41,6 +44,15 @@ describe('allowedChatTools', () => {
     expect(captionForToolUse(n('adversary_overview'), {})).toBe('reading Seer Adversarial');
     expect(captionForToolUse(n('adversary_verdicts'), { verdict: 'object' })).toBe("reading Claude's verdicts");
     expect(captionForToolUse(n('adversary_scorecard'), { strategy: 'A-GT' })).toBe("reading Claude's record");
+  });
+
+  it('captions the movie tools', () => {
+    expect(captionForToolUse(n('movies_list'), { company: 'Blumhouse' })).toBe('searching movies');
+    expect(captionForToolUse(n('movies_get'), { title: 'mobland' })).toBe('reading a title');
+    expect(captionForToolUse(n('movies_history'), {})).toBe('reading watch history');
+    expect(captionForToolUse(n('movies_continue'), {})).toBe('opening VLC');
+    expect(captionForToolUse(n('movies_person'), { name: 'Margaret Qualley' })).toBe('reading a filmography');
+    expect(captionForToolUse(n('movies_mark'), { title: 'tv-247718', rating: 4 })).toBe('marking a title');
   });
 
   it('offers no tool that deletes permanently', () => {

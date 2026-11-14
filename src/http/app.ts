@@ -6,6 +6,7 @@ import { dbChatUploadSource } from '../embeddings/chatUploads.js';
 import { wallUrlForPort } from '../mcp/instructions.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
+import { movieToolDeps } from '../mcp/movieTools.js';
 import { sessionsReadDeps, type SessionsReadOverrides } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
 import { adversaryApiRoutes } from './adversaryApi.js';
@@ -63,6 +64,7 @@ export interface CreateAppOptions {
  * free port", only known after listen) leaves it unset and the instructions fall back to 7317.
  * `sessions` is always set (building it does no I/O); `sessionOverrides` are test seams.
  * `extra.sessionResume` is passed in by createApp (shared with the resume route); mcpToolDeps never builds one.
+ * `movies` is null while the movie library is off; building it does no I/O.
  */
 export function mcpToolDeps(
   deps: AppDeps,
@@ -78,6 +80,7 @@ export function mcpToolDeps(
     chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
     sessions: sessionsReadDeps(deps, sessionOverrides),
     adversary: deps.adversary,
+    movies: movieToolDeps(deps),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };

@@ -1,6 +1,6 @@
 ---
 name: n
-description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them, or link a note to a Claude Code session ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32", "link 5-BW7 into 5U-I7"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard").
+description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods) — and keeps their movie and TV library (what they watched and when, VLC playback). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them, or link a note to a Claude Code session ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32", "link 5-BW7 into 5U-I7"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard"), or about their movies and series ("which MobLand episode did I watch last", "continue MobLand", "recommend other Margaret Qualley films").
 argument-hint: <request for mcp-notes>
 ---
 
@@ -298,6 +298,42 @@ either.
   (the one the SessionStart context names; never invent one, and leave the line out when it names
   none) and the `repo` you passed in `origin` as REPO. With no confirmation, say it is not linked
   instead.
+
+## Movies
+
+The same server keeps the user's movie and TV library: every title (id `movie-<tmdb id>` or
+`tv-<tmdb id>`; never invent one) with its TMDB metadata, studios, cast and crew; every video
+file on each laptop, with season, episode, `host`, and `deleted_at` once the user deleted it;
+and every play event (when, and to what position). A title and its history outlive its files,
+so "what did I watch" still answers after the file is gone.
+
+- "What Blumhouse films have I seen this year", "my unfinished series", "which films with
+  Margaret Qualley do I have" → `movies_list` (`company`, `person`, `kind`, `state`,
+  `finished_from` / `finished_to`, `q`). Dates are `YYYY-MM-DD`, like every other date filter.
+- "Which MobLand episode did I watch last and when", "how far am I in X", "is X still on
+  disk" → `movies_get` with the title's name or id. `last_play` answers "last watched"
+  (season, episode, episode name, `started_at`, `position_s`); `files[].deleted_at` says when a
+  file was deleted; `plays` are newest first.
+- "What did I watch last week" → `movies_history` with `from` / `to`.
+- "Continue MobLand", "resume X", "play the next episode", and "continue what I watched last
+  night" (no title) → `movies_continue`. It opens VLC on the user's screen on this machine, so
+  call it only when they asked to play something. `action` says what happened: `resumed` (from
+  `position` seconds), `started` (the next episode, or a film from the start), `missing`
+  (nothing played: `missing` is the next episode with no file here and `present` the later ones
+  that are here; tell the user both), `nothing`. `not_on_this_machine` means the file is on the
+  other laptop; `file_missing` means the library thinks the file is there but it is not on disk:
+  say it is a bug.
+- "Recommend other Margaret Qualley films", "what else did this director make" →
+  `movies_person` with the name, then `WebSearch` for reviews or anything newer than TMDB.
+  Recommend entries with `seen: false`, and say which ones they have already seen. When
+  `other_people` lists someone else with the same name, make sure you have the right person
+  (pass `person_id`).
+- "Mark X watched", "rate X 4 stars", "my review of X: ..." → `movies_mark`. The review is a
+  normal note tagged `#movie`, linked to the title; one episode's watched flag goes on its
+  `file_id` (from `movies_get`).
+- When you mention a title, link it with the `url` the tool returned, e.g.
+  `[MobLand](<wall>/movies/tv-247718)`.
+- `movies_off` means the movie library is not running on this daemon; say so in one line.
 
 ## Deleting
 

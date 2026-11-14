@@ -11,6 +11,7 @@ import { ConnectorError, type Connectors } from '../connectors/types.js';
 import type { SessionsReadDeps } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
 import type { AdversaryService } from '../adversary/service.js';
+import type { MovieToolDeps } from './movieTools.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -34,6 +35,8 @@ export interface ToolDeps {
   sessionResume?: SessionResumer;
   /** Seer Adversarial reviewer (phase 4) for adversary_overview's `reviewer`. Omitted or null: reported as null. */
   adversary?: AdversaryService | null;
+  /** The movie library behind the movies_* tools (MOVIES_LIBRARY_PLAN phase 7). Omitted or null: every movie tool answers movies_off. */
+  movies?: MovieToolDeps | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */
