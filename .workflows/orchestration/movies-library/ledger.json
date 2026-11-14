@@ -57,7 +57,7 @@
         "R2",
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Library sync: scan, diff, match, store, background service"
     },
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T13:55:48+07:00",
+  "updated": "2026-11-14T14:02:49+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
