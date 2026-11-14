@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 3
-- Completed: 102
+- Blocked: 2
+- Completed: 103
 
 ---
 
@@ -85,15 +85,6 @@
   - **Satisfies**: R5 — UI - Movies page: poster grid gallery; click opens movie-detail-page (release date, synopsis, studios, producer/writer, cast ... · criteria: R5.1, R5.2, R5.3, R5.4, R5.5
   - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
   - **Plan**: `.workflows/plan/P1-NOTES-A107.md`
-- [ ] **P1-NOTES-A108** Phase 7: MCP tools, chat bar allow-list, `/n` skill
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/mcp/movieTools.ts`, registration in `src/mcp/server.ts`, `ToolDeps.movies` + `mcpToolDeps` in `src/http/app.ts` (`movies_continue` drives `deps.moviesPlayer`), `MOVIE_TOOL_NAMES` + `allowedChatTools` in `src/chat/status.ts`, the subsystem sentence in `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `claude/skills/n/SKILL.md`, MCP integration tests. Does not touch routes, web, the player's internals. Exit criteria: the six tools answer over `/mcp` against seeded data, including a deleted series' last watched episode and a company-in-year list; `movies_person` marks seen entries; the chat allow-list contains the tools.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 7 of 9)
-  - **Satisfies**: R6 — MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R6.1, R6.2, R6.3, R6.4, R6.5
-  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
-  - **Plan**: `.workflows/plan/P1-NOTES-A108.md`
 - [ ] **P1-NOTES-A109** Phase 8: Docs, feature map, verify fixtures, live config
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -122,6 +113,23 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A108** Phase 7: MCP tools, chat bar allow-list, `/n` skill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/mcp/movieTools.ts`, registration in `src/mcp/server.ts`, `ToolDeps.movies` + `mcpToolDeps` in `src/http/app.ts` (`movies_continue` drives `deps.moviesPlayer`), `MOVIE_TOOL_NAMES` + `allowedChatTools` in `src/chat/status.ts`, the subsystem sentence in `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `claude/skills/n/SKILL.md`, MCP integration tests. Does not touch routes, web, the player's internals. Exit criteria: the six tools answer over `/mcp` against seeded data, including a deleted series' last watched episode and a company-in-year list; `movies_person` marks seen entries; the chat allow-list contains the tools.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 7 of 9)
+  - **Satisfies**: R6 — MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R6.1, R6.2, R6.3, R6.4, R6.5
+  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A108.md`
+  - **Completed**: 2026-11-14 15:32
+  - **Method**: /implement
+  - **Files**: src/mcp/movieTools.ts, src/mcp/tools.ts, src/mcp/server.ts, src/http/app.ts, src/chat/status.ts, src/chat/prompt.ts, src/mcp/instructions.ts, claude/skills/n/SKILL.md, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/mcp.movieTools.test.ts, tests/integration/helpers/moviesMcpSeed.ts, tests/integration/movies.mcp.int.test.ts
+  - **Proof**: verified-after-fix — 8 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-152951-347311/evidence
+  - **Drift**: Worktree/branch is the swarm's per-phase one (movies-library-p7 / phase-7-movies-library), not the index's feature/movies-library.
+    No code drift: every Requires shape matched phases 1-5 as landed; plan code blocks applied verbatim.
+  - **Decided**: J2 text says the files array has three entries, but the plan's own verify seed inserts two MobLand files → judged on the seed (9003, 9004 deleted; last_play S1E2 Alternative Fuel) (rung 3: code block over prose; the three-file case is asserted in the integration test)
+    J4/J5 first answered present: [] because the plan's seeded path /v/Gap.S01E03.mkv is not on disk and continueTitle checks disk → pointed seed row 9006 at a real empty file and re-ran; pass criteria unchanged, now missing E2 / present E3, play count still 5 (rung 2: exit criteria). Phase 8's feature-map copy of these journeys needs a real file for that row.
 - [x] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
   - **Difficulty**: NORMAL
   - **Type**: Feature
