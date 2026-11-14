@@ -6,37 +6,37 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "a96dece",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "movie_* schema (0017), MoviesRepo, watch state, config, empty routers mounted; typecheck + npm test 2462 + test:int 762 green; task created only for phase 1 (A102), worked in wave worktree movies-library-p1; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1114-135117-116833/evidence",
       "package": "src/db`, `src/movies`, `src/config.ts`, `src/http",
       "plan": ".workflows/plan/movies-library/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T13:55:48+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A102",
       "title": "Foundation: schema, repo, state, config, seams"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "360c21d45f8a370d70996fbe934014add9ac72a8",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "parser, TMDB client, matcher, Haiku fallback: 18 new files, plan code verbatim, on branch phase-2-movies-library (per-phase worktree movies-library-p2); TaskIDs phase 1=A102 (from p1), 2-9=A103-A110 minted here, todos.md will conflict with p1 at integration: keep p2's 9-entry block, phase 1 status from p1; proof: verified-first-pass /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-movies-library-p2/01350057-20f0-4146-bc68-1578e79e7b41/scratchpad/proof-p2",
       "package": "src/movies",
       "plan": ".workflows/plan/movies-library/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T13:52:13+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A103",
       "title": "Filename parser, TMDB client, matcher, Haiku fallback"
     },
     {
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T13:46:38+07:00",
+  "updated": "2026-11-14T13:55:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }

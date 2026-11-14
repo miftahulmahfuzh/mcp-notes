@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/movies-library`
 **Branch:** `feature/movies-library` (base: `origin/main` @ `e09e602`)
 **Phases:** 9
-**Status:** planned
+**Status:** phase 1/9 complete
 **Coordinator:** —
 
 ---
@@ -206,15 +206,15 @@ Phase 1 creates both routers empty and mounts them in `src/http/app.ts`; later p
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Foundation: schema, repo, state, config, seams | R3 | `src/db`, `src/movies`, `src/config.ts`, `src/http` | 31 | — | NORMAL | `.workflows/plan/movies-library/phase-1.md` | — | — |
-| 2 | Filename parser, TMDB client, matcher, Haiku fallback | R1, R2 | `src/movies` | 18 | — | HARD | `.workflows/plan/movies-library/phase-2.md` | — | — |
-| 3 | Library sync: scan, diff, match, store, background service | R1, R2, R3 | `src/movies`, `src/background.ts`, `src/daemon.ts` | 11 | 1, 2 | HARD | `.workflows/plan/movies-library/phase-3.md` | — | — |
-| 4 | HTTP API: read model, user state, review note, manual fix, SSE | R1, R2, R3 | `src/http`, `src/movies` | 6 | 3 | NORMAL | `.workflows/plan/movies-library/phase-4.md` | — | — |
-| 5 | VLC playback: launch, live tracking, recents backfill, continue | R3, R4, R6 | `src/movies/vlc`, `src/http` | 22 | 3 | HARD | `.workflows/plan/movies-library/phase-5.md` | — | — |
-| 6 | Web: Movies page, grid, detail, unmatched, pill | R5 | `web/src` | 29 | 4, 5 | HARD | `.workflows/plan/movies-library/phase-6.md` | — | — |
-| 7 | MCP tools, chat bar allow-list, `/n` skill | R6 | `src/mcp`, `src/chat`, `claude/skills/n` | 14 | 4, 5 | NORMAL | `.workflows/plan/movies-library/phase-7.md` | — | — |
-| 8 | Docs, feature map, verify fixtures, live config | R7 | docs, `.claude/skills/verify-notesd` | 15 | 6, 7, 9 | NORMAL | `.workflows/plan/movies-library/phase-8.md` | — | — |
-| 9 | VLC health log, hang detection, crash incidents | R8 | `src/movies/vlc`, `src/http` | 17 | 5 | NORMAL | `.workflows/plan/movies-library/phase-9.md` | — | — |
+| 1 | Foundation: schema, repo, state, config, seams | R3 | `src/db`, `src/movies`, `src/config.ts`, `src/http` | 31 | — | NORMAL | `.workflows/plan/movies-library/phase-1.md` | P1-NOTES-A102 | — |
+| 2 | Filename parser, TMDB client, matcher, Haiku fallback | R1, R2 | `src/movies` | 18 | — | HARD | `.workflows/plan/movies-library/phase-2.md` | P1-NOTES-A103 | — |
+| 3 | Library sync: scan, diff, match, store, background service | R1, R2, R3 | `src/movies`, `src/background.ts`, `src/daemon.ts` | 11 | 1, 2 | HARD | `.workflows/plan/movies-library/phase-3.md` | P1-NOTES-A104 | — |
+| 4 | HTTP API: read model, user state, review note, manual fix, SSE | R1, R2, R3 | `src/http`, `src/movies` | 6 | 3 | NORMAL | `.workflows/plan/movies-library/phase-4.md` | P1-NOTES-A105 | — |
+| 5 | VLC playback: launch, live tracking, recents backfill, continue | R3, R4, R6 | `src/movies/vlc`, `src/http` | 22 | 3 | HARD | `.workflows/plan/movies-library/phase-5.md` | P1-NOTES-A106 | — |
+| 6 | Web: Movies page, grid, detail, unmatched, pill | R5 | `web/src` | 29 | 4, 5 | HARD | `.workflows/plan/movies-library/phase-6.md` | P1-NOTES-A107 | — |
+| 7 | MCP tools, chat bar allow-list, `/n` skill | R6 | `src/mcp`, `src/chat`, `claude/skills/n` | 14 | 4, 5 | NORMAL | `.workflows/plan/movies-library/phase-7.md` | P1-NOTES-A108 | — |
+| 8 | Docs, feature map, verify fixtures, live config | R7 | docs, `.claude/skills/verify-notesd` | 15 | 6, 7, 9 | NORMAL | `.workflows/plan/movies-library/phase-8.md` | P1-NOTES-A109 | — |
+| 9 | VLC health log, hang detection, crash incidents | R8 | `src/movies/vlc`, `src/http` | 17 | 5 | NORMAL | `.workflows/plan/movies-library/phase-9.md` | P1-NOTES-A110 | — |
 
 Waves: {1, 2} → {3} → {4, 5} → {6, 7, 9} → {8}.
 
