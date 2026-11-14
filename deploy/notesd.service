@@ -4,7 +4,7 @@
 
 [Unit]
 Description=mcp-notes daemon (notesd, 127.0.0.1:7317)
-Documentation=file://@REPO_DIR@/docs/INSTALL.md
+Documentation=file://@REPO_DIR@/docs/guide/install.md
 StartLimitIntervalSec=0
 
 [Service]

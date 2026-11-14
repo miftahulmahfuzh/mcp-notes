@@ -6,7 +6,7 @@
 .DESCRIPTION
   Registers a Task Scheduler task, triggered at logon of the current user, that runs
   "wsl.exe -d <Distro> -- sleep infinity" inside a headless console (no window). The attached
-  wsl.exe keeps the distro from being shut down by WSL's idle timeout. See docs/INSTALL.md.
+  wsl.exe keeps the distro from being shut down by WSL's idle timeout. See docs/guide/install.md.
 
   Run from Windows PowerShell:
     powershell -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\<you>\mcp-notes\scripts\windows\install-wsl-keepalive.ps1

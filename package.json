@@ -69,6 +69,9 @@
     "embed:backfill": "tsx src/cli/embedBackfill.ts",
     "embed:images:backfill": "tsx src/cli/embedImagesBackfill.ts",
     "verify:paste-hook": "node scripts/verify-paste-hook.mjs",
-    "verify:prompt-hook": "node scripts/verify-prompt-hook.mjs"
+    "verify:prompt-hook": "node scripts/verify-prompt-hook.mjs",
+    "docs:gen": "tsx scripts/docs/reference.ts",
+    "docs:check": "tsx scripts/docs/reference.ts --check",
+    "docs:shots": "node scripts/docs/capture.mjs"
   }
 }

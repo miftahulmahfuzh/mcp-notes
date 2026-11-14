@@ -1,5 +1,5 @@
 // fake-tmdb.mjs: a TMDB v3 stand-in for `verify.sh up --movies`. Serves tmdb.json (search, details
-// with credits, seasons, people) and solid-colour PNG posters on 127.0.0.1, on any free port.
+// with credits, seasons, people) and generated PNG posters on 127.0.0.1, on any free port.
 //   node fake-tmdb.mjs --data tmdb.json --port-file FILE --log FILE
 // The daemon reaches it through TMDB_API_BASE=http://127.0.0.1:<port>/3 and
 // TMDB_IMAGE_BASE=http://127.0.0.1:<port>/t/p. Every request is appended to the log, with
@@ -163,7 +163,7 @@ function route(url) {
   return notFound()
 }
 
-// Minimal PNG encoder: one solid colour per poster path, so the grid shows distinct tiles.
+// Minimal PNG encoder: one solid colour per image path (the fallback, and what profiles and stills get).
 function crc32(buf) {
   let crc = 0xffffffff
   for (const byte of buf) {
@@ -203,11 +203,115 @@ function png(width, height, [r, g, b]) {
 const posters = new Map()
 function poster(name) {
   if (!posters.has(name)) {
-    let h = 0
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-    posters.set(name, png(120, 180, [40 + (h & 0x7f), 40 + ((h >> 8) & 0x7f), 40 + ((h >> 16) & 0x7f)]))
+    posters.set(name, png(120, 180, tint(name)))
   }
   return posters.get(name)
+}
+function hash(name) {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return h
+}
+function tint(name) {
+  const h = hash(name)
+  return [40 + (h & 0x7f), 40 + ((h >> 8) & 0x7f), 40 + ((h >> 16) & 0x7f)]
+}
+
+// Drawn art for the paths tmdb.json names: a poster with the title and year on it, a backdrop
+// without text. Needs sharp (the repo's own dependency); without it, and for any other path
+// (profiles, stills), the solid-colour PNG above is served. Always image/png.
+const art = new Map()
+for (const item of [...movies, ...tvs]) {
+  const title = item.title ?? item.name
+  const year = String(item.release_date ?? item.first_air_date ?? '').slice(0, 4)
+  if (item.poster_path) art.set(item.poster_path.replace(/^\//, ''), { kind: 'poster', title, year })
+  if (item.backdrop_path) art.set(item.backdrop_path.replace(/^\//, ''), { kind: 'backdrop', title, year })
+}
+const sharpLib = import('sharp').then(
+  (m) => m.default,
+  () => null,
+)
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/** Words packed into lines of at most `max` characters. */
+function wrap(text, max) {
+  const lines = []
+  for (const word of String(text).split(/\s+/)) {
+    const last = lines[lines.length - 1]
+    if (last !== undefined && `${last} ${word}`.length <= max) lines[lines.length - 1] = `${last} ${word}`
+    else lines.push(word)
+  }
+  return lines
+}
+/** A small seeded generator (mulberry32 over an FNV-1a hash), so each title gets its own steady art. */
+function seeded(name) {
+  let a = 0x811c9dc5
+  for (const ch of name) a = Math.imul(a ^ ch.charCodeAt(0), 0x01000193) >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+function artSvg(name, { kind, title, year }, width) {
+  const rnd = seeded(`${title}poster`)
+  const hue = Math.floor(rnd() * 360)
+  const hue2 = (hue + 30 + Math.floor(rnd() * 60)) % 360
+  const height = kind === 'poster' ? Math.round(width * 1.5) : Math.round((width * 9) / 16)
+  const u = width / 100
+  const field = kind === 'poster' ? height * 0.6 : height
+  const shapes = []
+  for (let i = 0; i < 6; i++) {
+    const cx = rnd() * width
+    const cy = rnd() * field
+    const r = (8 + rnd() * 26) * u
+    shapes.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="hsl(${(hue2 + i * 12) % 360} 72% ${50 + i * 5}%)" opacity="${(0.1 + rnd() * 0.2).toFixed(2)}"/>`)
+  }
+  const base = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 48% 32%)"/><stop offset="1" stop-color="hsl(${hue2} 52% 11%)"/></linearGradient>`,
+    `<linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0.45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.62"/></linearGradient></defs>`,
+    `<rect width="100%" height="100%" fill="url(#g)"/>`,
+    ...shapes,
+    `<rect width="100%" height="100%" fill="url(#f)"/>`,
+  ]
+  if (kind === 'poster') {
+    const lines = wrap(title.toUpperCase(), 10)
+    const longest = Math.max(...lines.map((l) => l.length))
+    const size = Math.min(13, 100 / longest) * u
+    const top = height - 17 * u - (lines.length - 1) * size * 1.1
+    lines.forEach((line, i) => {
+      base.push(
+        `<text x="${8 * u}" y="${(top + i * size * 1.1).toFixed(1)}" font-family="DejaVu Sans, Arial, sans-serif" font-weight="700" font-size="${size.toFixed(1)}" fill="#f5f1e8">${esc(line)}</text>`,
+      )
+    })
+    base.push(`<rect x="${8 * u}" y="${(height - 12.5 * u).toFixed(1)}" width="${12 * u}" height="${(0.8 * u).toFixed(1)}" fill="hsl(${hue2} 80% 68%)"/>`)
+    if (year) {
+      base.push(
+        `<text x="${8 * u}" y="${(height - 5.5 * u).toFixed(1)}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${(5.4 * u).toFixed(1)}" letter-spacing="${(0.6 * u).toFixed(1)}" fill="#f5f1e8" opacity="0.78">${esc(year)}</text>`,
+      )
+    }
+  }
+  base.push('</svg>')
+  return base.join('')
+}
+const drawn = new Map()
+/** The PNG for one image URL (`/t/p/<size>/<name>`). */
+function image(size, name) {
+  const spec = art.get(name)
+  if (!spec) return Promise.resolve(poster(name))
+  const key = `${size}/${name}`
+  if (!drawn.has(key)) {
+    const asked = Number(/^w(\d+)$/.exec(size)?.[1] ?? 500)
+    const width = Math.min(Math.max(asked, 92), spec.kind === 'poster' ? 500 : 1280)
+    drawn.set(
+      key,
+      sharpLib
+        .then((sharp) => (sharp ? sharp(Buffer.from(artSvg(name, spec, width))).png({ compressionLevel: 9 }).toBuffer() : poster(name)))
+        .catch(() => poster(name)),
+    )
+  }
+  return drawn.get(key)
 }
 
 const server = http.createServer((req, res) => {
@@ -221,11 +325,12 @@ const server = http.createServer((req, res) => {
     res.end('ok')
     return
   }
-  const img = url.pathname.match(/^\/t\/p\/[^/]+\/(.+)$/)
+  const img = url.pathname.match(/^\/t\/p\/([^/]+)\/(.+)$/)
   if (img) {
-    const body = poster(img[1])
-    res.writeHead(200, { 'content-type': 'image/png', 'content-length': body.length, 'cache-control': 'max-age=3600' })
-    res.end(body)
+    image(img[1], img[2]).then((body) => {
+      res.writeHead(200, { 'content-type': 'image/png', 'content-length': body.length, 'cache-control': 'max-age=3600' })
+      res.end(body)
+    })
     return
   }
   const [status, body] = req.method === 'GET' ? route(url) : [405, { success: false, status_message: 'GET only' }]

@@ -349,7 +349,7 @@ verify() {
   if [[ "$REPO_DIR" == "$HOME/.worktrees/"* ]]; then
     warn "the unit, the skill and the hooks point at a worktree ($REPO_DIR). After the branch lands, re-run: cd ~/mcp-notes && git pull && scripts/install.sh"
   fi
-  printf 'Windows side (keeps WSL up at logon): see docs/INSTALL.md, scripts/windows/install-wsl-keepalive.ps1\n'
+  printf 'Windows side (keeps WSL up at logon): see docs/guide/install.md, scripts/windows/install-wsl-keepalive.ps1\n'
   (( ok == 1 )) || die "verification failed."
   printf 'OK\n'
 }
