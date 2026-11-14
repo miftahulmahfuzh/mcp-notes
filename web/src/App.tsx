@@ -887,7 +887,6 @@ export function App() {
                 tags={tags}
                 active={active}
                 onMode={pickMode}
-                onToggleMovies={toggleMovies}
                 onToggleProjects={toggleProjects}
                 onToggleHistory={toggleHistory}
                 onToggleAdversary={toggleAdversary}

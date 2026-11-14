@@ -35,7 +35,6 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
       tags={[]}
       active={[]}
       onMode={vi.fn()}
-      onToggleMovies={vi.fn()}
       onToggleProjects={vi.fn()}
       onToggleHistory={onToggleHistory}
       onToggleAdversary={vi.fn()}
@@ -239,10 +238,11 @@ describe('Movies icon', () => {
     expect(screen.getByRole('button', { name: 'Recycle bin' }).getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(btn);
     expect(toggle).toHaveBeenCalledTimes(1);
-    cleanup();
-    const s = side('movies');
-    const sideLabels = order(s.container.querySelector('.side-modes') as Element);
-    expect(sideLabels.indexOf('Movies')).toBe(sideLabels.indexOf('Projects') - 1);
-    expect(screen.getByRole('button', { name: 'Movies' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('has no Movies icon of its own in the sidebar; the rail icon stays visible instead', () => {
+    const { container } = side('movies');
+    const sideLabels = order(container.querySelector('.side-modes') as Element);
+    expect(sideLabels.indexOf('Movies')).toBe(-1);
   });
 });
