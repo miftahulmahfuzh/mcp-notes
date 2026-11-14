@@ -1,0 +1,192 @@
+{
+  "branch": "feature/movies-library",
+  "coordinator": "orch-movies-library",
+  "coordinator_session_id": "d801832c-8889-4085-be5d-17222681f095",
+  "created": "2026-11-14T13:45:59+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/db`, `src/movies`, `src/config.ts`, `src/http",
+      "plan": ".workflows/plan/movies-library/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Foundation: schema, repo, state, config, seams"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/movies",
+      "plan": ".workflows/plan/movies-library/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Filename parser, TMDB client, matcher, Haiku fallback"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/movies`, `src/background.ts`, `src/daemon.ts",
+      "plan": ".workflows/plan/movies-library/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Library sync: scan, diff, match, store, background service"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/http`, `src/movies",
+      "plan": ".workflows/plan/movies-library/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "HTTP API: read model, user state, review note, manual fix, SSE"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "src/movies/vlc`, `src/http",
+      "plan": ".workflows/plan/movies-library/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3",
+        "R4",
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "VLC playback: launch, live tracking, recents backfill, continue"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        5
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "web/src",
+      "plan": ".workflows/plan/movies-library/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Web: Movies page, grid, detail, unmatched, pill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 7,
+      "note": null,
+      "package": "src/mcp`, `src/chat`, `claude/skills/n",
+      "plan": ".workflows/plan/movies-library/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "MCP tools, chat bar allow-list, `/n` skill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        6,
+        7,
+        9
+      ],
+      "difficulty": "NORMAL",
+      "n": 8,
+      "note": null,
+      "package": "docs, `.claude/skills/verify-notesd",
+      "plan": ".workflows/plan/movies-library/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Docs, feature map, verify fixtures, live config"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 9,
+      "note": null,
+      "package": "src/movies/vlc`, `src/http",
+      "plan": ".workflows/plan/movies-library/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R8"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "VLC health log, hang detection, crash incidents"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "movies-library",
+  "updated": "2026-11-14T13:45:59+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
+}
