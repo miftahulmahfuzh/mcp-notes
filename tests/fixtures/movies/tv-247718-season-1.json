@@ -1,0 +1,10 @@
+{
+  "id": 381456,
+  "season_number": 1,
+  "name": "Season 1",
+  "episodes": [
+    { "episode_number": 1, "season_number": 1, "name": "Stick or Twist", "air_date": "2025-03-30", "runtime": 60, "overview": "Harry Da Souza is called upon to make a problem disappear.", "still_path": "/5IBWjTRedZgLgUEx5MYAq76FBZf.jpg" },
+    { "episode_number": 2, "season_number": 1, "name": "Jigsaw Puzzle", "air_date": "2025-04-06", "runtime": 52, "overview": "Harry must deal with the aftermath.", "still_path": "/22kcWCxB4bf4ZlKx1UiE1zArFr2.jpg" },
+    { "episode_number": 3, "season_number": 1, "name": "Plan B", "air_date": "2025-04-13", "runtime": 48, "overview": "", "still_path": "/jKXqCG2lyCgWHSRyukpriRzoI14.jpg" }
+  ]
+}

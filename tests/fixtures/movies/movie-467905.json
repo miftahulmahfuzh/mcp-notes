@@ -1,0 +1,36 @@
+{
+  "id": 467905,
+  "title": "How to Make a Killing",
+  "original_title": "How to Make a Killing",
+  "release_date": "2026-02-16",
+  "overview": "Disowned at birth by his obscenely wealthy family, blue-collar Becket Redfellow will stop at nothing to reclaim his inheritance, no matter how many relatives stand in his way.",
+  "poster_path": "/vxMeKC7o5Gi8IHMi6lUgsdprTqv.jpg",
+  "backdrop_path": "/bkUa5ZDqjQPx6rkxs0hM87vaWVa.jpg",
+  "runtime": 105,
+  "genres": [
+    { "id": 35, "name": "Comedy" },
+    { "id": 53, "name": "Thriller" },
+    { "id": 80, "name": "Crime" }
+  ],
+  "production_companies": [
+    { "id": 694, "logo_path": "/5LEHONGkZBIoWvp1ygHOF8iyi1M.png", "name": "StudioCanal", "origin_country": "FR" },
+    { "id": 2376, "logo_path": "/yeNoWmSHZfvKsBYuL8uTRE4LPdQ.png", "name": "Blueprint Pictures", "origin_country": "GB" }
+  ],
+  "credits": {
+    "cast": [
+      { "id": 83271, "name": "Glen Powell", "character": "Becket Redfellow", "order": 0, "profile_path": "/7eG0GB1GY3RXI7Tg3GoKrLO9mPW.jpg" },
+      { "id": 1392137, "name": "Margaret Qualley", "character": "Julia", "order": 1, "profile_path": "/r5WeMrU4YLJqRRE3joeOrBVicAH.jpg" },
+      { "id": 1202689, "name": "Jessica Henwick", "character": "Ruth", "order": 2, "profile_path": "/ayMJbMeg68uJyirPKmcAtHYML8r.jpg" }
+    ],
+    "crew": [
+      { "id": 1099792, "name": "John Patton Ford", "job": "Director", "department": "Directing", "profile_path": "/9JuEmMR8xNWZ1vBesh6YC4WhTe7.jpg" },
+      { "id": 29227, "name": "Graham Broadbent", "job": "Producer", "department": "Production", "profile_path": "/ySorycswjsueC1hdmybKzeRGm6M.jpg" },
+      { "id": 54474, "name": "Peter Czernin", "job": "Producer", "department": "Production", "profile_path": "/mgsZQ959ro3lB2iJUcFkvLxojH3.jpg" },
+      { "id": 70864, "name": "Robert Hamer", "job": "Original Film Writer", "department": "Writing", "profile_path": "/uyfGB5eUmDMXvRZJkQwqqModX3D.jpg" },
+      { "id": 83271, "name": "Glen Powell", "job": "Executive Producer", "department": "Production", "profile_path": "/7eG0GB1GY3RXI7Tg3GoKrLO9mPW.jpg" },
+      { "id": 1099792, "name": "John Patton Ford", "job": "Writer", "department": "Writing", "profile_path": "/9JuEmMR8xNWZ1vBesh6YC4WhTe7.jpg" },
+      { "id": 1099792, "name": "John Patton Ford", "job": "Screenplay", "department": "Writing", "profile_path": "/9JuEmMR8xNWZ1vBesh6YC4WhTe7.jpg" },
+      { "id": 4000001, "name": "Sam Grip", "job": "Key Grip", "department": "Crew", "profile_path": null }
+    ]
+  }
+}
