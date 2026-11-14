@@ -149,6 +149,21 @@ describe('GET /api/movies/:id (detail)', () => {
     expect(eps[1]?.progress.ratio).toBeCloseTo(0.2);
   });
 
+  it('a movie id (M-XXXX, any case) answers the title it names, and an episode\'s id answers its series', async () => {
+    const { body: film } = await getJson<TitleDetail>(appFor(here), '/api/movies/movie-467905');
+    expect(film.movie_id).toMatch(/^M-[0-9A-Z]{4}$/);
+    const byId = await getJson<TitleDetail>(appFor(here), `/api/movies/${film.movie_id!.toLowerCase()}`);
+    expect(byId.status).toBe(200);
+    expect(byId.body.id).toBe('movie-467905');
+    const { body: series } = await getJson<TitleDetail>(appFor(here), '/api/movies/tv-247718');
+    const episode = series.seasons[0]!.episodes[0]!;
+    expect(episode.movie_id).toMatch(/^M-[0-9A-Z]{4}$/);
+    expect(episode.movie_id).not.toBe(series.movie_id);
+    const byEpisode = await getJson<TitleDetail>(appFor(here), `/api/movies/${episode.movie_id}`);
+    expect(byEpisode.body.id).toBe('tv-247718');
+    expect((await appFor(here).request('/api/movies/M-ZZZZ')).status).toBe(404);
+  });
+
   it('answers 400 for a malformed id, 404 for an unknown one, and leaves other /api/movies/* paths to other routers', async () => {
     const app = appFor(here);
     // Mounted after the movies router, like phase 5's. Hono freezes its routes at the first request, so it goes first here.

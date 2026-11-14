@@ -5,12 +5,14 @@ import {
   movieCredits,
   movieEpisodes,
   movieFiles,
+  movieIds,
   moviePeople,
   moviePlays,
   movieTitleCompanies,
   movieTitles,
   notes,
 } from '../db/schema.js';
+import { emptyTitleMovieIds, episodeKey, movieIdsOfTitles, type TitleMovieIds } from './ids.js';
 import { reviewText } from './reviewNote.js';
 import { FINISHED_RATIO, fileState, resumePosition, titleState } from './state.js';
 import { posterUrl, type TmdbSearchHit } from './tmdb.js';
@@ -99,6 +101,8 @@ export interface FileView {
 }
 
 export interface EpisodeView {
+  /** The episode's movie id (`M-0T77`); it has one whether or not a file exists. Null only before the registry knows it. */
+  movie_id: string | null;
   season: number;
   episode: number;
   name: string | null;
@@ -124,6 +128,8 @@ export interface SeasonView {
 
 export interface TitleListItem {
   id: string;
+  /** The id the owner types and reads (`M-23T4`, src/movies/ids.ts). `id` stays the key of routes and rows. */
+  movie_id: string | null;
   kind: TitleKind;
   tmdb_id: number;
   title: string;
@@ -173,6 +179,8 @@ export interface PlayView {
   episode: number | null;
   /** The episode's TMDB name; null for a film or an episode TMDB does not list. */
   episode_name: string | null;
+  /** What was played: the episode's movie id, or the title's for a film. */
+  movie_id: string | null;
   file_name: string;
   file_deleted: boolean;
   file_deleted_at: string | null;
@@ -424,10 +432,11 @@ function groupState(files: readonly FileView[]): WatchState {
 interface TitleParts {
   files: FileView[];
   episodes: EpisodeRow[];
+  ids: TitleMovieIds;
 }
 
 function emptyParts(): TitleParts {
-  return { files: [], episodes: [] };
+  return { files: [], episodes: [], ids: emptyTitleMovieIds() };
 }
 
 async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext): Promise<Map<string, TitleParts>> {
@@ -454,6 +463,10 @@ async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext):
     parts.get(row.titleId)?.files.push(fileView(row, last.get(Number(row.id)) ?? null, ctx));
   }
   for (const row of episodeRows) parts.get(row.titleId)?.episodes.push(row);
+  for (const [id, movieIdsOfTitle] of await movieIdsOfTitles(db, ids)) {
+    const p = parts.get(id);
+    if (p !== undefined) p.ids = movieIdsOfTitle;
+  }
   return parts;
 }
 
@@ -464,9 +477,10 @@ interface EpisodeSlot {
   files: FileView[];
 }
 
-function episodeView(slot: EpisodeSlot, ctx: ReadContext): EpisodeView {
+function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): EpisodeView {
   const primary = primaryFile(slot.files);
   return {
+    movie_id: ids.episodes.get(episodeKey(slot.season, slot.episode)) ?? null,
     season: slot.season,
     episode: slot.episode,
     name: slot.row?.name ?? null,
@@ -508,7 +522,7 @@ function buildSeasons(parts: TitleParts, ctx: ReadContext): { seasons: SeasonVie
   const episodes = [...slots.values()]
     .filter((s) => s.season >= 1 || s.files.length > 0)
     .sort((a, b) => a.season - b.season || a.episode - b.episode)
-    .map((s) => episodeView(s, ctx));
+    .map((s) => episodeView(s, parts.ids, ctx));
   const seasons: SeasonView[] = [];
   for (const ep of episodes) {
     const lastSeason = seasons[seasons.length - 1];
@@ -554,6 +568,7 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
   if (t.watchedAt !== null) state = 'finished';
   const item: TitleListItem = {
     id: t.id,
+    movie_id: parts.ids.title,
     kind,
     tmdb_id: t.tmdbId,
     title: t.title,
@@ -778,7 +793,7 @@ export async function history(db: Db, filter: HistoryFilter = {}): Promise<PlayV
   if (filter.to !== undefined) where.push(lt(moviePlays.startedAt, filter.to));
   const limit = clamp(filter.limit ?? DEFAULT_HISTORY_LIMIT, 1, MAX_HISTORY_LIMIT);
   const rows = await db
-    .select({ play: moviePlays, file: movieFiles, titleName: movieTitles.title, titleKind: movieTitles.kind, episodeName: movieEpisodes.name })
+    .select({ play: moviePlays, file: movieFiles, titleName: movieTitles.title, titleKind: movieTitles.kind, episodeName: movieEpisodes.name, movieId: movieIds.id })
     .from(moviePlays)
     .innerJoin(movieFiles, eq(movieFiles.id, moviePlays.fileId))
     .leftJoin(movieTitles, eq(movieTitles.id, movieFiles.titleId))
@@ -786,10 +801,19 @@ export async function history(db: Db, filter: HistoryFilter = {}): Promise<PlayV
       movieEpisodes,
       and(eq(movieEpisodes.titleId, movieFiles.titleId), eq(movieEpisodes.season, movieFiles.season), eq(movieEpisodes.episode, movieFiles.episode)),
     )
+    // The episode's id for a file with a season and episode, else the title's (season and episode null on both sides).
+    .leftJoin(
+      movieIds,
+      and(
+        eq(movieIds.titleId, movieFiles.titleId),
+        sql`${movieIds.season} is not distinct from ${movieFiles.season}`,
+        sql`${movieIds.episode} is not distinct from ${movieFiles.episode}`,
+      ),
+    )
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(moviePlays.startedAt), desc(moviePlays.id))
     .limit(limit);
-  return rows.map(({ play, file, titleName, titleKind, episodeName }) => {
+  return rows.map(({ play, file, titleName, titleKind, episodeName, movieId }) => {
     const duration = play.durationS ?? file.durationS ?? null;
     return {
       id: Number(play.id),
@@ -800,6 +824,7 @@ export async function history(db: Db, filter: HistoryFilter = {}): Promise<PlayV
       season: file.season,
       episode: file.episode,
       episode_name: episodeName ?? null,
+      movie_id: movieId ?? null,
       file_name: file.name,
       file_deleted: file.deletedAt !== null,
       file_deleted_at: isoOrNull(file.deletedAt),

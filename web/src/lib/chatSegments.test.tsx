@@ -154,3 +154,23 @@ describe('segmentChat: node ids', () => {
     expect(nodeIdCandidates('BE-XU, CI-CD, BE-XU, `ZZ-ZZ`, 12-34, be-xu, AB-CDE, A-B32, 2026-11-02')).toEqual(['BE-XU', 'CI-CD']);
   });
 });
+
+describe('segmentChat: movie ids', () => {
+  const movies = (text: string, opts: Parameters<typeof segmentChat>[1] = {}) =>
+    segmentChat(text, opts).flatMap((s) => (s.kind === 'movie' ? [`${s.id}:${s.text}`] : []));
+
+  it('links a movie id by shape, beside a note id, and never as a note', () => {
+    expect(movies('MobLand (2025), M-8TR4. Episode M-0T77 is missing.')).toEqual(['M-8TR4:M-8TR4', 'M-0T77:M-0T77']);
+    const segs = segmentChat('note A-B32, film M-0909');
+    expect(segs.map((s) => s.kind)).toEqual(['text', 'note', 'text', 'movie']);
+  });
+
+  it('skips code spans, paths, longer words, lower case and the streaming tail', () => {
+    expect(movies('`M-23T4` src/M-23T4/x M-23T45 XM-23T4 m-23t4 M-23T4.mkv M3GAN')).toEqual([]);
+    expect(movies('watch M-23T4', { streaming: true })).toEqual([]);
+  });
+
+  it('a wall link to /movies/<movie id> is a movie link with its label', () => {
+    expect(movies('see [the film](http://localhost:7317/movies/M-23T4) and [page](http://localhost:7317/movies/tv-247718)')).toEqual(['M-23T4:the film']);
+  });
+});

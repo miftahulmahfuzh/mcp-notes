@@ -43,6 +43,7 @@ export function makeItem(id: string, title: string, over: Partial<TitleListItem>
   const kind: TitleKind = id.startsWith('tv-') ? 'tv' : 'movie';
   const base: TitleListItem = {
     id,
+    movie_id: null,
     kind,
     tmdb_id: Number(id.slice(id.indexOf('-') + 1)),
     title,
@@ -93,6 +94,7 @@ function detailOf(item: TitleListItem, over: Partial<TitleDetail>): TitleDetail 
 
 function episodeOf(season: number, episode: number, name: string, file: FileView | null): EpisodeView {
   return {
+    movie_id: `M-0S${season}${episode}`,
     season,
     episode,
     name,
@@ -113,6 +115,7 @@ function episodeOf(season: number, episode: number, name: string, file: FileView
 }
 
 export const KILLING_ITEM = makeItem('movie-467905', 'How to Make a Killing', {
+  movie_id: 'M-23T4',
   poster_url: 'https://image.tmdb.org/t/p/w342/kill.jpg',
   state: 'in_progress',
   progress: { kind: 'movie', position_s: 2700, duration_s: 6720, ratio: 0.4 },
@@ -120,6 +123,7 @@ export const KILLING_ITEM = makeItem('movie-467905', 'How to Make a Killing', {
 });
 
 export const MOBLAND_ITEM = makeItem('tv-247718', 'MobLand', {
+  movie_id: 'M-8TR4',
   year: 2025,
   state: 'in_progress',
   progress: { kind: 'tv', episodes_finished: 1, episodes_total: 4, episodes_present: 1 },

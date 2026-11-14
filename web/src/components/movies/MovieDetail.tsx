@@ -11,6 +11,8 @@ import { Stars } from './Stars';
 export interface MovieDetailProps {
   detail: TitleDetail;
   player: PlayerState | null;
+  /** The movie id in the address (`/movies/M-0T77`): an episode's id scrolls the page to that episode. */
+  focus?: string | null;
   /** Re-read the store after a write (the server's state wins). */
   onChanged: () => void;
   onNotice: (text: string) => void;
@@ -22,7 +24,7 @@ export interface MovieDetailProps {
  * directors, writers, producers; creators for a series), the cast with character names, then the
  * film's files or the series' episodes, each with progress and its deleted / other-machine flag.
  */
-export function MovieDetail({ detail: d, player, onChanged, onNotice }: MovieDetailProps) {
+export function MovieDetail({ detail: d, player, focus = null, onChanged, onNotice }: MovieDetailProps) {
   const [watched, setWatched] = useState(d.watched);
   const [rating, setRating] = useState<number | null>(d.rating);
   const [busy, setBusy] = useState(false);
@@ -115,6 +117,11 @@ export function MovieDetail({ detail: d, player, onChanged, onNotice }: MovieDet
         </div>
         <div className="mv-detail-info">
           <p className="mv-facts">
+            {d.movie_id !== null && (
+              <span className="mv-code" data-testid="movie-id" data-tip="Movie id: name it to Claude" data-tip-side="below">
+                {d.movie_id}
+              </span>
+            )}
             {facts.map((f, i) => (
               <span key={i}>{f}</span>
             ))}
@@ -162,7 +169,7 @@ export function MovieDetail({ detail: d, player, onChanged, onNotice }: MovieDet
       </div>
       <CastList cast={d.cast} />
       {d.kind === 'tv' ? (
-        <EpisodeList detail={d} player={player} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} />
+        <EpisodeList detail={d} player={player} focus={focus} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} />
       ) : (
         <section className="mv-sec" aria-label="Files">
           <h2 className="mv-h2">Files</h2>

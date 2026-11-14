@@ -29,6 +29,8 @@ export type TitleProgress =
 /** One poster in the grid. */
 export interface TitleListItem {
   id: string;
+  /** The id the owner reads and types, `M-23T4`. `id` stays the key of routes. Null from a server older than movie ids. */
+  movie_id: string | null;
   kind: TitleKind;
   tmdb_id: number;
   title: string;
@@ -109,6 +111,8 @@ export interface FileView {
 }
 
 export interface EpisodeView {
+  /** The episode's own movie id; it has one with or without a file. */
+  movie_id: string | null;
   season: number;
   episode: number;
   name: string | null;
@@ -144,6 +148,8 @@ export interface PlayView {
   season: number | null;
   episode: number | null;
   episode_name: string | null;
+  /** The episode that was played, or the film. */
+  movie_id: string | null;
   file_name: string;
   file_deleted: boolean;
   file_deleted_at: string | null;

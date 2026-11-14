@@ -43,7 +43,8 @@ import { Wall } from './components/Wall';
 import { AnswerPanel } from './components/AnswerPanel';
 import { ChatBar } from './components/ChatBar';
 import { Tooltip } from './components/Tooltip';
-import { NodeLinkContext, NoteLinkContext, type NodeLinks, type NoteLinks } from './components/ChatText';
+import { MovieLinkContext, NodeLinkContext, NoteLinkContext, type MovieLinks, type NodeLinks, type NoteLinks } from './components/ChatText';
+import { MovieModal } from './components/movies/MovieModal';
 import { NodeModal } from './components/graph/NodeModal';
 import { useKnownNodes } from './hooks/useKnownNodes';
 import { fetchKnownNodes } from './sessionsApi';
@@ -818,6 +819,16 @@ export function App() {
     setView('projects');
   }, []);
 
+  // Movie ids in chat (`M-23T4`): opened in the movie pop-up; its top-right button goes to the page.
+  const [movieModal, setMovieModal] = useState<string | null>(null);
+  const movieLinks = useMemo<MovieLinks>(() => ({ open: setMovieModal }), []);
+  const closeMovieModal = useCallback(() => setMovieModal(null), []);
+  const openMoviePage = useCallback((movieId: string) => {
+    setMovieModal(null);
+    setMoviesRoute({ title: movieId, unmatched: false });
+    setView('movies');
+  }, []);
+
   useEffect(() => () => cancelFlash.current(), []);
 
   const send = (e: FormEvent<HTMLFormElement>) => {
@@ -847,6 +858,7 @@ export function App() {
     <IconContext.Provider value={ICONS}>
       <NoteLinkContext.Provider value={noteLinks}>
         <NodeLinkContext.Provider value={nodeLinks}>
+        <MovieLinkContext.Provider value={movieLinks}>
           <div className={focus ? 'app app-focus' : 'app'}>
             {!focus && (
               <Rail
@@ -1060,10 +1072,12 @@ export function App() {
                 onOpenNote={openNote}
               />
             )}
+            {movieModal !== null && <MovieModal movieId={movieModal} onClose={closeMovieModal} onOpenPage={openMoviePage} />}
             <UndoBar entry={undoEntry} onUndo={runUndo} />
             <LinkNotice text={linkNotice} />
             <Tooltip />
           </div>
+        </MovieLinkContext.Provider>
         </NodeLinkContext.Provider>
       </NoteLinkContext.Provider>
     </IconContext.Provider>

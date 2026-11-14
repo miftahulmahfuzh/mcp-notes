@@ -39,6 +39,9 @@ const fakeTmdb = {
   },
 } as unknown as TmdbClient;
 
+/** Tool urls open the wall on a movie id. */
+const MOVIE_URL = /^http:\/\/localhost:7317\/movies\/M-[0-9A-Z]{4}$/;
+
 let h: ApiHarness;
 let client: Client;
 let lib: SeededLibrary;
@@ -132,7 +135,7 @@ describe('movie MCP tools', () => {
   it('movies_list: the Blumhouse films finished this year', async () => {
     const res = await callJson<ListBody>('movies_list', { company: 'Blumhouse', finished_from: '2026-01-01', finished_to: '2026-12-31' });
     expect(res.titles.map((t) => t.id)).toEqual(['movie-467905']);
-    expect(res.titles[0]).toMatchObject({ state: 'finished', url: `${WALL}/movies/movie-467905` });
+    expect(res.titles[0]).toMatchObject({ state: 'finished', url: expect.stringMatching(MOVIE_URL) });
   });
 
   it('movies_list by person, words, kind and state', async () => {
@@ -157,7 +160,7 @@ describe('movie MCP tools', () => {
       plays: Array<{ started_at: string }>;
     }>('movies_get', { title: 'mobland' });
     expect(res.id).toBe('tv-247718');
-    expect(res.url).toBe(`${WALL}/movies/tv-247718`);
+    expect(res.url).toMatch(MOVIE_URL);
     expect(res.last_play).toMatchObject({ season: 1, episode: 2, episode_name: 'Alternative Fuel', position_s: 1300 });
     expect(new Date(res.last_play.started_at).toISOString()).toBe('2026-11-12T13:00:00.000Z');
     expect(res.seasons.flatMap((x) => x.episodes).map((e) => e.name)).toEqual(['Stick or Twist', 'Alternative Fuel', 'Sweet Home']);
@@ -180,8 +183,9 @@ describe('movie MCP tools', () => {
     const both = await call('movies_get', { title: 'blumhouse film' });
     expect(both.isError).toBe(true);
     expect(text(both)).toMatch(/^ambiguous: /);
-    expect(text(both)).toContain('movie-1001');
-    expect(text(both)).toContain('movie-1002');
+    // The candidates are named by the id the owner would type back.
+    expect(text(both)).toMatch(/Old Blumhouse Film \(2024\) = M-[0-9A-Z]{4}/);
+    expect(text(both)).toMatch(/Unfinished Blumhouse Film \(2025\) = M-[0-9A-Z]{4}/);
   });
 
   it('movies_history: plays newest first, across deleted files, and for one title', async () => {
@@ -190,7 +194,7 @@ describe('movie MCP tools', () => {
       { from: '2026-11-01' },
     );
     expect(all.plays.map((p) => p.title_id)).toEqual(['tv-247718', 'tv-247718', 'movie-1002']);
-    expect(all.plays[0]).toMatchObject({ episode: 2, episode_name: 'Alternative Fuel', url: `${WALL}/movies/tv-247718` });
+    expect(all.plays[0]).toMatchObject({ episode: 2, episode_name: 'Alternative Fuel', url: expect.stringMatching(MOVIE_URL) });
     const mobland = await callJson<{ count: number; plays: Array<{ title_id: string }> }>('movies_history', { title: 'mobland' });
     expect(mobland.count).toBe(2);
     expect(new Set(mobland.plays.map((p) => p.title_id))).toEqual(new Set(['tv-247718']));
@@ -198,7 +202,7 @@ describe('movie MCP tools', () => {
 
   it('movies_continue with a title resumes the latest unfinished film from its position', async () => {
     const res = await callJson<{ action: string; position: number; url: string; message: string }>('movies_continue', { title: 'Unfinished Blumhouse Film' });
-    expect(res).toMatchObject({ action: 'resumed', position: 1200, url: `${WALL}/movies/movie-1002` });
+    expect(res).toMatchObject({ action: 'resumed', position: 1200, url: expect.stringMatching(MOVIE_URL) });
     expect(played).toEqual([lib.files.unfinished]);
   });
 
@@ -259,6 +263,130 @@ describe('movie MCP tools', () => {
     expect(text(both)).toContain('invalid_input');
   });
 
+  describe('movie ids', () => {
+    const idOf = async (titleId: string, season: number | null = null, episode: number | null = null): Promise<string> => {
+      const res = await h.deps.db.execute(
+        sql`select id from movie_ids where title_id = ${titleId} and season is not distinct from ${season} and episode is not distinct from ${episode}`,
+      );
+      return String((res.rows[0] as { id: string }).id);
+    };
+
+    it('every title and every episode has one M-XXXX id, all different, and a file-only episode gets one too', async () => {
+      const res = await h.deps.db.execute(sql`select id, title_id, season, episode from movie_ids`);
+      const rows = res.rows as Array<{ id: string; title_id: string; season: number | null; episode: number | null }>;
+      expect(rows.filter((r) => r.season === null)).toHaveLength(7); // the seven seeded titles
+      expect(rows.filter((r) => r.season !== null)).toHaveLength(8); // every movie_episodes row
+      for (const r of rows) expect(r.id).toMatch(/^M-[0-9A-Z]{4}$/);
+      expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
+      // An episode TMDB does not list, named only by a file.
+      await h.deps.db.execute(sql`
+        insert into movie_files (title_id, host, path, name, size, duration_s, season, episode, status, source, first_seen_at, last_seen_at, updated_at)
+        values ('tv-1003', ${THIS_HOST}, '/library/Series.Next.S01E09.mkv', 'Series.Next.S01E09.mkv', 1, 3000, 1, 9, 'matched', 'scan', now(), now(), now())`);
+      expect(await idOf('tv-1003', 1, 9)).toMatch(/^M-[0-9A-Z]{4}$/);
+    });
+
+    it('an episode keeps its id when its rows are deleted and inserted again (a metadata refresh)', async () => {
+      const before = await idOf('tv-247718', 1, 3);
+      await h.deps.db.execute(sql`delete from movie_episodes where title_id = 'tv-247718'`);
+      await h.deps.db.execute(sql`insert into movie_episodes (title_id, season, episode, name) values ('tv-247718', 1, 3, 'Sweet Home'), ('tv-247718', 1, 4, 'New One')`);
+      expect(await idOf('tv-247718', 1, 3)).toBe(before);
+      expect(await idOf('tv-247718', 1, 4)).not.toBe(before);
+    });
+
+    it('movies_list and movies_get carry movie_id, and movies_get takes one in any case', async () => {
+      const id = await idOf('movie-467905');
+      const list = await callJson<{ titles: Array<{ id: string; movie_id: string }> }>('movies_list', { q: 'killing' });
+      expect(list.titles[0]).toMatchObject({ id: 'movie-467905', movie_id: id });
+      const got = await callJson<{ id: string; movie_id: string; asked?: unknown }>('movies_get', { title: id.toLowerCase() });
+      expect(got).toMatchObject({ id: 'movie-467905', movie_id: id });
+      expect(got.asked).toBeUndefined();
+      const unknown = await call('movies_get', { title: 'M-ZZZZ' });
+      expect(unknown.isError).toBe(true);
+      expect(text(unknown)).toContain('not_found');
+    });
+
+    it("an episode's movie id answers with that episode first, also when it has no file", async () => {
+      const gap = await idOf('tv-1004', 1, 2);
+      const res = await callJson<{
+        id: string;
+        asked: { movie_id: string; what: string; episode: { season: number; episode: number; name: string; has_file: boolean; movie_id: string } };
+        seasons: Array<{ season: number; episodes: number; files_here: string }>;
+        files: unknown[];
+        url: string;
+      }>('movies_get', { title: gap });
+      expect(res.id).toBe('tv-1004');
+      expect(res.asked).toMatchObject({ movie_id: gap, what: 'episode S01E02 of Series Gap', episode: { season: 1, episode: 2, name: 'Gap Two', has_file: false, movie_id: gap } });
+      // The series around it is a summary: the gap shows in files_here.
+      expect(res.seasons).toEqual([{ season: 1, episodes: 3, first_episode: 1, last_episode: 3, finished: 1, files_here: '3' }]);
+      expect(res.files).toEqual([]);
+      expect(res.url).toBe(`${WALL}/movies/${gap}`);
+    });
+
+    it('movies_get with season or episode answers just those episodes, each with its movie id', async () => {
+      const one = await callJson<{ seasons: Array<{ episodes: Array<{ episode: number; movie_id: string; overview?: unknown; files?: unknown }> }>; files: Array<{ episode: number }> }>(
+        'movies_get',
+        { title: 'Series Gap', episode: 3 },
+      );
+      expect(one.seasons).toHaveLength(1);
+      expect(one.seasons[0]!.episodes).toHaveLength(1);
+      expect(one.seasons[0]!.episodes[0]).toMatchObject({ episode: 3, movie_id: await idOf('tv-1004', 1, 3) });
+      expect(one.seasons[0]!.episodes[0]).toHaveProperty('overview');
+      expect(one.seasons[0]!.episodes[0]).not.toHaveProperty('files');
+      expect(one.files.map((f) => f.episode)).toEqual([3]);
+      const season = await callJson<{ seasons: Array<{ episodes: unknown[] }> }>('movies_get', { title: 'Series Gap', season: 1 });
+      expect(season.seasons[0]!.episodes).toHaveLength(3);
+    });
+
+    it('a long series answers with a summary per season that fits in a reply', async () => {
+      await h.deps.db.execute(sql`
+        insert into movie_episodes (title_id, season, episode, name, overview)
+        select 'tv-1003', 2, n, 'Long ' || n, repeat('synopsis ', 40) from generate_series(1, 400) n`);
+      await h.deps.db.execute(sql`
+        insert into movie_files (title_id, host, path, name, size, duration_s, season, episode, status, source, first_seen_at, last_seen_at, updated_at)
+        select 'tv-1003', ${THIS_HOST}, '/library/Long.' || n || '.mkv', 'Long.' || n || '.mkv', 1, 1400, 2, n, 'matched', 'scan', now(), now(), now()
+        from unnest(array[10, 11, 12, 20]) n`);
+      const r = await call('movies_get', { title: 'Series Next' });
+      expect(r.isError ?? false).toBe(false);
+      expect(text(r).length).toBeLessThan(20_000);
+      const body = JSON.parse(text(r)) as { seasons: Array<{ season: number; episodes: number; files_here: string }>; seasons_note: string };
+      expect(body.seasons[1]).toMatchObject({ season: 2, episodes: 400, first_episode: 1, last_episode: 400, files_here: '10-12, 20' });
+      expect(body.seasons_note).toContain('season');
+      const ep = await callJson<{ seasons: Array<{ episodes: Array<{ name: string; movie_id: string }> }> }>('movies_get', { title: 'Series Next', season: 2, episode: 250 });
+      expect(ep.seasons[0]!.episodes[0]).toMatchObject({ name: 'Long 250', movie_id: await idOf('tv-1003', 2, 250) });
+    });
+
+    it("movies_continue with an episode's movie id plays that episode, or says it is missing", async () => {
+      const e3 = await idOf('tv-1004', 1, 3); // the continue rule would stop at the missing E2
+      const res = await callJson<{ action: string; file: { episode: number } }>('movies_continue', { title: e3 });
+      expect(res).toMatchObject({ action: 'started', file: { episode: 3 } });
+      expect(played).toEqual([lib.files.gapE3]);
+      const missing = await callJson<{ action: string; missing: { season: number; episode: number } }>('movies_continue', { title: await idOf('tv-1004', 1, 2) });
+      expect(missing).toMatchObject({ action: 'missing', missing: { season: 1, episode: 2 } });
+      expect(played).toEqual([lib.files.gapE3]);
+      const film = await callJson<{ action: string; position: number }>('movies_continue', { title: await idOf('movie-1002') });
+      expect(film).toMatchObject({ action: 'resumed', position: 1200 });
+    });
+
+    it("movies_mark with an episode's movie id marks that episode, never the series", async () => {
+      const e2 = await idOf('tv-1003', 1, 2);
+      const res = await callJson<{ title_id: string; episode: { state: string } }>('movies_mark', { title: e2, watched: true });
+      expect(res).toMatchObject({ title_id: 'tv-1003', episode: { state: 'finished' } });
+      const title = await h.deps.db.execute(sql`select watched_at from movie_titles where id = 'tv-1003'`);
+      expect((title.rows[0] as { watched_at: unknown }).watched_at).toBeNull();
+      const rated = await call('movies_mark', { title: e2, rating: 4 });
+      expect(rated.isError).toBe(true);
+      expect(text(rated)).toContain('invalid_input');
+    });
+
+    it('movies_history names the episode that was played by its movie id', async () => {
+      const res = await callJson<{ plays: Array<{ title_id: string; season: number | null; movie_id: string }> }>('movies_history', { limit: 50 });
+      const mobland = res.plays.find((p) => p.title_id === 'tv-247718' && p.season === 1);
+      expect(mobland?.movie_id).toBe(await idOf('tv-247718', 1, 2));
+      const film = res.plays.find((p) => p.title_id === 'movie-1002');
+      expect(film?.movie_id).toBe(await idOf('movie-1002'));
+    });
+  });
+
   it('movies_person marks each TMDB credit seen or not seen against the library', async () => {
     const res = await callJson<{
       person: { id: number; name: string };
@@ -270,7 +398,7 @@ describe('movie MCP tools', () => {
     expect(res.other_people.map((p) => p.id)).toEqual([42]);
     expect(res.counts).toEqual({ credits: 3, in_library: 2, seen: 1 });
     const byId = new Map(res.credits.map((c) => [c.title_id, c]));
-    expect(byId.get('movie-467905')).toMatchObject({ in_library: true, seen: true, state: 'finished', url: `${WALL}/movies/movie-467905` });
+    expect(byId.get('movie-467905')).toMatchObject({ in_library: true, seen: true, state: 'finished', url: expect.stringMatching(MOVIE_URL) });
     expect(byId.get('movie-1002')).toMatchObject({ in_library: true, seen: false, started: true });
     expect(byId.get('movie-9001')).toMatchObject({ in_library: false, seen: false, state: null, url: null });
     expect(byId.get('movie-9001')!.roles).toEqual(['cast as Sue', 'Producer']);
@@ -288,7 +416,7 @@ describe('movie MCP tools', () => {
       watched: true,
       rating: 4,
     });
-    expect(marked).toMatchObject({ title_id: 'tv-1003', rating: 4, url: `${WALL}/movies/tv-1003` });
+    expect(marked).toMatchObject({ title_id: 'tv-1003', rating: 4, url: expect.stringMatching(MOVIE_URL) });
     expect(marked.watched_at).not.toBeNull();
     const titleRow = await h.deps.db.execute(sql`select rating, watched_at from movie_titles where id = 'tv-1003'`);
     expect(titleRow.rows[0]).toMatchObject({ rating: 4 });

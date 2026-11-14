@@ -13,6 +13,10 @@
  * the same boundary rules but are linked only when the caller says the id exists (upper-case words
  * such as CI-CD share the shape): `nodeCandidates` lists what to ask the daemon about, and
  * `linkify(markdown, wall, known)` links the known ones to `<wall>/projects?node=ID`.
+ *
+ * Movie ids (`M-23T4`: `M-` and four characters, `src/movies/ids.ts`; a title, or one episode of a
+ * series) are linked by shape alone to `<wall>/movies/ID`, where the wall opens the title's page,
+ * scrolled to the episode when the id is an episode's.
  */
 
 /** The wall the daemon serves when nothing else is known. */
@@ -30,8 +34,11 @@ const LOOSE_NODE_ID = /^([0-9A-Z]{2})-?([0-9A-Z]{2})$/
 
 const HAS_LETTER = /[A-Z]/
 
+/** Canonical movie id: `M-` and four of [0-9A-Z]. The dash is required (`M3GAN` is a film, not an id). */
+export const MOVIE_ID_PATTERN = /^M-[0-9A-Z]{4}$/
+
 /** A note or node candidate anywhere in a text: the fast path skips texts without one. */
-const ANY_CANDIDATE = /[0-9A-Z]-[0-9A-Z]{3}|[0-9A-Z]{2}-[0-9A-Z]{2}/
+const ANY_CANDIDATE = /[0-9A-Z]-[0-9A-Z]{3}|[0-9A-Z]{2}-[0-9A-Z]{2}/ // a movie id starts like a note id
 
 /** True when `text` holds something id-shaped, before any boundary rule. */
 export function hasCandidate(text: string): boolean {
@@ -89,6 +96,17 @@ export function normalizeWallUrl(raw: string): string | null {
   s = s.replace(/\/+$/, '')
   if (!/^https?:\/\/[^\s/?#()<>'"`]+(?:\/[^\s?#()<>'"`]*)?$/i.test(s)) return null
   return s
+}
+
+/** Movie ids, case-insensitive: `m-23t4` -> `M-23T4`; null for anything else. */
+export function normalizeMovieId(input: string): string | null {
+  const v = input.trim().toUpperCase()
+  return MOVIE_ID_PATTERN.test(v) ? v : null
+}
+
+/** `<wall>/movies/<ID>`: the title's page, scrolled to the episode for an episode's id. */
+export function movieUrl(wall: string, id: string): string {
+  return `${wall}/movies/${id}`
 }
 
 /** `<wall>/?note=<ID>`. `wall` is already normalised; `id` is canonical. */
@@ -171,22 +189,23 @@ export function splitFences(text: string): Segment[] {
   return out
 }
 
-/** Which id kind starts at i, by shape and boundary; null for neither. */
-function candidateAt(text: string, i: number): 'note' | 'node' | null {
+/** Which id kind starts at i, by shape and boundary; null for none. A movie id (6 characters) is tried first: its first five read as a note id. */
+function candidateAt(text: string, i: number): 'note' | 'node' | 'movie' | null {
+  if (MOVIE_ID_PATTERN.test(text.slice(i, i + 6)) && isWhole(text, i, 6)) return 'movie'
   const word = text.slice(i, i + 5)
   const kind = ID_PATTERN.test(word) ? 'note' : NODE_ID_PATTERN.test(word) && HAS_LETTER.test(word) ? 'node' : null
   return kind !== null && isWhole(text, i) ? kind : null
 }
 
-/** The 5 characters at i stand alone: nothing before or after makes them part of something longer. */
-function isWhole(text: string, i: number): boolean {
+/** The `length` characters at i stand alone: nothing before or after makes them part of something longer. */
+function isWhole(text: string, i: number, length = 5): boolean {
   const before = i > 0 ? text[i - 1]! : ''
   if (before !== '' && BAD_BEFORE.test(before)) return false
-  const after = text[i + 5]
+  const after = text[i + length]
   if (after === undefined) return true
   if (BAD_AFTER.test(after)) return false
   if (JOINER.test(after)) {
-    const next = text[i + 6]
+    const next = text[i + length + 1]
     if (next !== undefined && ALNUM.test(next)) return false
   }
   return true
@@ -269,6 +288,13 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
       }
     }
     const kind = candidateAt(text, i)
+    if (kind === 'movie') {
+      const id = text.slice(i, i + 6)
+      out += `${text.slice(plainFrom, i)}[${id}](${movieUrl(wall, id)})`
+      i += 6
+      plainFrom = i
+      continue
+    }
     if (kind !== null) {
       const id = text.slice(i, i + 5)
       if (kind === 'note' || nodes.has(id)) {
@@ -284,8 +310,9 @@ function linkifyProse(text: string, wall: string, nodes: KnownNodes): string {
 }
 
 /**
- * Every free-standing upper-case note id in `markdown` becomes `[ID](<wall>/?note=ID)`, and every
- * free-standing node id in `nodes` becomes `[ID](<wall>/projects?node=ID)`.
+ * Every free-standing upper-case note id in `markdown` becomes `[ID](<wall>/?note=ID)`, every
+ * free-standing node id in `nodes` becomes `[ID](<wall>/projects?node=ID)`, and every free-standing
+ * movie id becomes `[ID](<wall>/movies/ID)`.
  * Idempotent: an id already inside a link is left alone, so linkify(linkify(x)) === linkify(x).
  */
 export function linkify(markdown: string, wall: string, nodes: KnownNodes = NO_NODES): string {

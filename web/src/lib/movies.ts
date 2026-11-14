@@ -282,8 +282,9 @@ export interface SeasonsShown {
   hidden: number;
 }
 
-export function seasonsShown(d: TitleDetail): SeasonsShown {
-  const seasons = d.seasons.filter((s) => s.episodes.some((e) => e.has_file));
+/** `focus`: an episode's movie id whose season is shown even when no machine holds a file of it. */
+export function seasonsShown(d: TitleDetail, focus: string | null = null): SeasonsShown {
+  const seasons = d.seasons.filter((s) => s.episodes.some((e) => e.has_file || (focus !== null && e.movie_id === focus)));
   return { seasons, hidden: d.seasons.length - seasons.length };
 }
 
@@ -361,9 +362,41 @@ export function unmatchedCount(status: MoviesStatusResponse | null): number | nu
   return status === null ? null : status.counts.unmatched_here + status.counts.pending_here;
 }
 
+/** `M-23T4`, the id the owner reads and types (src/movies/ids.ts); the dash is required. */
+const MOVIE_ID = /^M-[0-9A-Z]{4}$/;
+
+/** `m-23t4` -> `M-23T4`; null for anything that is not a movie id. */
+export function normalizeMovieId(input: string): string | null {
+  const v = input.trim().toUpperCase();
+  return MOVIE_ID.test(v) ? v : null;
+}
+
+/** `/movies/M-23T4`: the title's page, scrolled to the episode when the id is an episode's. */
+export function movieIdHref(movieId: string): string {
+  return `/movies/${encodeURIComponent(movieId)}`;
+}
+
+/** The episode of `d` that `movieId` names, or null (the id is the title's own, or someone else's). */
+export function episodeByMovieId(d: TitleDetail, movieId: string | null): EpisodeView | null {
+  if (movieId === null) return null;
+  for (const s of d.seasons) for (const e of s.episodes) if (e.movie_id === movieId) return e;
+  return null;
+}
+
+/**
+ * Is `d` what `/movies/<segment>` asks for? The segment is a title id (`movie-467905`), the title's
+ * movie id, or the movie id of one of its episodes.
+ */
+export function detailIsFor(d: TitleDetail | null, segment: string | null): d is TitleDetail {
+  if (d === null || segment === null) return false;
+  if (d.id === segment) return true;
+  const movieId = normalizeMovieId(segment);
+  return movieId !== null && (d.movie_id === movieId || episodeByMovieId(d, movieId) !== null);
+}
+
 export function moviesHeading(s: MoviesView, route: MoviesRoute): string {
   if (route.unmatched) return UNMATCHED_HEADING;
-  if (route.title !== null && s.detail !== null && s.detail.id === route.title) return `${s.detail.title}.`;
+  if (detailIsFor(s.detail, route.title)) return `${s.detail.title}.`;
   return MOVIES_HEADING;
 }
 
@@ -377,7 +410,7 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
   }
   if (route.title !== null) {
     if (s.detailError !== null) return moviesErrorText(s.detailError, route.title);
-    if (s.detail === null || s.detail.id !== route.title) return 'Loading.';
+    if (!detailIsFor(s.detail, route.title)) return 'Loading.';
     return `${factsLine(s.detail)}.`;
   }
   if (s.listError !== null) return moviesErrorText(s.listError);
@@ -392,12 +425,12 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
 /**
  * The chat bar has no page field (POST /api/chat carries message, thread_id, image_ids). The page's
  * context rides on the message's first line, as on Seer Adversarial: `[Movies · library]`,
- * `[Movies · unmatched files]`, or `[Movies · <title> (<year>) · <title id>]` once the open title's
- * detail is loaded (the bare id before). The chat agent reads it with phase 7's movies_* tools.
+ * `[Movies · unmatched files]`, or `[Movies · <title> (<year>) · <movie id>]` (`M-23T4`) once the open
+ * title's detail is loaded (the bare title id before, and from a server without movie ids). The chat agent reads it with phase 7's movies_* tools.
  */
 /** The pill's hint: the open title by name once its detail is loaded, so "this film" visibly has a meaning. */
 export function moviesPillPlaceholder(route: MoviesRoute, detail: TitleDetail | null): string {
-  if (route.title !== null && !route.unmatched && detail !== null && detail.id === route.title) return `Ask about ${detail.title}`;
+  if (!route.unmatched && detailIsFor(detail, route.title)) return `Ask about ${detail.title}`;
   return MOVIES_PILL_PLACEHOLDER;
 }
 
@@ -405,7 +438,7 @@ export function moviesChatMessage(text: string, route: MoviesRoute, detail: Titl
   let where: string;
   if (route.unmatched) where = 'unmatched files';
   else if (route.title === null) where = 'library';
-  else if (detail !== null && detail.id === route.title) where = `${detail.title}${detail.year !== null ? ` (${detail.year})` : ''} · ${route.title}`;
+  else if (detailIsFor(detail, route.title)) where = `${detail.title}${detail.year !== null ? ` (${detail.year})` : ''} · ${detail.movie_id ?? route.title}`;
   else where = route.title;
   return `[Movies · ${where}]\n${text}`;
 }

@@ -19,6 +19,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   vector,
 } from 'drizzle-orm/pg-core'
@@ -1103,6 +1104,34 @@ export const movieEpisodes = pgTable(
     stillPath: text('still_path'),
   },
   (t) => [primaryKey({ columns: [t.titleId, t.season, t.episode] })],
+)
+
+/**
+ * The movie id registry (migration 0018): the id the owner types and reads, `M-23T4` (`M-` and four
+ * of [0-9A-Z]; a note id has three, so the two never look alike). One row per title (season and
+ * episode null) and one per episode of a series (from `movie_episodes`, or named only by a file).
+ * Rows are written by database triggers on `movie_titles`, `movie_episodes` and `movie_files`
+ * (`movie_ids_register`), never by application code, so every writer on either machine tags what
+ * it adds; the id is `movie_next_id()`, a scrambled sequence, so it cannot repeat. An episode keeps
+ * its id when `upsertTitle` deletes and re-inserts the episode rows, and a title's ids go only when
+ * the title row itself is deleted. Never invent an id; resolve one with src/movies/ids.ts.
+ */
+export const movieIds = pgTable(
+  'movie_ids',
+  {
+    id: text('id').primaryKey().default(sql`movie_next_id()`),
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season'),
+    episode: integer('episode'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('movie_ids_target_unique').on(t.titleId, t.season, t.episode).nullsNotDistinct(),
+    check('movie_ids_id_format', sql`${t.id} ~ '^M-[0-9A-Z]{4}$'`),
+    check('movie_ids_target_shape', sql`(${t.season} is null) = (${t.episode} is null)`),
+  ],
 )
 
 /**

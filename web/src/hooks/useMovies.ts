@@ -14,6 +14,7 @@ import {
   type UnmatchedFile,
 } from '../moviesApi';
 import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageActive';
+import { detailIsFor } from '../lib/movies';
 import type { MoviesRoute } from '../lib/route';
 
 /** Every minute while the tab is visible: picks up a sync or a play on the other laptop (its events never reach this daemon). */
@@ -146,7 +147,7 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
 
   // A switch to another title drops the old detail at once, so its facts never show under the new heading.
   useEffect(() => {
-    setDetail((d) => (d !== null && d.id === title ? d : null));
+    setDetail((d) => (detailIsFor(d, title) ? d : null));
     setDetailError(null);
   }, [title]);
 

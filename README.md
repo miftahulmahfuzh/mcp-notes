@@ -1001,6 +1001,13 @@ A series page lists every episode with its own progress. The pill bar at the bot
 the page you are on. On a title's page it reads "Ask about <title>", and "this film", "this director" or
 "films like this" mean that title: trivia and people are looked up on the web, other work in TMDB.
 
+**Movie ids.** Every title has an id like `M-23T4` (`M-` and four characters; a note id has three), and
+so has every episode of a series, with or without a file. It is shown on the title's page and beside
+each episode, and it is how you name a film to Claude: "what's M-0909 about?", "we missed M-0T77, can
+we skip it?", "play M-0T77". `/movies/M-23T4` opens the title; an episode's id opens its series
+scrolled to that episode. In the wall's chat an id is a link that opens a pop-up with Play and a
+button to the page; in Claude Code it is a link to the page.
+
 **Play and resume.** Play starts the Windows VLC on the file at the second you stopped (from the start
 when you had finished it), so VLC's own "continue?" prompt never comes up, and reads its position every
 five seconds while it plays. VLC opens full screen and in front of every other window, so one click
@@ -1247,7 +1254,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `adversary_scorecard` | One method's record: each objected stock's return over the method's horizon (5 sessions for a daily method, until the next rebalance for a book) against the kept picks; for a daily method with C, Claude against C on the nights they disagree |
 | `adversary_redo_context` / `adversary_redo_submit` | For the `/redo <method> <TICKER>` skill: redo one pick's review with real web search. Context says whether it is still fresh (a verdict counts only before the session's 09:30 New York open; after that nothing is written) and gives the facts and rules; submit writes the verdict to Seer, superseding the old one, and re-checks the clock |
 | `movies_list` | Titles by text, `state` (finished, in progress, unwatched, dropped, removed unwatched, seen), studio (`company`), `person`, kind, and the date range they were finished in ("Blumhouse films I saw this year") |
-| `movies_get` | One title with its credits, episodes, files (deleted ones too) and play events |
+| `movies_get` | One title with its credits, episodes, files (deleted ones too) and play events, by movie id (`M-23T4`), title id or name. An episode's movie id answers with that episode first. `season` / `episode` return just those episodes; a series of more than 60 episodes answers with a summary per season until one is given |
 | `movies_history` | Play events, newest first, optionally for one title or date range; kept after the file is deleted ("which MobLand episode did I watch last, and when?") |
 | `movies_continue` | Resume the latest unfinished episode or film of `title` from its position, else start the next episode whose file is here, else say which next episode is missing and which later ones are present. Without `title`: the title of the newest play. With `random: true` ("play something"): one title picked at random among those playable on this machine (a file here that is not deleted, not finished; a half-watched one resumes); `picked_from` says how many. Starts VLC on this machine |
 | `movies_person` | A person's TMDB filmography, each entry marked seen or not seen ("other Margaret Qualley films") |
@@ -1356,6 +1363,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/movies/events` | Server-sent events, `event: changed` after every pass or write that changes the library |
 | `GET /api/movies/player` | The play notesd is tracking now, if any, and whether playback is `available` on this machine |
 | `GET /api/movies/player/health?limit=` | This machine's VLC health log (phase 9): the newest `limit` samples (default 200, max 2000) with pid, working set, private bytes, handles and, for the VLC notesd follows, its state and seconds paused; per-VLC run summaries with growth per paused minute; hang lines; and crash incidents with the Windows Application Error / Application Hang events. The file is `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl`. 503 `movies_off` without a monitor |
+| `GET /api/movies/:movieId` | The same answer as `GET /api/movies/:id`, by movie id (`M-23T4`, any case). An episode's movie id answers its series. 404 `not_found` for an id that names nothing |
 | `GET /api/movies/:id` | One title (`movie-<tmdb id>` or `tv-<tmdb id>`): release date, synopsis, studios, directors, writers, producers, cast with characters, rating, watched, review, the episode list, and every file (deleted ones too) with its `state`, `available`, season and episode |
 | `POST /api/movies/:id/user` | `{watched?, rating?, review?}`: the watched flag, 0–5 stars, and the review, kept as a note tagged `#movie` and linked to the title. Same-origin only |
 | `POST /api/movies/files/:fileId/watched` | `{watched}`: mark one file or episode finished, or take the mark off. Same-origin only |

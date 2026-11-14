@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { linkify, nodeCandidates, normalizeId, normalizeNodeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
+import { linkify, nodeCandidates, normalizeId, normalizeMovieId, normalizeNodeId, normalizeWallUrl, splitFences, wallFromMcpGet } from '../hooks/linkify'
 
 // Made-up ids only. No real note's id or body belongs in this file.
 const WALL = 'http://localhost:7317'
@@ -196,5 +196,32 @@ describe('wallFromMcpGet', () => {
   test('null without a URL line, or for a stdio server', () => {
     expect(wallFromMcpGet('No MCP server found with name: notes')).toBe(null)
     expect(wallFromMcpGet('notes:\n  Type: stdio\n  Command: node server.js\n')).toBe(null)
+  })
+})
+
+describe('movie ids', () => {
+  const M = (id: string) => `[${id}](${WALL}/movies/${id})`
+
+  test('a free-standing movie id links to the title page, never as a note', () => {
+    expect(linkify('Watch M-23T4 tonight.', WALL)).toBe(`Watch ${M('M-23T4')} tonight.`)
+    expect(linkify('MobLand (2025), M-8TR4: episode M-0T77.', WALL)).toBe(`MobLand (2025), ${M('M-8TR4')}: episode ${M('M-0T77')}.`)
+    expect(linkify('note A-B32 and film M-0909', WALL)).toBe(`note ${L('A-B32')} and film ${M('M-0909')}`)
+  })
+
+  test('code, links, longer words and lower case are left alone', () => {
+    for (const s of ['`M-23T4`', '```\nM-23T4\n```', `[M-23T4](${WALL}/movies/M-23T4)`, 'M-23T45', 'XM-23T4', 'm-23t4', 'M-23T4.mkv', 'src/M-23T4/x', 'M3GAN']) {
+      expect(linkify(s, WALL)).toBe(s)
+    }
+  })
+
+  test('linking twice changes nothing', () => {
+    const once = linkify('M-23T4 and A-B32', WALL)
+    expect(linkify(once, WALL)).toBe(once)
+  })
+
+  test('normalizeMovieId needs the dash', () => {
+    expect(normalizeMovieId(' m-23t4 ')).toBe('M-23T4')
+    expect(normalizeMovieId('M23T4')).toBe(null)
+    expect(normalizeMovieId('A-B32')).toBe(null)
   })
 })

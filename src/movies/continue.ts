@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, or, sql } f
 import type { Db } from '../db/client.js';
 import { movieEpisodes, movieFiles, moviePlays, movieTitles } from '../db/schema.js';
 import type { MoviePlayer, PlayStarted } from './player.js';
+import { normalizeMovieId, resolveMovieId } from './ids.js';
 import { fileState } from './state.js';
 import type { TitleKind, WatchState } from './types.js';
 
@@ -181,10 +182,26 @@ async function pathExists(abs: string): Promise<boolean> {
   }
 }
 
-type Resolved = { kind: 'one'; title: TitleRow } | { kind: 'none' } | { kind: 'ambiguous'; candidates: TitleRow[] };
+/** `episode`: the query was an episode's movie id, so that episode is the one asked for. */
+type Resolved =
+  | { kind: 'one'; title: TitleRow; episode?: { season: number; episode: number } }
+  | { kind: 'none' }
+  | { kind: 'ambiguous'; candidates: TitleRow[] };
 
-/** A title id (`tv-247718`, what the web sends), or a case-insensitive substring of the title/original title. */
+/**
+ * A movie id (`M-23T4`: a title, or one episode of it), a title id (`tv-247718`, what the web
+ * sends), or a case-insensitive substring of the title/original title.
+ */
 async function resolveTitle(db: Db, q: string): Promise<Resolved> {
+  if (normalizeMovieId(q) !== null) {
+    const target = await resolveMovieId(db, q);
+    if (target === null) return { kind: 'none' };
+    const [title] = await db.select().from(movieTitles).where(eq(movieTitles.id, target.titleId)).limit(1);
+    if (title === undefined) return { kind: 'none' };
+    return target.season === null || target.episode === null
+      ? { kind: 'one', title }
+      : { kind: 'one', title, episode: { season: target.season, episode: target.episode } };
+  }
   const lower = q.toLowerCase();
   const pattern = `%${escapeLike(q)}%`;
   const rows = await db
@@ -257,11 +274,33 @@ interface Loaded {
   decision: ContinueDecision;
 }
 
-/** One title's files, plays and episodes -> what continue would do with it. Plays nothing. */
-async function loadDecision(deps: ContinueDeps, title: TitleRow): Promise<Loaded> {
+/**
+ * One asked-for episode (by its movie id): play its file on this machine, resuming when it was left
+ * partway; with no file here it is missing. The continue rule is not consulted: the owner chose.
+ */
+export function decideEpisode(files: ContinueFileView[], slot: EpisodeSlot): ContinueDecision {
+  const here = files
+    .filter((v) => v.present && v.file.season === slot.season && v.file.episode === slot.episode)
+    .sort(newestFirst);
+  const resumable = here.find((v) => v.state === 'in_progress');
+  if (resumable !== undefined) return { action: 'resume', file: resumable.file };
+  if (here[0] !== undefined) return { action: 'start', file: here[0].file };
+  return {
+    action: 'missing',
+    missing: { file_id: null, season: slot.season, episode: slot.episode, absolute_episode: null, name: slot.name },
+    present: [],
+  };
+}
+
+/** One title's files, plays and episodes -> what continue would do with it (or with one asked-for episode). Plays nothing. */
+async function loadDecision(deps: ContinueDeps, title: TitleRow, asked?: { season: number; episode: number }): Promise<Loaded> {
   const kind = title.kind as TitleKind;
   const views = await loadFiles(deps, title.id);
   const episodes = kind === 'tv' ? await loadEpisodes(deps.db, title.id) : [];
+  if (asked !== undefined) {
+    const name = episodes.find((e) => e.season === asked.season && e.episode === asked.episode)?.name ?? null;
+    return { title, episodes, decision: decideEpisode(views, { ...asked, name }) };
+  }
   return { title, episodes, decision: decideContinue(kind, title.watchedAt, views, episodes) };
 }
 
@@ -300,18 +339,15 @@ async function carryOut(deps: ContinueDeps, { title, episodes, decision }: Loade
  */
 export async function continueTitle(deps: ContinueDeps, titleQuery: string | null): Promise<ContinueResult> {
   const q = titleQuery?.trim() ?? '';
-  let title: TitleRow;
   if (q === '') {
     const newest = await newestPlayedTitle(deps.db, deps.player.host);
     if (newest === null) return { action: 'no_match', query: null };
-    title = newest;
-  } else {
-    const resolved = await resolveTitle(deps.db, q);
-    if (resolved.kind === 'none') return { action: 'no_match', query: q };
-    if (resolved.kind === 'ambiguous') return { action: 'ambiguous', query: q, candidates: resolved.candidates.map(titleRef) };
-    title = resolved.title;
+    return carryOut(deps, await loadDecision(deps, newest));
   }
-  return carryOut(deps, await loadDecision(deps, title));
+  const resolved = await resolveTitle(deps.db, q);
+  if (resolved.kind === 'none') return { action: 'no_match', query: q };
+  if (resolved.kind === 'ambiguous') return { action: 'ambiguous', query: q, candidates: resolved.candidates.map(titleRef) };
+  return carryOut(deps, await loadDecision(deps, resolved.title, resolved.episode));
 }
 
 /** Titles decided at once by playSomething (two or three queries each). */

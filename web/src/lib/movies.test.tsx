@@ -10,6 +10,8 @@ import {
   moviesChatMessage,
   moviesCountLine,
   moviesPillPlaceholder,
+  detailIsFor,
+  episodeByMovieId,
   NO_MOVIES_FILTER,
   PLAYER_OFF_LABEL,
   playErrorText,
@@ -30,7 +32,8 @@ describe('moviesChatMessage', () => {
   it('names the page, and the open title once its detail is loaded', () => {
     expect(moviesChatMessage('what next?', { title: null, unmatched: false }, null)).toBe('[Movies · library]\nwhat next?');
     expect(moviesChatMessage('why?', { title: null, unmatched: true }, null)).toBe('[Movies · unmatched files]\nwhy?');
-    expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, MOVIE)).toBe('[Movies · How to Make a Killing (2026) · movie-467905]\ncast?');
+    expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, MOVIE)).toBe('[Movies · How to Make a Killing (2026) · M-23T4]\ncast?');
+    expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, { ...MOVIE, movie_id: null })).toBe('[Movies · How to Make a Killing (2026) · movie-467905]\ncast?');
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, SERIES)).toBe('[Movies · movie-467905]\ncast?');
   });
 });
@@ -127,5 +130,22 @@ describe('playErrorText', () => {
     expect(playErrorText('player_unavailable', 'VLC HTTP ports 47318-47327 are all in use.')).toBe('VLC HTTP ports 47318-47327 are all in use.');
     expect(playErrorText('player_unavailable')).toBe(PLAYER_OFF_LABEL);
     expect(playErrorText('file_missing', 'A.mkv is no longer on disk.')).toBe('the file is gone from disk; rescan to update the library');
+  });
+});
+
+describe('movie ids on the page', () => {
+  it('a detail answers its title id, its movie id and its episodes\' movie ids', () => {
+    expect(detailIsFor(SERIES, 'tv-247718')).toBe(true);
+    expect(detailIsFor(SERIES, 'm-8tr4')).toBe(true);
+    expect(detailIsFor(SERIES, 'M-0S12')).toBe(true);
+    expect(detailIsFor(SERIES, 'M-23T4')).toBe(false);
+    expect(detailIsFor(null, 'M-8TR4')).toBe(false);
+    expect(episodeByMovieId(SERIES, 'M-0S12')?.name).toBe('Episode Two');
+    expect(episodeByMovieId(SERIES, 'M-8TR4')).toBeNull();
+  });
+
+  it('a focused episode keeps its season on the page even when no machine holds a file of it', () => {
+    expect(seasonsShown(SERIES).seasons.map((s) => s.season)).toEqual([1]);
+    expect(seasonsShown(SERIES, 'M-0S21').seasons.map((s) => s.season)).toEqual([1, 2]);
   });
 });

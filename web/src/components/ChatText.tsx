@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type MouseEvent, type ReactNode } from 'react';
 import { nodeIdCandidates, segmentChat } from '../lib/chatSegments';
 import { noteHref } from '../lib/deepLink';
+import { movieIdHref } from '../lib/movies';
 import { projectsHref } from '../lib/route';
 import type { KnownNodes } from '../hooks/useKnownNodes';
 
@@ -21,6 +22,14 @@ export interface NodeLinks extends Pick<KnownNodes, 'lookup' | 'request'> {
 }
 
 export const NodeLinkContext = createContext<NodeLinks | null>(null);
+
+/** What chat text needs to link movie ids (`M-23T4`): the movie pop-up. */
+export interface MovieLinks {
+  /** Open the movie pop-up over the current page, without navigating. */
+  open: (id: string) => void;
+}
+
+export const MovieLinkContext = createContext<MovieLinks | null>(null);
 
 /** Opens the picture named by an `img:ID` (a note image) or `upload:ID` (a pasted image) written in chat text. */
 export interface ImageLinks {
@@ -45,6 +54,7 @@ export interface ChatInlineProps {
 export function ChatInline({ text, streaming = false }: ChatInlineProps) {
   const links = useContext(NoteLinkContext);
   const nodes = useContext(NodeLinkContext);
+  const movies = useContext(MovieLinkContext);
   const isKnown = links?.isKnown ?? NOBODY;
   const lookup = nodes?.lookup;
   const isKnownNode = useMemo(() => (lookup ? (id: string) => Boolean(lookup(id)) : NOBODY), [lookup]);
@@ -67,6 +77,7 @@ export function ChatInline({ text, streaming = false }: ChatInlineProps) {
         }
         if (s.kind === 'note') return <NoteLink key={j} id={s.id} text={s.text} open={links?.open ?? null} />;
         if (s.kind === 'node') return <NodeLink key={j} id={s.id} text={s.text} repo={lookup?.(s.id)?.repo ?? null} open={nodes?.open ?? null} />;
+        if (s.kind === 'movie') return <MovieLink key={j} id={s.id} text={s.text} open={movies?.open ?? null} />;
         return <PlainText key={j} text={s.text} streaming={streaming && j === segs.length - 1} />;
       })}
     </>
@@ -116,6 +127,22 @@ function NodeLink({ id, text, repo, open }: { id: string; text: string; repo: st
       data-tip="Open session"
       onClick={onClick}
     >
+      {text}
+    </a>
+  );
+}
+
+/** A real link to the title's page (`/movies/M-23T4`); a plain primary click opens the movie pop-up in place. */
+function MovieLink({ id, text, open }: { id: string; text: string; open: ((id: string) => void) | null }) {
+  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (open === null) return;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    open(id);
+  };
+  return (
+    <a className="answer-link note-link movie-link" href={movieIdHref(id)} data-movie-link={id} data-tip="Open movie" onClick={onClick}>
       {text}
     </a>
   );

@@ -131,7 +131,7 @@ describe('/open', () => {
   test('rejects a word that is not an id', async ($, on) => {
     const world = worldOf(on, MCP_7400)
     const out = await $.command.run(OPEN('e-mail'))
-    expect(out.text).toContain('"e-mail" is not a note or node id')
+    expect(out.text).toContain('"e-mail" is not a note, node or movie id')
     expect(world.runs.filter(argv => argv[0] !== 'claude')).toEqual([])
   })
 })

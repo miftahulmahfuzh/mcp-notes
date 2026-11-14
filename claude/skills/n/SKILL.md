@@ -301,8 +301,8 @@ either.
 
 ## Movies
 
-The same server keeps the user's movie and TV library: every title (id `movie-<tmdb id>` or
-`tv-<tmdb id>`; never invent one) with its TMDB metadata, studios, cast and crew; every video
+The same server keeps the user's movie and TV library: every title (movie id `M-23T4`: `M`, a
+dash, four of 0-9/A-Z; never invent one) with its TMDB metadata, studios, cast and crew; every video
 file on each laptop, with season, episode, `host`, and `deleted_at` once the user deleted it;
 and every play event (when, and to what position). A title and its history outlive its files,
 so "what did I watch" still answers after the file is gone.
@@ -338,8 +338,25 @@ so "what did I watch" still answers after the file is gone.
 - "Mark X watched", "rate X 4 stars", "my review of X: ..." → `movies_mark`. The review is a
   normal note tagged `#movie`, linked to the title; one episode's watched flag goes on its
   `file_id` (from `movies_get`).
-- When you mention a title, link it with the `url` the tool returned, e.g.
-  `[MobLand](<wall>/movies/tv-247718)`.
+- Movie ids. Every title has one (`movie_id`, e.g. `M-23T4`) and so has every episode of a
+  series, with or without a file. A note id has three characters after its dash (`A-B32`), a
+  movie id starts with `M-` and has four, so `M-0909` in a request is always a film or an
+  episode, never a note. Every `movies_*` tool takes a movie id as `title`:
+  - "What's M-0909 about?" → `movies_get` with it, then `WebSearch` for more than the synopsis.
+  - "We missed M-0T77, tell me about this episode, maybe we can skip it" → `movies_get` with
+    it: `asked.episode` is that episode (name, air date, overview, `has_file`); then
+    `WebSearch` for what happens in it and whether it is filler.
+  - "M-8TR4 is interesting, give me other movies in the same genre" → `movies_get` for its
+    genres and credits, then `WebSearch`, and check suggestions against `movies_list`.
+  - "Play M-0T77" → `movies_continue` with it plays exactly that episode.
+  - To find an episode's movie id ("One Piece episode 744"), call `movies_get` with the series
+    as `title` and `episode: 744` (and/or `season`). A long series answers with a summary per
+    season (`files_here` shows which episode numbers have a file, so a gap is a missing file)
+    until you pass `season` or `episode`.
+  Quote the movie id after the name when you mention a title or episode, as a link the user
+  can click: `MobLand (2025), [M-8TR4](<wall>/movies/M-8TR4)`. `<wall>/movies/<movie id>`
+  opens the title's page; an episode's id opens its series scrolled to that episode. It is the
+  `url` the tools return.
 - `movies_off` means the movie library is not running on this daemon; say so in one line.
 
 ## Deleting

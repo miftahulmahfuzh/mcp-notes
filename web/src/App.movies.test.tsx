@@ -13,6 +13,11 @@ const CHAT_SSE =
   'event: delta\ndata: {"text":"Watch MobLand next."}\n\n' +
   'event: done\ndata: {"thread_id":"T-1","user_message_id":"Q001","assistant_message_id":"A001","reply_to":null,"brain":"claude"}\n\n';
 
+const CHAT_SSE_IDS =
+  'event: delta\ndata: {"text":"Next up is M-0S12 of MobLand."}\n\n' +
+  'event: done\ndata: {"thread_id":"T-1","user_message_id":"Q001","assistant_message_id":"A001","reply_to":null,"brain":"claude"}\n\n';
+let chatSse: string;
+
 let calls: string[];
 let posts: { url: string; body: Record<string, unknown> | null }[];
 let off: boolean;
@@ -24,6 +29,7 @@ beforeEach(() => {
   posts = [];
   off = false;
   titles = TITLES;
+  chatSse = CHAT_SSE;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -33,7 +39,7 @@ beforeEach(() => {
       if (method === 'POST') posts.push({ url, body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null });
       if (url.startsWith('/api/notes?')) return json({ notes, next_cursor: null });
       if (url.startsWith('/api/tags')) return json([]);
-      if (method === 'POST' && url === '/api/chat') return new Response(CHAT_SSE, { headers: { 'content-type': 'text/event-stream' } });
+      if (method === 'POST' && url === '/api/chat') return new Response(chatSse, { headers: { 'content-type': 'text/event-stream' } });
       if (url.startsWith('/api/movies') && off) return json({ error: 'movies_off', message: 'off' }, 503);
       if (url === '/api/movies') return json({ titles });
       if (url === '/api/movies/status') return json(STATUS);
@@ -41,7 +47,7 @@ beforeEach(() => {
       if (url === '/api/movies/unmatched') return json({ files: UNMATCHED });
       if (url.startsWith('/api/movies/search-tmdb?')) return json({ results: SEARCH });
       if (url === '/api/movies/movie-467905') return json(MOVIE);
-      if (url === '/api/movies/tv-247718') return json(SERIES);
+      if (url === '/api/movies/tv-247718' || url === '/api/movies/M-0S12') return json(SERIES);
       if (method === 'POST' && url === '/api/movies/files/32/assign') return json({ file_id: 32, title: { ...MOVIE, id: 'movie-1125510', title: 'Ne Zha 2' } });
       if (method === 'POST' && url.startsWith('/api/movies/')) return json({}, 202);
       return new Response('not found', { status: 404 });
@@ -187,9 +193,37 @@ describe('App: Movies', () => {
     fireEvent.submit(box.closest('form') as HTMLFormElement);
     await waitFor(() => expect(postsTo('/api/chat')).toHaveLength(1));
     const message = String(postsTo('/api/chat')[0]?.message ?? '');
-    expect(message.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · movie-467905]');
+    expect(message.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4]');
     expect(message.split('\n').slice(1).join('\n')).toBe('what should I watch after this?');
     await screen.findByText('Watch MobLand next.');
+  });
+
+  it('a movie id in a chat answer opens the pop-up: the episode, Play, and the page scrolled to it', async () => {
+    chatSse = CHAT_SSE_IDS;
+    at('/movies');
+    render(<App />);
+    await screen.findByRole('list', { name: 'Posters' });
+    const box = screen.getByPlaceholderText('Ask about your movies');
+    fireEvent.change(box, { target: { value: 'what next?' } });
+    fireEvent.submit(box.closest('form') as HTMLFormElement);
+    const link = await screen.findByRole('link', { name: 'M-0S12' });
+    expect(link.getAttribute('href')).toBe('/movies/M-0S12');
+    fireEvent.click(link);
+    const dialog = await screen.findByRole('dialog', { name: 'Movie M-0S12' });
+    await within(dialog).findByRole('heading', { name: 'Episode Two' });
+    expect(within(dialog).getByText('MobLand (2025)')).toBeTruthy();
+    const e2 = SERIES.seasons[0]!.episodes[1]!;
+    fireEvent.click(dialog.querySelector('.mm-actions button') as HTMLButtonElement);
+    await waitFor(() => expect(postsTo(`/api/movies/files/${e2.file_id}/play`)).toHaveLength(1));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the page at S01E02' }));
+    await waitFor(() => expect(where()).toBe('/movies/M-0S12'));
+    expect(screen.queryByRole('dialog', { name: 'Movie M-0S12' })).toBeNull();
+    await screen.findByRole('article', { name: 'MobLand' });
+    const row = document.querySelector('[data-movie-id="M-0S12"]') as HTMLElement;
+    expect(row.dataset.focused).toBe('true');
+    expect(row.dataset.episode).toBe('S01E02');
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+    expect(h1()).toBe('MobLand.');
   });
 
   it('R5.5: the unmatched list shows each file with its reason and assigns a TMDB title', async () => {

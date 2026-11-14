@@ -7,7 +7,7 @@
  * success, so its exit code is never read (the same rule as `src/http/reveal.ts`); only a
  * failure to start moves on to the next opener.
  */
-import { normalizeId, normalizeNodeId, nodeUrl, noteUrl } from './linkify'
+import { movieUrl, normalizeId, normalizeMovieId, normalizeNodeId, nodeUrl, noteUrl } from './linkify'
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string }
 export type RunInit = { cwd?: string; timeoutMs?: number }
@@ -63,7 +63,7 @@ export async function openUrl(run: Run, url: string, openers: readonly Opener[] 
   return { isOpened: false, failures }
 }
 
-export const USAGE = 'Usage: /open <note id | node id>, for example /open A-B32 or /open BE-XU (case and the dash do not matter).'
+export const USAGE = 'Usage: /open <note id | node id | movie id>, for example /open A-B32, /open BE-XU or /open M-23T4 (case does not matter; a movie id needs its dash).'
 
 /** The id-ish word of the arguments: the first word, without a leading `#` or wrapping `` ` ``, `[ ]`. */
 export function idArgument(args: string): string {
@@ -72,19 +72,21 @@ export function idArgument(args: string): string {
 }
 
 /**
- * The text `/open` answers with; opens the browser when the argument is a note or node id. Without
+ * The text `/open` answers with; opens the browser when the argument is a note, node or movie id
+ * (`M-23T4` opens the title's page, at the episode for an episode's id). Without
  * a dash `ab32` reads as both, and stays a note (as before node ids); `ab-32` is the node.
  */
 export async function openCommand(args: string, wall: string, run: Run): Promise<string> {
   const word = idArgument(args)
   if (word === '') return USAGE
-  const note = normalizeId(word)
-  const node = note === null ? normalizeNodeId(word) : null
-  const id = note ?? node
+  const movie = normalizeMovieId(word)
+  const note = movie === null ? normalizeId(word) : null
+  const node = movie === null && note === null ? normalizeNodeId(word) : null
+  const id = movie ?? note ?? node
   if (id === null) {
-    return `"${word}" is not a note or node id. Note ids look like A-B32 and session node ids like BE-XU (the dash is optional, case does not matter).`
+    return `"${word}" is not a note, node or movie id. Note ids look like A-B32, session node ids like BE-XU (the dash is optional, case does not matter) and movie ids like M-23T4.`
   }
-  const url = node !== null ? nodeUrl(wall, node) : noteUrl(wall, id)
+  const url = movie !== null ? movieUrl(wall, movie) : node !== null ? nodeUrl(wall, node) : noteUrl(wall, id)
   const outcome = await openUrl(run, url)
   if (outcome.isOpened) return `Opened ${id} on the wall: ${url}`
   return `Could not open a browser from here (${outcome.failures.join('; ')}). Open ${url} yourself.`

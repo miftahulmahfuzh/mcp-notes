@@ -127,6 +127,18 @@ wait_q "select (count(*) >= 2)::text from movie_plays p join movie_files f on f.
 ok "VLC recents: two gone films became deleted files with observations (The Dog Stars at 4210 s)"
 grep -q ' GET /3/' "$DIR/movies/tmdb.log" || fail "the fake TMDB saw no request"
 ok "metadata came from the fake TMDB ($(grep -c ' GET /3/' "$DIR/movies/tmdb.log") requests)"
+# Movie ids: every title and every episode is tagged M-XXXX by the database, and an id opens what it names.
+api GET /api/movies
+need_2xx "GET /api/movies"
+jqb '(.titles | length) > 0 and ([.titles[].movie_id | test("^M-[0-9A-Z]{4}$")] | all)' <<<"$BODY" || fail "a title has no movie id: $BODY"
+api GET /api/movies/tv-247718
+need_2xx "GET /api/movies/tv-247718"
+jqb '[.seasons[].episodes[].movie_id | test("^M-[0-9A-Z]{4}$")] | all' <<<"$BODY" || fail "an episode has no movie id"
+EP_ID="$(jq -r '.seasons[0].episodes[1].movie_id' <<<"$BODY")"
+api GET "/api/movies/$EP_ID"
+jqb '.id == "tv-247718"' <<<"$BODY" || fail "GET /api/movies/$EP_ID did not answer its series: HTTP $CODE"
+[ "$(q "select count(*) = count(distinct id) from movie_ids")" = t ] || fail "movie ids repeat"
+ok "every title and episode has its own movie id ($(q "select count(*) from movie_ids") ids); $EP_ID opens MobLand"
 
 stage "2 posters: every title has a poster URL that loads without the files"
 api GET /api/movies

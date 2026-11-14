@@ -7,7 +7,8 @@ import type { Db } from '../db/client.js';
 import { movieFiles, movieTitles } from '../db/schema.js';
 import type { AppDeps } from '../deps.js';
 import { continueTitle, playSomething, type ContinueResult, type SomethingResult } from '../movies/continue.js';
-import { getTitle, history, listTitles, type HistoryFilter, type ReadContext, type TitleFilter, type TitleListItem } from '../movies/read.js';
+import { movieIdFor, normalizeMovieId, resolveMovieId, type MovieIdTarget } from '../movies/ids.js';
+import { getTitle, history, listTitles, type HistoryFilter, type ReadContext, type TitleDetail, type TitleFilter, type TitleListItem } from '../movies/read.js';
 import { saveReview } from '../movies/reviewNote.js';
 import { TmdbError, type TmdbClient, type TmdbPersonCredit } from '../movies/tmdb.js';
 import { titleId, type TitleKind, type WatchState } from '../movies/types.js';
@@ -149,16 +150,38 @@ function normalizedTitle(s: string): string {
 }
 
 function describeCandidate(t: TitleListItem): string {
-  return `${t.title}${t.year !== null ? ` (${t.year})` : ''} = ${t.id}`;
+  return `${t.title}${t.year !== null ? ` (${t.year})` : ''} = ${t.movie_id ?? t.id}`;
+}
+
+/** What the owner named: a title, and the episode too when they gave an episode's movie id. */
+interface ResolvedTitle {
+  titleId: string;
+  /** Set when the query was a movie id. */
+  target: MovieIdTarget | null;
+}
+
+/** resolveTitleId, keeping which episode a movie id named. */
+async function resolveTitle(db: Db, ctx: ReadContext, query: string): Promise<ResolvedTitle> {
+  const q = query.trim();
+  if (normalizeMovieId(q) !== null) {
+    const target = await resolveMovieId(db, q);
+    if (target === null) {
+      throw new MovieToolError('not_found', `no title or episode has the movie id ${normalizeMovieId(q)}. Movie ids come from these tools (movie_id); never invent one.`);
+    }
+    return { titleId: target.titleId, target };
+  }
+  return { titleId: await resolveTitleId(db, ctx, q), target: null };
 }
 
 /**
- * A title id from what the owner typed: an id (movie-467905, tv-247718, any case) is taken as is;
- * words go through the read model's text search. One hit, or one hit whose name equals the words,
- * wins; otherwise not_found / ambiguous.
+ * A title id from what the owner typed: a movie id (M-23T4, any case; an episode's id names its
+ * series) or a title id (movie-467905, tv-247718, any case) is taken as is; words go through the
+ * read model's text search. One hit, or one hit whose name equals the words, wins; otherwise
+ * not_found / ambiguous.
  */
 async function resolveTitleId(db: Db, ctx: ReadContext, query: string): Promise<string> {
   const q = query.trim();
+  if (normalizeMovieId(q) !== null) return (await resolveTitle(db, ctx, q)).titleId;
   if (TITLE_ID.test(q)) return q.toLowerCase();
   const hits = await listTitles(db, { q, limit: 6 }, ctx);
   if (hits.length === 0) {
@@ -174,6 +197,45 @@ async function resolveTitleId(db: Db, ctx: ReadContext, query: string): Promise<
     'ambiguous',
     `"${q}" fits several titles: ${hits.map(describeCandidate).join('; ')}. Call again with one id as title.`,
   );
+}
+
+/** A series with more episodes than this answers movies_get with a summary per season. */
+const BIG_SERIES_EPISODES = 60;
+const BIG_SERIES_FILES = 40;
+/** A season / episode answer carries each episode's synopsis only up to this many episodes. */
+const EPISODES_WITH_OVERVIEW = 30;
+const SEASONS_NOTE =
+  'A summary per season: files_here lists the episode numbers with a file on this machine as ranges, so a gap is a missing file. Call again with season (and/or episode, the episode number) for the episodes themselves, each with its movie_id.';
+
+type EpisodeDetail = TitleDetail['seasons'][number]['episodes'][number];
+
+/** Episode numbers as ranges: [1,2,3,7] -> "1-3, 7". */
+function ranges(numbers: readonly number[]): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const from = sorted[i]!;
+    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i]! + 1) i++;
+    out.push(from === sorted[i] ? String(from) : `${from}-${sorted[i]}`);
+  }
+  return out.join(', ');
+}
+
+function seasonSummaries(seasons: TitleDetail['seasons']) {
+  return seasons.map((s) => ({
+    season: s.season,
+    episodes: s.episodes.length,
+    first_episode: s.episodes[0]?.episode ?? null,
+    last_episode: s.episodes[s.episodes.length - 1]?.episode ?? null,
+    finished: s.episodes.filter((e) => e.state === 'finished').length,
+    files_here: ranges(s.episodes.filter((e) => e.present_here).map((e) => e.episode)),
+  }));
+}
+
+/** An episode without its per-file detail (files[] is on the title) and its still; the synopsis only when asked. */
+function slimEpisode(e: EpisodeDetail, withOverview: boolean) {
+  const { files: _files, still_url: _still, overview, ...rest } = e;
+  return withOverview ? { ...rest, overview } : rest;
 }
 
 function pad2(n: number): string {
@@ -206,8 +268,19 @@ function continueMessage(r: ContinueResult): string {
   }
 }
 
-function continueUrl(r: ContinueResult, titleUrl: (id: string) => string): string | null {
-  return r.action === 'ambiguous' || r.action === 'no_match' ? null : titleUrl(r.title.id);
+/** What a continue result is about: the episode played or missing, else the title; with its movie id and wall link. */
+async function continueLinks(db: Db, r: ContinueResult, titleUrl: (id: string) => string): Promise<{ movie_id: string | null; url: string | null }> {
+  if (r.action === 'ambiguous' || r.action === 'no_match') return { movie_id: null, url: null };
+  const ep = r.action === 'missing' ? r.missing : r.action === 'nothing' ? r.last : r.file;
+  let movieId: string | null = null;
+  try {
+    movieId =
+      (ep !== null && ep.season !== null && ep.episode !== null ? await movieIdFor(db, r.title.id, ep.season, ep.episode) : null) ??
+      (await movieIdFor(db, r.title.id));
+  } catch {
+    // VLC may already be open: a failed id lookup must not turn the answer into an error.
+  }
+  return { movie_id: movieId, url: titleUrl(movieId ?? r.title.id) };
 }
 
 type MarkRequest =
@@ -290,7 +363,7 @@ const titleField = z
   .trim()
   .min(1)
   .max(200)
-  .describe('A title id like movie-467905 or tv-247718 (from these tools; never invent one), or the title in words, e.g. "mobland".');
+  .describe('A movie id like M-23T4 (a title, or one episode of a series; from these tools, never invent one), a title id like movie-467905 or tv-247718, or the title in words, e.g. "mobland".');
 
 const dateField = (what: string) =>
   z
@@ -301,12 +374,14 @@ const dateField = (what: string) =>
 const LIST_DESCRIPTION =
   "The owner's movie and TV library (files on both laptops, titles shared). Finds titles by words in the title or synopsis (q), production company (company, e.g. \"Blumhouse\"), a person in the cast or crew (person, e.g. \"Margaret Qualley\"), kind (movie | tv), state, and the day the owner finished it (finished_from / finished_to; giving either keeps only finished titles). " +
   '"Blumhouse films I have seen this year" is company "Blumhouse" with finished_from = 1 January and finished_to = today. ' +
-  'Returns { count, titles: [{ id, kind, title, year, release_date, state, finished_at, last_played_at, rating, watched_at, companies, available, poster_url, url, ... }] }. ' +
-  "id is movie-<tmdb id> or tv-<tmdb id>; url opens the title on the owner's wall. state: finished (the watched flag, moved into a Done folder, or played to 90%), in_progress, unwatched, dropped (file deleted partway), removed_unwatched (file deleted, never played), seen (opened in VLC, position unknown). " +
+  'Returns { count, titles: [{ movie_id, id, kind, title, year, release_date, state, finished_at, last_played_at, rating, watched_at, companies, available, poster_url, url, ... }] }. ' +
+  "movie_id (M-23T4: M, a dash, four of 0-9 A-Z) is the id the owner reads and types, so quote it when you name a title, as a markdown link to its url; id (movie-<tmdb id> or tv-<tmdb id>) is the internal key; url (<wall>/movies/<movie id>) opens the title on the owner's wall, and an episode's url opens its series scrolled to that episode. state: finished (the watched flag, moved into a Done folder, or played to 90%), in_progress, unwatched, dropped (file deleted partway), removed_unwatched (file deleted, never played), seen (opened in VLC, position unknown). " +
   'Dates are ISO 8601 UTC. available: false means no file of it is on this machine. Then call movies_get for episodes, files and plays.';
 
 const GET_DESCRIPTION =
-  'One title of the owner\'s library, by id (movie-467905, tv-247718) or by name ("mobland"; a name that fits several titles answers ambiguous with the candidates\' ids). ' +
+  'One title of the owner\'s library, by movie id (M-23T4), title id (movie-467905, tv-247718) or name ("mobland"; a name that fits several titles answers ambiguous with the candidates\' ids). ' +
+  'Every title has a movie id and so has every episode of a series, with or without a file (seasons[].episodes[].movie_id). Given an episode\'s movie id ("what is M-0T77 about", "we are missing M-0T77") the answer starts with asked: { movie_id, what, episode: { season, episode, name, air_date, overview, state, has_file, present_here, ... } }, with only that episode\'s files and plays and the series as a summary per season. ' +
+  'A series with more than 60 episodes (One Piece) answers with a summary per season too (seasons[]: season, episodes, first_episode, last_episode, finished, files_here = the episode numbers with a file on this machine as ranges, so a gap is a missing file): call again with season for that season\'s episodes, or with episode for one episode number ("One Piece episode 744" is title "one piece", episode 744). ' +
   'Returns the title (title, year, release_date, overview, genres, companies, credits: directors, writers, producers, creators and cast with character names, rating 0-5, watched_at, review_note_id and the review, state, poster_url, url), ' +
   'seasons (a series: seasons[].episodes[] with season, episode, name, air_date, state, deleted and progress per episode), files (every file ever seen, deleted ones too: id, host, path, season, episode, duration_s, state, available, first_seen_at, deleted_at = when the owner deleted it, done_at = moved into a Done folder, watched_at, last_play) ' +
   'and plays (every play event, newest first: started_at, ended_at, position_s reached, duration_s, season, episode, episode_name, source "live" = VLC started by notesd or "vlc_recents" = read from VLC\'s recent list). ' +
@@ -315,15 +390,15 @@ const GET_DESCRIPTION =
 
 const HISTORY_DESCRIPTION =
   "The owner's play events across the library, newest first: { count, plays: [{ started_at, ended_at, position_s, duration_s, ratio, source, host, title_id, title, kind, file_id, season, episode, episode_name, file_deleted, file_deleted_at, url }] }. " +
-  'from / to filter on started_at ("what did I watch last night" is from = yesterday). title narrows to one title (id or name). ' +
+  'from / to filter on started_at ("what did I watch last night" is from = yesterday). title narrows to one title (movie id, title id or name). movie_id on a play is the episode that was played, or the film. ' +
   'A play outlives its file: file_deleted_at says when the file was deleted. position_s null means VLC was opened but the position is unknown. Dates are ISO 8601 UTC; positions are seconds.';
 
 const CONTINUE_DESCRIPTION =
   "Plays something in VLC on the owner's screen, on the machine that runs this server: VLC opens and notesd records the play, so call it only when the owner asked to play, resume or continue something. " +
-  'With title (id or name; "continue MobLand"): resumes the latest unfinished episode or film from where it stopped; else starts the next episode whose file is on this machine; else plays nothing and answers which next episode is missing (missing) and which later episodes are present (present). ' +
+  'With title (movie id, title id or name; "continue MobLand"): an episode\'s movie id ("play M-0T77") plays exactly that episode (resumed when it was left partway; missing when it has no file here); otherwise it resumes the latest unfinished episode or film from where it stopped; else starts the next episode whose file is on this machine; else plays nothing and answers which next episode is missing (missing) and which later episodes are present (present). ' +
   'Without title ("continue what I watched last night"): the same for the title of the newest play event. ' +
   'With random: true and no title ("play something", "I am eating dinner, play a random movie", "let\'s watch something"): the server picks one title at random among every film and series that can be played on this machine right now (a file here that is not deleted; not finished; a half-watched one resumes) and plays it, so do not list or choose titles yourself; picked_from says how many it chose among. Calling again picks again. ' +
-  'Returns { action: resumed | started | missing | nothing | ambiguous | no_match, message, title, file, position (the second it starts at), missing, present, reason, candidates, url }. ambiguous lists candidates (call again with one id); no_match means nothing fits (or, without title, nothing was ever played). ' +
+  'Returns { action: resumed | started | missing | nothing | ambiguous | no_match, message, title, file, position (the second it starts at), missing, present, reason, candidates, movie_id (the episode or film it is about), url }. ambiguous lists candidates (call again with one id); no_match means nothing fits (or, without title, nothing was ever played). ' +
   'Errors: not_on_this_machine (the file is on the other laptop: play it there), player_unavailable (VLC cannot be started here), file_missing (the library lists the file but it is not on disk: a bug, tell the owner), not_found and ambiguous (no single title matches).';
 
 const PERSON_DESCRIPTION =
@@ -335,7 +410,7 @@ const PERSON_DESCRIPTION =
   'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
 
 const MARK_DESCRIPTION =
-  "Sets the owner's own marks. On a title (title = id or name): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it) and review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review). " +
+  "Sets the owner's own marks. On a title (title = movie id, title id or name; an episode's movie id takes watched only and marks that episode): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it) and review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review). " +
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
   'Returns { title_id, title, state, watched_at, rating, review_note_id, url } after the change, plus file for file_id.';
 
@@ -384,7 +459,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         const titles = await listTitles(deps.db, filter, ctxOf(m));
         return {
           count: titles.length,
-          titles: titles.map((t) => ({ ...t, url: titleUrl(t.id) })),
+          titles: titles.map((t) => ({ ...t, url: titleUrl(t.movie_id ?? t.id) })),
           next:
             titles.length > 0
               ? 'Call movies_get with an id for episodes, files and plays; link titles with their url.'
@@ -399,17 +474,83 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
     {
       title: 'Get one movie or series',
       description: GET_DESCRIPTION,
-      inputSchema: { title: titleField },
+      inputSchema: {
+        title: titleField,
+        season: z.number().int().min(0).max(1000).optional().describe('A series only: just this season (0 = specials), with every episode of it.'),
+        episode: z
+          .number()
+          .int()
+          .min(0)
+          .max(100000)
+          .optional()
+          .describe('A series only: just the episodes with this episode number ("One Piece episode 744"), in any season, or in season when both are given.'),
+      },
       annotations: { readOnlyHint: true },
     },
-    async ({ title }) => {
+    async ({ title, season, episode }) => {
       const m = deps.movies;
       if (!m) return off();
       return answer(async () => {
-        const id = await resolveTitleId(deps.db, ctxOf(m), title);
+        const { titleId: id, target } = await resolveTitle(deps.db, ctxOf(m), title);
         const detail = await getTitle(deps.db, id, ctxOf(m));
         if (detail === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
-        return { ...detail, last_play: detail.plays[0] ?? null, url: titleUrl(detail.id) };
+        const last_play = detail.plays[0] ?? null;
+        const all = detail.seasons.flatMap((s) => s.episodes);
+        if (target !== null && target.season !== null) {
+          // An episode's movie id: that episode in full, and the series as a summary around it.
+          const episode = all.find((e) => e.season === target.season && e.episode === target.episode) ?? null;
+          const ofEpisode = <T extends { season: number | null; episode: number | null }>(rows: T[]): T[] =>
+            rows.filter((r) => r.season === target.season && r.episode === target.episode);
+          return {
+            asked: {
+              movie_id: target.movieId,
+              what: `episode S${pad2(target.season)}E${pad2(target.episode ?? 0)} of ${detail.title}`,
+              episode: episode ?? { movie_id: target.movieId, season: target.season, episode: target.episode, has_file: false, note: 'no longer in TMDB\'s episode list and no file names it' },
+            },
+            ...detail,
+            seasons: seasonSummaries(detail.seasons),
+            seasons_note: SEASONS_NOTE,
+            files: ofEpisode(detail.files),
+            unplaced_files: [],
+            plays: ofEpisode(detail.plays),
+            last_play,
+            url: titleUrl(target.movieId),
+          };
+        }
+        const url = titleUrl(detail.movie_id ?? detail.id);
+        if (season !== undefined || episode !== undefined) {
+          // One season, or one episode number: those episodes in full, their files and plays.
+          const wanted = all.filter((e) => (season === undefined || e.season === season) && (episode === undefined || e.episode === episode));
+          const keys = new Set(wanted.map((e) => `${e.season}x${e.episode}`));
+          const inWanted = <T extends { season: number | null; episode: number | null }>(rows: T[]): T[] => rows.filter((r) => keys.has(`${r.season}x${r.episode}`));
+          const withOverview = wanted.length <= EPISODES_WITH_OVERVIEW;
+          return {
+            ...detail,
+            seasons: detail.seasons
+              .map((s) => ({ season: s.season, episodes: s.episodes.filter((e) => keys.has(`${e.season}x${e.episode}`)).map((e) => slimEpisode(e, withOverview)) }))
+              .filter((s) => s.episodes.length > 0),
+            ...(wanted.length === 0 ? { seasons_note: 'No episode matches that season / episode. seasons lists what exists when you call without them.' } : {}),
+            files: inWanted(detail.files),
+            unplaced_files: [],
+            plays: inWanted(detail.plays),
+            last_play,
+            url,
+          };
+        }
+        if (all.length > BIG_SERIES_EPISODES) {
+          // A long series (One Piece: 1,200 episodes, 900 KB) would not fit in a reply: a summary per season instead.
+          return {
+            ...detail,
+            seasons: seasonSummaries(detail.seasons),
+            seasons_note: SEASONS_NOTE,
+            files: detail.files.filter((f) => !f.deleted).slice(0, BIG_SERIES_FILES),
+            files_note: `Files not deleted, at most ${BIG_SERIES_FILES}; pass season for a season's files, deleted ones included.`,
+            unplaced_files: detail.unplaced_files.slice(0, BIG_SERIES_FILES),
+            last_play,
+            url,
+          };
+        }
+        return { ...detail, last_play, url };
       });
     },
   );
@@ -443,7 +584,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (args.to !== undefined) filter.to = parseDateBound(args.to, 'to');
         if (args.title !== undefined) filter.titleId = await resolveTitleId(deps.db, ctxOf(m), args.title);
         const plays = await history(deps.db, filter);
-        return { count: plays.length, plays: plays.map((p) => ({ ...p, url: p.title_id === null ? null : titleUrl(p.title_id) })) };
+        return { count: plays.length, plays: plays.map((p) => ({ ...p, url: p.title_id === null ? null : titleUrl(p.movie_id ?? p.title_id) })) };
       });
     },
   );
@@ -475,10 +616,10 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             result.action === 'no_match'
               ? 'Nothing was played: no film or series with a file on this machine is left to watch.'
               : `Picked at random among ${candidates} playable title${candidates === 1 ? '' : 's'}. ${continueMessage(result)}`;
-          return { ...result, picked_from: candidates, message, url: continueUrl(result, titleUrl) };
+          return { ...result, picked_from: candidates, message, ...(await continueLinks(deps.db, result, titleUrl)) };
         }
         const result = await m.continueTitle(title ?? null);
-        return { ...result, message: continueMessage(result), url: continueUrl(result, titleUrl) };
+        return { ...result, message: continueMessage(result), ...(await continueLinks(deps.db, result, titleUrl)) };
       });
     },
   );
@@ -533,10 +674,13 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             ? []
             : await deps.db.select({ id: movieTitles.id }).from(movieTitles).where(inArray(movieTitles.id, ids));
         const states = new Map<string, WatchState>();
+        const movieIdOf = new Map<string, string>();
         await Promise.all(
           inLibrary.slice(0, PERSON_STATE_LOOKUPS).map(async ({ id }) => {
             const detail = await getTitle(deps.db, id, ctxOf(m));
-            if (detail !== null) states.set(id, detail.state);
+            if (detail === null) return;
+            states.set(id, detail.state);
+            if (detail.movie_id !== null) movieIdOf.set(id, detail.movie_id);
           }),
         );
         const libraryIds = new Set(inLibrary.map((r) => r.id));
@@ -549,6 +693,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             kind: c.kind,
             tmdb_id: c.tmdbId,
             title_id: id,
+            movie_id: movieIdOf.get(id) ?? null,
             title: c.title,
             release_date: c.releaseDate,
             roles: c.roles,
@@ -558,7 +703,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             state,
             seen: state !== null && SEEN_STATES.has(state),
             started: state !== null && STARTED_STATES.has(state),
-            url: inLib ? titleUrl(id) : null,
+            url: inLib ? titleUrl(movieIdOf.get(id) ?? id) : null,
             tmdb_url: `https://www.themoviedb.org/${c.kind}/${c.tmdbId}`,
           };
         });
@@ -625,11 +770,31 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             title_id: detail.id,
             title: detail.title,
             state: detail.state,
-            url: titleUrl(detail.id),
+            url: titleUrl(detail.movie_id ?? detail.id),
             file: detail.files.find((f) => f.id === req.fileId) ?? null,
           };
         }
-        const id = await resolveTitleId(deps.db, ctxOf(m), req.title);
+        const { titleId: id, target } = await resolveTitle(deps.db, ctxOf(m), req.title);
+        if (target !== null && target.season !== null) {
+          // An episode's movie id: watched goes on that episode's files, never on the whole series.
+          if (req.rating !== undefined || req.review !== undefined || req.watched === undefined) {
+            throw new MovieToolError('invalid_input', `${target.movieId} is one episode: it takes watched only. Rating and review belong to the series; pass its movie id or name.`);
+          }
+          const before = await getTitle(deps.db, id, ctxOf(m));
+          const files = (before?.files ?? []).filter((f) => f.season === target.season && f.episode === target.episode);
+          if (files.length === 0) throw new MovieToolError('not_found', `${target.movieId} has no file in the library, so there is nothing to mark.`);
+          for (const f of files) await m.setFileWatched(f.id, req.watched);
+          const after = await getTitle(deps.db, id, ctxOf(m));
+          if (after === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
+          return {
+            title_id: after.id,
+            movie_id: after.movie_id,
+            title: after.title,
+            state: after.state,
+            url: titleUrl(target.movieId),
+            episode: after.seasons.flatMap((s) => s.episodes).find((e) => e.season === target.season && e.episode === target.episode) ?? null,
+          };
+        }
         const patch: TitleUserPatch = {};
         if (req.watched !== undefined) patch.watched = req.watched;
         if (req.rating !== undefined) patch.rating = req.rating;
@@ -639,12 +804,13 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (detail === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
         return {
           title_id: detail.id,
+          movie_id: detail.movie_id,
           title: detail.title,
           state: detail.state,
           watched_at: detail.watched_at,
           rating: detail.rating,
           review_note_id: detail.review_note_id,
-          url: titleUrl(detail.id),
+          url: titleUrl(detail.movie_id ?? detail.id),
         };
       });
     },

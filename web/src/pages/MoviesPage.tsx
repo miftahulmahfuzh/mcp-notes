@@ -7,7 +7,7 @@ import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
 import { errorCode, startSync } from '../moviesApi';
-import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, moviesErrorText, moviesPillPlaceholder, NO_MOVIES_FILTER, unmatchedCount, type MoviesFilter } from '../lib/movies';
+import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, unmatchedCount, type MoviesFilter } from '../lib/movies';
 import { NO_MOVIES_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
@@ -71,8 +71,8 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
     );
   else if (route.title !== null) {
     if (store.detailError !== null) content = <MoviesEmpty text={moviesErrorText(store.detailError, route.title)} />;
-    else if (store.detail === null || store.detail.id !== route.title) content = <p className="mv-empty mv-content">loading</p>;
-    else content = <MovieDetail detail={store.detail} player={store.player} onChanged={store.refresh} onNotice={show} />;
+    else if (!detailIsFor(store.detail, route.title)) content = <p className="mv-empty mv-content">loading</p>;
+    else content = <MovieDetail detail={store.detail} player={store.player} focus={normalizeMovieId(route.title)} onChanged={store.refresh} onNotice={show} />;
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
   else if (store.titles.length === 0) content = <MoviesEmpty text={emptyLibraryText(store.status)} />;

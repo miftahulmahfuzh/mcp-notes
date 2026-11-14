@@ -73,6 +73,12 @@ describe('openCommand', () => {
     expect(calls[0]?.argv).toEqual(['explorer.exe', `${WALL}/?note=A-B32`])
   })
 
+  test('a movie id opens the title page', async () => {
+    const { run, calls } = fakeRun({ 'explorer.exe': 1 })
+    expect(await openCommand('m-23t4', WALL, run)).toBe(`Opened M-23T4 on the wall: ${WALL}/movies/M-23T4`)
+    expect(calls[0]?.argv).toEqual(['explorer.exe', `${WALL}/movies/M-23T4`])
+  })
+
   test('no argument: usage, nothing run', async () => {
     const { run, calls } = fakeRun({ 'explorer.exe': 1 })
     expect(await openCommand('   ', WALL, run)).toBe(USAGE)
@@ -82,7 +88,7 @@ describe('openCommand', () => {
   test('not an id: says what an id looks like, nothing run', async () => {
     const { run, calls } = fakeRun({ 'explorer.exe': 1 })
     const text = await openCommand('hello', WALL, run)
-    expect(text).toContain('"hello" is not a note or node id')
+    expect(text).toContain('"hello" is not a note, node or movie id')
     expect(text).toContain('A-B32')
     expect(calls).toEqual([])
   })

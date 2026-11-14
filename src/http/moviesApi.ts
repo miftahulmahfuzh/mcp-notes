@@ -18,6 +18,7 @@ import {
   type TmdbHitView,
   type UnmatchedFile,
 } from '../movies/read.js';
+import { resolveMovieId } from '../movies/ids.js';
 import { MAX_REVIEW_CHARS, saveReview } from '../movies/reviewNote.js';
 import { MoviesServiceError, type MovieChangeEvent, type MoviesService } from '../movies/service.js';
 import { TmdbError } from '../movies/tmdb.js';
@@ -71,6 +72,8 @@ const TMDB_OFF = {
 } as const;
 
 const TITLE_PATH = '/api/movies/:id{[a-z]+-[0-9]+}';
+/** A movie id (`M-23T4`, any case): the title it names, or the series of the episode it names. */
+const MOVIE_ID_PATH = '/api/movies/:movieId{[Mm]-[0-9A-Za-z]+}';
 const USER_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/user';
 const FILE_WATCHED_PATH = '/api/movies/files/:fileId{[0-9]+}/watched';
 const FILE_ASSIGN_PATH = '/api/movies/files/:fileId{[0-9]+}/assign';
@@ -274,6 +277,14 @@ export function moviesApiRoutes(
       });
     });
   });
+
+  api.get(
+    MOVIE_ID_PATH,
+    withMovies(async (c, _movies, ctx) => {
+      const target = await resolveMovieId(db, c.req.param('movieId') ?? '');
+      return target === null ? c.json({ error: 'not_found' }, 404) : detailResponse(c, target.titleId, ctx);
+    }),
+  );
 
   api.get(
     TITLE_PATH,

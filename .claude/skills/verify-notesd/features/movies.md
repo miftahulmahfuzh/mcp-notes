@@ -37,6 +37,13 @@
   which later ones are present. Without a title: the title of the newest play. MCP only:
   `random: true` ("play something") plays one title picked at random among those continue would
   play on this machine (`playSomething`, proven by `tests/integration/movies.mcp.int.test.ts`).
+- Movie ids: every title and every episode of a series (with or without a file) has an `M-23T4` id
+  (`movie_ids`, written by database triggers; `src/movies/ids.ts`). Tools, `GET /api/movies/<id>`
+  and `/movies/<id>` on the wall take one; an episode's id opens its series scrolled to that
+  episode. In wall chat an id is a link that opens the movie pop-up (Play, and a button to the
+  page); in Claude Code it is a link to the page (MCP instructions, the `note-links` mod).
+  Proof: journey stage 1, `tests/integration/movies.mcp.int.test.ts` ("movie ids"),
+  `web/src/App.movies.test.tsx` (the pop-up).
 - MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
 
