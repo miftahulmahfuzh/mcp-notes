@@ -3,6 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { defaultConnectors, registerConnectorTools } from '../connectors/register.js';
 import { registerImageTools } from './imageTools.js';
 import { registerAdversaryTools } from './adversaryTools.js';
+import { registerMovieTools } from './movieTools.js';
 import { buildInstructions } from './instructions.js';
 import { registerSessionTools } from './sessionTools.js';
 import { registerSimilarTools } from './similarTools.js';
@@ -25,6 +26,8 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerConnectorTools(server, deps.connectors ?? defaultConnectors());
   // Seer Adversarial (phase 5): read-only, reads Seer through the connector per call.
   registerAdversaryTools(server, deps);
+  // Movies (MOVIES_LIBRARY_PLAN phase 7). Answer movies_off when deps.movies is unset.
+  registerMovieTools(server, deps);
   return server;
 }
 

@@ -6,6 +6,7 @@ import { dbChatUploadSource } from '../embeddings/chatUploads.js';
 import { wallUrlForPort } from '../mcp/instructions.js';
 import { handleMcpRequest } from '../mcp/server.js';
 import type { ToolDeps } from '../mcp/tools.js';
+import { movieToolDeps } from '../mcp/movieTools.js';
 import { sessionsReadDeps, type SessionsReadOverrides } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
 import { adversaryApiRoutes } from './adversaryApi.js';
@@ -15,6 +16,8 @@ import { chatImageRoutes } from './chatImages.js';
 import { fileRoutes } from './files.js';
 import { captureRoutes } from './capture.js';
 import { imageRoutes } from './images.js';
+import { moviesApiRoutes } from './moviesApi.js';
+import { moviesPlayRoutes } from './moviesPlayApi.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
@@ -61,6 +64,7 @@ export interface CreateAppOptions {
  * free port", only known after listen) leaves it unset and the instructions fall back to 7317.
  * `sessions` is always set (building it does no I/O); `sessionOverrides` are test seams.
  * `extra.sessionResume` is passed in by createApp (shared with the resume route); mcpToolDeps never builds one.
+ * `movies` is null while the movie library is off; building it does no I/O.
  */
 export function mcpToolDeps(
   deps: AppDeps,
@@ -76,6 +80,7 @@ export function mcpToolDeps(
     chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
     sessions: sessionsReadDeps(deps, sessionOverrides),
     adversary: deps.adversary,
+    movies: movieToolDeps(deps),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };
@@ -90,8 +95,9 @@ export function mcpToolDeps(
  * and spawn hooks), sessionsApiRoutes (iteration 8 phase 7: projects, session graph, detail,
  * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
  * resume/spawn into tmux, own Origin only), adversaryApiRoutes (seer-adversarial phase 5: the Seer
- * Adversarial read model, toggle and review-now), staticRoutes (P6, last: it owns the SPA fallback; it
- * reserves /api, so the order is for clarity).
+ * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
+ * (movies-library phases 4 and 5: library, user state, sync, playback), staticRoutes (P6, last: it
+ * owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -119,6 +125,8 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', debugApiRoutes(deps));
   app.route('/', sessionResumeRoutes(deps, { resumer: sessionResume }));
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
+  app.route('/', moviesApiRoutes(deps));
+  app.route('/', moviesPlayRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

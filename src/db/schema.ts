@@ -15,6 +15,8 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -52,6 +54,10 @@ import {
  * Migration 0014 (session replies) adds `cc_session_replies` (Claude's reply to each prompt of a
  * session, redacted), `cc_session_reply_embeddings` (one vector per reply, filled in the
  * background) and `cc_sessions.replies_version`; src/sessions/repo.ts is their only writer.
+ * Migration 0017 (movies library) adds the eight `movie_*` tables: titles (TMDB data, never
+ * deleted because files are gone), their companies, people, credits and episodes, the files seen
+ * on each host (soft-deleted) and the play events (never deleted). src/movies/repo.ts
+ * (`MoviesRepo`) is their only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -950,6 +956,232 @@ export const adversaryReviews = pgTable(
   ],
 )
 
+/** The closed sets of the movie tables. The CHECK constraints below enforce the same lists. */
+export const MOVIE_TITLE_KINDS = ['movie', 'tv'] as const
+export type MovieTitleKind = (typeof MOVIE_TITLE_KINDS)[number]
+export const MOVIE_FILE_STATUSES = ['matched', 'unmatched', 'pending'] as const
+export type MovieFileStatus = (typeof MOVIE_FILE_STATUSES)[number]
+/** Why a file is not (yet) in the library. Not a CHECK: a new reason needs no migration. */
+export const MOVIE_FILE_REASONS = ['too_short', 'no_match', 'low_confidence', 'tmdb_error', 'no_tmdb_credentials', 'probe_failed'] as const
+export type MovieFileReason = (typeof MOVIE_FILE_REASONS)[number]
+export const MOVIE_FILE_SOURCES = ['scan', 'vlc_recents'] as const
+export type MovieFileSource = (typeof MOVIE_FILE_SOURCES)[number]
+export const MOVIE_PLAY_SOURCES = ['live', 'vlc_recents'] as const
+export type MoviePlaySource = (typeof MOVIE_PLAY_SOURCES)[number]
+export const MOVIE_CREDIT_ROLES = ['cast', 'director', 'writer', 'producer', 'creator'] as const
+export type MovieCreditRole = (typeof MOVIE_CREDIT_ROLES)[number]
+
+/** `movie_files.parsed`: what the filename parser read from a file's path (src/movies/parse.ts). */
+export interface MovieParsedName {
+  title: string
+  year: number | null
+  season: number | null
+  episode: number | null
+  absoluteEpisode: number | null
+  kindHint: 'movie' | 'tv' | null
+}
+
+/**
+ * One row per TMDB movie or series (migration 0017). `id` is `movie-<tmdb id>` or `tv-<tmdb id>`
+ * (a CHECK ties it to `kind` and `tmdb_id`, so no other id can be stored). TMDB columns are
+ * rewritten on every metadata fetch; `watched_at` (manual flag), `rating` and `review_note_id`
+ * are the owner's and survive a refetch. A title is never deleted because its files are gone:
+ * `movie_files.title_id` has no cascade, so deleting a title with files fails.
+ */
+export const movieTitles = pgTable(
+  'movie_titles',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    originalTitle: text('original_title').notNull(),
+    year: integer('year'),
+    releaseDate: date('release_date', { mode: 'string' }),
+    overview: text('overview').notNull().default(''),
+    /** TMDB image path (`/abc.jpg`); the URL is built from TMDB_IMAGE_BASE at read time. */
+    posterPath: text('poster_path'),
+    backdropPath: text('backdrop_path'),
+    runtimeMin: integer('runtime_min'),
+    genres: jsonb('genres').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    seasonCount: integer('season_count'),
+    episodeCount: integer('episode_count'),
+    /** The owner's manual "watched" flag for the whole title. */
+    watchedAt: timestamp('watched_at', { withTimezone: true, mode: 'date' }),
+    /** 0..5 stars. */
+    rating: smallint('rating'),
+    /** The review, a normal note (written through NotesService). Purging the note clears the link. */
+    reviewNoteId: text('review_note_id').references(() => notes.id, { onDelete: 'set null' }),
+    metadataFetchedAt: timestamp('metadata_fetched_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Full text (`simple`) over title, original title and synopsis. Never selected by the app. */
+    searchTsv: tsvector('search_tsv').generatedAlwaysAs(
+      sql`to_tsvector('simple', coalesce("title", '') || ' ' || coalesce("original_title", '') || ' ' || coalesce("overview", ''))`,
+    ),
+  },
+  (t) => [
+    uniqueIndex('movie_titles_kind_tmdb_uniq').on(t.kind, t.tmdbId),
+    index('movie_titles_search_gin').using('gin', t.searchTsv),
+    check('movie_titles_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check('movie_titles_tmdb_id_check', sql`${t.tmdbId} > 0`),
+    check('movie_titles_id_check', sql`${t.id} = ${t.kind} || '-' || ${t.tmdbId}::text`),
+    check('movie_titles_rating_check', sql`${t.rating} between 0 and 5`),
+  ],
+)
+
+/** A production company, keyed by its TMDB company id. Shared by every title it made. */
+export const movieCompanies = pgTable('movie_companies', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  logoPath: text('logo_path'),
+  originCountry: text('origin_country'),
+})
+
+/** Which companies made a title, in TMDB's order (`ord`). Replaced on every metadata fetch. */
+export const movieTitleCompanies = pgTable(
+  'movie_title_companies',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    companyId: integer('company_id')
+      .notNull()
+      .references(() => movieCompanies.id),
+    ord: integer('ord').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.titleId, t.companyId] }), index('movie_title_companies_company_idx').on(t.companyId)],
+)
+
+/** A person (cast or crew), keyed by their TMDB person id. */
+export const moviePeople = pgTable('movie_people', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  profilePath: text('profile_path'),
+})
+
+/**
+ * One credit of a person on a title: `role` cast (with `character`), director, writer, producer
+ * or creator (with TMDB's `job`). A person may hold several credits on one title. `ord` is the
+ * credit's position in the title's credit list. Replaced on every metadata fetch.
+ */
+export const movieCredits = pgTable(
+  'movie_credits',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    personId: integer('person_id')
+      .notNull()
+      .references(() => moviePeople.id),
+    role: text('role').$type<MovieCreditRole>().notNull(),
+    character: text('character'),
+    job: text('job'),
+    ord: integer('ord').notNull(),
+  },
+  (t) => [
+    index('movie_credits_person_idx').on(t.personId),
+    index('movie_credits_title_role_idx').on(t.titleId, t.role, t.ord),
+    check('movie_credits_role_check', sql`${t.role} in ('cast', 'director', 'writer', 'producer', 'creator')`),
+  ],
+)
+
+/** A series' episodes per season, from TMDB. Replaced on every metadata fetch. */
+export const movieEpisodes = pgTable(
+  'movie_episodes',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    name: text('name').notNull(),
+    airDate: date('air_date', { mode: 'string' }),
+    runtimeMin: integer('runtime_min'),
+    overview: text('overview'),
+    stillPath: text('still_path'),
+  },
+  (t) => [primaryKey({ columns: [t.titleId, t.season, t.episode] })],
+)
+
+/**
+ * One video file on one host (migration 0017). `title_id` is null while the file is unmatched or
+ * pending (a CHECK keeps `status`, `title_id` and `reason` consistent). Files are soft-deleted
+ * (`deleted_at`); a live (host, path) is unique, deleted rows may repeat it. `done_at` is the
+ * "moved into a Done folder" signal, `watched_at` the owner's manual per-file flag; either makes
+ * the file finished (src/movies/state.ts). `source` vlc_recents marks a file known only from
+ * VLC's recent list, created already deleted.
+ */
+export const movieFiles = pgTable(
+  'movie_files',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    titleId: text('title_id').references(() => movieTitles.id),
+    host: text('host').notNull(),
+    /** Absolute Linux path on `host`. */
+    path: text('path').notNull(),
+    /** Basename of `path`; with `size` it recognizes a moved file. */
+    name: text('name').notNull(),
+    size: bigint('size', { mode: 'number' }),
+    mtime: timestamp('mtime', { withTimezone: true, mode: 'date' }),
+    durationS: real('duration_s'),
+    season: integer('season'),
+    episode: integer('episode'),
+    absoluteEpisode: integer('absolute_episode'),
+    status: text('status').$type<MovieFileStatus>().notNull(),
+    reason: text('reason').$type<MovieFileReason>(),
+    parsed: jsonb('parsed').$type<MovieParsedName>(),
+    source: text('source').$type<MovieFileSource>().notNull().default('scan'),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    movedAt: timestamp('moved_at', { withTimezone: true, mode: 'date' }),
+    doneAt: timestamp('done_at', { withTimezone: true, mode: 'date' }),
+    watchedAt: timestamp('watched_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('movie_files_live_path_uniq').on(t.host, t.path).where(sql`${t.deletedAt} is null`),
+    index('movie_files_title_idx').on(t.titleId),
+    index('movie_files_name_size_idx').on(t.host, t.name, t.size),
+    check('movie_files_status_check', sql`${t.status} in ('matched', 'unmatched', 'pending')`),
+    check('movie_files_source_check', sql`${t.source} in ('scan', 'vlc_recents')`),
+    check(
+      'movie_files_match_check',
+      sql`(${t.status} = 'matched' and ${t.titleId} is not null and ${t.reason} is null) or (${t.status} <> 'matched' and ${t.titleId} is null)`,
+    ),
+  ],
+)
+
+/**
+ * One play event of a file (migration 0017): a VLC that notesd started (`live`, updated while it
+ * plays, closed with `ended_at`), or one entry of VLC's recent list (`vlc_recents`, one row per
+ * distinct position seen). `position_s` null means "opened, position unknown". Never deleted.
+ */
+export const moviePlays = pgTable(
+  'movie_plays',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    fileId: bigint('file_id', { mode: 'number' })
+      .notNull()
+      .references(() => movieFiles.id, { onDelete: 'cascade' }),
+    host: text('host').notNull(),
+    source: text('source').$type<MoviePlaySource>().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
+    startPositionS: real('start_position_s'),
+    positionS: real('position_s'),
+    durationS: real('duration_s'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('movie_plays_file_started_idx').on(t.fileId, t.startedAt.desc()),
+    index('movie_plays_started_idx').on(t.startedAt.desc()),
+    check('movie_plays_source_check', sql`${t.source} in ('live', 'vlc_recents')`),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -979,3 +1211,10 @@ export type CcPendingSpawnRow = typeof ccPendingSpawns.$inferSelect
 export type AppSettingRow = typeof appSettings.$inferSelect
 export type AdversaryReviewRow = typeof adversaryReviews.$inferSelect
 export type NewAdversaryReviewRow = typeof adversaryReviews.$inferInsert
+export type MovieTitleRow = typeof movieTitles.$inferSelect
+export type MovieCompanyRow = typeof movieCompanies.$inferSelect
+export type MoviePersonRow = typeof moviePeople.$inferSelect
+export type MovieCreditRow = typeof movieCredits.$inferSelect
+export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
+export type MovieFileRow = typeof movieFiles.$inferSelect
+export type MoviePlayRow = typeof moviePlays.$inferSelect

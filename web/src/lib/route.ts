@@ -8,12 +8,17 @@ import type { View } from '../types';
  * Claude Code links a node: the app looks up the node's repo.
  * Seer Adversarial (seer-adversarial phase 6): `/adversary` (overview) and `/adversary/<strategy_id>`
  * (one roster method, the id exactly as Seer stores it), each with `?focus=1` for focus mode.
+ * Movies (movies-library phase 6): `/movies` (the poster grid), `/movies/<title id>` (`movie-<n>` /
+ * `tv-<n>`, never altered) and `/movies/unmatched` (the files that matched no title).
  * The wall and the bin have no path of their own: they live at `/` (and `/?note=<id>` deep links,
- * lib/deepLink.ts), so leaving the history, projects or adversary page pushes `/` and nothing else is touched.
+ * lib/deepLink.ts), so leaving the history, projects, adversary or movies page pushes `/` and nothing else is touched.
  */
 export const HISTORY_PATH = '/history';
 export const PROJECTS_PATH = '/projects';
 export const ADVERSARY_PATH = '/adversary';
+export const MOVIES_PATH = '/movies';
+/** `/movies/unmatched`. Title ids are `movie-<n>` / `tv-<n>`, so this segment never names a title. */
+export const MOVIES_UNMATCHED_SEGMENT = 'unmatched';
 
 export interface Route {
   history: boolean;
@@ -41,6 +46,19 @@ function pathOf(loc: Loc): string {
 function param(search: string, key: string): string | null {
   const v = new URLSearchParams(search).get(key);
   return v !== null && v.trim() !== '' ? v.trim() : null;
+}
+
+/** The one segment after `<base>/`, decoded and trimmed: '' for the bare base, null when the path is not `<base>[/<one segment>]`. */
+function oneSegment(p: string, base: string): string | null {
+  if (p === base) return '';
+  if (!p.startsWith(`${base}/`)) return null;
+  const rest = p.slice(base.length + 1);
+  if (rest === '' || rest.includes('/')) return null;
+  try {
+    return decodeURIComponent(rest).trim();
+  } catch {
+    return null;
+  }
 }
 
 /** What the URL asks for. A trailing slash is tolerated; an empty `thread` is no thread. */
@@ -88,19 +106,9 @@ export const NO_ADVERSARY_ROUTE: AdversaryRoute = { strategy: null, focus: false
 
 /** The adversary route, or null when the URL is not `/adversary[/<id>]`. A deeper path is not this page. */
 export function adversaryRouteFromLocation(loc: Loc): AdversaryRoute | null {
-  const p = pathOf(loc);
-  const focus = param(loc.search, 'focus') === '1';
-  if (p === ADVERSARY_PATH) return { strategy: null, focus };
-  if (!p.startsWith(`${ADVERSARY_PATH}/`)) return null;
-  const rest = p.slice(ADVERSARY_PATH.length + 1);
-  if (rest === '' || rest.includes('/')) return null;
-  let id: string;
-  try {
-    id = decodeURIComponent(rest).trim();
-  } catch {
-    return null;
-  }
-  return { strategy: id === '' ? null : id, focus };
+  const id = oneSegment(pathOf(loc), ADVERSARY_PATH);
+  if (id === null) return null;
+  return { strategy: id === '' ? null : id, focus: param(loc.search, 'focus') === '1' };
 }
 
 export function adversaryHref(r: AdversaryRoute): string {
@@ -109,9 +117,34 @@ export function adversaryHref(r: AdversaryRoute): string {
 }
 
 /**
+ * What `/movies` asks for: the grid (`title` null, `unmatched` false), one title, or the unmatched
+ * list. The parser never builds `title` and `unmatched` together; `moviesHref` gives `unmatched` precedence.
+ */
+export interface MoviesRoute {
+  title: string | null;
+  unmatched: boolean;
+}
+
+export const NO_MOVIES_ROUTE: MoviesRoute = { title: null, unmatched: false };
+
+/** The movies route, or null when the URL is not `/movies[/<title id> | /unmatched]`. A deeper path is not this page. */
+export function moviesRouteFromLocation(loc: Loc): MoviesRoute | null {
+  const seg = oneSegment(pathOf(loc), MOVIES_PATH);
+  if (seg === null) return null;
+  if (seg === '') return { title: null, unmatched: false };
+  if (seg === MOVIES_UNMATCHED_SEGMENT) return { title: null, unmatched: true };
+  return { title: seg, unmatched: false };
+}
+
+export function moviesHref(r: MoviesRoute): string {
+  if (r.unmatched) return `${MOVIES_PATH}/${MOVIES_UNMATCHED_SEGMENT}`;
+  return r.title ? `${MOVIES_PATH}/${encodeURIComponent(r.title)}` : MOVIES_PATH;
+}
+
+/**
  * The URL to push so the address bar matches `view`, or null when it already does. Wall and bin
- * accept any non-history, non-projects, non-adversary URL as it is (a `/?note=` link stays put); only
- * leaving `/history`, `/projects` or `/adversary` pushes `/`.
+ * accept any non-history, non-projects, non-adversary, non-movies URL as it is (a `/?note=` link stays put);
+ * only leaving `/history`, `/projects`, `/adversary` or `/movies` pushes `/`.
  */
 export function hrefForView(
   view: View,
@@ -119,12 +152,15 @@ export function hrefForView(
   loc: Loc,
   projects: ProjectsRoute = NO_PROJECT_ROUTE,
   adversary: AdversaryRoute = NO_ADVERSARY_ROUTE,
+  movies: MoviesRoute = NO_MOVIES_ROUTE,
 ): string | null {
   const r = routeFromLocation(loc);
   const p = projectsRouteFromLocation(loc);
   const a = adversaryRouteFromLocation(loc);
+  const m = moviesRouteFromLocation(loc);
   if (view === 'history') return r.history && r.thread === thread ? null : historyHref(thread);
   if (view === 'projects') return p !== null && p.repo === projects.repo && p.node === projects.node && p.focus === projects.focus ? null : projectsHref(projects);
   if (view === 'adversary') return a !== null && a.strategy === adversary.strategy && a.focus === adversary.focus ? null : adversaryHref(adversary);
-  return r.history || p !== null || a !== null ? '/' : null;
+  if (view === 'movies') return m !== null && moviesHref(m) === moviesHref(movies) ? null : moviesHref(movies);
+  return r.history || p !== null || a !== null || m !== null ? '/' : null;
 }

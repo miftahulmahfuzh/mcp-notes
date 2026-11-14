@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-12
-**Total Active Tasks**: 8
+**Last Updated**: 2026-11-14
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 5
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 92
+- Completed: 106
 
 ---
 
@@ -86,6 +86,161 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A109** Phase 8: Docs, feature map, verify fixtures, live config
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `CLAUDE.md` (architecture paragraph), `README.md` (tour, HTTP API and MCP tables, completed env rows), `.claude/skills/verify-notesd/features/movies.md` and its README row, movie fixtures for `verify.sh` (generated video tree, fake TMDB, fake VLC), and a documented step that adds the roots, `NOTESD_VLC_INI` and the Done dir to the live `/home/miftah/mcp-notes/.env.local` (appended only if absent). Does not touch product code, except a verify-harness seam a journey cannot do without. Exit criteria: the feature map's journeys run green on a throwaway daemon; docs name every env var, route and tool that exists (phase 9's included). J4 and the VLC-survives-restart check are post-merge only: J4 is `pending` before the merge and R7.1 is judged on J1-J3.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 8 of 9)
+  - **Satisfies**: R7 — ORDER 1. Scanner, filename parser, TMDB, grid + detail page (rating, review, watched flag, pill bar). 2. VLC play/resume ... · criteria: R7.1
+  - **Depends on**: P1-NOTES-A107, P1-NOTES-A108, P1-NOTES-A110
+  - **Plan**: `.workflows/plan/P1-NOTES-A109.md`
+  - **Completed**: 2026-11-14 16:00
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/movies/make-fixtures.sh, .claude/skills/verify-notesd/scripts/movies/tmdb.json, .claude/skills/verify-notesd/scripts/movies/fake-tmdb.mjs, .claude/skills/verify-notesd/scripts/movies/fake-vlc.mjs, .claude/skills/verify-notesd/scripts/movies/vlc-qt-interface.ini, .claude/skills/verify-notesd/scripts/movies/journey.sh, .claude/skills/verify-notesd/scripts/movies/ui-library.mjs, .claude/skills/verify-notesd/scripts/movies/doc-check.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/README.md, CLAUDE.md, README.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-154856-433001/evidence (J2), /home/miftah/.local/state/notesd-verify/1114-154935-441164/evidence (neighbor); J4 and the two post-deploy checks pending (post-merge only)
+  - **Drift**: src/mcp/movieTools.ts registers tools through constants destructured from MOVIE_TOOL_NAMES, not literal registerTool('movies_…'), so the plan's doc-check grep found 0 tools; a comment in src/http/moviesApi.ts contains the literal '/api/movies/*', which the plan's grep read as a route.
+    Plan Step 9e capabilities key: landed key is movies_playback (README row worded from src/http/reveal.ts).
+  - **Decided**: doc-check tool/route detection vs landed code → doc-check reads names from MOVIE_TOOL_NAMES in src/chat/status.ts (and checks movieTools.ts registers that many) and ignores '/api/movies' literals containing '*' (rung 2: exit criteria — doc-check OK against landed code; product code untouched)
+    Index names worktree movies-library / branch feature/movies-library; ran in movies-library-p8 / phase-8-movies-library (rung 5: swarm launch; coordinator integrates the phase branch)
+    Step 10 (live .env.local, db:migrate, install.sh) not run: post-merge only, left to the lander (rung 2: phase exit criteria; index Decisions row 'Phase 8 J4')
+
+- [x] **P1-NOTES-A107** Phase 6: Web: Movies page, grid, detail, unmatched, pill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under `web/src` named in the contract, plus `Rail.tsx`, `Sidebar.tsx`, `Header.tsx`, `App.tsx`, `lib/route.ts`, `types.ts`, `styles.css` edits and their jsdom tests. Does not touch the server. Exit criteria: the rail icon toggles the page; grid, detail (movie and series), unmatched list with assign, stars, watched, review, play/resume (disabled with a tip when playback is unavailable or the file is on another host), deleted flags and the pill all work against the phase 4 and 5 routes; back/forward and deep links work.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 6 of 9)
+  - **Satisfies**: R5 — UI - Movies page: poster grid gallery; click opens movie-detail-page (release date, synopsis, studios, producer/writer, cast ... · criteria: R5.1, R5.2, R5.3, R5.4, R5.5
+  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A107.md`
+  - **Completed**: 2026-11-14 15:31
+  - **Method**: /implement
+  - **Files**: web/src/types.ts, web/src/lib/route.ts, web/src/lib/route.test.tsx, web/src/moviesApi.ts, web/src/hooks/useMovies.ts, web/src/hooks/useMovies.test.tsx, web/src/lib/movies.ts, web/src/lib/movies.test.tsx, web/src/testing/movieFixtures.ts, web/src/components/movies/Movies.css, web/src/components/movies/Poster.tsx, web/src/components/movies/Poster.test.tsx, web/src/components/movies/PosterTile.tsx, web/src/components/movies/MoviesGrid.tsx, web/src/components/movies/MovieDetail.tsx, web/src/components/movies/Stars.tsx, web/src/components/movies/ReviewField.tsx, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/parts.tsx, web/src/components/movies/UnmatchedList.tsx, web/src/components/movies/AssignDialog.tsx, web/src/components/movies/MoviesPill.tsx, web/src/pages/MoviesPage.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/components/Header.tsx, web/src/components/Rail.test.tsx, web/src/App.tsx, web/src/App.movies.test.tsx
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-152956-347840/evidence
+  - **Drift**: None in code: every plan anchor (App.tsx line numbers, whole-file replacements of route.ts, Rail.tsx, Sidebar.tsx, Header.tsx) matched the tree exactly.
+    The plan's commands name the worktree /home/miftah/.worktrees/mcp-notes/movies-library; the swarm ran this phase in movies-library-p6 on branch phase-6-movies-library.
+  - **Decided**: Index names worktree movies-library / branch feature/movies-library but the session was launched in movies-library-p6 / phase-6-movies-library → implemented here (rung 6: swarm.py launched this phase in its own wave worktree with phases 4 and 5 merged in)
+- [x] **P1-NOTES-A108** Phase 7: MCP tools, chat bar allow-list, `/n` skill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/mcp/movieTools.ts`, registration in `src/mcp/server.ts`, `ToolDeps.movies` + `mcpToolDeps` in `src/http/app.ts` (`movies_continue` drives `deps.moviesPlayer`), `MOVIE_TOOL_NAMES` + `allowedChatTools` in `src/chat/status.ts`, the subsystem sentence in `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `claude/skills/n/SKILL.md`, MCP integration tests. Does not touch routes, web, the player's internals. Exit criteria: the six tools answer over `/mcp` against seeded data, including a deleted series' last watched episode and a company-in-year list; `movies_person` marks seen entries; the chat allow-list contains the tools.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 7 of 9)
+  - **Satisfies**: R6 — MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R6.1, R6.2, R6.3, R6.4, R6.5
+  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A108.md`
+  - **Completed**: 2026-11-14 15:32
+  - **Method**: /implement
+  - **Files**: src/mcp/movieTools.ts, src/mcp/tools.ts, src/mcp/server.ts, src/http/app.ts, src/chat/status.ts, src/chat/prompt.ts, src/mcp/instructions.ts, claude/skills/n/SKILL.md, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/chat-prompt.test.ts, tests/unit/mcp.movieTools.test.ts, tests/integration/helpers/moviesMcpSeed.ts, tests/integration/movies.mcp.int.test.ts
+  - **Proof**: verified-after-fix — 8 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-152951-347311/evidence
+  - **Drift**: Worktree/branch is the swarm's per-phase one (movies-library-p7 / phase-7-movies-library), not the index's feature/movies-library.
+    No code drift: every Requires shape matched phases 1-5 as landed; plan code blocks applied verbatim.
+  - **Decided**: J2 text says the files array has three entries, but the plan's own verify seed inserts two MobLand files → judged on the seed (9003, 9004 deleted; last_play S1E2 Alternative Fuel) (rung 3: code block over prose; the three-file case is asserted in the integration test)
+    J4/J5 first answered present: [] because the plan's seeded path /v/Gap.S01E03.mkv is not on disk and continueTitle checks disk → pointed seed row 9006 at a real empty file and re-ran; pass criteria unchanged, now missing E2 / present E3, play count still 5 (rung 2: exit criteria). Phase 8's feature-map copy of these journeys needs a real file for that row.
+- [x] **P1-NOTES-A110** Phase 9: VLC health log, hang detection, crash incidents
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/vlc/health.ts` (process sampler through an injectable `ProcessLister`, the append-only per-host log `<dataDir>/movies/vlc-health-<host>.jsonl` with synchronous append and rotation, heartbeat/clean-stop marker, `HealthMonitor`), `src/movies/vlc/incidents.ts` (unclean previous stop -> Windows event log through an injectable `EventLogReader` -> one incident record), the hang rule in `src/movies/player.ts`, `vlc.healthMs`/`vlc.extraArgs` in `src/config.ts` and `vlc/launch.ts`, `GET /api/movies/player/health`, `AppDeps.moviesHealth`, the monitor block in `src/daemon.ts`, README env rows, tests with fake lister / fake event log. Does not touch web, MCP, `src/chat`, `app.ts`, `repo.ts`, the schema; never kills, pauses or restarts a VLC. Exit criteria: samples are appended for notesd-started and foreign VLCs; killing the daemon without a clean stop and restarting writes one incident with the fake event log's entries; a silent HTTP interface with a live pid records a hang and no play is lost; extra args reach the launch line; the health route returns samples and incidents; with no roots or `NOTESD_VLC_HEALTH_MS=0` nothing is sampled. J6 is WSL-only (`inconclusive` off WSL); J8 is the owner's manual post-deploy check.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 9 of 9)
+  - **Satisfies**: R8 — the WSL terminal crashed again. i am pretty sure this is caused by windows's VLC that i paused for several minutes ... · criteria: R8.1, R8.2, R8.3, R8.4, R8.5
+  - **Depends on**: P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A110.md`
+  - **Completed**: 2026-11-14 15:45
+  - **Method**: /implement
+  - **Files**: README.md, src/config.ts, src/daemon.ts, src/deps.ts, src/http/moviesPlayApi.ts, src/movies/player.ts, src/movies/vlc/launch.ts, src/movies/vlc/health.ts, src/movies/vlc/incidents.ts, tests/fixtures/movies/fake-vlc.mjs, tests/fixtures/movies/fake-windows.mjs, tests/unit/config.test.ts, tests/unit/movies/vlc.extraArgs.test.ts, tests/unit/movies/vlc.health.test.ts, tests/unit/movies/vlc.incidents.test.ts, tests/unit/movies/player.hang.test.ts, tests/integration/movies.health.int.test.ts, tests/integration/movies.healthCrash.int.test.ts
+  - **Proof**: verified-after-fix — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-153214-363914/evidence
+  - **Decided**:
+    - health-off log line: plan's health.ts says '(NOTESD_VLC_HEALTH_MS=0 or no NOTESD_MOVIES_ROOTS)', plan's unit test expected '(NOTESD_VLC_HEALTH_MS=0)' → kept the code, updated the test's expected string (rung 1: invariant 5 as reconciled in row 31, 'the startup line says so')
+    - movies.healthCrash.int test env had NOTESD_MOVIES_ROOTS='' which keeps the sampler off under invariant 5 → test now gives the daemons an empty root dir + NOTESD_MOVIES_SCAN_MS=86400000, as the plan's J7 harness setup does (rung 1: invariant 5; assertions unchanged)
+- [x] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/read.ts`, `reviewNote.ts`, the body of `src/http/moviesApi.ts`, `tests/integration/helpers/moviesSeed.ts`, integration tests over HTTP. Does not touch `src/http/app.ts`, `moviesPlayApi.ts`, `src/movies/repo.ts`, VLC, web, MCP. Exit criteria: every route in the contract answers; a title detail carries state per file/episode, `available` per file and `poster_url`; assigning an unmatched file moves it into the library; watched/rating/review persist and the review is a real note; 503 `movies_off` without a service.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 4 of 9)
+  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.5, R2.4, R3.6, R3.7
+  - **Depends on**: P1-NOTES-A104
+  - **Plan**: `.workflows/plan/P1-NOTES-A105.md`
+  - **Completed**: 2026-11-14 15:16
+  - **Method**: /implement
+  - **Files**: src/http/moviesApi.ts, src/movies/read.ts, src/movies/reviewNote.ts, tests/unit/movies/reviewNote.test.ts, tests/integration/helpers/moviesSeed.ts, tests/integration/movies.api.int.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-151500-286132/evidence
+  - **Drift**: read.ts: plan cast `row.parsed as ParsedName` (type not imported); used the column's own ParsedNameRecord type (reconciliation row 15)
+    moviesSeed.ts: landed TmdbSearchHit has a releaseDate field; added it to SEARCH_HITS
+    landed posterUrl() accepts a null path and returns string | null; call sites unchanged
+  - **Decided**: Plan's sentinel-route test called app.get() after the first request, which Hono rejects ('matcher is already built') → sentinel registered before the first request, still after the movies router mount, same assertions (rung 3: the code block's intent; test-only, no assertion loosened)
+- [x] **P1-NOTES-A106** Phase 5: VLC playback: launch, live tracking, recents backfill, continue
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/vlc/*`, `player.ts`, `continue.ts`, the body of `src/http/moviesPlayApi.ts`, `movies_playback` in `/api/capabilities` (`src/http/reveal.ts`), `AppDeps.moviesPlayer`, building the player and registering `recentsSyncHook` in `src/daemon.ts`, unit tests with fake launcher/status reader/ini, an integration test with a fake VLC and its fixtures/helpers. Does not touch `moviesApi.ts`, `read.ts`, `repo.ts`, `app.ts`, web, MCP. Exit criteria: play launches the (fake) VLC with the Windows path, `--no-one-instance`, `--extraintf http`, loopback host, our port and a per-launch password, confirms `playing`, seeks to the resume position, polls into one play event and closes it when the process is gone; `changed` is emitted on play start and end only; under systemd VLC runs in its own `systemd-run --user --scope`; recents entries become observations, also for a file that no longer exists; continue picks resume / next present / missing as specified and accepts an exact title id.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 5 of 9)
+  - **Satisfies**: R3, R4, R6 — R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ...; R4: PLAYBACK + PROGRESS (most important feature) - VLC is Windows-only: /mnt/c/Program Files/VideoLAN/VLC/vlc.exe (no WSL vlc) ...; R6: MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R3.7, R4.1, R4.2, R4.3, R4.4, R4.5, R6.1, R6.2
+  - **Depends on**: P1-NOTES-A104
+  - **Plan**: `.workflows/plan/P1-NOTES-A106.md`
+  - **Completed**: 2026-11-14 15:16
+  - **Method**: /implement
+  - **Files**: src/movies/vlc/launch.ts, src/movies/vlc/http.ts, src/movies/vlc/recents.ts, src/movies/player.ts, src/movies/continue.ts, src/http/moviesPlayApi.ts, src/http/reveal.ts, src/deps.ts, src/daemon.ts, tests/integration/reveal.int.test.ts, tests/fixtures/movies/fake-vlc.mjs, tests/fixtures/movies/memVlc.ts, tests/fixtures/movies/rows.ts, tests/integration/helpers/moviesPlaySeed.ts, tests/unit/movies/vlc.launch.test.ts, tests/unit/movies/vlc.http.test.ts, tests/unit/movies/vlc.recents.test.ts, tests/unit/movies/player.test.ts, tests/unit/movies/continue.test.ts, tests/integration/movies.play.int.test.ts, tests/integration/movies.continue.int.test.ts, tests/integration/movies.recents.int.test.ts
+  - **Proof**: verified-after-fix — 11 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-151306-275241/evidence (J9, J10), /home/miftah/.local/state/notesd-verify/1114-151354-281082/evidence (J11)
+  - **Drift**: A previous phase-5 session was interrupted; its 18 whole-file drafts were byte-identical to the plan's code blocks and were kept. Steps 8 and 9 (reveal.ts, deps.ts, daemon.ts, reveal.int.test.ts) were applied in this session.
+    The plan listed one capabilities assertion in tests/integration/reveal.int.test.ts; a second one ('capabilities follow detect') also asserted the old exact body { reveal } and failed in the first full test:int run.
+  - **Decided**: Second exact-body capabilities assertion in reveal.int.test.ts the plan did not list → updated to the new exact body { reveal, movies_playback: false }, strict toEqual kept (rung 3: the plan's code block changes the capabilities body)
+- [x] **P1-NOTES-A104** Phase 3: Library sync: scan, diff, match, store, background service
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/scan.ts`, `sync.ts`, the real `service.ts` (`MoviesService`, `buildMoviesService`, `MovieEvents`, `assign`, `addSyncHook`), the re-export replacing phase 2's mirrored types in `tmdb.ts`, building it in `src/daemon.ts`, starting/closing it in `src/background.ts`, unit tests with fake fs/ffprobe/TMDB and an integration test over a temp directory. Does not touch routes, VLC, web, MCP. Exit criteria: a pass over a fixture tree registers matched files, lists short/no-match files as unmatched (short ones without a TMDB call), groups a season folder under one `tv-` title, detects delete, move and done; files under no configured root are never judged; a TMDB outage leaves files `pending` and the next pass matches them, one title's 404 leaves only that file pending; unmatched files are never re-matched; nothing runs with `NOTESD_MOVIES=off` or empty roots.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 3 of 9)
+  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.1, R1.2, R1.4, R2.1, R2.3, R3.1, R3.2, R3.3, R3.5
+  - **Depends on**: P1-NOTES-A102, P1-NOTES-A103
+  - **Plan**: `.workflows/plan/P1-NOTES-A104.md`
+  - **Completed**: 2026-11-14 14:07
+  - **Method**: /implement
+  - **Files**: src/movies/tmdb.ts, src/movies/scan.ts, src/movies/sync.ts, src/movies/service.ts, src/daemon.ts, src/background.ts, tests/unit/movies/scan.test.ts, tests/unit/movies/sync.helpers.test.ts, tests/unit/movies/service.test.ts, tests/integration/helpers/movieMeta.ts, tests/integration/movies.sync.int.test.ts
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-140623-156253/evidence
+  - **Drift**: tests/integration/helpers/movieMeta.ts: dropped `ord: 0` from the credit literals — phase 1's CreditMeta has no `ord` (array order), as the index's reconciliation row 1 says
+    tests/integration/movies.sync.int.test.ts: the fake resolver's matched result gained `source: 'filename', matchedTitle` — phase 2's MatchResult requires them
+    src/daemon.ts: the deps literal had `movies: null` before `sessionEvents` rather than last; replaced in place
+- [x] **P1-NOTES-A102** Phase 1: Foundation: schema, repo, state, config, seams
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `drizzle/0017_movies.sql` + `drizzle/meta`; the `movie_*` tables in `src/db/schema.ts`; `src/movies/types.ts` (the one `TitleMetadata` definition), `state.ts`, `repo.ts` (every method any phase calls, `closeOpenPlays` and `findTrackedFile` for phase 5 included; no later phase edits this file); `MoviesConfig`/`parseMovies`/`DEFAULT_MOVIES_CONFIG` in `src/config.ts`; `movies: MoviesService | null` in `AppDeps` as a forward type (a minimal `src/movies/service.ts` exporting only the `MoviesService` interface shape phase 3 will implement, `deps.movies = null` in `src/daemon.ts` and every test builder of `AppDeps`); empty `src/http/moviesApi.ts` and `src/http/moviesPlayApi.ts` routers mounted in `src/http/app.ts`; the README env table rows; unit tests for `state.ts` and config; integration tests for the migration and `MoviesRepo` (including the "company finished in a date range" query of R3.8). Exit criteria: migration applies on the test database; `MoviesRepo` round-trips titles with companies, credits and episodes, files and plays; `fileState` covers every state; `NOTESD_MOVIES_FALLBACK_MODEL=off` parses to `fallbackModel: null`; typecheck and both test suites pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 1 of 9)
+  - **Satisfies**: R3 — DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, season/episode, first_seen, deleted_at), play events (file, started/ended, position, duration). Studios and people are real rows so "Blumhouse films I saw this year" is a plain query. - Series collapse into one title/detail page with per-episode progress and per-episode deleted flag. - Sync detects new files and deleted files. A move (e.g. Telegram Desktop -> Videos/Done, matched by name+size) is NOT a delete. A move into Videos/Done is a "finished" signal (owner: usually, not always). - Deleted is not the same as watched; derive state from last position: deleted at >= 90% or manually flagged = finished; deleted partway = dropped; deleted at 0% = removed unwatched. Detail page shows a deleted flag. - User state: manual "watched" flag (covers the 95%-skipping-credits case), rating 0-5 stars, optional review. Review is a normal note linked to the title (search, revisions, /n for free) shown as one text field on the detail page; rating is a column. - Files and VLC are per-host: Play works only on the owning machine (available:false / not_on_this_machine pattern, same as photos). · criteria: R3.4, R3.8
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A102.md`
+  - **Completed**: 2026-11-14 13:52
+  - **Method**: /implement
+  - **Files**: .workflows/todos.md, .workflows/plan/P1-NOTES-A102.md, README.md, drizzle/0017_movies.sql, drizzle/meta/0017_snapshot.json, drizzle/meta/_journal.json, src/config.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/http/app.ts, src/http/moviesApi.ts, src/http/moviesPlayApi.ts, src/movies/types.ts, src/movies/state.ts, src/movies/repo.ts, src/movies/service.ts, tests/integration/setup.ts, tests/integration/movies.schema.int.test.ts, tests/integration/movies.repo.int.test.ts, tests/integration/connectors/mcp.int.test.ts, tests/integration/daemon.int.test.ts, tests/integration/embeddings.worker.int.test.ts, tests/integration/helpers/api-harness.ts, tests/integration/imageHarness.ts, tests/integration/images.int.test.ts, tests/integration/mcp.tools.int.test.ts, tests/integration/related.int.test.ts, tests/integration/sessions.ingest.int.test.ts, tests/integration/sessions.replyEmbeddings.int.test.ts, tests/unit/config.test.ts, tests/unit/embeddings/embedBackfillCli.test.ts, tests/unit/movies/state.test.ts, tests/unit/movies/types.test.ts
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-135117-116833/evidence
+  - **Drift**:
+    - Applied in the swarm's per-phase worktree movies-library-p1 / branch phase-1-movies-library, not the index's movies-library / feature/movies-library (same base commit 3a11b40).
+    - Generated index SQL reads `"started_at" DESC NULLS LAST` (drizzle-kit's output) where the plan wrote `DESC`; same ordering in Postgres, not hand-edited.
+    - Plan Step 11's sed script relies on shell word-splitting of $FILES; run under bash (zsh does not split). Per-file counts matched the plan.
+  - **Decided**:
+    - Index names worktree movies-library, session was spawned in movies-library-p1 → proceeded in the per-phase worktree (rung 6: swarm ledger convention, wave branches merged by the integrator)
+    - Step 3 creates every phase's task, phase 2 was doing the same concurrently → created only phase 1's task P1-NOTES-A102 here (tie-break: narrower blast radius); coordinator confirmed A102 and resolves the todos.md overlap at integration
+- [x] **P1-NOTES-A103** Phase 2: Filename parser, TMDB client, matcher, Haiku fallback
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/parse.ts`, `tmdb.ts`, `match.ts`, `fallback.ts`, their unit tests, `tests/helpers/tmdbFixtures.ts` and TMDB JSON fixtures under `tests/fixtures/movies/`. `tmdb.ts` declares a field-for-field mirror of phase 1's `types.ts` types (same wave); phase 3 replaces it with a re-export. Does not touch the database, config (takes a plain `{ token, apiKey, apiBase }`), scanning, routes, web; no network in tests. Exit criteria: every filename listed in the request parses to the expected title/year/season/episode (table-driven test with the real names); `tvDetails` returns episodes for every season; a low-confidence search goes to the fallback; an unreachable TMDB raises `TmdbError`.
+  - **Status**: complete
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 2 of 9)
+  - **Satisfies**: R1, R2 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ... · criteria: R1.3, R2.1, R2.2
+  - **Plan**: `.workflows/plan/P1-NOTES-A103.md`
+  - **Completed**: 2026-11-14 13:49
+  - **Method**: /implement
+  - **Files**: src/movies/parse.ts, src/movies/tmdb.ts, src/movies/match.ts, src/movies/fallback.ts, tests/helpers/tmdbFixtures.ts, tests/fixtures/movies/filenames.ts, tests/fixtures/movies/movie-467905.json, tests/fixtures/movies/tv-247718.json, tests/fixtures/movies/tv-247718-season-1.json, tests/fixtures/movies/tv-247718-season-2.json, tests/fixtures/movies/search-movie-how-to-make-a-killing.json, tests/fixtures/movies/search-tv-mobland.json, tests/fixtures/movies/search-person-margaret-qualley.json, tests/fixtures/movies/person-1392137-combined-credits.json, tests/unit/movies/parse.test.ts, tests/unit/movies/tmdb.test.ts, tests/unit/movies/fallback.test.ts, tests/unit/movies/match.test.ts
+  - **Proof**: verified-first-pass — 4 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-movies-library-p2/01350057-20f0-4146-bc68-1578e79e7b41/scratchpad/proof-p2
+  - **Drift**:
+    - The plan's commands name worktree /home/miftah/.worktrees/mcp-notes/movies-library; this phase ran in the swarm's per-phase worktree movies-library-p2. Code blocks were applied verbatim (extracted mechanically from the plan), no code drift.
+  - **Decided**:
+    - Index names worktree movies-library / feature/movies-library, session launched in movies-library-p2 / phase-2-movies-library -> proceeded here (rung 6: swarm .runtime.json records this cwd for phase 2)
+    - Task package -> repo root .workflows/todos.md (NOTES counter), not a new src/movies/.workflows (rung 6: every earlier plan set in this repo is tracked there)
+    - TaskIDs: phase 1 = P1-NOTES-A102 reused from the phase 1 session, phases 2-9 = A103-A110 minted here; phase 1's worktree holds only its own entry, so todos.md will conflict at integration: keep this worktree's 9-entry block, with phase 1's status taken from phase 1
 - [x] **P1-NOTES-A101** Phase 4: Context Rot view in the node panel
   - **Difficulty**: NORMAL
   - **Type**: Feature

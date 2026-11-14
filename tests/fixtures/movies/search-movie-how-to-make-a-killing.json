@@ -1,0 +1,9 @@
+{
+  "page": 1,
+  "total_pages": 1,
+  "total_results": 2,
+  "results": [
+    { "adult": false, "id": 467905, "title": "How to Make a Killing", "original_title": "How to Make a Killing", "original_language": "en", "release_date": "2026-02-16", "overview": "Disowned at birth by his obscenely wealthy family, blue-collar Becket Redfellow will stop at nothing to reclaim his inheritance.", "poster_path": "/vxMeKC7o5Gi8IHMi6lUgsdprTqv.jpg", "popularity": 9.9714, "vote_count": 864 },
+    { "adult": false, "id": 1210732, "title": "How to Make a Killing", "original_title": "Un ours dans le Jura", "original_language": "fr", "release_date": "2025-01-01", "overview": "Michel and Cathy lead a quiet but monotonous life in the mountains.", "poster_path": "/oovadj4TsgCuAGfd5LhDP19ZCYD.jpg", "popularity": 2.6182, "vote_count": 428 }
+  ]
+}

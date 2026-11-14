@@ -152,4 +152,12 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/2 to 3 concrete everyday situations/);
     expect(prompt).toMatch(/no advice, no praise/);
   });
+
+  it('names the movie tools and keeps movies_continue for explicit play requests', () => {
+    for (const name of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark']) {
+      expect(prompt).toContain(name);
+    }
+    expect(prompt).toMatch(/movies_continue opens VLC on the owner's screen, so call it only when the owner asks to play, resume or continue something/);
+    expect(prompt).toMatch(/"continue what I watched last night" is movies_continue with no title/);
+  });
 });

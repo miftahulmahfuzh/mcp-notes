@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startBackground } from '../../src/background.js';
 import { ChatService } from '../../src/chat/service.js';
-import { DEFAULT_ADVERSARY_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_DWORD_CONFIG, type Config } from '../../src/config.js';
+import { DEFAULT_ADVERSARY_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_DWORD_CONFIG, DEFAULT_MOVIES_CONFIG, type Config } from '../../src/config.js';
 import type { Db } from '../../src/db/client.js';
 import type { AppDeps } from '../../src/deps.js';
 import type { Embedder } from '../../src/embeddings/embedder.js';
@@ -265,7 +265,7 @@ describe('startBackground and the reply embedding worker', () => {
       embeddings: { apiKey: null },
       sessions: { claudeHome, worktreesDir: claudeHome, enabled: true, swarmScript: null },
       adversary: DEFAULT_ADVERSARY_CONFIG,
-      dword: DEFAULT_DWORD_CONFIG,
+      dword: DEFAULT_DWORD_CONFIG, movies: DEFAULT_MOVIES_CONFIG,
     };
     return {
       config,
@@ -275,7 +275,7 @@ describe('startBackground and the reply embedding worker', () => {
       embedder,
       imageEmbedder: null,
       chat: new ChatService({ db }),
-      adversary: null,
+      adversary: null, movies: null,
     };
   }
 

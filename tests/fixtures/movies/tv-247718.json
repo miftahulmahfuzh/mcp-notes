@@ -1,0 +1,49 @@
+{
+  "id": 247718,
+  "name": "MobLand",
+  "original_name": "MobLand",
+  "first_air_date": "2025-03-30",
+  "overview": "Two mob families clash in a war that threatens to topple empires and lives.",
+  "poster_path": "/5Xc7WpWsgflfgEMoBlf9TmWhfbH.jpg",
+  "backdrop_path": "/h0OC7ouop8YLwbAVfS3UUE2Lw4T.jpg",
+  "episode_run_time": [],
+  "genres": [
+    { "id": 80, "name": "Crime" },
+    { "id": 18, "name": "Drama" }
+  ],
+  "number_of_seasons": 2,
+  "number_of_episodes": 5,
+  "created_by": [
+    { "id": 84665, "credit_id": "67c7365126b4e196b1f06589", "name": "Ronan Bennett", "original_name": "Ronan Bennett", "gender": 2, "profile_path": null }
+  ],
+  "production_companies": [
+    { "id": 6329, "logo_path": "/4lZJiVHPClma8YB9hXodraFXSwi.png", "name": "MTV Entertainment Studios", "origin_country": "US" },
+    { "id": 270146, "logo_path": "/4r6rIxegOrrVeJwqRxpzNrCRQMD.png", "name": "Paramount Television Studios", "origin_country": "US" }
+  ],
+  "seasons": [
+    { "season_number": 1, "episode_count": 3, "name": "Season 1" },
+    { "season_number": 2, "episode_count": 2, "name": "Season 2" }
+  ],
+  "aggregate_credits": {
+    "cast": [
+      { "id": 2524, "name": "Tom Hardy", "profile_path": "/d81K0RH8UX7tZj49tZaQhZ9ewH.jpg", "total_episode_count": 20, "order": 0,
+        "roles": [{ "credit_id": "674757fc95c55a202717aeb1", "character": "Harry Da Souza", "episode_count": 20 }] },
+      { "id": 517, "name": "Pierce Brosnan", "profile_path": "/dzXVwwJLPwiZeXOnf7YxorqVEEM.jpg", "total_episode_count": 20, "order": 1,
+        "roles": [{ "credit_id": "6747580495c55a202717aeb9", "character": "Conrad Harrigan", "episode_count": 20 }] }
+    ],
+    "crew": [
+      { "id": 131844, "name": "Lawrence Gough", "profile_path": null, "department": "Directing", "total_episode_count": 4,
+        "jobs": [{ "credit_id": "6821464efc29087c4ea16146", "job": "Director", "episode_count": 4 }] },
+      { "id": 956, "name": "Guy Ritchie", "profile_path": "/9pLUnjMgIEWXi0mlHYzie9cKUTD.jpg", "department": "Directing", "total_episode_count": 4,
+        "jobs": [{ "credit_id": "67e907e8700a6a94c6e546d5", "job": "Director", "episode_count": 4 }] },
+      { "id": 21339, "name": "Jez Butterworth", "profile_path": "/fCdknBtQMVoIEW0VfKiL2yMZqgW.jpg", "department": "Writing", "total_episode_count": 20,
+        "jobs": [{ "credit_id": "67e907e02cca6fc8fbc6a9c4", "job": "Writer", "episode_count": 20 }] },
+      { "id": 5337321, "name": "Sebastian Magiera", "profile_path": null, "department": "Writing", "total_episode_count": 20,
+        "jobs": [{ "credit_id": "67e90f0e7a75294b76c69b87", "job": "Script Editor", "episode_count": 20 }] },
+      { "id": 956, "name": "Guy Ritchie", "profile_path": "/9pLUnjMgIEWXi0mlHYzie9cKUTD.jpg", "department": "Production", "total_episode_count": 20,
+        "jobs": [{ "credit_id": "65df68c998f1f1017d9a0875", "job": "Executive Producer", "episode_count": 20 }] },
+      { "id": 228247, "name": "Ron Burkle", "profile_path": "/hf69HPpxXieEPqSblJGqX5Hq31V.jpg", "department": "Production", "total_episode_count": 20,
+        "jobs": [{ "credit_id": "65df6900b39e35018630c819", "job": "Executive Producer", "episode_count": 20 }] }
+    ]
+  }
+}

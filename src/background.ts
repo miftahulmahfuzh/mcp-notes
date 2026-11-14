@@ -36,7 +36,8 @@ export interface BackgroundOptions {
  * ingester (iteration 8: backfill, then tail `<claudeHome>/projects`), its parent linker, the
  * session summary worker (summaries only with `options.sessionSummarizer`) and, with an embedder,
  * the reply embedding worker (one vector per Claude reply of this host's sessions). With
- * `deps.adversary`, the Seer Adversarial reviewer's poll loop.
+ * `deps.adversary`, the Seer Adversarial reviewer's poll loop. With deps.movies, the movies
+ * library's poll loop over NOTESD_MOVIES_ROOTS.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -162,6 +163,20 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // Movies library sync (phase 3): built by the daemon, started here, closed on stop.
+  if (deps.movies === null) {
+    console.log('[notesd] movies off: NOTESD_MOVIES=off');
+  } else {
+    deps.movies.start();
+    const m = deps.config.movies;
+    console.log(
+      m.roots.length === 0
+        ? `[notesd] movies on as ${deps.movies.host}: NOTESD_MOVIES_ROOTS is empty, nothing is scanned`
+        : `[notesd] movies on as ${deps.movies.host}: scanning ${m.roots.join(', ')} every ${Math.round(m.scanMs / 1000)} s, ` +
+            `TMDB ${deps.movies.tmdb === null ? 'off (no TMDB_API_READ_ACCESS_TOKEN or TMDB_API_KEY)' : 'on'}`,
+    );
+  }
+
   // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
   const meter = dbInstruments(deps.db)?.meter;
   const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
@@ -182,6 +197,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       replyEmbeddings?.close(),
       sessionSummaries?.close(),
       deps.adversary?.close(),
+      deps.movies?.close(),
     ]);
   };
 }

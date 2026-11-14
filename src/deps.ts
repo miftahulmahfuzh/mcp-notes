@@ -4,6 +4,9 @@ import type { Config } from './config.js';
 import type { Db } from './db/client.js';
 import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
+import type { MoviePlayer } from './movies/player.js';
+import type { HealthMonitor } from './movies/vlc/health.js';
+import type { MoviesService } from './movies/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -22,6 +25,22 @@ export interface AppDeps {
   chat: ChatService;
   /** Seer Adversarial reviewer (phase 4). Null when NOTESD_ADVERSARY=off or no claude binary. Phase 5's routes call it. */
   adversary: AdversaryService | null;
+  /**
+   * The movies library: sync, matching and playback on this host (MOVIES_LIBRARY_PLAN phase 3
+   * builds it). Null when NOTESD_MOVIES=off, and always null until phase 3 lands. Routes answer
+   * 503 `movies_off` without it.
+   */
+  movies: MoviesService | null;
+  /**
+   * VLC playback (movies phase 5). The daemon builds it next to `movies`; null or absent when
+   * `movies` is null. Read by moviesPlayRoutes, /api/capabilities and (phase 7) movies_continue.
+   */
+  moviesPlayer?: MoviePlayer | null;
+  /**
+   * The VLC health log (movies phase 9): built next to `moviesPlayer`; null or absent when `movies`
+   * is null. Read by GET /api/movies/player/health.
+   */
+  moviesHealth?: HealthMonitor | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

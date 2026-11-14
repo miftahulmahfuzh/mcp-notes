@@ -271,3 +271,20 @@ describe('buildInstructions: Seer Adversarial', () => {
     expect(order.indexOf('Adversary')).toBe(order.indexOf('Sessions') - 1);
   });
 });
+
+describe('buildInstructions: Movies', () => {
+  it('has one Movies paragraph after Connectors and before Adversary, naming the six tools and the wall link', () => {
+    const text = buildInstructions('Asia/Jakarta', 'http://localhost:4321');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Movies.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark', 'last_play', 'never invent', 'not_on_this_machine', 'opens VLC']) {
+      expect(p).toContain(word);
+    }
+    expect(p).toContain('[Title](http://localhost:4321/movies/<title id>)');
+    const order = text.split('\n\n').map((s) => s.split('.')[0]);
+    expect(order.indexOf('Movies')).toBe(order.indexOf('Connectors') + 1);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('Movies') + 1);
+    expect(order.at(-1)).toBe('Sessions');
+  });
+});
