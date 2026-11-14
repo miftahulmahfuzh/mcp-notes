@@ -8,10 +8,10 @@ journal entries through `/v`, `/j` and the chat bar, by a separate and narrow wr
 
 | System | Tools | App | What it holds |
 |---|---|---|---|
-| `expenses` | `expenses_*` | expense-tracking | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
-| `runs` | `runs_*` | run-insights | Apple Watch runs (pace, distance, heart rate, splits), the app's analyses, weekly and monthly reviews, the coach Nina |
-| `seer` | `seer_*` | Seer | The trading lab: strategies, positions, trades, the leaderboard, and Sera, the method lab, in `lab/lab.sqlite` |
-| `dword` | `dword_*` | daily-words | Vocabulary (words and phrases with definitions, examples and where they were met) and a journal of sayings, each with its insight |
+| `expenses` | `expenses_*` | [expense-tracking](https://github.com/miftahulmahfuzh/expense-tracking) | Expenses parsed from pasted text, in whole rupiah, with categories and receipt photos |
+| `runs` | `runs_*` | [run-insights](https://github.com/miftahulmahfuzh/run-insights) | Apple Watch runs (pace, distance, heart rate, splits), the app's analyses, weekly and monthly reviews, the coach Nina |
+| `seer` | `seer_*` | [Seer](https://github.com/miftahulmahfuzh/seer) | The trading lab: strategies, positions, trades, the leaderboard, and Sera, the method lab, in `lab/lab.sqlite` |
+| `dword` | `dword_*` | [daily-words](https://github.com/miftahulmahfuzh/daily-words) | Vocabulary (words and phrases with definitions, examples and where they were met) and a journal of sayings, each with its insight |
 
 Every tool with its arguments is in [reference/mcp-tools.md](reference/mcp-tools.md), and the
 settings are in [reference/configuration.md](reference/configuration.md). Seer Adversarial, which

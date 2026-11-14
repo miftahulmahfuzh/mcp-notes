@@ -7,7 +7,7 @@ method's pick is bought, a background reviewer in notesd researches the stock an
 The wall's `/adversary` page shows the twins next to their originals and SPY, every verdict with
 its sources, and whether the objections turned out right.
 
-Two repositories are involved. Seer (found through `SEER_DIR`, see
+Two repositories are involved. [Seer](https://github.com/miftahulmahfuzh/seer) (found through `SEER_DIR`, see
 [connectors.md](connectors.md)) owns the roster, the twins, the prices and the simulator. mcp-notes
 owns the reviewer, the read model, the page and the MCP tools. mcp-notes writes three narrow tables
 in Seer's database and nothing else.
