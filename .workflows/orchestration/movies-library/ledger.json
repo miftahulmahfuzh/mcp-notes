@@ -41,24 +41,24 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "06f5c08",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "library sync (scan/sync/service, daemon+background wiring) on origin/phase-3-movies-library; typecheck, npm test 2571, test:int 779 green; no ladder decisions; drift: movieMeta credits without ord, fake resolver MatchResult gained source/matchedTitle; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1114-140623-156253/evidence",
       "package": "src/movies`, `src/background.ts`, `src/daemon.ts",
       "plan": ".workflows/plan/movies-library/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T14:11:35+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A104",
       "title": "Library sync: scan, diff, match, store, background service"
     },
     {
@@ -78,7 +78,7 @@
         "R2",
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "HTTP API: read model, user state, review note, manual fix, SSE"
     },
@@ -99,7 +99,7 @@
         "R4",
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "VLC playback: launch, live tracking, recents backfill, continue"
     },
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T14:02:49+07:00",
+  "updated": "2026-11-14T14:11:57+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
