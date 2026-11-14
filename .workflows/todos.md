@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 3
-- Completed: 102
+- Blocked: 2
+- Completed: 103
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A107** Phase 6: Web: Movies page, grid, detail, unmatched, pill
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: everything under `web/src` named in the contract, plus `Rail.tsx`, `Sidebar.tsx`, `Header.tsx`, `App.tsx`, `lib/route.ts`, `types.ts`, `styles.css` edits and their jsdom tests. Does not touch the server. Exit criteria: the rail icon toggles the page; grid, detail (movie and series), unmatched list with assign, stars, watched, review, play/resume (disabled with a tip when playback is unavailable or the file is on another host), deleted flags and the pill all work against the phase 4 and 5 routes; back/forward and deep links work.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 6 of 9)
-  - **Satisfies**: R5 — UI - Movies page: poster grid gallery; click opens movie-detail-page (release date, synopsis, studios, producer/writer, cast ... · criteria: R5.1, R5.2, R5.3, R5.4, R5.5
-  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
-  - **Plan**: `.workflows/plan/P1-NOTES-A107.md`
 - [ ] **P1-NOTES-A108** Phase 7: MCP tools, chat bar allow-list, `/n` skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -122,6 +113,22 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A107** Phase 6: Web: Movies page, grid, detail, unmatched, pill
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under `web/src` named in the contract, plus `Rail.tsx`, `Sidebar.tsx`, `Header.tsx`, `App.tsx`, `lib/route.ts`, `types.ts`, `styles.css` edits and their jsdom tests. Does not touch the server. Exit criteria: the rail icon toggles the page; grid, detail (movie and series), unmatched list with assign, stars, watched, review, play/resume (disabled with a tip when playback is unavailable or the file is on another host), deleted flags and the pill all work against the phase 4 and 5 routes; back/forward and deep links work.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 6 of 9)
+  - **Satisfies**: R5 — UI - Movies page: poster grid gallery; click opens movie-detail-page (release date, synopsis, studios, producer/writer, cast ... · criteria: R5.1, R5.2, R5.3, R5.4, R5.5
+  - **Depends on**: P1-NOTES-A105, P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A107.md`
+  - **Completed**: 2026-11-14 15:31
+  - **Method**: /implement
+  - **Files**: web/src/types.ts, web/src/lib/route.ts, web/src/lib/route.test.tsx, web/src/moviesApi.ts, web/src/hooks/useMovies.ts, web/src/hooks/useMovies.test.tsx, web/src/lib/movies.ts, web/src/lib/movies.test.tsx, web/src/testing/movieFixtures.ts, web/src/components/movies/Movies.css, web/src/components/movies/Poster.tsx, web/src/components/movies/Poster.test.tsx, web/src/components/movies/PosterTile.tsx, web/src/components/movies/MoviesGrid.tsx, web/src/components/movies/MovieDetail.tsx, web/src/components/movies/Stars.tsx, web/src/components/movies/ReviewField.tsx, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/parts.tsx, web/src/components/movies/UnmatchedList.tsx, web/src/components/movies/AssignDialog.tsx, web/src/components/movies/MoviesPill.tsx, web/src/pages/MoviesPage.tsx, web/src/components/Rail.tsx, web/src/components/Sidebar.tsx, web/src/components/Header.tsx, web/src/components/Rail.test.tsx, web/src/App.tsx, web/src/App.movies.test.tsx
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-152956-347840/evidence
+  - **Drift**: None in code: every plan anchor (App.tsx line numbers, whole-file replacements of route.ts, Rail.tsx, Sidebar.tsx, Header.tsx) matched the tree exactly.
+    The plan's commands name the worktree /home/miftah/.worktrees/mcp-notes/movies-library; the swarm ran this phase in movies-library-p6 on branch phase-6-movies-library.
+  - **Decided**: Index names worktree movies-library / branch feature/movies-library but the session was launched in movies-library-p6 / phase-6-movies-library → implemented here (rung 6: swarm.py launched this phase in its own wave worktree with phases 4 and 5 merged in)
 - [x] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
   - **Difficulty**: NORMAL
   - **Type**: Feature

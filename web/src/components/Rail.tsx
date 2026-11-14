@@ -1,4 +1,4 @@
-import { ChatsCircle, Images, NotePencil, SidebarSimple, SquaresFour, Sword, TextAa, Trash, TreeStructure, XCircle } from '@phosphor-icons/react';
+import { ChatsCircle, FilmSlate, Images, NotePencil, SidebarSimple, SquaresFour, Sword, TextAa, Trash, TreeStructure, XCircle } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { Mode, View } from '../types';
 import { MODE_TIP } from '../lib/filter';
@@ -6,7 +6,14 @@ import { MODE_TIP } from '../lib/filter';
 export const MODE_ICON: Record<Mode, Icon> = { text: TextAa, images: Images, all: SquaresFour };
 
 /** Tooltip / label of the Trash toggle, by the view it is pressed from. */
-export const BIN_TIP: Record<View, string> = { wall: 'Recycle bin', bin: 'Back to the wall', history: 'Recycle bin', projects: 'Recycle bin', adversary: 'Recycle bin' };
+export const BIN_TIP: Record<View, string> = {
+  wall: 'Recycle bin',
+  bin: 'Back to the wall',
+  history: 'Recycle bin',
+  projects: 'Recycle bin',
+  adversary: 'Recycle bin',
+  movies: 'Recycle bin',
+};
 
 /** Tooltip / label of the chat-history toggle (phase 9). Pressed state says when it is open; a second press returns to the wall. */
 export const HISTORY_TIP = 'Chat history';
@@ -17,6 +24,9 @@ export const PROJECTS_TIP = 'Projects';
 /** Tooltip / label of the Seer Adversarial toggle (seer-adversarial phase 6): Claude's twins of Seer's roster, with the roster in the sidebar. */
 export const ADVERSARY_TIP = 'Seer Adversarial';
 
+/** Tooltip / label of the movies toggle (movies-library phase 6): the poster grid of the film and series library. */
+export const MOVIES_TIP = 'Movies';
+
 export interface RailProps {
   mode: Mode;
   view: View;
@@ -24,6 +34,7 @@ export interface RailProps {
   onToggleSide: () => void;
   onAdd: () => void;
   onCycleMode: () => void;
+  onToggleMovies: () => void;
   onToggleProjects: () => void;
   onToggleHistory: () => void;
   onToggleAdversary: () => void;
@@ -32,7 +43,7 @@ export interface RailProps {
   onClear: () => void;
 }
 
-export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleProjects, onToggleHistory, onToggleAdversary, onToggleBin, onToggleTag, onClear }: RailProps) {
+export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onToggleMovies, onToggleProjects, onToggleHistory, onToggleAdversary, onToggleBin, onToggleTag, onClear }: RailProps) {
   const ModeIcon = MODE_ICON[mode];
   return (
     <nav className="rail">
@@ -51,6 +62,17 @@ export function Rail({ mode, view, active, onToggleSide, onAdd, onCycleMode, onT
         onClick={onCycleMode}
       >
         <ModeIcon weight="duotone" />
+      </button>
+      <button
+        type="button"
+        className={view === 'movies' ? 'ibtn on' : 'ibtn hov'}
+        data-tip={MOVIES_TIP}
+        data-tip-side="right"
+        aria-label={MOVIES_TIP}
+        aria-pressed={view === 'movies'}
+        onClick={onToggleMovies}
+      >
+        <FilmSlate weight="duotone" />
       </button>
       <button
         type="button"

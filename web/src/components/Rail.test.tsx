@@ -17,6 +17,7 @@ const rail = (view: View, onToggleHistory = vi.fn(), onToggleProjects = vi.fn(),
       onToggleSide={vi.fn()}
       onAdd={vi.fn()}
       onCycleMode={vi.fn()}
+      onToggleMovies={vi.fn()}
       onToggleProjects={onToggleProjects}
       onToggleHistory={onToggleHistory}
       onToggleAdversary={onToggleAdversary}
@@ -34,6 +35,7 @@ const side = (view: View, onToggleHistory = vi.fn(), extra: Partial<SidebarProps
       tags={[]}
       active={[]}
       onMode={vi.fn()}
+      onToggleMovies={vi.fn()}
       onToggleProjects={vi.fn()}
       onToggleHistory={onToggleHistory}
       onToggleAdversary={vi.fn()}
@@ -203,5 +205,44 @@ describe('sidebar roster list', () => {
   it('says loading before the roster arrives', () => {
     side('adversary', vi.fn(), { roster: null });
     expect(screen.getByText('loading')).toBeTruthy();
+  });
+});
+
+describe('Movies icon', () => {
+  it('is an icon-only FilmSlate above Projects, pressed on the movies view, in the rail and the sidebar', () => {
+    const toggle = vi.fn();
+    const { container } = render(
+      <Rail
+        mode="text"
+        view="movies"
+        active={[]}
+        onToggleSide={vi.fn()}
+        onAdd={vi.fn()}
+        onCycleMode={vi.fn()}
+        onToggleMovies={toggle}
+        onToggleProjects={vi.fn()}
+        onToggleHistory={vi.fn()}
+        onToggleAdversary={vi.fn()}
+        onToggleBin={vi.fn()}
+        onToggleTag={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    const labels = order(container.querySelector('.rail') as Element);
+    expect(labels.indexOf('Movies')).toBe(labels.indexOf('Projects') - 1);
+    const btn = screen.getByRole('button', { name: 'Movies' });
+    expect(btn.textContent).toBe('');
+    expect(btn.querySelector('svg')).not.toBeNull();
+    expect(btn.getAttribute('data-tip')).toBe('Movies');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(btn.className).toBe('ibtn on');
+    expect(screen.getByRole('button', { name: 'Recycle bin' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(btn);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    cleanup();
+    const s = side('movies');
+    const sideLabels = order(s.container.querySelector('.side-modes') as Element);
+    expect(sideLabels.indexOf('Movies')).toBe(sideLabels.indexOf('Projects') - 1);
+    expect(screen.getByRole('button', { name: 'Movies' }).getAttribute('aria-pressed')).toBe('true');
   });
 });
