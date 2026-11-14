@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 7
+**Total Active Tasks**: 6
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 7
+- P1 High: 6
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 105
+- Completed: 106
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A109** Phase 8: Docs, feature map, verify fixtures, live config
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `CLAUDE.md` (architecture paragraph), `README.md` (tour, HTTP API and MCP tables, completed env rows), `.claude/skills/verify-notesd/features/movies.md` and its README row, movie fixtures for `verify.sh` (generated video tree, fake TMDB, fake VLC), and a documented step that adds the roots, `NOTESD_VLC_INI` and the Done dir to the live `/home/miftah/mcp-notes/.env.local` (appended only if absent). Does not touch product code, except a verify-harness seam a journey cannot do without. Exit criteria: the feature map's journeys run green on a throwaway daemon; docs name every env var, route and tool that exists (phase 9's included). J4 and the VLC-survives-restart check are post-merge only: J4 is `pending` before the merge and R7.1 is judged on J1-J3.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 8 of 9)
-  - **Satisfies**: R7 — ORDER 1. Scanner, filename parser, TMDB, grid + detail page (rating, review, watched flag, pill bar). 2. VLC play/resume ... · criteria: R7.1
-  - **Depends on**: P1-NOTES-A107, P1-NOTES-A108, P1-NOTES-A110
-  - **Plan**: `.workflows/plan/P1-NOTES-A109.md`
 ### [P2] Medium
 
 ### [P3] Low
@@ -94,6 +85,25 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A109** Phase 8: Docs, feature map, verify fixtures, live config
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `CLAUDE.md` (architecture paragraph), `README.md` (tour, HTTP API and MCP tables, completed env rows), `.claude/skills/verify-notesd/features/movies.md` and its README row, movie fixtures for `verify.sh` (generated video tree, fake TMDB, fake VLC), and a documented step that adds the roots, `NOTESD_VLC_INI` and the Done dir to the live `/home/miftah/mcp-notes/.env.local` (appended only if absent). Does not touch product code, except a verify-harness seam a journey cannot do without. Exit criteria: the feature map's journeys run green on a throwaway daemon; docs name every env var, route and tool that exists (phase 9's included). J4 and the VLC-survives-restart check are post-merge only: J4 is `pending` before the merge and R7.1 is judged on J1-J3.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 8 of 9)
+  - **Satisfies**: R7 — ORDER 1. Scanner, filename parser, TMDB, grid + detail page (rating, review, watched flag, pill bar). 2. VLC play/resume ... · criteria: R7.1
+  - **Depends on**: P1-NOTES-A107, P1-NOTES-A108, P1-NOTES-A110
+  - **Plan**: `.workflows/plan/P1-NOTES-A109.md`
+  - **Completed**: 2026-11-14 16:00
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/movies/make-fixtures.sh, .claude/skills/verify-notesd/scripts/movies/tmdb.json, .claude/skills/verify-notesd/scripts/movies/fake-tmdb.mjs, .claude/skills/verify-notesd/scripts/movies/fake-vlc.mjs, .claude/skills/verify-notesd/scripts/movies/vlc-qt-interface.ini, .claude/skills/verify-notesd/scripts/movies/journey.sh, .claude/skills/verify-notesd/scripts/movies/ui-library.mjs, .claude/skills/verify-notesd/scripts/movies/doc-check.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/README.md, CLAUDE.md, README.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-154856-433001/evidence (J2), /home/miftah/.local/state/notesd-verify/1114-154935-441164/evidence (neighbor); J4 and the two post-deploy checks pending (post-merge only)
+  - **Drift**: src/mcp/movieTools.ts registers tools through constants destructured from MOVIE_TOOL_NAMES, not literal registerTool('movies_…'), so the plan's doc-check grep found 0 tools; a comment in src/http/moviesApi.ts contains the literal '/api/movies/*', which the plan's grep read as a route.
+    Plan Step 9e capabilities key: landed key is movies_playback (README row worded from src/http/reveal.ts).
+  - **Decided**: doc-check tool/route detection vs landed code → doc-check reads names from MOVIE_TOOL_NAMES in src/chat/status.ts (and checks movieTools.ts registers that many) and ignores '/api/movies' literals containing '*' (rung 2: exit criteria — doc-check OK against landed code; product code untouched)
+    Index names worktree movies-library / branch feature/movies-library; ran in movies-library-p8 / phase-8-movies-library (rung 5: swarm launch; coordinator integrates the phase branch)
+    Step 10 (live .env.local, db:migrate, install.sh) not run: post-merge only, left to the lander (rung 2: phase exit criteria; index Decisions row 'Phase 8 J4')
 
 - [x] **P1-NOTES-A107** Phase 6: Web: Movies page, grid, detail, unmatched, pill
   - **Difficulty**: HARD

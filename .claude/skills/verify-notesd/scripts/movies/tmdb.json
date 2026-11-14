@@ -1,0 +1,159 @@
+{
+  "movies": [
+    {
+      "id": 467905, "title": "How to Make a Killing", "original_title": "How to Make a Killing", "original_language": "en",
+      "release_date": "2026-02-20", "runtime": 105, "popularity": 41.2, "vote_average": 7.1, "vote_count": 512,
+      "overview": "Verify fixture. A disinherited heir works out how far he will go to get his family's fortune back.",
+      "poster_path": "/fx-how-to-make-a-killing.jpg", "backdrop_path": "/fx-how-to-make-a-killing-bd.jpg",
+      "genres": [{ "id": 80, "name": "Crime" }, { "id": 35, "name": "Comedy" }],
+      "production_companies": [{ "id": 41077, "logo_path": null, "name": "A24", "origin_country": "US" }],
+      "credits": {
+        "cast": [
+          { "id": 990102, "name": "Glen Powell", "character": "Becket Redfellow", "order": 0, "profile_path": null, "known_for_department": "Acting" },
+          { "id": 990101, "name": "Margaret Qualley", "character": "Julia", "order": 1, "profile_path": null, "known_for_department": "Acting" }
+        ],
+        "crew": [
+          { "id": 990103, "name": "John Patton Ford", "job": "Director", "department": "Directing", "profile_path": null },
+          { "id": 990103, "name": "John Patton Ford", "job": "Screenplay", "department": "Writing", "profile_path": null },
+          { "id": 990104, "name": "Verify Producer", "job": "Producer", "department": "Production", "profile_path": null }
+        ]
+      }
+    },
+    {
+      "id": 990001, "title": "The Rivals of Amziah King", "original_title": "The Rivals of Amziah King", "original_language": "en",
+      "release_date": "2026-03-13", "runtime": 112, "popularity": 18.3, "vote_average": 6.8, "vote_count": 140,
+      "overview": "Verify fixture. A beekeeper and moonshiner in rural Oklahoma takes in an orphan girl.",
+      "poster_path": "/fx-rivals-of-amziah-king.jpg", "backdrop_path": null,
+      "genres": [{ "id": 18, "name": "Drama" }],
+      "production_companies": [{ "id": 3172, "logo_path": null, "name": "Blumhouse Productions", "origin_country": "US" }],
+      "credits": {
+        "cast": [
+          { "id": 990105, "name": "Matthew McConaughey", "character": "Amziah King", "order": 0, "profile_path": null, "known_for_department": "Acting" }
+        ],
+        "crew": [
+          { "id": 990106, "name": "Andrew Patterson", "job": "Director", "department": "Directing", "profile_path": null },
+          { "id": 990106, "name": "Andrew Patterson", "job": "Writer", "department": "Writing", "profile_path": null },
+          { "id": 990104, "name": "Verify Producer", "job": "Producer", "department": "Production", "profile_path": null }
+        ]
+      }
+    },
+    {
+      "id": 990004, "title": "Oldboy", "original_title": "올드보이", "original_language": "ko",
+      "release_date": "2003-11-21", "runtime": 120, "popularity": 30.0, "vote_average": 8.3, "vote_count": 9000,
+      "overview": "Verify fixture. A man held captive for fifteen years is released and given five days to learn why.",
+      "poster_path": "/fx-oldboy.jpg", "backdrop_path": null,
+      "genres": [{ "id": 18, "name": "Drama" }, { "id": 53, "name": "Thriller" }],
+      "production_companies": [{ "id": 7036, "logo_path": null, "name": "Show East", "origin_country": "KR" }],
+      "credits": {
+        "cast": [
+          { "id": 990107, "name": "Choi Min-sik", "character": "Oh Dae-su", "order": 0, "profile_path": null, "known_for_department": "Acting" }
+        ],
+        "crew": [
+          { "id": 990108, "name": "Park Chan-wook", "job": "Director", "department": "Directing", "profile_path": null },
+          { "id": 990108, "name": "Park Chan-wook", "job": "Screenplay", "department": "Writing", "profile_path": null }
+        ]
+      }
+    },
+    {
+      "id": 990002, "title": "The Dog Stars", "original_title": "The Dog Stars", "original_language": "en",
+      "release_date": "2026-03-27", "runtime": 118, "popularity": 25.0, "vote_average": 6.9, "vote_count": 210,
+      "overview": "Verify fixture. A pilot and his dog live on after a flu wipes out most of the world.",
+      "poster_path": "/fx-dog-stars.jpg", "backdrop_path": null,
+      "genres": [{ "id": 878, "name": "Science Fiction" }],
+      "production_companies": [{ "id": 1645, "logo_path": null, "name": "Scott Free Productions", "origin_country": "US" }],
+      "credits": {
+        "cast": [
+          { "id": 990109, "name": "Jacob Elordi", "character": "Hig", "order": 0, "profile_path": null, "known_for_department": "Acting" }
+        ],
+        "crew": [
+          { "id": 990110, "name": "Ridley Scott", "job": "Director", "department": "Directing", "profile_path": null },
+          { "id": 990117, "name": "Mark L. Smith", "job": "Screenplay", "department": "Writing", "profile_path": null }
+        ]
+      }
+    },
+    {
+      "id": 990003, "title": "Bad Apples", "original_title": "Bad Apples", "original_language": "en",
+      "release_date": "2025-10-03", "runtime": 99, "popularity": 12.0, "vote_average": 6.2, "vote_count": 80,
+      "overview": "Verify fixture. A teacher keeps her worst pupil locked in her basement.",
+      "poster_path": "/fx-bad-apples.jpg", "backdrop_path": null,
+      "genres": [{ "id": 35, "name": "Comedy" }, { "id": 53, "name": "Thriller" }],
+      "production_companies": [{ "id": 990301, "logo_path": null, "name": "Verify Pictures", "origin_country": "SE" }],
+      "credits": {
+        "cast": [
+          { "id": 990111, "name": "Saoirse Ronan", "character": "Maria", "order": 0, "profile_path": null, "known_for_department": "Acting" }
+        ],
+        "crew": [
+          { "id": 990112, "name": "Jonatan Etzler", "job": "Director", "department": "Directing", "profile_path": null }
+        ]
+      }
+    }
+  ],
+  "tv": [
+    {
+      "id": 247718, "name": "MobLand", "original_name": "MobLand", "original_language": "en", "origin_country": ["GB"],
+      "first_air_date": "2025-03-30", "episode_run_time": [55], "popularity": 88.5, "vote_average": 8.0, "vote_count": 640,
+      "overview": "Verify fixture. A fixer keeps a London crime family together while rival gangs close in.",
+      "poster_path": "/fx-mobland.jpg", "backdrop_path": "/fx-mobland-bd.jpg",
+      "genres": [{ "id": 80, "name": "Crime" }, { "id": 18, "name": "Drama" }],
+      "number_of_seasons": 1, "number_of_episodes": 3,
+      "created_by": [{ "id": 990113, "name": "Ronan Bennett", "profile_path": null }],
+      "production_companies": [{ "id": 990302, "logo_path": null, "name": "Verify Television", "origin_country": "GB" }],
+      "seasons": [{ "id": 990401, "season_number": 1, "episode_count": 3, "air_date": "2025-03-30", "name": "Season 1", "poster_path": null, "overview": "" }],
+      "aggregate_credits": {
+        "cast": [
+          { "id": 990114, "name": "Tom Hardy", "profile_path": null, "order": 0, "total_episode_count": 3, "roles": [{ "credit_id": "fx1", "character": "Harry Da Souza", "episode_count": 3 }] },
+          { "id": 990115, "name": "Helen Mirren", "profile_path": null, "order": 1, "total_episode_count": 3, "roles": [{ "credit_id": "fx2", "character": "Maeve Harrigan", "episode_count": 3 }] }
+        ],
+        "crew": [
+          { "id": 990116, "name": "Guy Ritchie", "profile_path": null, "department": "Directing", "total_episode_count": 2, "jobs": [{ "credit_id": "fx3", "job": "Director", "episode_count": 2 }] },
+          { "id": 990113, "name": "Ronan Bennett", "profile_path": null, "department": "Writing", "total_episode_count": 3, "jobs": [{ "credit_id": "fx4", "job": "Writer", "episode_count": 3 }] },
+          { "id": 990104, "name": "Verify Producer", "profile_path": null, "department": "Production", "total_episode_count": 3, "jobs": [{ "credit_id": "fx5", "job": "Executive Producer", "episode_count": 3 }] }
+        ]
+      },
+      "credits": {
+        "cast": [
+          { "id": 990114, "name": "Tom Hardy", "character": "Harry Da Souza", "order": 0, "profile_path": null },
+          { "id": 990115, "name": "Helen Mirren", "character": "Maeve Harrigan", "order": 1, "profile_path": null }
+        ],
+        "crew": [
+          { "id": 990116, "name": "Guy Ritchie", "job": "Director", "department": "Directing", "profile_path": null },
+          { "id": 990113, "name": "Ronan Bennett", "job": "Writer", "department": "Writing", "profile_path": null },
+          { "id": 990104, "name": "Verify Producer", "job": "Executive Producer", "department": "Production", "profile_path": null }
+        ]
+      },
+      "seasons_detail": {
+        "1": {
+          "id": 990401, "season_number": 1, "name": "Season 1", "air_date": "2025-03-30", "overview": "", "poster_path": null,
+          "episodes": [
+            { "id": 990501, "season_number": 1, "episode_number": 1, "name": "Stick or Twist", "air_date": "2025-03-30", "runtime": 57, "overview": "Verify fixture episode 1.", "still_path": "/fx-mobland-s01e01.jpg" },
+            { "id": 990502, "season_number": 1, "episode_number": 2, "name": "Eye for an Eye", "air_date": "2025-04-06", "runtime": 52, "overview": "Verify fixture episode 2.", "still_path": "/fx-mobland-s01e02.jpg" },
+            { "id": 990503, "season_number": 1, "episode_number": 3, "name": "Lie Down with Dogs", "air_date": "2025-04-13", "runtime": 50, "overview": "Verify fixture episode 3.", "still_path": "/fx-mobland-s01e03.jpg" }
+          ]
+        }
+      }
+    }
+  ],
+  "people": [
+    {
+      "id": 990101, "name": "Margaret Qualley", "known_for_department": "Acting", "profile_path": null, "popularity": 30.1,
+      "biography": "Verify fixture.", "birthday": "1994-10-23",
+      "combined_credits": {
+        "cast": [
+          { "id": 467905, "media_type": "movie", "title": "How to Make a Killing", "original_title": "How to Make a Killing", "release_date": "2026-02-20", "character": "Julia", "poster_path": "/fx-how-to-make-a-killing.jpg", "popularity": 41.2, "vote_count": 512, "credit_id": "fx6" },
+          { "id": 990201, "media_type": "movie", "title": "Kinds of Kindness", "original_title": "Kinds of Kindness", "release_date": "2024-06-21", "character": "Verify role", "poster_path": "/fx-kinds-of-kindness.jpg", "popularity": 20.4, "vote_count": 900, "credit_id": "fx7" }
+        ],
+        "crew": []
+      }
+    },
+    {
+      "id": 990114, "name": "Tom Hardy", "known_for_department": "Acting", "profile_path": null, "popularity": 50.0,
+      "biography": "Verify fixture.", "birthday": "1977-09-15",
+      "combined_credits": {
+        "cast": [
+          { "id": 247718, "media_type": "tv", "name": "MobLand", "original_name": "MobLand", "first_air_date": "2025-03-30", "character": "Harry Da Souza", "episode_count": 3, "poster_path": "/fx-mobland.jpg", "popularity": 88.5, "vote_count": 640, "credit_id": "fx8" }
+        ],
+        "crew": []
+      }
+    }
+  ]
+}

@@ -23,6 +23,7 @@ $V up --web           # also rebuild web/dist first: REQUIRED when the change to
 $V up --sessions      # seed CLAUDE_HOME with tests/fixtures/claude-home (Projects page has data)
 $V up --embed         # keep OPENROUTER_API_KEY: real embeddings, billed (default: off, search = fallback)
 $V up --adversary     # Seer reviewer ON against a throwaway Seer DB built from ${SEER_DIR:-~/seer}/db/migrations
+$V up --movies        # Movies ON against a generated video library, a fake TMDB and a fake vlc.exe/curl.exe
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,
@@ -36,6 +37,14 @@ container) and a temp `SEER_DIR` that holds only that URL, the three data-tool k
 `~/seer/.env.local` and Seer's `ticker_cik.csv`; `ADVERSARY_POLL_MS` (default 5000 here) and any
 other `ADVERSARY_*` key in your shell pass through. A review it runs is a real, billed Agent SDK
 run: set the toggle off first (`exec`, below) unless the journey means to pay.
+
+Every run also pins `NOTESD_MOVIES=off`, so a throwaway daemon never scans the owner's video folders
+(the live `.env.local` names them), calls TMDB or starts VLC. `--movies` turns it on against
+`<run>/movies/`: a library generated once with ffmpeg (`scripts/movies/make-fixtures.sh`, cached in
+`$VERIFY_HOME/.movies-fixture`, copied per run), a fake TMDB (`scripts/movies/fake-tmdb.mjs`) and fake
+`vlc.exe`/`curl.exe` wrappers (`scripts/movies/fake-vlc.mjs`) that record every launch and answer VLC's
+`status.json`. The filename fallback is pinned `off`, so nothing is billed. `scripts/movies/journey.sh RUN`
+drives the whole chain; see `features/movies.md`.
 
 ## Doctor
 
@@ -59,6 +68,7 @@ any drive that surprised you. `code WARN HEAD moved` means the instance serves o
 | State | `$V sql RUN "select ..."` | Read-only transaction against the run's DB. Use it to prove side effects. |
 | Seed | `$V exec RUN [--seer] "SQL"` | WRITES to the run's throwaway notes DB, or with `--seer` its Seer DB (`--adversary` runs). For seeding only; prove state with `sql`. |
 | Log | `$V note RUN "what this proved"` | Appends to `evidence/LOG.md`, the human-readable summary. |
+| Fake VLC | `$V vlc RUN args\|status\|commands\|at SECONDS\|quit` | `--movies` runs only: what VLC was started with, where it is, jump to a second, make it exit (the daemon then closes the play). |
 
 A `steps.mjs` file (write it in the scratchpad, not the repo):
 
@@ -131,3 +141,5 @@ not implementation.
   with a different host via a test, not via this harness.
 - Without `--embed`, search runs in full-text mode and reports `fallback`. That is expected, not a
   failure. Semantic ranking needs `--embed`.
+- Never drive Play or `movies_continue` on the live daemon, and never give a run a `/mnt/c` root: both
+  reach the owner's real VLC or folders. `up --movies` is the only way to drive Movies.

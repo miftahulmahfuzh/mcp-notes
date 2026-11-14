@@ -5,11 +5,13 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
 #                                       built from ${SEER_DIR:-~/seer}/db/migrations (reviews are real, billed)
+#                                       --movies turns the Movies library on against a generated video tree,
+#                                       a fake TMDB and a fake vlc.exe/curl.exe (scripts/movies/); else it is off
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
@@ -18,6 +20,8 @@
 #   verify.sh sql RUN "SELECT ..."      read the run's database (read-only transaction)
 #   verify.sh exec RUN [--seer] "SQL"   WRITE to the run's throwaway notes DB (or its Seer DB); saved as evidence
 #   verify.sh note RUN "TEXT"           append a line to the run's evidence log (what you proved)
+#   verify.sh vlc RUN args|status|commands|at SECONDS|quit
+#                                       drive a --movies run's fake VLC; saved as evidence
 #   verify.sh down RUN|--all            stop what `up` started, drop its DB; evidence stays
 #   verify.sh ls                        runs with state, pid and evidence count
 set -euo pipefail
@@ -70,13 +74,14 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0
+  local web=0 embed=0 sessions=0 adversary=0 movies=0
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
       --embed) embed=1 ;;
       --sessions) sessions=1 ;;
       --adversary) adversary=1 ;;
+      --movies) movies=1 ;;
       *) die "up: unknown flag $a" ;;
     esac
   done
@@ -129,6 +134,29 @@ cmd_up() {
     if [ -f "$seer_src/engine/data/ticker_cik.csv" ]; then cp "$seer_src/engine/data/ticker_cik.csv" "$dir/seer/engine/data/"; fi
   fi
 
+  # --movies: a generated library, a fake TMDB and a fake VLC pair, all under the run dir. Never the
+  # owner's folders, TMDB or VLC: the live .env.local names the real roots, so the env below overrides them.
+  local tmdb_port=""
+  if [ "$movies" = 1 ]; then
+    command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || die "--movies: ffmpeg and ffprobe must be on PATH"
+    command -v wslpath >/dev/null || echo "verify: --movies without wslpath: Play will answer player_unavailable" >&2
+    "$HERE/movies/make-fixtures.sh" "$VERIFY_HOME/.movies-fixture" || die "--movies: building the fixture library failed"
+    mkdir -p "$dir/movies/bin" "$dir/movies/vlc"
+    cp -a "$VERIFY_HOME/.movies-fixture/library" "$dir/movies/library"
+    cp "$HERE/movies/vlc-qt-interface.ini" "$dir/movies/vlc-qt-interface.ini"
+    local node_bin
+    node_bin="$(command -v node)"
+    printf '#!/bin/sh\nexec "%s" "%s" vlc --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/vlc.exe"
+    printf '#!/bin/sh\nexec "%s" "%s" curl --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/curl.exe"
+    chmod +x "$dir/movies/bin/vlc.exe" "$dir/movies/bin/curl.exe"
+    setsid node "$HERE/movies/fake-tmdb.mjs" --data "$HERE/movies/tmdb.json" \
+      --port-file "$dir/movies/tmdb.port" --log "$dir/movies/tmdb.log" </dev/null >"$dir/movies/tmdb.out" 2>&1 &
+    echo $! >"$dir/tmdb.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/movies/tmdb.port" ] && break; sleep 0.25; done
+    [ -s "$dir/movies/tmdb.port" ] || die "--movies: the fake TMDB did not start (log: $dir/movies/tmdb.out; verify.sh down $run)"
+    tmdb_port="$(cat "$dir/movies/tmdb.port")"
+  fi
+
   # Real env wins over .env.local, so these pin the instance to the run's own state.
   # OPENROUTER_API_KEY='' turns embeddings off (search reports fallback) unless --embed.
   # NOTESD_ADVERSARY=off unless --adversary: a throwaway daemon never reviews the owner's real Seer.
@@ -146,12 +174,41 @@ cmd_up() {
   else
     env+=(NOTESD_ADVERSARY=off)
   fi
+  # NOTESD_MOVIES=off unless --movies: a throwaway daemon never scans the owner's video folders,
+  # calls TMDB or starts VLC. --movies points every path and binary at the run's own fakes; the
+  # filename fallback is pinned off so nothing is billed.
+  if [ "$movies" = 1 ]; then
+    env+=(
+      NOTESD_MOVIES=on
+      "NOTESD_MOVIES_ROOTS=$dir/movies/library/Videos:$dir/movies/library/Telegram Desktop"
+      NOTESD_MOVIES_DONE_DIRS=Done
+      NOTESD_MOVIES_SCAN_MS=3600000
+      NOTESD_MOVIES_MIN_SECONDS=900
+      NOTESD_MOVIES_FALLBACK_MODEL=off
+      TMDB_API_READ_ACCESS_TOKEN=verify-fake-token
+      TMDB_API_KEY=
+      "TMDB_API_BASE=http://127.0.0.1:$tmdb_port/3"
+      "TMDB_IMAGE_BASE=http://127.0.0.1:$tmdb_port/t/p"
+      "NOTESD_FFPROBE_BIN=$(command -v ffprobe)"
+      "NOTESD_VLC_BIN=$dir/movies/bin/vlc.exe"
+      "NOTESD_CURL_EXE=$dir/movies/bin/curl.exe"
+      "NOTESD_VLC_INI=$dir/movies/vlc-qt-interface.ini"
+      NOTESD_VLC_HTTP_PORT=47318
+      NOTESD_VLC_POLL_MS=1000
+      # Phase 9: never sample the owner's real vlc.exe into verify evidence; no launch flags from .env.local.
+      NOTESD_VLC_HEALTH_MS=0
+      NOTESD_VLC_EXTRA_ARGS=
+    )
+  else
+    env+=(NOTESD_MOVIES=off)
+  fi
   {
     echo "repo=$root"
     echo "head=$(git -C "$root" rev-parse --short HEAD)"
     echo "dirty=$(git -C "$root" status --porcelain | wc -l)"
     echo "embed=$embed"
     echo "adversary=$adversary"
+    echo "movies=$movies"
     [ "$adversary" = 1 ] && echo "seer_migrations=$seer_src"
   } >"$dir/meta"
 
@@ -174,6 +231,7 @@ cmd_up() {
   echo "URL=http://127.0.0.1:$port"
   echo "EVIDENCE=$dir/evidence"
   echo "LOG=$dir/daemon.log"
+  if [ "$movies" = 1 ]; then echo "MOVIES=$dir/movies"; fi
 }
 
 cmd_doctor() {
@@ -195,6 +253,13 @@ cmd_doctor() {
     echo "port     FAIL :$port belongs to pid $owner, not this run"; ok=0
   fi
   if psql_run -d "$(cat "$dir/db")" -tAc "select count(*) from notes" >/dev/null 2>&1; then echo "database ok   $(cat "$dir/db")"; else echo "database FAIL $(cat "$dir/db")"; ok=0; fi
+  if [ -f "$dir/tmdb.pid" ]; then
+    if kill -0 "$(cat "$dir/tmdb.pid")" 2>/dev/null && curl -fsS -m 3 "http://127.0.0.1:$(cat "$dir/movies/tmdb.port")/health" >/dev/null; then
+      echo "tmdb     ok   fake TMDB on :$(cat "$dir/movies/tmdb.port")"
+    else
+      echo "tmdb     FAIL fake TMDB is not answering"; ok=0
+    fi
+  fi
   sed 's/^/meta     /' "$dir/meta"
   local root
   root="$(sed -n 's/^repo=//p' "$dir/meta")"
@@ -290,8 +355,17 @@ cmd_note() {
   echo "$(date -Iseconds) ${2:?TEXT}" >>"$dir/evidence/LOG.md"
 }
 
+cmd_vlc() {
+  local dir out
+  dir="$(run_dir "${1:-}")"; shift
+  [ -d "$dir/movies/vlc" ] || die "vlc: this run was not started with --movies"
+  out="$(next_evidence "$dir" vlc "${*:-args}" txt)"
+  node "$HERE/movies/fake-vlc.mjs" control --state "$dir/movies/vlc" "$@" | tee "$out"
+  echo "[evidence: $out]" >&2
+}
+
 stop_run() {
-  local dir=$1 pid
+  local dir=$1 pid f
   pid="$(cat "$dir/pid" 2>/dev/null || true)"
   # setsid made the daemon a process-group leader: kill exactly the group `up` started.
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -299,13 +373,25 @@ stop_run() {
     for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
     kill -KILL -- "-$pid" 2>/dev/null || true
   fi
+  # --movies: the fake VLCs were started detached by the daemon, the fake TMDB by `up`; keep their records.
+  if [ -d "$dir/movies" ]; then
+    for f in "$dir"/movies/vlc/*.pid; do
+      if [ -f "$f" ]; then kill -TERM "$(cat "$f")" 2>/dev/null || true; fi
+    done
+    if [ -f "$dir/movies/tmdb.log" ]; then cp "$dir/movies/tmdb.log" "$dir/evidence/movies-tmdb-requests.log"; fi
+    if [ -f "$dir/movies/vlc/launches.jsonl" ]; then cp "$dir/movies/vlc/launches.jsonl" "$dir/evidence/movies-vlc-launches.jsonl"; fi
+    if [ -f "$dir/movies/vlc/commands.jsonl" ]; then cp "$dir/movies/vlc/commands.jsonl" "$dir/evidence/movies-vlc-commands.jsonl"; fi
+  fi
+  if [ -f "$dir/tmdb.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/tmdb.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/tmdb.pid")" 2>/dev/null || true
+  fi
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi
   if [ -f "$dir/seer_db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/seer_db") with (force)" >/dev/null || true
   fi
-  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/seer" "$dir/pid" "$dir/port" "$dir/db" "$dir/seer_db"
+  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/seer" "$dir/movies" "$dir/pid" "$dir/port" "$dir/db" "$dir/seer_db" "$dir/tmdb.pid"
   echo "verify: stopped $(basename "$dir"); evidence kept in $dir/evidence ($(find "$dir/evidence" -type f | wc -l) files)"
 }
 
@@ -338,7 +424,8 @@ case "$sub" in
   sql) cmd_sql "$@" ;;
   exec) cmd_exec "$@" ;;
   note) cmd_note "$@" ;;
+  vlc) cmd_vlc "$@" ;;
   down) cmd_down "$@" ;;
   ls) cmd_ls ;;
-  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

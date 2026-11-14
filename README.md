@@ -41,6 +41,7 @@ its own chat bar.
   - [Chat about one project](#chat-about-one-project)
   - [Running swarms with the graph](#running-swarms-with-the-graph)
 - [Connectors: spending, runs, Seer, daily-words](#connectors-spending-runs-seer-daily-words)
+- [Movies](#movies)
 - [Install and run](#install-and-run)
   - [Requirements](#requirements)
   - [Install on WSL](#install-on-wsl)
@@ -982,6 +983,60 @@ How it stays safe:
 There are no recordings of the connectors on purpose: the only data they can show is real
 spending, real runs, real positions and your own vocabulary and journal.
 
+## Movies
+
+The Movies icon in the rail opens `/movies`: every film and series in your video folders, as a grid of
+posters. notesd scans the folders named in `NOTESD_MOVIES_ROOTS` every two minutes, keeps the videos of
+at least 15 minutes, and looks each one up on TMDB from its file name and folder. Release names like
+`How.to.Make.a.Killing.2026.1080p.WEB-DL.x265.6CH-Pahe.in.mkv`, `The_Rivals_of_Amziah_King_2026_…_Pahe_in.mkv`,
+`Oldboy (2003)/Oldboy.mkv`, a season folder of `MobLand.S01E01…` files and `One Piece - 405` all
+resolve. When a name is not clear enough, one short Haiku call suggests the title. Everything else
+(WhatsApp clips, trailers, names nothing matches) goes to a hidden unmatched list with the reason,
+where you pick the right title by hand.
+
+A series is one poster. Click a poster for its page: release date, synopsis, studios, directors,
+writers and producers, the cast with their characters, Play or Resume, the watched flag, 0–5 stars and
+a review. The review is an ordinary note tagged `#movie`, so `/n` finds it and its revisions are kept.
+A series page lists every episode with its own progress. The pill bar at the bottom asks the chat about
+the page you are on.
+
+**Play and resume.** Play starts the Windows VLC on the file at the second you stopped (from the start
+when you had finished it), so VLC's own "continue?" prompt never comes up, and reads its position every
+five seconds while it plays. A film you open from Explorer counts too: VLC writes its recent list when
+it exits, and the next scan reads the positions from it.
+
+**Deleting is not watching.** Files come and go; titles and their history stay. A file is finished
+when it got to 90 % or more, when you set the watched flag (for the films whose credits you skip), or
+when it is moved into a `Done` folder. Deleted partway, it is dropped; deleted before it was played,
+it is removed unwatched. A file that shows up elsewhere in the folders with the same name and size was
+moved, not deleted. Deleted files keep their row, with a deleted flag on the page.
+
+**From Claude Code.**
+
+```
+/n which MobLand episode did I watch last, and when?
+/n Blumhouse films I finished this year
+/n recommend other Margaret Qualley films I haven't seen
+/n continue MobLand
+/n continue whatever I watched last night
+```
+
+"Continue" resumes the episode you stopped in, else starts the next one whose file is here, else
+tells you which episode is missing and which later ones you have.
+
+**Setup.** Put the folders and VLC's settings file in `.env.local` (the TMDB token is in the
+Configuration table below), then run `npm run db:migrate` once and `scripts/install.sh`:
+
+```
+NOTESD_MOVIES_ROOTS=/mnt/c/Users/<you>/Videos:/mnt/c/Users/<you>/Downloads/Telegram Desktop
+NOTESD_MOVIES_DONE_DIRS=Done
+NOTESD_VLC_INI=/mnt/c/Users/<you>/AppData/Roaming/vlc/vlc-qt-interface.ini
+```
+
+Play needs WSL interop, VLC at `NOTESD_VLC_BIN` and Windows' `curl.exe`; without them the button is
+disabled and says why. Titles, ratings and reviews are shared by both machines; files, plays and VLC
+belong to the machine that has the file, and the other one shows "not on this machine".
+
 ## Install and run
 
 ### Requirements
@@ -1121,26 +1176,26 @@ part of `npm test` or `test:int`.
 | `NOTESD_TMUX_SOCKET` | unset | A tmux socket path for resume from the wall (`tmux -S`). Unset: the default socket, which the systemd user unit reaches. |
 | `NOTESD_TMUX_BIN` | `tmux` | The tmux binary resume from the wall runs. |
 | `NOTES_CLAUDE_RETENTION_DAYS` | 3650 | Read by `scripts/install.sh`, not the daemon: the minimum `cleanupPeriodDays` it writes to `~/.claude/settings.json`. |
-| `NOTESD_MOVIES` | on | `off` stops the movies library on this machine: no scan, no TMDB calls, no VLC. |
-| `NOTESD_MOVIES_ROOTS` | — | `:`-separated absolute directories scanned recursively for video files (mkv, mp4, avi, m4v, webm). Unset: nothing is scanned. |
-| `NOTESD_MOVIES_DONE_DIRS` | `Done` | `:`-separated folder names (not paths). A file moved into, or first found inside, such a folder below a root counts as finished. |
-| `NOTESD_MOVIES_SCAN_MS` | `120000` | Pause between library sync passes. |
-| `NOTESD_MOVIES_MIN_SECONDS` | `900` | Videos shorter than this stay out of the library (unmatched, `too_short`). |
-| `TMDB_API_READ_ACCESS_TOKEN` | — | TMDB v4 read access token (Bearer), preferred. Without it and `TMDB_API_KEY`, files are recorded as unmatched (`no_tmdb_credentials`). |
-| `TMDB_API_KEY` | — | TMDB v3 API key, used when there is no read access token. |
-| `TMDB_API_BASE` | `https://api.themoviedb.org/3` | TMDB API host. Tests point it at a fixture server. |
-| `TMDB_IMAGE_BASE` | `https://image.tmdb.org/t/p` | Poster host. Posters are linked, not stored, so both machines show them. |
-| `NOTESD_FFPROBE_BIN` | `ffprobe` | The ffprobe that measures each video's duration. |
-| `NOTESD_VLC_BIN` | `/mnt/c/Program Files/VideoLAN/VLC/vlc.exe` | The Windows VLC that Play starts. |
-| `NOTESD_VLC_INI` | — | VLC's `vlc-qt-interface.ini` (e.g. `/mnt/c/Users/<you>/AppData/Roaming/vlc/vlc-qt-interface.ini`). Its recent list backfills plays of films opened outside notesd. Unset: no backfill. |
-| `NOTESD_VLC_HTTP_PORT` | `47318` | Port of the HTTP interface of a VLC that notesd starts (bound to Windows loopback). |
-| `NOTESD_VLC_POLL_MS` | `5000` | How often a playing VLC's position is recorded. |
-| `NOTESD_CURL_EXE` | `/mnt/c/Windows/System32/curl.exe` | The Windows curl that reads VLC's HTTP interface from the Windows side (WSL's NAT network cannot reach Windows loopback). |
+| `NOTESD_MOVIES` | on | `off` stops the Movies library on this machine: no scan, no TMDB call, no VLC. While `NOTESD_MOVIES_ROOTS` is empty nothing is scanned, but the library, playback and the routes still work. |
+| `NOTESD_MOVIES_ROOTS` | — | The folders scanned for films and series: absolute paths separated by `:`, searched recursively. Spaces are fine (`/mnt/c/Users/you/Videos:/mnt/c/Users/you/Downloads/Telegram Desktop`). Unset: nothing is scanned. |
+| `NOTESD_MOVIES_DONE_DIRS` | `Done` | Folder names, separated by `:`, any case, that mean "watched": a file found in or moved into one, at any depth below a root, counts as finished. |
+| `NOTESD_MOVIES_SCAN_MS` | `120000` | Pause between library passes. `/mnt/c` sends WSL no file events, so the folders are polled, not watched. `POST /api/movies/sync` starts a pass at once. |
+| `NOTESD_MOVIES_MIN_SECONDS` | `900` | Videos shorter than this (by `ffprobe`) go to the unmatched list as `too_short`, without a TMDB lookup. |
+| `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model alias asked for a title and year when a file name has no confident TMDB match: one short call per such file (never repeated for a file left unmatched), on your `claude` login. `off`: no fallback. |
+| `TMDB_API_READ_ACCESS_TOKEN` | — | TMDB v4 read access token, sent as a Bearer header. Preferred. |
+| `TMDB_API_KEY` | — | TMDB v3 API key, used only when there is no token. With neither, files are still registered, all unmatched as `no_tmdb_credentials`. |
+| `TMDB_API_BASE` | `https://api.themoviedb.org/3` | TMDB API root. Tests and `verify.sh up --movies` point it at a fake. |
+| `TMDB_IMAGE_BASE` | `https://image.tmdb.org/t/p` | Where poster URLs point. Posters are linked, never stored, so both machines show them. |
+| `NOTESD_FFPROBE_BIN` | `ffprobe` | Reads each video's duration. |
+| `NOTESD_VLC_BIN` | `/mnt/c/Program Files/VideoLAN/VLC/vlc.exe` | The Windows VLC that Play starts. notesd never reuses or closes a VLC it did not start. |
+| `NOTESD_CURL_EXE` | `/mnt/c/Windows/System32/curl.exe` | The Windows `curl.exe` that reads VLC's status. VLC's HTTP interface listens on Windows' `127.0.0.1`, which WSL's NAT networking cannot reach, so the request is made from the Windows side. |
+| `NOTESD_VLC_HTTP_PORT` | `47318` | Port of the HTTP interface notesd turns on in the VLC it starts (loopback only, a new password each launch). |
+| `NOTESD_VLC_POLL_MS` | `5000` | How often a playing VLC's position is read into its play event. |
+| `NOTESD_VLC_INI` | — | VLC's `vlc-qt-interface.ini` (`/mnt/c/Users/<you>/AppData/Roaming/vlc/vlc-qt-interface.ini`), read on every pass for its `[RecentsMRL]` list, so films opened from Explorer count too. Unset: only plays started from notesd are recorded. |
 | `NOTESD_VLC_HEALTH_MS` | `30000` | How often every `vlc.exe` on this machine is sampled into `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl` (pid, working set, private bytes, handles, and for a VLC notesd started its play state and seconds paused); one fsync'd JSON line per VLC, 5 MB plus one previous file. After a crash the next start adds an incident with the last samples and the Windows Application Error / Application Hang events around them. `GET /api/movies/player/health` reads it. `0` turns the log, incidents and hang detection off (so does an empty `NOTESD_MOVIES_ROOTS`); 1-4999 is rejected. |
 | `NOTESD_VLC_EXTRA_ARGS` | — | Extra `vlc.exe` arguments for every VLC notesd starts, split on whitespace (no quoting), placed before the file, e.g. `--avcodec-hw=none`. `--http-*`, `--extraintf`, `--intf` and `-I` are rejected: notesd owns VLC's HTTP interface. |
 | `NOTESD_TASKLIST_EXE` | `/mnt/c/Windows/System32/tasklist.exe` | The Windows tasklist the VLC health log runs each interval. Missing: the health log is off (one startup log line). |
 | `NOTESD_POWERSHELL_EXE` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` | Reads private bytes, handles and the command line of each `vlc.exe` (only while one runs), and the Windows events for a crash incident. Missing: samples keep pid and working set only, and incidents carry no Windows events. |
-| `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model alias that names a file TMDB could not match from its name. `off`: no fallback (such files stay unmatched). |
 
 ## How it works
 
@@ -1189,6 +1244,12 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `adversary_verdicts` | Claude's verdicts (`agree`, `object`, `unsure`) with reasons, sources, model, prompt version and host; `late: true` when decided after the open. Optional `strategy`, `session` (default: each method's latest decision), `verdict`, `limit` |
 | `adversary_scorecard` | One method's record: each objected stock's return over the method's horizon (5 sessions for a daily method, until the next rebalance for a book) against the kept picks; for a daily method with C, Claude against C on the nights they disagree |
 | `adversary_redo_context` / `adversary_redo_submit` | For the `/redo <method> <TICKER>` skill: redo one pick's review with real web search. Context says whether it is still fresh (a verdict counts only before the session's 09:30 New York open; after that nothing is written) and gives the facts and rules; submit writes the verdict to Seer, superseding the old one, and re-checks the clock |
+| `movies_list` | Titles by text, `state` (finished, in progress, unwatched, dropped, removed unwatched, seen), studio (`company`), `person`, kind, and the date range they were finished in ("Blumhouse films I saw this year") |
+| `movies_get` | One title with its credits, episodes, files (deleted ones too) and play events |
+| `movies_history` | Play events, newest first, optionally for one title or date range; kept after the file is deleted ("which MobLand episode did I watch last, and when?") |
+| `movies_continue` | Resume the latest unfinished episode or film of `title` from its position, else start the next episode whose file is here, else say which next episode is missing and which later ones are present. Without `title`: the title of the newest play. Starts VLC on this machine |
+| `movies_person` | A person's TMDB filmography, each entry marked seen or not seen ("other Margaret Qualley films") |
+| `movies_mark` | Set the watched flag, the 0–5 rating or the review of a title, or the watched flag of one file |
 
 Every note in a result carries `images`: its photos in order, each with its own id, metadata,
 URLs and `available` (false when the file lives on another machine). No tool deletes anything
@@ -1199,7 +1260,7 @@ The 21 connector tools are listed under [Connectors](#connectors-spending-runs-s
 
 The server also sends Claude short instructions: what mcp-notes is, how note and session ids look,
 that comparisons are Claude's job, and that the connectors are read-only and the curated tools
-come first. The chat bar can use the five session tools and the three adversary tools too.
+come first. The chat bar can use the five session tools, the three adversary tools and the movie tools too.
 
 ### Search by meaning
 
@@ -1251,7 +1312,7 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `DELETE /api/files/:fileId` · `POST /api/files/:fileId/restore` | Remove one file from its note (soft) / put it back at its old place; 409 `duplicate_file` with the holder's `note_id` |
 | `GET /api/bin?tag=` | The recycle bin, `{notes, images}`, newest deleted first |
 | `DELETE /api/bin/notes/:id` · `DELETE /api/bin/images/:imageId` | Delete forever: rows and files. 409 `not_deleted` for anything not in the bin; 403 `forbidden_origin` unless the request comes from the wall's own page |
-| `GET /api/capabilities` | `{"reveal": true}` when "open file location" can work on this machine |
+| `GET /api/capabilities` | `{"reveal": true, "movies_playback": true}`: whether "open file location" can work on this machine, and whether Play can start VLC here |
 | `POST /api/images/:imageId/reveal` | Open Explorer with the original selected; 202 as soon as `explorer.exe` has started. Same-origin requests only |
 | `POST /api/files/:fileId/reveal` | Open Explorer with the file selected. Same-origin requests only |
 | `POST /api/notes/:id/reveal` | Open the note's `files/<noteId>/` folder in Explorer, or select its first photo when it has no files. Same-origin requests only |
@@ -1286,6 +1347,20 @@ million image tokens, roughly 258-516 tokens a photo); without `--dry-run` it em
 | `GET /api/adversary/scorecard/:id` | Each objection's horizon return against the kept picks, and Claude against C |
 | `GET/PUT /api/adversary/toggle` | Automatic reviews on or off (`{on}`), shared by both machines; `PUT` is same-origin only. 503 `reviewer_off` when this daemon runs with `NOTESD_ADVERSARY=off` |
 | `POST /api/adversary/review-now` | `{strategy_id?}`: start one review pass now, even while automatic reviews are off; 202 `{started, reason}` before it finishes. Same-origin only |
+| `GET /api/movies?q=&state=&kind=&company=&person=` | The library, one entry per title with `poster_url` and its derived `state`; `q` is full text over title and synopsis. With `NOTESD_MOVIES=off` every `/api/movies*` route answers 503 `movies_off` |
+| `GET /api/movies/unmatched` | This machine's files that are not in the library, each with its `reason` (`too_short`, `no_match`, `low_confidence`, `tmdb_error`, `no_tmdb_credentials`, `probe_failed`) |
+| `GET /api/movies/status` | Whether the library is on, its roots, and the last pass with its counts |
+| `GET /api/movies/search-tmdb?q=&kind=` | TMDB search, for picking the title of an unmatched file |
+| `GET /api/movies/events` | Server-sent events, `event: changed` after every pass or write that changes the library |
+| `GET /api/movies/player` | The play notesd is tracking now, if any, and whether playback is `available` on this machine |
+| `GET /api/movies/player/health?limit=` | This machine's VLC health log (phase 9): the newest `limit` samples (default 200, max 2000) with pid, working set, private bytes, handles and, for the VLC notesd follows, its state and seconds paused; per-VLC run summaries with growth per paused minute; hang lines; and crash incidents with the Windows Application Error / Application Hang events. The file is `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl`. 503 `movies_off` without a monitor |
+| `GET /api/movies/:id` | One title (`movie-<tmdb id>` or `tv-<tmdb id>`): release date, synopsis, studios, directors, writers, producers, cast with characters, rating, watched, review, the episode list, and every file (deleted ones too) with its `state`, `available`, season and episode |
+| `POST /api/movies/:id/user` | `{watched?, rating?, review?}`: the watched flag, 0–5 stars, and the review, kept as a note tagged `#movie` and linked to the title. Same-origin only |
+| `POST /api/movies/files/:fileId/watched` | `{watched}`: mark one file or episode finished, or take the mark off. Same-origin only |
+| `POST /api/movies/files/:fileId/assign` | `{kind, tmdb_id, season?, episode?}`: put an unmatched (or wrongly matched) file under that TMDB title. Same-origin only |
+| `POST /api/movies/sync` | Start a library pass now. Same-origin only |
+| `POST /api/movies/files/:fileId/play` | Start VLC on the file at its resume point (the last position; the start when there is none or it was finished). `not_on_this_machine` for another machine's file, `player_unavailable` without `vlc.exe`, WSL interop or `curl.exe`. Same-origin only |
+| `POST /api/movies/continue` | `{title?}`: what `movies_continue` does. Same-origin only |
 | `/full/:imageId` | The full-screen photo page |
 | `/projects?repo=&node=&focus=1` | The project session graph, opened on that repo and node; `focus=1` shows only the graph (or project chat), toolbar and pill. With `node` and no `repo` (how Claude Code links a session) the node's own repo is looked up |
 
@@ -1315,6 +1390,15 @@ Postgres   notes(id, body, tags[], origin, created_at, updated_at, deleted_at,
                        commits, files_edited, plan_docs, summary, summary_sha, …)
            cc_session_embeddings(session_id, embedding vector(1536), sha, model)
            cc_pending_spawns(id, parent_session_id, cwd, name, host, created_at, claimed_by, claimed_at)
+           movie_titles(id [movie-467905 | tv-247718], kind, tmdb_id, title, year, release_date,
+                        overview, poster_path, genres, watched_at, rating, review_note_id, …)
+           movie_companies, movie_title_companies, movie_people,
+           movie_credits(title_id, person_id, role, character, job, ord)
+           movie_episodes(title_id, season, episode, name, air_date, runtime_min, …)
+           movie_files(id, title_id, host, path, name, size, duration_s, season, episode, status,
+                       reason, source, first_seen_at, deleted_at, moved_at, done_at, watched_at, …)
+           movie_plays(id, file_id, host, source [live | vlc_recents], started_at, ended_at,
+                       start_position_s, position_s, duration_s)
            app_settings(key, value)                    projects.selected: the repo picked on the wall
 ~/mcp-notes-data/
   images/YYYY/MM/<imageId>.<ext>   originals, byte for byte
@@ -1387,6 +1471,9 @@ disk again. Transcripts Claude Code has since deleted are gone from disk but kep
   look a little flat in the browser. The original is untouched.
 - **Tag syntax is loose.** Any `#word`, including `#123`, becomes a tag.
 - **Edits from another machine** reach the wall within 60 seconds, not instantly.
+- **Movies play where the file is.** Titles, ratings and reviews are shared; files, plays and VLC belong
+  to one machine. A film opened from Explorer reaches the history only when VLC exits (VLC writes its
+  recent list then), and VLC keeps only its last 30. Playback needs Windows VLC under WSL.
 - **Sessions are as good as the transcripts.** A session Claude Code deleted before the daemon
   read it is not on the graph. Links between old sessions are guesses from what the parent
   wrote (marked as such); only sessions started after install are linked for certain.
