@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 15
+**Total Active Tasks**: 14
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 12
+- P1 High: 11
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 7
-- Completed: 94
+- Blocked: 4
+- Completed: 95
 
 ---
 
@@ -76,20 +76,11 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A104** Phase 3: Library sync: scan, diff, match, store, background service
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/movies/scan.ts`, `sync.ts`, the real `service.ts` (`MoviesService`, `buildMoviesService`, `MovieEvents`, `assign`, `addSyncHook`), the re-export replacing phase 2's mirrored types in `tmdb.ts`, building it in `src/daemon.ts`, starting/closing it in `src/background.ts`, unit tests with fake fs/ffprobe/TMDB and an integration test over a temp directory. Does not touch routes, VLC, web, MCP. Exit criteria: a pass over a fixture tree registers matched files, lists short/no-match files as unmatched (short ones without a TMDB call), groups a season folder under one `tv-` title, detects delete, move and done; files under no configured root are never judged; a TMDB outage leaves files `pending` and the next pass matches them, one title's 404 leaves only that file pending; unmatched files are never re-matched; nothing runs with `NOTESD_MOVIES=off` or empty roots.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 3 of 9)
-  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.1, R1.2, R1.4, R2.1, R2.3, R3.1, R3.2, R3.3, R3.5
-  - **Depends on**: P1-NOTES-A102, P1-NOTES-A103
-  - **Plan**: `.workflows/plan/P1-NOTES-A104.md`
 - [ ] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/movies/read.ts`, `reviewNote.ts`, the body of `src/http/moviesApi.ts`, `tests/integration/helpers/moviesSeed.ts`, integration tests over HTTP. Does not touch `src/http/app.ts`, `moviesPlayApi.ts`, `src/movies/repo.ts`, VLC, web, MCP. Exit criteria: every route in the contract answers; a title detail carries state per file/episode, `available` per file and `poster_url`; assigning an unmatched file moves it into the library; watched/rating/review persist and the review is a real note; 503 `movies_off` without a service.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 4 of 9)
   - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.5, R2.4, R3.6, R3.7
   - **Depends on**: P1-NOTES-A104
@@ -98,7 +89,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/movies/vlc/*`, `player.ts`, `continue.ts`, the body of `src/http/moviesPlayApi.ts`, `movies_playback` in `/api/capabilities` (`src/http/reveal.ts`), `AppDeps.moviesPlayer`, building the player and registering `recentsSyncHook` in `src/daemon.ts`, unit tests with fake launcher/status reader/ini, an integration test with a fake VLC and its fixtures/helpers. Does not touch `moviesApi.ts`, `read.ts`, `repo.ts`, `app.ts`, web, MCP. Exit criteria: play launches the (fake) VLC with the Windows path, `--no-one-instance`, `--extraintf http`, loopback host, our port and a per-launch password, confirms `playing`, seeks to the resume position, polls into one play event and closes it when the process is gone; `changed` is emitted on play start and end only; under systemd VLC runs in its own `systemd-run --user --scope`; recents entries become observations, also for a file that no longer exists; continue picks resume / next present / missing as specified and accepts an exact title id.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 5 of 9)
   - **Satisfies**: R3, R4, R6 — R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ...; R4: PLAYBACK + PROGRESS (most important feature) - VLC is Windows-only: /mnt/c/Program Files/VideoLAN/VLC/vlc.exe (no WSL vlc) ...; R6: MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R3.7, R4.1, R4.2, R4.3, R4.4, R4.5, R6.1, R6.2
   - **Depends on**: P1-NOTES-A104
@@ -149,6 +140,22 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A104** Phase 3: Library sync: scan, diff, match, store, background service
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/scan.ts`, `sync.ts`, the real `service.ts` (`MoviesService`, `buildMoviesService`, `MovieEvents`, `assign`, `addSyncHook`), the re-export replacing phase 2's mirrored types in `tmdb.ts`, building it in `src/daemon.ts`, starting/closing it in `src/background.ts`, unit tests with fake fs/ffprobe/TMDB and an integration test over a temp directory. Does not touch routes, VLC, web, MCP. Exit criteria: a pass over a fixture tree registers matched files, lists short/no-match files as unmatched (short ones without a TMDB call), groups a season folder under one `tv-` title, detects delete, move and done; files under no configured root are never judged; a TMDB outage leaves files `pending` and the next pass matches them, one title's 404 leaves only that file pending; unmatched files are never re-matched; nothing runs with `NOTESD_MOVIES=off` or empty roots.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 3 of 9)
+  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.1, R1.2, R1.4, R2.1, R2.3, R3.1, R3.2, R3.3, R3.5
+  - **Depends on**: P1-NOTES-A102, P1-NOTES-A103
+  - **Plan**: `.workflows/plan/P1-NOTES-A104.md`
+  - **Completed**: 2026-11-14 14:07
+  - **Method**: /implement
+  - **Files**: src/movies/tmdb.ts, src/movies/scan.ts, src/movies/sync.ts, src/movies/service.ts, src/daemon.ts, src/background.ts, tests/unit/movies/scan.test.ts, tests/unit/movies/sync.helpers.test.ts, tests/unit/movies/service.test.ts, tests/integration/helpers/movieMeta.ts, tests/integration/movies.sync.int.test.ts
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-140623-156253/evidence
+  - **Drift**: tests/integration/helpers/movieMeta.ts: dropped `ord: 0` from the credit literals — phase 1's CreditMeta has no `ord` (array order), as the index's reconciliation row 1 says
+    tests/integration/movies.sync.int.test.ts: the fake resolver's matched result gained `source: 'filename', matchedTitle` — phase 2's MatchResult requires them
+    src/daemon.ts: the deps literal had `movies: null` before `sessionEvents` rather than last; replaced in place
 - [x] **P1-NOTES-A102** Phase 1: Foundation: schema, repo, state, config, seams
   - **Difficulty**: NORMAL
   - **Type**: Feature

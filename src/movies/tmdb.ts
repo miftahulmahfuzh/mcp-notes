@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata } from './types.js';
 
 /**
  * TMDB v3 client: search, details with credits, every season's episodes, people. The only module
@@ -21,69 +22,8 @@ export const DEFAULT_POSTER_SIZE = 'w342';
 /** How much of a bad response body an error message carries. */
 const SNIPPET_CHARS = 300;
 
-export type TitleKind = 'movie' | 'tv';
-export type CreditRole = 'cast' | 'director' | 'writer' | 'producer' | 'creator';
-
-/*
- * TitleMetadata: what a match stores (movie_titles + movie_companies/movie_title_companies +
- * movie_people/movie_credits + movie_episodes). TEMPORARY MIRROR of src/movies/types.ts (phase 1,
- * built in parallel): same names, same fields, field for field. Phase 3 replaces this block with
- * `export type { TitleKind, CreditRole, CompanyMeta, CreditMeta, EpisodeMeta, TitleMetadata } from
- * './types.js';` (reconciled plan set). Order is array order: MoviesRepo.upsertTitle stores each
- * list's index as `ord`, so these types carry no `ord` field.
- */
-export interface CompanyMeta {
-  /** TMDB company id (movie_companies.id). */
-  id: number;
-  name: string;
-  logoPath: string | null;
-  originCountry: string | null;
-}
-
-export interface CreditMeta {
-  /** TMDB person id (movie_people.id). */
-  personId: number;
-  name: string;
-  profilePath: string | null;
-  role: CreditRole;
-  /** Cast only: the character(s) played, " / " joined. */
-  character: string | null;
-  /** Crew only: TMDB job(s), ", " joined ("Writer, Original Concept"). Null for cast and creators. */
-  job: string | null;
-}
-
-export interface EpisodeMeta {
-  season: number;
-  episode: number;
-  name: string;
-  airDate: string | null;
-  runtimeMin: number | null;
-  overview: string | null;
-  stillPath: string | null;
-}
-
-export interface TitleMetadata {
-  kind: TitleKind;
-  tmdbId: number;
-  title: string;
-  originalTitle: string;
-  year: number | null;
-  /** YYYY-MM-DD: a film's release date, a series' first air date. */
-  releaseDate: string | null;
-  overview: string;
-  posterPath: string | null;
-  backdropPath: string | null;
-  runtimeMin: number | null;
-  genres: string[];
-  seasonCount: number | null;
-  episodeCount: number | null;
-  /** Billing order (array order). */
-  companies: CompanyMeta[];
-  /** Ordered by role (cast, director, writer, producer, creator), then billing within the role (array order). */
-  credits: CreditMeta[];
-  /** Series: every episode of every season TMDB lists, season 0 (specials) included. Films: []. */
-  episodes: EpisodeMeta[];
-}
+// TitleMetadata and its parts have one definition, in ./types.ts (phase 1); this module re-exports them.
+export type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata };
 
 /** One search result, film or series. */
 export interface TmdbSearchHit {
