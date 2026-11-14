@@ -76,9 +76,10 @@ export interface VlcLaunch {
 /**
  * vlc.exe's argv. A separate instance (never the owner's running VLC), no "Continue playback?"
  * question (`qt-continue` is 0 never / 1 ask / 2 always), no first-run privacy dialog, the HTTP
- * interface beside the normal Qt window, and the resume second. The file is the last argument.
+ * interface beside the normal Qt window, and the resume second. Then NOTESD_VLC_EXTRA_ARGS
+ * (movies phase 9; config.ts rejects any that would set the HTTP interface), and the file last.
  */
-export function vlcArgs(l: VlcLaunch): string[] {
+export function vlcArgs(l: VlcLaunch, extraArgs: readonly string[] = []): string[] {
   return [
     '--no-one-instance',
     '--no-one-instance-when-started-from-file',
@@ -93,6 +94,7 @@ export function vlcArgs(l: VlcLaunch): string[] {
     '--http-password',
     l.password,
     `--start-time=${Math.max(0, Math.floor(l.startTime))}`,
+    ...extraArgs,
     l.winPath,
   ];
 }
@@ -126,9 +128,9 @@ export function scopeArgs(vlc: string, args: string[]): string[] {
  * The real launcher: detached, stdio ignored, unref'd. Under systemd (`scope` true; default: detected
  * from /proc/self/cgroup) VLC goes through `systemd-run --user --scope` so `systemctl --user restart
  * notesd` (KillMode=control-group) cannot kill it; without systemd-run it falls back to a plain
- * detached spawn.
+ * detached spawn. `extraArgs` (config.movies.vlc.extraArgs) go on every launch.
  */
-export function spawnVlcLauncher(opts: { scope?: boolean } = {}): VlcLauncher {
+export function spawnVlcLauncher(opts: { scope?: boolean; extraArgs?: readonly string[] } = {}): VlcLauncher {
   let scoped: Promise<string | null> | null = null;
   const systemdRun = (): Promise<string | null> => {
     scoped ??= (async () => {
@@ -139,11 +141,12 @@ export function spawnVlcLauncher(opts: { scope?: boolean } = {}): VlcLauncher {
     })();
     return scoped;
   };
+  const extra = opts.extraArgs ?? [];
   return {
     async launch(env, l) {
       const run = await systemdRun();
-      if (run !== null) return spawnDetached(run, scopeArgs(env.vlc, vlcArgs(l)));
-      return spawnDetached(env.vlc, vlcArgs(l));
+      if (run !== null) return spawnDetached(run, scopeArgs(env.vlc, vlcArgs(l, extra)));
+      return spawnDetached(env.vlc, vlcArgs(l, extra));
     },
   };
 }

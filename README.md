@@ -1136,6 +1136,10 @@ part of `npm test` or `test:int`.
 | `NOTESD_VLC_HTTP_PORT` | `47318` | Port of the HTTP interface of a VLC that notesd starts (bound to Windows loopback). |
 | `NOTESD_VLC_POLL_MS` | `5000` | How often a playing VLC's position is recorded. |
 | `NOTESD_CURL_EXE` | `/mnt/c/Windows/System32/curl.exe` | The Windows curl that reads VLC's HTTP interface from the Windows side (WSL's NAT network cannot reach Windows loopback). |
+| `NOTESD_VLC_HEALTH_MS` | `30000` | How often every `vlc.exe` on this machine is sampled into `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl` (pid, working set, private bytes, handles, and for a VLC notesd started its play state and seconds paused); one fsync'd JSON line per VLC, 5 MB plus one previous file. After a crash the next start adds an incident with the last samples and the Windows Application Error / Application Hang events around them. `GET /api/movies/player/health` reads it. `0` turns the log, incidents and hang detection off (so does an empty `NOTESD_MOVIES_ROOTS`); 1-4999 is rejected. |
+| `NOTESD_VLC_EXTRA_ARGS` | — | Extra `vlc.exe` arguments for every VLC notesd starts, split on whitespace (no quoting), placed before the file, e.g. `--avcodec-hw=none`. `--http-*`, `--extraintf`, `--intf` and `-I` are rejected: notesd owns VLC's HTTP interface. |
+| `NOTESD_TASKLIST_EXE` | `/mnt/c/Windows/System32/tasklist.exe` | The Windows tasklist the VLC health log runs each interval. Missing: the health log is off (one startup log line). |
+| `NOTESD_POWERSHELL_EXE` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` | Reads private bytes, handles and the command line of each `vlc.exe` (only while one runs), and the Windows events for a crash incident. Missing: samples keep pid and working set only, and incidents carry no Windows events. |
 | `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model alias that names a file TMDB could not match from its name. `off`: no fallback (such files stay unmatched). |
 
 ## How it works

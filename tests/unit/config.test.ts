@@ -349,6 +349,8 @@ describe('movies config', () => {
         httpPort: 47318,
         pollMs: 5000,
         curlExe: '/mnt/c/Windows/System32/curl.exe',
+        healthMs: 30_000,
+        extraArgs: [],
       },
       fallbackModel: 'haiku',
     })
@@ -372,6 +374,8 @@ describe('movies config', () => {
         NOTESD_VLC_HTTP_PORT: '48000',
         NOTESD_VLC_POLL_MS: '250',
         NOTESD_CURL_EXE: 'curl.exe',
+        NOTESD_VLC_HEALTH_MS: '0',
+        NOTESD_VLC_EXTRA_ARGS: '  --avcodec-hw=none   --no-video-title-show ',
         NOTESD_MOVIES_FALLBACK_MODEL: 'claude-haiku-4-5',
       }),
     ).toEqual({
@@ -388,6 +392,8 @@ describe('movies config', () => {
         httpPort: 48000,
         pollMs: 250,
         curlExe: 'curl.exe',
+        healthMs: 0,
+        extraArgs: ['--avcodec-hw=none', '--no-video-title-show'],
       },
       fallbackModel: 'claude-haiku-4-5',
     })
@@ -413,6 +419,13 @@ describe('movies config', () => {
     ['NOTESD_VLC_INI', 'vlc-qt-interface.ini'],
     ['NOTESD_VLC_HTTP_PORT', '70000'],
     ['NOTESD_VLC_POLL_MS', '1.5'],
+    ['NOTESD_VLC_HEALTH_MS', '1000'],
+    ['NOTESD_VLC_HEALTH_MS', '-1'],
+    ['NOTESD_VLC_HEALTH_MS', '30s'],
+    ['NOTESD_VLC_EXTRA_ARGS', '--http-port 9999'],
+    ['NOTESD_VLC_EXTRA_ARGS', '--avcodec-hw=none --http-password=x'],
+    ['NOTESD_VLC_EXTRA_ARGS', '--extraintf=rc'],
+    ['NOTESD_VLC_EXTRA_ARGS', '-I dummy'],
     ['NOTESD_MOVIES_FALLBACK_MODEL', 'ha iku'],
   ])('rejects %s=%j', (key, value) => {
     expect(() => movies({ [key]: value })).toThrow(ConfigError)
@@ -420,5 +433,13 @@ describe('movies config', () => {
 
   it('keeps DEFAULT_MOVIES_CONFIG off, with no roots, no credentials and no VLC ini, so hand-built test configs never scan', () => {
     expect(DEFAULT_MOVIES_CONFIG).toMatchObject({ enabled: false, roots: [], tmdb: { token: null, apiKey: null }, vlc: { ini: null } })
+  })
+
+  it('R8.4: NOTESD_VLC_EXTRA_ARGS is split on whitespace, and a 5 s health interval is the smallest accepted', () => {
+    expect(movies({ NOTESD_VLC_EXTRA_ARGS: '--avcodec-hw=none' }).vlc.extraArgs).toEqual(['--avcodec-hw=none'])
+    expect(movies({ NOTESD_VLC_EXTRA_ARGS: '   ' }).vlc.extraArgs).toEqual([])
+    expect(movies({ NOTESD_VLC_EXTRA_ARGS: '--intf-foo --no-http-forward-cookies' }).vlc.extraArgs).toEqual(['--intf-foo', '--no-http-forward-cookies'])
+    expect(movies({ NOTESD_VLC_HEALTH_MS: '5000' }).vlc.healthMs).toBe(5000)
+    expect(DEFAULT_MOVIES_CONFIG.vlc).toMatchObject({ healthMs: 30_000, extraArgs: [] })
   })
 })

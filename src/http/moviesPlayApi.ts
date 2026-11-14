@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { continueTitle } from '../movies/continue.js';
 import { PlayError } from '../movies/player.js';
+import { DEFAULT_REPORT_SAMPLES, MAX_REPORT_SAMPLES } from '../movies/vlc/health.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 /**
@@ -16,6 +17,11 @@ const fileIdParam = z
   .regex(/^[1-9][0-9]{0,15}$/)
   .transform(Number);
 const continueBody = z.object({ title: z.string().trim().min(1).max(200).optional() }).strict();
+const healthLimit = z
+  .string()
+  .regex(/^[1-9][0-9]{0,3}$/)
+  .transform(Number)
+  .refine((n) => n <= MAX_REPORT_SAMPLES);
 
 const MOVIES_OFF = {
   error: 'movies_off',
@@ -37,7 +43,7 @@ export function playErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer'>): Hono {
+export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'>): Hono {
   const r = new Hono();
 
   r.get('/api/movies/player', async (c) => {
@@ -78,6 +84,23 @@ export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer'>): Ho
     } catch (err) {
       return playErrorResponse(c, err);
     }
+  });
+
+  /**
+   * Movies phase 9 (R8.5): this host's VLC health log. Read only, no Origin check. `limit` caps the
+   * samples (default 200, max 2000); run summaries, hangs and incidents come from the whole read window.
+   */
+  r.get('/api/movies/player/health', (c) => {
+    const raw = c.req.query('limit');
+    let limit = DEFAULT_REPORT_SAMPLES;
+    if (raw !== undefined) {
+      const parsed = healthLimit.safeParse(raw);
+      if (!parsed.success) return c.json({ error: 'invalid_limit', message: `limit must be an integer 1-${MAX_REPORT_SAMPLES}` }, 400);
+      limit = parsed.data;
+    }
+    const health = deps.moviesHealth ?? null;
+    if (health === null) return c.json(MOVIES_OFF, 503);
+    return c.json(health.report(limit));
   });
 
   return r;
