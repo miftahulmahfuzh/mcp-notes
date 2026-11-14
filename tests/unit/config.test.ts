@@ -9,6 +9,7 @@ import {
   DEFAULT_CHAT_CONFIG,
   DEFAULT_DWORD_CONFIG,
   DEFAULT_EMBEDDINGS_CONFIG,
+  DEFAULT_MOVIES_CONFIG,
   DEFAULT_PORT,
   DEFAULT_SESSIONS_CONFIG,
   loadConfig,
@@ -47,6 +48,7 @@ describe('loadConfig', () => {
       sessions: { claudeHome: path.join(homedir(), '.claude'), worktreesDir: path.join(homedir(), '.worktrees'), enabled: true, swarmScript: path.join(homedir(), '.claude', 'skills', 'swarm', 'swarm.py') },
       adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true, dispatchNightly: true },
       dword: DEFAULT_DWORD_CONFIG,
+      movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -326,5 +328,97 @@ describe('adversary config', () => {
 
   it('keeps DEFAULT_ADVERSARY_CONFIG off so hand-built test configs never review', () => {
     expect(DEFAULT_ADVERSARY_CONFIG.enabled).toBe(false)
+  })
+})
+
+describe('movies config', () => {
+  const movies = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).movies
+
+  it('defaults to on with no roots, Done as the done folder, no TMDB credentials and no VLC ini', () => {
+    expect(movies({})).toEqual({
+      enabled: true,
+      roots: [],
+      doneDirs: ['Done'],
+      scanMs: 120_000,
+      minSeconds: 900,
+      tmdb: { token: null, apiKey: null, apiBase: 'https://api.themoviedb.org/3', imageBase: 'https://image.tmdb.org/t/p' },
+      ffprobeBin: 'ffprobe',
+      vlc: {
+        bin: '/mnt/c/Program Files/VideoLAN/VLC/vlc.exe',
+        ini: null,
+        httpPort: 47318,
+        pollMs: 5000,
+        curlExe: '/mnt/c/Windows/System32/curl.exe',
+      },
+      fallbackModel: 'haiku',
+    })
+  })
+
+  it('reads every key', () => {
+    expect(
+      movies({
+        NOTESD_MOVIES: 'off',
+        NOTESD_MOVIES_ROOTS: '/mnt/c/Users/x/Videos/:/mnt/c/Users/x/Downloads/Telegram Desktop:~/films:/mnt/c/Users/x/Videos',
+        NOTESD_MOVIES_DONE_DIRS: 'Done: Watched ',
+        NOTESD_MOVIES_SCAN_MS: '60000',
+        NOTESD_MOVIES_MIN_SECONDS: '600',
+        TMDB_API_READ_ACCESS_TOKEN: ' tok ',
+        TMDB_API_KEY: 'key',
+        TMDB_API_BASE: 'http://127.0.0.1:9999/3/',
+        TMDB_IMAGE_BASE: 'http://127.0.0.1:9999/img',
+        NOTESD_FFPROBE_BIN: '/usr/bin/ffprobe',
+        NOTESD_VLC_BIN: '/tmp/fake vlc/vlc.exe',
+        NOTESD_VLC_INI: '~/vlc/vlc-qt-interface.ini',
+        NOTESD_VLC_HTTP_PORT: '48000',
+        NOTESD_VLC_POLL_MS: '250',
+        NOTESD_CURL_EXE: 'curl.exe',
+        NOTESD_MOVIES_FALLBACK_MODEL: 'claude-haiku-4-5',
+      }),
+    ).toEqual({
+      enabled: false,
+      roots: ['/mnt/c/Users/x/Videos', '/mnt/c/Users/x/Downloads/Telegram Desktop', path.join(homedir(), 'films')],
+      doneDirs: ['Done', 'Watched'],
+      scanMs: 60_000,
+      minSeconds: 600,
+      tmdb: { token: 'tok', apiKey: 'key', apiBase: 'http://127.0.0.1:9999/3', imageBase: 'http://127.0.0.1:9999/img' },
+      ffprobeBin: '/usr/bin/ffprobe',
+      vlc: {
+        bin: '/tmp/fake vlc/vlc.exe',
+        ini: path.join(homedir(), 'vlc', 'vlc-qt-interface.ini'),
+        httpPort: 48000,
+        pollMs: 250,
+        curlExe: 'curl.exe',
+      },
+      fallbackModel: 'claude-haiku-4-5',
+    })
+  })
+
+  it('turns the Haiku fallback off with NOTESD_MOVIES_FALLBACK_MODEL=off', () => {
+    expect(movies({ NOTESD_MOVIES_FALLBACK_MODEL: 'off' }).fallbackModel).toBeNull()
+    expect(movies({ NOTESD_MOVIES_FALLBACK_MODEL: 'OFF' }).fallbackModel).toBeNull()
+  })
+
+  it('treats blank TMDB credentials as unset', () => {
+    expect(movies({ TMDB_API_READ_ACCESS_TOKEN: '  ', TMDB_API_KEY: '' }).tmdb).toMatchObject({ token: null, apiKey: null })
+  })
+
+  it.each([
+    ['NOTESD_MOVIES', 'maybe'],
+    ['NOTESD_MOVIES_ROOTS', 'relative/films'],
+    ['NOTESD_MOVIES_DONE_DIRS', 'Videos/Done'],
+    ['NOTESD_MOVIES_SCAN_MS', '0'],
+    ['NOTESD_MOVIES_MIN_SECONDS', '-1'],
+    ['TMDB_API_BASE', 'ftp://tmdb.example'],
+    ['TMDB_IMAGE_BASE', 'not a url'],
+    ['NOTESD_VLC_INI', 'vlc-qt-interface.ini'],
+    ['NOTESD_VLC_HTTP_PORT', '70000'],
+    ['NOTESD_VLC_POLL_MS', '1.5'],
+    ['NOTESD_MOVIES_FALLBACK_MODEL', 'ha iku'],
+  ])('rejects %s=%j', (key, value) => {
+    expect(() => movies({ [key]: value })).toThrow(ConfigError)
+  })
+
+  it('keeps DEFAULT_MOVIES_CONFIG off, with no roots, no credentials and no VLC ini, so hand-built test configs never scan', () => {
+    expect(DEFAULT_MOVIES_CONFIG).toMatchObject({ enabled: false, roots: [], tmdb: { token: null, apiKey: null }, vlc: { ini: null } })
   })
 })

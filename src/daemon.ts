@@ -102,7 +102,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.log(`[notesd] adversary off: claude binary "${config.chat.claudeBin}" not found (set NOTESD_CLAUDE_BIN)`);
     }
   }
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, sessionEvents };
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies: null, sessionEvents };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;
