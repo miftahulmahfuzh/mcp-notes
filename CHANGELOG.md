@@ -5,6 +5,51 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0] - 2026-11-14
+
+Movies: a watched library on `/movies`, matched against TMDB and played through VLC, plus one
+guide per subsystem replacing the single long README.
+
+### Added
+
+- **Movies subsystem** (`/movies`): the roots under `MOVIES_LIBRARY_DIRS` are parsed, matched
+  against TMDB and polled for changes (`src/movies/scan.ts`, `match.ts`, `tmdb.ts`, `sync.ts`);
+  `MoviesRepo` (`src/movies/repo.ts`) is the only writer of the `movie_*` tables (migration
+  0017). Titles and files are shared across both machines, files and watch state are per host,
+  watch state is derived at read time and never stored (`src/movies/state.ts`).
+- **Movie ids** (`M-23T4`, migration 0018, `src/movies/ids.ts`): one per title and per episode,
+  minted by database triggers like note ids; a movie id written in a note body links to its
+  movie page, not the wall (`claude/mods/note-links`).
+- **Play via VLC**: Play starts the Windows `vlc.exe` full screen and in front and reads its
+  status through Windows `curl.exe`, since WSL NAT cannot reach Windows loopback
+  (`src/movies/vlc/*`); a closed VLC port no longer fails Play with `no_free_port`
+  (`src/movies/vlc/launch.ts`). A health log, hang detection and crash incidents cover VLC going
+  away mid-play.
+- **Movies web page**: grid, title/episode detail, an unmatched list with manual assignment,
+  and a sidebar pill; the pill reads "Ask about `<title>`" on a title's page and "play
+  something" picks a random playable title when nothing is open.
+- **Movies MCP tools** (`movies_list`, `movies_get`, `movies_history`, `movies_mark`,
+  `movies_continue`, `movies_person`) and chat allow-list entries; the review left on a title or
+  episode is written as a normal note through `NotesService`.
+- `scripts/install.sh` registers the Movies pieces. Re-run it after updating, and run
+  `npm run db:migrate` once for migrations 0017-0018.
+
+### Changed
+
+- **Docs restructured into one guide per subsystem** under `docs/guide/` (wall, claude-code,
+  search, chat, sessions, connectors, adversary, movies, architecture, install), each with its
+  own pictures; `docs/guide/reference/{mcp-tools,http-api,configuration}.md` are generated and
+  checked against the code (`npm run docs:gen`, `npm run docs:check`,
+  `tests/unit/docs/reference.test.ts`). `README.md` is now a one-line-per-subsystem index with
+  links into the guides; `docs/INSTALL.md` is folded into `docs/guide/install.md`.
+- `scripts/docs/httpRoutes.ts` and `envVars.ts` describe every HTTP route and non-setting
+  env var so generated reference docs and `docs:check` stay complete.
+
+### Fixed
+
+- A movie id written as a note link opens the movie page instead of the wall's note view.
+- The expanded sidebar no longer shows a duplicate Movies icon.
+
 ## [v0.5.0] - 2026-11-12
 
 Context Rot and a fuller Spawn fresh, Claude Code session forks, Claude's replies and
@@ -193,6 +238,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.6.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.3.0
