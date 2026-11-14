@@ -63,22 +63,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "d4e0b299d714289a9b93fc2d8f2fdf05ecc3e1a1",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": "not started: usage limit reached after reading the plan index; no code changed, worktree clean at 06f5c08; re-run /implement --phase 4",
+      "note": "phase 4 HTTP API landed on phase-4-movies-library (read.ts, reviewNote.ts, moviesApi.ts, moviesSeed.ts + tests); wire contract unchanged; decision: sentinel-route test registers /api/movies/player before the first request (Hono freezes routes), test-only; drift: TmdbSearchHit.releaseDate added to seed hits; plan index not ticked (outside worktree); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1114-151500-286132/evidence",
       "package": "src/http`, `src/movies",
       "plan": ".workflows/plan/movies-library/phase-4.md",
-      "reported_at": "2026-11-14T14:12:15+07:00",
+      "reported_at": "2026-11-14T15:18:33+07:00",
       "satisfies": [
         "R1",
         "R2",
         "R3"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A105",
       "title": "HTTP API: read model, user state, review note, manual fix, SSE"
     },
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:11:04+07:00",
+  "updated": "2026-11-14T15:18:33+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
