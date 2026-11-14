@@ -145,7 +145,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "521c873",
       "depends_on": [
         6,
         7,
@@ -153,15 +153,15 @@
       ],
       "difficulty": "NORMAL",
       "n": 8,
-      "note": null,
+      "note": "docs, feature map, verify --movies fixtures, journey.sh, doc-check.sh; doc-check reads MOVIE_TOOL_NAMES and skips '*' literals (rung 2, landed code registers tools via constants); Step 10 live config + J4 + post-deploy checks pending post-merge for the lander; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1114-154856-433001/evidence",
       "package": "docs, `.claude/skills/verify-notesd",
       "plan": ".workflows/plan/movies-library/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T15:55:48+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A109",
       "title": "Docs, feature map, verify fixtures, live config"
     },
     {
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:46:23+07:00",
+  "updated": "2026-11-14T15:55:48+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }

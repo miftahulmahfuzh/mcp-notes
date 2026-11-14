@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/movies-library`
 **Branch:** `feature/movies-library` (base: `origin/main` @ `e09e602`)
 **Phases:** 9
-**Status:** 8 of 9 phases complete (phase 8 open); phases 1, 2, 3, 4, 5, 6, 7, 9 of 9 complete (phases 4 and 5 merged into `integrate-movies-library-w2`; phase 6 on `phase-6-movies-library`, phase 7 on `phase-7-movies-library` and phase 9 on `phase-9-movies-library`, not yet integrated)
+**Status:** complete (9 of 9 phases implemented; phases 6, 7, 9 integrated into `integrate-movies-library-w3` @ 5f3afea; phase 8 on `phase-8-movies-library`, not yet integrated; landing is the coordinator's)
 **Coordinator:** —
 
 ---
