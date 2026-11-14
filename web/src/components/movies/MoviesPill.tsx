@@ -1,15 +1,16 @@
 import { useState, type FormEvent } from 'react';
 import { useChatImages } from '../../hooks/useChatImages';
-import { MOVIES_PILL_PLACEHOLDER } from '../../lib/movies';
 import { ChatBar } from '../ChatBar';
 
 export interface MoviesPillProps {
   /** Sends one question through the wall's chat (App wraps it with the page context). */
   onAsk: (text: string, imageIds: string[]) => void;
+  /** "Ask about your movies", or "Ask about <title>" on a title's page (lib/movies moviesPillPlaceholder). */
+  placeholder: string;
 }
 
-/** "Ask about your movies": ChatBar's page variant with its own draft, as AdversaryPill. The answer shows in the wall's answer panel over the page. */
-export function MoviesPill({ onAsk }: MoviesPillProps) {
+/** "Ask about your movies" / "Ask about <title>": ChatBar's page variant with its own draft, as AdversaryPill. The answer shows in the wall's answer panel over the page. */
+export function MoviesPill({ onAsk, placeholder }: MoviesPillProps) {
   const images = useChatImages();
   const [draft, setDraft] = useState('');
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -32,7 +33,7 @@ export function MoviesPill({ onAsk }: MoviesPillProps) {
         onPasteFiles={images.add}
         onRemoveImage={images.remove}
         sendBlocked={images.blocked}
-        placeholder={MOVIES_PILL_PLACEHOLDER}
+        placeholder={placeholder}
       />
     </div>
   );

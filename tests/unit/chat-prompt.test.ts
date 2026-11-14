@@ -160,4 +160,11 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/movies_continue opens VLC on the owner's screen, so call it only when the owner asks to play, resume or continue something/);
     expect(prompt).toMatch(/"continue what I watched last night" is movies_continue with no title/);
   });
+
+  it('reads "this film" on a title page as the open title and says how to answer about it', () => {
+    expect(prompt).toMatch(/"this film", "this show", "here", "this director" and "the main character" all mean that title, so never ask which one/);
+    expect(prompt).toMatch(/Call movies_get with that id first/);
+    expect(prompt).toMatch(/Trivia, production stories and reception are a WebSearch/);
+    expect(prompt).toMatch(/"Films like this" is a WebSearch for similar films/);
+  });
 });

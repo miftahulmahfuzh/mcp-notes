@@ -7,7 +7,7 @@ import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
 import { errorCode, startSync } from '../moviesApi';
-import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, moviesErrorText, NO_MOVIES_FILTER, unmatchedCount, type MoviesFilter } from '../lib/movies';
+import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, moviesErrorText, moviesPillPlaceholder, NO_MOVIES_FILTER, unmatchedCount, type MoviesFilter } from '../lib/movies';
 import { NO_MOVIES_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
@@ -32,7 +32,7 @@ function MoviesEmpty({ text }: { text: string }) {
  * The movies view's main area:
  *   .mv-tools   toolbar, icon-only: Back (on a title or the unmatched list), Unmatched files (with a count), Rescan
  *   content     grid / detail / unmatched list, or an empty state (subsystem off, empty library, error)
- *   pill        "Ask about your movies"
+ *   pill        "Ask about your movies"; "Ask about <title>" on a title's page
  * The filter lives here, so it survives opening a title and coming back.
  */
 export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
@@ -109,7 +109,7 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
         </button>
       </div>
       {content}
-      <MoviesPill onAsk={onAsk} />
+      <MoviesPill onAsk={onAsk} placeholder={moviesPillPlaceholder(route, store.detail)} />
     </section>
   );
 }

@@ -44,7 +44,8 @@
 Wall: the Movies icon in the rail or sidebar -> `/movies` (poster grid) -> click a poster ->
 `/movies/<title id>` (detail, Play/Resume, watched, stars, review, episodes with progress and deleted
 flags). The unmatched list (`/movies/unmatched`) opens from the Movies page; pick a TMDB title for a
-file there. The pill bar asks the chat about the page.
+file there. The pill bar asks the chat about the page; on a title's page it reads "Ask about <title>" and
+"this film" means that title (`moviesPillPlaceholder`, `web/src/App.movies.test.tsx` R5.4).
 Claude Code: `/n continue MobLand`, `/n which MobLand episode did I watch last?`, `/n Blumhouse films I
 finished this year`, `/n other Margaret Qualley films I haven't seen`.
 

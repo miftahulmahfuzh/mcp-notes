@@ -9,6 +9,7 @@ import {
   matchesFilter,
   moviesChatMessage,
   moviesCountLine,
+  moviesPillPlaceholder,
   NO_MOVIES_FILTER,
   PLAYER_OFF_LABEL,
   playErrorText,
@@ -31,6 +32,16 @@ describe('moviesChatMessage', () => {
     expect(moviesChatMessage('why?', { title: null, unmatched: true }, null)).toBe('[Movies · unmatched files]\nwhy?');
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, MOVIE)).toBe('[Movies · How to Make a Killing (2026) · movie-467905]\ncast?');
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, SERIES)).toBe('[Movies · movie-467905]\ncast?');
+  });
+});
+
+describe('moviesPillPlaceholder', () => {
+  it('names the open title once its detail is loaded, and the library everywhere else', () => {
+    expect(moviesPillPlaceholder({ title: null, unmatched: false }, null)).toBe('Ask about your movies');
+    expect(moviesPillPlaceholder({ title: null, unmatched: true }, MOVIE)).toBe('Ask about your movies');
+    expect(moviesPillPlaceholder({ title: 'movie-467905', unmatched: false }, null)).toBe('Ask about your movies');
+    expect(moviesPillPlaceholder({ title: 'movie-467905', unmatched: false }, SERIES)).toBe('Ask about your movies');
+    expect(moviesPillPlaceholder({ title: 'movie-467905', unmatched: false }, MOVIE)).toBe('Ask about How to Make a Killing');
   });
 });
 

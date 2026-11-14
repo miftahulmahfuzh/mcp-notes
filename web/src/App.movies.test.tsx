@@ -182,7 +182,7 @@ describe('App: Movies', () => {
     render(<App />);
     await screen.findByRole('article', { name: 'How to Make a Killing' });
     expect(screen.queryByPlaceholderText('Ask about your notes')).toBeNull();
-    const box = screen.getByPlaceholderText('Ask about your movies');
+    const box = screen.getByPlaceholderText('Ask about How to Make a Killing');
     fireEvent.change(box, { target: { value: 'what should I watch after this?' } });
     fireEvent.submit(box.closest('form') as HTMLFormElement);
     await waitFor(() => expect(postsTo('/api/chat')).toHaveLength(1));

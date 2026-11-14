@@ -998,7 +998,8 @@ A series is one poster. Click a poster for its page: release date, synopsis, stu
 writers and producers, the cast with their characters, Play or Resume, the watched flag, 0–5 stars and
 a review. The review is an ordinary note tagged `#movie`, so `/n` finds it and its revisions are kept.
 A series page lists every episode with its own progress. The pill bar at the bottom asks the chat about
-the page you are on.
+the page you are on. On a title's page it reads "Ask about <title>", and "this film", "this director" or
+"films like this" mean that title: trivia and people are looked up on the web, other work in TMDB.
 
 **Play and resume.** Play starts the Windows VLC on the file at the second you stopped (from the start
 when you had finished it), so VLC's own "continue?" prompt never comes up, and reads its position every

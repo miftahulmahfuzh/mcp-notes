@@ -395,6 +395,12 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
  * `[Movies · unmatched files]`, or `[Movies · <title> (<year>) · <title id>]` once the open title's
  * detail is loaded (the bare id before). The chat agent reads it with phase 7's movies_* tools.
  */
+/** The pill's hint: the open title by name once its detail is loaded, so "this film" visibly has a meaning. */
+export function moviesPillPlaceholder(route: MoviesRoute, detail: TitleDetail | null): string {
+  if (route.title !== null && !route.unmatched && detail !== null && detail.id === route.title) return `Ask about ${detail.title}`;
+  return MOVIES_PILL_PLACEHOLDER;
+}
+
 export function moviesChatMessage(text: string, route: MoviesRoute, detail: TitleDetail | null): string {
   let where: string;
   if (route.unmatched) where = 'unmatched files';
