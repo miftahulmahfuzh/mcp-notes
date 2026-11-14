@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 14
+**Total Active Tasks**: 13
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 4
-- Completed: 95
+- Completed: 96
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/movies/read.ts`, `reviewNote.ts`, the body of `src/http/moviesApi.ts`, `tests/integration/helpers/moviesSeed.ts`, integration tests over HTTP. Does not touch `src/http/app.ts`, `moviesPlayApi.ts`, `src/movies/repo.ts`, VLC, web, MCP. Exit criteria: every route in the contract answers; a title detail carries state per file/episode, `available` per file and `poster_url`; assigning an unmatched file moves it into the library; watched/rating/review persist and the review is a real note; 503 `movies_off` without a service.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 4 of 9)
-  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.5, R2.4, R3.6, R3.7
-  - **Depends on**: P1-NOTES-A104
-  - **Plan**: `.workflows/plan/P1-NOTES-A105.md`
 - [ ] **P1-NOTES-A106** Phase 5: VLC playback: launch, live tracking, recents backfill, continue
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -140,6 +131,23 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/read.ts`, `reviewNote.ts`, the body of `src/http/moviesApi.ts`, `tests/integration/helpers/moviesSeed.ts`, integration tests over HTTP. Does not touch `src/http/app.ts`, `moviesPlayApi.ts`, `src/movies/repo.ts`, VLC, web, MCP. Exit criteria: every route in the contract answers; a title detail carries state per file/episode, `available` per file and `poster_url`; assigning an unmatched file moves it into the library; watched/rating/review persist and the review is a real note; 503 `movies_off` without a service.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 4 of 9)
+  - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.5, R2.4, R3.6, R3.7
+  - **Depends on**: P1-NOTES-A104
+  - **Plan**: `.workflows/plan/P1-NOTES-A105.md`
+  - **Completed**: 2026-11-14 15:16
+  - **Method**: /implement
+  - **Files**: src/http/moviesApi.ts, src/movies/read.ts, src/movies/reviewNote.ts, tests/unit/movies/reviewNote.test.ts, tests/integration/helpers/moviesSeed.ts, tests/integration/movies.api.int.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-151500-286132/evidence
+  - **Drift**: read.ts: plan cast `row.parsed as ParsedName` (type not imported); used the column's own ParsedNameRecord type (reconciliation row 15)
+    moviesSeed.ts: landed TmdbSearchHit has a releaseDate field; added it to SEARCH_HITS
+    landed posterUrl() accepts a null path and returns string | null; call sites unchanged
+  - **Decided**: Plan's sentinel-route test called app.get() after the first request, which Hono rejects ('matcher is already built') → sentinel registered before the first request, still after the movies router mount, same assertions (rung 3: the code block's intent; test-only, no assertion loosened)
 - [x] **P1-NOTES-A104** Phase 3: Library sync: scan, diff, match, store, background service
   - **Difficulty**: HARD
   - **Type**: Feature
