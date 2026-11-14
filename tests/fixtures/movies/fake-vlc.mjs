@@ -8,6 +8,8 @@
 // FAKE_VLC_SPEED (media seconds per wall second, 1), FAKE_VLC_HTTP_DELAY_MS (200),
 // FAKE_VLC_NO_HTTP=1 (never listen), FAKE_VLC_LIFE_MS (exit after, 120000).
 // GET /fake/quit (no auth) makes it exit, as closing the VLC window would.
+// GET /fake/hang?ms=N (no auth): for N ms every other request is accepted and never answered, as a
+// hung VLC does (curl.exe -m 2 then exits 28), and is dropped when the hang ends.
 import { appendFileSync } from 'node:fs';
 import http from 'node:http';
 
@@ -62,11 +64,21 @@ function status() {
 }
 
 const expected = 'Basic ' + Buffer.from(':' + password).toString('base64');
+let hungUntil = 0;
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://fake');
   if (url.pathname === '/fake/quit') {
     res.end('bye');
     setTimeout(() => process.exit(0), 20);
+    return;
+  }
+  if (url.pathname === '/fake/hang') {
+    hungUntil = Date.now() + Number(url.searchParams.get('ms') ?? 60000);
+    res.end('hung');
+    return;
+  }
+  if (Date.now() < hungUntil) {
+    setTimeout(() => res.destroy(), hungUntil - Date.now());
     return;
   }
   if ((req.headers.authorization ?? '') !== expected) {

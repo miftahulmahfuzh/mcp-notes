@@ -20,6 +20,7 @@ import { createApp } from './http/app.js';
 import { NoteEvents } from './notes/events.js';
 import { NotesService } from './notes/service.js';
 import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
+import { buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -106,8 +107,15 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   }
   // Movies library (phase 3): null with NOTESD_MOVIES=off; started and closed by startBackground.
   const movies = buildMoviesService(config, db);
+  // Movies phase 9: the VLC health log. Built before the player, whose hang rule asks it whether a
+  // silent VLC still exists; it reads the followed play back through the player. Started after listen.
+  let moviesPlayer: MoviePlayer | null = null;
+  const moviesHealth: HealthMonitor | null =
+    movies === null
+      ? null
+      : buildVlcHealth({ config: config.movies, dataDir: config.dataDir, host: movies.host, tracked: () => moviesPlayer?.healthView() ?? null });
   // Movies phase 5: VLC playback and the [RecentsMRL] hook hang off the movies service.
-  const moviesPlayer: MoviePlayer | null = movies === null ? null : buildMoviePlayback(movies, config.movies);
+  moviesPlayer = movies === null ? null : buildMoviePlayback(movies, config.movies, moviesHealth === null ? {} : { health: moviesHealth });
   if (moviesPlayer !== null) {
     try {
       const closed = await moviesPlayer.start();
@@ -122,7 +130,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         : `[notesd] movies: playback off (${playback.reason})`,
     );
   }
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies, moviesPlayer, sessionEvents };
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies, moviesPlayer, moviesHealth, sessionEvents };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;
@@ -152,6 +160,14 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     throw err;
   }
   boundPort = port;
+  // Movies phase 9: sampling starts once the daemon serves; the incident of a crashed run is written in the background.
+  if (moviesHealth !== null) {
+    try {
+      await moviesHealth.start();
+    } catch (err) {
+      console.error(`[notesd] vlc health: could not start: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   let sessionSummarizer: Summarizer | null = null;
   if (config.sessions.enabled) {
     sessionSummarizer = createAgentSummarizer({
@@ -170,6 +186,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       agent?.close();
       // Ends the tracked play at its last read position while the DB is still open; VLC stays open.
       await moviesPlayer?.close();
+      // After the player (its last hang line), before the DB: writes `clean_stop`.
+      await moviesHealth?.close();
       await stopBackground();
       await closeServer(server);
       await closeDb(db);

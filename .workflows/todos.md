@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 8
+**Total Active Tasks**: 7
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 7
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 104
+- Blocked: 0
+- Completed: 105
 
 ---
 
@@ -80,20 +80,11 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `CLAUDE.md` (architecture paragraph), `README.md` (tour, HTTP API and MCP tables, completed env rows), `.claude/skills/verify-notesd/features/movies.md` and its README row, movie fixtures for `verify.sh` (generated video tree, fake TMDB, fake VLC), and a documented step that adds the roots, `NOTESD_VLC_INI` and the Done dir to the live `/home/miftah/mcp-notes/.env.local` (appended only if absent). Does not touch product code, except a verify-harness seam a journey cannot do without. Exit criteria: the feature map's journeys run green on a throwaway daemon; docs name every env var, route and tool that exists (phase 9's included). J4 and the VLC-survives-restart check are post-merge only: J4 is `pending` before the merge and R7.1 is judged on J1-J3.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 8 of 9)
   - **Satisfies**: R7 — ORDER 1. Scanner, filename parser, TMDB, grid + detail page (rating, review, watched flag, pill bar). 2. VLC play/resume ... · criteria: R7.1
   - **Depends on**: P1-NOTES-A107, P1-NOTES-A108, P1-NOTES-A110
   - **Plan**: `.workflows/plan/P1-NOTES-A109.md`
-- [ ] **P1-NOTES-A110** Phase 9: VLC health log, hang detection, crash incidents
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/movies/vlc/health.ts` (process sampler through an injectable `ProcessLister`, the append-only per-host log `<dataDir>/movies/vlc-health-<host>.jsonl` with synchronous append and rotation, heartbeat/clean-stop marker, `HealthMonitor`), `src/movies/vlc/incidents.ts` (unclean previous stop -> Windows event log through an injectable `EventLogReader` -> one incident record), the hang rule in `src/movies/player.ts`, `vlc.healthMs`/`vlc.extraArgs` in `src/config.ts` and `vlc/launch.ts`, `GET /api/movies/player/health`, `AppDeps.moviesHealth`, the monitor block in `src/daemon.ts`, README env rows, tests with fake lister / fake event log. Does not touch web, MCP, `src/chat`, `app.ts`, `repo.ts`, the schema; never kills, pauses or restarts a VLC. Exit criteria: samples are appended for notesd-started and foreign VLCs; killing the daemon without a clean stop and restarting writes one incident with the fake event log's entries; a silent HTTP interface with a live pid records a hang and no play is lost; extra args reach the launch line; the health route returns samples and incidents; with no roots or `NOTESD_VLC_HEALTH_MS=0` nothing is sampled. J6 is WSL-only (`inconclusive` off WSL); J8 is the owner's manual post-deploy check.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 9 of 9)
-  - **Satisfies**: R8 — the WSL terminal crashed again. i am pretty sure this is caused by windows's VLC that i paused for several minutes ... · criteria: R8.1, R8.2, R8.3, R8.4, R8.5
-  - **Depends on**: P1-NOTES-A106
-  - **Plan**: `.workflows/plan/P1-NOTES-A110.md`
 ### [P2] Medium
 
 ### [P3] Low
@@ -137,6 +128,22 @@
     No code drift: every Requires shape matched phases 1-5 as landed; plan code blocks applied verbatim.
   - **Decided**: J2 text says the files array has three entries, but the plan's own verify seed inserts two MobLand files → judged on the seed (9003, 9004 deleted; last_play S1E2 Alternative Fuel) (rung 3: code block over prose; the three-file case is asserted in the integration test)
     J4/J5 first answered present: [] because the plan's seeded path /v/Gap.S01E03.mkv is not on disk and continueTitle checks disk → pointed seed row 9006 at a real empty file and re-ran; pass criteria unchanged, now missing E2 / present E3, play count still 5 (rung 2: exit criteria). Phase 8's feature-map copy of these journeys needs a real file for that row.
+- [x] **P1-NOTES-A110** Phase 9: VLC health log, hang detection, crash incidents
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/vlc/health.ts` (process sampler through an injectable `ProcessLister`, the append-only per-host log `<dataDir>/movies/vlc-health-<host>.jsonl` with synchronous append and rotation, heartbeat/clean-stop marker, `HealthMonitor`), `src/movies/vlc/incidents.ts` (unclean previous stop -> Windows event log through an injectable `EventLogReader` -> one incident record), the hang rule in `src/movies/player.ts`, `vlc.healthMs`/`vlc.extraArgs` in `src/config.ts` and `vlc/launch.ts`, `GET /api/movies/player/health`, `AppDeps.moviesHealth`, the monitor block in `src/daemon.ts`, README env rows, tests with fake lister / fake event log. Does not touch web, MCP, `src/chat`, `app.ts`, `repo.ts`, the schema; never kills, pauses or restarts a VLC. Exit criteria: samples are appended for notesd-started and foreign VLCs; killing the daemon without a clean stop and restarting writes one incident with the fake event log's entries; a silent HTTP interface with a live pid records a hang and no play is lost; extra args reach the launch line; the health route returns samples and incidents; with no roots or `NOTESD_VLC_HEALTH_MS=0` nothing is sampled. J6 is WSL-only (`inconclusive` off WSL); J8 is the owner's manual post-deploy check.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 9 of 9)
+  - **Satisfies**: R8 — the WSL terminal crashed again. i am pretty sure this is caused by windows's VLC that i paused for several minutes ... · criteria: R8.1, R8.2, R8.3, R8.4, R8.5
+  - **Depends on**: P1-NOTES-A106
+  - **Plan**: `.workflows/plan/P1-NOTES-A110.md`
+  - **Completed**: 2026-11-14 15:45
+  - **Method**: /implement
+  - **Files**: README.md, src/config.ts, src/daemon.ts, src/deps.ts, src/http/moviesPlayApi.ts, src/movies/player.ts, src/movies/vlc/launch.ts, src/movies/vlc/health.ts, src/movies/vlc/incidents.ts, tests/fixtures/movies/fake-vlc.mjs, tests/fixtures/movies/fake-windows.mjs, tests/unit/config.test.ts, tests/unit/movies/vlc.extraArgs.test.ts, tests/unit/movies/vlc.health.test.ts, tests/unit/movies/vlc.incidents.test.ts, tests/unit/movies/player.hang.test.ts, tests/integration/movies.health.int.test.ts, tests/integration/movies.healthCrash.int.test.ts
+  - **Proof**: verified-after-fix — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-153214-363914/evidence
+  - **Decided**:
+    - health-off log line: plan's health.ts says '(NOTESD_VLC_HEALTH_MS=0 or no NOTESD_MOVIES_ROOTS)', plan's unit test expected '(NOTESD_VLC_HEALTH_MS=0)' → kept the code, updated the test's expected string (rung 1: invariant 5 as reconciled in row 31, 'the startup line says so')
+    - movies.healthCrash.int test env had NOTESD_MOVIES_ROOTS='' which keeps the sampler off under invariant 5 → test now gives the daemons an empty root dir + NOTESD_MOVIES_SCAN_MS=86400000, as the plan's J7 harness setup does (rung 1: invariant 5; assertions unchanged)
 - [x] **P1-NOTES-A105** Phase 4: HTTP API: read model, user state, review note, manual fix, SSE
   - **Difficulty**: NORMAL
   - **Type**: Feature

@@ -5,6 +5,7 @@ import type { Db } from './db/client.js';
 import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import type { MoviePlayer } from './movies/player.js';
+import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
@@ -35,6 +36,11 @@ export interface AppDeps {
    * `movies` is null. Read by moviesPlayRoutes, /api/capabilities and (phase 7) movies_continue.
    */
   moviesPlayer?: MoviePlayer | null;
+  /**
+   * The VLC health log (movies phase 9): built next to `moviesPlayer`; null or absent when `movies`
+   * is null. Read by GET /api/movies/player/health.
+   */
+  moviesHealth?: HealthMonitor | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

@@ -18,6 +18,7 @@ import {
 } from './vlc/launch.js';
 import { tmdbResolver } from './sync.js';
 import { nodeRecentsFs, recentsSyncHook, type RecentsFs } from './vlc/recents.js';
+import type { HangEvent, HangOutcome, PidCheck, PlayerHealthLink, TrackedVlc } from './vlc/health.js';
 
 type FileRow = typeof movieFiles.$inferSelect;
 
@@ -32,6 +33,13 @@ export const PLAYING_TIMEOUT_MS = 3_000;
 export const SEEK_TOLERANCE_S = 5;
 /** Consecutive unreadable polls (curl timeouts etc.) after which the play is ended. */
 export const MAX_READ_ERRORS = 6;
+/**
+ * Movies phase 9: silent polls in a row (curl timeout, or exit 7 while the vlc.exe still exists)
+ * before a VLC whose process is alive counts as hung. A hung VLC keeps its play open at the last
+ * position read, however long it stays silent. Two, not one, so a VLC that is closing (socket shut,
+ * process not yet gone) does not log a false hang.
+ */
+export const HANG_AFTER_SILENT_POLLS = 2;
 
 export type PlayErrorCode = 'not_found' | 'not_on_this_machine' | 'player_unavailable' | 'file_missing';
 
@@ -86,6 +94,14 @@ export interface MoviePlayerDeps {
   playingTimeoutMs?: number;
   /** Called when a play starts or ends, never per poll (buildMoviePlayback emits MovieEvents `changed('play')`). */
   onChange?: (file: FileRow) => void;
+  /**
+   * Movies phase 9: the VLC health monitor. Asked whether a silent VLC's process still exists, and
+   * told when a hang starts and ends (R8.3). Absent: Phase 5's rules (exit 7 ends the play at once,
+   * MAX_READ_ERRORS curl errors end it).
+   */
+  health?: PlayerHealthLink;
+  /** Default `new Date()`: the paused and silent clocks. */
+  now?: () => Date;
   log?: (line: string) => void;
 }
 
@@ -132,10 +148,19 @@ interface Tracked {
   position: number;
   duration: number | null;
   lastReadAt: Date | null;
+  /** Silent polls in a row (curl errors, and exit 7 while the process lives). */
   errors: number;
   timer: NodeJS.Timeout | null;
   inFlight: Promise<void> | null;
   ended: boolean;
+  /** The first poll of the current pause that read `paused`; null while not paused. */
+  pausedSince: Date | null;
+  /** The first silent poll of the current silence; null while VLC answers. */
+  silentSince: Date | null;
+  /** Between a hang's start and end lines. */
+  hung: boolean;
+  /** The vlc.exe pid the monitor matched when the hang started. */
+  hangPid: number | null;
 }
 
 function message(err: unknown): string {
@@ -197,6 +222,32 @@ export class MoviePlayer {
       started_at: t.startedAt.toISOString(),
       last_read_at: t.lastReadAt === null ? null : t.lastReadAt.toISOString(),
     };
+  }
+
+  /**
+   * Movies phase 9: the followed play as the health monitor samples it. Holds the per-launch
+   * password, which the monitor matches against vlc.exe command lines in memory and never logs.
+   * Not a wire type: GET /api/movies/player keeps current().
+   */
+  healthView(): TrackedVlc | null {
+    const t = this.tracked;
+    if (t === null) return null;
+    return {
+      playId: t.playId,
+      fileId: t.file.id,
+      name: t.file.name,
+      port: t.ep.port,
+      password: t.ep.password,
+      state: t.state,
+      positionS: t.position,
+      pausedSince: t.pausedSince,
+      silentSince: t.silentSince,
+      hung: t.hung,
+    };
+  }
+
+  private now(): Date {
+    return (this.deps.now ?? (() => new Date()))();
   }
 
   /** Daemon stop: finish a play in progress, then end the tracked play at its last position. VLC stays open. */
@@ -276,6 +327,10 @@ export class MoviePlayer {
       timer: null,
       inFlight: null,
       ended: false,
+      pausedSince: status.state === 'paused' ? this.now() : null,
+      silentSince: null,
+      hung: false,
+      hangPid: null,
     };
     this.tracked = t;
     if (this.closed) await this.finish(t, 'shutdown');
@@ -346,7 +401,11 @@ export class MoviePlayer {
     switch (r.kind) {
       case 'ok': {
         t.errors = 0;
+        this.endHang(t, 'answered');
+        t.silentSince = null;
         t.state = r.status.state;
+        if (r.status.state === 'paused') t.pausedSince ??= this.now();
+        else t.pausedSince = null;
         // Stopped (user pressed stop, or the media ended) reads time 0 / length 0: keep the last real position.
         if (r.status.state === 'stopped') return;
         t.position = r.status.time;
@@ -355,18 +414,75 @@ export class MoviePlayer {
         await this.deps.repo.updatePlay(t.playId, { positionS: t.position, durationS: t.duration });
         return;
       }
-      case 'gone':
       case 'unauthorized':
         await this.finish(t, 'exited', true);
         return;
+      case 'gone':
+        if (this.deps.health === undefined) {
+          await this.finish(t, 'exited', true);
+          return;
+        }
+        await this.onSilent(t, 'refused');
+        return;
       case 'error':
-        t.errors += 1;
-        if (t.errors >= MAX_READ_ERRORS) await this.finish(t, 'unreachable', true);
+        await this.onSilent(t, 'error');
         return;
     }
   }
 
-  /** Ends tracking once: stop polling, then close the play row at the last position read. */
+  /**
+   * Movies phase 9, the hang rule (R8.3). A silent poll never writes a position. With the monitor:
+   * process gone -> the play ends `exited`; alive for HANG_AFTER_SILENT_POLLS polls -> one hang
+   * start line, and the play stays open at its last position; unknown -> Phase 5's rules.
+   */
+  private async onSilent(t: Tracked, how: 'refused' | 'error'): Promise<void> {
+    t.errors += 1;
+    t.silentSince ??= this.now();
+    const health = this.deps.health;
+    if (health !== undefined && (how === 'refused' || t.errors >= HANG_AFTER_SILENT_POLLS)) {
+      const check: PidCheck = await health.processAlive(t.ep);
+      if (t.ended) return;
+      if (check.kind === 'gone' || (check.kind === 'unknown' && how === 'refused')) {
+        await this.finish(t, 'exited', true);
+        return;
+      }
+      if (check.kind === 'alive') {
+        if (t.errors >= HANG_AFTER_SILENT_POLLS && !t.hung) this.startHang(t, check.pid);
+        return;
+      }
+    }
+    if (t.errors >= MAX_READ_ERRORS) await this.finish(t, 'unreachable', true);
+  }
+
+  private hangBase(t: Tracked): Omit<HangEvent, 'phase' | 'outcome'> {
+    return {
+      pid: t.hangPid,
+      port: t.ep.port,
+      playId: t.playId,
+      fileId: t.file.id,
+      name: t.file.name,
+      positionS: t.position,
+      silentSince: t.silentSince ?? this.now(),
+    };
+  }
+
+  private startHang(t: Tracked, pid: number): void {
+    t.hung = true;
+    t.hangPid = pid;
+    this.deps.health?.onHang({ ...this.hangBase(t), phase: 'start' });
+    this.log(`[movies] VLC pid ${pid} of play ${t.playId} (${t.file.name}) stopped answering on port ${t.ep.port}; play kept at ${Math.round(t.position)} s`);
+  }
+
+  /** Writes the hang's end line once; a no-op when the play is not hung. */
+  private endHang(t: Tracked, outcome: HangOutcome): void {
+    if (!t.hung) return;
+    this.deps.health?.onHang({ ...this.hangBase(t), phase: 'end', outcome });
+    this.log(`[movies] VLC of play ${t.playId} (${t.file.name}) hang ended: ${outcome}`);
+    t.hung = false;
+    t.hangPid = null;
+  }
+
+  /** Ends tracking once: stop polling, close a hang, then close the play row at the last position read. */
   private async finish(t: Tracked, why: EndWhy, fromTick = false): Promise<void> {
     if (t.ended) return;
     t.ended = true;
@@ -375,6 +491,7 @@ export class MoviePlayer {
       t.timer = null;
     }
     if (this.tracked === t) this.tracked = null;
+    this.endHang(t, why === 'exited' ? 'exited' : 'tracking_ended');
     if (!fromTick && t.inFlight !== null) await t.inFlight;
     await this.deps.repo.endPlay(t.playId, { positionS: t.position, durationS: t.duration }, new Date());
     this.deps.onChange?.(t.file);
@@ -385,13 +502,15 @@ export class MoviePlayer {
 /** The parts of MoviesService playback hangs off (Phase 3). */
 export type PlaybackService = Pick<MoviesService, 'repo' | 'host' | 'tmdb' | 'events' | 'addSyncHook'>;
 
-/** Seams for tests; the daemon passes none. */
+/** Seams for tests; the daemon passes `health` only. */
 export interface PlaybackOverrides {
   probe?: DetectProbe;
   launcher?: VlcLauncher;
   reader?: VlcStatusReader;
   wslpath?: (wslpathBin: string, abs: string) => Promise<string>;
   recentsFs?: RecentsFs;
+  /** Movies phase 9: the health monitor (the hang rule). */
+  health?: PlayerHealthLink;
 }
 
 /**
@@ -407,9 +526,10 @@ export function buildMoviePlayback(service: PlaybackService, config: MoviesConfi
     httpPort: config.vlc.httpPort,
     pollMs: config.vlc.pollMs,
     detect,
-    launcher: overrides.launcher ?? spawnVlcLauncher(),
+    launcher: overrides.launcher ?? spawnVlcLauncher({ extraArgs: config.vlc.extraArgs }),
     reader: overrides.reader ?? curlStatusReader(),
     ...(overrides.wslpath !== undefined ? { wslpath: overrides.wslpath } : {}),
+    ...(overrides.health !== undefined ? { health: overrides.health } : {}),
     // Play start and end only: the web reloads its whole list on every `changed`.
     onChange: (file) => service.events.changed('play', { fileIds: [file.id], titleIds: file.titleId === null ? [] : [file.titleId] }),
   });

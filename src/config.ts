@@ -153,6 +153,10 @@ export const DEFAULT_VLC_BIN = '/mnt/c/Program Files/VideoLAN/VLC/vlc.exe'
 export const DEFAULT_VLC_HTTP_PORT = 47318
 export const DEFAULT_VLC_POLL_MS = 5_000
 export const DEFAULT_CURL_EXE = '/mnt/c/Windows/System32/curl.exe'
+/** NOTESD_VLC_HEALTH_MS default: one vlc.exe sample every 30 s (src/movies/vlc/health.ts). */
+export const DEFAULT_VLC_HEALTH_MS = 30_000
+/** A non-zero NOTESD_VLC_HEALTH_MS below this is rejected: one PowerShell detail read takes ~0.5 s. */
+export const MIN_VLC_HEALTH_MS = 5_000
 export const DEFAULT_MOVIES_FALLBACK_MODEL = 'haiku'
 
 /** TMDB credentials and hosts (src/movies/tmdb.ts). Secrets are never logged. */
@@ -179,6 +183,16 @@ export interface VlcConfig {
   pollMs: number
   /** `NOTESD_CURL_EXE`: the Windows curl that reaches VLC's loopback-only HTTP interface. */
   curlExe: string
+  /**
+   * `NOTESD_VLC_HEALTH_MS`: how often every vlc.exe on this host is sampled into the health log.
+   * 0 turns the health log, crash incidents and hang detection off.
+   */
+  healthMs: number
+  /**
+   * `NOTESD_VLC_EXTRA_ARGS`, split on whitespace (no quoting): appended to every VLC notesd starts,
+   * before the file. Never `--http-*`, `--extraintf`, `--intf` or `-I` (notesd owns the HTTP interface).
+   */
+  extraArgs: string[]
 }
 
 /** The movies library (src/movies/*). */
@@ -219,6 +233,8 @@ export const DEFAULT_MOVIES_CONFIG: MoviesConfig = {
     httpPort: DEFAULT_VLC_HTTP_PORT,
     pollMs: DEFAULT_VLC_POLL_MS,
     curlExe: DEFAULT_CURL_EXE,
+    healthMs: DEFAULT_VLC_HEALTH_MS,
+    extraArgs: [],
   },
   fallbackModel: DEFAULT_MOVIES_FALLBACK_MODEL,
 }
@@ -482,6 +498,32 @@ function parseTcpPort(name: string, raw: string | undefined, fallback: number): 
   return port
 }
 
+function parseVlcHealthMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_VLC_HEALTH_MS
+  const trimmed = raw.trim()
+  const value = Number(trimmed)
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(value) || (value !== 0 && value < MIN_VLC_HEALTH_MS)) {
+    throw new ConfigError(`NOTESD_VLC_HEALTH_MS must be 0 (off) or an integer of at least ${MIN_VLC_HEALTH_MS}, got "${raw}"`)
+  }
+  return value
+}
+
+/** notesd's own VLC flags: an extra argument may not replace them, or tracking breaks. */
+const RESERVED_VLC_ARG = /^(--http-|--extraintf(=|$)|--intf(=|$)|-I$)/
+
+function parseVlcExtraArgs(raw: string | undefined): string[] {
+  const args = (raw ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter((a) => a !== '')
+  for (const a of args) {
+    if (RESERVED_VLC_ARG.test(a)) {
+      throw new ConfigError(`NOTESD_VLC_EXTRA_ARGS must not set ${a}: notesd owns VLC's HTTP interface`)
+    }
+  }
+  return args
+}
+
 export function parseMovies(env: Record<string, string | undefined>): MoviesConfig {
   return {
     enabled: parseSwitch('NOTESD_MOVIES', env.NOTESD_MOVIES),
@@ -502,6 +544,8 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
       httpPort: parseTcpPort('NOTESD_VLC_HTTP_PORT', env.NOTESD_VLC_HTTP_PORT, DEFAULT_VLC_HTTP_PORT),
       pollMs: parsePositiveInt('NOTESD_VLC_POLL_MS', env.NOTESD_VLC_POLL_MS, DEFAULT_VLC_POLL_MS),
       curlExe: parseBin(env.NOTESD_CURL_EXE, DEFAULT_CURL_EXE),
+      healthMs: parseVlcHealthMs(env.NOTESD_VLC_HEALTH_MS),
+      extraArgs: parseVlcExtraArgs(env.NOTESD_VLC_EXTRA_ARGS),
     },
     fallbackModel:
       env.NOTESD_MOVIES_FALLBACK_MODEL?.trim().toLowerCase() === 'off'
@@ -525,8 +569,9 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
  * Movies keys: NOTESD_MOVIES, NOTESD_MOVIES_ROOTS, NOTESD_MOVIES_DONE_DIRS, NOTESD_MOVIES_SCAN_MS,
  * NOTESD_MOVIES_MIN_SECONDS, TMDB_API_READ_ACCESS_TOKEN, TMDB_API_KEY, TMDB_API_BASE, TMDB_IMAGE_BASE,
  * NOTESD_FFPROBE_BIN, NOTESD_VLC_BIN, NOTESD_VLC_INI, NOTESD_VLC_HTTP_PORT, NOTESD_VLC_POLL_MS,
- * NOTESD_CURL_EXE, NOTESD_MOVIES_FALLBACK_MODEL (relative roots or ini, a path as a Done folder
- * name, a non-http TMDB base or a port above 65535 throw ConfigError).
+ * NOTESD_CURL_EXE, NOTESD_VLC_HEALTH_MS, NOTESD_VLC_EXTRA_ARGS, NOTESD_MOVIES_FALLBACK_MODEL
+ * (relative roots or ini, a path as a Done folder name, a non-http TMDB base, a port above 65535,
+ * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
