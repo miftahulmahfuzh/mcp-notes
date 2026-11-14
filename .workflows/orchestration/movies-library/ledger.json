@@ -166,27 +166,27 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "652533b",
       "depends_on": [
         5
       ],
       "difficulty": "NORMAL",
       "n": 9,
-      "note": null,
+      "note": "VLC health log, hang rule, crash incidents, extra args, GET /api/movies/player/health on phase-9-movies-library; decisions: health-off log line keeps 'or no NOTESD_MOVIES_ROOTS' (test string updated) and healthCrash int test gets an empty root dir, both per invariant 5 / row 31; J8 owner-manual inconclusive; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1114-153214-363914/evidence",
       "package": "src/movies/vlc`, `src/http",
       "plan": ".workflows/plan/movies-library/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T15:37:16+07:00",
       "satisfies": [
         "R8"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A110",
       "title": "VLC health log, hang detection, crash incidents"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:35:16+07:00",
+  "updated": "2026-11-14T15:37:16+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
