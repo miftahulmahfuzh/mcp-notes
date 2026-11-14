@@ -160,7 +160,7 @@
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Docs, feature map, verify fixtures, live config"
     },
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:37:16+07:00",
+  "updated": "2026-11-14T15:46:23+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
