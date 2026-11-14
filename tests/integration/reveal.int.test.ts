@@ -54,12 +54,13 @@ describe('reveal in Explorer', () => {
   }
 
   describe('on the real app (never spawns)', () => {
-    it('GET /api/capabilities answers { reveal: boolean }', async () => {
+    it('GET /api/capabilities answers { reveal: boolean, movies_playback: boolean }', async () => {
       const res = await h.app.request('/api/capabilities');
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { reveal: unknown };
-      expect(Object.keys(body)).toEqual(['reveal']);
+      const body = (await res.json()) as { reveal: unknown; movies_playback: unknown };
+      expect(Object.keys(body)).toEqual(['reveal', 'movies_playback']);
       expect(typeof body.reveal).toBe('boolean');
+      expect(body.movies_playback).toBe(false); // the harness has no movies player
     });
 
     it('403 forbidden_origin without an Origin header', async () => {
@@ -96,9 +97,9 @@ describe('reveal in Explorer', () => {
   describe('with injected RevealDeps', () => {
     it('capabilities follow detect', async () => {
       const on = createApp(h.deps, { reveal: fakeReveal() });
-      expect(await (await on.request('/api/capabilities')).json()).toEqual({ reveal: true });
+      expect(await (await on.request('/api/capabilities')).json()).toEqual({ reveal: true, movies_playback: false });
       const off = createApp(h.deps, { reveal: fakeReveal({ detect: async () => null }) });
-      expect(await (await off.request('/api/capabilities')).json()).toEqual({ reveal: false });
+      expect(await (await off.request('/api/capabilities')).json()).toEqual({ reveal: false, movies_playback: false });
     });
 
     it('runs explorer.exe /select,<wslpath -w original> for a real image and answers 202', async () => {
