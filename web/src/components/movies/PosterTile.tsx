@@ -14,13 +14,14 @@ export function PosterTile({ title: t, onOpen }: PosterTileProps) {
   const gone = isGone(t);
   const badge = stateBadge(t.state);
   const progress = tileProgress(t);
+  const titleId = t.movie_id ?? t.id;
   const open = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    onOpen(t.id);
+    onOpen(titleId);
   };
   return (
-    <a href={moviesHref({ title: t.id, unmatched: false })} className={gone ? 'mv-tile gone' : 'mv-tile'} data-title={t.id} onClick={open}>
+    <a href={moviesHref({ title: titleId, unmatched: false })} className={gone ? 'mv-tile gone' : 'mv-tile'} data-title={titleId} onClick={open}>
       <span className="mv-art">
         <Poster key={t.poster_url ?? 'none'} url={t.poster_url} title={t.title} year={t.year} />
         {badge !== null && <span className={`mv-badge ${t.state}`}>{badge}</span>}

@@ -46,8 +46,8 @@ beforeEach(() => {
       if (url === '/api/movies/player') return json(PLAYER_IDLE);
       if (url === '/api/movies/unmatched') return json({ files: UNMATCHED });
       if (url.startsWith('/api/movies/search-tmdb?')) return json({ results: SEARCH });
-      if (url === '/api/movies/movie-467905') return json(MOVIE);
-      if (url === '/api/movies/tv-247718' || url === '/api/movies/M-0S12') return json(SERIES);
+      if (url === '/api/movies/movie-467905' || url === '/api/movies/M-23T4') return json(MOVIE);
+      if (url === '/api/movies/tv-247718' || url === '/api/movies/M-0S12' || url === '/api/movies/M-8TR4') return json(SERIES);
       if (method === 'POST' && url === '/api/movies/files/32/assign') return json({ file_id: 32, title: { ...MOVIE, id: 'movie-1125510', title: 'Ne Zha 2' } });
       if (method === 'POST' && url.startsWith('/api/movies/')) return json({}, 202);
       return new Response('not found', { status: 404 });
@@ -86,7 +86,7 @@ describe('App: Movies', () => {
     await waitFor(() => expect(where()).toBe('/movies'));
     expect(h1()).toBe('Movies.');
     await screen.findByRole('list', { name: 'Posters' });
-    expect(tiles().map((t) => t.querySelector('a')?.getAttribute('data-title'))).toEqual(['movie-467905', 'tv-247718', 'movie-9001']);
+    expect(tiles().map((t) => t.querySelector('a')?.getAttribute('data-title'))).toEqual(['M-23T4', 'M-8TR4', 'movie-9001']);
     const poster = screen.getByRole('img', { name: 'How to Make a Killing' });
     expect(poster.getAttribute('src')).toBe('https://image.tmdb.org/t/p/w342/kill.jpg');
     expect(poster.getAttribute('loading')).toBe('lazy');
@@ -121,7 +121,7 @@ describe('App: Movies', () => {
     render(<App />);
     await screen.findByRole('list', { name: 'Posters' });
     fireEvent.click(screen.getByRole('link', { name: /How to Make a Killing/ }));
-    await waitFor(() => expect(where()).toBe('/movies/movie-467905'));
+    await waitFor(() => expect(where()).toBe('/movies/M-23T4'));
     const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
     expect(h1()).toBe('How to Make a Killing.');
     const a = within(article);
@@ -280,7 +280,7 @@ describe('App: Movies', () => {
     render(<App />);
     await screen.findByRole('list', { name: 'Posters' });
     fireEvent.click(screen.getByRole('link', { name: /MobLand/ }));
-    await waitFor(() => expect(where()).toBe('/movies/tv-247718'));
+    await waitFor(() => expect(where()).toBe('/movies/M-8TR4'));
     await screen.findByRole('region', { name: 'Episodes' });
     pop('/movies');
     await screen.findByRole('list', { name: 'Posters' });

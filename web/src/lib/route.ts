@@ -8,8 +8,9 @@ import type { View } from '../types';
  * Claude Code links a node: the app looks up the node's repo.
  * Seer Adversarial (seer-adversarial phase 6): `/adversary` (overview) and `/adversary/<strategy_id>`
  * (one roster method, the id exactly as Seer stores it), each with `?focus=1` for focus mode.
- * Movies (movies-library phase 6): `/movies` (the poster grid), `/movies/<title id>` (`movie-<n>` /
- * `tv-<n>`, never altered) and `/movies/unmatched` (the files that matched no title).
+ * Movies (movies-library phase 6): `/movies` (the poster grid), `/movies/<title id>` (the canonical
+ * `M-xxxx` movie id; `movie-<n>` / `tv-<n>` also resolve, as a fallback for a title with no movie id
+ * yet) and `/movies/unmatched` (the files that matched no title).
  * The wall and the bin have no path of their own: they live at `/` (and `/?note=<id>` deep links,
  * lib/deepLink.ts), so leaving the history, projects, adversary or movies page pushes `/` and nothing else is touched.
  */
@@ -17,7 +18,7 @@ export const HISTORY_PATH = '/history';
 export const PROJECTS_PATH = '/projects';
 export const ADVERSARY_PATH = '/adversary';
 export const MOVIES_PATH = '/movies';
-/** `/movies/unmatched`. Title ids are `movie-<n>` / `tv-<n>`, so this segment never names a title. */
+/** `/movies/unmatched`. Title ids are `M-xxxx` (or `movie-<n>` / `tv-<n>`), so this segment never names a title. */
 export const MOVIES_UNMATCHED_SEGMENT = 'unmatched';
 
 export interface Route {
