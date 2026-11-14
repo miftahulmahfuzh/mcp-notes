@@ -188,6 +188,10 @@ src/adversary/readTypes.ts   (phase 5) read-side wire types
 src/adversary/scorecard.ts   (phase 5) per-method verdict scorecard
 src/adversary/golive.ts      (phase 5) go-live checklist, parity with Seer web
 claude/adversary/briefs/     hand-written method briefs STRATEGY_A.md, RESIDMOM35.md, COSKEW.md (part of the lens hash)
+src/movies/parse.ts     (movies-library phase 2, P1-NOTES-A103) pure file-name parser: parseVideoPath -> ParsedName (title, year, season, episode, absoluteEpisode, kindHint, fileName, dirName), isVideoFile, VIDEO_EXTENSIONS, normalizeTitle, compactTitle
+src/movies/tmdb.ts      (phase 2) TMDB client: createTmdbClient(config, fetchImpl?, opts?) -> TmdbClient (searchMovie, searchTv, movieDetails, tvDetails, searchPerson, personCredits), TitleMetadata, TmdbError (no_credentials | network | timeout | http | bad_response), posterUrl, yearOf, absoluteToSeasonEpisode, crewRole, TMDB_TIMEOUT_MS, MAX_CAST, MAX_CREW_PER_ROLE
+src/movies/match.ts     (phase 2) matchTitle(parsed, client, fallback?) -> MatchResult (matched with tmdbKind/tmdbId/confidence/source, or none: no_match | low_confidence), titleSimilarity, yearAdjustment, scoreHit, searchQuery, CONFIDENT_SCORE 0.85, MAX_CANDIDATES 10
+src/movies/fallback.ts  (phase 2) Haiku name fallback via the Agent SDK: createHaikuFallback (null without a claude binary) -> NameFallback.resolve(fileName, dirName), buildFallbackInput, parseFallbackAnswer, DEFAULT_FALLBACK_MODEL 'haiku', DEFAULT_FALLBACK_TIMEOUT_MS
 src/images/probe.ts    magic-byte sniff, probeImage (mime, oriented size, EXIF taken_at), sha256Hex, HEIC decode
 src/images/store.ts    data-dir paths (+ chat-images/), images/YYYY/MM/<id>.<ext>, atomic write/copy/move (EXDEV-safe), removeImageFiles (purge)
 src/images/derive.ts   lazy cache/<imageId>/{thumb.webp,preview.jpg,display.jpg}
@@ -2182,6 +2186,10 @@ Claude reviews the picks of Seer roster originals that have an active `-CX` twin
 **Toggle** (`toggle.ts`): `app_settings` key `adversary.auto` = `{ on, changed_at, host }`, written only through `SessionsRepo`; absent or unreadable = on. Shared by both machines.
 
 **Clock** (`sessions.ts`): `sessionOpenUtc('2026-11-04')` = `2026-11-04T14:30:00Z`, `'2026-07-01'` = `13:30Z` (pinned on both sides, contract C3). The cap runs on WIB days (UTC+7).
+
+### Movies: src/movies/ (movies-library phase 2, P1-NOTES-A103)
+
+Library modules only; nothing in the daemon imports them yet (later phases wire sync, routes and docs). `parseVideoPath` reads only the file name and its parent folder (`/` or `\`), strips release tags, and lets the folder lend a missing title, a same-film year or a season; it never throws, and `tests/fixtures/movies/filenames.ts` is its spec. `matchTitle` scores up to `MAX_CANDIDATES` TMDB hits per query as clamp(title similarity + year adjustment, 0, 1), accepts at `CONFIDENT_SCORE`, searches series only for a `tv` hint, films only for `movie`, else films then series, and retries a yearless search when a year finds nothing; below the bar it asks the optional `NameFallback` (Haiku, one tool-less SDK turn, same setup as the session summarizer) and runs its answer through the same rule. `TmdbError` is not caught by the matcher; the caller is expected to leave the file pending and retry. The TMDB client takes a bearer token or API key (`no_credentials` without either, no request made), never puts the URL in errors, and is tested against recorded JSON in `tests/fixtures/movies/` through `tests/helpers/tmdbFixtures.ts` (unit tests in `tests/unit/movies/`, no network).
 
 ### src/deps.ts, src/daemon.ts, src/background.ts, src/main.ts
 
