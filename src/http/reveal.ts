@@ -280,7 +280,7 @@ export async function noteRevealPlan(
 }
 
 /**
- * GET /api/capabilities -> { reveal }.
+ * GET /api/capabilities -> { reveal, movies_playback } (movies_playback: deps.moviesPlayer can play on this host).
  * POST /api/images/:imageId/reveal (own Origin only) -> Explorer with the image's original selected.
  * POST /api/files/:fileId/reveal (own Origin only) -> Explorer with the file selected.
  * POST /api/notes/:id/reveal (own Origin only) -> the note's files folder, or its first image (noteRevealPlan).
@@ -292,7 +292,11 @@ export function revealRoutes(deps: AppDeps, opts: RevealRoutesOptions = {}): Hon
   const files = fileDeps(deps);
   const r = new Hono();
 
-  r.get('/api/capabilities', async (c) => c.json({ reveal: (await reveal.detect()) !== null }));
+  r.get('/api/capabilities', async (c) => {
+    const player = deps.moviesPlayer ?? null;
+    const [revealEnv, playback] = await Promise.all([reveal.detect(), player === null ? null : player.availability()]);
+    return c.json({ reveal: revealEnv !== null, movies_playback: playback?.available ?? false });
+  });
 
   r.post('/api/images/:imageId/reveal', sameOriginOnly, async (c) => {
     const id = normalizeId(c.req.param('imageId'));

@@ -4,6 +4,7 @@ import type { Config } from './config.js';
 import type { Db } from './db/client.js';
 import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
+import type { MoviePlayer } from './movies/player.js';
 import type { MoviesService } from './movies/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
@@ -29,6 +30,11 @@ export interface AppDeps {
    * 503 `movies_off` without it.
    */
   movies: MoviesService | null;
+  /**
+   * VLC playback (movies phase 5). The daemon builds it next to `movies`; null or absent when
+   * `movies` is null. Read by moviesPlayRoutes, /api/capabilities and (phase 7) movies_continue.
+   */
+  moviesPlayer?: MoviePlayer | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

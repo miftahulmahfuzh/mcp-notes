@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-14
-**Total Active Tasks**: 14
+**Total Active Tasks**: 13
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 95
+- Blocked: 3
+- Completed: 96
 
 ---
 
@@ -85,15 +85,6 @@
   - **Satisfies**: R1, R2, R3 — R1: SCOPE - Library roots (this host, WSL): /mnt/c/Users/mahfu/Videos/ and /mnt/c/Users/mahfu/Downloads/Telegram Desktop/ (nested) ...; R2: METADATA - TMDB API (key was added by the owner to .env.local; find the var name there, add it to config + README env table) ...; R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ... · criteria: R1.5, R2.4, R3.6, R3.7
   - **Depends on**: P1-NOTES-A104
   - **Plan**: `.workflows/plan/P1-NOTES-A105.md`
-- [ ] **P1-NOTES-A106** Phase 5: VLC playback: launch, live tracking, recents backfill, continue
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `src/movies/vlc/*`, `player.ts`, `continue.ts`, the body of `src/http/moviesPlayApi.ts`, `movies_playback` in `/api/capabilities` (`src/http/reveal.ts`), `AppDeps.moviesPlayer`, building the player and registering `recentsSyncHook` in `src/daemon.ts`, unit tests with fake launcher/status reader/ini, an integration test with a fake VLC and its fixtures/helpers. Does not touch `moviesApi.ts`, `read.ts`, `repo.ts`, `app.ts`, web, MCP. Exit criteria: play launches the (fake) VLC with the Windows path, `--no-one-instance`, `--extraintf http`, loopback host, our port and a per-launch password, confirms `playing`, seeks to the resume position, polls into one play event and closes it when the process is gone; `changed` is emitted on play start and end only; under systemd VLC runs in its own `systemd-run --user --scope`; recents entries become observations, also for a file that no longer exists; continue picks resume / next present / missing as specified and accepts an exact title id.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 5 of 9)
-  - **Satisfies**: R3, R4, R6 — R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ...; R4: PLAYBACK + PROGRESS (most important feature) - VLC is Windows-only: /mnt/c/Program Files/VideoLAN/VLC/vlc.exe (no WSL vlc) ...; R6: MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R3.7, R4.1, R4.2, R4.3, R4.4, R4.5, R6.1, R6.2
-  - **Depends on**: P1-NOTES-A104
-  - **Plan**: `.workflows/plan/P1-NOTES-A106.md`
 - [ ] **P1-NOTES-A107** Phase 6: Web: Movies page, grid, detail, unmatched, pill
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -125,7 +116,7 @@
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/movies/vlc/health.ts` (process sampler through an injectable `ProcessLister`, the append-only per-host log `<dataDir>/movies/vlc-health-<host>.jsonl` with synchronous append and rotation, heartbeat/clean-stop marker, `HealthMonitor`), `src/movies/vlc/incidents.ts` (unclean previous stop -> Windows event log through an injectable `EventLogReader` -> one incident record), the hang rule in `src/movies/player.ts`, `vlc.healthMs`/`vlc.extraArgs` in `src/config.ts` and `vlc/launch.ts`, `GET /api/movies/player/health`, `AppDeps.moviesHealth`, the monitor block in `src/daemon.ts`, README env rows, tests with fake lister / fake event log. Does not touch web, MCP, `src/chat`, `app.ts`, `repo.ts`, the schema; never kills, pauses or restarts a VLC. Exit criteria: samples are appended for notesd-started and foreign VLCs; killing the daemon without a clean stop and restarting writes one incident with the fake event log's entries; a silent HTTP interface with a live pid records a hang and no play is lost; extra args reach the launch line; the health route returns samples and incidents; with no roots or `NOTESD_VLC_HEALTH_MS=0` nothing is sampled. J6 is WSL-only (`inconclusive` off WSL); J8 is the owner's manual post-deploy check.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 9 of 9)
   - **Satisfies**: R8 — the WSL terminal crashed again. i am pretty sure this is caused by windows's VLC that i paused for several minutes ... · criteria: R8.1, R8.2, R8.3, R8.4, R8.5
   - **Depends on**: P1-NOTES-A106
@@ -140,6 +131,22 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A106** Phase 5: VLC playback: launch, live tracking, recents backfill, continue
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/movies/vlc/*`, `player.ts`, `continue.ts`, the body of `src/http/moviesPlayApi.ts`, `movies_playback` in `/api/capabilities` (`src/http/reveal.ts`), `AppDeps.moviesPlayer`, building the player and registering `recentsSyncHook` in `src/daemon.ts`, unit tests with fake launcher/status reader/ini, an integration test with a fake VLC and its fixtures/helpers. Does not touch `moviesApi.ts`, `read.ts`, `repo.ts`, `app.ts`, web, MCP. Exit criteria: play launches the (fake) VLC with the Windows path, `--no-one-instance`, `--extraintf http`, loopback host, our port and a per-launch password, confirms `playing`, seeks to the resume position, polls into one play event and closes it when the process is gone; `changed` is emitted on play start and end only; under systemd VLC runs in its own `systemd-run --user --scope`; recents entries become observations, also for a file that no longer exists; continue picks resume / next present / missing as specified and accepts an exact title id.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md` (phase 5 of 9)
+  - **Satisfies**: R3, R4, R6 — R3: DATA MODEL - Three layers: title (movie or series, TMDB data, outlives its files), file (path, host, size, duration, ...) ...; R4: PLAYBACK + PROGRESS (most important feature) - VLC is Windows-only: /mnt/c/Program Files/VideoLAN/VLC/vlc.exe (no WSL vlc) ...; R6: MCP / /n - Tools so /n can answer: "which Mobland episode did I watch last and when" (survives deletion), "Blumhouse movies ... · criteria: R3.7, R4.1, R4.2, R4.3, R4.4, R4.5, R6.1, R6.2
+  - **Depends on**: P1-NOTES-A104
+  - **Plan**: `.workflows/plan/P1-NOTES-A106.md`
+  - **Completed**: 2026-11-14 15:16
+  - **Method**: /implement
+  - **Files**: src/movies/vlc/launch.ts, src/movies/vlc/http.ts, src/movies/vlc/recents.ts, src/movies/player.ts, src/movies/continue.ts, src/http/moviesPlayApi.ts, src/http/reveal.ts, src/deps.ts, src/daemon.ts, tests/integration/reveal.int.test.ts, tests/fixtures/movies/fake-vlc.mjs, tests/fixtures/movies/memVlc.ts, tests/fixtures/movies/rows.ts, tests/integration/helpers/moviesPlaySeed.ts, tests/unit/movies/vlc.launch.test.ts, tests/unit/movies/vlc.http.test.ts, tests/unit/movies/vlc.recents.test.ts, tests/unit/movies/player.test.ts, tests/unit/movies/continue.test.ts, tests/integration/movies.play.int.test.ts, tests/integration/movies.continue.int.test.ts, tests/integration/movies.recents.int.test.ts
+  - **Proof**: verified-after-fix — 11 journeys, evidence /home/miftah/.local/state/notesd-verify/1114-151306-275241/evidence (J9, J10), /home/miftah/.local/state/notesd-verify/1114-151354-281082/evidence (J11)
+  - **Drift**: A previous phase-5 session was interrupted; its 18 whole-file drafts were byte-identical to the plan's code blocks and were kept. Steps 8 and 9 (reveal.ts, deps.ts, daemon.ts, reveal.int.test.ts) were applied in this session.
+    The plan listed one capabilities assertion in tests/integration/reveal.int.test.ts; a second one ('capabilities follow detect') also asserted the old exact body { reveal } and failed in the first full test:int run.
+  - **Decided**: Second exact-body capabilities assertion in reveal.int.test.ts the plan did not list → updated to the new exact body { reveal, movies_playback: false }, strict toEqual kept (rung 3: the plan's code block changes the capabilities body)
 - [x] **P1-NOTES-A104** Phase 3: Library sync: scan, diff, match, store, background service
   - **Difficulty**: HARD
   - **Type**: Feature
