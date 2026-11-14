@@ -1,5 +1,5 @@
 import { access } from 'node:fs/promises';
-import { and, asc, desc, eq, gte, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { movieEpisodes, movieFiles, moviePlays, movieTitles } from '../db/schema.js';
 import type { MoviePlayer, PlayStarted } from './player.js';
@@ -251,27 +251,22 @@ async function loadEpisodes(db: Db, titleIdValue: string): Promise<EpisodeSlot[]
     .orderBy(asc(movieEpisodes.season), asc(movieEpisodes.episode));
 }
 
-/**
- * "continue <title>" / "continue" (R6.1, R6.2). Plays through the player when the decision is to
- * resume or start; a PlayError from the player propagates to the caller.
- */
-export async function continueTitle(deps: ContinueDeps, titleQuery: string | null): Promise<ContinueResult> {
-  const q = titleQuery?.trim() ?? '';
-  let title: TitleRow;
-  if (q === '') {
-    const newest = await newestPlayedTitle(deps.db, deps.player.host);
-    if (newest === null) return { action: 'no_match', query: null };
-    title = newest;
-  } else {
-    const resolved = await resolveTitle(deps.db, q);
-    if (resolved.kind === 'none') return { action: 'no_match', query: q };
-    if (resolved.kind === 'ambiguous') return { action: 'ambiguous', query: q, candidates: resolved.candidates.map(titleRef) };
-    title = resolved.title;
-  }
+interface Loaded {
+  title: TitleRow;
+  episodes: EpisodeSlot[];
+  decision: ContinueDecision;
+}
+
+/** One title's files, plays and episodes -> what continue would do with it. Plays nothing. */
+async function loadDecision(deps: ContinueDeps, title: TitleRow): Promise<Loaded> {
   const kind = title.kind as TitleKind;
   const views = await loadFiles(deps, title.id);
   const episodes = kind === 'tv' ? await loadEpisodes(deps.db, title.id) : [];
-  const decision = decideContinue(kind, title.watchedAt, views, episodes);
+  return { title, episodes, decision: decideContinue(kind, title.watchedAt, views, episodes) };
+}
+
+/** Carries a decision out: resume and start go through the player, the rest only report. */
+async function carryOut(deps: ContinueDeps, { title, episodes, decision }: Loaded): Promise<ContinueResult> {
   const ref = titleRef(title);
   switch (decision.action) {
     case 'resume':
@@ -297,4 +292,60 @@ export async function continueTitle(deps: ContinueDeps, titleQuery: string | nul
         last: decision.last,
       };
   }
+}
+
+/**
+ * "continue <title>" / "continue" (R6.1, R6.2). Plays through the player when the decision is to
+ * resume or start; a PlayError from the player propagates to the caller.
+ */
+export async function continueTitle(deps: ContinueDeps, titleQuery: string | null): Promise<ContinueResult> {
+  const q = titleQuery?.trim() ?? '';
+  let title: TitleRow;
+  if (q === '') {
+    const newest = await newestPlayedTitle(deps.db, deps.player.host);
+    if (newest === null) return { action: 'no_match', query: null };
+    title = newest;
+  } else {
+    const resolved = await resolveTitle(deps.db, q);
+    if (resolved.kind === 'none') return { action: 'no_match', query: q };
+    if (resolved.kind === 'ambiguous') return { action: 'ambiguous', query: q, candidates: resolved.candidates.map(titleRef) };
+    title = resolved.title;
+  }
+  return carryOut(deps, await loadDecision(deps, title));
+}
+
+/** Titles decided at once by playSomething (two or three queries each). */
+const SOMETHING_BATCH = 8;
+
+export interface SomethingResult {
+  /** `resumed` or `started` for the pick; `no_match` (query null) when nothing here is left to watch. */
+  result: ContinueResult;
+  /** How many titles could have been picked. */
+  candidates: number;
+}
+
+/**
+ * "play something": one title at random among those continue would play right now, i.e. with a
+ * file on this machine that is not deleted and is on disk, and a film not finished or a series
+ * with a next episode here. A half-watched title is as likely as an unwatched one, and resumes.
+ * A title the owner marked watched is never picked. `random` is Math.random's contract.
+ */
+export async function playSomething(deps: ContinueDeps, random: () => number = Math.random): Promise<SomethingResult> {
+  const here = deps.db
+    .selectDistinct({ titleId: movieFiles.titleId })
+    .from(movieFiles)
+    .where(and(eq(movieFiles.host, deps.player.host), isNull(movieFiles.deletedAt), isNotNull(movieFiles.titleId)));
+  const titles = await deps.db
+    .select()
+    .from(movieTitles)
+    .where(and(inArray(movieTitles.id, here), isNull(movieTitles.watchedAt)))
+    .orderBy(asc(movieTitles.id));
+  const playable: Loaded[] = [];
+  for (let i = 0; i < titles.length; i += SOMETHING_BATCH) {
+    const batch = await Promise.all(titles.slice(i, i + SOMETHING_BATCH).map((t) => loadDecision(deps, t)));
+    playable.push(...batch.filter((l) => l.decision.action === 'resume' || l.decision.action === 'start'));
+  }
+  if (playable.length === 0) return { result: { action: 'no_match', query: null }, candidates: 0 };
+  const pick = playable[Math.min(playable.length - 1, Math.floor(random() * playable.length))]!;
+  return { result: await carryOut(deps, pick), candidates: playable.length };
 }

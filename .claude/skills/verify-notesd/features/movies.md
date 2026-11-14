@@ -34,7 +34,9 @@
   and a gone file becomes a deleted file under its matched title.
 - Continue: `movies_continue` / `POST /api/movies/continue` resumes the latest unfinished episode or
   film, else starts the next episode whose file is here, else answers which episode is missing and
-  which later ones are present. Without a title: the title of the newest play.
+  which later ones are present. Without a title: the title of the newest play. MCP only:
+  `random: true` ("play something") plays one title picked at random among those continue would
+  play on this machine (`playSomething`, proven by `tests/integration/movies.mcp.int.test.ts`).
 - MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
 

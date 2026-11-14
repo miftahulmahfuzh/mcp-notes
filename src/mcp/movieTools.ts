@@ -6,7 +6,7 @@ import { MOVIE_TOOL_NAMES } from '../chat/status.js';
 import type { Db } from '../db/client.js';
 import { movieFiles, movieTitles } from '../db/schema.js';
 import type { AppDeps } from '../deps.js';
-import { continueTitle, type ContinueResult } from '../movies/continue.js';
+import { continueTitle, playSomething, type ContinueResult, type SomethingResult } from '../movies/continue.js';
 import { getTitle, history, listTitles, type HistoryFilter, type ReadContext, type TitleFilter, type TitleListItem } from '../movies/read.js';
 import { saveReview } from '../movies/reviewNote.js';
 import { TmdbError, type TmdbClient, type TmdbPersonCredit } from '../movies/tmdb.js';
@@ -62,6 +62,8 @@ export interface MovieToolDeps {
   saveReview(titleId: string, text: string): Promise<unknown>;
   /** Phase 5's continueTitle on the daemon's one MoviePlayer: may open VLC on this machine. */
   continueTitle(title: string | null): Promise<ContinueResult>;
+  /** "play something": a random title that can be played here (continue.ts playSomething); opens VLC. */
+  playSomething(): Promise<SomethingResult>;
 }
 
 /** The movie tool deps for a running daemon, or null when the library is off. */
@@ -84,6 +86,11 @@ export function movieToolDeps(deps: AppDeps): MovieToolDeps | null {
       const player = deps.moviesPlayer ?? null;
       if (player === null) throw new MovieToolError('movies_off', 'playback is not running on this server.');
       return continueTitle({ db: deps.db, player }, title);
+    },
+    playSomething: async () => {
+      const player = deps.moviesPlayer ?? null;
+      if (player === null) throw new MovieToolError('movies_off', 'playback is not running on this server.');
+      return playSomething({ db: deps.db, player });
     },
   };
 }
@@ -315,6 +322,7 @@ const CONTINUE_DESCRIPTION =
   "Plays something in VLC on the owner's screen, on the machine that runs this server: VLC opens and notesd records the play, so call it only when the owner asked to play, resume or continue something. " +
   'With title (id or name; "continue MobLand"): resumes the latest unfinished episode or film from where it stopped; else starts the next episode whose file is on this machine; else plays nothing and answers which next episode is missing (missing) and which later episodes are present (present). ' +
   'Without title ("continue what I watched last night"): the same for the title of the newest play event. ' +
+  'With random: true and no title ("play something", "I am eating dinner, play a random movie", "let\'s watch something"): the server picks one title at random among every film and series that can be played on this machine right now (a file here that is not deleted; not finished; a half-watched one resumes) and plays it, so do not list or choose titles yourself; picked_from says how many it chose among. Calling again picks again. ' +
   'Returns { action: resumed | started | missing | nothing | ambiguous | no_match, message, title, file, position (the second it starts at), missing, present, reason, candidates, url }. ambiguous lists candidates (call again with one id); no_match means nothing fits (or, without title, nothing was ever played). ' +
   'Errors: not_on_this_machine (the file is on the other laptop: play it there), player_unavailable (VLC cannot be started here), file_missing (the library lists the file but it is not on disk: a bug, tell the owner), not_found and ambiguous (no single title matches).';
 
@@ -449,13 +457,26 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         title: titleField
           .optional()
           .describe('The title to continue, as an id or in words ("mobland"). Omit to continue whatever was played last.'),
+        random: z
+          .boolean()
+          .optional()
+          .describe('true: play a title picked at random among everything playable on this machine ("play something"). Not with title.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
-    async ({ title }) => {
+    async ({ title, random }) => {
       const m = deps.movies;
       if (!m) return off();
       return answer(async () => {
+        if (random === true) {
+          if (title !== undefined) throw new MovieToolError('invalid_input', 'pass title or random, not both: random picks the title.');
+          const { result, candidates } = await m.playSomething();
+          const message =
+            result.action === 'no_match'
+              ? 'Nothing was played: no film or series with a file on this machine is left to watch.'
+              : `Picked at random among ${candidates} playable title${candidates === 1 ? '' : 's'}. ${continueMessage(result)}`;
+          return { ...result, picked_from: candidates, message, url: continueUrl(result, titleUrl) };
+        }
         const result = await m.continueTitle(title ?? null);
         return { ...result, message: continueMessage(result), url: continueUrl(result, titleUrl) };
       });

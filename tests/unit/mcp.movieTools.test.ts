@@ -18,6 +18,7 @@ function fakeMovies(over: Partial<MovieToolDeps> = {}): MovieToolDeps {
     setFileWatched: vi.fn(async () => {}),
     saveReview: vi.fn(async () => null),
     continueTitle: vi.fn(async (): Promise<ContinueResult> => ({ action: 'no_match', query: null })),
+    playSomething: vi.fn(async () => ({ result: { action: 'no_match', query: null } as ContinueResult, candidates: 0 })),
     ...over,
   };
 }

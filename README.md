@@ -1248,7 +1248,7 @@ every 60 seconds, which picks up edits made by a daemon on another machine.
 | `movies_list` | Titles by text, `state` (finished, in progress, unwatched, dropped, removed unwatched, seen), studio (`company`), `person`, kind, and the date range they were finished in ("Blumhouse films I saw this year") |
 | `movies_get` | One title with its credits, episodes, files (deleted ones too) and play events |
 | `movies_history` | Play events, newest first, optionally for one title or date range; kept after the file is deleted ("which MobLand episode did I watch last, and when?") |
-| `movies_continue` | Resume the latest unfinished episode or film of `title` from its position, else start the next episode whose file is here, else say which next episode is missing and which later ones are present. Without `title`: the title of the newest play. Starts VLC on this machine |
+| `movies_continue` | Resume the latest unfinished episode or film of `title` from its position, else start the next episode whose file is here, else say which next episode is missing and which later ones are present. Without `title`: the title of the newest play. With `random: true` ("play something"): one title picked at random among those playable on this machine (a file here that is not deleted, not finished; a half-watched one resumes); `picked_from` says how many. Starts VLC on this machine |
 | `movies_person` | A person's TMDB filmography, each entry marked seen or not seen ("other Margaret Qualley films") |
 | `movies_mark` | Set the watched flag, the 0–5 rating or the review of a title, or the watched flag of one file |
 

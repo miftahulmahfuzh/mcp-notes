@@ -6,7 +6,7 @@ import { MOVIE_TOOL_NAMES } from '../../src/chat/status.js';
 import { mcpToolDeps } from '../../src/http/app.js';
 import type { MovieToolDeps } from '../../src/mcp/movieTools.js';
 import { createMcpServer } from '../../src/mcp/server.js';
-import { continueTitle } from '../../src/movies/continue.js';
+import { continueTitle, playSomething } from '../../src/movies/continue.js';
 import type { MoviePlayer, PlayStarted } from '../../src/movies/player.js';
 import { MoviesRepo } from '../../src/movies/repo.js';
 import { resumePosition } from '../../src/movies/state.js';
@@ -43,6 +43,8 @@ let h: ApiHarness;
 let client: Client;
 let lib: SeededLibrary;
 const played: number[] = [];
+/** What playSomething draws; a test sets it to pin the pick. */
+let nextRandom: () => number = Math.random;
 const reviews: Array<{ titleId: string; text: string }> = [];
 
 /** Records what VLC would have been asked to play and answers like MoviePlayer (resume second included); never spawns anything. */
@@ -92,6 +94,7 @@ beforeAll(async () => {
     // Phase 5's ContinueDeps: the real continue rule over the seeded rows, with a recording player.
     // Phase 5's ContinueDeps: the real continue rule over the seeded rows (seeded paths count as on disk), with a recording player.
     continueTitle: (title) => continueTitle({ db: h.deps.db, player: fakePlayer, exists: async () => true }, title),
+    playSomething: () => playSomething({ db: h.deps.db, player: fakePlayer, exists: async () => true }, () => nextRandom()),
   };
   const server = createMcpServer({ ...mcpToolDeps(h.deps), movies });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -111,6 +114,7 @@ beforeEach(async () => {
   lib = await seedLibrary(h.deps.db);
   played.length = 0;
   reviews.length = 0;
+  nextRandom = Math.random;
 });
 
 interface ListBody {
@@ -221,6 +225,38 @@ describe('movie MCP tools', () => {
     const res = await callJson<{ action: string; title: { id: string }; position: number }>('movies_continue', {});
     expect(res).toMatchObject({ action: 'resumed', title: { id: 'movie-1002' }, position: 1500 });
     expect(played).toEqual([lib.files.unfinished]);
+  });
+
+  // Playable here: movie-1002 (half watched), tv-1003 (E2 next), tv-247718 (E3 next). Not: the finished
+  // and watched films, the deleted file, Series Gap (its next episode has no file), the other laptop's film.
+  it('movies_continue random picks only among titles that can be played here, and resumes a half-watched one', async () => {
+    type Pick = { action: string; title: { id: string }; position: number; picked_from: number; message: string };
+    nextRandom = () => 0;
+    const first = await callJson<Pick>('movies_continue', { random: true });
+    expect(first).toMatchObject({ action: 'resumed', title: { id: 'movie-1002' }, position: 1200, picked_from: 3 });
+    expect(first.message).toContain('Picked at random among 3 playable titles');
+    nextRandom = () => 0.999;
+    const last = await callJson<Pick>('movies_continue', { random: true });
+    expect(last).toMatchObject({ action: 'started', title: { id: 'tv-247718' }, picked_from: 3 });
+    expect(played).toEqual([lib.files.unfinished, lib.files.moblandE3]);
+
+    played.length = 0;
+    nextRandom = Math.random;
+    for (let i = 0; i < 25; i++) await callJson<Pick>('movies_continue', { random: true });
+    const allowed = new Set([lib.files.unfinished, lib.files.nextE2, lib.files.moblandE3]);
+    expect(played.every((id) => allowed.has(id))).toBe(true);
+    expect(new Set(played).size).toBeGreaterThan(1);
+  });
+
+  it('movies_continue random plays nothing when nothing here is left to watch, and refuses a title with it', async () => {
+    await h.deps.db.execute(sql`update movie_files set deleted_at = now() where host = ${THIS_HOST}`);
+    const none = await callJson<{ action: string; picked_from: number; message: string }>('movies_continue', { random: true });
+    expect(none).toMatchObject({ action: 'no_match', picked_from: 0 });
+    expect(none.message).toContain('Nothing was played');
+    expect(played).toEqual([]);
+    const both = await call('movies_continue', { random: true, title: 'mobland' });
+    expect(both.isError).toBe(true);
+    expect(text(both)).toContain('invalid_input');
   });
 
   it('movies_person marks each TMDB credit seen or not seen against the library', async () => {

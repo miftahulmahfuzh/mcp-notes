@@ -315,6 +315,13 @@ so "what did I watch" still answers after the file is gone.
   (season, episode, episode name, `started_at`, `position_s`); `files[].deleted_at` says when a
   file was deleted; `plays` are newest first.
 - "What did I watch last week" → `movies_history` with `from` / `to`.
+- "Play something", "I am eating dinner, play a random movie", "I am eating lunch, play smth",
+  "let's watch something" (no title named) → `movies_continue` with `random: true` and nothing
+  else, at once: no listing, no questions, no choosing a title yourself. The server picks one film
+  or series at random among those playable on this machine (never a deleted file or a finished
+  title; a half-watched one resumes) and opens it full screen. Then say in one line what it
+  opened (title with year, the episode for a series, and "resumed at" when `action` is
+  `resumed`). If they ask for another, call it again.
 - "Continue MobLand", "resume X", "play the next episode", and "continue what I watched last
   night" (no title) → `movies_continue`. It opens VLC on the user's screen on this machine, so
   call it only when they asked to play something. `action` says what happened: `resumed` (from
