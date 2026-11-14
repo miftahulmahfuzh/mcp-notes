@@ -125,22 +125,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "82d531f28bf2163f5d257958d63f0645d7d906b3",
       "depends_on": [
         4,
         5
       ],
       "difficulty": "NORMAL",
       "n": 7,
-      "note": null,
+      "note": "six movies_* MCP tools, chat allow-list (56), instructions, chat prompt, /n skill; plan applied verbatim, no code drift; decisions: J2 judged on the plan's 2-file seed (text says 3), J4/J5 seed row 9006 pointed at a real file because continueTitle checks disk (phase 8's feature-map copy needs the same); proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1114-152951-347311/evidence",
       "package": "src/mcp`, `src/chat`, `claude/skills/n",
       "plan": ".workflows/plan/movies-library/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T15:35:16+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A108",
       "title": "MCP tools, chat bar allow-list, `/n` skill"
     },
     {
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:34:04+07:00",
+  "updated": "2026-11-14T15:35:16+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
