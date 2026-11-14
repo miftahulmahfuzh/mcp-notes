@@ -17,7 +17,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Foundation: schema, repo, state, config, seams"
     },
@@ -35,7 +35,7 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Filename parser, TMDB client, matcher, Haiku fallback"
     },
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T13:45:59+07:00",
+  "updated": "2026-11-14T13:46:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
