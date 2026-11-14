@@ -3,6 +3,12 @@
   "coordinator": "orch-movies-library",
   "coordinator_session_id": "d801832c-8889-4085-be5d-17222681f095",
   "created": "2026-11-14T13:45:59+07:00",
+  "landed": {
+    "at": "2026-11-14T15:57:16+07:00",
+    "base": "main",
+    "commit": "062ac03c2b81a6ece53fa15845b26d0bd85f6e40",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -187,6 +193,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:55:48+07:00",
+  "updated": "2026-11-14T15:57:16+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
