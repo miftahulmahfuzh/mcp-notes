@@ -84,23 +84,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b236d5d",
       "depends_on": [
         3
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "VLC play/track/recents/continue + movies_playback capability landed on phase-5-movies-library; decision: 2nd exact-body capabilities assertion in reveal.int.test.ts (unlisted in plan) updated to { reveal, movies_playback:false } per rung 3; PLAN.md Status line edited uncommitted in main checkout by completion-handler; proof: verified-after-fix ~/.local/state/notesd-verify/1114-151306-275241/evidence + 1114-151354-281082/evidence (J1-J11 pass, J12 manual owner-only inconclusive)",
       "package": "src/movies/vlc`, `src/http",
       "plan": ".workflows/plan/movies-library/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-14T15:21:33+07:00",
       "satisfies": [
         "R3",
         "R4",
         "R6"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A106",
       "title": "VLC playback: launch, live tracking, recents backfill, continue"
     },
     {
@@ -119,7 +119,7 @@
       "satisfies": [
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Web: Movies page, grid, detail, unmatched, pill"
     },
@@ -139,7 +139,7 @@
       "satisfies": [
         "R6"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "MCP tools, chat bar allow-list, `/n` skill"
     },
@@ -179,7 +179,7 @@
       "satisfies": [
         "R8"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "VLC health log, hang detection, crash incidents"
     }
@@ -187,6 +187,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/movies-library/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "movies-library",
-  "updated": "2026-11-14T15:18:33+07:00",
+  "updated": "2026-11-14T15:27:17+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/movies-library"
 }
