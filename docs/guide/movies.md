@@ -740,7 +740,7 @@ no exact match the answer shows up to three near misses, or says the site does n
 and gives the search link. A link is never built by hand, because the addresses are irregular,
 and the lookup stops at the title's page: the download buttons behind it are not followed.
 
-## Finding a title on idlix
+## Finding and playing a title on idlix
 
 The same lookup for idlix, the streaming site: `/idlix no other choice`, `/idlix la brea`,
 `/idlix ready or not 2019`. It answers with a link per matching film (`/movie/...`) or series
@@ -758,7 +758,27 @@ It works only in Claude Code, not in the chat bar. idlix sits behind Cloudflare,
   started minimized, and it stays open for the next search: about 4 seconds cold, under a second
   warm.
 - Inside a tab on the site it runs the request the site's own search box makes
-  (`/api/search?q=...`) and reads the JSON. Nothing is clicked or typed.
+  (`/api/search?q=...`) and reads the JSON. A lookup clicks and types nothing.
+
+`/idlix <title>` with exactly one matching film also puts the film on (`search.mjs --play`). The
+skill's Chrome window comes to the front and opens the film's page, and the script clicks play,
+closes the advertising tab that click opens, waits through the site's countdown, presses the
+site's own "Skip Ad" when the advert offers it, and once the film is running makes the window
+full screen with the player stretched over it. That takes about 25 seconds. F11 leaves full
+screen. Things to know:
+
+- The film plays in the skill's Chrome, not in your own browser. A link opens a fresh page, and
+  a page that is already playing cannot be handed over through one. That Chrome has no ad
+  blocker.
+- The countdown stops while the page is hidden, so Chrome is started with
+  `--disable-features=CalculateNativeWinOcclusion` (a covered window still counts as visible)
+  and the window is brought to the front. Minimizing it during the wait stops the flow; the
+  answer says at which stage, and asking again starts over.
+- The page's own full-screen button is refused for a click that does not come from the keyboard
+  or mouse, so the full screen is the F11 kind plus a style that stretches the player. Esc
+  removes the style.
+- Several matches, or a series, start nothing: the answer lists the links, and
+  `search.mjs --play-url <url>` plays the one you pick.
 
 A result matches when its English or original-language name is the asked title, and its year is
 the asked year when one was given. The site changes host from time to time (`z1`, `z2`, ...):

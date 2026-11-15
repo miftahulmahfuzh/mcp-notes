@@ -12,6 +12,8 @@
 - `/idlix` is Claude Code only (the chat bar cannot reach the site). Its matching is proven by
   `npx vitest run tests/unit/scripts/idlixSearch.test.ts`, and the live path by
   `node claude/skills/idlix/search.mjs no other choice`, which opens a minimized Chrome on Windows.
+  `search.mjs --play <film>` is proven only live: it takes over the screen and starts the film
+  with sound, so run it when the owner expects it.
 
 ## How to get to it (user POV)
 The bar at the bottom of the wall, `Send`; `Chat history` in the sidebar.

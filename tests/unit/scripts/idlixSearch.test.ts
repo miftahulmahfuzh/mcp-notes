@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- a plain .mjs skill script without type declarations
-import { pickMatches, searchExpression, toResult } from '../../../claude/skills/idlix/search.mjs';
+import { CLICK_PLAY_EXPRESSION, FILL_SCREEN_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, pickMatches, searchExpression, titlePath, toResult } from '../../../claude/skills/idlix/search.mjs';
 
 const ORIGIN = 'https://z2.idlixku.com';
 
@@ -61,5 +61,24 @@ describe('idlix search script', () => {
   it('keeps every year without one asked, and only the asked year with one', () => {
     expect(pickMatches(results, { name: 'pilot', year: null }).matches.map((r: { year: number }) => r.year)).toEqual([2024, 1998]);
     expect(pickMatches(results, { name: 'pilot', year: 1998 }).matches.map((r: { year: number }) => r.year)).toEqual([1998]);
+  });
+
+  it('plays only a title page on the site itself', () => {
+    expect(titlePath('https://z2.idlixku.com/movie/no-other-choice-2025', ORIGIN)).toBe('/movie/no-other-choice-2025');
+    expect(titlePath('https://z2.idlixku.com/series/la-brea-2021', ORIGIN)).toBe('/series/la-brea-2021');
+    expect(titlePath('https://example.com/movie/no-other-choice-2025', ORIGIN)).toBeNull();
+    expect(titlePath('https://z2.idlixku.com/auth/login', ORIGIN)).toBeNull();
+    expect(titlePath('https://z2.idlixku.com/movie/x?next=1', ORIGIN)).toBe('/movie/x');
+    expect(titlePath('javascript:alert(1)', ORIGIN)).toBeNull();
+    expect(titlePath('not a url', ORIGIN)).toBeNull();
+  });
+
+  it('ships page expressions that parse, and presses nothing but play and the site\'s own Skip Ad', () => {
+    for (const expression of [CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, FILL_SCREEN_EXPRESSION]) {
+      expect(() => new Function(`return ${expression}`)).not.toThrow();
+    }
+    const clicks = [CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, FILL_SCREEN_EXPRESSION].join('\n').match(/\w+\.click\(\)/g);
+    expect(clicks).toEqual(['hero.click()', 'skip.click()']);
+    expect(WAIT_FOR_FILM_EXPRESSION).toContain('/^skip ad$/i');
   });
 });
