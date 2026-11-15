@@ -972,6 +972,7 @@ export function App() {
                     projects={view === 'projects'}
                     adversary={view === 'adversary'}
                     movies={view === 'movies'}
+                    stream={view === 'movies' && moviesRoute.stream === true}
                     onJumpLast={() => last && jump(last.id)}
                     onAdd={() => void addNote()}
                   />

@@ -24,6 +24,8 @@ import type { MoviesRoute } from './route';
 export const MOVIES_HEADING = 'Movies.';
 export const UNMATCHED_HEADING = 'Unmatched.';
 export const MOVIES_HINT = 'Posters and credits come from TMDB. Play opens VLC on the machine that holds the file.';
+/** The Stream side (`?side=stream`): nothing there plays in VLC. */
+export const STREAM_HINT = 'Posters and credits come from TMDB. Play streams the title full screen in the streaming Chrome.';
 export const MOVIES_PILL_PLACEHOLDER = 'Ask about your movies';
 export const MOVIES_OFF_TEXT = 'Movies are off on this daemon. Set NOTESD_MOVIES=on and NOTESD_MOVIES_ROOTS, then restart notesd.';
 export const STREAM_HEADING = 'Stream.';

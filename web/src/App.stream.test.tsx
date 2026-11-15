@@ -89,6 +89,9 @@ describe('App: the Stream side of /movies', () => {
     fireEvent.click(within(switcher()).getByRole('button', { name: 'Stream' }));
     await waitFor(() => expect(where()).toBe('/movies?side=stream'));
     expect(h1()).toBe('Stream.');
+    // The header hint follows the side: nothing on the Stream side plays in VLC.
+    expect(screen.getByText(/Play streams the title full screen/)).toBeTruthy();
+    expect(screen.queryByText(/Play opens VLC/)).toBeNull();
     await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
     expect(within(switcher()).getByRole('button', { name: 'Stream' }).getAttribute('aria-pressed')).toBe('true');
     // A title with no file is not "gone" on this side, and there is no gone pill.
@@ -100,6 +103,7 @@ describe('App: the Stream side of /movies', () => {
     fireEvent.click(within(switcher()).getByRole('button', { name: 'Library' }));
     await waitFor(() => expect(where()).toBe('/movies'));
     expect(h1()).toBe('Movies.');
+    expect(screen.getByText(/Play opens VLC/)).toBeTruthy();
   });
 
   it('R5.2: the Stream grid shows exactly the verified list; empty and off say why', async () => {
