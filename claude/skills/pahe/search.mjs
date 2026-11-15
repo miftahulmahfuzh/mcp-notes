@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // The /pahe skill's search: fetch pahe.ink's search page for a title and print, as JSON, the
 // results whose name (and year, when one was given) match. Usage: search.mjs <title> [year]
+import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const PAHE_ORIGIN = 'https://pahe.ink';
@@ -126,6 +127,15 @@ async function main(argv) {
   return 0;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+// The skill folder is a symlink in ~/.claude/skills, so compare real paths.
+function isMain() {
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1] ?? '')).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
   process.exitCode = await main(process.argv.slice(2));
 }
