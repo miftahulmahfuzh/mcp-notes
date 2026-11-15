@@ -121,21 +121,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "72f54d0d5375eb12ed2be55faf7980332e8fc78f",
       "depends_on": [
         4,
         5
       ],
       "difficulty": "NORMAL",
       "n": 7,
-      "note": null,
+      "note": "direct_stream_find/play, title lookup, /direct-stream skill, chat bar wiring; verify.sh now pins NOTESD_STREAMING=off on every throwaway daemon (coordinator decision, invariants 6 and 8); INCIDENT: before that pin the plan's neighbor check ran the real lk21 flow, Saltburn played full screen with sound ~20:40 WIB, one lk21 tab closed by phase 7, phase 2 campaign rows around 20:40-20:42 unverified; install.sh not run from the wave worktree, deferred to landing (Follow-ups); proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1115-204158-555644/evidence",
       "package": "src/mcp`, `src/directStream`, `claude/skills",
       "plan": ".workflows/plan/direct-streaming/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:45:01+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A117",
       "title": "/direct-stream`: title lookup, tools, skill, chat bar"
     },
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:37:34+07:00",
+  "updated": "2026-11-15T20:45:01+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
