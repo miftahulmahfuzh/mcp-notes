@@ -131,9 +131,6 @@ try {
   if ($Show) {
     $window = (Invoke-Cdp $page 'Browser.getWindowForTarget' @{}) | ConvertFrom-Json
     Invoke-Cdp $page 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = 'normal' } } | Out-Null
-    if ($WindowState -ne 'normal') {
-      Invoke-Cdp $page 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = $WindowState } } | Out-Null
-    }
     Invoke-Cdp $page 'Page.bringToFront' @{} | Out-Null
     # The page keeps behaving as focused when the user clicks into another window.
     Invoke-Cdp $page 'Emulation.setFocusEmulationEnabled' @{ enabled = $true } | Out-Null
@@ -148,6 +145,12 @@ try {
       $shell.SendKeys('%')
       $shell.AppActivate($browser.ProcessId) | Out-Null
       Start-Sleep -Milliseconds 300
+    }
+    # Full screen comes last, on the window that is already in front. Windows hides its taskbar
+    # only while the foreground window covers the screen; going full screen first left Chrome's
+    # "To exit full screen" bubble as the window AppActivate picked, and the taskbar stayed.
+    if ($WindowState -ne 'normal') {
+      Invoke-Cdp $page 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = $WindowState } } | Out-Null
     }
   }
   if ($FrameMatch) {

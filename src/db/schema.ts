@@ -1023,6 +1023,11 @@ export const movieTitles = pgTable(
     rating: smallint('rating'),
     /** The review, a normal note (written through NotesService). Purging the note clears the link. */
     reviewNoteId: text('review_note_id').references(() => notes.id, { onDelete: 'set null' }),
+    /**
+     * Other names the owner calls this title, normalized (src/directStream/match.ts normalizeName).
+     * The direct-stream lookup matches them like the title's own name. Never rewritten from TMDB.
+     */
+    aliases: text('aliases').array().notNull().default(sql`'{}'::text[]`),
     metadataFetchedAt: timestamp('metadata_fetched_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),

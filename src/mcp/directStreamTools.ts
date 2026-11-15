@@ -3,23 +3,30 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { DIRECT_STREAM_TOOL_NAMES } from '../chat/status.js';
 import type { AppDeps } from '../deps.js';
+import { pickEpisode, withListedEpisodes, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
 import {
   dbTitleLibrary,
   LookupError,
   lookupTitle,
   parseTitleRequest,
+  sameTitle,
   targetKey,
   type EpisodePick,
+  type LookupTmdb,
   type SeasonCount,
   type StreamTarget,
   type TitleCandidate,
   type TitleLibrary,
 } from '../directStream/lookup.js';
+import { normalizeName } from '../directStream/match.js';
 import type { ProviderView } from '../directStream/repo.js';
 import { DirectStreamError } from '../directStream/types.js';
 import type { UpdateSourceAnswer } from '../directStream/updateSource.js';
+import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
+import { MovieStreams } from '../movies/streams.js';
 import { TmdbError, type TmdbClient } from '../movies/tmdb.js';
+import { titleId } from '../movies/types.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
 import { movieErrorResult } from './movieTools.js';
 import { jsonResult, type ToolDeps } from './tools.js';
@@ -42,7 +49,13 @@ export interface FreshSource {
 /** What the direct-streaming tools need, bound once per daemon by directStreamToolDeps (tests build their own). */
 export interface DirectStreamToolDeps {
   library: TitleLibrary;
-  tmdb: TmdbClient | null;
+  tmdb: (TmdbClient & LookupTmdb) | null;
+  /** A stored series' episodes with their watch state (files and streams) and last play; [] when the series is not stored. */
+  progress(tmdbId: number): Promise<EpisodeProgress[]>;
+  /** Stores `name` (normalized) as one more name of the title, storing the title first when it is new. False when nothing was added. */
+  rememberAlias(candidate: TitleCandidate, name: string): Promise<boolean>;
+  /** Default: the clock. */
+  now?: () => Date;
   /** DirectStreamService.play: resolve, then open the player page full screen in the streaming Chrome, resuming where the last stream stopped. */
   play(target: StreamTarget): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
@@ -62,6 +75,16 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
   return {
     library: dbTitleLibrary(deps.db),
     tmdb: movies.tmdb,
+    progress: async (tmdbId) => {
+      const detail = await getTitle(deps.db, titleId('tv', tmdbId), { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase });
+      return (detail?.seasons ?? []).flatMap((s) =>
+        s.episodes.map((e) => ({ season: e.season, episode: e.episode, state: e.state, lastPlayedAt: e.last_played_at, airDate: e.air_date })),
+      );
+    },
+    rememberAlias: async (candidate, name) => {
+      const id = await new MovieStreams(movies).ensureTitle({ kind: candidate.kind, tmdbId: candidate.tmdbId });
+      return id === null ? false : movies.repo.addTitleAlias(id, normalizeName(name));
+    },
     play: (target) => service.play(target),
     freshSource: async (target) => {
       // Phase 5's one freshness rule: this host's row of the film (0, 0) or the episode, fresh as of now.
@@ -84,7 +107,8 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
 const FIND_DESCRIPTION =
   "Look a film or series up for direct streaming: a stream played in the owner's own player page straight from a cloud source, with no site and no adverts. " +
   'Pass title (the words without the year; or a movie id like M-23T4, of a title or of one episode; or a title key like movie-550 or tv-1399), year when known, and kind (movie or tv) when the owner said which. ' +
-  "Titles already stored (the library, and titles streamed before) are matched first, then TMDB. A title matches when its English or original name is the asked title and its year is the asked year when one was given. " +
+  "Titles already stored (the library, and titles streamed before) are matched first, then TMDB. A title matches when its English or original name, a name the owner gave it before, or one of TMDB's alternative titles is the asked title, and its year is the asked year when one was given. " +
+  'With status none, did_you_mean lists titles close to the words (a site may call a title by another name than TMDB does): show them and ask; none of them is a match. ' +
   'Returns { status: one | several | none, matches: [{ title, original_title, year, kind, tmdb_id, movie_id, url, tmdb_url, episode, stream }] }. stream says whether this machine has a source verified recently: ' +
   'verified true with provider, manifest_kind, best_height and en_subtitle; verified false when none is known yet (it may still stream: only playing tries); verified null for a series named without an episode, whose episodes are checked when played. ' +
   'This tool only looks: nothing is resolved and nothing opens. To start one, call direct_stream_play.';
@@ -93,10 +117,13 @@ const PLAY_DESCRIPTION =
   'Stream one film, or one episode of a series, directly: the daemon finds a cloud source (providers with an English subtitle first), then opens its own player page full screen in the streaming Chrome window on the Windows side, ' +
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
-  'Pass title (words without the year, a movie id, or a title key) with year when known; for a series also season and episode (an episode\'s movie id names both). ' +
-  'started true: the player page is open, and play carries the session and the source (provider, quality, subtitles). ' +
+  'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both): ' +
+  'without them the daemon picks the episode from what was watched, on file or streamed (picked: first, nothing played yet; resume, the episode played last is unfinished and carries on where it stopped; next, the episode after the last finished one). ' +
+  'started true: the player page is open, season and episode say which episode, and play carries the session and the source (provider, quality, subtitles). ' +
   'started false with skipped_play says why nothing started: several_matches (list candidates with their years and ask which, then call again with that one\'s movie_id, or title and year), ' +
-  'series (ask for a season and an episode; seasons lists what there is), or no_match. ' +
+  'caught_up (every episode after the last one played is finished or there is none: say so, with last and seasons), not_aired (the next episode airs on air_date), ' +
+  'or no_match: did_you_mean lists titles close to the words, none of them the asked name; show them with their years and ask which. When the owner picks one, call again with its title_key (or movie_id) and asked_as set to the name the owner first used, ' +
+  'so that name finds the title from then on. Never pass asked_as for a name the owner did not use. ' +
   'The error no_source means no provider could stream it: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, skipped_browser_only, skipped_no_template), and nothing started; offer /idlix or /lk21. ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
@@ -203,6 +230,7 @@ function candidateView(c: TitleCandidate, wall: string) {
     kind: c.kind,
     tmdb_id: c.tmdbId,
     movie_id: c.movieId,
+    title_key: titleId(c.kind, c.tmdbId),
     url: c.movieId === null ? null : `${wall}/movies/${encodeURIComponent(c.movieId)}`,
     tmdb_url: `https://www.themoviedb.org/${c.kind}/${c.tmdbId}`,
   };
@@ -234,6 +262,31 @@ async function seasonsOf(c: TitleCandidate, d: DirectStreamToolDeps): Promise<Se
     if (err instanceof TmdbError) return null;
     throw err;
   }
+}
+
+/** A series' episodes as TMDB lists them now; null when TMDB cannot be asked. */
+async function listedEpisodes(c: TitleCandidate, d: DirectStreamToolDeps): Promise<{ season: number; episode: number; airDate: string | null }[] | null> {
+  if (d.tmdb === null) return null;
+  try {
+    return (await d.tmdb.tvDetails(c.tmdbId)).episodes;
+  } catch (err) {
+    if (err instanceof TmdbError) return null;
+    throw err;
+  }
+}
+
+/**
+ * The episode a series named without one streams (episodePick.ts). The stored episodes decide;
+ * TMDB's list is read when the series is not stored, or when the stored list has no episode left
+ * (a series still airing has newer ones).
+ */
+async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promise<EpisodeChoice> {
+  const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
+  const stored = await d.progress(c.tmdbId);
+  const choice = pickEpisode(stored, today);
+  if (stored.length > 0 && choice.pick !== 'caught_up') return choice;
+  const listed = await listedEpisodes(c, d);
+  return listed === null ? choice : pickEpisode(withListedEpisodes(stored, listed), today);
 }
 
 async function streamView(d: DirectStreamToolDeps, target: StreamTarget | null) {
@@ -302,9 +355,12 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         return ok({
           status: result.status,
           matches,
+          ...(result.status === 'none' ? { did_you_mean: result.nearMisses.map((c) => candidateView(c, wall)) } : {}),
           next:
             result.status === 'none'
-              ? 'No title has that name (or that name and year). Say so; offer a near spelling only if the owner asks.'
+              ? result.nearMisses.length > 0
+                ? 'No title has that name (or that name and year). Say so, show did_you_mean with years and kinds, and ask whether one of them is meant.'
+                : 'No title has that name (or that name and year). Say so.'
               : 'Nothing was started. To stream one, call direct_stream_play with its movie_id, or its title and year.',
         });
       });
@@ -322,16 +378,28 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
         season: seasonField.optional().describe('A series only: the season to stream from.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
+        asked_as: titleField
+          .optional()
+          .describe('Only after the owner picked a title from did_you_mean: the name they first used for it, word for word. It is remembered as another name of this title.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode }) => {
+    async ({ title, year, kind, season, episode, asked_as }) => {
       const d = deps.directStream;
       if (!d) return off();
       return respond(async () => {
         const result = await lookupTitle(parseTitleRequest(title, year ?? null, kind ?? null), d);
         if (result.status === 'none') {
-          return ok({ started: false, skipped_play: 'no_match', query: { title, year: year ?? null }, next: 'No title has that name (or that name and year). Say so; nothing started.' });
+          return ok({
+            started: false,
+            skipped_play: 'no_match',
+            query: { title, year: year ?? null },
+            did_you_mean: result.nearMisses.map((c) => candidateView(c, wall)),
+            next:
+              result.nearMisses.length > 0
+                ? 'Nothing started: no title has that name (or that name and year). Show did_you_mean with years and kinds and ask whether one of them is meant. When the owner picks one, call again with its title_key and asked_as set to the name they used.'
+                : 'No title has that name (or that name and year). Say so; nothing started.',
+          });
         }
         if (result.status === 'several') {
           return ok({
@@ -342,17 +410,44 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
           });
         }
         const c = result.candidate;
-        const target = targetFor(c, result.episode, season, episode);
+        // A name the owner confirmed for this title: remembered whether or not a source resolves.
+        const remembered =
+          asked_as !== undefined && normalizeName(asked_as) !== '' && !sameTitle(c, { name: asked_as, year: null }) ? await d.rememberAlias(c, asked_as) : false;
+        let target = targetFor(c, result.episode, season, episode);
+        let choice: EpisodeChoice | null = null;
         if (target === null) {
-          return ok({
-            started: false,
-            skipped_play: 'series',
-            title: candidateView(c, wall),
-            seasons: await seasonsOf(c, d),
-            next: 'A series streams one episode at a time. Ask which season and episode; nothing started.',
-          });
+          if (season !== undefined || episode !== undefined) {
+            throw new LookupError('invalid_input', `${label(c)} is a series: pass both season and episode, or neither to carry on from the last episode watched.`);
+          }
+          choice = await chooseEpisode(c, d);
+          if (choice.pick === 'caught_up') {
+            return ok({
+              started: false,
+              skipped_play: 'caught_up',
+              title: candidateView(c, wall),
+              last: choice.last,
+              seasons: await seasonsOf(c, d),
+              next: 'Nothing started: the last episode played is finished and no episode after it is left. Say so with last; to watch one again the owner names a season and an episode.',
+            });
+          }
+          if (choice.pick === 'not_aired') {
+            return ok({
+              started: false,
+              skipped_play: 'not_aired',
+              title: candidateView(c, wall),
+              season: choice.season,
+              episode: choice.episode,
+              air_date: choice.airDate,
+              next: 'Nothing started: the next episode has not aired yet. Say which episode and its air date.',
+            });
+          }
+          target = { kind: 'tv', tmdbId: c.tmdbId, season: choice.season, episode: choice.episode };
         }
-        const picked = target.kind === 'tv' ? { season: target.season, episode: target.episode } : { season: null, episode: null };
+        const picked = {
+          ...(target.kind === 'tv' ? { season: target.season, episode: target.episode } : { season: null, episode: null }),
+          ...(choice === null ? {} : { picked: choice.pick }),
+          ...(remembered ? { remembered_as: asked_as } : {}),
+        };
         try {
           const play = await d.play(target);
           return ok({
@@ -360,7 +455,10 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             title: candidateView(c, wall),
             ...picked,
             play,
-            next: 'Say it is playing full screen in the streaming Chrome window, and that F11 leaves full screen.',
+            next:
+              choice === null
+                ? 'Say it is playing full screen in the streaming Chrome window, and that F11 leaves full screen.'
+                : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that F11 leaves full screen.',
           });
         } catch (err) {
           const failure = playFailure(err);

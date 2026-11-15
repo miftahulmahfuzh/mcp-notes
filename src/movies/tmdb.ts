@@ -109,6 +109,15 @@ export interface TmdbCatalog {
   recommendations(kind: TitleKind, tmdbId: number, page?: number): Promise<TmdbSearchHit[]>;
 }
 
+/**
+ * The other names TMDB keeps for a title, for the direct-stream lookup (src/directStream/lookup.ts).
+ * Kept apart from TmdbClient for the same reason as TmdbCatalog; createTmdbClient returns it too.
+ */
+export interface TmdbTitleNames {
+  /** A title's alternative titles in every country, in TMDB's order, without blanks. A title TMDB does not know (404) answers []. */
+  alternativeTitles(kind: TitleKind, tmdbId: number): Promise<string[]>;
+}
+
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
 export interface TmdbClientConfig {
   token: string | null;
@@ -263,6 +272,12 @@ const PersonSearchSchema = z.object({
   results: z
     .array(z.object({ id: intId, name: z.string(), known_for_department: text, profile_path: text, popularity: num }))
     .nullish(),
+});
+
+/** `/movie/{id}/alternative_titles` answers `titles`, `/tv/{id}/alternative_titles` answers `results`. */
+const AlternativeTitlesSchema = z.object({
+  titles: z.array(z.object({ title: text })).nullish(),
+  results: z.array(z.object({ title: text })).nullish(),
 });
 
 const GenreListSchema = z.object({ genres: z.array(z.object({ id: intId, name: z.string() })).nullish() });
@@ -555,7 +570,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient & TmdbCatalog {
+): TmdbClient & TmdbCatalog & TmdbTitleNames {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -815,6 +830,13 @@ export function createTmdbClient(
     async recommendations(kind, tmdbId, page = 1) {
       const json = await getOrNull(`/${kind}/${tmdbId}/recommendations`, { page });
       return json === null ? [] : hitsOf(kind, json, `${kind} ${tmdbId} recommendations`);
+    },
+
+    async alternativeTitles(kind, tmdbId) {
+      const json = await getOrNull(`/${kind}/${tmdbId}/alternative_titles`, {});
+      if (json === null) return [];
+      const raw = decode(AlternativeTitlesSchema, json, `${kind} ${tmdbId} alternative titles`);
+      return [...(raw.titles ?? []), ...(raw.results ?? [])].flatMap((t) => orNull(t.title) ?? []);
     },
   };
 }

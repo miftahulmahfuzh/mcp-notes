@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   LOOKUP_MAX_CANDIDATES,
+  LOOKUP_MAX_NEAR_MISSES,
   lookupTitle,
   parseTitleRequest,
+  shorterName,
+  type LookupTmdb,
   type SeasonCount,
   type TitleCandidate,
   type TitleLibrary,
@@ -45,6 +48,18 @@ function fakeTmdb(movies: TmdbSearchHit[], tv: TmdbSearchHit[] = []) {
   } as unknown as TmdbClient & { searchMovie: ReturnType<typeof vi.fn>; searchTv: ReturnType<typeof vi.fn> };
 }
 
+/** A TMDB whose series search answers by query (anything else: nothing) and that knows alternative titles by TMDB id. */
+function namedTmdb(tvByQuery: Record<string, TmdbSearchHit[]>, alternatives: Record<number, string[]> = {}) {
+  return {
+    searchMovie: vi.fn(async () => []),
+    searchTv: vi.fn(async (query: string) => tvByQuery[query] ?? []),
+    alternativeTitles: vi.fn(async (_kind: 'movie' | 'tv', id: number) => alternatives[id] ?? []),
+  } satisfies LookupTmdb;
+}
+
+const MICHIKO = hit({ kind: 'tv', title: 'Doctor-X: Surgeon Michiko Daimon', tmdbId: 46052, year: 2012, popularity: 9 });
+const MAFIA = hit({ kind: 'tv', title: 'Doctor X: Mafia in White', originalTitle: '닥터X: 하얀 마피아의 시대', tmdbId: 293610, year: 2026, popularity: 5 });
+
 const words = (title: string, year: number | null = null) => parseTitleRequest(title, year, null);
 
 describe('lookupTitle', () => {
@@ -82,10 +97,70 @@ describe('lookupTitle', () => {
   });
 
   it('answers none when no result has the name, and caps several at the limit', async () => {
-    expect(await lookupTitle(words('saltburn'), { library: fakeLibrary([]), tmdb: fakeTmdb([hit({ title: 'Saltburn 2', tmdbId: 9 })]) })).toEqual({ status: 'none' });
+    expect(await lookupTitle(words('saltburn'), { library: fakeLibrary([]), tmdb: fakeTmdb([hit({ title: 'Saltburn 2', tmdbId: 9 })]) })).toEqual({
+      status: 'none',
+      nearMisses: [expect.objectContaining({ title: 'Saltburn 2', tmdbId: 9 })],
+    });
     const many = Array.from({ length: LOOKUP_MAX_CANDIDATES + 3 }, (_, i) => hit({ title: 'Pilot', tmdbId: i + 1 }));
     const r = await lookupTitle(words('pilot'), { library: fakeLibrary([]), tmdb: fakeTmdb(many) });
     expect(r.status === 'several' ? r.candidates.length : 0).toBe(LOOKUP_MAX_CANDIDATES);
+  });
+
+  it("matches a hit by one of TMDB's alternative titles when no name matches, reading only the top hits", async () => {
+    const tmdb = namedTmdb({ 'doctor x': [MICHIKO, MAFIA] }, { 293610: ['Doctora X', 'Doctor X'], 46052: ['Doctor-X'] });
+    const r = await lookupTitle(parseTitleRequest('doctor x', 2026, 'tv'), { library: fakeLibrary([]), tmdb });
+    expect(r).toEqual({ status: 'one', candidate: expect.objectContaining({ tmdbId: 293610, title: 'Doctor X: Mafia in White' }), episode: null });
+    // The 2012 series is outside the asked year: its alternative titles are never read.
+    expect(tmdb.alternativeTitles.mock.calls).toEqual([['tv', 293610]]);
+    // Without a year both series are called "Doctor X" somewhere: several, most popular first.
+    const both = await lookupTitle(parseTitleRequest('doctor x', null, 'tv'), { library: fakeLibrary([]), tmdb });
+    expect(both.status === 'several' ? both.candidates.map((c) => c.tmdbId) : []).toEqual([46052, 293610]);
+  });
+
+  it('never reads alternative titles when a name matches', async () => {
+    const tmdb = namedTmdb({ 'doctor x: mafia in white': [MAFIA, MICHIKO] }, { 46052: ['Doctor X: Mafia in White'] });
+    const r = await lookupTitle(parseTitleRequest('doctor x: mafia in white', null, 'tv'), { library: fakeLibrary([]), tmdb });
+    expect(r.status === 'one' ? r.candidate.tmdbId : 0).toBe(293610);
+    expect(tmdb.alternativeTitles).not.toHaveBeenCalled();
+  });
+
+  it('answers none with the search\'s other hits as near misses, carrying a stored title\'s movie id', async () => {
+    const tmdb = namedTmdb({ 'doctor x mafia': [MAFIA, MICHIKO] });
+    const library = fakeLibrary([stored({ kind: 'tv', title: 'Doctor X: Mafia in White', tmdbId: 293610, year: 2026, movieId: 'M-0DRX' })]);
+    const r = await lookupTitle(parseTitleRequest('doctor x mafia', null, 'tv'), { library, tmdb });
+    expect(r.status).toBe('none');
+    if (r.status !== 'none') return;
+    expect(r.nearMisses.map((c) => [c.tmdbId, c.movieId])).toEqual([[46052, null], [293610, 'M-0DRX']]);
+  });
+
+  it('searches a shorter form of the name for near misses when the full name finds nothing', async () => {
+    const tmdb = namedTmdb({ 'Doctor X': [MICHIKO, MAFIA], doctor: [MICHIKO] });
+    const r = await lookupTitle(parseTitleRequest('Doctor X: Age of the White Mafia', 2026, 'tv'), { library: fakeLibrary([]), tmdb });
+    expect(r).toEqual({ status: 'none', nearMisses: [expect.objectContaining({ tmdbId: 293610 })] });
+    expect(tmdb.searchTv.mock.calls.map(([q]) => q)).toEqual(['Doctor X: Age of the White Mafia', 'Doctor X']);
+    // A near miss is never promoted to a match, whatever its alternative titles say.
+    expect(tmdb.alternativeTitles).not.toHaveBeenCalled();
+    const many = Array.from({ length: LOOKUP_MAX_NEAR_MISSES + 4 }, (_, i) => hit({ kind: 'tv', title: `Pilot ${i}`, tmdbId: i + 1 }));
+    const capped = await lookupTitle(parseTitleRequest('pilot', null, 'tv'), { library: fakeLibrary([]), tmdb: namedTmdb({ pilot: many }) });
+    expect(capped.status === 'none' ? capped.nearMisses.length : 0).toBe(LOOKUP_MAX_NEAR_MISSES);
+  });
+
+  it('shortens a name to the part before its subtitle, else to its first two words when it has four or more', () => {
+    expect(shorterName('Doctor X: Age of the White Mafia')).toBe('Doctor X');
+    expect(shorterName('Mission Impossible - Dead Reckoning')).toBe('Mission Impossible');
+    expect(shorterName('doctor x age of the white mafia')).toBe('doctor x');
+    expect(shorterName('Spider-Man')).toBeNull();
+    expect(shorterName('the bear')).toBeNull();
+  });
+
+  it('finds a stored title by a name the owner gave it, without asking TMDB, and keeps the year rule', async () => {
+    const library = fakeLibrary([stored({ kind: 'tv', title: 'Doctor X: Mafia in White', tmdbId: 293610, year: 2026, movieId: 'M-0DRX', aliases: ['doctorxageofthewhitemafia'] })]);
+    const tmdb = namedTmdb({});
+    const r = await lookupTitle(words('Doctor X: Age of the White Mafia'), { library, tmdb });
+    expect(r).toEqual({ status: 'one', candidate: expect.objectContaining({ tmdbId: 293610, movieId: 'M-0DRX' }), episode: null });
+    expect(tmdb.searchTv).not.toHaveBeenCalled();
+    const wrongYear = await lookupTitle(words('doctor x age of the white mafia', 2012), { library, tmdb });
+    expect(wrongYear.status).toBe('none');
   });
 
   it('says tmdb_unavailable when nothing stored matches and there is no TMDB', async () => {

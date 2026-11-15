@@ -59,3 +59,19 @@ describe('TmdbCatalog', () => {
     await expect(createTmdbClient(CONFIG, f.fetch).list('trending', 'tv')).rejects.toMatchObject({ name: 'TmdbError', code: 'bad_response' });
   });
 });
+
+describe('TmdbTitleNames', () => {
+  it("reads a film's and a series' alternative titles, leaving blanks out", async () => {
+    const f = routedFetch({
+      '/movie/550/alternative_titles': { id: 550, titles: [{ iso_3166_1: 'DE', title: 'Fight Club' }, { iso_3166_1: 'FR', title: '' }] },
+      '/tv/293610/alternative_titles': { id: 293610, results: [{ iso_3166_1: 'US', title: 'Doctor X', type: '' }, { iso_3166_1: 'ES', title: 'Doctora X', type: '' }] },
+    });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    expect(await client.alternativeTitles('movie', 550)).toEqual(['Fight Club']);
+    expect(await client.alternativeTitles('tv', 293610)).toEqual(['Doctor X', 'Doctora X']);
+  });
+
+  it('answers no names for a title TMDB does not know', async () => {
+    expect(await createTmdbClient(CONFIG, routedFetch({}).fetch).alternativeTitles('tv', 1)).toEqual([]);
+  });
+});

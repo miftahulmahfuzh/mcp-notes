@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 import { dbTitleLibrary, lookupTitle, parseTitleRequest, type TitleLibrary } from '../../src/directStream/lookup.js';
+import { MoviesRepo } from '../../src/movies/repo.js';
 import { clearMovies } from './helpers/moviesMcpSeed.js';
 import { closeTestDb, openTestDb } from './setup.js';
 
@@ -53,5 +54,19 @@ describe('dbTitleLibrary', () => {
   it('keeps kind apart', async () => {
     expect(await library.search('lookup series', 'movie')).toEqual([]);
     expect((await library.search('lookup series', 'tv')).map((t) => t.tmdbId)).toEqual([990002]);
+  });
+
+  it('finds a title by a name the owner gave it, stored once and kept when TMDB metadata is not the source', async () => {
+    const repo = new MoviesRepo(db);
+    expect(await repo.addTitleAlias('tv-990002', 'theotherlookupname')).toBe(true);
+    expect(await repo.addTitleAlias('tv-990002', 'theotherlookupname')).toBe(false);
+    expect(await repo.addTitleAlias('tv-404', 'theotherlookupname')).toBe(false);
+    const rows = await db.execute(sql`select aliases from movie_titles where id = 'tv-990002'`);
+    expect((rows.rows[0] as { aliases: string[] }).aliases).toEqual(['theotherlookupname']);
+
+    // The words share nothing with the title, its original name or its synopsis: only the alias finds it.
+    const r = await lookupTitle(parseTitleRequest('The Other: Lookup Name', null, null), { library, tmdb: null });
+    expect(r).toMatchObject({ status: 'one', candidate: { kind: 'tv', tmdbId: 990002, title: 'Lookup Series' } });
+    await expect(lookupTitle(parseTitleRequest('The Other: Lookup Name', 1999, null), { library, tmdb: null })).rejects.toMatchObject({ code: 'tmdb_unavailable' });
   });
 });

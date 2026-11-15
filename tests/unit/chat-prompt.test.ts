@@ -200,7 +200,9 @@ describe('buildChatSystemPrompt', () => {
 
   it('streams directly only when asked, resolves "the first one" to a title, and looks up with direct_stream_find otherwise', () => {
     expect(prompt).toMatch(/A message that starts with \/direct-stream followed by a title/);
-    expect(prompt).toMatch(/call direct_stream_play with the exact title, the year when you know it, and for a series the season and episode/);
+    expect(prompt).toMatch(/call direct_stream_play with the exact title, the year when you know it, and for a series the season and episode only when the owner named them/);
+    expect(prompt).toMatch(/the daemon carries the series on from what was watched/);
+    expect(prompt).toMatch(/list did_you_mean with years and ask whether one of them is meant/);
     expect(prompt).toMatch(/"this is a LOTR night\. let's \/direct-stream the first one" is The Lord of the Rings: The Fellowship of the Ring \(2001\)/);
     expect(prompt).toMatch(/When it answers no_source, say no source could stream it, with each provider's outcome from attempts/);
     expect(prompt).toMatch(/is a lookup, not a request to play: call direct_stream_find/);

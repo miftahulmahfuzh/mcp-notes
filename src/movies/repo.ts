@@ -270,6 +270,19 @@ export class MoviesRepo {
     return rows[0] ?? null;
   }
 
+  /**
+   * Remembers one more name the owner uses for a title (already normalized), once. False when the
+   * title is not stored or already has it.
+   */
+  async addTitleAlias(id: string, alias: string, now: Date = new Date()): Promise<boolean> {
+    const rows = await this.db
+      .update(movieTitles)
+      .set({ aliases: sql`array_append(${movieTitles.aliases}, ${alias})`, updatedAt: now })
+      .where(and(eq(movieTitles.id, id), sql`not (${alias} = any(${movieTitles.aliases}))`))
+      .returning({ id: movieTitles.id });
+    return rows.length > 0;
+  }
+
   /** The stored TMDB metadata of a title, in the shape `upsertTitle` takes, or null. */
   async loadTitleMetadata(id: string): Promise<TitleMetadata | null> {
     const title = await this.titleById(id);

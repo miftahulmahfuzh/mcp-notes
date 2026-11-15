@@ -2,13 +2,17 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { movieEpisodes, movieIds, movieTitles } from '../db/schema.js';
 import { normalizeMovieId, resolveMovieId } from '../movies/ids.js';
-import type { TmdbClient, TmdbSearchHit } from '../movies/tmdb.js';
+import { TmdbError, type TmdbClient, type TmdbSearchHit, type TmdbTitleNames } from '../movies/tmdb.js';
 import { titleId, type TitleKind } from '../movies/types.js';
-import { isSameTitle, type TitleQuery } from './match.js';
+import { isSameTitle, normalizeName, type TitleQuery } from './match.js';
 import type { StreamRef } from './types.js';
 
 /** Candidates an answer lists at most. */
 export const LOOKUP_MAX_CANDIDATES = 10;
+/** Near misses a `none` answer lists at most. */
+export const LOOKUP_MAX_NEAR_MISSES = 5;
+/** TMDB hits whose alternative titles are read when no name matches (one request each). */
+export const ALTERNATIVE_TITLE_HITS = 5;
 /** Stored titles the loose SQL pre-filter hands to the exact rule. */
 const LIBRARY_SCAN_LIMIT = 50;
 /** A title key: movie-550, tv-1399 (any case). */
@@ -44,6 +48,8 @@ export interface TitleCandidate {
   year: number | null;
   /** The title's movie id (M-23T4) when a movie_titles row exists for it; null for a TMDB-only hit. */
   movieId: string | null;
+  /** A stored title's other names as the owner uses them, normalized (movie_titles.aliases). */
+  aliases?: readonly string[];
 }
 
 /** What the tool was given, read once at the boundary by parseTitleRequest. */
@@ -54,11 +60,11 @@ export type LookupRequest =
 export type LookupResult =
   | { status: 'one'; candidate: TitleCandidate; /** Set when a movie id named one episode. */ episode: EpisodePick | null }
   | { status: 'several'; candidates: TitleCandidate[]; source: 'library' | 'tmdb' }
-  | { status: 'none' };
+  | { status: 'none'; /** Titles close to the words, none of them the asked name: for "did you mean", never played unasked. */ nearMisses: TitleCandidate[] };
 
 /** The stored titles, read-only. dbTitleLibrary is the real one; tests pass a fake. */
 export interface TitleLibrary {
-  /** movie_titles rows whose name or synopsis contains the words: a loose pre-filter, the exact rule decides. */
+  /** movie_titles rows whose name or synopsis contains the words, or that have them as an alias: a loose pre-filter, the exact rule decides. */
   search(name: string, kind: TitleKind | null): Promise<TitleCandidate[]>;
   /** One stored title, or null. */
   byKey(kind: TitleKind, tmdbId: number): Promise<TitleCandidate | null>;
@@ -70,9 +76,12 @@ export interface TitleLibrary {
 
 export interface LookupDeps {
   library: TitleLibrary;
-  /** Null without TMDB credentials: only stored titles can be found. */
-  tmdb: TmdbClient | null;
+  /** Null without TMDB credentials: only stored titles can be found. Without `alternativeTitles`, only names match. */
+  tmdb: LookupTmdb | null;
 }
+
+/** What the lookup asks of TMDB; createTmdbClient's client has all of it. */
+export type LookupTmdb = Pick<TmdbClient, 'searchMovie' | 'searchTv'> & Partial<TmdbTitleNames>;
 
 /** A lookup that cannot answer: the tool result reads `<code>: <message>`. */
 export class LookupError extends Error {
@@ -96,15 +105,57 @@ function fromHit(hit: TmdbSearchHit): TitleCandidate {
   return { kind: hit.kind, tmdbId: hit.tmdbId, title: hit.title, originalTitle: hit.originalTitle, year: hit.year, movieId: null };
 }
 
-function sameTitle(c: TitleCandidate, query: TitleQuery): boolean {
-  return isSameTitle({ name: c.title, originalName: c.originalTitle, year: c.year }, query);
+function yearFits(year: number | null, query: TitleQuery): boolean {
+  return query.year === null || year === null || year === query.year;
+}
+
+/** The exact rule, or one of the title's aliases is the asked name (and the year fits). */
+export function sameTitle(c: TitleCandidate, query: TitleQuery): boolean {
+  if (isSameTitle({ name: c.title, originalName: c.originalTitle, year: c.year }, query)) return true;
+  return (c.aliases ?? []).includes(normalizeName(query.name)) && yearFits(c.year, query);
 }
 
 function fromMatches(matches: TitleCandidate[], source: 'library' | 'tmdb'): LookupResult {
   const [only] = matches;
   if (matches.length === 1 && only !== undefined) return { status: 'one', candidate: only, episode: null };
-  if (matches.length === 0) return { status: 'none' };
+  if (matches.length === 0) return { status: 'none', nearMisses: [] };
   return { status: 'several', candidates: matches.slice(0, LOOKUP_MAX_CANDIDATES), source };
+}
+
+/**
+ * A shorter name worth one more search when the full one found nothing: the name without its
+ * subtitle ("Doctor X: Age of the White Mafia" is "Doctor X"), else the first two words of a name
+ * of four or more. Null when there is none.
+ */
+export function shorterName(name: string): string | null {
+  const full = name.trim();
+  const base = full.split(/\s*[:\u2013\u2014]\s+|\s+-\s+/)[0]?.trim() ?? '';
+  if (base !== '' && base !== full) return base;
+  const words = full.split(/\s+/);
+  return words.length >= 4 ? words.slice(0, 2).join(' ') : null;
+}
+
+/** The hits one of whose TMDB alternative titles is the asked name, in the order given. A TMDB failure matches nothing. */
+async function matchesByAlternativeTitle(hits: TmdbSearchHit[], query: TitleQuery, tmdb: LookupTmdb): Promise<TmdbSearchHit[]> {
+  const names = tmdb.alternativeTitles?.bind(tmdb);
+  if (names === undefined) return [];
+  const checked = await Promise.all(
+    hits.map(async (hit) => {
+      try {
+        const alternatives = await names(hit.kind, hit.tmdbId);
+        return alternatives.some((name) => isSameTitle({ name, originalName: null, year: hit.year }, query));
+      } catch (err) {
+        if (err instanceof TmdbError) return false;
+        throw err;
+      }
+    }),
+  );
+  return hits.filter((_, i) => checked[i]);
+}
+
+/** A TMDB hit as a candidate, with the stored title's movie id when there is one. */
+async function withStored(hit: TmdbSearchHit, library: TitleLibrary): Promise<TitleCandidate> {
+  return (await library.byKey(hit.kind, hit.tmdbId)) ?? fromHit(hit);
 }
 
 async function lookupById(text: string, deps: LookupDeps): Promise<LookupResult> {
@@ -133,8 +184,11 @@ async function lookupById(text: string, deps: LookupDeps): Promise<LookupResult>
 
 /**
  * The titles the owner's words (or id) may mean. Stored titles first: one or more exact matches
- * there answer without asking TMDB. Otherwise TMDB is searched (films and series, or the one kind
- * asked for), keeping the exact matches, most popular first.
+ * there (by name or by an alias the owner gave) answer without asking TMDB. Otherwise TMDB is
+ * searched (films and series, or the one kind asked for), keeping the exact matches, most popular
+ * first; when no name matches, the top hits whose TMDB alternative titles hold the asked name.
+ * With no match at all the answer is `none` with near misses: the search's other hits, or, when it
+ * found nothing, the hits for a shorter form of the name (shorterName).
  */
 export async function lookupTitle(req: LookupRequest, deps: LookupDeps): Promise<LookupResult> {
   if (req.by === 'id') return lookupById(req.text, deps);
@@ -146,15 +200,23 @@ export async function lookupTitle(req: LookupRequest, deps: LookupDeps): Promise
     throw new LookupError('tmdb_unavailable', `no stored title is called "${req.name}", and this server has no TMDB credentials to search further.`);
   }
   const kinds: TitleKind[] = req.kind === null ? ['movie', 'tv'] : [req.kind];
-  const hits = (
-    await Promise.all(kinds.map((kind) => (kind === 'movie' ? tmdb.searchMovie(req.name, req.year) : tmdb.searchTv(req.name, req.year))))
-  ).flat();
-  const matches = hits
-    .map((hit) => ({ hit, candidate: fromHit(hit) }))
-    .filter(({ candidate }) => sameTitle(candidate, query))
-    .sort((a, b) => b.hit.popularity - a.hit.popularity)
-    .map(({ candidate }) => candidate);
-  return fromMatches(matches, 'tmdb');
+  /** Films and series for `name`, the asked year only, most popular first. */
+  const search = async (name: string): Promise<TmdbSearchHit[]> =>
+    (await Promise.all(kinds.map((kind) => (kind === 'movie' ? tmdb.searchMovie(name, req.year) : tmdb.searchTv(name, req.year)))))
+      .flat()
+      .filter((hit) => yearFits(hit.year, query))
+      .sort((a, b) => b.popularity - a.popularity);
+  const asCandidates = (hits: TmdbSearchHit[]) => Promise.all(hits.map((hit) => withStored(hit, deps.library)));
+
+  const hits = await search(req.name);
+  const exact = hits.filter((hit) => sameTitle(fromHit(hit), query));
+  if (exact.length > 0) return fromMatches(await asCandidates(exact), 'tmdb');
+  const alternative = await matchesByAlternativeTitle(hits.slice(0, ALTERNATIVE_TITLE_HITS), query, tmdb);
+  if (alternative.length > 0) return fromMatches(await asCandidates(alternative), 'tmdb');
+
+  const base = hits.length === 0 ? shorterName(req.name) : null;
+  const near = base === null ? hits : await search(base);
+  return { status: 'none', nearMisses: await asCandidates(near.slice(0, LOOKUP_MAX_NEAR_MISSES)) };
 }
 
 function escapeLike(value: string): string {
@@ -176,13 +238,15 @@ export function dbTitleLibrary(db: Db): TitleLibrary {
     originalTitle: movieTitles.originalTitle,
     year: movieTitles.year,
     movieId: movieIds.id,
+    aliases: movieTitles.aliases,
   };
   const titleIdRow = and(eq(movieIds.titleId, movieTitles.id), isNull(movieIds.season), isNull(movieIds.episode));
   return {
     async search(name, kind) {
       const like = `%${escapeLike(name)}%`;
       const text = sql`(movie_titles.search_tsv @@ websearch_to_tsquery('simple', ${name})
-        or ${movieTitles.title} ilike ${like} or ${movieTitles.originalTitle} ilike ${like})`;
+        or ${movieTitles.title} ilike ${like} or ${movieTitles.originalTitle} ilike ${like}
+        or ${normalizeName(name)} = any(${movieTitles.aliases}))`;
       const rows = await db
         .select(columns)
         .from(movieTitles)

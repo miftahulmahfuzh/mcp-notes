@@ -404,15 +404,46 @@ words in the chat bar end in the same two MCP tools:
   stream service: resolve, then the player page full screen in the streaming Chrome, from the
   last stream position.
 
-The lookup (`src/directStream/lookup.ts`) reads titles already stored first (the library, and
-titles streamed before), then TMDB's film and series search. A result matches when its English
-or original name is the asked title and its year is the asked year when one was given: the rule
-of `claude/streaming/match.mjs`, ported, and a test keeps the two equal. A movie id (`M-23T4`,
-of a title or one episode) or a title key (`movie-550`) is taken as is.
+**Finding the title.** The lookup (`src/directStream/lookup.ts`) reads titles already stored
+first (the library, and titles streamed before), then TMDB's film and series search. A movie id
+(`M-23T4`, of a title or one episode) or a title key (`movie-550`) is taken as is. Words match a
+title in one of three ways, tried in this order:
 
-Nothing starts when several titles match (the candidates come back with their years), when a
-series is named without an episode (its seasons come back), or when no provider resolves: then
-the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
+1. **Its name.** Its English or original name is the asked title, and its year is the asked year
+   when one was given: the rule of `claude/streaming/match.mjs`, ported, and a test keeps the two
+   equal.
+2. **A name you gave it.** A stored title keeps the other names you have used for it
+   (`movie_titles.aliases`, normalized), and they match like its own name.
+3. **A TMDB alternative title.** When no name matches, the alternative titles of the search's
+   first 5 hits are read (one request each), and a hit matches when one of them is the asked
+   title. This is how "Doctor X" finds "Doctor X: Mafia in White".
+
+A site and TMDB sometimes disagree on a name: lk21 lists "Doctor X: Age of the White Mafia", TMDB
+only "Doctor X: Mafia in White". Then nothing matches, and the answer is `no_match` with
+`did_you_mean`: the search's other hits, or, when the search found nothing at all, the hits for a
+shorter form of the name (the part before its subtitle, else its first two words). A near miss is
+never played unasked. When you pick one, Claude plays it by its `title_key` and passes the name
+you first used as `asked_as`; it is stored as an alias, so the same words find the title directly
+from then on, on both machines.
+
+**A series without an episode** carries on from what you watched (`src/directStream/episodePick.ts`).
+The episode states are the ones the Movies page shows, from every play in `movie_plays` (streams
+and VLC), so the progress survives sessions and restarts:
+
+| What was played | What starts | `picked` |
+| --- | --- | --- |
+| Nothing | Season 1, episode 1 | `first` |
+| The episode played last is unfinished | That episode, from the position it stopped at | `resume` |
+| The episode played last is finished | The first unfinished episode after it, into the next season | `next` |
+
+Specials (season 0) are never picked. When the stored episode list has nothing left, TMDB's
+current list is read first, since a series still airing has newer episodes than the stored ones.
+A named season and episode always wins over the pick.
+
+Nothing starts when several titles match (the candidates come back with their years), when no
+title matches (`no_match`), when no episode is left after the last one played (`caught_up`), when
+the next episode airs after today (`not_aired`, with its air date), or when no provider resolves:
+then the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
 `skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
 
 ### `/update-cloud-source`: providers from another site

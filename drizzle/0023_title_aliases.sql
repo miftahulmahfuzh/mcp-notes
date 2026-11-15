@@ -1,0 +1,1 @@
+ALTER TABLE "movie_titles" ADD COLUMN "aliases" text[] DEFAULT '{}'::text[] NOT NULL;

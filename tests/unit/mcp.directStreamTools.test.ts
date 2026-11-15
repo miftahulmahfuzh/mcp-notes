@@ -3,6 +3,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it, vi } from 'vitest';
 import { DIRECT_STREAM_TOOL_NAMES } from '../../src/chat/status.js';
+import type { EpisodeProgress } from '../../src/directStream/episodePick.js';
 import type { SeasonCount, StreamTarget, TitleCandidate, TitleLibrary } from '../../src/directStream/lookup.js';
 import { DirectStreamError } from '../../src/directStream/types.js';
 import type { AppDeps } from '../../src/deps.js';
@@ -21,7 +22,13 @@ const hit = (over: Partial<TmdbSearchHit> & Pick<TmdbSearchHit, 'title' | 'tmdbI
   kind: 'movie', originalTitle: over.title, releaseDate: null, year: null, overview: '', posterPath: null, popularity: 1, ...over,
 });
 
-function fakeDeps(over: Partial<DirectStreamToolDeps> & { stored?: TitleCandidate[]; seasons?: SeasonCount[]; tmdbMovies?: TmdbSearchHit[] } = {}) {
+const ep = (season: number, episode: number, state: EpisodeProgress['state'] = 'unwatched', lastPlayedAt: string | null = null, airDate: string | null = '2022-06-23'): EpisodeProgress => ({
+  season, episode, state, lastPlayedAt, airDate,
+});
+
+function fakeDeps(
+  over: Partial<DirectStreamToolDeps> & { stored?: TitleCandidate[]; seasons?: SeasonCount[]; tmdbMovies?: TmdbSearchHit[]; tmdbTv?: TmdbSearchHit[]; tmdbEpisodes?: { season: number; episode: number; airDate: string | null }[] } = {},
+) {
   const stored = over.stored ?? [SALTBURN, THE_BEAR];
   const library: TitleLibrary = {
     search: async (_name, kind) => stored.filter((t) => kind === null || t.kind === kind),
@@ -29,11 +36,27 @@ function fakeDeps(over: Partial<DirectStreamToolDeps> & { stored?: TitleCandidat
     byMovieId: async (id) => (id === 'M-0E23' ? { kind: 'tv' as const, tmdbId: 136315, episode: { season: 2, episode: 3 } } : null),
     seasons: async () => over.seasons ?? [{ season: 1, episodes: 8 }, { season: 2, episodes: 10 }],
   };
-  const tmdb = { searchMovie: async () => over.tmdbMovies ?? [], searchTv: async () => [], tvDetails: async () => ({ episodes: [] }) } as unknown as TmdbClient;
+  const tmdb = {
+    searchMovie: async () => over.tmdbMovies ?? [],
+    searchTv: async () => over.tmdbTv ?? [],
+    tvDetails: vi.fn(async () => ({ episodes: over.tmdbEpisodes ?? [] })),
+  } as unknown as TmdbClient;
   const play = vi.fn<(t: StreamTarget) => Promise<unknown>>(async () => ({ session_id: 's1', source: { provider: 'VidFast', subtitles: [{ lang: 'en' }] } }));
   const freshSource = vi.fn<(t: StreamTarget) => Promise<FreshSource | null>>(async () => null);
-  const deps: DirectStreamToolDeps = { library, tmdb, play, freshSource, providers: vi.fn(async () => []), updateSource: vi.fn(), ...over };
-  return { deps, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource };
+  const rememberAlias = vi.fn<(c: TitleCandidate, name: string) => Promise<boolean>>(async () => true);
+  const deps: DirectStreamToolDeps = {
+    library,
+    tmdb,
+    play,
+    freshSource,
+    progress: async () => [],
+    rememberAlias,
+    now: () => new Date('2026-11-16T03:00:00Z'),
+    providers: vi.fn(async () => []),
+    updateSource: vi.fn(),
+    ...over,
+  };
+  return { deps, tmdb, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource, rememberAlias: deps.rememberAlias as typeof rememberAlias };
 }
 
 async function connect(directStream: DirectStreamToolDeps | null) {
@@ -114,13 +137,83 @@ describe('direct-stream MCP tools', () => {
     await c.close();
   });
 
-  it('lists the seasons and starts nothing for a series without an episode', async () => {
-    const f = fakeDeps();
+  it('starts a series named without an episode at season 1, episode 1 when nothing was played', async () => {
+    const f = fakeDeps({ progress: async () => [ep(0, 1), ep(1, 1), ep(1, 2)] });
     const c = await connect(f.deps);
     const out = json(await c.call('direct_stream_play', { title: 'the bear' }));
-    expect(out).toMatchObject({ started: false, skipped_play: 'series', title: { title: 'The Bear' }, seasons: [{ season: 1, episodes: 8 }, { season: 2, episodes: 10 }] });
-    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 2 })).skipped_play).toBe('series');
+    expect(out).toMatchObject({ started: true, season: 1, episode: 1, picked: 'first', title: { title: 'The Bear', title_key: 'tv-136315' } });
+    expect(f.play.mock.calls).toEqual([[{ kind: 'tv', tmdbId: 136315, season: 1, episode: 1 }]]);
+    await c.close();
+  });
+
+  it('carries a series on: the unfinished episode played last, else the one after the last finished', async () => {
+    const resume = fakeDeps({ progress: async () => [ep(1, 1, 'finished', '2026-11-10T12:00:00.000Z'), ep(1, 2, 'in_progress', '2026-11-11T12:00:00.000Z'), ep(1, 3)] });
+    let c = await connect(resume.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: true, season: 1, episode: 2, picked: 'resume' });
+    await c.close();
+
+    // Season 1 is done: the next one is the first episode of season 2. An older half-watched episode is not gone back to.
+    const next = fakeDeps({ progress: async () => [ep(1, 1, 'in_progress', '2026-11-01T12:00:00.000Z'), ep(1, 2, 'finished', '2026-11-11T12:00:00.000Z'), ep(2, 1)] });
+    c = await connect(next.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: true, season: 2, episode: 1, picked: 'next' });
+    expect(next.play.mock.calls).toEqual([[{ kind: 'tv', tmdbId: 136315, season: 2, episode: 1 }]]);
+    await c.close();
+  });
+
+  it('asks TMDB for newer episodes before saying a series is caught up, and says when the next one has not aired', async () => {
+    const played = [ep(1, 1, 'finished', '2026-11-10T12:00:00.000Z'), ep(1, 2, 'finished', '2026-11-11T12:00:00.000Z')];
+    const newer = fakeDeps({ progress: async () => played, tmdbEpisodes: [{ season: 1, episode: 2, airDate: '2026-10-16' }, { season: 1, episode: 3, airDate: '2026-11-13' }] });
+    let c = await connect(newer.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: true, season: 1, episode: 3, picked: 'next' });
+    await c.close();
+
+    const waiting = fakeDeps({ progress: async () => played, tmdbEpisodes: [{ season: 1, episode: 3, airDate: '2026-11-20' }] });
+    c = await connect(waiting.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: false, skipped_play: 'not_aired', season: 1, episode: 3, air_date: '2026-11-20' });
+    expect(waiting.play).not.toHaveBeenCalled();
+    await c.close();
+
+    const done = fakeDeps({ progress: async () => played });
+    c = await connect(done.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: false, skipped_play: 'caught_up', last: { season: 1, episode: 2 }, seasons: [{ season: 1, episodes: 8 }, { season: 2, episodes: 10 }] });
+    expect(done.play).not.toHaveBeenCalled();
+    await c.close();
+  });
+
+  it('reads TMDB only when the stored episodes do not decide, and refuses half an episode', async () => {
+    const f = fakeDeps({ progress: async () => [ep(1, 1, 'finished', '2026-11-10T12:00:00.000Z'), ep(1, 2)] });
+    const c = await connect(f.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: true, season: 1, episode: 2 });
+    expect(f.tmdb.tvDetails).not.toHaveBeenCalled();
+    const r = await c.call('direct_stream_play', { title: 'the bear', season: 2 });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatch(/^invalid_input: The Bear \(2022\) is a series: pass both season and episode/);
+    await c.close();
+  });
+
+  it('lists near misses on no_match, and remembers the name the owner used once they pick one', async () => {
+    const mafia = hit({ kind: 'tv', title: 'Doctor X: Mafia in White', tmdbId: 293610, year: 2026 });
+    const f = fakeDeps({ stored: [], tmdbTv: [mafia] });
+    const c = await connect(f.deps);
+    const miss = json(await c.call('direct_stream_play', { title: 'Doctor X: Age of the White Mafia', kind: 'tv' }));
+    expect(miss).toMatchObject({ started: false, skipped_play: 'no_match', did_you_mean: [{ title: 'Doctor X: Mafia in White', year: 2026, kind: 'tv', title_key: 'tv-293610' }] });
     expect(f.play).not.toHaveBeenCalled();
+    expect(f.rememberAlias).not.toHaveBeenCalled();
+    expect(json(await c.call('direct_stream_find', { title: 'Doctor X: Age of the White Mafia', kind: 'tv' }))).toMatchObject({ status: 'none', matches: [], did_you_mean: [{ title_key: 'tv-293610' }] });
+
+    const out = json(await c.call('direct_stream_play', { title: 'tv-293610', asked_as: 'Doctor X: Age of the White Mafia' }));
+    expect(out).toMatchObject({ started: true, season: 1, episode: 1, picked: 'first', remembered_as: 'Doctor X: Age of the White Mafia' });
+    expect(f.rememberAlias.mock.calls).toEqual([[expect.objectContaining({ kind: 'tv', tmdbId: 293610 }), 'Doctor X: Age of the White Mafia']]);
+    await c.close();
+  });
+
+  it('does not store the name a title already has', async () => {
+    const f = fakeDeps();
+    const c = await connect(f.deps);
+    const out = json(await c.call('direct_stream_play', { title: 'movie-930564', asked_as: 'saltburn' }));
+    expect(out.started).toBe(true);
+    expect(out.remembered_as).toBeUndefined();
+    expect(f.rememberAlias).not.toHaveBeenCalled();
     await c.close();
   });
 

@@ -86,10 +86,14 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 
 ## /direct-stream (find and play)
 - `direct_stream_find`, `direct_stream_play` (MCP, chat bar, `/direct-stream` skill): one film
-  starts through the service, several matches and a series without an episode start nothing,
-  `no_source` carries every provider's outcome, off answers `direct_stream_off`. Proven with a
-  fake service by `npx vitest run tests/unit/mcp.directStreamTools.test.ts tests/unit/directStream`;
-  the stored-title lookup by `npm run test:int -- tests/integration/directStream.lookup.int.test.ts`;
+  starts through the service, several matches start nothing, `no_source` carries every provider's
+  outcome, off answers `direct_stream_off`. A series without an episode carries on from what was
+  watched (`picked`: `first`, `resume`, `next`; `caught_up` and `not_aired` start nothing). A name
+  only TMDB's alternative titles hold matches; a name nothing holds answers `no_match` with
+  `did_you_mean`, and `asked_as` stores it as an alias of the picked title. Proven with a
+  fake service by `npx vitest run tests/unit/mcp.directStreamTools.test.ts tests/unit/directStream`
+  (the pick rules: `tests/unit/directStream/episodePick.test.ts`); the stored-title lookup and the
+  alias column by `npm run test:int -- tests/integration/directStream.lookup.int.test.ts`;
   the chat allow list, captions and prompt by `tests/unit/chat-status.test.ts tests/unit/chat-prompt.test.ts tests/unit/mcp.instructions.test.ts`.
 - Throwaway daemon: both tools answer `direct_stream_off` (`$V mcp RUN direct_stream_play '{"title":"saltburn"}'`).
   That is the expected proof there; never wire the real resolver into a throwaway instance.
