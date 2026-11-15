@@ -81,21 +81,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "e4e44cd",
       "depends_on": [
         3
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "streams in the movies store: migration 0021, stream plays + verified/stale sources, position route, hooks wired; decided: directStreamRoutes deps take movies as optional (phase 3's route test passes only directStream); architecture.md and features/direct-streaming.md also edited by phase 4 (merge both); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1115-202317-479183/evidence",
       "package": "src/movies`, `src/db",
       "plan": ".workflows/plan/direct-streaming/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:32:39+07:00",
       "satisfies": [
         "R2",
         "R5"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A115",
       "title": "Streams in the movies store: plays, verified sources, state"
     },
@@ -135,7 +135,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A117",
       "title": "/direct-stream`: title lookup, tools, skill, chat bar"
     },
@@ -175,7 +175,7 @@
       "satisfies": [
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A119",
       "title": "The Stream side of `/movies"
     },
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:25:16+07:00",
+  "updated": "2026-11-15T20:37:34+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
