@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "a9db223",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "resolver CLI, 24-provider seed, sniffer, tests and fixtures landed; sniff.ps1 departs from the plan block: focus emulation on its background tab + document.title read from the page (planned sniffer failed J3: hidden tab drops clicks, title event never arrives; rung 2, inside invariants 2 and 7) - phase 2's quoted anchors ($pageSessions, media block, Close-Tab, Write-Output) unchanged; tasks A111-A120 in root todos.md (rung 6); live 550 resolved by Smashy, VidNest/Videasy/VidKing/Peachify no_stream; proof: verified-after-fix /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-direct-streaming/bd4bba11-4354-4294-ab83-fe3221140cf4/scratchpad/proof-p1",
       "package": "claude/streaming/direct",
       "plan": ".workflows/plan/direct-streaming/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:06:59+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A111",
       "title": "Provider seed, sniffer and resolver CLI"
     },
     {
@@ -36,8 +36,8 @@
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "spawned",
+      "task_id": "P1-NOTES-A112",
       "title": "Resolve probe campaign: 24 providers, failures, episodes, token lifetime"
     },
     {
@@ -56,8 +56,8 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "spawned",
+      "task_id": "P1-NOTES-A113",
       "title": "Registry tables, DirectStreamService, sessions and the pass-through"
     },
     {
@@ -76,7 +76,7 @@
         "R2"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A114",
       "title": "The player page"
     },
     {
@@ -96,7 +96,7 @@
         "R5"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A115",
       "title": "Streams in the movies store: plays, verified sources, state"
     },
     {
@@ -116,7 +116,7 @@
         "R7"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A116",
       "title": "Playback probe campaign: DASH, VidNest, subtitles, expiry"
     },
     {
@@ -136,7 +136,7 @@
         "R3"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A117",
       "title": "/direct-stream`: title lookup, tools, skill, chat bar"
     },
     {
@@ -156,7 +156,7 @@
         "R4"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A118",
       "title": "/update-cloud-source`: template reader, registry tools, skill"
     },
     {
@@ -176,7 +176,7 @@
         "R5"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A119",
       "title": "The Stream side of `/movies"
     },
     {
@@ -198,13 +198,13 @@
         "R6"
       ],
       "status": "pending",
-      "task_id": null,
+      "task_id": "P1-NOTES-A120",
       "title": "Candidates and the background prober, behind a setting"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T19:53:20+07:00",
+  "updated": "2026-11-15T20:07:25+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
