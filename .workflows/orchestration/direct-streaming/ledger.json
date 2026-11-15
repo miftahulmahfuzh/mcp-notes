@@ -3,6 +3,12 @@
   "coordinator": "orch-direct-streaming",
   "coordinator_session_id": "298508aa-df00-4cf4-9f09-e2922f8b2edb",
   "created": "2026-11-15T19:52:42+07:00",
+  "landed": {
+    "at": "2026-11-15T23:59:44+07:00",
+    "base": "main",
+    "commit": "6e04cc2701187467b850b5d180bc97d4c090314c",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -101,21 +107,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "2ff89b522276b25a280544148f8bacaaaabb9a0f",
       "depends_on": [
         2,
         4
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "playcheck.mjs + playgate.mjs; DASH (VidLink), VidNest (Sinners, not 550), English subtitle (NexaStream/Smashy/HyperLink) and forced-expiry refresh all play in our page; nothing marked browser_only, seed unchanged; player fix: failed subtitle fetch retried once (controller.ts); WARN resolver fault not patched (phase 1 file): resolve.mjs:59 takes VidRock's text/html demo-video.mp4 as an mp4 stream, VidRock is tried first so /direct-stream can open a broken page, card mcp-notes#1; lifetime table refreshed to 180 min, watch pid 427755 still running; PLAN.md Status line edited in main checkout uncommitted and reads 1-10 complete, check it; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1115-231919-1066204/evidence/playcheck",
       "package": "claude/streaming/direct`, `web/src/stream",
       "plan": ".workflows/plan/direct-streaming/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T23:50:45+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A116",
       "title": "Playback probe campaign: DASH, VidNest, subtitles, expiry"
     },
@@ -205,7 +211,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T23:35:56+07:00",
+  "updated": "2026-11-15T23:59:44+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
