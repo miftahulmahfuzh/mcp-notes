@@ -330,6 +330,41 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 | `forbidden_host` | The address is not on a host the session may reach |
 | `upstream_error` | The stream host did not answer, or redirected too often |
 
+### The player
+
+`/stream/<session id>` is the page a direct-stream play opens in the streaming Chrome. It is a
+separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wall. The resolver's
+`open --fullscreen` makes the window full screen; the page fills the window.
+
+- **It plays what the session names.** The page reads `GET /api/stream/sessions/<id>` and plays its
+  manifest through the pass-through: HLS with hls.js, DASH with dash.js, a plain file in the
+  browser itself. Both libraries are npm packages built into the page, each fetched only when the
+  manifest needs it. Nothing comes from a CDN.
+- **English subtitles are on by default.** An English track inside the manifest comes first, then
+  a separate English `.vtt` or `.srt` from the resolve (an `.srt` is converted to WebVTT in the
+  page). With no English track, subtitles start off and the others can still be picked.
+- **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
+- **Position.** The film starts at the session's `resume_s`. The page reports
+  `{ position_s, duration_s, ended }` to `POST /api/stream/sessions/<id>/position` every 5 seconds
+  while playing, on pause and at the end; it ignores the answer, a 404 included.
+- **An expired token.** When the stream host answers 401, 403 or 410 through the pass-through (the
+  answer carries `X-Notesd-Upstream`), the page calls `POST /api/stream/sessions/<id>/refresh`,
+  reads the session again and carries on from where it was. It does this at most three times for
+  one page, and stops with a message when a refreshed stream is refused before it plays. A 403
+  without that header is notesd's own (the session ended, or the daemon restarted): the page says
+  the session has ended and does not refresh.
+- **Sound.** A play from `/direct-stream` or the movies page opens the page full screen and then
+  calls its `start()` the way a click would, so the film starts with sound. If the browser still
+  will not start it with sound, the page starts it muted and the speaker icon shows it.
+- **`?muted=1`** (the playback checks): muted from the start, never unmuted, never full screen.
+- **Controls** are icons only and hide after 2.5 seconds without the mouse: play, back and forward
+  10 seconds, position, mute, subtitles, quality, full screen. Keys: Space or K, the left and right
+  arrows, M, C (subtitles on or off), F.
+
+The page keeps its state on `window.notesdStream` (stage, `kind`, `levels`, `level`, subtitle
+choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
+play, and its `start()`.
+
 ## Where the code is
 
 | Path | What |

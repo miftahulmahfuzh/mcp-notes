@@ -104,6 +104,11 @@ export function staticRoutes(deps?: AppDeps, options: StaticOptions = {}): Hono 
       return sendHtml(c, fullscreen ?? index);
     }
 
+    if (/^\/stream\/[^/]+\/?$/.test(pathname)) {
+      const stream = await readInside(root, 'stream.html');
+      return sendHtml(c, stream ?? index);
+    }
+
     if (pathname !== '/') {
       const file = await readInside(root, pathname);
       if (file !== null) {

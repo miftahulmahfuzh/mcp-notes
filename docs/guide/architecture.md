@@ -233,6 +233,7 @@ not in the route table: the app reads the URL itself (`web/src/lib/route.ts`,
 | `/adversary`, `/adversary/<strategy id>` | Seer Adversarial: the overview, or one method. `?focus=1` works here too. |
 | `/movies`, `/movies/<id>`, `/movies/unmatched` | The library, one title (a movie id such as `M-23T4`, or a title key such as `movie-467905`; an episode's id opens its series at that episode), and the files that matched no title. |
 | `/full/<imageId>` | The full-screen photo page, a separate small bundle (`web/fullscreen.html`). |
+| `/stream/<sessionId>` | The direct-streaming player, a separate small bundle (`web/stream.html`) with hls.js and dash.js built in. A play opens it in the streaming Chrome: see [The player](streaming.md#the-player). |
 | `/assets/*` | Hashed build output, cached as immutable. |
 
 Without a build the fallback answers 503 `web UI not built: run npm run build`.

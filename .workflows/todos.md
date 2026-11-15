@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 14
+**Total Active Tasks**: 13
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 14
+- P1 High: 13
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 5
-- Completed: 108
+- Completed: 109
 
 ---
 
@@ -85,15 +85,6 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
   - **Depends on**: P1-NOTES-A111
   - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
-- [ ] **P1-NOTES-A114** Phase 4: The player page
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `web/stream.html`, `web/src/stream/*`, `web/src/testing/streamFakes.ts`, the Vite input, `src/http/static.ts` for `/stream/<id>`, `package.json` (hls.js, dash.js); `?muted=1`, `window.notesdStream` (with `start()`), the refresh rule on `X-Notesd-Upstream`; jsdom tests; the "The player" subsection of `docs/guide/streaming.md`; architecture's Pages row; the player lines of `features/direct-streaming.md`; `scripts/stream/{make-hls-fixture.sh,player.steps.mjs}`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and `npm run build` pass; `web/dist/stream.html` exists and loads `/assets/stream-*.js`; the `player.steps.mjs` transcript has `J1 PASS`, `API PASS`, `J3 PASS`, `J2 PASS`, `MUTED PASS` and `CDN PASS`.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 4 of 10)
-  - **Satisfies**: R2 — "daemon proxy and player page" with "one click to a full-screen film" · criteria: R2.3, R2.5
-  - **Depends on**: P1-NOTES-A113
-  - **Plan**: `.workflows/plan/P1-NOTES-A114.md`
 - [ ] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -159,6 +150,24 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A114** Phase 4: The player page
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `web/stream.html`, `web/src/stream/*`, `web/src/testing/streamFakes.ts`, the Vite input, `src/http/static.ts` for `/stream/<id>`, `package.json` (hls.js, dash.js); `?muted=1`, `window.notesdStream` (with `start()`), the refresh rule on `X-Notesd-Upstream`; jsdom tests; the "The player" subsection of `docs/guide/streaming.md`; architecture's Pages row; the player lines of `features/direct-streaming.md`; `scripts/stream/{make-hls-fixture.sh,player.steps.mjs}`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and `npm run build` pass; `web/dist/stream.html` exists and loads `/assets/stream-*.js`; the `player.steps.mjs` transcript has `J1 PASS`, `API PASS`, `J3 PASS`, `J2 PASS`, `MUTED PASS` and `CDN PASS`.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 4 of 10)
+  - **Satisfies**: R2 — "daemon proxy and player page" with "one click to a full-screen film" · criteria: R2.3, R2.5
+  - **Depends on**: P1-NOTES-A113
+  - **Plan**: `.workflows/plan/P1-NOTES-A114.md`
+  - **Completed**: 2026-11-15 20:22
+  - **Method**: /implement
+  - **Files**: package.json, package-lock.json, web/stream.html, web/vite.config.ts, src/http/static.ts, tests/unit/static.test.ts, web/src/stream/session.ts, web/src/stream/subtitles.ts, web/src/stream/engine.ts, web/src/stream/createEngine.ts, web/src/stream/hlsEngine.ts, web/src/stream/dashEngine.ts, web/src/stream/nativeEngine.ts, web/src/stream/controller.ts, web/src/stream/StreamApp.tsx, web/src/stream/stream.css, web/src/stream/main.tsx, web/src/stream/subtitles.test.tsx, web/src/stream/controller.test.tsx, web/src/stream/StreamApp.test.tsx, web/src/testing/streamFakes.ts, docs/guide/streaming.md, docs/guide/architecture.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/stream/make-hls-fixture.sh, .claude/skills/verify-notesd/scripts/stream/player.steps.mjs, .workflows/todos.md, .workflows/plan/DIRECT_STREAMING_PLAN.md
+  - **Proof**: verified-after-fix — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-201918-462570/evidence
+  - **Drift**:
+    - Session ran in the per-phase swarm worktree direct-streaming-p4 on phase-4-direct-streaming, not the index's feature/direct-streaming worktree.
+  - **Decided**:
+    - Plan's controller.refresh() returned silently while stage was 'refreshing', so its own test 'gives up when the refreshed stream is refused again before it plays' failed → a refusal from the newly attached engine during 'refreshing' now ends as stream_expired; test untouched (rung 2: exit criteria J4 names that test)
+    - J3 saw no 403 because hls.js buffered the whole 120 s fixture ahead (buffer grows with bitrate up to 600 s) → hlsEngine sets maxMaxBufferLength: 30 so the forward buffer stays at 30 s; journey untouched (tie-break: fix the code, never the check). Phase 6 may tune it.
 - [x] **P1-NOTES-A113** Phase 3: Registry tables, DirectStreamService, sessions and the pass-through
   - **Difficulty**: HARD
   - **Type**: Feature

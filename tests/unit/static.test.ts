@@ -72,6 +72,23 @@ describe('staticRoutes', () => {
     }
   });
 
+  it('serves index.html for /stream/:id until stream.html exists, then stream.html', async () => {
+    const app = appFor(dist);
+    expect(await (await app.request('/stream/k3R9xQ2m')).text()).toContain('<title>index</title>');
+    await writeFile(path.join(dist, 'stream.html'), '<!doctype html><title>Stream</title>');
+    try {
+      for (const url of ['/stream/k3R9xQ2m', '/stream/k3R9xQ2m/']) {
+        const res = await app.request(url);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('cache-control')).toBe('no-cache');
+        expect(await res.text()).toContain('<title>Stream</title>');
+      }
+      expect(await (await app.request('/stream/a/b')).text()).toContain('<title>index</title>');
+    } finally {
+      await rm(path.join(dist, 'stream.html'));
+    }
+  });
+
   it('serves assets with a long immutable cache and the right type', async () => {
     const res = await appFor(dist).request('/assets/app-abc123.js');
     expect(res.status).toBe(200);
