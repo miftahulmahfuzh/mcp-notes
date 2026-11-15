@@ -62,20 +62,20 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "eecfda2",
       "depends_on": [
         3
       ],
       "difficulty": "HARD",
       "n": 4,
-      "note": null,
+      "note": "player page /stream/<id> (hls.js, dash.js, native), window.notesdStream, ?muted=1; decisions: refusal while 'refreshing' ends as stream_expired (plan's refresh() returned silently, exit criteria J4); hlsEngine maxMaxBufferLength 30 so J3 expiry finds unloaded segments (phase 6 may tune); proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1115-201918-462570/evidence",
       "package": "web/src/stream",
       "plan": ".workflows/plan/direct-streaming/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:25:16+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A114",
       "title": "The player page"
     },
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:16:24+07:00",
+  "updated": "2026-11-15T20:25:16+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
