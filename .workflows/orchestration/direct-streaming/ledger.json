@@ -1,0 +1,210 @@
+{
+  "branch": "feature/direct-streaming",
+  "coordinator": "orch-direct-streaming",
+  "coordinator_session_id": "298508aa-df00-4cf4-9f09-e2922f8b2edb",
+  "created": "2026-11-15T19:52:42+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "claude/streaming/direct",
+      "plan": ".workflows/plan/direct-streaming/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Provider seed, sniffer and resolver CLI"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "claude/streaming/direct",
+      "plan": ".workflows/plan/direct-streaming/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Resolve probe campaign: 24 providers, failures, episodes, token lifetime"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/directStream`, `src/http",
+      "plan": ".workflows/plan/direct-streaming/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Registry tables, DirectStreamService, sessions and the pass-through"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 4,
+      "note": null,
+      "package": "web/src/stream",
+      "plan": ".workflows/plan/direct-streaming/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The player page"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "src/movies`, `src/db",
+      "plan": ".workflows/plan/direct-streaming/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2",
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Streams in the movies store: plays, verified sources, state"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        4
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "claude/streaming/direct`, `web/src/stream",
+      "plan": ".workflows/plan/direct-streaming/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R7"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Playback probe campaign: DASH, VidNest, subtitles, expiry"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        5
+      ],
+      "difficulty": "NORMAL",
+      "n": 7,
+      "note": null,
+      "package": "src/mcp`, `src/directStream`, `claude/skills",
+      "plan": ".workflows/plan/direct-streaming/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "/direct-stream`: title lookup, tools, skill, chat bar"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        7
+      ],
+      "difficulty": "NORMAL",
+      "n": 8,
+      "note": null,
+      "package": "claude/streaming/direct`, `src/directStream`, `src/mcp",
+      "plan": ".workflows/plan/direct-streaming/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "/update-cloud-source`: template reader, registry tools, skill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        5
+      ],
+      "difficulty": "HARD",
+      "n": 9,
+      "note": null,
+      "package": "web/src`, `src/http",
+      "plan": ".workflows/plan/direct-streaming/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R5"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The Stream side of `/movies"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        5,
+        8,
+        9
+      ],
+      "difficulty": "HARD",
+      "n": 10,
+      "note": null,
+      "package": "src/directStream",
+      "plan": ".workflows/plan/direct-streaming/phase-10.md",
+      "reported_at": null,
+      "satisfies": [
+        "R6"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Candidates and the background prober, behind a setting"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "direct-streaming",
+  "updated": "2026-11-15T19:52:42+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
+}
