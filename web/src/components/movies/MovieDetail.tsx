@@ -146,8 +146,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             </button>
             <Stars value={rating} onRate={(v) => void rate(v)} />
             {live !== null && (
-              <span className="mv-live">
-                playing in VLC
+              <span className={live.video_stalled === true ? 'mv-live mv-live-stalled' : 'mv-live'}>
+                {live.video_stalled === true ? 'no picture in VLC' : 'playing in VLC'}
                 {` · ${clock(live.position)}`}
                 {live.duration !== null ? ` / ${clock(live.duration)}` : ''}
               </span>

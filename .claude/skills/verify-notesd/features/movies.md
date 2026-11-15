@@ -9,7 +9,8 @@
   gets a hang line and its play stays open. While a `vlc.exe` exists each Windows `Display` event
   (4101: the driver was reset) gets a `gpu_reset` line, and a followed VLC that says `playing`
   with its clock advancing and its video counters frozen for three polls gets a `video_stall` line
-  and `video_stalled: true` on `GET /api/movies/player`. `GET /api/movies/player/health` returns it
+  and `video_stalled: true` on `GET /api/movies/player`, which the Movies page shows as an amber
+  alert line and "no picture in VLC" on the title (`web/src/App.movies.test.tsx`). `GET /api/movies/player/health` returns it
   (`stalls`, `gpu_resets`). Proof: `npx vitest run tests/unit/movies/vlc.videoStall.test.ts` and
   `npm run test:int -- tests/integration/movies.health.int.test.ts tests/integration/movies.healthCrash.int.test.ts`
   (fake Windows side `tests/fixtures/movies/fake-windows.mjs`; the crash test needs WSL interop and

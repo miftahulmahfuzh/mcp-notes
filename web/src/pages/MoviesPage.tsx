@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowsClockwise, FilmSlate, Question } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowsClockwise, FilmSlate, Question, Warning } from '@phosphor-icons/react';
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
 import { MoviesPill } from '../components/movies/MoviesPill';
@@ -7,7 +7,7 @@ import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
 import { errorCode, startSync } from '../moviesApi';
-import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, unmatchedCount, type MoviesFilter } from '../lib/movies';
+import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, stalledText, unmatchedCount, type MoviesFilter } from '../lib/movies';
 import { NO_MOVIES_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
@@ -40,6 +40,7 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
   const [filter, setFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
   const [busy, setBusy] = useState(false);
   const off = isMoviesOff(store);
+  const stalled = off ? null : stalledText(store.player);
   const waiting = unmatchedCount(store.status);
   const unmatchedTip = waiting === null || waiting === 0 ? 'Unmatched files' : `Unmatched files (${waiting})`;
 
@@ -108,6 +109,12 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
           <ArrowsClockwise weight="duotone" />
         </button>
       </div>
+      {stalled !== null && (
+        <p className="mv-stalled mv-content" role="alert">
+          <Warning weight="duotone" />
+          <span>{stalled}</span>
+        </p>
+      )}
       {content}
       <MoviesPill onAsk={onAsk} placeholder={moviesPillPlaceholder(route, store.detail)} />
     </section>

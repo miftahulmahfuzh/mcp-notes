@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { Note } from './types';
 import type { TitleListItem } from './moviesApi';
 import { makeNote } from './testing/fixtures';
-import { MOVIE, PLAYER_IDLE, SEARCH, SERIES, STATUS, TITLES, UNMATCHED } from './testing/movieFixtures';
+import { MOVIE, PLAYER_IDLE, PLAYING, SEARCH, SERIES, STATUS, TITLES, UNMATCHED } from './testing/movieFixtures';
 import { MOVIES_OFF_TEXT } from './lib/movies';
 import { App } from './App';
 
@@ -22,6 +22,7 @@ let calls: string[];
 let posts: { url: string; body: Record<string, unknown> | null }[];
 let off: boolean;
 let titles: TitleListItem[];
+let player: typeof PLAYER_IDLE;
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
@@ -29,6 +30,7 @@ beforeEach(() => {
   posts = [];
   off = false;
   titles = TITLES;
+  player = PLAYER_IDLE;
   chatSse = CHAT_SSE;
   vi.stubGlobal(
     'fetch',
@@ -43,7 +45,7 @@ beforeEach(() => {
       if (url.startsWith('/api/movies') && off) return json({ error: 'movies_off', message: 'off' }, 503);
       if (url === '/api/movies') return json({ titles });
       if (url === '/api/movies/status') return json(STATUS);
-      if (url === '/api/movies/player') return json(PLAYER_IDLE);
+      if (url === '/api/movies/player') return json(player);
       if (url === '/api/movies/unmatched') return json({ files: UNMATCHED });
       if (url.startsWith('/api/movies/search-tmdb?')) return json({ results: SEARCH });
       if (url === '/api/movies/movie-467905' || url === '/api/movies/M-23T4') return json(MOVIE);
@@ -138,6 +140,28 @@ describe('App: Movies', () => {
     expect(a.getByRole('button', { name: 'Mark as watched' })).toBeTruthy();
     expect(a.getAllByRole('button', { name: /^Rate \d of 5$/ })).toHaveLength(5);
     expect(a.getByRole('textbox', { name: 'Review' })).toBeTruthy();
+  });
+
+  it('a VLC that plays without video is named on the grid and on its title, and not while it plays fine', async () => {
+    player = { ...PLAYING, current: { ...PLAYING.current!, video_stalled: true } };
+    at('/movies');
+    const first = render(<App />);
+    await screen.findByRole('list', { name: 'Posters' });
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('VLC lost its picture at 45:10');
+    expect(alert.textContent).toContain('Close that VLC window and press Play again');
+    fireEvent.click(screen.getByRole('link', { name: /How to Make a Killing/ }));
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    expect(within(article).getByText(/no picture in VLC/)).toBeTruthy();
+    expect(screen.getByRole('alert')).toBeTruthy();
+    first.unmount();
+
+    player = PLAYING;
+    at('/movies/M-23T4');
+    render(<App />);
+    const fine = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    await waitFor(() => expect(within(fine).getByText(/playing in VLC/)).toBeTruthy());
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('play, watched, stars and review write through the API', async () => {

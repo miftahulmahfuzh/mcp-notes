@@ -306,6 +306,8 @@ export interface PlayerSnapshot {
   duration: number | null;
   started_at: string;
   last_read_at: string | null;
+  /** VLC says it plays and its clock advances, but it shows no new frame (its video device was removed). */
+  video_stalled?: boolean;
 }
 
 /** Phase 5's `GET /api/movies/player`. `available` false = no vlc.exe, interop or curl.exe on this machine. */

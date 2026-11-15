@@ -196,6 +196,13 @@ export interface PlayButtonState {
   disabled: boolean;
 }
 
+/** The followed VLC plays without video: what the page says, or null while it is fine. */
+export function stalledText(player: PlayerState | null): string | null {
+  const c = player?.current ?? null;
+  if (c === null || c.video_stalled !== true) return null;
+  return `VLC lost its picture at ${clock(c.position)} (the graphics driver was reset). Close that VLC window and press Play again; /trace-vlc-bug has the evidence.`;
+}
+
 /**
  * A film plays its most recently played file on this machine (the server resumes it, or starts over
  * when finished). A series asks phase 5's continue (resume the open episode, else the next one with

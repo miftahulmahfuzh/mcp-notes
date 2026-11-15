@@ -410,7 +410,9 @@ freezes after the fact.
   every poll. Three polls in a row that say `playing` with the clock ahead and neither counter
   moved, in a play whose counters did move before, write one `video_stall` start line with the
   display-driver events of the hour before it, and `GET /api/movies/player` answers
-  `video_stalled: true`. The play stays open and keeps following the clock. An end line follows
+  `video_stalled: true`, which the Movies page shows as an amber line above the grid or the title
+  ("VLC lost its picture at 21:27 ... Close that VLC window and press Play again") and as "no
+  picture in VLC" beside the title's Play button. The play stays open and keeps following the clock. An end line follows
   when frames come back, VLC exits or tracking ends. Only a VLC on the default `direct3d11` output
   is caught: the `direct3d9` and `directdraw` outputs freeze the same way and keep counting.
 - **Reading it.** `GET /api/movies/player/health?limit=` returns the newest samples (default 200,
