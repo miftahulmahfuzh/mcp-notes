@@ -36,7 +36,8 @@ export interface ContinueEpisodeRef {
 export type NothingReason = 'finished' | 'caught_up' | 'no_episodes';
 
 export type ContinueResult =
-  | { action: 'resumed' | 'started'; title: ContinueTitleRef; file: ContinueEpisodeRef; position: number; play: PlayStarted }
+  /** `already_playing`: the file was open in the VLC notesd follows; no VLC was started (PlayStarted.already_playing). */
+  | { action: 'resumed' | 'started' | 'already_playing'; title: ContinueTitleRef; file: ContinueEpisodeRef; position: number; play: PlayStarted }
   | { action: 'missing'; title: ContinueTitleRef; missing: ContinueEpisodeRef; present: ContinueEpisodeRef[] }
   | { action: 'nothing'; title: ContinueTitleRef; reason: NothingReason; finished_at: string | null; last: ContinueEpisodeRef | null }
   | { action: 'ambiguous'; query: string; candidates: ContinueTitleRef[] }
@@ -313,7 +314,7 @@ async function carryOut(deps: ContinueDeps, { title, episodes, decision }: Loade
       const play = await deps.player.play(decision.file.id);
       const name = episodes.find((e) => e.season === decision.file.season && e.episode === decision.file.episode)?.name ?? null;
       return {
-        action: decision.action === 'resume' ? 'resumed' : 'started',
+        action: play.already_playing === true ? 'already_playing' : decision.action === 'resume' ? 'resumed' : 'started',
         title: ref,
         file: fileRef(decision.file, name),
         position: play.start_position,

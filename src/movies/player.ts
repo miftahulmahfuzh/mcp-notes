@@ -131,6 +131,12 @@ export interface PlayStarted {
   port: number;
   tracking: boolean;
   note: 'http_timeout' | null;
+  /**
+   * Present (true) when no VLC was started: this file is already open in the VLC notesd follows.
+   * That window was brought to the front and, when it was paused, told to play; `start_position`
+   * is where it is now.
+   */
+  already_playing?: true;
 }
 
 /** GET /api/movies/player -> current. */
@@ -207,8 +213,9 @@ async function pathExists(abs: string): Promise<boolean> {
 }
 
 /**
- * Plays movie files in the Windows VLC and tracks one play at a time (R4.1-R4.3). It never stops,
- * kills or reuses a VLC: a new play ends the tracking of the previous one and leaves that VLC open.
+ * Plays movie files in the Windows VLC and tracks one play at a time (R4.1-R4.3). It never stops
+ * or kills a VLC: a new play ends the tracking of the previous one and leaves that VLC open. The
+ * one VLC it reuses is the one it follows, when the same file is asked for again (rejoin).
  */
 export class MoviePlayer {
   readonly host: string;
@@ -312,6 +319,11 @@ export class MoviePlayer {
       throw new PlayError('player_unavailable', UNAVAILABLE_MESSAGE[detection.reason], { reason: detection.reason });
     }
     const env = detection.env;
+    const open = this.tracked;
+    if (open !== null && open.file.id === file.id) {
+      const again = await this.rejoin(open);
+      if (again !== null) return again;
+    }
     const start = resumePosition(file, await repo.lastPlay(file.id));
     let winPath: string;
     try {
@@ -379,6 +391,39 @@ export class MoviePlayer {
     if (this.closed) await this.finish(t, 'shutdown');
     else this.schedule(t);
     return { ...base, tracking: true, note: null };
+  }
+
+  /**
+   * The file asked for is already open in the VLC notesd follows: no second VLC. That VLC is told
+   * to play when it is paused and its window is brought to the front. Null (start a new VLC, as
+   * before) when it does not answer, is stopped, is hung or plays without video: none of those
+   * can be watched again in place.
+   */
+  private async rejoin(t: Tracked): Promise<PlayStarted | null> {
+    if (t.ended || t.hung || t.stalled) return null;
+    let r = await this.deps.reader.status(t.env.curl, t.ep);
+    if (r.kind !== 'ok' || r.status.state === 'stopped' || t.ended) return null;
+    if (r.status.state === 'paused') {
+      const resumed = await this.deps.reader.command(t.env.curl, t.ep, { command: 'pl_forceresume' });
+      if (resumed.kind === 'ok') r = resumed;
+      if (r.status.state === 'stopped' || t.ended) return null;
+    }
+    t.state = r.status.state;
+    t.pausedSince = r.status.state === 'paused' ? (t.pausedSince ?? this.now()) : null;
+    t.position = r.status.time;
+    this.raise(t.ep, t.playId);
+    this.log(`[movies] play ${t.playId} (${t.file.name}) is already open on port ${t.ep.port} at ${Math.round(t.position)} s: brought to the front, no second VLC`);
+    return {
+      play_id: t.playId,
+      file_id: t.file.id,
+      title_id: t.file.titleId,
+      name: t.file.name,
+      start_position: t.position,
+      port: t.ep.port,
+      tracking: true,
+      note: null,
+      already_playing: true,
+    };
   }
 
   /**

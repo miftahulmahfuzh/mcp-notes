@@ -23,6 +23,7 @@ let posts: { url: string; body: Record<string, unknown> | null }[];
 let off: boolean;
 let titles: TitleListItem[];
 let player: typeof PLAYER_IDLE;
+let alreadyPlaying: boolean;
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
@@ -31,6 +32,7 @@ beforeEach(() => {
   off = false;
   titles = TITLES;
   player = PLAYER_IDLE;
+  alreadyPlaying = false;
   chatSse = CHAT_SSE;
   vi.stubGlobal(
     'fetch',
@@ -51,6 +53,8 @@ beforeEach(() => {
       if (url === '/api/movies/movie-467905' || url === '/api/movies/M-23T4') return json(MOVIE);
       if (url === '/api/movies/tv-247718' || url === '/api/movies/M-0S12' || url === '/api/movies/M-8TR4') return json(SERIES);
       if (method === 'POST' && url === '/api/movies/files/32/assign') return json({ file_id: 32, title: { ...MOVIE, id: 'movie-1125510', title: 'Ne Zha 2' } });
+      if (method === 'POST' && url === '/api/movies/continue' && alreadyPlaying) return json({ action: 'already_playing', title: { id: 'movie-467905', title: 'How to Make a Killing', kind: 'movie', year: 2026 }, file: { file_id: 11, season: null, episode: null, absolute_episode: null, name: null }, position: 2710, play: { already_playing: true } });
+      if (method === 'POST' && /^\/api\/movies\/files\/\d+\/play$/.test(url) && alreadyPlaying) return json({ ok: true, play: { already_playing: true } }, 202);
       if (method === 'POST' && url.startsWith('/api/movies/')) return json({}, 202);
       return new Response('not found', { status: 404 });
     }),
@@ -162,6 +166,42 @@ describe('App: Movies', () => {
     const fine = await screen.findByRole('article', { name: 'How to Make a Killing' });
     await waitFor(() => expect(within(fine).getByText(/playing in VLC/)).toBeTruthy());
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('the poster of the title in the followed VLC says playing, paused or no picture; other posters keep their state chip', async () => {
+    player = PLAYING;
+    at('/movies');
+    const first = render(<App />);
+    const list = await screen.findByRole('list', { name: 'Posters' });
+    const now = await within(list).findByRole('status', { name: 'How to Make a Killing: playing in VLC' });
+    expect(now.textContent).toBe('playing');
+    expect(now.closest('a')!.className).toBe('mv-tile now playing');
+    expect(within(list).getAllByRole('status')).toHaveLength(1);
+    first.unmount();
+
+    player = { ...PLAYING, current: { ...PLAYING.current!, state: 'paused' } };
+    const second = render(<App />);
+    expect((await screen.findByRole('status', { name: 'How to Make a Killing: paused in VLC' })).closest('a')!.className).toBe('mv-tile now paused');
+    second.unmount();
+
+    player = { ...PLAYING, current: { ...PLAYING.current!, video_stalled: true } };
+    const third = render(<App />);
+    expect((await screen.findByRole('status', { name: 'How to Make a Killing: no picture in VLC' })).closest('a')!.className).toBe('mv-tile now stalled');
+    third.unmount();
+
+    player = { ...PLAYING, current: { ...PLAYING.current!, state: 'stopped' } };
+    render(<App />);
+    await screen.findByRole('list', { name: 'Posters' });
+    expect(screen.queryByRole('status', { name: /in VLC$/ })).toBeNull();
+  });
+
+  it('Play on a file that is already open in VLC says so instead of "resuming"', async () => {
+    at('/movies/M-23T4');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    alreadyPlaying = true;
+    fireEvent.click(within(article).getByRole('button', { name: 'Resume at 45:00' }));
+    expect(await screen.findByText('already open in VLC: brought to the front')).toBeTruthy();
   });
 
   it('play, watched, stars and review write through the API', async () => {

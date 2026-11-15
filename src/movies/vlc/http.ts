@@ -34,7 +34,8 @@ export type VlcReply =
   | { kind: 'unauthorized' }
   | { kind: 'error'; message: string };
 
-export type VlcCommand = { command: 'pl_play' } | { command: 'seek'; val: number };
+/** `pl_forceresume` plays a paused VLC and leaves a playing one alone (`pl_pause` would toggle). */
+export type VlcCommand = { command: 'pl_play' } | { command: 'pl_forceresume' } | { command: 'seek'; val: number };
 
 export interface VlcStatusReader {
   status(curl: string, ep: VlcEndpoint): Promise<VlcReply>;
@@ -85,7 +86,7 @@ export const execCapture: ExecFn = (cmd, args, timeoutMs) =>
 export function statusUrl(ep: VlcEndpoint, cmd?: VlcCommand): string {
   const base = `http://${VLC_HTTP_HOST}:${ep.port}/requests/status.json`;
   if (cmd === undefined) return base;
-  if (cmd.command === 'pl_play') return `${base}?command=pl_play`;
+  if (cmd.command === 'pl_play' || cmd.command === 'pl_forceresume') return `${base}?command=${cmd.command}`;
   return `${base}?command=seek&val=${Math.max(0, Math.floor(cmd.val))}`;
 }
 

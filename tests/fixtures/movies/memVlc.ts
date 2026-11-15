@@ -13,6 +13,7 @@ export interface MemInstance {
 
 export class MemVlc implements VlcLauncher, VlcStatusReader {
   readonly launches: VlcLaunch[] = [];
+  readonly commands: VlcCommand[] = [];
   readonly instances = new Map<number, MemInstance>();
   /** The length a pl_play loads. */
   length = 7200;
@@ -41,9 +42,12 @@ export class MemVlc implements VlcLauncher, VlcStatusReader {
   async command(_curl: string, ep: VlcEndpoint, cmd: VlcCommand): Promise<VlcReply> {
     const i = this.instances.get(ep.port);
     if (i !== undefined && i.up && i.password === ep.password) {
+      this.commands.push(cmd);
       if (cmd.command === 'pl_play') {
         i.state = 'playing';
         i.length = this.length;
+      } else if (cmd.command === 'pl_forceresume') {
+        if (i.state === 'paused') i.state = 'playing';
       } else {
         i.time = cmd.val;
       }

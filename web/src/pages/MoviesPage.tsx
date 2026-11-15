@@ -77,7 +77,7 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
   else if (store.titles.length === 0) content = <MoviesEmpty text={emptyLibraryText(store.status)} />;
-  else content = <MoviesGrid titles={store.titles} filter={filter} onFilter={setFilter} onOpen={(id) => onRoute({ title: id, unmatched: false })} />;
+  else content = <MoviesGrid titles={store.titles} player={store.player} filter={filter} onFilter={setFilter} onOpen={(id) => onRoute({ title: id, unmatched: false })} />;
 
   return (
     <section className="mv" aria-label="Movies">

@@ -1,20 +1,22 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
-import type { TitleListItem } from '../../moviesApi';
-import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, STATE_FILTERS, type KindFilter, type MoviesFilter } from '../../lib/movies';
+import type { PlayerState, TitleListItem } from '../../moviesApi';
+import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, STATE_FILTERS, tileLive, type KindFilter, type MoviesFilter } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
 
 const KIND_ICON: Record<KindFilter, Icon> = { all: SquaresFour, movie: FilmSlate, tv: Television };
 
 export interface MoviesGridProps {
   titles: TitleListItem[];
+  /** The followed play marks its title's poster. */
+  player?: PlayerState | null;
   filter: MoviesFilter;
   onFilter: (f: MoviesFilter) => void;
   onOpen: (titleId: string) => void;
 }
 
 /** The library: a filter row (state pills with counts, kind icons, a text filter), then one poster per title. */
-export function MoviesGrid({ titles, filter, onFilter, onOpen }: MoviesGridProps) {
+export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen }: MoviesGridProps) {
   const counts = stateCounts(titles, filter);
   const shown = sortTitles(titles.filter((t) => matchesFilter(t, filter)));
   return (
@@ -65,7 +67,7 @@ export function MoviesGrid({ titles, filter, onFilter, onOpen }: MoviesGridProps
         <div className="mv-grid" role="list" aria-label="Posters">
           {shown.map((t) => (
             <div key={t.id} role="listitem">
-              <PosterTile title={t} onOpen={onOpen} />
+              <PosterTile title={t} live={tileLive(t.id, player)} onOpen={onOpen} />
             </div>
           ))}
         </div>

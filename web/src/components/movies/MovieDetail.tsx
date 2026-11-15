@@ -50,8 +50,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
 
   const playOne = (f: FileView) => {
     void run(async () => {
-      await playFile(f.id);
-      return startedNotice(f);
+      return startedNotice(f, await playFile(f.id));
     });
   };
 

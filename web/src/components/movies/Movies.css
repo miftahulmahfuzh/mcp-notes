@@ -67,6 +67,14 @@
 .mv-live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .mv-live::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; animation: repo-pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mv-live::before { animation: none; } }
+.mv-now { display: inline-flex; align-items: center; gap: 6px; }
+.mv-now::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+.mv-now.playing::before { animation: repo-pulse 1.6s ease-in-out infinite; }
+.mv-now.stalled { background: var(--band-amber); }
+.mv-tile.now .mv-art::after { content: ""; position: absolute; inset: -5px; border: 2px solid var(--fg); pointer-events: none; }
+.mv-tile.now.playing .mv-art::after { animation: repo-pulse 1.6s ease-in-out infinite; }
+.mv-tile.now.stalled .mv-art::after { border-color: var(--band-amber); }
+@media (prefers-reduced-motion: reduce) { .mv-now.playing::before, .mv-tile.now.playing .mv-art::after { animation: none; } }
 .mv-live-stalled { color: var(--band-amber); }
 .mv-live-stalled::before { animation: none; }
 .mv-stalled { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 14px; padding: 9px 12px; border: 1px solid var(--band-amber); border-radius: 4px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--band-amber); }

@@ -325,7 +325,9 @@ so "what did I watch" still answers after the file is gone.
 - "Continue MobLand", "resume X", "play the next episode", and "continue what I watched last
   night" (no title) → `movies_continue`. It opens VLC on the user's screen on this machine, so
   call it only when they asked to play something. `action` says what happened: `resumed` (from
-  `position` seconds), `started` (the next episode, or a film from the start), `missing`
+  `position` seconds), `started` (the next episode, or a film from the start), `already_playing`
+  (no new VLC: it was already open, and that window was brought to the front and set playing; say
+  it was already open and where it is), `missing`
   (nothing played: `missing` is the next episode with no file here and `present` the later ones
   that are here; tell the user both), `nothing`. `not_on_this_machine` means the file is on the
   other laptop; `file_missing` means the library thinks the file is there but it is not on disk:

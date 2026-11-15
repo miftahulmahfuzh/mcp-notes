@@ -329,8 +329,15 @@ Rules worth knowing:
   networking cannot reach from Linux, so each read is one `curl.exe` run through interop.
 - **One play is followed at a time.** Starting another ends the tracking of the previous one at its
   last position and leaves that VLC open.
-- **notesd never reuses, stops or kills a VLC.** Not the one you opened yourself, and not one it
-  started. There is no stop, pause or seek command for you to send.
+- **The same file is never opened twice.** Play or continue on the file notesd already follows
+  starts no second VLC: the open one comes to the front and plays if it was paused
+  (`already_playing`). A followed VLC that is stopped, hung, without video or no longer answering
+  is not reused, and a new one starts as usual.
+- **The poster shows what is on.** While a play is followed, its title's poster in the grid has a
+  pulsing frame and a "playing" chip; paused it is steady and reads "paused"; a VLC without video
+  reads "no picture" in amber.
+- **notesd never stops or kills a VLC, and never touches one you opened yourself.** There is no
+  stop, pause or seek command for you to send.
 - **A stopped VLC keeps the last real position.** When VLC reports `stopped` (you pressed stop, or
   the film ended) the position is not overwritten with 0.
 - **A VLC that never answers** within 20 seconds leaves the play recorded at its start position
@@ -365,6 +372,7 @@ here.
 | --- | --- |
 | `resumed` | VLC opened at `position`. |
 | `started` | VLC opened from the start: the next episode, or a film not started yet. |
+| `already_playing` | No VLC opened: the file is already open in the VLC notesd follows. That window came to the front and plays at `position` (it was told to play if it was paused). |
 | `missing` | Nothing played. `missing` is the episode with no file here; `present` lists later episodes that have one. For a film, both are empty. |
 | `nothing` | Nothing played. `reason` is `finished`, `caught_up` or `no_episodes`. |
 | `ambiguous` | The words fit several titles; `candidates` lists them. |

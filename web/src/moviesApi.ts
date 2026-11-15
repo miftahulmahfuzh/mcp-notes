@@ -334,7 +334,7 @@ export interface ContinueEpisodeRef {
 
 /** Phase 5's `POST /api/movies/continue` answer (`play` is the 202 body of the play route; the page ignores it). */
 export type ContinueResult =
-  | { action: 'resumed' | 'started'; title: ContinueTitleRef; file: ContinueEpisodeRef; position: number; play: unknown }
+  | { action: 'resumed' | 'started' | 'already_playing'; title: ContinueTitleRef; file: ContinueEpisodeRef; position: number; play: unknown }
   | { action: 'missing'; title: ContinueTitleRef; missing: ContinueEpisodeRef; present: ContinueEpisodeRef[] }
   | { action: 'nothing'; title: ContinueTitleRef; reason: 'finished' | 'caught_up' | 'no_episodes'; finished_at: string | null; last: ContinueEpisodeRef | null }
   | { action: 'ambiguous'; query: string; candidates: ContinueTitleRef[] }
@@ -466,8 +466,10 @@ export async function startSync(): Promise<void> {
   await postJson<unknown>('/api/movies/sync', {});
 }
 
-export async function playFile(fileId: number): Promise<void> {
-  await postJson<unknown>(`/api/movies/files/${fileId}/play`, {});
+/** True when no VLC was started: the file was already open in the VLC notesd follows, which came to the front. */
+export async function playFile(fileId: number): Promise<boolean> {
+  const r = await postJson<{ play?: { already_playing?: boolean } }>(`/api/movies/files/${fileId}/play`, {});
+  return r?.play?.already_playing === true;
 }
 
 export async function continueTitle(titleId: string): Promise<ContinueResult> {

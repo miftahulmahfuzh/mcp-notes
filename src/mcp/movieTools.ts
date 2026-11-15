@@ -255,6 +255,8 @@ function continueMessage(r: ContinueResult): string {
   switch (r.action) {
     case 'resumed':
       return `Opened VLC on the owner's screen (this machine): ${r.title.title}, resumed at ${clock(r.position)}. file is what is playing.`;
+    case 'already_playing':
+      return `No new VLC was opened: ${r.title.title} is already open in the VLC notesd follows on this machine. That window was brought to the front and plays at ${clock(r.position)} (it was told to play if it was paused). Tell the owner it was already open.`;
     case 'started':
       return `Opened VLC on the owner's screen (this machine): ${r.title.title}, from the start of file (the next episode, or a film not started yet).`;
     case 'missing':
@@ -398,7 +400,7 @@ const CONTINUE_DESCRIPTION =
   'With title (movie id, title id or name; "continue MobLand"): an episode\'s movie id ("play M-0T77") plays exactly that episode (resumed when it was left partway; missing when it has no file here); otherwise it resumes the latest unfinished episode or film from where it stopped; else starts the next episode whose file is on this machine; else plays nothing and answers which next episode is missing (missing) and which later episodes are present (present). ' +
   'Without title ("continue what I watched last night"): the same for the title of the newest play event. ' +
   'With random: true and no title ("play something", "I am eating dinner, play a random movie", "let\'s watch something"): the server picks one title at random among every film and series that can be played on this machine right now (a file here that is not deleted; not finished; a half-watched one resumes) and plays it, so do not list or choose titles yourself; picked_from says how many it chose among. Calling again picks again. ' +
-  'Returns { action: resumed | started | missing | nothing | ambiguous | no_match, message, title, file, position (the second it starts at), missing, present, reason, candidates, movie_id (the episode or film it is about), url }. ambiguous lists candidates (call again with one id); no_match means nothing fits (or, without title, nothing was ever played). ' +
+  'Returns { action: resumed | started | already_playing | missing | nothing | ambiguous | no_match, message, title, file, position (the second it starts at), missing, present, reason, candidates, movie_id (the episode or film it is about), url }. already_playing means no VLC was opened because that file is already open in the VLC notesd follows: that window was brought to the front and told to play if it was paused, so say it was already open; ambiguous lists candidates (call again with one id); no_match means nothing fits (or, without title, nothing was ever played). ' +
   'Errors: not_on_this_machine (the file is on the other laptop: play it there), player_unavailable (VLC cannot be started here), file_missing (the library lists the file but it is not on disk: a bug, tell the owner), not_found and ambiguous (no single title matches).';
 
 const PERSON_DESCRIPTION =

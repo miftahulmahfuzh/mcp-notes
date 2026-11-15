@@ -236,7 +236,22 @@ export function filePlayLabel(f: FileView, player: PlayerState | null, what: str
   return { label: at > 0 ? `Resume ${what} at ${clock(at)}` : `Play ${what}`, disabled: false };
 }
 
-export function startedNotice(f: FileView): string {
+export const ALREADY_PLAYING_NOTICE = 'already open in VLC: brought to the front';
+
+export type TileLive = 'playing' | 'paused' | 'stalled';
+
+/** The followed play, when it is this title: what its poster shows. A stopped VLC shows nothing. */
+export function tileLive(titleId: string, player: PlayerState | null): TileLive | null {
+  const c = player?.current ?? null;
+  if (c === null || c.title_id !== titleId) return null;
+  if (c.video_stalled === true) return 'stalled';
+  return c.state === 'playing' ? 'playing' : c.state === 'paused' ? 'paused' : null;
+}
+
+export const TILE_LIVE_LABEL: Record<TileLive, string> = { playing: 'playing', paused: 'paused', stalled: 'no picture' };
+
+export function startedNotice(f: FileView, already = false): string {
+  if (already) return ALREADY_PLAYING_NOTICE;
   return f.resume_position_s > 0 ? `resuming at ${clock(f.resume_position_s)}` : 'playing in VLC';
 }
 
@@ -254,6 +269,7 @@ function refCode(e: ContinueEpisodeRef): string {
 }
 
 export function continueNotice(r: ContinueResult): string {
+  if (r.action === 'already_playing') return ALREADY_PLAYING_NOTICE;
   if (r.action === 'resumed' || r.action === 'started') {
     const what = episodeCode(r.file.season, r.file.episode) || 'it';
     if (r.action === 'started') return `playing ${what}`;
