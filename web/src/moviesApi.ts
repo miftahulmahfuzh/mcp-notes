@@ -143,7 +143,7 @@ export interface SeasonView {
 
 export interface PlayView {
   id: number;
-  file_id: number;
+  file_id: number | null;
   title_id: string | null;
   title: string | null;
   kind: TitleKind | null;
@@ -152,17 +152,37 @@ export interface PlayView {
   episode_name: string | null;
   /** The episode that was played, or the film. */
   movie_id: string | null;
-  file_name: string;
+  file_name: string | null;
   file_deleted: boolean;
   file_deleted_at: string | null;
   host: string;
-  source: 'live' | 'vlc_recents';
+  source: 'live' | 'vlc_recents' | 'stream';
+  /** The direct-stream provider of a stream play (no file); null for a VLC play. */
+  provider: string | null;
   started_at: string;
   ended_at: string | null;
   start_position_s: number | null;
   position_s: number | null;
   duration_s: number | null;
   ratio: number | null;
+}
+
+/**
+ * One of this machine's stream sources (phase 5's `movie_stream_sources` row, as `GET /api/movies/:id`
+ * answers it). A film's is season 0, episode 0. `fresh`: verified inside the freshness window, not
+ * stale, and direct streaming is on: what the Stream side counts as playable.
+ */
+export interface StreamSourceView {
+  host: string;
+  season: number;
+  episode: number;
+  provider: string;
+  manifest_kind: string;
+  best_height: number | null;
+  en_subtitle: boolean;
+  verified_at: string;
+  stale_at: string | null;
+  fresh: boolean;
 }
 
 export interface TitleDetail extends TitleListItem {
@@ -193,6 +213,8 @@ export interface TitleDetail extends TitleListItem {
   /** tv files with no season/episode; movie: []. */
   unplaced_files: FileView[];
   plays: PlayView[];
+  /** This machine's verified stream sources, in season and episode order; [] when none. */
+  stream_sources: StreamSourceView[];
   metadata_fetched_at: string | null;
 }
 
@@ -293,7 +315,7 @@ export interface FileChangeResponse {
 /** `data:` of each `event: changed` on `GET /api/movies/events` (phase 3's MovieChangeEvent). The page only refetches. */
 export interface MovieChangeWire {
   type: 'changed';
-  reason: 'sync' | 'assign' | 'user' | 'play';
+  reason: 'sync' | 'assign' | 'user' | 'play' | 'stream';
   title_ids: string[];
   file_ids: number[];
 }
@@ -349,6 +371,14 @@ export type ContinueResult =
 export type TitleUserPatch = { watched: boolean } | { rating: number } | { review: string };
 
 export type AssignBody = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season?: number; episode?: number };
+
+/** `GET /api/movies/stream`. Off is an answer, not an error: the page says how to turn it on. */
+export type StreamListResponse =
+  | { enabled: true; titles: TitleListItem[]; fresh_days: number }
+  | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
+
+/** The body of phase 3's `POST /api/stream/play`. A series always names its episode. */
+export type StreamRef = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season: number; episode: number };
 
 export const MOVIES_EVENTS_URL = '/api/movies/events';
 
@@ -419,6 +449,7 @@ function normalizeDetail(d: TitleDetail): TitleDetail {
     seasons: list(d.seasons).map((s) => ({ ...s, episodes: list(s.episodes).map((e) => ({ ...e, files: list(e.files) })) })),
     unplaced_files: list(d.unplaced_files),
     plays: list(d.plays),
+    stream_sources: list(d.stream_sources),
   };
 }
 
@@ -480,4 +511,16 @@ export async function playFile(fileId: number): Promise<boolean> {
 export async function continueTitle(titleId: string): Promise<ContinueResult> {
   const r = await postJson<ContinueResult>('/api/movies/continue', { title: titleId });
   return r ?? { action: 'no_match', query: titleId };
+}
+
+/** The Stream side's titles. Anything but a well-formed `enabled: true` reads as off. */
+export async function fetchStreamTitles(signal?: AbortSignal): Promise<StreamListResponse> {
+  const j = await getJson<{ enabled?: unknown; titles?: TitleListItem[] | null; fresh_days?: unknown }>('/api/movies/stream', signal);
+  if (j.enabled === true && typeof j.fresh_days === 'number') return { enabled: true, titles: list(j.titles), fresh_days: j.fresh_days };
+  return { enabled: false, reason: 'direct_stream_off', titles: [] };
+}
+
+/** Phase 3: resolve the title and open the player page full screen in the streaming Chrome. Throws ApiError `no_source`, `direct_stream_off`, ... */
+export async function streamPlay(ref: StreamRef): Promise<void> {
+  await postJson<unknown>('/api/stream/play', ref);
 }

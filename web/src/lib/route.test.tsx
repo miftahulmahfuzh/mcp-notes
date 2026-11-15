@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, moviesHref, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation } from './route';
+import { adversaryHref, adversaryRouteFromLocation, canonicalNodeId, historyHref, hrefForView, moviesHref, moviesRouteFromLocation, NO_ADVERSARY_ROUTE, NO_PROJECT_ROUTE, projectsHref, projectsRouteFromLocation, routeFromLocation, STREAM_ROUTE } from './route';
 
 const loc = (url: string) => {
   const u = new URL(url, 'http://localhost');
@@ -149,5 +149,16 @@ describe('movies route', () => {
     expect(hrefForView('wall', null, loc('/movies/tv-1'))).toBe('/');
     expect(hrefForView('adversary', null, loc('/movies'))).toBe('/adversary');
     expect(hrefForView('wall', null, loc('/?note=A-B32'))).toBeNull();
+  });
+
+  it('the Stream side is ?side=stream on the grid and on a title; the unmatched list ignores it', () => {
+    expect(moviesRouteFromLocation(loc('/movies?side=stream'))).toEqual({ title: null, unmatched: false, stream: true });
+    expect(moviesRouteFromLocation(loc('/movies/M-23T4?side=stream'))).toEqual({ title: 'M-23T4', unmatched: false, stream: true });
+    expect(moviesRouteFromLocation(loc('/movies/unmatched?side=stream'))).toEqual({ title: null, unmatched: true });
+    expect(moviesRouteFromLocation(loc('/movies?side=library'))).toEqual({ title: null, unmatched: false });
+    expect(moviesHref(STREAM_ROUTE)).toBe('/movies?side=stream');
+    expect(moviesHref({ title: 'M-23T4', unmatched: false, stream: true })).toBe('/movies/M-23T4?side=stream');
+    expect(hrefForView('movies', null, loc('/movies'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, STREAM_ROUTE)).toBe('/movies?side=stream');
+    expect(hrefForView('movies', null, loc('/movies?side=stream'), NO_PROJECT_ROUTE, NO_ADVERSARY_ROUTE, STREAM_ROUTE)).toBeNull();
   });
 });

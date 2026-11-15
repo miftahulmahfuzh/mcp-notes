@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowsClockwise, FilmSlate, Question, Warning } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, Question, Warning } from '@phosphor-icons/react';
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
 import { MoviesPill } from '../components/movies/MoviesPill';
@@ -7,14 +7,33 @@ import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
 import { errorCode, startSync } from '../moviesApi';
-import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, stalledText, unmatchedCount, entityHint, entityQuestion, entitySearchQuery, type MovieEntity, type MoviesFilter } from '../lib/movies';
-import { NO_MOVIES_ROUTE, type MoviesRoute } from '../lib/route';
+import {
+  detailIsFor,
+  emptyLibraryText,
+  entityHint,
+  entityQuestion,
+  entitySearchQuery,
+  isMoviesOff,
+  MOVIES_OFF_TEXT,
+  moviesErrorText,
+  moviesPillPlaceholder,
+  NO_MOVIES_FILTER,
+  normalizeMovieId,
+  sideOf,
+  stalledText,
+  STREAM_OFF_TEXT,
+  streamEmptyText,
+  unmatchedCount,
+  type MovieEntity,
+  type MoviesFilter,
+} from '../lib/movies';
+import { NO_MOVIES_ROUTE, STREAM_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
 export interface MoviesPageProps {
   store: MoviesStore;
   route: MoviesRoute;
-  /** Push another movies URL (grid, a title, the unmatched list). */
+  /** Push another movies URL (grid, a title, the unmatched list, either side). */
   onRoute: (r: MoviesRoute) => void;
   onAsk: (text: string, imageIds: string[], entity?: MoviesEntityAsk) => void;
   /** An answer is still streaming in the wall's answer panel: entity links wait for it. */
@@ -38,19 +57,25 @@ function MoviesEmpty({ text }: { text: string }) {
 
 /**
  * The movies view's main area:
- *   .mv-tools   toolbar, icon-only: Back (on a title or the unmatched list), Unmatched files (with a count), Rescan
- *   content     grid / detail / unmatched list, or an empty state (subsystem off, empty library, error)
+ *   .mv-tools   toolbar, icon-only: the Library / Stream switch (left), then Back (on a title or the
+ *               unmatched list), and on the Library side Unmatched files (with a count) and Rescan
+ *   content     grid / detail / unmatched list, or an empty state (subsystem off, empty library or
+ *               Stream side, direct streaming off, error)
  *   pill        "Ask about your movies"; "Ask about <title>" on a title's page
- * The filter lives here, so it survives opening a title and coming back.
+ * Each side keeps its own filter here, so it survives opening a title and coming back.
+ * The Stream side has no entry in the rail or sidebar: it is this switch only (D3).
  */
 export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: MoviesPageProps) {
   const { notice, show } = useNotice(6000);
   const [filter, setFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
+  const [streamFilter, setStreamFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
   const [busy, setBusy] = useState(false);
+  const side = sideOf(route);
   const off = isMoviesOff(store);
   const stalled = off ? null : stalledText(store.player);
   const waiting = unmatchedCount(store.status);
   const unmatchedTip = waiting === null || waiting === 0 ? 'Unmatched files' : `Unmatched files (${waiting})`;
+  const backLabel = side === 'stream' ? 'Back to Stream' : 'Back to the library';
 
   const rescan = async () => {
     setBusy(true);
@@ -85,9 +110,29 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       const detail = store.detail;
       const askEntity = (e: MovieEntity) => onAsk(entityQuestion(e, detail), [], { hint: entityHint(e), search: entitySearchQuery(e, detail) });
       content = (
-        <MovieDetail detail={detail} player={store.player} focus={normalizeMovieId(route.title)} onChanged={store.refresh} onNotice={show} onEntity={askEntity} asking={asking} />
+        <MovieDetail
+          detail={detail}
+          player={store.player}
+          focus={normalizeMovieId(route.title)}
+          side={side}
+          streamEnabled={store.stream?.enabled ?? true}
+          onChanged={store.refresh}
+          onNotice={show}
+          onEntity={askEntity}
+          asking={asking}
+        />
       );
     }
+  } else if (side === 'stream') {
+    const list = store.stream;
+    if (store.streamError !== null) content = <MoviesEmpty text={moviesErrorText(store.streamError)} />;
+    else if (list === null) content = <p className="mv-empty mv-content">loading the Stream titles</p>;
+    else if (!list.enabled) content = <MoviesEmpty text={STREAM_OFF_TEXT} />;
+    else if (list.titles.length === 0) content = <MoviesEmpty text={streamEmptyText(list.fresh_days)} />;
+    else
+      content = (
+        <MoviesGrid side="stream" titles={list.titles} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} />
+      );
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
   else if (store.titles.length === 0) content = <MoviesEmpty text={emptyLibraryText(store.status)} />;
@@ -96,32 +141,62 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   return (
     <section className="mv" aria-label="Movies">
       <div className="mv-tools">
+        <div className="mv-side" role="group" aria-label="Library or Stream">
+          <button
+            type="button"
+            className={side === 'library' ? 'ibtn on' : 'ibtn hov'}
+            data-tip="Library: the files on your machines"
+            data-tip-side="below"
+            aria-label="Library"
+            aria-pressed={side === 'library'}
+            disabled={off}
+            onClick={() => onRoute(NO_MOVIES_ROUTE)}
+          >
+            <Books weight="duotone" />
+          </button>
+          <button
+            type="button"
+            className={side === 'stream' ? 'ibtn on' : 'ibtn hov'}
+            data-tip="Stream: titles verified to play on this machine"
+            data-tip-side="below"
+            aria-label="Stream"
+            aria-pressed={side === 'stream'}
+            disabled={off}
+            onClick={() => onRoute(STREAM_ROUTE)}
+          >
+            <Broadcast weight="duotone" />
+          </button>
+        </div>
         {notice && (
           <span className="mv-note" role="status">
             {notice}
           </span>
         )}
         {(route.title !== null || route.unmatched) && (
-          <button type="button" className="ibtn hov" data-tip="Back to the library" data-tip-side="below" aria-label="Back to the library" onClick={() => onRoute(NO_MOVIES_ROUTE)}>
+          <button type="button" className="ibtn hov" data-tip={backLabel} data-tip-side="below" aria-label={backLabel} onClick={() => onRoute(side === 'stream' ? STREAM_ROUTE : NO_MOVIES_ROUTE)}>
             <ArrowLeft weight="duotone" />
           </button>
         )}
-        <button
-          type="button"
-          className={route.unmatched ? 'ibtn on' : 'ibtn hov'}
-          data-tip={unmatchedTip}
-          data-tip-side="below"
-          aria-label="Unmatched files"
-          aria-pressed={route.unmatched}
-          disabled={off}
-          onClick={() => onRoute(route.unmatched ? NO_MOVIES_ROUTE : { title: null, unmatched: true })}
-        >
-          <Question weight="duotone" />
-          {waiting !== null && waiting > 0 && <span className="mv-count">{waiting}</span>}
-        </button>
-        <button type="button" className="ibtn hov" data-tip="Rescan the library" data-tip-side="below" aria-label="Rescan the library" disabled={off || busy} onClick={() => void rescan()}>
-          <ArrowsClockwise weight="duotone" />
-        </button>
+        {side === 'library' && (
+          <>
+            <button
+              type="button"
+              className={route.unmatched ? 'ibtn on' : 'ibtn hov'}
+              data-tip={unmatchedTip}
+              data-tip-side="below"
+              aria-label="Unmatched files"
+              aria-pressed={route.unmatched}
+              disabled={off}
+              onClick={() => onRoute(route.unmatched ? NO_MOVIES_ROUTE : { title: null, unmatched: true })}
+            >
+              <Question weight="duotone" />
+              {waiting !== null && waiting > 0 && <span className="mv-count">{waiting}</span>}
+            </button>
+            <button type="button" className="ibtn hov" data-tip="Rescan the library" data-tip-side="below" aria-label="Rescan the library" disabled={off || busy} onClick={() => void rescan()}>
+              <ArrowsClockwise weight="duotone" />
+            </button>
+          </>
+        )}
       </div>
       {stalled !== null && (
         <p className="mv-stalled mv-content" role="alert">

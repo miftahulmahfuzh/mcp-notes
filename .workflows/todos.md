@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 13
+**Total Active Tasks**: 12
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 13
+- P1 High: 12
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 5
-- Completed: 109
+- Blocked: 4
+- Completed: 110
 
 ---
 
@@ -112,15 +112,6 @@
   - **Satisfies**: R4 — "and /update-cloud-source skills first" · criteria: R4.1, R4.2
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A117
   - **Plan**: `.workflows/plan/P1-NOTES-A118.md`
-- [ ] **P1-NOTES-A119** Phase 9: The Stream side of `/movies`
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `GET /api/movies/stream` (through phase 5's `listStreamTitles`, `streamFreshSince`, `isFreshStreamSource`), the `fresh` flag on title answers, the Library / Stream switch in `MoviesPage`'s toolbar (icon-only, Phosphor), the Stream grid, the title page's stream line and Play, episode rows that verify on click, the stale answer, `web/src/lib/{movies,route}.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` (stream types, widened `PlayView`, change reason `stream`), web tests, `docs/guide/movies.md` ("The Movies page", "The Stream side"), `scripts/docs/shots/movies.mjs` (a read-only live picture), the movies feature map. Its Proof runs `verify.sh up --web --direct-stream`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; J1-J6 pass on a throwaway daemon; `/movies` has a Library / Stream switch whose Stream side lists only this host's fresh verified titles, streams on Play with one request, drops a title that failed, and keeps a local file as the default Play.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 9 of 10)
-  - **Satisfies**: R5 — "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R5.1, R5.2, R5.3, R5.4 (page half), R5.5
-  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
-  - **Plan**: `.workflows/plan/P1-NOTES-A119.md`
 - [ ] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -141,6 +132,23 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A119** Phase 9: The Stream side of `/movies`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `GET /api/movies/stream` (through phase 5's `listStreamTitles`, `streamFreshSince`, `isFreshStreamSource`), the `fresh` flag on title answers, the Library / Stream switch in `MoviesPage`'s toolbar (icon-only, Phosphor), the Stream grid, the title page's stream line and Play, episode rows that verify on click, the stale answer, `web/src/lib/{movies,route}.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` (stream types, widened `PlayView`, change reason `stream`), web tests, `docs/guide/movies.md` ("The Movies page", "The Stream side"), `scripts/docs/shots/movies.mjs` (a read-only live picture), the movies feature map. Its Proof runs `verify.sh up --web --direct-stream`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; J1-J6 pass on a throwaway daemon; `/movies` has a Library / Stream switch whose Stream side lists only this host's fresh verified titles, streams on Play with one request, drops a title that failed, and keeps a local file as the default Play.
+  - **Status**: done
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 9 of 10)
+  - **Satisfies**: R5 — "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R5.1, R5.2, R5.3, R5.4 (page half), R5.5
+  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
+  - **Plan**: `.workflows/plan/P1-NOTES-A119.md`
+  - **Completed**: 2026-11-15 20:45
+  - **Method**: /implement
+  - **Files**: src/http/moviesApi.ts, tests/integration/movies.stream.int.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, web/src/moviesApi.ts, web/src/lib/route.ts, web/src/lib/movies.ts, web/src/hooks/useMovies.ts, web/src/pages/MoviesPage.tsx, web/src/components/movies/MoviesGrid.tsx, web/src/components/movies/PosterTile.tsx, web/src/components/movies/MovieDetail.tsx, web/src/components/movies/EpisodeList.tsx, web/src/components/movies/parts.tsx, web/src/components/movies/Movies.css, web/src/testing/movieFixtures.ts, web/src/App.stream.test.tsx, web/src/lib/route.test.tsx, web/src/lib/movies.test.tsx, docs/guide/movies.md, scripts/docs/shots/movies.mjs, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/README.md
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-204328-564145/evidence
+  - **Drift**:
+    - docs/guide/movies.md line numbers had moved after phase 5; the plan's edits were applied at the same paragraphs by text anchor. No code drift.
+    - Step 16 picture not taken: the live daemon on 7317 answers 404 for /api/movies/stream (still serves main). docs/guide/img/movies/stream.png and its guide line are left to the landing step (plan Handoffs); no fixture picture added (invariant 9).
+    - Cosmetic, not in the plan and not changed: the page header hint on the Stream grid still reads 'Play opens VLC on the machine that holds the file' (MOVIES_HINT, App.tsx is outside this phase's Owns).
 - [x] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
   - **Difficulty**: HARD
   - **Type**: Feature

@@ -6,7 +6,8 @@
 //
 // The owner wants this guide to show their real library, so `live` below takes the grid, a film,
 // a series, the trailer pop-up, the filter clip and the page of whatever VLC is playing from the
-// daemon on 7317. It only looks: it clicks filters, opens the trailer pop-up and reads pages. It
+// daemon on 7317, and the Stream side (stream.png) when this machine has a verified title; no Play
+// is pressed there. It only looks: it clicks filters, opens the trailer pop-up and reads pages. It
 // never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
 // pictures send real, billed questions (they are stored in the chat history), so they are retaken
 // only with DOCS_SHOTS_CHAT=1.
@@ -211,6 +212,21 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   await page.getByRole('list', { name: 'Posters' }).waitFor();
   await postersLoaded(page);
   await shot('grid');
+
+  // The Stream side: only titles verified to stream on this machine. It looks only: no Play, so no
+  // Chrome opens and no source is re-checked. Kept as it is when the daemon has no Stream side yet
+  // (404), direct streaming is off, or nothing is verified.
+  const stream = await fetchJson('GET', '/api/movies/stream').catch(() => null);
+  if (stream?.enabled === true && stream.titles.length > 0) {
+    await page.goto(`${base}/movies?side=stream`);
+    await page.getByRole('list', { name: 'Posters' }).waitFor();
+    await postersLoaded(page);
+    await page.mouse.move(640, 60);
+    await shot('stream');
+  } else {
+    const why = stream === null ? 'this daemon has no Stream side' : stream.enabled ? 'nothing is verified to stream' : 'direct streaming is off';
+    console.log(`movies: ${why}, stream.png is kept as it is`);
+  }
 
   // A film: facts, Play, the trailer icon, watched flag, stars, review, credits, cast. A taller
   // window, so the whole page is in one picture with the pill where it really sits.

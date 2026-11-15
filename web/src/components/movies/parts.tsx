@@ -1,4 +1,4 @@
-import { CheckCircle, Desktop, MonitorPlay, Play, Trash } from '@phosphor-icons/react';
+import { Broadcast, CheckCircle, Desktop, MonitorPlay, Play, Trash } from '@phosphor-icons/react';
 import type { FileView, PlayerSnapshot, PlayerState, ProgressView, WatchState } from '../../moviesApi';
 import { clock, dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, TILE_LIVE_LABEL, type MovieEntity, type PlayButtonState, type TileLive, type TrailerTarget } from '../../lib/movies';
 
@@ -61,6 +61,26 @@ export function PlayButton({ state, busy, onClick }: { state: PlayButtonState; b
   return (
     <button type="button" className="pbtn hov" data-tip={state.label} aria-label={state.label} disabled={state.disabled || busy} onClick={onClick}>
       <Play weight="duotone" />
+    </button>
+  );
+}
+
+/**
+ * Stream instead: the second icon beside a Play that plays a file on this machine (R5.5 keeps the
+ * file as the default). `ibtn` on a title's page, `pbtn` in an episode row.
+ */
+export function StreamAltButton({ state, busy, onClick, size = 'row' }: { state: PlayButtonState; busy: boolean; onClick: () => void; size?: 'row' | 'page' }) {
+  return (
+    <button
+      type="button"
+      className={size === 'page' ? 'ibtn hov mv-stream-alt' : 'pbtn hov mv-stream-alt'}
+      data-tip={state.label}
+      data-tip-side={size === 'page' ? 'below' : undefined}
+      aria-label={state.label}
+      disabled={state.disabled || busy}
+      onClick={onClick}
+    >
+      <Broadcast weight="duotone" />
     </button>
   );
 }

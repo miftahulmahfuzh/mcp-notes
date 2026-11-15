@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
-import { episodeCode, filePlayLabel, primaryFile, seasonsShown, trailerTarget, type PlayButtonState, type TrailerTarget } from '../../lib/movies';
-import { FileFlags, FileRow, Meter, PlayButton, TrailerButton, WatchedButton } from './parts';
+import { episodeAction, episodeCode, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
+import { FileFlags, FileRow, Meter, PlayButton, StreamAltButton, TrailerButton, WatchedButton } from './parts';
 
 export interface EpisodeListProps {
   detail: TitleDetail;
@@ -9,15 +9,19 @@ export interface EpisodeListProps {
   /** An episode's movie id from the address: its row is marked, its season shown even without a file, and scrolled to once. */
   focus?: string | null;
   busy: boolean;
+  /** `stream`: every season is listed and an episode without a file here streams (verified when clicked). */
+  side: MoviesSide;
+  streamEnabled: boolean;
   onPlay: (f: FileView) => void;
+  onStream: (t: StreamTarget) => void;
   onWatched: (f: FileView) => void;
   /** Plays a season's trailer in the page's pop-up. */
   onTrailer: (t: TrailerTarget) => void;
 }
 
-/** A series' seasons (those with a file on any machine), each with its trailer and every episode with its progress and flags; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatched, onTrailer }: EpisodeListProps) {
-  const { seasons, hidden } = seasonsShown(detail, focus);
+/** A series' seasons (Library: those with a file on any machine; Stream: all), each with its trailer and every episode with its progress, flags and play icons; then files with no episode. */
+export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onWatched, onTrailer }: EpisodeListProps) {
+  const { seasons, hidden } = seasonsShown(detail, focus, side);
   const list = useRef<HTMLElement>(null);
   // Once per (title, focus): a refresh of the detail must not pull the page back to the episode.
   const found = focus !== null && seasons.some((s) => s.episodes.some((e) => e.movie_id === focus));
@@ -36,7 +40,19 @@ export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatc
           </div>
           <ol className="mv-eps">
             {s.episodes.map((e) => (
-              <EpisodeItem key={e.episode} episode={e} focused={focus !== null && e.movie_id === focus} player={player} busy={busy} onPlay={onPlay} onWatched={onWatched} />
+              <EpisodeItem
+                key={e.episode}
+                detail={detail}
+                episode={e}
+                focused={focus !== null && e.movie_id === focus}
+                player={player}
+                busy={busy}
+                side={side}
+                streamEnabled={streamEnabled}
+                onPlay={onPlay}
+                onStream={onStream}
+                onWatched={onWatched}
+              />
             ))}
           </ol>
         </div>
@@ -57,19 +73,28 @@ export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatc
 }
 
 interface EpisodeItemProps {
+  detail: TitleDetail;
   episode: EpisodeView;
   focused: boolean;
   player: PlayerState | null;
   busy: boolean;
+  side: MoviesSide;
+  streamEnabled: boolean;
   onPlay: (f: FileView) => void;
+  onStream: (t: StreamTarget) => void;
   onWatched: (f: FileView) => void;
 }
 
-function EpisodeItem({ episode: e, focused, player, busy, onPlay, onWatched }: EpisodeItemProps) {
+function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onWatched }: EpisodeItemProps) {
   const code = episodeCode(e.season, e.episode);
   const file = primaryFile(e);
-  const play: PlayButtonState = file !== null ? filePlayLabel(file, player, code) : { label: `${code} has no file`, disabled: true };
-  const cls = `${!e.has_file ? 'mv-row none' : e.deleted ? 'mv-row del' : 'mv-row'}${focused ? ' focus' : ''}`;
+  const act = episodeAction(detail, e, side);
+  const play: PlayButtonState =
+    act.kind === 'stream' ? streamLabel(act.target, streamEnabled) : file !== null ? filePlayLabel(file, player, code) : { label: `${code} has no file`, disabled: true };
+  /** The stream behind a file here (R5.5: the file stays the default). */
+  const alt = act.kind === 'vlc' ? act.stream : null;
+  const source = act.kind === 'stream' ? act.target.source : alt !== null ? alt.source : null;
+  const cls = `${!e.has_file && side === 'library' ? 'mv-row none' : e.deleted ? 'mv-row del' : 'mv-row'}${focused ? ' focus' : ''}`;
   return (
     <li
       className={cls}
@@ -89,17 +114,26 @@ function EpisodeItem({ episode: e, focused, player, busy, onPlay, onWatched }: E
             {e.movie_id}
           </span>
         )}
-        {file !== null ? <FileFlags file={file} /> : <span className="mv-flag">no file</span>}
+        {file !== null ? <FileFlags file={file} /> : side === 'library' && <span className="mv-flag">no file</span>}
+        {source !== null && source.fresh && (
+          <span className="mv-flag" data-tip={streamSourceText(source)}>
+            verified
+          </span>
+        )}
       </span>
       <Meter state={e.state} progress={e.progress} />
       {file !== null ? <WatchedButton file={file} what={code} onWatched={onWatched} /> : <span />}
-      <PlayButton
-        state={play}
-        busy={busy}
-        onClick={() => {
-          if (file !== null) onPlay(file);
-        }}
-      />
+      <span className="mv-row-play">
+        <PlayButton
+          state={play}
+          busy={busy}
+          onClick={() => {
+            if (act.kind === 'stream') onStream(act.target);
+            else if (act.kind === 'vlc') onPlay(act.file);
+          }}
+        />
+        {alt !== null && <StreamAltButton state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => onStream(alt)} />}
+      </span>
     </li>
   );
 }

@@ -11,6 +11,7 @@ import type { View } from '../types';
  * Movies (movies-library phase 6): `/movies` (the poster grid), `/movies/<title id>` (the canonical
  * `M-xxxx` movie id; `movie-<n>` / `tv-<n>` also resolve, as a fallback for a title with no movie id
  * yet) and `/movies/unmatched` (the files that matched no title).
+ * The Stream side is `?side=stream` on `/movies` and on `/movies/<title id>`.
  * The wall and the bin have no path of their own: they live at `/` (and `/?note=<id>` deep links,
  * lib/deepLink.ts), so leaving the history, projects, adversary or movies page pushes `/` and nothing else is touched.
  */
@@ -119,14 +120,22 @@ export function adversaryHref(r: AdversaryRoute): string {
 
 /**
  * What `/movies` asks for: the grid (`title` null, `unmatched` false), one title, or the unmatched
- * list. The parser never builds `title` and `unmatched` together; `moviesHref` gives `unmatched` precedence.
+ * list; `stream` is the Stream side (`?side=stream`): its grid, or a title opened from it. Absent =
+ * the Library side. The parser never builds `title` with `unmatched`, nor `stream` with `unmatched`;
+ * `moviesHref` gives `unmatched` precedence.
  */
 export interface MoviesRoute {
   title: string | null;
   unmatched: boolean;
+  stream?: boolean;
 }
 
 export const NO_MOVIES_ROUTE: MoviesRoute = { title: null, unmatched: false };
+/** The Stream grid, `/movies?side=stream`. */
+export const STREAM_ROUTE: MoviesRoute = { title: null, unmatched: false, stream: true };
+/** `?side=stream`: a query, not a path segment, so `/movies/<id>` and `/movies/unmatched` keep their meaning. */
+export const MOVIES_SIDE_PARAM = 'side';
+const STREAM_SIDE = 'stream';
 
 /** src/movies/ids.ts: `M-` and four of [0-9A-Z]. */
 const MOVIE_ID_IN_NOTE_LINK = /^M-[0-9A-Z]{4}$/;
@@ -140,14 +149,15 @@ export function moviesRouteFromLocation(loc: Loc): MoviesRoute | null {
     const mislinked = pathOf(loc) === '/' ? MOVIE_ID_IN_NOTE_LINK.exec(new URLSearchParams(loc.search).get('note')?.trim().toUpperCase() ?? '') : null;
     return mislinked === null ? null : { title: mislinked[0], unmatched: false };
   }
-  if (seg === '') return { title: null, unmatched: false };
   if (seg === MOVIES_UNMATCHED_SEGMENT) return { title: null, unmatched: true };
-  return { title: seg, unmatched: false };
+  const title = seg === '' ? null : seg;
+  return param(loc.search, MOVIES_SIDE_PARAM) === STREAM_SIDE ? { title, unmatched: false, stream: true } : { title, unmatched: false };
 }
 
 export function moviesHref(r: MoviesRoute): string {
   if (r.unmatched) return `${MOVIES_PATH}/${MOVIES_UNMATCHED_SEGMENT}`;
-  return r.title ? `${MOVIES_PATH}/${encodeURIComponent(r.title)}` : MOVIES_PATH;
+  const base = r.title ? `${MOVIES_PATH}/${encodeURIComponent(r.title)}` : MOVIES_PATH;
+  return r.stream === true ? `${base}?${MOVIES_SIDE_PARAM}=${STREAM_SIDE}` : base;
 }
 
 /**

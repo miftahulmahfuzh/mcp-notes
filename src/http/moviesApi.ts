@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import {
   getTitle,
+  listStreamTitles,
   listTitles,
   listUnmatched,
   MAX_LIST_LIMIT,
@@ -13,12 +14,14 @@ import {
   WATCH_STATES,
   type ReadContext,
   type StatusCounts,
+  type StreamSourceView,
   type TitleDetail,
   type TitleListItem,
   type TmdbHitView,
   type UnmatchedFile,
 } from '../movies/read.js';
 import { resolveMovieId } from '../movies/ids.js';
+import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { MAX_REVIEW_CHARS, saveReview } from '../movies/reviewNote.js';
 import { MoviesServiceError, type MovieChangeEvent, type MoviesService } from '../movies/service.js';
 import { TmdbError } from '../movies/tmdb.js';
@@ -52,7 +55,7 @@ export interface TmdbSearchResponse {
 }
 export interface FileChangeResponse {
   file_id: number;
-  title: TitleDetail | null;
+  title: TitleDetailResponse | null;
 }
 export interface SyncResponse {
   started: true;
@@ -60,6 +63,17 @@ export interface SyncResponse {
 }
 /** `data:` of each `event: changed`: phase 3's event, unchanged. */
 export type MovieChangeWire = MovieChangeEvent;
+
+/** One of this machine's stream sources as the page reads it: phase 5's row plus `fresh`, the Stream grid's own test. */
+export type StreamSourceWire = StreamSourceView & { fresh: boolean };
+
+/** A title as every detail route answers it: phase 5's TitleDetail with only this machine's stream sources, each marked fresh or not. */
+export type TitleDetailResponse = Omit<TitleDetail, 'stream_sources'> & { stream_sources: StreamSourceWire[] };
+
+/** `GET /api/movies/stream`. Off is a normal answer, not an error, so the page can say how to turn it on. */
+export type StreamListResponse =
+  | { enabled: true; titles: TitleListItem[]; fresh_days: number }
+  | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
 
 const MOVIES_OFF = {
   error: 'movies_off',
@@ -70,6 +84,43 @@ const TMDB_OFF = {
   error: 'tmdb_off',
   message: 'No TMDB credentials (TMDB_API_READ_ACCESS_TOKEN or TMDB_API_KEY) on this machine.',
 } as const;
+
+interface StreamWindow {
+  freshDays: number;
+  since: Date;
+}
+
+/**
+ * Direct streaming answers on this daemon only with movies on, NOTESD_DIRECT_STREAM on and a
+ * DirectStreamService built (R2.6's three switches). Then: the freshness window, from
+ * NOTESD_STREAM_FRESH_DAYS (`config.directStream.freshDays`), through phase 5's streamFreshSince.
+ */
+function streamWindow(deps: Pick<AppDeps, 'config' | 'movies' | 'directStream'>, now: Date = new Date()): StreamWindow | null {
+  const ds = deps.config.directStream;
+  if (deps.movies === null || (deps.directStream ?? null) === null || ds === undefined || !ds.enabled) return null;
+  return { freshDays: ds.freshDays, since: streamFreshSince(now, ds.freshDays) };
+}
+
+/**
+ * Each of this machine's sources (phase 5's getTitle returns only `ctx.host`'s) marked `fresh` by
+ * phase 5's isFreshStreamSource, the same rule listStreamTitles applies in SQL. With direct
+ * streaming off nothing is fresh.
+ */
+function withStreamFreshness(detail: TitleDetail, host: string, window: StreamWindow | null): TitleDetailResponse {
+  return {
+    ...detail,
+    stream_sources: detail.stream_sources.map((s) => ({
+      ...s,
+      fresh:
+        window !== null &&
+        isFreshStreamSource(
+          { host: s.host, staleAt: s.stale_at === null ? null : new Date(s.stale_at), verifiedAt: new Date(s.verified_at) },
+          host,
+          window.since,
+        ),
+    })),
+  };
+}
 
 const TITLE_PATH = '/api/movies/:id{[a-z]+-[0-9]+}';
 /** A movie id (`M-23T4`, any case): the title it names, or the series of the episode it names. */
@@ -143,7 +194,7 @@ function errorMessage(err: unknown): string {
 }
 
 export function moviesApiRoutes(
-  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies'>,
+  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'>,
   options: MoviesApiOptions = {},
 ): Hono {
   const api = new Hono();
@@ -159,8 +210,14 @@ export function moviesApiRoutes(
     };
   }
 
-  async function detailResponse(c: Context, id: string, ctx: ReadContext): Promise<Response> {
+  /** Every route that answers one title goes through here, so `stream_sources` always carries `fresh`. */
+  async function titleResponse(id: string, ctx: ReadContext): Promise<TitleDetailResponse | null> {
     const detail = await getTitle(db, id, ctx);
+    return detail === null ? null : withStreamFreshness(detail, ctx.host, streamWindow(deps));
+  }
+
+  async function detailResponse(c: Context, id: string, ctx: ReadContext): Promise<Response> {
+    const detail = await titleResponse(id, ctx);
     return detail === null ? c.json({ error: 'not_found' }, 404) : c.json(detail);
   }
 
@@ -209,6 +266,28 @@ export function moviesApiRoutes(
         ctx,
       );
       const body: TitleListResponse = { titles };
+      return c.json(body);
+    }),
+  );
+
+  /**
+   * The Stream side of the page: only the titles with a source verified on this machine inside the
+   * freshness window and not marked stale (D4, invariant 10), in the grid's TitleListItem shape.
+   * Direct streaming off is `enabled: false`, never an error, so the page can say how to turn it on.
+   */
+  api.get(
+    '/api/movies/stream',
+    withMovies(async (c, _movies, ctx) => {
+      const window = streamWindow(deps);
+      if (window === null) {
+        const off: StreamListResponse = { enabled: false, reason: 'direct_stream_off', titles: [] };
+        return c.json(off);
+      }
+      const body: StreamListResponse = {
+        enabled: true,
+        titles: await listStreamTitles(db, {}, ctx, window.since),
+        fresh_days: window.freshDays,
+      };
       return c.json(body);
     }),
   );
@@ -335,7 +414,7 @@ export function moviesApiRoutes(
       movies.events.changed('user', { fileIds: [fileId.data], titleIds: file.titleId !== null ? [file.titleId] : [] });
       const body: FileChangeResponse = {
         file_id: fileId.data,
-        title: file.titleId === null ? null : await getTitle(db, file.titleId, ctx),
+        title: file.titleId === null ? null : await titleResponse(file.titleId, ctx),
       };
       return c.json(body);
     }),
@@ -371,7 +450,7 @@ export function moviesApiRoutes(
         throw err;
       }
       const titleId = makeTitleId(target.kind, target.tmdb_id);
-      const body: FileChangeResponse = { file_id: fileId.data, title: await getTitle(db, titleId, ctx) };
+      const body: FileChangeResponse = { file_id: fileId.data, title: await titleResponse(titleId, ctx) };
       return c.json(body);
     }),
   );

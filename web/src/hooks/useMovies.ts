@@ -5,10 +5,12 @@ import {
   fetchMovies,
   fetchPlayer,
   fetchStatus,
+  fetchStreamTitles,
   fetchUnmatched,
   MOVIES_EVENTS_URL,
   type MoviesStatusResponse,
   type PlayerState,
+  type StreamListResponse,
   type TitleDetail,
   type TitleListItem,
   type UnmatchedFile,
@@ -32,6 +34,9 @@ export interface MoviesStore {
   unmatchedError: string | null;
   status: MoviesStatusResponse | null;
   player: PlayerState | null;
+  /** The Stream side's list (`GET /api/movies/stream`), fetched only while the route is on the Stream side. */
+  stream: StreamListResponse | null;
+  streamError: string | null;
   /** Re-read everything the page shows. Called after every write: the server's state wins. */
   refresh: () => void;
 }
@@ -42,9 +47,11 @@ function quiet(what: string, e: unknown): void {
 
 /**
  * The Movies page's data. Fetches only while `enabled` (the page is shown): the library (grid and
- * header), the status (unmatched badge, empty state), the player, and the title or unmatched list
- * the route asks for. Refreshes on `GET /api/movies/events` `changed`, every minute while visible,
- * and, while a play is active, the player and the open title every 5 s (one full refresh when it ends).
+ * header), the status (unmatched badge, empty state), the player, the title or unmatched list the
+ * route asks for, and on the Stream side its list. Refreshes on `GET /api/movies/events` `changed`,
+ * every minute while visible, and, while a play is active, the player and the open title every 5 s
+ * (one full refresh when it ends). Every refresh re-reads the Stream list too, so a title whose
+ * source went stale leaves the grid on the refresh after a failed play.
  */
 export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   const [titles, setTitles] = useState<TitleListItem[] | null>(null);
@@ -55,6 +62,8 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   const [unmatchedError, setUnmatchedError] = useState<string | null>(null);
   const [status, setStatus] = useState<MoviesStatusResponse | null>(null);
   const [player, setPlayer] = useState<PlayerState | null>(null);
+  const [stream, setStream] = useState<StreamListResponse | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [playTick, setPlayTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
@@ -63,6 +72,7 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   const wasPlaying = useRef(false);
   const title = route.title;
   const wantUnmatched = route.unmatched;
+  const wantStream = route.stream === true && !route.unmatched;
   const playing = player !== null && player.current !== null;
 
   useEffect(() => {
@@ -116,6 +126,22 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
     );
     return () => ac.abort();
   }, [enabled, tick]);
+
+  useEffect(() => {
+    if (!enabled || !wantStream) return;
+    const ac = new AbortController();
+    fetchStreamTitles(ac.signal).then(
+      (s) => {
+        if (ac.signal.aborted) return;
+        setStream(s);
+        setStreamError(null);
+      },
+      (e: unknown) => {
+        if (!ac.signal.aborted) setStreamError(errorCode(e));
+      },
+    );
+    return () => ac.abort();
+  }, [enabled, wantStream, tick]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -183,5 +209,5 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
     return () => ac.abort();
   }, [enabled, wantUnmatched, tick]);
 
-  return { titles, listError, detail, detailError, unmatched, unmatchedError, status, player, refresh };
+  return { titles, listError, detail, detailError, unmatched, unmatchedError, status, player, stream, streamError, refresh };
 }

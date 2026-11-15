@@ -1,9 +1,33 @@
 import { Fragment, useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
-import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { CAST_LIMIT, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, trailerTarget, type MovieEntity, type TrailerTarget } from '../../lib/movies';
+import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, streamPlay, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
+import {
+  CAST_LIMIT,
+  continueNotice,
+  creditGroups,
+  kindLabel,
+  playErrorText,
+  playLabel,
+  releaseText,
+  runtimeText,
+  seasonsText,
+  startedNotice,
+  STATE_LABEL,
+  STREAM_OPENING_NOTICE,
+  streamErrorText,
+  streamLabel,
+  streamLine,
+  TILE_LIVE_LABEL,
+  tileLive,
+  titleAction,
+  trailerTarget,
+  type MovieEntity,
+  type MoviesSide,
+  type StreamTarget,
+  type TrailerTarget,
+} from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
-import { EntityLink, FileRow, LiveStatus, TrailerButton } from './parts';
+import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from './parts';
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
@@ -21,15 +45,20 @@ export interface MovieDetailProps {
   onEntity?: (e: MovieEntity) => void;
   /** An answer is streaming: entity links wait. */
   asking?: boolean;
+  /** The side the title was opened from: on `stream`, Play streams when no file is on this machine. */
+  side?: MoviesSide;
+  /** False when GET /api/movies/stream said direct streaming is off: the stream buttons say so and are disabled. */
+  streamEnabled?: boolean;
 }
 
 /**
- * One title (`/movies/<id>`), a film or a series: poster, facts (release date, runtime or seasons,
- * genres), the Play/Resume button, the trailer, the watched flag, stars, synopsis, the review, credits (studios,
- * directors, writers, producers; creators for a series), the cast with character names, then the
- * film's files or the series' episodes, each with progress and its deleted / other-machine flag.
+ * One title (`/movies/<id>`, `/movies/<id>?side=stream`), a film or a series: poster, facts (release
+ * date, runtime or seasons, genres), the stream source line, the Play button (VLC on a file here;
+ * else the stream player), a second stream icon when both exist, the trailer, the watched flag,
+ * stars, synopsis, the review, credits, the cast with character names, then the film's files or
+ * the series' episodes, each with progress, its deleted / other-machine flag and its stream icon.
  */
-export function MovieDetail({ detail: d, player, focus = null, onChanged, onNotice, onEntity, asking = false }: MovieDetailProps) {
+export function MovieDetail({ detail: d, player, focus = null, onChanged, onNotice, onEntity, asking = false, side = 'library', streamEnabled = true }: MovieDetailProps) {
   const [watched, setWatched] = useState(d.watched);
   const [rating, setRating] = useState<number | null>(d.rating);
   const [busy, setBusy] = useState(false);
@@ -39,19 +68,22 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const [trailer, setTrailer] = useState<TrailerTarget | null>(null);
   useEffect(() => setTrailer(null), [d.id]);
 
-  const plan = playPlan(d);
-  const play = playLabel(plan, player);
+  const action = titleAction(d, side);
+  const play = action.kind === 'stream' ? streamLabel(action.target, streamEnabled) : playLabel(action.plan, player);
+  /** The stream behind a Play that plays a file here (R5.5: the file stays the default). */
+  const alt = action.kind === 'vlc' ? action.stream : null;
+  const line = streamLine(d, side);
   const current = player?.current ?? null;
   const live = current !== null && current.title_id === d.id ? current : null;
   /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is in VLC (or it is stopped). */
   const now = tileLive(d.id, player);
 
-  const run = async (action: () => Promise<string>) => {
+  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText) => {
     setBusy(true);
     try {
-      onNotice(await action());
+      onNotice(await act());
     } catch (e) {
-      onNotice(playErrorText(errorCode(e), errorDetail(e)));
+      onNotice(failed(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
       onChanged();
@@ -64,9 +96,23 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
     });
   };
 
+  /** One request: the daemon resolves and opens the player full screen in the streaming Chrome. A refresh follows either way. */
+  const streamOne = (t: StreamTarget) => {
+    void run(
+      async () => {
+        await streamPlay(t.ref);
+        return STREAM_OPENING_NOTICE;
+      },
+      (code, detail) => streamErrorText(code, detail, t, d.title),
+    );
+  };
+
   const start = () => {
-    if (plan.kind === 'continue') void run(async () => continueNotice(await continueTitle(d.id)));
-    else if (plan.kind === 'file') playOne(plan.file);
+    if (action.kind === 'stream') streamOne(action.target);
+    else if (action.kind === 'vlc') {
+      if (action.plan.kind === 'continue') void run(async () => continueNotice(await continueTitle(d.id)));
+      else playOne(action.plan.file);
+    }
   };
 
   const toggleWatched = async () => {
@@ -148,10 +194,16 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
               {kindLabel(d.kind)} · {STATE_LABEL[d.state]}
             </span>
           </p>
+          {line !== null && (
+            <p className="mv-stream-line" data-testid="stream-source">
+              {line}
+            </p>
+          )}
           <div className="mv-actions">
             <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
               <Play weight="duotone" />
             </button>
+            {alt !== null && <StreamAltButton size="page" state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => streamOne(alt)} />}
             <TrailerButton target={trailerTarget(d)} onWatch={setTrailer} />
             <button
               type="button"
@@ -191,16 +243,29 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
       </div>
       <CastList cast={d.cast} onEntity={onEntity} asking={asking} />
       {d.kind === 'tv' ? (
-        <EpisodeList detail={d} player={player} focus={focus} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} onTrailer={setTrailer} />
+        <EpisodeList
+          detail={d}
+          player={player}
+          focus={focus}
+          busy={busy}
+          side={side}
+          streamEnabled={streamEnabled}
+          onPlay={playOne}
+          onStream={streamOne}
+          onWatched={(f) => void toggleFileWatched(f)}
+          onTrailer={setTrailer}
+        />
       ) : (
-        <section className="mv-sec" aria-label="Files">
-          <h2 className="mv-h2">Files</h2>
-          <ul className="mv-files">
-            {d.files.map((f) => (
-              <FileRow key={f.id} file={f} player={player} busy={busy} onPlay={playOne} onWatched={(x) => void toggleFileWatched(x)} />
-            ))}
-          </ul>
-        </section>
+        (side === 'library' || d.files.length > 0) && (
+          <section className="mv-sec" aria-label="Files">
+            <h2 className="mv-h2">Files</h2>
+            <ul className="mv-files">
+              {d.files.map((f) => (
+                <FileRow key={f.id} file={f} player={player} busy={busy} onPlay={playOne} onWatched={(x) => void toggleFileWatched(x)} />
+              ))}
+            </ul>
+          </section>
+        )
       )}
       {trailer !== null && trailer.key !== null && <TrailerModal videoKey={trailer.key} name={trailer.name} onClose={() => setTrailer(null)} />}
     </article>
