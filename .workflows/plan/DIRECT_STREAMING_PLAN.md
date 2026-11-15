@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/direct-streaming`
 **Branch:** `feature/direct-streaming` (base: `origin/main` @ `d996abb`)
 **Phases:** 10
-**Status:** planned
+**Status:** phase 1/10 complete
 **Coordinator:** orch-direct-streaming
 
 ---
@@ -300,16 +300,16 @@ by phases 3, 5, 9 and 10, each adding only its own rows; the `GET /api/movies/:i
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Provider seed, sniffer and resolver CLI | R1 | `claude/streaming/direct` | 12 | — | HARD | `.workflows/plan/direct-streaming/phase-1.md` | — | — |
-| 2 | Resolve probe campaign: 24 providers, failures, episodes, token lifetime | R7 | `claude/streaming/direct` | 7 | 1 | HARD | `.workflows/plan/direct-streaming/phase-2.md` | — | — |
-| 3 | Registry tables, DirectStreamService, sessions and the pass-through | R1, R2 | `src/directStream`, `src/http` | 40 | 1 | HARD | `.workflows/plan/direct-streaming/phase-3.md` | — | — |
-| 4 | The player page | R2 | `web/src/stream` | 26 | 3 | HARD | `.workflows/plan/direct-streaming/phase-4.md` | — | — |
-| 5 | Streams in the movies store: plays, verified sources, state | R2, R5 | `src/movies`, `src/db` | 22 | 3 | HARD | `.workflows/plan/direct-streaming/phase-5.md` | — | — |
-| 6 | Playback probe campaign: DASH, VidNest, subtitles, expiry | R7 | `claude/streaming/direct`, `web/src/stream` | 7 | 2, 4 | HARD | `.workflows/plan/direct-streaming/phase-6.md` | — | — |
-| 7 | `/direct-stream`: title lookup, tools, skill, chat bar | R3 | `src/mcp`, `src/directStream`, `claude/skills` | 23 | 4, 5 | NORMAL | `.workflows/plan/direct-streaming/phase-7.md` | — | — |
-| 8 | `/update-cloud-source`: template reader, registry tools, skill | R4 | `claude/streaming/direct`, `src/directStream`, `src/mcp` | 19 | 2, 7 | NORMAL | `.workflows/plan/direct-streaming/phase-8.md` | — | — |
-| 9 | The Stream side of `/movies` | R5 | `web/src`, `src/http` | 24 | 4, 5 | HARD | `.workflows/plan/direct-streaming/phase-9.md` | — | — |
-| 10 | Candidates and the background prober, behind a setting | R6 | `src/directStream` | 33 | 2, 5, 8, 9 | HARD | `.workflows/plan/direct-streaming/phase-10.md` | — | — |
+| 1 | Provider seed, sniffer and resolver CLI | R1 | `claude/streaming/direct` | 12 | — | HARD | `.workflows/plan/direct-streaming/phase-1.md` | P1-NOTES-A111 | — |
+| 2 | Resolve probe campaign: 24 providers, failures, episodes, token lifetime | R7 | `claude/streaming/direct` | 7 | 1 | HARD | `.workflows/plan/direct-streaming/phase-2.md` | P1-NOTES-A112 | — |
+| 3 | Registry tables, DirectStreamService, sessions and the pass-through | R1, R2 | `src/directStream`, `src/http` | 40 | 1 | HARD | `.workflows/plan/direct-streaming/phase-3.md` | P1-NOTES-A113 | — |
+| 4 | The player page | R2 | `web/src/stream` | 26 | 3 | HARD | `.workflows/plan/direct-streaming/phase-4.md` | P1-NOTES-A114 | — |
+| 5 | Streams in the movies store: plays, verified sources, state | R2, R5 | `src/movies`, `src/db` | 22 | 3 | HARD | `.workflows/plan/direct-streaming/phase-5.md` | P1-NOTES-A115 | — |
+| 6 | Playback probe campaign: DASH, VidNest, subtitles, expiry | R7 | `claude/streaming/direct`, `web/src/stream` | 7 | 2, 4 | HARD | `.workflows/plan/direct-streaming/phase-6.md` | P1-NOTES-A116 | — |
+| 7 | `/direct-stream`: title lookup, tools, skill, chat bar | R3 | `src/mcp`, `src/directStream`, `claude/skills` | 23 | 4, 5 | NORMAL | `.workflows/plan/direct-streaming/phase-7.md` | P1-NOTES-A117 | — |
+| 8 | `/update-cloud-source`: template reader, registry tools, skill | R4 | `claude/streaming/direct`, `src/directStream`, `src/mcp` | 19 | 2, 7 | NORMAL | `.workflows/plan/direct-streaming/phase-8.md` | P1-NOTES-A118 | — |
+| 9 | The Stream side of `/movies` | R5 | `web/src`, `src/http` | 24 | 4, 5 | HARD | `.workflows/plan/direct-streaming/phase-9.md` | P1-NOTES-A119 | — |
+| 10 | Candidates and the background prober, behind a setting | R6 | `src/directStream` | 33 | 2, 5, 8, 9 | HARD | `.workflows/plan/direct-streaming/phase-10.md` | P1-NOTES-A120 | — |
 
 Phase 3 serves R1 and R2 and phase 5 serves R2 and R5. Both couplings are real: the registry
 table and the pass-through share one migration and one service, and the stream play row and the

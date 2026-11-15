@@ -1,0 +1,463 @@
+import { readFileSync } from 'node:fs';
+import { createContext, runInContext } from 'node:vm';
+import { describe, expect, it } from 'vitest';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { ChromeError } from '../../../claude/streaming/chrome.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { main, openInChrome, parseArgs, readHealth, readProviders, SEED_PATH, START_EXPRESSION, wantsStart } from '../../../claude/streaming/direct/cli.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { orderProviders } from '../../../claude/streaming/direct/order.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { embedUrl, pickSource, resolveTitle } from '../../../claude/streaming/direct/resolve.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { MEDIA_EXPRESSION, MUTE_SCRIPT, parseSniffReply } from '../../../claude/streaming/direct/sniff.mjs';
+
+type Json = Record<string, any>;
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+const MASTER = [
+  '#EXTM3U',
+  '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="subs/en.m3u8"',
+  '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=854x480,SUBTITLES="subs"',
+  '480/index.m3u8',
+  '#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160,SUBTITLES="subs"',
+  '2160/index.m3u8',
+].join('\n');
+const MPD = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+ <Period>
+  <AdaptationSet contentType="video" mimeType="video/mp4" maxHeight="1080">
+   <Representation id="v480" bandwidth="900000" width="854" height="480"/>
+   <Representation id="v1080" bandwidth="5000000" width="1920" height="1080"/>
+  </AdaptationSet>
+  <AdaptationSet contentType="text" mimeType="text/vtt" lang="en">
+   <Label>English</Label>
+   <Representation id="sub-en" bandwidth="256"><BaseURL>subs/en.vtt</BaseURL></Representation>
+  </AdaptationSet>
+ </Period>
+</MPD>`;
+
+const hit = (over: Json): Json => ({ at_s: 2, type: 'XHR', url: '', referer: 'https://vidfast.vc/', origin: 'https://vidfast.vc', user_agent: UA, document: null, status: 200, mime: null, body: null, ...over });
+const capture = (over: Json = {}): Json => ({
+  url: '', took_s: 2.3, user_agent: UA, bot_check: false, bot_check_reason: null, requests: 40, clicks: 0, popups_closed: 0, tabs_left_open: 0,
+  frames: [], hosts: [], media: { elements: 1, audible: 0 }, hits: [], ...over,
+});
+const streamCapture = (over: Json = {}): Json =>
+  capture({
+    hits: [
+      hit({ url: 'https://cdn.example/hls/master.m3u8?token=abc', mime: 'application/vnd.apple.mpegurl', body: MASTER }),
+      hit({ at_s: 2.4, url: 'https://cdn.example/hls/2160/index.m3u8?token=abc', mime: 'application/vnd.apple.mpegurl', body: '#EXTM3U\n#EXTINF:6,\nseg0.ts' }),
+      hit({ at_s: 2.6, url: 'https://cdn.example/hls/subs/seg-0.vtt', mime: 'text/vtt' }),
+    ],
+    ...over,
+  });
+const botCapture = (): Json => capture({ requests: 6, bot_check: true, bot_check_reason: 'title Just a moment...' });
+
+const provider = (name: string, over: Json = {}): Json => ({
+  name, id_kind: 'tmdb', movie: `https://${name.toLowerCase()}.example/movie/{id}`, tv: null, browser_only: false, en_subtitle: null, notes: '', ...over,
+});
+const names = (list: Json[]): string[] => list.map((p) => p.name);
+
+/** A sniffer that answers by the embed's host name; anything unknown loaded no stream. */
+function fakeSniffer(byHost: Record<string, Json | Error>) {
+  const calls: Array<{ url: string; options: unknown }> = [];
+  const sniff = async (url: string, options: unknown): Promise<Json> => {
+    calls.push({ url, options });
+    const answer = byHost[new URL(url).hostname];
+    if (answer instanceof Error) throw answer;
+    return answer ?? capture();
+  };
+  return { sniff, calls };
+}
+
+const MOVIE = { kind: 'movie', tmdbId: 550, season: null, episode: null };
+
+describe('the provider seed', () => {
+  const seed: Json[] = readProviders(readFileSync(SEED_PATH, 'utf8'));
+
+  it('holds the 24 fmovies providers, films only, nothing learned yet', () => {
+    expect(names(seed)).toEqual([
+      'VidNest', 'Videasy', 'VidKing', 'Peachify', 'Smashy', 'VidUp', 'VidFast', 'VidLink', 'VidMov', 'VidFyi', 'VidRock', 'Movies111',
+      'NonTongo', 'VidSrc', 'HyperLink', 'NexaStream', 'UltraBox', 'CloudBox', 'UpCloud', 'StreamVault', 'MediaHub', 'CloudPlay', 'StreamBoxHD', 'MovieVault',
+    ]);
+    for (const p of seed) {
+      expect(p.movie).toMatch(/^https:\/\/[^/]+\/.*\{id\}/);
+      expect(p).toMatchObject({ id_kind: 'tmdb', tv: null, browser_only: false, en_subtitle: null, notes: '' });
+    }
+  });
+
+  it('fills a template with the TMDB id, and has no address for an episode without a tv template', () => {
+    const byName = Object.fromEntries(seed.map((p) => [p.name, p]));
+    expect(embedUrl(byName.VidFast, MOVIE)).toBe('https://vidfast.pro/movie/550?autoPlay=true');
+    expect(embedUrl(byName.VidSrc, MOVIE)).toBe('https://vidsrc.me/embed/movie?tmdb=550');
+    expect(embedUrl(byName.VidFast, { kind: 'tv', tmdbId: 1399, season: 1, episode: 2 })).toBeNull();
+    const withTv = provider('Beta', { tv: 'https://beta.example/tv/{id}/{season}/{episode}' });
+    expect(embedUrl(withTv, { kind: 'tv', tmdbId: 1399, season: 1, episode: 2 })).toBe('https://beta.example/tv/1399/1/2');
+  });
+});
+
+describe('reading providers and health', () => {
+  const bad = (entries: Json[]): (() => unknown) => () => readProviders(JSON.stringify(entries));
+
+  it('refuses a providers file it cannot trust', () => {
+    expect(bad([provider('A'), provider('a')])).toThrow(/used twice/);
+    expect(bad([provider('A', { movie: 'https://a.example/movie' })])).toThrow(/\{id\}/);
+    expect(bad([provider('A', { tv: 'https://a.example/tv/{id}/{season}' })])).toThrow(/tv must be/);
+    expect(bad([provider('A', { id_kind: 'imdb' })])).toThrow(/id_kind/);
+    expect(bad([provider('A', { en_subtitle: 'yes' })])).toThrow(/en_subtitle/);
+    expect(() => readProviders('[]')).toThrow(/non-empty/);
+  });
+
+  it('accepts registry rows with extra fields and drops them', () => {
+    const [row] = readProviders(JSON.stringify([provider('A', { origin_site: 'https://ww6-fmovies.com', added_at: '2026-11-15' })]));
+    expect(Object.keys(row)).toEqual(['name', 'id_kind', 'movie', 'tv', 'browser_only', 'en_subtitle', 'notes']);
+  });
+
+  it('fills what a health entry leaves out, and refuses a list', () => {
+    expect(readHealth('{"VidFast":{"en_subtitle":true}}')).toEqual({
+      VidFast: { en_subtitle: true, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 },
+    });
+    expect(() => readHealth('[]')).toThrow(/keyed by provider name/);
+    expect(() => readHealth('{"A":{"best_height":"tall"}}')).toThrow(/best_height/);
+  });
+});
+
+describe('the order providers are tried in (R1.2)', () => {
+  it('puts a known English subtitle first, unknown next, known none last', () => {
+    const list = [provider('A'), provider('B', { en_subtitle: false }), provider('C', { en_subtitle: true }), provider('D')];
+    expect(names(orderProviders(list, {}))).toEqual(['C', 'A', 'D', 'B']);
+  });
+
+  it('ranks by English subtitle before health', () => {
+    const health = readHealth(JSON.stringify({ E1: { consecutive_failures: 3 }, E2: { last_success_at: '2026-11-15T10:00:00Z', best_height: 2160 } }));
+    expect(names(orderProviders([provider('E2', { en_subtitle: false }), provider('E1', { en_subtitle: true })], health))).toEqual(['E1', 'E2']);
+  });
+
+  it('ranks by health before quality, then quality, then list order', () => {
+    const list = [provider('P1', { en_subtitle: true }), provider('P2', { en_subtitle: true }), provider('P3', { en_subtitle: true }), provider('P4', { en_subtitle: true })];
+    const health = readHealth(
+      JSON.stringify({
+        P1: { consecutive_failures: 2, best_height: 4320 },
+        P2: { last_success_at: '2026-11-15T10:00:00Z', best_height: 720 },
+        P3: { last_success_at: '2026-11-15T10:00:00Z', best_height: 2160 },
+      }),
+    );
+    expect(names(orderProviders(list, health))).toEqual(['P3', 'P2', 'P4', 'P1']);
+    expect(names(orderProviders([provider('X'), provider('Y')], {}))).toEqual(['X', 'Y']);
+  });
+
+  it('lets what this host measured override the seed', () => {
+    const health = readHealth('{"Late":{"en_subtitle":true}}');
+    expect(names(orderProviders([provider('Early'), provider('Late', { en_subtitle: false })], health))).toEqual(['Late', 'Early']);
+  });
+});
+
+describe('picking the stream out of a capture', () => {
+  it('takes the HLS master with its headers, best height and in-manifest English track', () => {
+    const found = pickSource(streamCapture());
+    expect(found).toEqual({
+      manifest_url: 'https://cdn.example/hls/master.m3u8?token=abc',
+      manifest_kind: 'hls',
+      headers: { referer: 'https://vidfast.vc/', origin: 'https://vidfast.vc', user_agent: UA },
+      subtitles: [{ url: 'https://cdn.example/hls/subs/en.m3u8', lang: 'en', label: 'English', format: 'hls', source: 'manifest' }],
+      best_height: 2160,
+      en_subtitle: true,
+    });
+  });
+
+  it("falls back to the tab's user agent and keeps a missing header null", () => {
+    const found = pickSource(capture({ hits: [hit({ url: 'https://cdn.example/a.m3u8', origin: null, user_agent: null, body: MASTER })] }));
+    expect(found.headers).toEqual({ referer: 'https://vidfast.vc/', origin: null, user_agent: UA });
+  });
+
+  it('reads a playlist behind an address that does not look like one', () => {
+    const found = pickSource(capture({ hits: [hit({ url: 'https://vidnest.example/v/master.txt', mime: 'text/plain', body: MASTER })] }));
+    expect(found.manifest_kind).toBe('hls');
+    expect(found.best_height).toBe(2160);
+  });
+
+  it('takes a DASH manifest with its text track and a separate .srt request', () => {
+    const found = pickSource(
+      capture({
+        hits: [
+          hit({ url: 'https://dash.example/v/manifest.mpd', mime: 'application/dash+xml', body: MPD }),
+          hit({ at_s: 3, url: 'https://subs.example/fight-club/English.srt', mime: 'application/x-subrip' }),
+        ],
+      }),
+    );
+    expect(found.manifest_kind).toBe('dash');
+    expect(found.best_height).toBe(1080);
+    expect(found.subtitles).toEqual([
+      { url: 'https://dash.example/v/subs/en.vtt', lang: 'en', label: 'English', format: 'vtt', source: 'manifest' },
+      { url: 'https://subs.example/fight-club/English.srt', lang: 'en', label: null, format: 'srt', source: 'request' },
+    ]);
+    expect(found.en_subtitle).toBe(true);
+  });
+
+  it('finds no stream in refused requests or an empty capture', () => {
+    expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/master.m3u8', status: 403, body: MASTER })] }))).toBeNull();
+    expect(pickSource(capture())).toBeNull();
+  });
+});
+
+describe('resolving a title (R1.1, R1.3)', () => {
+  it('skips a provider that answers with a bot check, records it, and tries the next with the same client', async () => {
+    const { sniff, calls } = fakeSniffer({ 'alpha.example': botCapture(), 'beta.example': streamCapture() });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff });
+    expect(result.ok).toBe(true);
+    expect(result.source.provider).toBe('Beta');
+    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([
+      ['Alpha', 'bot_check'],
+      ['Beta', 'resolved'],
+    ]);
+    expect(result.attempts[0].detail).toBe('title Just a moment...');
+    expect(calls.map((c) => c.url)).toEqual(['https://alpha.example/movie/550', 'https://beta.example/movie/550']);
+    expect(calls[1]?.options).toBe(calls[0]?.options);
+  });
+
+  it('keeps a stream the real Chrome reached even when a check was seen on the way', async () => {
+    const { sniff } = fakeSniffer({ 'alpha.example': streamCapture({ bot_check: true, bot_check_reason: 'frame challenges.cloudflare.com' }) });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha')], sniff });
+    expect(result.attempts.map((a: Json) => a.outcome)).toEqual(['resolved']);
+  });
+
+  it('answers no_source with every provider and its outcome when nothing resolves', async () => {
+    const { sniff, calls } = fakeSniffer({ 'beta.example': botCapture(), 'delta.example': new Error('boom') });
+    const providers = [provider('Alpha'), provider('Beta'), provider('Gamma', { browser_only: true }), provider('Delta')];
+    const result = await resolveTitle(MOVIE, { providers, sniff });
+    expect(result).toMatchObject({ ok: false, kind: 'movie', tmdb_id: 550, source: null, error: 'no_source' });
+    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([
+      ['Alpha', 'no_stream'],
+      ['Beta', 'bot_check'],
+      ['Gamma', 'skipped_browser_only'],
+      ['Delta', 'error'],
+    ]);
+    expect(calls.map((c) => new URL(c.url).hostname)).not.toContain('gamma.example');
+  });
+
+  it('stops at once when Chrome cannot be started', async () => {
+    const { sniff, calls } = fakeSniffer({ 'alpha.example': new ChromeError('no_chrome', 'chrome.exe was not found'), 'beta.example': streamCapture() });
+    const result = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff });
+    expect(result).toMatchObject({ ok: false, error: 'no_chrome', source: null });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('asks only providers with an episode template for an episode', async () => {
+    const { sniff, calls } = fakeSniffer({ 'beta.example': streamCapture() });
+    const providers = [provider('Alpha'), provider('Beta', { tv: 'https://beta.example/tv/{id}/{season}/{episode}' })];
+    const result = await resolveTitle({ kind: 'tv', tmdbId: 1399, season: 1, episode: 2 }, { providers, sniff });
+    expect(result).toMatchObject({ ok: true, kind: 'tv', tmdb_id: 1399, season: 1, episode: 2 });
+    expect(result.attempts.map((a: Json) => a.outcome)).toEqual(['skipped_no_template', 'resolved']);
+    expect(calls.map((c) => c.url)).toEqual(['https://beta.example/tv/1399/1/2']);
+  });
+
+  it('tries only the named provider with --only, and says so when there is none', async () => {
+    const { sniff, calls } = fakeSniffer({ 'beta.example': streamCapture() });
+    const one = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff, only: 'beta' });
+    expect(calls.map((c) => c.url)).toEqual(['https://beta.example/movie/550']);
+    expect(one.source.provider).toBe('Beta');
+    const none = await resolveTitle(MOVIE, { providers: [provider('Alpha')], sniff, only: 'Zeta' });
+    expect(none).toMatchObject({ ok: false, error: 'unknown_provider', attempts: [] });
+  });
+
+  it('tries no further provider once its deadline has passed, and says deadline, not no_source', async () => {
+    const { sniff, calls } = fakeSniffer({ 'gamma.example': streamCapture() });
+    let now = 0;
+    const slowSniff = async (url: string, options: Json) => {
+      now += 20_000;
+      return sniff(url, options);
+    };
+    const providers = [provider('Alpha'), provider('Beta'), provider('Gamma')];
+    const result = await resolveTitle(MOVIE, { providers, sniff: slowSniff, clock: () => now, deadlineS: 30 });
+    expect(result).toMatchObject({ ok: false, error: 'deadline', source: null });
+    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([
+      ['Alpha', 'no_stream'],
+      ['Beta', 'no_stream'],
+    ]);
+    expect(calls.map((c) => new URL(c.url).hostname)).toEqual(['alpha.example', 'beta.example']);
+    expect(parseArgs(['resolve', 'movie', '550', '--deadline-s', '30'])).toMatchObject({ deadlineS: 30 });
+    expect(parseArgs(['resolve', 'movie', '550'])).toMatchObject({ deadlineS: null });
+    expect(() => parseArgs(['resolve', 'movie', '550', '--deadline-s', '0'])).toThrow(/whole number of seconds/);
+  });
+});
+
+describe('the command', () => {
+  const run = async (argv: string[], io: Json = {}): Promise<{ code: number; printed: Json[] }> => {
+    const printed: Json[] = [];
+    const code = await main(argv, { print: (value: Json) => printed.push(value), ...io });
+    return { code, printed };
+  };
+
+  it('resolve prints one JSON object naming the provider, the manifest, its headers and the subtitles (R1.1)', async () => {
+    const { sniff } = fakeSniffer({ 'vidfast.pro': streamCapture() });
+    const { code, printed } = await run(['resolve', 'movie', '550'], { sniff });
+    expect(code).toBe(0);
+    expect(printed).toHaveLength(1);
+    const out = printed[0] as Json;
+    expect(Object.keys(out)).toEqual(['ok', 'kind', 'tmdb_id', 'season', 'episode', 'source', 'attempts']);
+    expect(Object.keys(out.source)).toEqual(['provider', 'embed_url', 'manifest_url', 'manifest_kind', 'headers', 'subtitles', 'best_height', 'en_subtitle', 'took_s']);
+    expect(out).toMatchObject({
+      ok: true,
+      kind: 'movie',
+      tmdb_id: 550,
+      season: null,
+      episode: null,
+      source: {
+        provider: 'VidFast',
+        embed_url: 'https://vidfast.pro/movie/550?autoPlay=true',
+        manifest_url: 'https://cdn.example/hls/master.m3u8?token=abc',
+        manifest_kind: 'hls',
+        headers: { referer: 'https://vidfast.vc/', origin: 'https://vidfast.vc', user_agent: UA },
+        subtitles: [{ lang: 'en', format: 'hls', source: 'manifest' }],
+        best_height: 2160,
+        en_subtitle: true,
+      },
+    });
+    expect(out.attempts).toHaveLength(7);
+    expect(out.attempts.slice(0, 6).every((a: Json) => a.outcome === 'no_stream')).toBe(true);
+    expect(typeof out.source.took_s).toBe('number');
+  });
+
+  it('resolve exits 1 with no_source and every attempt when nothing resolves', async () => {
+    const { sniff } = fakeSniffer({});
+    const { code, printed } = await run(['resolve', 'movie', '550'], { sniff });
+    expect(code).toBe(1);
+    expect(printed[0]).toMatchObject({ ok: false, error: 'no_source', source: null });
+    expect(printed[0]?.attempts).toHaveLength(24);
+  });
+
+  it('providers prints the order resolve would try, with what this host measured (R1.2)', async () => {
+    const HEALTH = JSON.stringify({
+      VidNest: { en_subtitle: false },
+      VidLink: { en_subtitle: true, best_height: 1080, consecutive_failures: 0, last_success_at: '2026-11-15T10:00:00Z' },
+      VidFast: { en_subtitle: true, best_height: 2160, consecutive_failures: 0, last_success_at: '2026-11-15T10:00:00Z' },
+      Videasy: { en_subtitle: true, consecutive_failures: 3 },
+    });
+    const readText = (file: string): string => (file === 'health.json' ? HEALTH : readFileSync(file, 'utf8'));
+    const { code, printed } = await run(['providers', '--health', 'health.json'], { readText });
+    expect(code).toBe(0);
+    const order = names(printed[0]?.providers);
+    expect(order.slice(0, 4)).toEqual(['VidFast', 'VidLink', 'Videasy', 'VidKing']);
+    expect(order.at(-1)).toBe('VidNest');
+    expect(printed[0]?.providers[0].health).toMatchObject({ best_height: 2160 });
+  });
+
+  it('refuses bad input with exit 2 and says why', async () => {
+    for (const argv of [['resolve', 'film', '550'], ['resolve', 'tv', '1399'], ['resolve', 'movie', '550', '1', '1'], ['resolve', 'movie', '550', '--fast'], ['open', 'https://example.com/'], ['providers', '--only', 'x'], []]) {
+      const { code, printed } = await run(argv);
+      expect(code, argv.join(' ')).toBe(2);
+      expect(printed[0]).toMatchObject({ ok: false, error: 'usage' });
+    }
+    const { code, printed } = await run(['providers', '--providers', 'p.json'], { readText: () => '[{"name":"A"}]' });
+    expect(code).toBe(2);
+    expect(printed[0]).toMatchObject({ ok: false, error: 'bad_providers' });
+  });
+
+  it('open hands a daemon page to Chrome, full screen when asked', async () => {
+    const opened: unknown[] = [];
+    const open = async (url: string, options: Json): Promise<Json> => {
+      opened.push([url, options]);
+      return { ok: true, url, fullscreen: options.fullscreen };
+    };
+    const { code } = await run(['open', 'http://localhost:7317/stream/abc', '--fullscreen'], { open });
+    expect(code).toBe(0);
+    expect(opened).toEqual([['http://localhost:7317/stream/abc', { fullscreen: true }]]);
+    expect(parseArgs(['open', 'http://127.0.0.1:7317/x'])).toEqual({ command: 'open', url: 'http://127.0.0.1:7317/x', fullscreen: false });
+  });
+
+  it('a full-screen open starts the film with sound through the page, and never for a muted check (D2)', async () => {
+    const asked: Array<[string, string, Json]> = [];
+    let tries = 0;
+    const evaluate = async (origin: string, expression: string, options: Json): Promise<unknown> => {
+      asked.push([origin, expression, options]);
+      if (expression !== START_EXPRESSION) return 'ok';
+      tries += 1;
+      return tries < 3 ? 'waiting' : 'started';
+    };
+    const wait = async (): Promise<void> => {};
+    const played = await openInChrome('http://localhost:7317/stream/abc', { fullscreen: true }, { evaluate, wait });
+    expect(played).toEqual({ ok: true, url: 'http://localhost:7317/stream/abc', fullscreen: true, started: true });
+    expect(asked[0]).toEqual(['http://localhost:7317', "location.assign(\"/stream/abc\"); 'ok'", { show: true, windowState: 'fullscreen' }]);
+    expect(asked.slice(1).map((a) => a[1])).toEqual([START_EXPRESSION, START_EXPRESSION, START_EXPRESSION]);
+
+    asked.length = 0;
+    const muted = await openInChrome('http://127.0.0.1:7317/stream/abc?muted=1', { fullscreen: true }, { evaluate, wait });
+    expect(muted).toMatchObject({ ok: true, started: null });
+    expect(asked.map((a) => a[1])).not.toContain(START_EXPRESSION);
+    expect(wantsStart('http://localhost:7317/stream/abc', false)).toBe(false);
+    expect(wantsStart('http://localhost:7317/stream/abc?muted=1', true)).toBe(false);
+
+    const never = await openInChrome('http://localhost:7317/stream/abc', { fullscreen: true }, { evaluate: async (_o: string, e: string) => (e === START_EXPRESSION ? 'waiting' : 'ok'), wait });
+    expect(never).toMatchObject({ ok: true, started: false });
+  });
+});
+
+describe('the sniffer', () => {
+  const parses = (expression: string): void => {
+    expect(() => new Function(`return ${expression}`)).not.toThrow();
+  };
+
+  it('reads its one line of JSON, and turns a named failure into a ChromeError', () => {
+    expect(() => parseSniffReply('starting\n{"error":"no_chrome","detail":"chrome.exe was not found"}\n')).toThrow(ChromeError);
+    try {
+      parseSniffReply('{"error":"chrome_not_reachable","detail":"x"}');
+    } catch (err) {
+      expect((err as { code: string }).code).toBe('chrome_not_reachable');
+    }
+    expect(() => parseSniffReply('garbage')).toThrow(/unreadable/);
+    const reply = parseSniffReply('{"url":"u","hits":null,"frames":"page https://a.example/","bot_check":true,"bot_check_reason":"title Just a moment..."}');
+    expect(reply).toMatchObject({ hits: [], frames: ['page https://a.example/'], hosts: [], bot_check: true, media: { elements: 0, audible: 0 } });
+  });
+
+  it('keeps a page silent: media cannot be unmuted and Web Audio stays suspended', async () => {
+    parses(MUTE_SCRIPT);
+    parses(MEDIA_EXPRESSION);
+    class FakeMedia {
+      #muted = false;
+      paused = true;
+      get muted(): boolean {
+        return this.#muted;
+      }
+      set muted(value: boolean) {
+        this.#muted = value;
+      }
+      play(): Promise<void> {
+        this.paused = false;
+        return Promise.resolve();
+      }
+    }
+    class FakeAudioContext {
+      state = 'running';
+      suspend(): Promise<void> {
+        this.state = 'suspended';
+        return Promise.resolve();
+      }
+      resume(): Promise<void> {
+        this.state = 'running';
+        return Promise.resolve();
+      }
+    }
+    const page: Json = { HTMLMediaElement: FakeMedia, AudioContext: FakeAudioContext, addEventListener: () => undefined };
+    page.window = page;
+    createContext(page);
+    runInContext(MUTE_SCRIPT, page);
+    const media = new FakeMedia();
+    media.muted = false;
+    await media.play();
+    expect(media.paused).toBe(false);
+    expect(media.muted).toBe(true);
+    const Audio = page.AudioContext as new () => FakeAudioContext;
+    const audio = new Audio();
+    await audio.resume();
+    expect(audio.state).toBe('suspended');
+  });
+
+  it('never raises a window and never disguises the client', () => {
+    const script = readFileSync(new URL('../../../claude/streaming/direct/sniff.ps1', import.meta.url), 'utf8');
+    for (const forbidden of ['bringToFront', 'setWindowBounds', 'AppActivate', 'SendKeys', 'setUserAgentOverride', '--user-agent', '--mute-audio']) {
+      expect(script, forbidden).not.toContain(forbidden);
+    }
+    expect(script).toContain('background = $true');
+    expect(script).toContain('Page.addScriptToEvaluateOnNewDocument');
+  });
+});

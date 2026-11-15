@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-14
-**Total Active Tasks**: 6
+**Last Updated**: 2026-11-15
+**Total Active Tasks**: 15
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 6
+- P1 High: 15
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
-- Completed: 106
+- Blocked: 7
+- Completed: 107
 
 ---
 
@@ -76,6 +76,88 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
+- [ ] **P1-NOTES-A112** Phase 2: Resolve probe campaign: 24 providers, failures, episodes, token lifetime
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/known-titles.json` (the one known-titles list), `claude/streaming/direct/campaign.mjs`, `docs/plans/2026-11-15-direct-streaming-findings.md` (its tables, the `campaign:timings` block, the `## Playback` heading for phase 6), the seed fields the findings fill (`tv`, `en_subtitle`, `browser_only`, `notes`), and the `-Inspect` switch in phase 1's `sniff.ps1` / `sniff.mjs` (quoted as phase 1 writes them). Diagnoses Videasy, VidKing and CloudPlay by name. Exit criteria: `campaign.mjs check` prints `"ok": true`; the findings file has a row for each of the 24 providers and the sections "Why three returned nothing" (each with a named cause), "Series episodes" and "Token lifetime" with measured data; the seed carries the measured values; `npm run typecheck`, `npm test` and `npm run docs:check` pass.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 2 of 10)
+  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
+  - **Depends on**: P1-NOTES-A111
+  - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
+- [ ] **P1-NOTES-A113** Phase 3: Registry tables, DirectStreamService, sessions and the pass-through
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under "Daemon" in Shared contracts; `src/config.ts`, `src/deps.ts`, `src/daemon.ts`, `src/http/app.ts` wiring; migration `0020`; the "Direct streaming" section of `docs/guide/streaming.md` (heading, "The resolver" from phase 1's draft, providers, sessions and the pass-through, answers), `docs/guide/architecture.md` rows, the configuration section, the `scripts/docs/httpRoutes.ts` group, the `README.md` line; `verify.sh up --direct-stream`, `scripts/direct-stream/journey.sh`, `features/direct-streaming.md` and its README row. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; migration `0020_stream_providers` applies on a fresh database; J1-J8 pass and the neighbor check passes.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 3 of 10)
+  - **Satisfies**: R1, R2 — R1: "Follow D7 for build order: resolver, provider registry, [...] first" with "D1-D4 are the owner's and binding (English subtitle sources first; [...])"; R2: "daemon proxy and player page" with "one click to a full-screen film" · criteria: R1.4, R2.1, R2.2, R2.6
+  - **Depends on**: P1-NOTES-A111
+  - **Plan**: `.workflows/plan/P1-NOTES-A113.md`
+- [ ] **P1-NOTES-A114** Phase 4: The player page
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `web/stream.html`, `web/src/stream/*`, `web/src/testing/streamFakes.ts`, the Vite input, `src/http/static.ts` for `/stream/<id>`, `package.json` (hls.js, dash.js); `?muted=1`, `window.notesdStream` (with `start()`), the refresh rule on `X-Notesd-Upstream`; jsdom tests; the "The player" subsection of `docs/guide/streaming.md`; architecture's Pages row; the player lines of `features/direct-streaming.md`; `scripts/stream/{make-hls-fixture.sh,player.steps.mjs}`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and `npm run build` pass; `web/dist/stream.html` exists and loads `/assets/stream-*.js`; the `player.steps.mjs` transcript has `J1 PASS`, `API PASS`, `J3 PASS`, `J2 PASS`, `MUTED PASS` and `CDN PASS`.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 4 of 10)
+  - **Satisfies**: R2 — "daemon proxy and player page" with "one click to a full-screen film" · criteria: R2.3, R2.5
+  - **Depends on**: P1-NOTES-A113
+  - **Plan**: `.workflows/plan/P1-NOTES-A114.md`
+- [ ] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under "Movies store" in Shared contracts; `src/db/schema.ts` + migration `0021`; `src/movies/{repo,types,state,read,service,streams}.ts` (including `TitleDetail.stream_sources` and the one freshness rule); the position route in `src/http/directStreamApi.ts`; the hooks passed to phase 3's builder in `src/daemon.ts`; the position route and the `GET /api/movies/:id` `stream_sources` sentence in `scripts/docs/httpRoutes.ts`; `docs/guide/movies.md` ("What is stored", "Watch state", "Two machines", "Where the code is"); integration tests. Exit criteria: `npm run typecheck`, `npm test`, `npm run test:int` and `npm run docs:check` pass; J1, J2 and J3 pass; the movies journey still passes.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 5 of 10)
+  - **Satisfies**: R2, R5 — R2: "daemon proxy and player page" with "one click to a full-screen film"; R5: "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R2.4, R5.4 (store half)
+  - **Depends on**: P1-NOTES-A113
+  - **Plan**: `.workflows/plan/P1-NOTES-A115.md`
+- [ ] **P1-NOTES-A116** Phase 6: Playback probe campaign: DASH, VidNest, subtitles, expiry
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/{playcheck.mjs,playgate.mjs}` (the wrapper runs under `verify.sh up --web --direct-stream` with `NOTESD_DIRECT_STREAM_CLI`; pages open as `/stream/<id>?muted=1` in a normal window, never full screen), the findings file's "Playback" section, `browser_only` in the seed, and fixes in `web/src/stream/*` that a finding demands. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; the findings Playback section says, with measured numbers, whether DASH (VidLink), VidNest and an English subtitle play in our page, and records the forced-expiry refresh-and-continue result; `playcheck.mjs audit` passes, so every provider that cannot play outside its own page is `browser_only`.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 6 of 10)
+  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
+  - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
+- [ ] **P1-NOTES-A117** Phase 7: `/direct-stream`: title lookup, tools, skill, chat bar
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: title lookup from words (`src/directStream/{match,lookup}.ts`; `StreamTarget` is phase 3's `StreamRef`), `direct_stream_find` and `direct_stream_play` in `src/mcp/directStreamTools.ts` (with `DirectStreamToolDeps`, `playFailure` reading `DirectStreamError`), `DIRECT_STREAM_TOOL_NAMES` and captions in `src/chat/status.ts`, `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `scope: 'all'` and the stream play source in `src/mcp/movieTools.ts`, `claude/skills/direct-stream/SKILL.md`, `SKILL_NAMES` in `scripts/install.sh`, the caption, allow-list and behaviour lines in `docs/guide/chat.md`, `npm run docs:gen`, the `/direct-stream` lines of `docs/guide/streaming.md`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the integration file pass; J1 to J5 and the neighbor check pass; `scripts/install.sh` links `~/.claude/skills/direct-stream`. The full-screen play with sound is the owner's to run (Follow-ups).
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 7 of 10)
+  - **Satisfies**: R3 — "the /direct-stream [...] skills first" · criteria: R3.1, R3.2, R3.3
+  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
+  - **Plan**: `.workflows/plan/P1-NOTES-A117.md`
+- [ ] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/templates.mjs` + the `templates <site url>` CLI command (a `parseArgs` case and a `main` branch quoted against phase 1), `src/directStream/updateSource.ts` (reads phase 2's `known-titles.json`), `DirectStreamRepo.insertProviders`, `DirectStreamService.updateSource(site)`, `direct_stream_sources` and `direct_stream_update_source` (through `DirectStreamToolDeps.providers` / `updateSource`), `CLAUDE_CODE_ONLY_TOOL_NAMES`, `claude/skills/update-cloud-source/SKILL.md`, `update-cloud-source` in `SKILL_NAMES`, the `/update-cloud-source` subsection and the chat.md row edits. Exit criteria: the reader prints the 24 fmovies providers from the real chunk and the live site; with a fake runner against real Postgres, new providers are inserted once with `origin_site`, existing rows read back unchanged, each new one is probed against the known titles, and every unreadable-site case leaves the table identical; the two tools are registered and the chat bar's allow list has `direct_stream_sources` and not `direct_stream_update_source`; `npm test`, `npm run typecheck` and `npm run docs:check` pass.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 8 of 10)
+  - **Satisfies**: R4 — "and /update-cloud-source skills first" · criteria: R4.1, R4.2
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A117
+  - **Plan**: `.workflows/plan/P1-NOTES-A118.md`
+- [ ] **P1-NOTES-A119** Phase 9: The Stream side of `/movies`
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `GET /api/movies/stream` (through phase 5's `listStreamTitles`, `streamFreshSince`, `isFreshStreamSource`), the `fresh` flag on title answers, the Library / Stream switch in `MoviesPage`'s toolbar (icon-only, Phosphor), the Stream grid, the title page's stream line and Play, episode rows that verify on click, the stale answer, `web/src/lib/{movies,route}.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` (stream types, widened `PlayView`, change reason `stream`), web tests, `docs/guide/movies.md` ("The Movies page", "The Stream side"), `scripts/docs/shots/movies.mjs` (a read-only live picture), the movies feature map. Its Proof runs `verify.sh up --web --direct-stream`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; J1-J6 pass on a throwaway daemon; `/movies` has a Library / Stream switch whose Stream side lists only this host's fresh verified titles, streams on Play with one request, drops a title that failed, and keeps a local file as the default Play.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 9 of 10)
+  - **Satisfies**: R5 — "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R5.1, R5.2, R5.3, R5.4 (page half), R5.5
+  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
+  - **Plan**: `.workflows/plan/P1-NOTES-A119.md`
+- [ ] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: TMDB list calls in `src/movies/tmdb.ts`, candidates, `src/directStream/{prober,idle,candidates}.ts`, `ProbeRepo` in `src/directStream/repo.ts` (freshness through phase 5's `freshStreamSourceSql`), migration `0022`, the prober settings (in phase 3's `DirectStreamConfig`), `GET /api/stream/prober`, `src/background.ts`, `verify.sh --prober` on top of `--direct-stream`, the fake TMDB's lists, "The prober" subsection, configuration rows. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the new integration file pass. A `--direct-stream` throwaway daemon with the prober setting unset reports `off_reason: "setting_off"` and writes no probe row; with `--direct-stream --prober` it lists the fake TMDB's titles as ranked candidates and holds every pass at `not_idle` with zero probes. Unit tests prove off, not-idle, budget (probes, seconds and each resolve's deadline), catalog size and re-check order.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 10 of 10)
+  - **Satisfies**: R6 — "background prober after" with "D5 and D6 are proposed and not yet confirmed by the owner: plan them as late phases behind a setting, and list them as the owner's to confirm" · criteria: R6.1, R6.2, R6.3
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A115, P1-NOTES-A118, P1-NOTES-A119
+  - **Plan**: `.workflows/plan/P1-NOTES-A120.md`
+
 ### [P2] Medium
 
 ### [P3] Low
@@ -86,6 +168,27 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A111** Phase 1: Provider seed, sniffer and resolver CLI
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/{providers.seed.json,sniff.ps1,sniff.mjs,order.mjs,resolve.mjs,cli.mjs}` (with `resolve --deadline-s` and the full-screen `open` that calls the page's `window.notesdStream.start()` as a user gesture); unit tests under `tests/unit/scripts/` with a fake sniffer; fixtures under `tests/fixtures/direct-stream/`; the resolver entry in `.claude/skills/verify-notesd/features/streaming.md`. The sniffer keeps the spike's behaviour and adds: the tab's user agent, a bot-check flag, a background tab, muted pages. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; J1 to J3 pass; J4 prints a `resolved` source for Fight Club on the owner's machine with no window brought forward and nothing heard.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 1 of 10)
+  - **Satisfies**: R1 — "Follow D7 for build order: resolver, provider registry, [...] first" with "D1-D4 are the owner's and binding (English subtitle sources first; [...])" · criteria: R1.1, R1.2, R1.3
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A111.md`
+  - **Completed**: 2026-11-15 20:04
+  - **Method**: /implement
+  - **Files**: claude/streaming/direct/providers.seed.json, claude/streaming/direct/sniff.ps1, claude/streaming/direct/sniff.mjs, claude/streaming/direct/order.mjs, claude/streaming/direct/resolve.mjs, claude/streaming/direct/cli.mjs, tests/unit/scripts/directResolve.test.ts, tests/fixtures/direct-stream/providers.json, tests/fixtures/direct-stream/check.html, tests/fixtures/direct-stream/stream.html, tests/fixtures/direct-stream/master.m3u8, .claude/skills/verify-notesd/features/streaming.md, .workflows/todos.md, .workflows/plan/DIRECT_STREAMING_PLAN.md, .workflows/plan/P1-NOTES-A111.md, .workflows/plan/P1-NOTES-A112.md, .workflows/plan/P1-NOTES-A113.md, .workflows/plan/P1-NOTES-A114.md, .workflows/plan/P1-NOTES-A115.md, .workflows/plan/P1-NOTES-A116.md, .workflows/plan/P1-NOTES-A117.md, .workflows/plan/P1-NOTES-A118.md, .workflows/plan/P1-NOTES-A119.md, .workflows/plan/P1-NOTES-A120.md
+  - **Proof**: verified-after-fix — 4 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-direct-streaming/bd4bba11-4354-4294-ab83-fe3221140cf4/scratchpad/proof-p1
+  - **Drift**:
+    - sniff.ps1 differs from the plan's code block in two places (see Decided). Phase 2's plan quotes sniff.ps1 anchors ($pageSessions, the media block, Close-Tab, the final Write-Output): those are unchanged; the additions are after `Page.enable`, in the `$events` pattern, and in the watch loop.
+    - cli.mjs and sniff.mjs are mode 755, matching claude/streaming/cli.mjs.
+    - One extra Gotchas bullet in features/streaming.md describing the fix.
+    - Live J4: VidNest ended no_stream with 3 media hits, Videasy/VidKing/Peachify no_stream (about 32 s each); diagnosing providers is phase 2's work.
+  - **Decided**:
+    - Where the ten phase tasks live → the repo's single root .workflows/todos.md with NOTES ids (A111 to A120), not one todos.md per Package cell (rung 6: every earlier plan set in this repo is tracked there)
+    - The planned sniffer failed its own J3 on the real Chrome (a background tab is hidden: Chrome drops Input.dispatchMouseEvent to it, and its title never arrives as Target.targetInfoChanged) → sniff.ps1 turns on Emulation.setFocusEmulationEnabled for its tab and reads document.title from the page after DOMContentLoaded/load (rung 2: exit criteria require J3; inside invariants 2 and 7: no window raised, no header, user agent or click added to pass a check)
 - [x] **P1-NOTES-A109** Phase 8: Docs, feature map, verify fixtures, live config
   - **Difficulty**: NORMAL
   - **Type**: Feature

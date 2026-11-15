@@ -1,0 +1,38 @@
+// The order providers are tried in, the one place it lives (decision D1): a provider known to
+// offer an English subtitle first, unknown next, known without one last; then health; then the
+// best quality; then the quickest; then the order of the list.
+
+/** 0: has an English subtitle, 1: not known, 2: has none. A measured value beats the seed's. */
+export function englishTier(provider, health) {
+  const measured = health?.en_subtitle;
+  const known = measured === true || measured === false ? measured : provider.en_subtitle;
+  if (known === true) return 0;
+  if (known === false) return 2;
+  return 1;
+}
+
+/** 0: worked last time; 1: no verdict yet; 2 and up: failed that many times in a row (capped). */
+export function healthRank(health) {
+  if (!health) return 1;
+  const failures = health.consecutive_failures ?? 0;
+  if (failures > 0) return 1 + Math.min(failures, 10);
+  return health.last_success_at ? 0 : 1;
+}
+
+/** The providers in the order a resolve tries them. Does not drop any; the resolver skips. */
+export function orderProviders(providers, health = {}) {
+  const keyed = providers.map((provider, index) => {
+    const h = Object.hasOwn(health, provider.name) ? health[provider.name] : null;
+    return {
+      provider,
+      key: [englishTier(provider, h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
+    };
+  });
+  keyed.sort((a, b) => {
+    for (let i = 0; i < a.key.length; i++) {
+      if (a.key[i] !== b.key[i]) return a.key[i] < b.key[i] ? -1 : 1;
+    }
+    return 0;
+  });
+  return keyed.map((entry) => entry.provider);
+}
