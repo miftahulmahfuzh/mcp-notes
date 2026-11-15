@@ -231,17 +231,18 @@ time it wrote this file (at least the T+60 check). Phase 6 reruns
 <!-- campaign:lifetime:begin -->
 | Provider | Started (UTC) | Claimed expiry | Valid at least (min) | First failure (min) | Checks | State |
 | --- | --- | --- | --- | --- | --- | --- |
-| VidFast (hls, moon.goldenkite.top) | 2026-11-15T13:11:00.127Z | 2026-11-15T19:10:57.000Z (360 min) | 120 | — | 9 | running |
+| VidFast (hls, moon.goldenkite.top) | 2026-11-15T13:11:00.127Z | 2026-11-15T19:10:57.000Z (360 min) | 180 | — | 10 | running |
 
 Log: `~/.local/state/notesd-direct-campaign/lifetime-20261115T131053Z.jsonl`.
 <!-- campaign:lifetime:end -->
 
 **Reading:** The address claims its own expiry in its `s` query value: 360 minutes after the
-resolve. When this file was written the watch had passed its 120-minute check (master, variant
-and first segment all answering, 9 checks, no failure) and was still running, so the measured
-lower bound is 120 minutes and nothing yet contradicts the claimed 6 hours; the table above shows
-the latest state, and phase 6 rewrites it from the finished log
-(`~/.local/state/notesd-direct-campaign/lifetime-20261115T131053Z.jsonl`). For phases 3 and 4: a
+resolve. When phase 6 last rewrote the table (2026-11-15T16:30Z) the watch had passed its
+180-minute check (master, variant and first segment all answering, 10 checks, no failure) and was
+still running, so the measured lower bound is 180 minutes and nothing yet contradicts the claimed
+6 hours. The watch ends after its 420-minute check; rerun `campaign.mjs report ... --lifetime` on
+the log (`~/.local/state/notesd-direct-campaign/lifetime-20261115T131053Z.jsonl`) for the final
+row. For phases 3 and 4: a
 film fits inside one token with room to spare, so the refresh on a 401/403/410 from the stream
 host is the exception path, not the normal one; a session kept past about six hours (paused
 overnight) must expect its first request to be refused and to refresh. Measured for VidFast's
@@ -553,7 +554,7 @@ For phase 10's probe budgets. Seconds are from opening the embed to the resolver
     "provider": "VidFast",
     "started_at": "2026-11-15T13:11:00.127Z",
     "claimed_minutes": 360,
-    "last_ok_min": 120,
+    "last_ok_min": 180,
     "first_failure_min": null,
     "finished": false
   }
@@ -563,6 +564,97 @@ For phase 10's probe budgets. Seconds are from opening the embed to the resolver
 
 ## Playback
 
-Phase 6 fills this section: whether DASH (VidLink), VidNest and an English subtitle track play in
-the daemon's player page, with the measured numbers, and a forced-expiry check of
-refresh-and-continue.
+<!-- playcheck:begin -->
+<!-- playcheck:rows [{"check":"play","provider":"VidFast","verdict":"plays","cause":null,"attempts":1,"at":"2026-11-15T16:19:34.675Z"},{"check":"dash","provider":"VidLink","verdict":"plays","cause":null,"attempts":3,"at":"2026-11-15T16:30:52.672Z"},{"check":"vidnest","provider":"VidNest","verdict":"plays","cause":null,"attempts":2,"at":"2026-11-15T16:31:20.335Z"},{"check":"subtitle","provider":"HyperLink","verdict":"plays","cause":null,"attempts":1,"at":"2026-11-15T16:29:22.999Z"},{"check":"subtitle","provider":"NexaStream","verdict":"plays","cause":null,"attempts":2,"at":"2026-11-15T16:44:18.981Z"},{"check":"subtitle","provider":"Smashy","verdict":"plays","cause":null,"attempts":1,"at":"2026-11-15T16:27:56.428Z"},{"check":"subtitle","provider":"VidLink","verdict":"inconclusive","cause":"no_english_offered","attempts":1,"at":"2026-11-15T16:22:52.940Z"},{"check":"subtitle","provider":"VidRock","verdict":"needs_fix","cause":"media error 4","attempts":5,"at":"2026-11-15T16:41:48.836Z"},{"check":"expiry","provider":"VidFast","verdict":"plays","cause":null,"attempts":1,"at":"2026-11-15T16:23:30.970Z"}] -->
+
+| Check | Provider | Title | Verdict | Cause | Kind | Video | Played s | First frame s | Dropped/frames | Buffered s | English subtitle | Levels | Expiry | Runs | When (UTC) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| play | VidFast | movie 550 | **plays** |  | hls | 3840x2160 | 16.7 | 44.3 | 0/462 | 28.9 | none | 2160 1080 720 480 |  | 1 | 2026-11-15T16:19 |
+| dash | VidLink | movie 550 | **plays** |  | dash | 1154x482 | 16 | 9.5 | 2/424 | 54.5 | none | 480 |  | 3 | 2026-11-15T16:30 |
+| vidnest | VidNest | movie 1233413 | **plays** |  | hls | 1920x696 | 15.9 | 36.8 | 0/401 | 33.5 | none | 696 |  | 2 | 2026-11-15T16:31 |
+| subtitle | HyperLink | movie 1233413 | **plays** |  | hls | 1280x720 | 20.8 | 15.3 | 0/533 | 34 | separate: en showing, 2065 cues | 1080 720 482 358 |  | 1 | 2026-11-15T16:29 |
+| subtitle | NexaStream | movie 550 | **plays** |  | hls | 1280x534 | 21.8 | 24.4 | 0/564 | 32.7 | separate: en showing, 1865 cues | 801 534 356 266 |  | 2 | 2026-11-15T16:44 |
+| subtitle | Smashy | movie 550 | **plays** |  | hls | 1282x526 | 20 | 24.3 | 0/548 | 30.2 | separate: en showing, 1864 cues |  |  | 1 | 2026-11-15T16:27 |
+| subtitle | VidLink | movie 550 | **inconclusive** | no_english_offered | dash | 1154x482 | 21.7 | 8.7 | 3/567 | 54.5 | none | 480 |  | 1 | 2026-11-15T16:22 |
+| subtitle | VidRock | movie 550 | **needs_fix** | media error 4 | mp4 |  | 0 |  | 0/0 | 0 | separate: en disabled, 0 cues |  |  | 5 | 2026-11-15T16:41 |
+| expiry | VidFast | movie 550 | **plays** |  | hls | 1920x1080 | 43.1 | 11.9 | 0/130 | 4.8 | none | 2160 1080 720 480 | refused 1, refreshed true, on at 41.2 s (stopped at 40 s) | 1 | 2026-11-15T16:23 |
+
+<!-- playcheck:end -->
+
+Measured with `claude/streaming/direct/playcheck.mjs` against a throwaway daemon started from the
+worktree (`verify.sh up --web --direct-stream`: its own port, database and data dir; the real resolver
+behind `NOTESD_DIRECT_STREAM_CLI`, wrapped so the daemon's play never opens Chrome itself). Each
+run opens one session's player page in the streaming Chrome, muted, in a normal window, never
+full screen, and samples the `<video>` every 1.5 s. The table between the markers is generated by
+`node claude/streaming/direct/playcheck.mjs findings`; do not edit it by hand. Re-running a check
+replaces its row and counts the run.
+
+### How a result is decided
+
+- **plays**: the video advanced at least 10 s at a real resolution and was playing at the end. A
+  subtitle check also needs an English text track in mode `showing` with cues. An expiry check
+  needs the first source refused by the gate, a second resolve served, and playback going on no
+  more than 10 s before where it stopped.
+- **browser_only**: it did not play, and a cause no pass-through can remove is named: `drm` (a
+  DASH `ContentProtection`, an HLS key format other than identity, or a key-system error),
+  `encrypted_segments` (SAMPLE-AES, or an AES-128 key the player cannot load) or
+  `obfuscated_segments` (the first segment is not TS, fMP4, AAC or ID3, for example a PNG header).
+  The provider is marked `"browser_only": true` in the seed with the cause in `notes`.
+- **needs_fix**: it did not play, or the subtitle or the refresh failed, with no such cause. The
+  fault is treated as ours. A fix in `web/src/stream` lands with a failing test first and a row
+  in Fixes; a fault in the daemon's pass-through stays open with a task.
+- **no_source**: the provider did not resolve during the run; after 3 runs at least 5 minutes
+  apart it is recorded as "did not resolve during the campaign", not as browser_only.
+- **inconclusive**: the run could not look (Chrome, tab, daemon, a stop for sound or full screen)
+  or the check did not apply (a DASH check served HLS, no English track offered). It decides
+  nothing and is run again.
+
+### Answers
+
+"First frame" counts from the moment the play was asked for, so it includes the resolve (5 to 11 s).
+
+- DASH (VidLink, Fight Club 550): plays. 1154x482 (the manifest's only level is 480p, h265), first
+  frame at 9.5 s, 2 dropped of 424 frames, 54.5 s buffered, no `ContentProtection`. Three runs: the
+  first answered `no_source` (the resolve saw no manifest that time), the next two played.
+- VidNest, HLS (Sinners 1233413; phase 2 measured that VidNest has no Fight Club): plays, twice.
+  1920x696, one level, 0 dropped of 401 frames, 33.5 s buffered; first frame at 10.9 s on the first
+  run and 36.8 s on the second (a slow stretch on the network). Its segments begin with a PNG
+  header (`89504e470d0a1a0a`) and play all the same: hls.js finds the transport stream behind it.
+  VidRock's segments are disguised the same way and also played. So a disguised first segment
+  alone is not a `browser_only` cause; `decide` only reads it when the video did not play.
+- English subtitle from a separate file (NexaStream, Fight Club 550): plays. Track `en`, mode
+  `showing`, 1865 cues, over 1280x534 video. The same holds for Smashy (1864 cues, 13 tracks
+  offered), HyperLink (Sinners, 2065 cues) and VidRock on its first run (1823 cues): every
+  provider phase 2 measured with an English subtitle showed it in our page by default.
+- VidRock went wrong twice afterwards, for two different reasons (both in Fixes). At 16:31 UTC its
+  subtitle file answered 502 once through the pass-through and the page, which asked only once,
+  played 65 s with no subtitle at all; the page now asks a second time. From 16:38 UTC VidRock
+  served no film: its page loaded `https://vidrock.net/demo-video.mp4`, an HTML page, and the
+  resolver took that for an mp4 stream, so the player ended with `media error 4`. That is why the
+  `subtitle | VidRock` row reads `needs_fix`; the fault is the resolver's, not VidRock's stream
+  format, so VidRock is not `browser_only`.
+- VidLink's one `.srt` names no language and no label, so the session does not offer it as English
+  (`inconclusive: no_english_offered`). It loads as a text track but is not shown by default. That
+  agrees with the seed's `en_subtitle: false` for VidLink.
+- English subtitle inside the manifest: no provider in the seed carried one (phase 2 findings, and
+  no playcheck run saw an English `EXT-X-MEDIA`/text `AdaptationSet`; seven of the eight resolving
+  providers were played, VidUp shares VidFast's host).
+- Refresh and continue after a forced expiry (VidFast, gate at 45 s): plays. The film stopped at
+  40 s, the gate refused the first source once (410), the page refreshed once
+  (`notesdStream.refreshes` 1), the second resolve was served 11 requests, and playback went on at
+  41.2 s. Nothing restarted from the start.
+- Every run stayed muted and never went full screen (`muted_always` true, `fullscreen_ever` false).
+
+### Marked browser_only
+
+None: every provider that resolved a real stream also played in our page.
+
+| Provider | Cause | Evidence |
+| --- | --- | --- |
+
+### Fixes
+
+| Finding | Cause | Change | Test | Status |
+| --- | --- | --- | --- | --- |
+| subtitle/VidRock (16:31 UTC run) | The subtitle file's one fetch answered 502 (page log: `subtitle en: http_502`); the page never asked again, so the film had no English subtitle | `web/src/stream/controller.ts` `loadFileSubtitles`: a failed subtitle fetch is tried once more before the track is given up | `controller.test.tsx`: "asks again for a subtitle file whose first answer failed, and gives up after the second" | fixed |
+| subtitle/VidRock | The resolver accepts `https://vidrock.net/demo-video.mp4` (answers `text/html`) as an mp4 stream: `manifestKind` in `claude/streaming/direct/resolve.mjs:59` trusts the `.mp4` path whatever the mime; the player ends with `media error 4` | none here: `resolve.mjs` is phase 1's file | to be added in `tests/unit/scripts/directResolve.test.ts` | open, task [mcp-notes#1](https://github.com/miftahulmahfuzh/mcp-notes/issues/1) |

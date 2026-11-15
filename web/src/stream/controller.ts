@@ -213,7 +213,9 @@ export class StreamController {
   private async loadFileSubtitles(session: StreamSession): Promise<void> {
     for (const [index, sub] of session.subtitles.entries()) {
       try {
-        const vtt = toWebVtt(await fetchText(sub.url, this.deps.fetch));
+        // One more try: a stream host that fails once would leave the whole film without the track.
+        const text = await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch));
+        const vtt = toWebVtt(text);
         const url = this.deps.textUrl(vtt);
         const element = this.video.ownerDocument.createElement('track');
         element.kind = 'subtitles';

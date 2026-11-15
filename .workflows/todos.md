@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 11
+**Total Active Tasks**: 10
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 111
+- Blocked: 3
+- Completed: 112
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A116** Phase 6: Playback probe campaign: DASH, VidNest, subtitles, expiry
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `claude/streaming/direct/{playcheck.mjs,playgate.mjs}` (the wrapper runs under `verify.sh up --web --direct-stream` with `NOTESD_DIRECT_STREAM_CLI`; pages open as `/stream/<id>?muted=1` in a normal window, never full screen), the findings file's "Playback" section, `browser_only` in the seed, and fixes in `web/src/stream/*` that a finding demands. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; the findings Playback section says, with measured numbers, whether DASH (VidLink), VidNest and an English subtitle play in our page, and records the forced-expiry refresh-and-continue result; `playcheck.mjs audit` passes, so every provider that cannot play outside its own page is `browser_only`.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 6 of 10)
-  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
-  - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
-  - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
 - [ ] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -114,6 +105,29 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A116** Phase 6: Playback probe campaign: DASH, VidNest, subtitles, expiry
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/{playcheck.mjs,playgate.mjs}` (the wrapper runs under `verify.sh up --web --direct-stream` with `NOTESD_DIRECT_STREAM_CLI`; pages open as `/stream/<id>?muted=1` in a normal window, never full screen), the findings file's "Playback" section, `browser_only` in the seed, and fixes in `web/src/stream/*` that a finding demands. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; the findings Playback section says, with measured numbers, whether DASH (VidLink), VidNest and an English subtitle play in our page, and records the forced-expiry refresh-and-continue result; `playcheck.mjs audit` passes, so every provider that cannot play outside its own page is `browser_only`.
+  - **Status**: complete
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 6 of 10)
+  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
+  - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
+  - **Completed**: 2026-11-15 23:59
+  - **Method**: /implement
+  - **Files**: claude/streaming/direct/playcheck.mjs, claude/streaming/direct/playgate.mjs, tests/unit/scripts/playcheck.test.ts, docs/plans/2026-11-15-direct-streaming-findings.md, .claude/skills/verify-notesd/features/direct-streaming.md, web/src/stream/controller.ts, web/src/stream/controller.test.tsx, docs/guide/streaming.md
+  - **Proof**: verified-after-fix — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-231919-1066204/evidence/playcheck
+  - **Drift**:
+    - VidNest has no Fight Club (phase 2 measured): the vidnest check and J2 ran with Sinners (movie 1233413) instead of movie 550.
+    - VidLink's .srt carries no language, so the subtitle check and J3 ran on providers phase 2 measured with English (VidRock, Smashy, NexaStream, HyperLink); J3's final run used NexaStream.
+    - No provider was marked browser_only: providers.seed.json is unchanged (every provider that resolved a real stream played in our page).
+    - campaign.mjs report was rerun with the lifetime log (coordinator handoff): token-lifetime table and timings block now say 180 min valid, watch still running (pid 427755, not killed).
+    - docs/guide/streaming.md got one sentence in 'The player' for the subtitle retry (CLAUDE.md: changed behaviour updates the guide).
+  - **Decided**:
+    - Plan says commit Steps 1-5 before any live run vs /implement's 'this session runs no commit' → no mid-phase commit, pusher commits all at the end (rung 6: workflow's shared-worktree git rule)
+    - Player fix a finding demanded: a subtitle file whose first fetch fails (502 seen live on VidRock) is fetched once more (web/src/stream/controller.ts loadFileSubtitles), failing test first (plan Step 8.2)
+    - Resolver fault found live (resolve.mjs:59 accepts VidRock's text/html demo-video.mp4 as an mp4 stream) is outside this phase's Owns → not patched; Fixes row 'open' + card https://github.com/miftahulmahfuzh/mcp-notes/issues/1 (plan Step 8.3 / 'never widen scope')
 - [x] **P1-NOTES-A117** Phase 7: `/direct-stream`: title lookup, tools, skill, chat bar
   - **Difficulty**: NORMAL
   - **Type**: Feature
