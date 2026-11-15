@@ -344,6 +344,50 @@ describe('App: Movies', () => {
     expect(sent()[4]!.split('\n')[1]).toBe('Tell me about Ava Director (director of this film) and list their other films and series. Mark the ones in my library.');
   });
 
+  it('on a title page, reaching for the page folds the answer panel to its header; the panel itself, the pill and a pinned panel do not', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    const panel = () => document.querySelector('.answer') as HTMLElement;
+    fireEvent.click(within(article).getByRole('button', { name: 'Crime' }));
+    await screen.findByText('Watch MobLand next.');
+    expect(panel().className).toBe('answer');
+
+    fireEvent.pointerDown(screen.getByText('Watch MobLand next.'));
+    fireEvent.wheel(panel());
+    fireEvent.pointerDown(screen.getByPlaceholderText('Ask about How to Make a Killing'));
+    expect(panel().className).toBe('answer');
+
+    fireEvent.wheel(article);
+    await waitFor(() => expect(panel().className).toBe('answer collapsed'));
+    fireEvent.pointerDown(article);
+    expect(panel().className).toBe('answer collapsed');
+
+    fireEvent.click(within(article).getByRole('button', { name: 'Comedy' }));
+    await waitFor(() => expect(panel().className).toBe('answer'));
+    await screen.findByText('Watch MobLand next.');
+    fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    fireEvent.pointerDown(article);
+    fireEvent.wheel(article);
+    expect(panel().className).toBe('answer');
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
+    fireEvent.pointerDown(article);
+    await waitFor(() => expect(panel().className).toBe('answer collapsed'));
+  });
+
+  it('the answer panel does not fold on the grid', async () => {
+    at('/movies');
+    render(<App />);
+    const list = await screen.findByRole('list', { name: 'Posters' });
+    const box = screen.getByPlaceholderText('Ask about your movies');
+    fireEvent.change(box, { target: { value: 'what next?' } });
+    fireEvent.submit(box.closest('form') as HTMLFormElement);
+    await screen.findByText('Watch MobLand next.');
+    fireEvent.pointerDown(list);
+    fireEvent.wheel(list);
+    expect((document.querySelector('.answer') as HTMLElement).className).toBe('answer');
+  });
+
   it('entity links wait while an answer is still streaming', async () => {
     chatSse = 'event: accepted\ndata: {"thread_id":"t1"}\n\nevent: delta\ndata: {"text":"Thinking"}\n\n';
     let release: () => void = () => {};

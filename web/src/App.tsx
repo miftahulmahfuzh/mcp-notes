@@ -407,6 +407,26 @@ export function App() {
     [askChat, moviesRoute, moviesDetail, moviesPlayer],
   );
 
+  // On a title's page the answer panel lies over part of the cast. Reaching for the page (a press or
+  // a wheel turn outside the panel and the pill) folds it to its header line, so the next name can
+  // be clicked; a pinned panel stays, and every new answer opens unfolded (useChat.ask).
+  const foldForPage = view === 'movies' && moviesRoute.title !== null && chat.open && !chat.pinned && !chat.collapsed;
+  const { toggleCollapsed } = chat;
+  useEffect(() => {
+    if (!foldForPage) return;
+    const onReach = (e: Event) => {
+      const t = e.target;
+      if (t instanceof Element && t.closest('.answer, .mv-pill, .lightbox, [role="dialog"]')) return;
+      toggleCollapsed();
+    };
+    document.addEventListener('pointerdown', onReach, true);
+    document.addEventListener('wheel', onReach, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onReach, true);
+      document.removeEventListener('wheel', onReach, true);
+    };
+  }, [foldForPage, toggleCollapsed]);
+
   // Resolve a repo-less `/projects?node=` to the node's repo. The address bar is replaced (not pushed)
   // before the state changes, so Back skips the repo-less URL instead of resolving it again.
   const routeNode = view === 'projects' && projectsRoute.repo === null ? projectsRoute.node : null;

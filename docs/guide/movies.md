@@ -305,6 +305,9 @@ click sends one question through the pill at once, with no Enter and no page cha
 - A person's TMDB id rides on the first line (`· person 1202689`), so a shared name cannot answer
   about someone else.
 - One question at a time: the links wait while an answer is still streaming.
+- The answer panel lies over part of the page, so on a title's page it folds to its header line as
+  soon as you press or turn the wheel anywhere outside it and the pill. Click the header to open
+  it again. A pinned panel stays open, and every new answer opens unfolded.
 - Under an answer that came from a link there is a Google icon, which opens a search for that
   entity in a new tab. In any answer, a film, series or person that is not in the library is a
   link to a web search for it; a title in the library is its movie id, as before.
