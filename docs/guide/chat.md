@@ -350,6 +350,17 @@ The web (`WebSearch`, `WebFetch`):
 what is Invisible Cities about? search the web, and do I have a note on it?
 ```
 
+Films on outside sites (`WebFetch` for pahe.ink, `streaming_find`, `streaming_play`; see
+[streaming.md](streaming.md#what-you-can-ask) for more):
+
+```text
+/pahe no other choice
+/idlix no other choice
+/lk21 ready or not 2019
+where can I stream no other choice?
+recommend comedies like How to Make a Killing, then put the first one I have not seen on idlix
+```
+
 The owner's other apps (`expenses_*`, `runs_*`, `seer_*`, `adversary_*`; see
 [connectors.md](connectors.md) and [adversary.md](adversary.md)):
 

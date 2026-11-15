@@ -1,12 +1,14 @@
 # Streaming and download sites
 
-Films the library does not have are found on three outside sites, each with its own skill:
+Films the library does not have are found on three outside sites, each with its own skill, and a
+fourth skill adds a site:
 
 | Site | Skill | What it does | Chat bar |
 | --- | --- | --- | --- |
 | pahe.ink (downloads) | `/pahe <title> [year]` | Finds the title's page and links each release, BluRay first | Yes, through `WebFetch` |
 | idlix (streaming) | `/idlix <title> [year]` | Finds the title, starts the film, shows it full screen | Yes, through `streaming_play` |
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
+| A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
 browser being driven on your screen.
@@ -62,20 +64,99 @@ search returned it.
 
 ## What you can ask
 
-In Claude Code:
+Every line below works in Claude Code. The same words work in the wall's chat bar, except
+`/create-streaming-skill` ([Adding a site](#adding-a-site)).
+
+### `/pahe`: a download page
+
+```text
+/pahe no other choice
+/pahe ready or not 2019
+/pahe mobland
+find no other choice on pahe
+is ready or not on pahe? the 2019 one
+get me the pahe link for that film
+/pahe the second one
+```
+
+| You type | What comes back |
+| --- | --- |
+| `/pahe no other choice` | Both releases of No Other Choice (2025), BluRay first, then WEB-DL, each a link |
+| `/pahe ready or not 2019` | Only the 2019 film, not the 2026 sequel |
+| `/pahe that one`, after a recommendation | The film from the conversation, with its year |
+| A title pahe does not have | "pahe.ink does not have it under that name", with the search link, or up to three near misses |
+
+### `/idlix` and `/lk21`: find it, play it
 
 ```text
 /idlix no other choice
+/idlix love of your life
+/lk21 love of your life
 /lk21 ready or not 2019
+/idlix la brea
+play it on idlix
+put that one on lk21
+/lk21 the first one
+```
+
+| You type | What happens |
+| --- | --- |
+| `/idlix no other choice` | One film matches: it starts, full screen, in the streaming Chrome (about 25 seconds) |
+| `/lk21 love of your life` | The same on lk21 (6 to 20 seconds) |
+| `/lk21 ready or not 2019` | The 2019 film starts. The year is what tells a remake from its original when both carry the same name |
+| A title two films share, with no year | Several films match: the answer lists them with their years and asks which one |
+| `the 2019 one`, after that | That film starts, played by the link from the list |
+| `/idlix la brea` | A series: its link, with the number of seasons. Nothing starts |
+| `play it on lk21`, after a recommendation | The film from the conversation |
+
+Lookups, which start nothing:
+
+```text
 is la brea on idlix?
 find no other choice on lk21
+where can I stream no other choice?
+is love of your life on idlix or lk21? which has the better quality?
+which of the films you recommended are on lk21?
 ```
+
+| You type | What comes back |
+| --- | --- |
+| `is la brea on idlix?` | The link, "series, 3 seasons" |
+| `where can I stream no other choice?` (chat bar) | One line per site, each with its link and quality |
+| A title neither site has | It says so, per site, and offers near misses when there are any |
+
+Together with the film library and the web:
+
+```text
+recommend comedies like How to Make a Killing, then put the first one I have not seen on idlix
+which of those are on pahe?
+what did this director make? find the newest one on lk21
+```
+
+The rules behind those answers:
 
 - **`/idlix <title>` or `/lk21 <title>` puts the film on** when exactly one film matches.
 - **A question is a lookup.** "Is it on idlix?" answers with the link and starts nothing.
 - **Several matches start nothing.** The answer lists them; say which one and it is played by
   its link.
 - **A series is a link only.** It has episodes to choose, and on lk21 it lives on another site.
+- **A recommendation is not a request.** A film is never started because it was suggested.
+- **A film in the library plays in VLC** (`movies_continue`), unless you name the site.
+
+### `/create-streaming-skill`: another site
+
+```text
+/create-streaming-skill "/lk21" the homepage is https://tv12.lk21official.cc/ .
+note: we can search directly on the homepage without being redirected to a dedicated search page
+search item url https://tv12.lk21official.cc/love-your-life-2026
+
+/create-streaming-skill rebahin https://rebahin.example/ search is a pop-up, like idlix
+add another streaming site, same as lk21: https://example.tv/
+/lk21 stopped working, look at the site again
+```
+
+Give it the skill's name and the homepage. An example film page and a word on how the search
+behaves save it a step. What it does is in [Adding a site](#adding-a-site).
 
 ## How a film is started
 
@@ -130,12 +211,34 @@ the error and the bar gives the link. `NOTESD_STREAMING=off` turns both tools of
 
 ## Adding a site
 
-The `/create-streaming-skill` skill (`claude/skills/create-streaming-skill`) holds the method:
-how to find a site's search request and its player, which of the two patterns above it follows,
-and the list of files a new site touches. In short, a site is one module in
-`claude/streaming/sites/` with a `search`, a `titlePath`, a `start` and a `playerSelector`, a
-line in `sites/index.mjs` and in `STREAMING_SITES` (`src/streaming/service.ts`), and a skill
-folder with a `SKILL.md` and a three-line `search.mjs`.
+`/create-streaming-skill <name> <homepage> [what you know]` adds a streaming site end to end:
+the skill, the site module, the chat bar's side, tests and this guide. Claude Code only, from any
+repository; it works in `~/mcp-notes`. The sample commands are under
+[What you can ask](#create-streaming-skill-another-site).
+
+What the skill (`claude/skills/create-streaming-skill`) makes Claude do, in order:
+
+1. **Ask the site with a plain request.** A real page back means lookups need no browser
+   (lk21). A Cloudflare 403 means everything goes through the streaming Chrome (idlix).
+2. **Find the search request** the site's search box makes, and read real answers: the fields
+   for title, year, kind and slug, and how a page's address is built from the slug.
+3. **Find the player:** in the page or in a frame from another host, what starts it, what the
+   site shows before the film, and when the film is really running.
+4. **Write the site module**, `claude/streaming/sites/<name>.mjs`: `search`, `titlePath`,
+   `start` and `playerSelector`. Add it to `sites/index.mjs` and to `STREAMING_SITES`
+   (`src/streaming/service.ts`).
+5. **Add the skill folder:** a `SKILL.md` copied from lk21's and a three-line `search.mjs`.
+6. **Name the site** in the chat prompt and the MCP instructions, so the chat bar knows it.
+7. **Tests and docs**, then prove it live: a lookup, a series, no result, and two plays in a
+   row, from the terminal and through the daemon.
+
+It tells you before the first play test, because a Chrome window takes over the screen and plays
+with sound. It also carries what went wrong on the first two sites: an advertising tab that
+froze a countdown, a first press that only set a player up, a full-screen button that refuses
+automated clicks, and a daemon that could not find PowerShell.
+
+It will not disguise a client to get past a bot check, skip an advert the site does not let a
+person skip, or dig out a video file. A site that needs any of those is not added.
 
 ## Failure answers
 

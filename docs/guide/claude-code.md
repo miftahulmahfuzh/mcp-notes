@@ -212,6 +212,10 @@ must be restored first. A note saved from a session stays listed there after an 
 The same `/n` answers questions about spending, runs and Seer
 ([connectors.md](connectors.md)) and about films and series ([movies.md](movies.md)).
 
+Films the library does not have are reached by four skills of their own, `/pahe`, `/idlix`,
+`/lk21` and `/create-streaming-skill`: see [streaming.md](streaming.md), which lists what to
+type.
+
 ## Note ids
 
 - A note id is one character, a dash and three characters, all from `0-9A-Z`: `A-B32`.
