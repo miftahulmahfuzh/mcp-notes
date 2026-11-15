@@ -1,7 +1,7 @@
 // Pictures for docs/guide/movies.md. Run by scripts/docs/capture.mjs. They come from two places:
 //
 //   npm run docs:shots -- --live movies                       the owner's real library (most pictures)
-//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the three chat pictures (billed)
+//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the two chat pictures (billed)
 //   npm run docs:shots -- movies                              unmatched.png and assign.png only
 //
 // The owner wants this guide to show their real library, so `live` below takes the grid, a film,
@@ -21,6 +21,13 @@
 // film that is already in progress, and only the VLC it opened is closed afterwards:
 //
 //   DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies
+//
+// chat-movie-id.png shows the pop-up following a play, so it needs both: one billed question on the
+// series' page for the chip, then Continue in the pop-up, which is a real play of the series (it
+// moves the open episode's resume point by a few seconds). It is retaken alone, and like the clip
+// it closes only the VLC it opened:
+//
+//   DOCS_SHOTS_PLAY=popup npm run docs:shots -- --live movies
 import { execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -149,10 +156,55 @@ async function playClip({ base, clip, fetchJson }) {
   }
 }
 
-/** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY=1: see the header. */
+/** A VLC this run opened: asked to close (no /F, as its X does), then reported with what the daemon follows now. */
+async function closeOpened(what, opened, fetchJson) {
+  for (const pid of opened) await run(TASKKILL, ['/PID', pid]).catch(() => {});
+  await sleep(3000);
+  const left = (await vlcPids()).filter((pid) => opened.includes(pid));
+  for (const pid of left) await run(TASKKILL, ['/PID', pid]).catch(() => {});
+  const { current } = await fetchJson('GET', '/api/movies/player');
+  console.log(`movies: ${what} opened VLC ${opened.join(', ') || 'none'}; still running: ${left.join(', ') || 'none'}; followed now: ${current?.name ?? 'nothing'}`);
+}
+
+/** The pop-up of LIVE_SERIES while VLC plays it: one billed question, one real play. Closes the VLC it opened and no other. */
+async function popupShot({ page, base, shot, fetchJson }) {
+  const { movie_id: id } = await fetchJson('GET', `/api/movies/${LIVE_SERIES}`);
+  await page.goto(`${base}/movies/${LIVE_SERIES}`);
+  const pill = page.getByTestId('movies-pill');
+  await pill.getByRole('textbox', { name: /^Ask about / }).fill('Which episode did I stop in, and which one is next? Two short sentences.');
+  await pill.getByRole('button', { name: 'Send' }).click();
+  await page.locator('.answer-body [data-movie-link]').first().waitFor({ timeout: 180000 });
+  await answerDone(page);
+  // The series' own chip: an episode's would play that episode, which may be the next one.
+  const link = page.locator(`.answer-body [data-movie-link="${id}"]`).first();
+  if ((await link.count()) === 0) throw new Error(`the answer has no ${id} chip: nothing was played, ask again`);
+  await link.click();
+  const popup = page.getByRole('dialog', { name: `Movie ${id}` });
+  const play = popup.getByRole('button', { name: /^Continue/ });
+  await play.waitFor();
+  await postersLoaded(page);
+  const before = new Set(await vlcPids());
+  let opened = [];
+  try {
+    await play.click();
+    await popup.locator('.mm-art.now.playing').waitFor({ timeout: 40000 });
+    opened = (await vlcPids()).filter((pid) => !before.has(pid));
+    await page.mouse.move(640, 60);
+    // The outline and the dots pulse: taken at full strength, not mid-fade.
+    await page.addStyleTag({ content: '.mm *, .mm *::before, .mm *::after { animation: none !important; }' });
+    await page.waitForTimeout(1500);
+    await shot('chat-movie-id', { locator: popup });
+  } finally {
+    if (opened.length === 0) opened = (await vlcPids()).filter((pid) => !before.has(pid));
+    await closeOpened('pop-up picture', opened, fetchJson);
+  }
+}
+
+/** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY: see the header. */
 export async function live({ page, base, shot, clip, fetchJson }) {
   // Alone, so a retake of the clip does not also retake every still.
   if (process.env.DOCS_SHOTS_PLAY === '1') return playClip({ base, clip, fetchJson });
+  if (process.env.DOCS_SHOTS_PLAY === 'popup') return popupShot({ page, base, shot, fetchJson });
 
   // The poster grid.
   await page.goto(`${base}/movies`);
@@ -219,8 +271,8 @@ export async function live({ page, base, shot, clip, fetchJson }) {
     await tab.waitForTimeout(1100);
   });
 
-  // Three billed questions: a name on a film's page asking about itself, one answer with movie
-  // ids, and the pop-up an id opens. See the header.
+  // Two billed questions: a name on a film's page asking about itself, and one answer with movie
+  // ids. The pop-up an id opens is popupShot's. See the header.
   if (process.env.DOCS_SHOTS_CHAT === '1') {
     await page.setViewportSize(TALL);
     await page.goto(`${base}/movies/${LIVE_FILM}`);
@@ -241,10 +293,5 @@ export async function live({ page, base, shot, clip, fetchJson }) {
     await answerDone(page);
     await page.mouse.move(640, 120);
     await shot('chat-answer', { locator: page.locator('.answer') });
-    await link.click();
-    const popup = page.getByRole('dialog', { name: /^Movie M-/ });
-    await popup.getByRole('button', { name: /^(Play|Resume|Continue)/ }).waitFor();
-    await postersLoaded(page);
-    await shot('chat-movie-id', { locator: popup });
   }
 }

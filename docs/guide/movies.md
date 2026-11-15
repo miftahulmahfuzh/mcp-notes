@@ -611,7 +611,7 @@ Differences between the two places:
 
 ![A chat answer on a title's page, with movie ids as chips](img/movies/chat-answer.png)
 
-![The pop-up a movie id opens in chat](img/movies/chat-movie-id.png)
+![The pop-up a movie id opens in chat, while VLC plays the series: "playing" on the poster and the episode and position beside Play](img/movies/chat-movie-id.png)
 
 ### Browse and filter
 
@@ -893,9 +893,8 @@ $V down RUN
   - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:
     the grid, a film, the trailer pop-up, a series' episodes, the filter clip, and the page of the
     title VLC has open (kept as it is when VLC has nothing open). It only looks: no Play, no mark,
-    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks three billed
-    questions for `ask-name.png`, `chat-answer.png` and `chat-movie-id.png`; they stay in the chat
-    history.
+    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks two billed
+    questions for `ask-name.png` and `chat-answer.png`; they stay in the chat history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway
     instance. It never touches a picture the live run takes.
   - `DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies` retakes `play.gif` and nothing else.
@@ -903,5 +902,10 @@ $V down RUN
     few seconds, which opens a VLC on screen and adds a play to the history, and it closes the
     VLC it opened and no other. A VLC that was open before stays open but is no longer followed.
     Run it only when asked.
+  - `DOCS_SHOTS_PLAY=popup npm run docs:shots -- --live movies` retakes `chat-movie-id.png` and
+    nothing else: the pop-up while VLC plays the series. It asks one billed question on the series'
+    page for the chip, then presses Continue in the pop-up, which is a real play (the open
+    episode's resume point moves by a few seconds), and closes the VLC it opened and no other. Run
+    it only when asked.
 - Never drive Play or `movies_continue` on the live daemon, and never give a run a root under
   `/mnt/c`.
