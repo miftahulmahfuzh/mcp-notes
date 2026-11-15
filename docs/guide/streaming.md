@@ -9,6 +9,7 @@ fourth skill adds a site:
 | idlix (streaming) | `/idlix <title> [year]` | Finds the title, starts the film, shows it full screen | Yes, through `streaming_play` |
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
 | A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
+| An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
@@ -412,6 +413,65 @@ Nothing starts when several titles match (the candidates come back with their ye
 series is named without an episode (its seasons come back), or when no provider resolves: then
 the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
 `skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
+
+### `/update-cloud-source`: providers from another site
+
+```text
+/update-cloud-source https://ww6-fmovies.com/
+which stream providers do we have?
+```
+
+Aggregator sites are lists of provider templates. `/update-cloud-source` reads one site's list,
+adds the providers the registry lacks and tries each new one on the known titles (Fight Club and
+the others in `claude/streaming/direct/known-titles.json`). It runs in Claude Code only; the chat
+bar can list the providers (`direct_stream_sources`) but not add one, because adding writes the
+provider list both machines share and probes for minutes.
+
+1. **Read the templates, no browser.** `cli.mjs templates <site>` fetches the page as a plain
+   client that says what it is, then the scripts the page names and the webpack (Gatsby) chunks
+   they load, on the site's own host only, likely chunks (`movie`, `details`, `player`, ...)
+   first. It stops at 40 scripts, 4 MB a script, 30 MB in all and 90 seconds. A template is an
+   object entry whose value builds an `https` address around one id (a film) or three (an
+   episode: id, season, episode), keyed by the provider's name. ww6-fmovies.com gave all 24 of
+   its servers, each with a film and an episode template.
+2. **Keep the new ones.** A provider is already known when the registry has a template with the
+   same host (without `www.`), path and id parameter; `?autoPlay=true` and colours do not count.
+   A new provider whose name is taken by another host is stored as `VidSrc (vidsrc.xyz)`.
+   Existing rows are never changed, and nothing is written when the read failed.
+3. **Probe each new one.** Each known film is resolved with only that provider
+   (`resolve --only`), in the streaming Chrome out of sight; the episode only when the provider
+   has an episode template and resolved a film. Health is recorded for this machine, so the
+   resolver orders the new provider like the others. A probe never marks a title stale.
+4. **Report** per provider: resolves or not, and per title the outcome, seconds, manifest kind,
+   best height and English subtitle.
+
+| Answer | Meaning |
+| --- | --- |
+| `ok: true`, `added: []` | The registry already has every provider the site uses |
+| `bot_check` | The site answers a plain request with a bot check. It is not got past |
+| `no_templates` | The page and the scripts read hold no provider template |
+| `unreachable` | The address does not answer, or answers an error |
+| `busy` | Another update is still probing |
+| `direct_stream_off` | Direct streaming is off, or the daemon runs without it |
+
+**Not built:** reading the frames a site's server buttons load through the streaming Chrome. It
+needs, per site, a film page with a known TMDB id, the selector of its server buttons and real
+clicks on a page full of adverts; a site that needs it answers `no_templates` or `bot_check`.
+
+**The seed and the table.** New providers go to the `stream_providers` table, which both
+machines share, with the site they came from (`origin_site`) and when (`added_at`);
+`providers.seed.json` is not changed. The other laptop sees them on its next resolve and
+measures its own health. The daemon loads the seed at every start: it adds seed providers the
+table lacks and updates seed rows (`origin_site` empty) whose entry changed in the file, but never
+touches a provider a site added and never deletes one. To make a site's provider part of the
+seed, copy its entry into `providers.seed.json` by hand.
+
+| Path | What |
+| --- | --- |
+| `claude/streaming/direct/templates.mjs` | The template reader (`cli.mjs templates`) |
+| `src/directStream/updateSource.ts` | What is new, the probes, the report |
+| `src/mcp/directStreamTools.ts` | `direct_stream_sources`, `direct_stream_update_source` |
+| `claude/skills/update-cloud-source/` | The skill |
 
 ## Where the code is
 

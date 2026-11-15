@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 11
+**Total Active Tasks**: 10
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 4
-- Completed: 111
+- Blocked: 2
+- Completed: 112
 
 ---
 
@@ -85,20 +85,11 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
   - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
-- [ ] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `claude/streaming/direct/templates.mjs` + the `templates <site url>` CLI command (a `parseArgs` case and a `main` branch quoted against phase 1), `src/directStream/updateSource.ts` (reads phase 2's `known-titles.json`), `DirectStreamRepo.insertProviders`, `DirectStreamService.updateSource(site)`, `direct_stream_sources` and `direct_stream_update_source` (through `DirectStreamToolDeps.providers` / `updateSource`), `CLAUDE_CODE_ONLY_TOOL_NAMES`, `claude/skills/update-cloud-source/SKILL.md`, `update-cloud-source` in `SKILL_NAMES`, the `/update-cloud-source` subsection and the chat.md row edits. Exit criteria: the reader prints the 24 fmovies providers from the real chunk and the live site; with a fake runner against real Postgres, new providers are inserted once with `origin_site`, existing rows read back unchanged, each new one is probed against the known titles, and every unreadable-site case leaves the table identical; the two tools are registered and the chat bar's allow list has `direct_stream_sources` and not `direct_stream_update_source`; `npm test`, `npm run typecheck` and `npm run docs:check` pass.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 8 of 10)
-  - **Satisfies**: R4 — "and /update-cloud-source skills first" · criteria: R4.1, R4.2
-  - **Depends on**: P1-NOTES-A112, P1-NOTES-A117
-  - **Plan**: `.workflows/plan/P1-NOTES-A118.md`
 - [ ] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: TMDB list calls in `src/movies/tmdb.ts`, candidates, `src/directStream/{prober,idle,candidates}.ts`, `ProbeRepo` in `src/directStream/repo.ts` (freshness through phase 5's `freshStreamSourceSql`), migration `0022`, the prober settings (in phase 3's `DirectStreamConfig`), `GET /api/stream/prober`, `src/background.ts`, `verify.sh --prober` on top of `--direct-stream`, the fake TMDB's lists, "The prober" subsection, configuration rows. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the new integration file pass. A `--direct-stream` throwaway daemon with the prober setting unset reports `off_reason: "setting_off"` and writes no probe row; with `--direct-stream --prober` it lists the fake TMDB's titles as ranked candidates and holds every pass at `not_idle` with zero probes. Unit tests prove off, not-idle, budget (probes, seconds and each resolve's deadline), catalog size and re-check order.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 10 of 10)
   - **Satisfies**: R6 — "background prober after" with "D5 and D6 are proposed and not yet confirmed by the owner: plan them as late phases behind a setting, and list them as the owner's to confirm" · criteria: R6.1, R6.2, R6.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A115, P1-NOTES-A118, P1-NOTES-A119
@@ -113,6 +104,23 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/templates.mjs` + the `templates <site url>` CLI command (a `parseArgs` case and a `main` branch quoted against phase 1), `src/directStream/updateSource.ts` (reads phase 2's `known-titles.json`), `DirectStreamRepo.insertProviders`, `DirectStreamService.updateSource(site)`, `direct_stream_sources` and `direct_stream_update_source` (through `DirectStreamToolDeps.providers` / `updateSource`), `CLAUDE_CODE_ONLY_TOOL_NAMES`, `claude/skills/update-cloud-source/SKILL.md`, `update-cloud-source` in `SKILL_NAMES`, the `/update-cloud-source` subsection and the chat.md row edits. Exit criteria: the reader prints the 24 fmovies providers from the real chunk and the live site; with a fake runner against real Postgres, new providers are inserted once with `origin_site`, existing rows read back unchanged, each new one is probed against the known titles, and every unreadable-site case leaves the table identical; the two tools are registered and the chat bar's allow list has `direct_stream_sources` and not `direct_stream_update_source`; `npm test`, `npm run typecheck` and `npm run docs:check` pass.
+  - **Status**: complete
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 8 of 10)
+  - **Satisfies**: R4 — "and /update-cloud-source skills first" · criteria: R4.1, R4.2
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A117
+  - **Plan**: `.workflows/plan/P1-NOTES-A118.md`
+  - **Completed**: 2026-11-15 23:30
+  - **Method**: /implement
+  - **Files**: claude/streaming/direct/templates.mjs, claude/streaming/direct/cli.mjs, src/directStream/updateSource.ts, src/directStream/repo.ts, src/directStream/service.ts, src/mcp/directStreamTools.ts, src/chat/status.ts, claude/skills/update-cloud-source/SKILL.md, scripts/install.sh, docs/guide/streaming.md, docs/guide/chat.md, docs/guide/reference/mcp-tools.md, .claude/skills/verify-notesd/features/direct-streaming.md, tests/unit/scripts/directTemplates.test.ts, tests/unit/directStream.updateSource.test.ts, tests/unit/mcp.directStreamSourceTools.test.ts, tests/unit/mcp.directStreamTools.test.ts, tests/unit/chat-status.test.ts, tests/integration/directStream.updateSource.int.test.ts
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-232050-1075367/evidence
+  - **Drift**: insertProviders also sets updatedAt: now (phase 3's stream_providers has an updated_at column and syncSeed sets it; the plan's block predates it)
+    docs/guide/streaming.md has two /direct-stream headings; the new '### /update-cloud-source' subsection went after the one under '## Direct streaming', before '## Where the code is', and the table row after the /direct-stream row at the top
+    the plan's CLI dispatch test (Step 2) was added to tests/unit/scripts/directTemplates.test.ts
 
 - [x] **P1-NOTES-A117** Phase 7: `/direct-stream`: title lookup, tools, skill, chat bar
   - **Difficulty**: NORMAL

@@ -15,7 +15,9 @@ import {
   type TitleCandidate,
   type TitleLibrary,
 } from '../directStream/lookup.js';
+import type { ProviderView } from '../directStream/repo.js';
 import { DirectStreamError } from '../directStream/types.js';
+import type { UpdateSourceAnswer } from '../directStream/updateSource.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { TmdbError, type TmdbClient } from '../movies/tmdb.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
@@ -23,6 +25,7 @@ import { movieErrorResult } from './movieTools.js';
 import { jsonResult, type ToolDeps } from './tools.js';
 
 const [FIND, PLAY] = DIRECT_STREAM_TOOL_NAMES;
+const [, , SOURCES, UPDATE_SOURCE] = DIRECT_STREAM_TOOL_NAMES;
 
 export const DIRECT_STREAM_OFF =
   'direct_stream_off: direct streaming is not running on this server (NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off, or the daemon was started without it), so nothing can be streamed here.';
@@ -44,6 +47,10 @@ export interface DirectStreamToolDeps {
   play(target: StreamTarget): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
+  /** DirectStreamService.providers(): the registry with this host's health (direct_stream_sources). */
+  providers(): Promise<ProviderView[]>;
+  /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
+  updateSource(site: string): Promise<UpdateSourceAnswer>;
 }
 
 /** The tool deps of a running daemon, or null when direct streaming (or the movie library under it) is off. */
@@ -69,6 +76,8 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
         ? null
         : { provider: row.provider ?? '', manifestKind: row.manifestKind ?? '', bestHeight: row.bestHeight, enSubtitle: row.enSubtitle, verifiedAt: row.verifiedAt };
     },
+    providers: () => service.providers(),
+    updateSource: (site) => service.updateSource(site),
   };
 }
 
@@ -91,6 +100,74 @@ const PLAY_DESCRIPTION =
   'The error no_source means no provider could stream it: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, skipped_browser_only, skipped_no_template), and nothing started; offer /idlix or /lk21. ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
+
+const SOURCES_DESCRIPTION =
+  'List the direct-streaming providers in the registry both machines share: each one\'s name, film and episode address templates ' +
+  '({id} is the TMDB id), whether it plays only in its own page (browser_only), whether it is known to offer an English subtitle, ' +
+  'the aggregator site it was added from (origin_site, null for the checked-in seed) and when, and this machine\'s health for it ' +
+  '(last success and failure, consecutive failures, median seconds to a stream, best quality). Health is per machine: the other ' +
+  'laptop measures its own. Read-only: nothing opens and nothing is probed.';
+
+const UPDATE_SOURCE_DESCRIPTION =
+  'Add the providers an aggregator streaming site uses that the registry lacks, and probe each new one. Use it for ' +
+  '"/update-cloud-source <site url>" in Claude Code. It reads the site\'s page and scripts with plain requests (no browser) for ' +
+  'provider address templates, keeps the ones whose host and path the registry does not have (a name already taken by another host ' +
+  'is stored as "<name> (<host>)"; existing providers are never changed), inserts them, then resolves each known title (Fight Club ' +
+  'and the others) with only that provider, recording its health on this machine. Probing opens tabs in the streaming Chrome out ' +
+  'of sight, plays nothing and makes no sound; a provider that finds nothing takes about 35 seconds per title, so the call can take ' +
+  'minutes. Answers ok: true with added (per provider: resolves, and per title the outcome, seconds, manifest kind, best height, ' +
+  'English subtitle), known (found but already in the registry) and skipped; or ok: false with error bot_check, no_templates, ' +
+  'unreachable, bad_url, reader_failed or busy, and the registry unchanged. Reading the frames a site\'s server buttons load is not built.';
+
+const siteField = z
+  .string()
+  .trim()
+  .url()
+  .max(500)
+  .refine((value) => /^https?:\/\//i.test(value), 'an http or https address');
+
+/**
+ * The registry tools (/update-cloud-source): list the providers with this host's health, and
+ * add a site's new providers. Without deps.directStream both answer direct_stream_off, as phase 7's do.
+ */
+function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps, 'directStream'>): void {
+  const off = (): CallToolResult => ({ isError: true, content: [{ type: 'text', text: DIRECT_STREAM_OFF }] });
+
+  server.registerTool(
+    SOURCES,
+    {
+      title: 'List the direct-streaming providers',
+      description: SOURCES_DESCRIPTION,
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      const d = deps.directStream;
+      if (!d) return off();
+      return respond(async () => {
+        const providers = await d.providers();
+        return ok({ count: providers.length, providers });
+      });
+    },
+  );
+
+  server.registerTool(
+    UPDATE_SOURCE,
+    {
+      title: 'Add an aggregator site\'s new stream providers',
+      description: UPDATE_SOURCE_DESCRIPTION,
+      inputSchema: {
+        site: siteField.describe('The aggregator site\'s address, such as https://ww6-fmovies.com/ (its home page or a film page).'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true },
+    },
+    async ({ site }) => {
+      const d = deps.directStream;
+      if (!d) return off();
+      return respond(async () => ok(await d.updateSource(site)));
+    },
+  );
+}
 
 const titleField = z.string().trim().min(1).max(200);
 const yearField = z.number().int().min(1880).max(2100);
@@ -312,4 +389,6 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
       });
     },
   );
+
+  registerDirectStreamSourceTools(server, deps);
 }

@@ -32,7 +32,7 @@ function fakeDeps(over: Partial<DirectStreamToolDeps> & { stored?: TitleCandidat
   const tmdb = { searchMovie: async () => over.tmdbMovies ?? [], searchTv: async () => [], tvDetails: async () => ({ episodes: [] }) } as unknown as TmdbClient;
   const play = vi.fn<(t: StreamTarget) => Promise<unknown>>(async () => ({ session_id: 's1', source: { provider: 'VidFast', subtitles: [{ lang: 'en' }] } }));
   const freshSource = vi.fn<(t: StreamTarget) => Promise<FreshSource | null>>(async () => null);
-  const deps: DirectStreamToolDeps = { library, tmdb, play, freshSource, ...over };
+  const deps: DirectStreamToolDeps = { library, tmdb, play, freshSource, providers: vi.fn(async () => []), updateSource: vi.fn(), ...over };
   return { deps, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource };
 }
 

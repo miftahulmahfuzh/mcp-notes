@@ -64,6 +64,15 @@ export async function readSeedFile(file: string): Promise<SeedProvider[]> {
   });
 }
 
+/** A provider /update-cloud-source adds: its film and episode templates and the site it came from. */
+export interface NewStreamProvider {
+  name: string;
+  movie: string;
+  tv: string | null;
+  /** The aggregator site's origin, `https://ww6-fmovies.com`; null for a seed row. */
+  originSite: string | null;
+}
+
 /** A registry row in the seed file's shape: what `cli.mjs resolve --providers <file>` reads. */
 export interface ProviderSeedJson {
   name: string;
@@ -290,5 +299,33 @@ export class DirectStreamRepo {
         }
       }
     });
+  }
+
+  /**
+   * Adds providers the registry lacks and returns the names inserted. A name already present is
+   * left exactly as it is (on conflict do nothing): this never rewrites a seed row or one another
+   * machine added. What the probe learns goes to stream_provider_health, not here.
+   */
+  async insertProviders(rows: NewStreamProvider[], now: Date = new Date()): Promise<string[]> {
+    if (rows.length === 0) return [];
+    const inserted = await this.db
+      .insert(streamProviders)
+      .values(
+        rows.map((row) => ({
+          name: row.name,
+          idKind: 'tmdb' as const,
+          movie: row.movie,
+          tv: row.tv,
+          browserOnly: false,
+          enSubtitle: null,
+          notes: '',
+          originSite: row.originSite,
+          addedAt: now,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoNothing({ target: streamProviders.name })
+      .returning({ name: streamProviders.name });
+    return inserted.map((row) => row.name);
   }
 }

@@ -5,6 +5,7 @@
 //   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>]
 //   cli.mjs providers [--providers <file>] [--health <file>]
 //   cli.mjs open <http://localhost:<port>/...> [--fullscreen]
+//   cli.mjs templates <site url>   read a site's provider templates (plain requests, no browser)
 // Prints one JSON object. Exit 0 when ok, 1 when not, 2 for a usage or input error.
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
@@ -13,10 +14,11 @@ import { ChromeError, evaluateInChrome, sleep } from '../chrome.mjs';
 import { orderProviders } from './order.mjs';
 import { resolveTitle } from './resolve.mjs';
 import { sniffEmbed } from './sniff.mjs';
+import { templatesCommand } from './templates.mjs';
 
 export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'providers.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen]';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url>';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -115,6 +117,10 @@ export function parseArgs(argv) {
       allow(['fullscreen']);
       if (rest.length !== 1) throw new InputError('usage', 'open takes one address');
       return { command, url: parseDaemonUrl(rest[0]), fullscreen: flags.fullscreen === true };
+    case 'templates':
+      allow([]);
+      // templatesCommand checks the address itself (usage, bad_url) and answers in its own shape.
+      return { command, rest };
     default:
       throw new InputError('usage', command === undefined ? 'no command' : `unknown command "${command}"`);
   }
@@ -257,7 +263,7 @@ export async function main(argv, io = {}) {
   let health = {};
   try {
     args = parseArgs(argv);
-    if (args.command !== 'open') {
+    if (args.command !== 'open' && args.command !== 'templates') {
       providers = readProviders(readInput(readText, args.providersFile ?? SEED_PATH, 'bad_providers'));
       health = args.healthFile === null ? {} : readHealth(readInput(readText, args.healthFile, 'bad_health'));
     }
@@ -265,6 +271,11 @@ export async function main(argv, io = {}) {
     if (!(err instanceof InputError)) throw err;
     print(err.code === 'usage' ? { ok: false, error: err.code, detail: err.message, usage: USAGE } : { ok: false, error: err.code, detail: err.message });
     return 2;
+  }
+  if (args.command === 'templates') {
+    const { code, answer } = await templatesCommand(args.rest);
+    print(answer);
+    return code;
   }
   if (args.command === 'providers') {
     print({ ok: true, providers: orderProviders(providers, health).map((p) => ({ ...p, health: Object.hasOwn(health, p.name) ? health[p.name] : null })) });

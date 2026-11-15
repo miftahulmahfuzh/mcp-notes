@@ -31,6 +31,15 @@
   `npm run test:int -- tests/integration/movies.streams.int.test.ts`; on a run, seed a stream play
   with `verify.sh exec` and read `GET /api/movies/<id>` and `GET /api/movies` (journey J2 of
   `.workflows/plan/direct-streaming/phase-5.md`).
+- `/update-cloud-source <site url>` (`direct_stream_update_source`) and `direct_stream_sources`:
+  read an aggregator site's provider templates, add the ones the registry lacks (matched by
+  template host and path), probe each new one against the known titles, report per provider; a
+  site that cannot be read changes nothing. Reader proven over the real fmovies chunk by
+  `npx vitest run tests/unit/scripts/directTemplates.test.ts`; insert-once, untouched rows,
+  probes and the unchanged registry by
+  `npm run test:int -- tests/integration/directStream.updateSource.int.test.ts`; the tools and
+  the chat bar's exclusion by `tests/unit/mcp.directStreamSourceTools.test.ts` and
+  `tests/unit/chat-status.test.ts`.
 
 ## How to get to it (user POV)
 Play on a stream (phase 9) or `/direct-stream <title>` (phase 7) opens the player page full screen in
@@ -57,6 +66,11 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   (`window.notesdStream` and the title), `J3 PASS` (403 with `X-Notesd-Upstream` mid-film, one
   refresh, continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
 - The player against a real provider is phase 6's `playcheck.mjs` (muted, normal window).
+- Live template read, free, no browser:
+  `node claude/streaming/direct/cli.mjs templates https://ww6-fmovies.com/` prints `ok: true`
+  and the 24 providers. Never run `direct_stream_update_source` against the live daemon for a
+  site with new providers unless the owner asked: it writes the shared registry and probes in
+  the streaming Chrome.
 
 ## /direct-stream (find and play)
 - `direct_stream_find`, `direct_stream_play` (MCP, chat bar, `/direct-stream` skill): one film

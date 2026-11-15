@@ -9,6 +9,7 @@ import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFi
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SessionStore, type StreamSession } from './sessions.js';
+import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer } from './updateSource.js';
 import {
   DirectStreamError,
   isEnglish,
@@ -123,6 +124,8 @@ export class DirectStreamService {
   private readonly log: (line: string) => void;
   private readonly fetchImpl: FetchLike;
   private chain: Promise<void> = Promise.resolve();
+  /** The running /update-cloud-source, if any: one at a time through the one streaming Chrome. */
+  private updatingSource: Promise<UpdateSourceAnswer> | null = null;
 
   constructor(private readonly opts: DirectStreamServiceOptions) {
     this.repo = opts.repo;
@@ -262,6 +265,39 @@ export class DirectStreamService {
       );
       return out;
     });
+  }
+
+  /**
+   * /update-cloud-source: reads a site's provider templates, adds the providers the registry
+   * lacks and probes each against the known titles (resolve --only, health recorded for this
+   * host). The probes open tabs in the streaming Chrome out of sight; nothing plays. A failed
+   * probe marks no title stale: it goes through runResolve, not resolve().
+   */
+  async updateSource(site: string): Promise<UpdateSourceAnswer> {
+    if (this.updatingSource !== null) {
+      return { ok: false, site, error: 'busy', detail: 'another /update-cloud-source is still probing; ask again when it has answered', registry_changed: false };
+    }
+    const running = updateSource(site, {
+      runner: this.runner,
+      registry: {
+        list: () => this.repo.providers(),
+        insert: (rows) => this.repo.insertProviders(rows),
+      },
+      knownTitles: () => loadKnownTitles(),
+      probe: async (provider, title) => {
+        try {
+          return toProbeResult(title, provider, await this.runResolve(title.ref, { only: provider }));
+        } catch (err) {
+          return { title: title.label, outcome: 'error', took_s: null, manifest_kind: null, best_height: null, en_subtitle: null, detail: err instanceof Error ? err.message : String(err) };
+        }
+      },
+    });
+    this.updatingSource = running;
+    try {
+      return await running;
+    } finally {
+      this.updatingSource = null;
+    }
   }
 
   /** runResolve, then the recordResolve hook, then a typed failure. */
