@@ -23,20 +23,20 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6b27fbb",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "probe campaign, findings and learned seed: 8/24 providers resolve, 10 unreachable (incl. Videasy, VidKing, CloudPlay), 5 episode templates, VidFast token valid >=120 min (claims 360, watch still running); re-ran NonTongo, VidSrc, HyperLink (13:39-13:43 UTC window) and VidMov; decisions: unpinned seed values in phase 1's directResolve.test.ts per invariant 1, sniff.ps1 drops mp4 clips <20 MB (VidMov advert false positive), diagnose names error/52x pages unreachable, bot flag left as is per invariant 2; proof: verified-after-fix /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-direct-streaming-p2/d2150049-3554-4a3a-9628-bf0ae301ff20/scratchpad/proof-p2",
       "package": "claude/streaming/direct",
       "plan": ".workflows/plan/direct-streaming/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T23:12:06+07:00",
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "done",
       "task_id": "P1-NOTES-A112",
       "title": "Resolve probe campaign: 24 providers, failures, episodes, token lifetime"
     },
@@ -115,7 +115,7 @@
       "satisfies": [
         "R7"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A116",
       "title": "Playback probe campaign: DASH, VidNest, subtitles, expiry"
     },
@@ -155,7 +155,7 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A118",
       "title": "/update-cloud-source`: template reader, registry tools, skill"
     },
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:48:02+07:00",
+  "updated": "2026-11-15T23:17:37+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
