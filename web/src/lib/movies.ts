@@ -529,6 +529,51 @@ export function entitySearchQuery(e: MovieEntity, d: TitleDetail): string {
   return `${e.name} movies and series`;
 }
 
+/** A trailer the title page can show: the title's own, or one season's. */
+export interface TrailerTarget {
+  /** YouTube video id; null when TMDB lists no trailer, and the button searches YouTube instead. */
+  key: string | null;
+  /** What the trailer is of: "How to Make a Killing (2026)", "MobLand, season 1". */
+  name: string;
+  /** The button's label, which says whether it plays here or searches. */
+  label: string;
+  /** The YouTube search that stands in for a missing trailer. */
+  searchUrl: string;
+}
+
+function youtubeSearchUrl(query: string): string {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+/** The trailer of a title (`season` null) or of one season of a series. */
+export function trailerTarget(d: TitleDetail, season: number | null = null): TrailerTarget {
+  if (season === null) {
+    const key = d.trailer_key;
+    return {
+      key,
+      name: `${d.title}${d.year !== null ? ` (${d.year})` : ''}`,
+      label: key !== null ? 'Watch the trailer' : 'Find the trailer on YouTube',
+      searchUrl: youtubeSearchUrl(`${d.title}${d.year !== null ? ` ${d.year}` : ''} trailer`),
+    };
+  }
+  const key = d.seasons.find((s) => s.season === season)?.trailer_key ?? null;
+  return {
+    key,
+    name: `${d.title}, season ${season}`,
+    label: key !== null ? `Watch the season ${season} trailer` : `Find the season ${season} trailer on YouTube`,
+    searchUrl: youtubeSearchUrl(`${d.title} season ${season} trailer`),
+  };
+}
+
+/** The YouTube player for a video id, on the domain that sets no cookies until it plays; it starts at once. */
+export function trailerEmbedUrl(key: string): string {
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(key)}?autoplay=1&rel=0`;
+}
+
+export function trailerWatchUrl(key: string): string {
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(key)}`;
+}
+
 export function googleSearchUrl(query: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }

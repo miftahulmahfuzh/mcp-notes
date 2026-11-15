@@ -123,6 +123,8 @@ export interface EpisodeView {
 
 export interface SeasonView {
   season: number;
+  /** YouTube video id of this season's trailer; null when TMDB lists none. */
+  trailer_key: string | null;
   episodes: EpisodeView[];
 }
 
@@ -201,6 +203,10 @@ export interface TitleDetail extends TitleListItem {
   runtime_min: number | null;
   genres: string[];
   backdrop_url: string | null;
+  /** YouTube video id of the title's trailer; null when TMDB lists none (or was not asked yet). */
+  trailer_key: string | null;
+  /** The trailer on YouTube; null with `trailer_key`. */
+  trailer_url: string | null;
   season_count: number | null;
   episode_count: number | null;
   review: string;
@@ -501,7 +507,7 @@ function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): E
 }
 
 /** Episodes of a series: TMDB's list plus any (season, episode) only a file names. Specials (season 0) only with a file. */
-function buildSeasons(parts: TitleParts, ctx: ReadContext): { seasons: SeasonView[]; episodes: EpisodeView[]; unplaced: FileView[] } {
+function buildSeasons(parts: TitleParts, ctx: ReadContext, trailers: Readonly<Record<string, string>>): { seasons: SeasonView[]; episodes: EpisodeView[]; unplaced: FileView[] } {
   const slots = new Map<string, EpisodeSlot>();
   const key = (s: number, e: number): string => `${s}x${e}`;
   for (const row of parts.episodes) slots.set(key(row.season, row.episode), { row, season: row.season, episode: row.episode, files: [] });
@@ -527,7 +533,7 @@ function buildSeasons(parts: TitleParts, ctx: ReadContext): { seasons: SeasonVie
   for (const ep of episodes) {
     const lastSeason = seasons[seasons.length - 1];
     if (lastSeason !== undefined && lastSeason.season === ep.season) lastSeason.episodes.push(ep);
-    else seasons.push({ season: ep.season, episodes: [ep] });
+    else seasons.push({ season: ep.season, trailer_key: trailers[String(ep.season)] ?? null, episodes: [ep] });
   }
   return { seasons, episodes, unplaced };
 }
@@ -547,7 +553,7 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
   let seasons: SeasonView[] = [];
   let unplaced: FileView[] = [];
   if (kind === 'tv') {
-    const built = buildSeasons(parts, ctx);
+    const built = buildSeasons(parts, ctx, t.seasonTrailers ?? {});
     seasons = built.seasons;
     unplaced = built.unplaced;
     state = titleState('tv', built.episodes.map((e) => e.state));
@@ -765,6 +771,8 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
     runtime_min: t.runtimeMin,
     genres: t.genres ?? [],
     backdrop_url: imageUrl(ctx, t.backdropPath, IMAGE_SIZES.backdrop),
+    trailer_key: t.trailerKey,
+    trailer_url: t.trailerKey === null ? null : `https://www.youtube.com/watch?v=${t.trailerKey}`,
     season_count: t.seasonCount,
     episode_count: t.episodeCount,
     review: review.review,

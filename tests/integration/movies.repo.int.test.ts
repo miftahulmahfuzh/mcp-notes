@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
@@ -41,6 +42,7 @@ function movie(tmdbId: number, over: Partial<TitleMetadata> = {}): TitleMetadata
     companies: [],
     credits: [],
     episodes: [],
+    trailers: { title: null, seasons: {} },
     ...over,
   }
 }
@@ -130,6 +132,29 @@ describe('MoviesRepo', () => {
       await repo.upsertTitle(refetched, day(4))
       expect(await repo.loadTitleMetadata(id)).toEqual(refetched)
       expect(await repo.titleById(id)).toMatchObject({ title: 'Renamed', watchedAt: day(3), rating: 4, metadataFetchedAt: day(4) })
+    })
+
+    it('keeps the trailers of a title, lists the titles never asked about and fills them in', async () => {
+      const film = await repo.upsertTitle(movie(1, { trailers: { title: 'BxBof_p3_es', seasons: {} } }), day(1))
+      const show = await repo.upsertTitle(series(2, { trailers: { title: 'seriesTrail', seasons: { '1': 'seasonOne01' } } }), day(1))
+      expect(await repo.titleById(film)).toMatchObject({ trailerKey: 'BxBof_p3_es', seasonTrailers: {}, trailersCheckedAt: day(1) })
+      expect(await repo.titleById(show)).toMatchObject({ trailerKey: 'seriesTrail', seasonTrailers: { '1': 'seasonOne01' } })
+      // A title asked about once is not asked again, with or without a trailer.
+      await repo.upsertTitle(movie(3), day(1))
+      expect(await repo.titlesWithoutTrailers(10)).toEqual([])
+
+      // Titles stored before the trailer columns existed.
+      await db.execute(sql`update movie_titles set trailer_key = null, season_trailers = '{}'::jsonb, trailers_checked_at = null where id in (${film}, ${show})`)
+      expect(await repo.titlesWithoutTrailers(10)).toEqual([
+        { id: film, kind: 'movie', tmdbId: 1, seasons: [] },
+        { id: show, kind: 'tv', tmdbId: 2, seasons: [1] },
+      ])
+      expect(await repo.titlesWithoutTrailers(1)).toHaveLength(1)
+
+      await repo.setTitleUser(show, { rating: 4 }, day(2))
+      await repo.setTitleTrailers(show, { title: null, seasons: { '1': 'seasonOne01' } }, day(5))
+      expect(await repo.titleById(show)).toMatchObject({ trailerKey: null, seasonTrailers: { '1': 'seasonOne01' }, trailersCheckedAt: day(5), rating: 4, updatedAt: day(2) })
+      expect((await repo.titlesWithoutTrailers(10)).map((t) => t.id)).toEqual([film])
     })
 
     it('stores the watched flag, rating and review link on the title', async () => {

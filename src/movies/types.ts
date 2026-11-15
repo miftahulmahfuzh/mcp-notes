@@ -87,6 +87,14 @@ export interface EpisodeMeta {
   stillPath: string | null;
 }
 
+/** The trailers TMDB lists for one title, as YouTube video ids. */
+export interface TitleTrailers {
+  /** The film's or the series' own trailer. */
+  title: string | null;
+  /** Season number -> that season's trailer. A season without one is absent; always {} for a film. */
+  seasons: Record<string, string>;
+}
+
 /** Everything a TMDB match stores for one title. `episodes` is empty for a movie. */
 export interface TitleMetadata {
   kind: TitleKind;
@@ -106,6 +114,7 @@ export interface TitleMetadata {
   companies: CompanyMeta[];
   credits: CreditMeta[];
   episodes: EpisodeMeta[];
+  trailers: TitleTrailers;
 }
 
 /**

@@ -33,6 +33,7 @@ function fakeClient(table: { movie?: Record<string, TmdbSearchHit[]>; tv?: Recor
     },
     movieDetails: unused,
     tvDetails: unused,
+    trailers: unused,
     searchPerson: unused,
     personCredits: unused,
   };

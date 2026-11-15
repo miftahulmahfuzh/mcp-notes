@@ -11,6 +11,9 @@
 .mm-notice { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .03em; }
 .mm-overview { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--soft); }
 .mm-empty { margin: 0; padding: 40px 20px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+/* The trailer pop-up: the same scrim and box, as wide as the page allows, with a 16:9 player. */
+.mm-panel.mm-trailer { width: min(1100px, 100%, calc((100vh - 110px) * 16 / 9)); overflow: hidden; }
+.mm-frame { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; }
 @media (max-width: 560px) {
   .mm-body { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 14px; }
   .mm-title { font-size: 20px; }

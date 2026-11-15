@@ -45,5 +45,6 @@
       { "id": 228247, "name": "Ron Burkle", "profile_path": "/hf69HPpxXieEPqSblJGqX5Hq31V.jpg", "department": "Production", "total_episode_count": 20,
         "jobs": [{ "credit_id": "65df6900b39e35018630c819", "job": "Executive Producer", "episode_count": 20 }] }
     ]
-  }
+  },
+  "videos": {"results": [{"iso_639_1": "en", "iso_3166_1": "US", "name": "Official Trailer", "key": "moblandTrlr", "site": "YouTube", "size": 1080, "type": "Trailer", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "vidmoblandTrlr"}]}
 }

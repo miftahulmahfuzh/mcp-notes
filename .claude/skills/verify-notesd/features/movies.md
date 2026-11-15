@@ -58,6 +58,15 @@
   page); in Claude Code it is a link to the page (MCP instructions, the `note-links` mod).
   Proof: journey stage 1, `tests/integration/movies.mcp.int.test.ts` ("movie ids"),
   `web/src/App.movies.test.tsx` (the pop-up).
+- Trailers: a title's details call also asks TMDB for its videos, and each season's call for that
+  season's; the newest official YouTube trailer (a teaser only without one) is stored as a video id
+  on the title (`trailer_key`, `season_trailers`). Titles stored before that are looked up ten per
+  pass (`trailers_checked_at`). On the title's page the trailer icon beside Play, and one beside
+  each season heading, plays it in a pop-up (`youtube-nocookie.com/embed/<id>`); with no trailer
+  listed the same icon opens a YouTube search in a new tab. `movies_get` carries `trailer_url`.
+  Proof: journey stages 1 and 12, `tests/unit/movies/tmdb.test.ts` (`pickTrailer`, `trailers`),
+  `tests/integration/movies.sync.int.test.ts` ("looks up the trailers"),
+  `web/src/App.movies.test.tsx` ("the trailer icon").
 - MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
 
@@ -85,7 +94,7 @@ $V down RUN                                              # keeps movies-tmdb-req
 ```
 | Stage | What it proves |
 | --- | --- |
-| 1 sync | 6 present files matched (`Videos/…Pahe.in.mkv`, the MobLand season folder as one `tv-247718` with S01E01-E03, `Done/The_Rivals…` with a done signal, `Telegram Desktop/Oldboy (2003)/Oldboy.mkv`); the 20 s `Done/docker_es` clip `unmatched:too_short`; studios, cast with characters, directors, 3 episode rows; two gone films from the fixture ini as deleted files with recents observations |
+| 1 sync | trailers (the film's video id, MobLand's season 1, none unchecked); 6 present files matched (`Videos/…Pahe.in.mkv`, the MobLand season folder as one `tv-247718` with S01E01-E03, `Done/The_Rivals…` with a done signal, `Telegram Desktop/Oldboy (2003)/Oldboy.mkv`); the 20 s `Done/docker_es` clip `unmatched:too_short`; studios, cast with characters, directors, 3 episode rows; two gone films from the fixture ini as deleted files with recents observations |
 | 2 posters | `GET /api/movies` `poster_url`s on `TMDB_IMAGE_BASE`, one loads as `image/png` |
 | 3 user state | `POST /api/movies/movie-467905/user` stores rating 4 + watched; review is a `#movie` note linked by `review_note_id` |
 | 4 play | `POST …/files/<S01E01>/play` launches the fake VLC at 0 with `--fullscreen` and runs the fake `powershell.exe` (the bring-to-front call); `vlc at 912` is polled into the play; `vlc quit` closes it; S01E01 `finished` |
@@ -96,7 +105,7 @@ $V down RUN                                              # keeps movies-tmdb-req
 | 9 other host | a seeded `verify-other-host` file is `available:false`; play answers `not_on_this_machine` |
 | 10 unmatched | `GET /api/movies/unmatched` lists the clip `too_short`; `POST …/assign {kind, tmdb_id}` moves it into `movie-990003` |
 | 11 MCP reads | `movies_person` (seen / not seen), `movies_list {company}`, `movies_history`, `movies_get` with the deleted file |
-| 12 wall | `ui-library.mjs`: grid of loaded posters; MobLand page with episodes, cast and characters, one `data-deleted="true"` row |
+| 12 wall | `ui-library.mjs`: grid of loaded posters; MobLand page with episodes, cast and characters, one `data-deleted="true"` row; the trailer icon searches YouTube in a new tab, season 1's plays in the pop-up (YouTube itself is stubbed) |
 
 Driving one piece by hand on the same run:
 ```sh

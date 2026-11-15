@@ -4,6 +4,7 @@ import {
   absoluteToSeasonEpisode,
   createTmdbClient,
   crewRole,
+  pickTrailer,
   posterUrl,
   type CreditMeta,
   type TmdbClientConfig,
@@ -97,6 +98,14 @@ describe('movieDetails', () => {
     ]);
     expect(meta.credits.some((c) => c.name === 'Sam Grip')).toBe(false);
   });
+
+  it('asks for the videos in the same request and keeps the newest official YouTube trailer', async () => {
+    const f = fixtureFetch();
+    const meta = await createTmdbClient(TOKEN_CONFIG, f.fetch).movieDetails(467905);
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/movie/467905']);
+    expect(f.calls[0]?.params.get('append_to_response')).toBe('credits,videos');
+    expect(meta.trailers).toEqual({ title: 'BxBof_p3_es', seasons: {} });
+  });
 });
 
 describe('tvDetails', () => {
@@ -132,7 +141,10 @@ describe('tvDetails', () => {
     expect(meta.episodes[0]).toMatchObject({ airDate: '2025-03-30', runtimeMin: 60, stillPath: '/5IBWjTRedZgLgUEx5MYAq76FBZf.jpg' });
     expect(meta.episodes[2]?.overview).toBeNull();
     expect(f.calls.map((c) => c.pathname)).toEqual(['/tv/247718', '/tv/247718/season/1', '/tv/247718/season/2']);
-    expect(f.calls[0]?.params.get('append_to_response')).toBe('aggregate_credits');
+    expect(f.calls[0]?.params.get('append_to_response')).toBe('aggregate_credits,videos');
+    expect(f.calls[1]?.params.get('append_to_response')).toBe('videos');
+    // Season 1 has only a teaser, season 2 no video at all.
+    expect(meta.trailers).toEqual({ title: 'moblandTrlr', seasons: { '1': 'moblandS1tr' } });
   });
 
   it('treats a listed season with no page (404) as empty', async () => {
@@ -149,6 +161,27 @@ describe('tvDetails', () => {
     }) as typeof fetch;
     const meta = await createTmdbClient(TOKEN_CONFIG, fetchImpl).tvDetails(247718);
     expect(meta.episodes).toHaveLength(5);
+  });
+});
+
+describe('trailers', () => {
+  it('reads a film\'s trailer with one request', async () => {
+    const f = fixtureFetch();
+    expect(await createTmdbClient(TOKEN_CONFIG, f.fetch).trailers('movie', 467905, [1])).toEqual({ title: 'BxBof_p3_es', seasons: {} });
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/movie/467905/videos']);
+  });
+
+  it('reads a series\' trailer and one per season, and a season with no page has none', async () => {
+    const f = fixtureFetch();
+    expect(await createTmdbClient(TOKEN_CONFIG, f.fetch).trailers('tv', 247718, [2, 1, 1])).toEqual({
+      title: 'moblandTrlr',
+      seasons: { '1': 'moblandS1tr' },
+    });
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/tv/247718/videos', '/tv/247718/season/1/videos', '/tv/247718/season/2/videos']);
+  });
+
+  it('a title TMDB does not have is an http TmdbError with 404', async () => {
+    await expect(createTmdbClient(TOKEN_CONFIG, fixtureFetch().fetch).trailers('movie', 1, [])).rejects.toMatchObject({ code: 'http', status: 404 });
   });
 });
 
@@ -235,6 +268,17 @@ describe('helpers', () => {
     expect(absoluteToSeasonEpisode(episodes, 4)).toEqual({ season: 2, episode: 63 });
     expect(absoluteToSeasonEpisode(episodes, 5)).toBeNull();
     expect(absoluteToSeasonEpisode(episodes, 0)).toBeNull();
+  });
+
+  it('pickTrailer prefers a trailer to a teaser, official to unofficial, then the newest, on YouTube only', () => {
+    const v = (key: string, type: string, official: boolean, at: string, site = 'YouTube') => ({ key, type, official, published_at: at, site });
+    expect(pickTrailer(null)).toBeNull();
+    expect(pickTrailer([v('clip0000001', 'Clip', true, '2026-01-01'), v('vimeo000001', 'Trailer', true, '2026-01-01', 'Vimeo')])).toBeNull();
+    expect(pickTrailer([v('teaser00001', 'Teaser', true, '2026-03-01'), v('fanmade0001', 'Trailer', false, '2025-01-01')])).toBe('fanmade0001');
+    expect(pickTrailer([v('fanmade0001', 'Trailer', false, '2026-03-01'), v('official001', 'Trailer', true, '2025-01-01')])).toBe('official001');
+    expect(pickTrailer([v('older000001', 'Trailer', true, '2025-01-01'), v('newer000001', 'Trailer', true, '2026-01-01')])).toBe('newer000001');
+    // A key that is not a YouTube video id never reaches an embed URL.
+    expect(pickTrailer([v('x"><script>', 'Trailer', true, '2026-01-01')])).toBeNull();
   });
 
   it('crewRole keeps directors, authors and producers only', () => {

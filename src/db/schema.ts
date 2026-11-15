@@ -1003,6 +1003,12 @@ export const movieTitles = pgTable(
     /** TMDB image path (`/abc.jpg`); the URL is built from TMDB_IMAGE_BASE at read time. */
     posterPath: text('poster_path'),
     backdropPath: text('backdrop_path'),
+    /** YouTube video id of the title's trailer as TMDB lists it; null when it lists none. */
+    trailerKey: text('trailer_key'),
+    /** Season number -> YouTube video id of that season's trailer (a series; seasons without one are absent). */
+    seasonTrailers: jsonb('season_trailers').$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
+    /** When TMDB was last asked for the trailers; null: not asked yet (a title stored before trailers existed). */
+    trailersCheckedAt: timestamp('trailers_checked_at', { withTimezone: true, mode: 'date' }),
     runtimeMin: integer('runtime_min'),
     genres: jsonb('genres').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     seasonCount: integer('season_count'),

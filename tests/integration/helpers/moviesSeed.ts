@@ -177,6 +177,7 @@ const NEZHA2: TitleMetadata = {
   companies: [],
   credits: [],
   episodes: [],
+  trailers: { title: 'nezha2Trail', seasons: {} },
 };
 
 export const SEARCH_HITS: TmdbSearchHit[] = [
@@ -193,6 +194,7 @@ export function fakeTmdb(): TmdbClient {
     movieDetails: (id: number) =>
       id === NEZHA2_TMDB_ID ? Promise.resolve(NEZHA2) : Promise.reject(new Error(`fake TMDB: no movie ${id}`)),
     tvDetails: unused('tvDetails'),
+    trailers: unused('trailers'),
     searchPerson: unused('searchPerson'),
     personCredits: unused('personCredits'),
   };

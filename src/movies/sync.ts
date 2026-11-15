@@ -14,7 +14,11 @@ import {
   type NewMovieFile,
   type TitleKind,
   type TitleMetadata,
+  type TitleTrailers,
 } from './types.js';
+
+/** Titles stored before trailers were kept that one pass asks TMDB about; the rest wait for the next pass. */
+export const TRAILER_BACKFILL_PER_PASS = 10;
 
 /** ffprobe processes at once: drvfs (9p) reads are slow and the daemon shares the machine. */
 export const PROBE_CONCURRENCY = 2;
@@ -54,6 +58,8 @@ export interface SyncReport {
   pending: number;
   /** TMDB detail calls made (one per title at most). */
   titles_fetched: number;
+  /** Titles stored before trailers were kept whose trailers were looked up this pass. */
+  trailers_checked: number;
   /** Rows the hooks reported writing. */
   hook_writes: number;
   unreadable: string[];
@@ -79,6 +85,7 @@ export function emptySyncReport(host: string, roots: readonly string[], at: Date
     unmatched: 0,
     pending: 0,
     titles_fetched: 0,
+    trailers_checked: 0,
     hook_writes: 0,
     unreadable: [],
     hook_errors: [],
@@ -91,12 +98,15 @@ export function emptySyncReport(host: string, roots: readonly string[], at: Date
 export interface TitleResolver {
   match(parsed: ParsedName): Promise<MatchResult>;
   details(kind: TitleKind, tmdbId: number): Promise<TitleMetadata>;
+  /** The trailers alone, for a title stored before trailers were kept. Absent: such titles stay unchecked. */
+  trailers?(kind: TitleKind, tmdbId: number, seasons: readonly number[]): Promise<TitleTrailers>;
 }
 
 export function tmdbResolver(tmdb: TmdbClient, fallback: NameFallback | null): TitleResolver {
   return {
     match: (parsed) => matchTitle(parsed, tmdb, fallback ?? undefined),
     details: (kind, tmdbId) => (kind === 'movie' ? tmdb.movieDetails(tmdbId) : tmdb.tvDetails(tmdbId)),
+    trailers: (kind, tmdbId, seasons) => tmdb.trailers(kind, tmdbId, seasons),
   };
 }
 
@@ -356,6 +366,36 @@ interface Candidate {
 }
 
 /**
+ * Looks up the trailers of titles stored before trailers were kept, a few per pass. A title TMDB
+ * answers for is marked checked, with or without a trailer, and so is one TMDB no longer has
+ * (404). Any other failure leaves it for the next pass; an unreachable TMDB ends the step.
+ * Returns how many titles were marked.
+ */
+async function backfillTrailers(deps: SyncDeps, at: Date, log: (line: string) => void): Promise<number> {
+  const lookup = deps.resolver?.trailers?.bind(deps.resolver);
+  if (lookup === undefined) return 0;
+  let checked = 0;
+  for (const t of await deps.repo.titlesWithoutTrailers(TRAILER_BACKFILL_PER_PASS)) {
+    deps.signal?.throwIfAborted();
+    let trailers: TitleTrailers;
+    try {
+      trailers = await lookup(t.kind, t.tmdbId, t.seasons);
+    } catch (err) {
+      if (!(err instanceof TmdbError)) throw err;
+      if (tmdbUnreachable(err)) break;
+      if (err.status !== 404) {
+        log(`[notesd] movies: trailers of ${t.id} could not be read (${err.message}); retried next pass`);
+        continue;
+      }
+      trailers = { title: null, seasons: {} };
+    }
+    await deps.repo.setTitleTrailers(t.id, trailers, at);
+    checked += 1;
+  }
+  return checked;
+}
+
+/**
  * One sync pass over this host's roots (see the step list in the phase plan). Never rejects: an
  * error or an abort ends the pass with `report.error` set.
  */
@@ -545,6 +585,7 @@ export async function runSyncPass(deps: SyncDeps): Promise<SyncReport> {
         report.hook_errors.push(`${hook.name ?? 'hook'}: ${messageOf(err)}`);
       }
     }
+    if (!resolver.tmdbDown) report.trailers_checked = await backfillTrailers(deps, at, log);
   } catch (err) {
     report.error = messageOf(err);
   }

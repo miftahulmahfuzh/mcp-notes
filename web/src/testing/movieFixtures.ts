@@ -73,6 +73,8 @@ function detailOf(item: TitleListItem, over: Partial<TitleDetail>): TitleDetail 
     runtime_min: null,
     genres: [],
     backdrop_url: null,
+    trailer_key: null,
+    trailer_url: null,
     season_count: null,
     episode_count: null,
     review: '',
@@ -157,6 +159,8 @@ export const KILLING_FILE = makeFile(11, {
 
 export const MOVIE: TitleDetail = detailOf(KILLING_ITEM, {
   poster_url: 'https://image.tmdb.org/t/p/w500/kill.jpg',
+  trailer_key: 'BxBof_p3_es',
+  trailer_url: 'https://www.youtube.com/watch?v=BxBof_p3_es',
   release_date: '2026-02-20',
   overview: 'A disinherited heir plots his way back into the family fortune.',
   runtime_min: 112,
@@ -214,9 +218,10 @@ export const SERIES: TitleDetail = detailOf(MOBLAND_ITEM, {
   seasons: [
     {
       season: 1,
+      trailer_key: 'moblandS1tr',
       episodes: [episodeOf(1, 1, 'Stick or Twist', E1), episodeOf(1, 2, 'Episode Two', E2), episodeOf(1, 3, 'Episode Three', E3), episodeOf(1, 4, 'Episode Four', null)],
     },
-    { season: 2, episodes: [episodeOf(2, 1, 'Season Two Opener', null)] },
+    { season: 2, trailer_key: null, episodes: [episodeOf(2, 1, 'Season Two Opener', null)] },
   ],
 });
 

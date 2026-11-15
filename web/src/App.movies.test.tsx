@@ -255,6 +255,36 @@ describe('App: Movies', () => {
     expect(postsTo('/api/movies/movie-467905/user').length).toBe(n);
   });
 
+  it('the trailer icon plays the trailer TMDB lists in a pop-up; Esc closes it and the page stays', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(article).getByRole('button', { name: 'Watch the trailer' }));
+    const dialog = screen.getByRole('dialog', { name: 'Trailer of How to Make a Killing (2026)' });
+    expect(dialog.querySelector('iframe')?.getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/BxBof_p3_es?autoplay=1&rel=0');
+    expect(within(dialog).getByRole('link', { name: 'Open on YouTube' }).getAttribute('href')).toBe('https://www.youtube.com/watch?v=BxBof_p3_es');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('article', { name: 'How to Make a Killing' })).toBeTruthy();
+  });
+
+  it('a title without a trailer searches YouTube in a new tab; a season plays its own trailer', async () => {
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    at('/movies/tv-247718');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'MobLand' });
+    fireEvent.click(within(article).getByRole('button', { name: 'Find the trailer on YouTube' }));
+    expect(open).toHaveBeenCalledWith('https://www.youtube.com/results?search_query=MobLand%202025%20trailer', '_blank', 'noopener');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(article).getByRole('button', { name: 'Watch the season 1 trailer' }));
+    const dialog = screen.getByRole('dialog', { name: 'Trailer of MobLand, season 1' });
+    expect(dialog.querySelector('iframe')?.getAttribute('src')).toContain('/embed/moblandS1tr?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('R5.2 + R5.3: a series lists episodes with progress, a deleted flag and an on-another-machine flag', async () => {
     at('/movies/tv-247718');
     render(<App />);

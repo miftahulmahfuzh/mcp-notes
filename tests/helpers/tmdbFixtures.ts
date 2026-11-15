@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
  *
  * Routes -> files: /search/{movie,tv,person}?query=Q -> search-{kind}-{slug(Q)}.json (an unknown
  * query answers an empty page, as TMDB does); /movie/ID -> movie-ID.json; /tv/ID -> tv-ID.json;
- * /tv/ID/season/N -> tv-ID-season-N.json; /person/ID/combined_credits ->
- * person-ID-combined-credits.json. Anything else is TMDB's 404 body.
+ * /tv/ID/season/N -> tv-ID-season-N.json; the same three with /videos -> ...-videos.json;
+ * /person/ID/combined_credits -> person-ID-combined-credits.json. Anything else is TMDB's 404 body.
  */
 
 export const TMDB_FIXTURE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/movies');
@@ -41,6 +41,8 @@ export function fixtureFileFor(pathname: string, params: URLSearchParams): strin
   if (tv !== null) return `tv-${tv[1]}.json`;
   const season = /^\/tv\/(\d+)\/season\/(\d+)$/.exec(pathname);
   if (season !== null) return `tv-${season[1]}-season-${season[2]}.json`;
+  const videos = /^\/(movie|tv)\/(\d+)(?:\/season\/(\d+))?\/videos$/.exec(pathname);
+  if (videos !== null) return `${videos[1]}-${videos[2]}${videos[3] === undefined ? '' : `-season-${videos[3]}`}-videos.json`;
   const person = /^\/person\/(\d+)\/combined_credits$/.exec(pathname);
   if (person !== null) return `person-${person[1]}-combined-credits.json`;
   return null;

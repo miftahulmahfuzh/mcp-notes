@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
 import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { CAST_LIMIT, clock, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, type MovieEntity } from '../../lib/movies';
+import { CAST_LIMIT, clock, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, trailerTarget, type MovieEntity, type TrailerTarget } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
-import { EntityLink, FileRow } from './parts';
+import { EntityLink, FileRow, TrailerButton } from './parts';
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
+import { TrailerModal } from './TrailerModal';
 
 export interface MovieDetailProps {
   detail: TitleDetail;
@@ -24,7 +25,7 @@ export interface MovieDetailProps {
 
 /**
  * One title (`/movies/<id>`), a film or a series: poster, facts (release date, runtime or seasons,
- * genres), the Play/Resume button, the watched flag, stars, synopsis, the review, credits (studios,
+ * genres), the Play/Resume button, the trailer, the watched flag, stars, synopsis, the review, credits (studios,
  * directors, writers, producers; creators for a series), the cast with character names, then the
  * film's files or the series' episodes, each with progress and its deleted / other-machine flag.
  */
@@ -34,6 +35,9 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const [busy, setBusy] = useState(false);
   useEffect(() => setWatched(d.watched), [d.watched]);
   useEffect(() => setRating(d.rating), [d.rating]);
+  /** The trailer playing in the pop-up. It has a video id: a title without one searches YouTube in a new tab instead. */
+  const [trailer, setTrailer] = useState<TrailerTarget | null>(null);
+  useEffect(() => setTrailer(null), [d.id]);
 
   const plan = playPlan(d);
   const play = playLabel(plan, player);
@@ -148,6 +152,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
               <Play weight="duotone" />
             </button>
+            <TrailerButton target={trailerTarget(d)} onWatch={setTrailer} />
             <button
               type="button"
               className={watched ? 'ibtn on' : 'ibtn hov'}
@@ -192,7 +197,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
       </div>
       <CastList cast={d.cast} onEntity={onEntity} asking={asking} />
       {d.kind === 'tv' ? (
-        <EpisodeList detail={d} player={player} focus={focus} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} />
+        <EpisodeList detail={d} player={player} focus={focus} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} onTrailer={setTrailer} />
       ) : (
         <section className="mv-sec" aria-label="Files">
           <h2 className="mv-h2">Files</h2>
@@ -203,6 +208,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           </ul>
         </section>
       )}
+      {trailer !== null && trailer.key !== null && <TrailerModal videoKey={trailer.key} name={trailer.name} onClose={() => setTrailer(null)} />}
     </article>
   );
 }

@@ -2,6 +2,7 @@
   "movies": [
     {
       "id": 467905, "title": "How to Make a Killing", "original_title": "How to Make a Killing", "original_language": "en",
+      "videos": { "results": [{ "iso_639_1": "en", "iso_3166_1": "US", "name": "Teaser", "key": "fxTeaser001", "site": "YouTube", "size": 1080, "type": "Teaser", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "fx-fxTeaser001" }, { "iso_639_1": "en", "iso_3166_1": "US", "name": "Official Trailer", "key": "BxBof_p3_es", "site": "YouTube", "size": 1080, "type": "Trailer", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "fx-BxBof_p3_es" }] },
       "release_date": "2026-02-20", "runtime": 105, "popularity": 41.2, "vote_average": 7.1, "vote_count": 512,
       "overview": "Verify fixture. A disinherited heir works out how far he will go to get his family's fortune back.",
       "poster_path": "/fx-how-to-make-a-killing.jpg", "backdrop_path": "/fx-how-to-make-a-killing-bd.jpg",
@@ -123,6 +124,7 @@
       },
       "seasons_detail": {
         "1": {
+          "videos": { "results": [{ "iso_639_1": "en", "iso_3166_1": "US", "name": "Season 1 Trailer", "key": "fxMobS1trlr", "site": "YouTube", "size": 1080, "type": "Trailer", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "fx-fxMobS1trlr" }] },
           "id": 990401, "season_number": 1, "name": "Season 1", "air_date": "2025-03-30", "overview": "", "poster_path": null,
           "episodes": [
             { "id": 990501, "season_number": 1, "episode_number": 1, "name": "Stick or Twist", "air_date": "2025-03-30", "runtime": 57, "overview": "Verify fixture episode 1.", "still_path": "/fx-mobland-s01e01.jpg" },

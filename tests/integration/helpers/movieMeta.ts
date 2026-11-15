@@ -24,6 +24,7 @@ export function movieMeta(tmdbId: number): TitleMetadata {
       { personId: 9003, name: 'Jason Blum', profilePath: null, role: 'producer', character: null, job: 'Producer' },
     ],
     episodes: [],
+    trailers: { title: null, seasons: {} },
   };
 }
 
@@ -53,5 +54,6 @@ export function tvMeta(tmdbId: number): TitleMetadata {
       { season: 1, episode: 2, name: 'Alpha Male', airDate: '2025-04-06', runtimeMin: 55, overview: null, stillPath: null },
       { season: 1, episode: 3, name: 'Sweet Dreams', airDate: '2025-04-13', runtimeMin: 56, overview: null, stillPath: null },
     ],
+    trailers: { title: 'moblandTrlr', seasons: { '1': 'moblandS1tr' } },
   };
 }

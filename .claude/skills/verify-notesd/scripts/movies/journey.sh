@@ -139,6 +139,14 @@ api GET "/api/movies/$EP_ID"
 jqb '.id == "tv-247718"' <<<"$BODY" || fail "GET /api/movies/$EP_ID did not answer its series: HTTP $CODE"
 [ "$(q "select count(*) = count(distinct id) from movie_ids")" = t ] || fail "movie ids repeat"
 ok "every title and episode has its own movie id ($(q "select count(*) from movie_ids") ids); $EP_ID opens MobLand"
+# Trailers: the film has one, the series none of its own and one for season 1 (the fake TMDB's videos).
+api GET /api/movies/movie-467905
+need_2xx "GET /api/movies/movie-467905"
+jqb '.trailer_key == "BxBof_p3_es" and .trailer_url == "https://www.youtube.com/watch?v=BxBof_p3_es"' <<<"$BODY" || fail "the film has no trailer: $(jq -c '{trailer_key, trailer_url}' <<<"$BODY")"
+api GET /api/movies/tv-247718
+jqb '.trailer_key == null and .seasons[0].trailer_key == "fxMobS1trlr"' <<<"$BODY" || fail "MobLand's trailers are wrong: $(jq -c '{trailer_key, seasons: [.seasons[] | {season, trailer_key}]}' <<<"$BODY")"
+[ "$(q "select count(*) from movie_titles where trailers_checked_at is null")" = 0 ] || fail "a title was never asked for its trailers"
+ok "trailers: the film's is BxBof_p3_es (the trailer, not the teaser), MobLand has none of its own and one for season 1"
 
 stage "2 posters: every title has a poster URL that loads without the files"
 api GET /api/movies

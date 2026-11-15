@@ -30,6 +30,7 @@ import {
   type RecentsObservation,
   type TitleKind,
   type TitleMetadata,
+  type TitleTrailers,
   type TitleUserPatch,
 } from './types.js';
 
@@ -125,6 +126,9 @@ export class MoviesRepo {
         overview: meta.overview,
         posterPath: meta.posterPath,
         backdropPath: meta.backdropPath,
+        trailerKey: meta.trailers.title,
+        seasonTrailers: meta.trailers.seasons,
+        trailersCheckedAt: now,
         runtimeMin: meta.runtimeMin,
         genres: meta.genres,
         seasonCount: meta.seasonCount,
@@ -175,6 +179,40 @@ export class MoviesRepo {
       for (const batch of chunks(episodes)) await tx.insert(movieEpisodes).values(batch);
     });
     return id;
+  }
+
+  /**
+   * Titles TMDB was never asked about trailers for (stored before trailers were kept), oldest
+   * first, each with the seasons its episode list names.
+   */
+  async titlesWithoutTrailers(limit: number): Promise<Array<{ id: string; kind: TitleKind; tmdbId: number; seasons: number[] }>> {
+    const titles = await this.db
+      .select({ id: movieTitles.id, kind: movieTitles.kind, tmdbId: movieTitles.tmdbId })
+      .from(movieTitles)
+      .where(isNull(movieTitles.trailersCheckedAt))
+      .orderBy(asc(movieTitles.createdAt), asc(movieTitles.id))
+      .limit(limit);
+    const out: Array<{ id: string; kind: TitleKind; tmdbId: number; seasons: number[] }> = [];
+    for (const t of titles) {
+      const seasons =
+        t.kind === 'tv'
+          ? await this.db
+              .selectDistinct({ season: movieEpisodes.season })
+              .from(movieEpisodes)
+              .where(eq(movieEpisodes.titleId, t.id))
+              .orderBy(asc(movieEpisodes.season))
+          : [];
+      out.push({ ...t, seasons: seasons.map((s) => s.season) });
+    }
+    return out;
+  }
+
+  /** Stores a title's trailers and marks them checked. Nothing else of the title changes. */
+  async setTitleTrailers(id: string, trailers: TitleTrailers, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(movieTitles)
+      .set({ trailerKey: trailers.title, seasonTrailers: trailers.seasons, trailersCheckedAt: now })
+      .where(eq(movieTitles.id, id));
   }
 
   /** Sets the owner's state on a title. Returns the updated row, or null for an unknown id. */
@@ -252,6 +290,7 @@ export class MoviesRepo {
       companies,
       credits,
       episodes,
+      trailers: { title: title.trailerKey, seasons: title.seasonTrailers },
     };
   }
 

@@ -1,6 +1,6 @@
-import { CheckCircle, Desktop, Play, Trash } from '@phosphor-icons/react';
+import { CheckCircle, Desktop, MonitorPlay, Play, Trash } from '@phosphor-icons/react';
 import type { FileView, PlayerState, ProgressView, WatchState } from '../../moviesApi';
-import { dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, type MovieEntity, type PlayButtonState } from '../../lib/movies';
+import { dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, type MovieEntity, type PlayButtonState, type TrailerTarget } from '../../lib/movies';
 
 /** R5.3: a deleted file says so; a present file on the other laptop says where it is. */
 export function FileFlags({ file }: { file: FileView }) {
@@ -91,6 +91,25 @@ export function EntityLink({ entity, onAsk, busy = false }: EntityLinkProps) {
   return (
     <button type="button" className="mv-ent" data-tip={entityTip(entity)} disabled={busy} onClick={() => onAsk(entity)}>
       {entity.name}
+    </button>
+  );
+}
+
+/** The trailer icon: plays the trailer TMDB lists in the pop-up, or opens a YouTube search in a new tab when it lists none. */
+export function TrailerButton({ target, onWatch }: { target: TrailerTarget; onWatch: (t: TrailerTarget) => void }) {
+  return (
+    <button
+      type="button"
+      className="ibtn hov mv-trailer"
+      data-tip={target.label}
+      data-tip-side="below"
+      aria-label={target.label}
+      onClick={() => {
+        if (target.key !== null) onWatch(target);
+        else window.open(target.searchUrl, '_blank', 'noopener');
+      }}
+    >
+      <MonitorPlay weight="duotone" />
     </button>
   );
 }

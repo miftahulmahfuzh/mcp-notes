@@ -136,6 +136,8 @@ export interface EpisodeView {
 
 export interface SeasonView {
   season: number;
+  /** YouTube video id of this season's trailer; null when TMDB lists none. */
+  trailer_key: string | null;
   episodes: EpisodeView[];
 }
 
@@ -170,6 +172,9 @@ export interface TitleDetail extends TitleListItem {
   runtime_min: number | null;
   genres: string[];
   backdrop_url: string | null;
+  /** YouTube video id of the title's trailer; null when TMDB lists none. */
+  trailer_key: string | null;
+  trailer_url: string | null;
   season_count: number | null;
   episode_count: number | null;
   /** The review note's text; '' when none. */

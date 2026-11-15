@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
-import { episodeCode, filePlayLabel, primaryFile, seasonsShown, type PlayButtonState } from '../../lib/movies';
-import { FileFlags, FileRow, Meter, PlayButton, WatchedButton } from './parts';
+import { episodeCode, filePlayLabel, primaryFile, seasonsShown, trailerTarget, type PlayButtonState, type TrailerTarget } from '../../lib/movies';
+import { FileFlags, FileRow, Meter, PlayButton, TrailerButton, WatchedButton } from './parts';
 
 export interface EpisodeListProps {
   detail: TitleDetail;
@@ -11,10 +11,12 @@ export interface EpisodeListProps {
   busy: boolean;
   onPlay: (f: FileView) => void;
   onWatched: (f: FileView) => void;
+  /** Plays a season's trailer in the page's pop-up. */
+  onTrailer: (t: TrailerTarget) => void;
 }
 
-/** A series' seasons (those with a file on any machine), each episode with its progress and flags; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatched }: EpisodeListProps) {
+/** A series' seasons (those with a file on any machine), each with its trailer and every episode with its progress and flags; then files with no episode. */
+export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatched, onTrailer }: EpisodeListProps) {
   const { seasons, hidden } = seasonsShown(detail, focus);
   const list = useRef<HTMLElement>(null);
   // Once per (title, focus): a refresh of the detail must not pull the page back to the episode.
@@ -28,7 +30,10 @@ export function EpisodeList({ detail, player, focus = null, busy, onPlay, onWatc
       <h2 className="mv-h2">Episodes</h2>
       {seasons.map((s) => (
         <div key={s.season} className="mv-season">
-          <h3 className="mv-season-h">{s.season === 0 ? 'Specials' : `Season ${s.season}`}</h3>
+          <div className="mv-season-head">
+            <h3 className="mv-season-h">{s.season === 0 ? 'Specials' : `Season ${s.season}`}</h3>
+            {s.season > 0 && <TrailerButton target={trailerTarget(detail, s.season)} onWatch={onTrailer} />}
+          </div>
           <ol className="mv-eps">
             {s.episodes.map((e) => (
               <EpisodeItem key={e.episode} episode={e} focused={focus !== null && e.movie_id === focus} player={player} busy={busy} onPlay={onPlay} onWatched={onWatched} />

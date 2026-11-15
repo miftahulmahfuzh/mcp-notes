@@ -103,6 +103,7 @@
 .mv-cast-n { font-size: 14px; color: var(--text); }
 .mv-cast-c { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
 .mv-season { display: flex; flex-direction: column; gap: 2px; }
+.mv-season-head { display: flex; align-items: center; gap: 8px; }
 .mv-season-h { font-size: 20px; font-weight: 400; letter-spacing: -.02em; margin: 0; padding: 10px 0 6px; }
 .mv-eps, .mv-files { list-style: none; margin: 0; padding: 0; }
 .mv-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 150px 32px 32px; gap: 14px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--line); }

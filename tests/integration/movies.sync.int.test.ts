@@ -354,6 +354,59 @@ describe('movies sync pass', () => {
     expect(await file(E01)).toMatchObject({ status: 'matched', title_id: 'tv-247718', season: 1, episode: 1 });
   });
 
+  it('looks up the trailers of titles stored before trailers were kept, once, and waits out a TMDB outage', async () => {
+    const r = fakeResolver();
+    await video(`Telegram/${KILLING}`, 7200);
+    await video(`Telegram/${MOBLAND}/${E01}`, 3500);
+    await video(`Telegram/${BAD_APPLES}`, 7000);
+    // A new title carries its trailers from its details call: nothing is left to look up.
+    expect(await settle(r)).toMatchObject({ matched: 3, trailers_checked: 0 });
+    const trailers = async (): Promise<Record<string, [string | null, Record<string, string>, boolean]>> => {
+      const rows = (
+        await db.execute<{ id: string; trailer_key: string | null; season_trailers: Record<string, string>; checked: boolean }>(
+          sql`select id, trailer_key, season_trailers, trailers_checked_at is not null as checked from movie_titles`,
+        )
+      ).rows;
+      return Object.fromEntries(rows.map((t) => [t.id, [t.trailer_key, t.season_trailers, t.checked]]));
+    };
+    expect(await trailers()).toEqual({
+      'movie-467905': [null, {}, true],
+      'tv-247718': ['moblandTrlr', { '1': 'moblandS1tr' }, true],
+      'movie-1200002': [null, {}, true],
+    });
+
+    await db.execute(sql`update movie_titles set trailer_key = null, season_trailers = '{}'::jsonb, trailers_checked_at = null`);
+    const asked: string[] = [];
+    let down = true;
+    const withTrailers: TitleResolver = {
+      match: r.match,
+      details: r.details,
+      async trailers(kind, tmdbId, seasons) {
+        if (down) throw new TmdbError('timeout', 'TMDB timed out (test)');
+        asked.push(`${kind}-${tmdbId}:${seasons.join(',')}`);
+        if (tmdbId === 1200002) throw new TmdbError('http', 'TMDB /movie/1200002/videos returned 404', 404);
+        const seasonTrailers: Record<string, string> = kind === 'movie' ? {} : { '1': 'backfillS1x' };
+        return { title: kind === 'movie' ? 'BxBof_p3_es' : null, seasons: seasonTrailers };
+      },
+    };
+    // A resolver that cannot read trailers, and an unreachable TMDB, leave the titles to be asked later.
+    expect(await runSyncPass(deps(r))).toMatchObject({ error: null, trailers_checked: 0 });
+    expect(await runSyncPass(deps(withTrailers))).toMatchObject({ error: null, trailers_checked: 0 });
+    expect(Object.values(await trailers()).every(([, , checked]) => !checked)).toBe(true);
+
+    down = false;
+    expect(await runSyncPass(deps(withTrailers))).toMatchObject({ error: null, trailers_checked: 3 });
+    expect([...asked].sort()).toEqual(['movie-1200002:', 'movie-467905:', 'tv-247718:1']);
+    // A title TMDB no longer has is settled without a trailer.
+    expect(await trailers()).toEqual({
+      'movie-467905': ['BxBof_p3_es', {}, true],
+      'tv-247718': [null, { '1': 'backfillS1x' }, true],
+      'movie-1200002': [null, {}, true],
+    });
+    expect(await runSyncPass(deps(withTrailers))).toMatchObject({ trailers_checked: 0 });
+    expect(asked).toHaveLength(3);
+  });
+
   it('registers files as no_tmdb_credentials without a resolver and matches them once one exists (R1.2)', async () => {
     await video(`Telegram/${KILLING}`, 7200);
     const off = await settle(null);

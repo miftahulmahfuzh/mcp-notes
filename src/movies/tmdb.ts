@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata } from './types.js';
+import type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata, TitleTrailers } from './types.js';
 
 /**
- * TMDB v3 client: search, details with credits, every season's episodes, people. The only module
+ * TMDB v3 client: search, details with credits and trailers, every season's episodes, people. The only module
  * that talks to TMDB. Every response is checked against a schema here, at the edge, and turned
  * into the types below; callers never see TMDB's JSON. Every failure is a TmdbError, which the
  * sync pass treats as "TMDB unreachable, retry next pass".
@@ -23,7 +23,7 @@ export const DEFAULT_POSTER_SIZE = 'w342';
 const SNIPPET_CHARS = 300;
 
 // TitleMetadata and its parts have one definition, in ./types.ts (phase 1); this module re-exports them.
-export type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata };
+export type { CompanyMeta, CreditMeta, CreditRole, EpisodeMeta, TitleKind, TitleMetadata, TitleTrailers };
 
 /** One search result, film or series. */
 export interface TmdbSearchHit {
@@ -71,6 +71,11 @@ export interface TmdbClient {
   movieDetails(id: number): Promise<TitleMetadata>;
   /** One request for the series, then one per season (sequential). */
   tvDetails(id: number): Promise<TitleMetadata>;
+  /**
+   * The trailers alone, for a title stored before trailers were kept: one request for the title,
+   * then one per season in `seasons` (sequential). A season TMDB has no page for has no trailer.
+   */
+  trailers(kind: TitleKind, id: number, seasons: readonly number[]): Promise<TitleTrailers>;
   searchPerson(query: string): Promise<TmdbPersonHit[]>;
   /** Films and series, cast then crew, in TMDB's order. */
   personCredits(personId: number): Promise<TmdbPersonCredit[]>;
@@ -118,6 +123,15 @@ const CompanySchema = z.object({ id: intId, name: z.string(), logo_path: text, o
 const MovieCastSchema = z.object({ id: intId, name: z.string(), character: text, order: num, profile_path: text });
 const MovieCrewSchema = z.object({ id: intId, name: z.string(), job: text, department: text, profile_path: text });
 
+const VideoSchema = z.object({
+  key: text,
+  site: text,
+  type: text,
+  official: z.boolean().nullish(),
+  published_at: text,
+});
+const VideosSchema = z.object({ results: z.array(VideoSchema).nullish() });
+
 const MovieDetailsSchema = z.object({
   id: intId,
   title: z.string(),
@@ -130,6 +144,7 @@ const MovieDetailsSchema = z.object({
   genres: z.array(GenreSchema).nullish(),
   production_companies: z.array(CompanySchema).nullish(),
   credits: z.object({ cast: z.array(MovieCastSchema).nullish(), crew: z.array(MovieCrewSchema).nullish() }).nullish(),
+  videos: VideosSchema.nullish(),
 });
 
 const TvCastSchema = z.object({
@@ -165,6 +180,7 @@ const TvDetailsSchema = z.object({
   production_companies: z.array(CompanySchema).nullish(),
   seasons: z.array(z.object({ season_number: intId })).nullish(),
   aggregate_credits: z.object({ cast: z.array(TvCastSchema).nullish(), crew: z.array(TvCrewSchema).nullish() }).nullish(),
+  videos: VideosSchema.nullish(),
 });
 
 const SeasonSchema = z.object({
@@ -180,6 +196,7 @@ const SeasonSchema = z.object({
       }),
     )
     .nullish(),
+  videos: VideosSchema.nullish(),
 });
 
 const MovieSearchSchema = z.object({
@@ -300,6 +317,29 @@ export function absoluteToSeasonEpisode(
     .sort((a, b) => a.season - b.season || a.episode - b.episode);
   const hit = ordered[n - 1];
   return hit === undefined ? null : { season: hit.season, episode: hit.episode };
+}
+
+// ---- trailers ----
+
+/** What a YouTube video id looks like. The key goes into an embed URL, so nothing else is kept. */
+const YOUTUBE_KEY = /^[A-Za-z0-9_-]{6,20}$/;
+
+/**
+ * The one video to show as the trailer, as a YouTube video id, or null. Only YouTube videos of type
+ * Trailer or Teaser count. A trailer beats a teaser, an official video an unofficial one, and
+ * among equals the newest wins (the final trailer, not the first announcement).
+ */
+export function pickTrailer(videos: ReadonlyArray<z.infer<typeof VideoSchema>> | null | undefined): string | null {
+  let best: { key: string; rank: number; at: string } | null = null;
+  for (const v of videos ?? []) {
+    const key = orNull(v.key);
+    if (key === null || !YOUTUBE_KEY.test(key) || v.site !== 'YouTube') continue;
+    if (v.type !== 'Trailer' && v.type !== 'Teaser') continue;
+    const rank = (v.type === 'Trailer' ? 2 : 0) + (v.official === true ? 1 : 0);
+    const at = v.published_at ?? '';
+    if (best === null || rank > best.rank || (rank === best.rank && at > best.at)) best = { key, rank, at };
+  }
+  return best === null ? null : best.key;
 }
 
 // ---- credits ----
@@ -495,17 +535,21 @@ export function createTmdbClient(
     }
   }
 
-  async function seasonEpisodes(tvId: number, season: number): Promise<EpisodeMeta[]> {
-    let json: unknown;
+  /** A 404 answers null: TMDB sometimes lists a season it has no page for, which is not a failed sync. */
+  async function getOrNull(path: string, params: QueryParams): Promise<unknown> {
     try {
-      json = await get(`/tv/${tvId}/season/${season}`, {});
+      return await get(path, params);
     } catch (err) {
-      // TMDB sometimes lists a season it has no page for: no episodes, not a failed sync.
-      if (err instanceof TmdbError && err.status === 404) return [];
+      if (err instanceof TmdbError && err.status === 404) return null;
       throw err;
     }
+  }
+
+  async function seasonDetails(tvId: number, season: number): Promise<{ episodes: EpisodeMeta[]; trailer: string | null }> {
+    const json = await getOrNull(`/tv/${tvId}/season/${season}`, { append_to_response: 'videos' });
+    if (json === null) return { episodes: [], trailer: null };
     const raw = decode(SeasonSchema, json, `tv ${tvId} season ${season}`);
-    return (raw.episodes ?? []).map((e) => ({
+    const episodes = (raw.episodes ?? []).map((e) => ({
       season,
       episode: e.episode_number,
       name: orNull(e.name) ?? `Episode ${e.episode_number}`,
@@ -514,6 +558,7 @@ export function createTmdbClient(
       overview: orNull(e.overview),
       stillPath: orNull(e.still_path),
     }));
+    return { episodes, trailer: pickTrailer(raw.videos?.results) };
   }
 
   return {
@@ -560,7 +605,7 @@ export function createTmdbClient(
     },
 
     async movieDetails(id) {
-      const raw = decode(MovieDetailsSchema, await get(`/movie/${id}`, { append_to_response: 'credits' }), `movie ${id}`);
+      const raw = decode(MovieDetailsSchema, await get(`/movie/${id}`, { append_to_response: 'credits,videos' }), `movie ${id}`);
       const credits = new CreditCollector();
       (raw.credits?.cast ?? []).forEach((c, i) =>
         credits.add('cast', personRef(c), { character: c.character, weight: -(c.order ?? i) }),
@@ -587,11 +632,12 @@ export function createTmdbClient(
         companies: companiesOf(raw.production_companies),
         credits: credits.build(),
         episodes: [],
+        trailers: { title: pickTrailer(raw.videos?.results), seasons: {} },
       };
     },
 
     async tvDetails(id) {
-      const raw = decode(TvDetailsSchema, await get(`/tv/${id}`, { append_to_response: 'aggregate_credits' }), `tv ${id}`);
+      const raw = decode(TvDetailsSchema, await get(`/tv/${id}`, { append_to_response: 'aggregate_credits,videos' }), `tv ${id}`);
       const credits = new CreditCollector();
       (raw.aggregate_credits?.cast ?? []).forEach((c, i) => {
         const weight = -(c.order ?? i);
@@ -609,7 +655,12 @@ export function createTmdbClient(
 
       const seasonNumbers = [...new Set((raw.seasons ?? []).map((s) => s.season_number))].sort((a, b) => a - b);
       const episodes: EpisodeMeta[] = [];
-      for (const n of seasonNumbers) episodes.push(...(await seasonEpisodes(raw.id, n)));
+      const seasonTrailers: Record<string, string> = {};
+      for (const n of seasonNumbers) {
+        const season = await seasonDetails(raw.id, n);
+        episodes.push(...season.episodes);
+        if (season.trailer !== null) seasonTrailers[String(n)] = season.trailer;
+      }
 
       const releaseDate = orNull(raw.first_air_date);
       return {
@@ -629,7 +680,21 @@ export function createTmdbClient(
         companies: companiesOf(raw.production_companies),
         credits: credits.build(),
         episodes,
+        trailers: { title: pickTrailer(raw.videos?.results), seasons: seasonTrailers },
       };
+    },
+
+    async trailers(kind, id, seasons) {
+      const own = decode(VideosSchema, await get(`/${kind}/${id}/videos`, {}), `${kind} ${id} videos`);
+      const out: TitleTrailers = { title: pickTrailer(own.results), seasons: {} };
+      if (kind === 'movie') return out;
+      for (const n of [...new Set(seasons)].sort((a, b) => a - b)) {
+        const json = await getOrNull(`/tv/${id}/season/${n}/videos`, {});
+        if (json === null) continue;
+        const key = pickTrailer(decode(VideosSchema, json, `tv ${id} season ${n} videos`).results);
+        if (key !== null) out.seasons[String(n)] = key;
+      }
+      return out;
     },
 
     async searchPerson(query) {

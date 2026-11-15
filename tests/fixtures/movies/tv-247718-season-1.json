@@ -6,5 +6,6 @@
     { "episode_number": 1, "season_number": 1, "name": "Stick or Twist", "air_date": "2025-03-30", "runtime": 60, "overview": "Harry Da Souza is called upon to make a problem disappear.", "still_path": "/5IBWjTRedZgLgUEx5MYAq76FBZf.jpg" },
     { "episode_number": 2, "season_number": 1, "name": "Jigsaw Puzzle", "air_date": "2025-04-06", "runtime": 52, "overview": "Harry must deal with the aftermath.", "still_path": "/22kcWCxB4bf4ZlKx1UiE1zArFr2.jpg" },
     { "episode_number": 3, "season_number": 1, "name": "Plan B", "air_date": "2025-04-13", "runtime": 48, "overview": "", "still_path": "/jKXqCG2lyCgWHSRyukpriRzoI14.jpg" }
-  ]
+  ],
+  "videos": {"results": [{"iso_639_1": "en", "iso_3166_1": "US", "name": "Official Trailer", "key": "clip0000001", "site": "YouTube", "size": 1080, "type": "Clip", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "vidclip0000001"}, {"iso_639_1": "en", "iso_3166_1": "US", "name": "Official Trailer", "key": "moblandS1tr", "site": "YouTube", "size": 1080, "type": "Teaser", "official": true, "published_at": "2026-01-10T15:00:00.000Z", "id": "vidmoblandS1tr"}]}
 }

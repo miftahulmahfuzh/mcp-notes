@@ -1,5 +1,5 @@
 // fake-tmdb.mjs: a TMDB v3 stand-in for `verify.sh up --movies`. Serves tmdb.json (search, details
-// with credits, seasons, people) and generated PNG posters on 127.0.0.1, on any free port.
+// with credits and videos, seasons, people) and generated PNG posters on 127.0.0.1, on any free port.
 //   node fake-tmdb.mjs --data tmdb.json --port-file FILE --log FILE
 // The daemon reaches it through TMDB_API_BASE=http://127.0.0.1:<port>/3 and
 // TMDB_IMAGE_BASE=http://127.0.0.1:<port>/t/p. Every request is appended to the log, with
@@ -146,6 +146,15 @@ function route(url) {
   if ((m = p.match(/^\/tv\/(\d+)\/season\/(\d+)$/))) {
     const season = byId(tvs, m[1])?.seasons_detail?.[String(Number(m[2]))]
     return season ? [200, season] : notFound()
+  }
+  // Trailers: How to Make a Killing has one, MobLand none of its own and one for season 1.
+  if ((m = p.match(/^\/(movie|tv)\/(\d+)\/videos$/))) {
+    const x = byId(m[1] === 'movie' ? movies : tvs, m[2])
+    return x ? [200, { id: x.id, results: x.videos?.results ?? [] }] : notFound()
+  }
+  if ((m = p.match(/^\/tv\/(\d+)\/season\/(\d+)\/videos$/))) {
+    const season = byId(tvs, m[1])?.seasons_detail?.[String(Number(m[2]))]
+    return season ? [200, { id: season.id, results: season.videos?.results ?? [] }] : notFound()
   }
   if ((m = p.match(/^\/person\/(\d+)$/))) {
     const x = byId(people, m[1])

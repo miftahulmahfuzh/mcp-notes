@@ -133,7 +133,7 @@ function messageOf(err: unknown): string {
 }
 
 function wrote(report: SyncReport): boolean {
-  return report.new + report.moved + report.deleted + report.done + report.matched + report.unmatched + report.hook_writes > 0;
+  return report.new + report.moved + report.deleted + report.done + report.matched + report.unmatched + report.hook_writes + report.trailers_checked > 0;
 }
 
 /**
