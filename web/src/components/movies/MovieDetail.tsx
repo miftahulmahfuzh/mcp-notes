@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
 import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { CAST_LIMIT, clock, continueNotice, creditRows, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL } from '../../lib/movies';
+import { CAST_LIMIT, clock, continueNotice, creditRows, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
 import { FileRow } from './parts';
 import { Poster } from './Poster';
@@ -35,6 +35,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const play = playLabel(plan, player);
   const current = player?.current ?? null;
   const live = current !== null && current.title_id === d.id ? current : null;
+  /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is in VLC (or it is stopped). */
+  const now = tileLive(d.id, player);
 
   const run = async (action: () => Promise<string>) => {
     setBusy(true);
@@ -111,8 +113,9 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
         </div>
       )}
       <div className="mv-detail-grid">
-        <div className="mv-detail-art">
+        <div className={now === null ? 'mv-detail-art' : `mv-detail-art now ${now}`}>
           <Poster key={d.poster_url ?? 'none'} url={d.poster_url} title={d.title} year={d.year} />
+          {now !== null && <span className={`mv-badge mv-now ${now}`}>{TILE_LIVE_LABEL[now]}</span>}
         </div>
         <div className="mv-detail-info">
           <p className="mv-facts">
@@ -145,8 +148,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             </button>
             <Stars value={rating} onRate={(v) => void rate(v)} />
             {live !== null && (
-              <span className={live.video_stalled === true ? 'mv-live mv-live-stalled' : 'mv-live'}>
-                {live.video_stalled === true ? 'no picture in VLC' : 'playing in VLC'}
+              <span className={`mv-live ${now ?? 'stopped'}`} role="status">
+                {now === null ? 'stopped' : TILE_LIVE_LABEL[now]} in VLC
                 {` · ${clock(live.position)}`}
                 {live.duration !== null ? ` / ${clock(live.duration)}` : ''}
               </span>

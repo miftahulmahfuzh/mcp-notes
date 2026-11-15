@@ -341,7 +341,8 @@ Rules worth knowing:
   is. The window is not touched. A VLC you opened yourself is never adopted.
 - **The poster shows what is on.** While a play is followed, its title's poster in the grid has a
   pulsing frame and a "playing" chip; paused it is steady and reads "paused"; a VLC without video
-  reads "no picture" in amber.
+  reads "no picture" in amber. The title's page shows the same on its poster, and the line beside
+  Play reads "playing in VLC", "paused in VLC" or "no picture in VLC" with the position.
 - **notesd never stops or kills a VLC, and never touches one you opened yourself.** There is no
   stop, pause or seek command for you to send.
 - **A stopped VLC keeps the last real position.** When VLC reports `stopped` (you pressed stop, or

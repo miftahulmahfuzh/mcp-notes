@@ -195,6 +195,33 @@ describe('App: Movies', () => {
     expect(screen.queryByRole('status', { name: /in VLC$/ })).toBeNull();
   });
 
+  it('the title page shows the same state: a framed poster with the chip, and playing / paused / no picture beside Play', async () => {
+    const cases = [
+      [PLAYING, 'playing', 'playing in VLC · 45:10 / 1:52:00'],
+      [{ ...PLAYING, current: { ...PLAYING.current!, state: 'paused' as const } }, 'paused', 'paused in VLC · 45:10 / 1:52:00'],
+      [{ ...PLAYING, current: { ...PLAYING.current!, video_stalled: true } }, 'stalled', 'no picture in VLC · 45:10 / 1:52:00'],
+    ] as const;
+    for (const [state, cls, line] of cases) {
+      player = state;
+      at('/movies/M-23T4');
+      const view = render(<App />);
+      const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+      const status = await within(article).findByRole('status');
+      expect(status.textContent).toBe(line);
+      expect(status.className).toBe(`mv-live ${cls}`);
+      const art = article.querySelector('.mv-detail-art') as HTMLElement;
+      expect(art.className).toBe(`mv-detail-art now ${cls}`);
+      expect(art.querySelector('.mv-now')!.textContent).toBe(cls === 'stalled' ? 'no picture' : cls);
+      view.unmount();
+    }
+    player = PLAYER_IDLE;
+    at('/movies/M-23T4');
+    render(<App />);
+    const idle = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    expect(within(idle).queryByRole('status')).toBeNull();
+    expect((idle.querySelector('.mv-detail-art') as HTMLElement).className).toBe('mv-detail-art');
+  });
+
   it('Play on a file that is already open in VLC says so instead of "resuming"', async () => {
     at('/movies/M-23T4');
     render(<App />);
