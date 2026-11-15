@@ -161,21 +161,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "cfed5ff",
       "depends_on": [
         4,
         5
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": null,
+      "note": "Stream side of /movies: GET /api/movies/stream, Library/Stream switch, stream Play, file-first; stream.png left to landing (7317 serves main); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1115-204328-564145/evidence",
       "package": "web/src`, `src/http",
       "plan": ".workflows/plan/direct-streaming/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:48:02+07:00",
       "satisfies": [
         "R5"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A119",
       "title": "The Stream side of `/movies"
     },
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:45:01+07:00",
+  "updated": "2026-11-15T20:48:02+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
