@@ -7,7 +7,7 @@
 **Branch:** `feature/direct-streaming` (base: `origin/main` @ `d996abb`)
 **Phases:** 10
 **Status:** planned
-**Coordinator:** —
+**Coordinator:** orch-direct-streaming
 
 ---
 
@@ -309,7 +309,7 @@ by phases 3, 5, 9 and 10, each adding only its own rows; the `GET /api/movies/:i
 | 7 | `/direct-stream`: title lookup, tools, skill, chat bar | R3 | `src/mcp`, `src/directStream`, `claude/skills` | 23 | 4, 5 | NORMAL | `.workflows/plan/direct-streaming/phase-7.md` | — | — |
 | 8 | `/update-cloud-source`: template reader, registry tools, skill | R4 | `claude/streaming/direct`, `src/directStream`, `src/mcp` | 19 | 2, 7 | NORMAL | `.workflows/plan/direct-streaming/phase-8.md` | — | — |
 | 9 | The Stream side of `/movies` | R5 | `web/src`, `src/http` | 24 | 4, 5 | HARD | `.workflows/plan/direct-streaming/phase-9.md` | — | — |
-| 10 | Candidates and the background prober, behind a setting | R6 | `src/directStream` | 33 | 2, 5 | HARD | `.workflows/plan/direct-streaming/phase-10.md` | — | — |
+| 10 | Candidates and the background prober, behind a setting | R6 | `src/directStream` | 33 | 2, 5, 8, 9 | HARD | `.workflows/plan/direct-streaming/phase-10.md` | — | — |
 
 Phase 3 serves R1 and R2 and phase 5 serves R2 and R5. Both couplings are real: the registry
 table and the pass-through share one migration and one service, and the stream play row and the
@@ -442,6 +442,7 @@ table: `0020` (phase 3) < `0021` (phase 5, depends on 3) < `0022` (phase 10, dep
 | Seed loading: insert-only (phase 8) vs insert-and-update seed rows (phase 3) | Phase 3's: seed rows (`origin_site` null) inserted and updated when the file changes; rows with `origin_site` set never touched | 2: phase 2's and phase 6's exit criteria require their seed edits to reach the table |
 | Which resolves mark verified/stale | Plays, refreshes and the prober (`resolve`/`play`) await `recordResolve`; phase 8's probes (`runResolve`) never do | 2: phase 9's failed-play exit criterion needs the await; phase 8's "existing untouched" needs probes to mark nothing |
 | A TMDB miss while ensuring the title of a play | Logged; no verified/stale row; never throws; the play still answers 200; the position route answers 404 `unknown_title` (no play row: a stream play needs a title) | 2: phase 6's exit criteria run plays against a fake TMDB without 550 |
+| Phase 10 writes `docs/guide/reference/http-api.md` (generated) and `scripts/docs/httpRoutes.ts` with phase 9, and appends to `docs/guide/streaming.md`, `features/direct-streaming.md` and `src/directStream/repo.ts` with phase 8 (write-set gate, exit 2) | Phase 10 depends on 8 and 9 too and runs last, alone: it regenerates `http-api.md` on top of phase 9's route and appends "The prober" after phase 8's `/update-cloud-source` subsection. Waves: [1] [2, 3] [4, 5] [6, 7, 9] [8] [10] | 6: the swarm's ORDER rule (a generated file is regenerated, not merged; the higher phase publishes last). Decided by the coordinator, orch-direct-streaming |
 | Whether phase 6 depends on phase 5 | No: phase 6 needs nothing phase 5 lands; with or without phase 5 a play answers 200 | 2: phase 6's exit criteria; rule 1 (no edge that is only caution) |
 | Where "fresh" is defined | Once, in phase 5 (`streamFreshSince`, `isFreshStreamSource`, `freshStreamSourceSql`); phases 7, 9, 10 use it | 1: invariant 10 (one rule keeps the grid, the tools and the prober in agreement) |
 | `movie_plays.stream_session` (added by phase 5) | Accepted into Shared contracts | 3: phase 5's schema code |
