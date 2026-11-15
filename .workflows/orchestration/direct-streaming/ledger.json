@@ -36,27 +36,27 @@
       "satisfies": [
         "R7"
       ],
-      "status": "spawned",
+      "status": "pending",
       "task_id": "P1-NOTES-A112",
       "title": "Resolve probe campaign: 24 providers, failures, episodes, token lifetime"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b759e180c4b5a37d31fdec1315b2a47d8b031fc1",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "registry tables (0020), DirectStreamService, sessions, pass-through, /api/stream/* routes, verify.sh --direct-stream; no drift; decided: ran in wave worktree direct-streaming-p3/phase-3-direct-streaming, not the index's feature/direct-streaming (rung 6); coordinator's PLAN.md status line still needs the phase-3 tick; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1115-201027-424492/evidence",
       "package": "src/directStream`, `src/http",
       "plan": ".workflows/plan/direct-streaming/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T20:15:52+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A113",
       "title": "Registry tables, DirectStreamService, sessions and the pass-through"
     },
@@ -75,7 +75,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A114",
       "title": "The player page"
     },
@@ -95,7 +95,7 @@
         "R2",
         "R5"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": "P1-NOTES-A115",
       "title": "Streams in the movies store: plays, verified sources, state"
     },
@@ -205,6 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T20:07:25+07:00",
+  "updated": "2026-11-15T20:16:24+07:00",
+  "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
