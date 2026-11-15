@@ -740,6 +740,31 @@ no exact match the answer shows up to three near misses, or says the site does n
 and gives the search link. A link is never built by hand, because the addresses are irregular,
 and the lookup stops at the title's page: the download buttons behind it are not followed.
 
+## Finding a title on idlix
+
+The same lookup for idlix, the streaming site: `/idlix no other choice`, `/idlix la brea`,
+`/idlix ready or not 2019`. It answers with a link per matching film (`/movie/...`) or series
+(`/series/...`), with the film's quality or the series' number of seasons.
+
+It works only in Claude Code, not in the chat bar. idlix sits behind Cloudflare, which answers
+403 to `curl`, to `WebFetch` and to a headless browser, so the `/idlix` skill
+(`claude/skills/idlix`) asks from inside a real Chrome on Windows:
+
+- `search.mjs` starts `cdp.ps1` through `powershell.exe`. WSL cannot reach Windows loopback, so
+  the half that talks to Chrome has to run on the Windows side, as with VLC.
+- `cdp.ps1` uses a Chrome with its own profile folder, `%LOCALAPPDATA%\notesd-idlix-chrome`, and
+  DevTools port 9333. Chrome refuses a debugging port on the default profile, so your everyday
+  Chrome, its tabs and its logins are never touched. When that Chrome is not running it is
+  started minimized, and it stays open for the next search: about 4 seconds cold, under a second
+  warm.
+- Inside a tab on the site it runs the request the site's own search box makes
+  (`/api/search?q=...`) and reads the JSON. Nothing is clicked or typed.
+
+A result matches when its English or original-language name is the asked title, and its year is
+the asked year when one was given. The site changes host from time to time (`z1`, `z2`, ...):
+set `IDLIX_ORIGIN=https://<host>` for the script when it has moved. When Cloudflare blocks the
+real Chrome too, the skill says so and gives no link; it never guesses one.
+
 ## Off switches and failure answers
 
 | Situation | What answers |
@@ -815,6 +840,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
 | `claude/skills/pahe/` | The `/pahe` skill and its `search.mjs` |
+| `claude/skills/idlix/` | The `/idlix` skill: `search.mjs` and `cdp.ps1`, the Windows half that talks to Chrome |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |

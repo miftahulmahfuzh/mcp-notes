@@ -129,6 +129,7 @@ See [install.md](../install.md).
 | `NOTES_PASTE_STRATEGY` | `updatedInput` | `deny` registers the notes-paste hook in its fallback mode (see `claude/hooks/notes-paste.mjs`). The installer writes it into the hook's command; the hook reads it. |
 | `NOTES_CLAUDE_RETENTION_DAYS` | `3650` | The minimum `cleanupPeriodDays` the installer writes to `~/.claude/settings.json`, so Claude Code keeps the transcripts the session graph reads. A higher value already there is kept. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's own setting. When it is an absolute path the notes-session hook looks for the running-session registry there. The daemon passes it through to the Claude children it starts, because the login lives there. |
+| `IDLIX_ORIGIN` | `https://z2.idlixku.com` | Not for `.env.local`. The address the `/idlix` skill's `search.mjs` asks; set it in the shell when the site has moved to another host. See [movies.md](../movies.md#finding-a-title-on-idlix). |
 
 ## Tests
 

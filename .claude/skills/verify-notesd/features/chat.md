@@ -9,6 +9,9 @@
   release. The parser is proven by `npx vitest run tests/unit/scripts/paheSearch.test.ts` and the
   live site by `node claude/skills/pahe/search.mjs no other choice` (free, reads pahe.ink); the
   chat bar's side is prompt text, covered by `tests/unit/chat-prompt.test.ts`.
+- `/idlix` is Claude Code only (the chat bar cannot reach the site). Its matching is proven by
+  `npx vitest run tests/unit/scripts/idlixSearch.test.ts`, and the live path by
+  `node claude/skills/idlix/search.mjs no other choice`, which opens a minimized Chrome on Windows.
 
 ## How to get to it (user POV)
 The bar at the bottom of the wall, `Send`; `Chat history` in the sidebar.
