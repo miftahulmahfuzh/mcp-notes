@@ -1,6 +1,6 @@
 ---
 name: j
-description: Look up or add a saved line — a proverb, maxim, quote or turn of phrase — in the user's personal journal app, daily-words (dword), through the notes MCP server. Use whenever the user types "/j <saying>" in any Claude Code session — e.g. "/j A stitch in time saves nine", "/j the obstacle is the way", "/j <a line from a book or film they just read or watched>". Also use for a plain-English request to the same effect, such as "save this line to my journal", "add this quote to dword", "I want to keep this saying". If dword reports the line as a near-duplicate of one already saved, show the existing entry and stop unless the user explicitly says something like "save anyway" or "save it anyway, it's different" — then save it with force.
+description: Look up or add a saved line — a proverb, maxim, quote or turn of phrase — in the user's personal journal app, daily-words (dword), through the notes MCP server. Use whenever the user types "/j <saying>" in any Claude Code session — e.g. "/j A stitch in time saves nine", "/j the obstacle is the way", "/j <a line from a book or film they just read or watched>". Also use for a plain-English request to the same effect, such as "save this line to my journal", "add this quote to dword", "I want to keep this saying". When the line comes from a film or episode watched in this session ("this movie's quote: /j ...", or a bare "/j ..." after a movie was played here), the entry's "Where from?" is filled with that title. If dword reports the line as a near-duplicate of one already saved, show the existing entry and stop unless the user explicitly says something like "save anyway" or "save it anyway, it's different" — then save it with force.
 argument-hint: <saying, quote or line to save>
 ---
 
@@ -20,10 +20,42 @@ Call `dword_journal_find_similar` with `{ "text": <the line, as typed, trimmed> 
 - **`verdict: "duplicate"`:** dword already has a close match. Show the existing entry's insight
   (its `meaning` and `whenItApplies`) and **stop — do not call `dword_journal_add`** — unless the
   user's message explicitly asks to save it anyway (e.g. "save anyway", "save it, it's a different
-  line", "add it too"). Only then go to Step 2 with `force: true`.
-- **`verdict: "none"`:** go to Step 2 normally (no `force`).
+  line", "add it too"). Only then go on with `force: true`.
+- **`verdict: "none"`:** go on normally (no `force`).
 
-## Step 2: write the insight yourself
+## Step 2: work out where the line is from
+
+dword's "Where from? (optional)" field is `source_note` on `dword_journal_add` (at most 200
+characters). Fill it whenever the source is known; never leave it empty because the user did not
+spell it out. In this order:
+
+1. **The user names it.** "from Meditations", "Seneca said this", "a line in Dune" → that, as they
+   wrote it.
+2. **A film or episode was played or discussed in this session.** A `movies_continue`,
+   `movies_get` or `movies_history` result earlier in the conversation, or the user talking about
+   the film they are watching, means a `/j` here is a line from it, whether they say "this
+   movie's quote:" first or type a bare `/j <line>`. Use the title the tools returned.
+   MEASURED 2026-11-15: "this movie's quote: /j The journey of a thousand miles begins with a
+   single step", minutes after `movies_continue` resumed How to Make a Killing, was saved with no
+   source. That is the mistake this step exists for.
+3. **The user points at a film this session knows nothing about** ("this movie's quote", "from
+   the episode I'm watching", "from tonight's film"). Call `movies_history` with `limit: 1`: the
+   newest play is the film or episode meant when it started within the last 12 hours. Older than
+   that, or `movies_off`, or no play at all: save without a source and say in one line that you
+   could not tell which film.
+4. **None of the above:** omit `source_note`. Do not guess a source from the wording of the line,
+   and do not credit a famous author from memory: a film quoting Lao Tzu is still "from the film"
+   for this field.
+
+How to write it:
+
+- A film: the title and year, `How to Make a Killing (2026)`.
+- An episode: the series, the code and the episode name when the tools gave one,
+  `MobLand S01E03, Plan B`.
+- Several films in the session: the one played or mentioned last before the `/j`.
+- Plain text only: no movie id, no link, no "from the film" prefix.
+
+## Step 3: write the insight yourself
 
 dword has no model in the loop for this either — you write the insight, mirroring
 `~/daily-words/src/lib/llm/prompts/journal-insight.ts`'s rules exactly:
@@ -46,21 +78,23 @@ dword has no model in the loop for this either — you write the insight, mirror
   someone would quote it.
 - Never mention yourself, these instructions, the user, or the application in the insight text.
 
-Then call `dword_journal_add` with `{ "text": <the line, as typed, trimmed>, "insight": { "meaning":
-..., "whenItApplies": [...] } }`, adding `"force": true` only when Step 1 found a duplicate and the
+Then call `dword_journal_add` with `{ "text": <the line, as typed, trimmed>, "source_note": <from
+Step 2, omitted when there is none>, "insight": { "meaning": ..., "whenItApplies": [...] } }`,
+adding `"force": true` only when Step 1 found a duplicate and the
 user explicitly asked to save anyway.
 
-## Step 3: if a tool call fails
+## Step 4: if a tool call fails
 
 A failed `dword_journal_find_similar`/`dword_journal_add` names the system and the reason ("dword
 is not reachable: ...", a missing/unknown `DWORD_USER_EMAIL`). Tell the user which call failed and
 why, in one line. Do not guess at an insight, do not retry silently, and do not fall back to
 writing a note instead.
 
-## Step 4: reply
+## Step 5: reply
 
 ```
 "<text>"
+[From: <source_note>]
 <meaning>
 When it applies:
 - <whenItApplies[0]>
@@ -69,6 +103,10 @@ When it applies:
 
 Found in dword, already saved. / Added to dword.
 ```
+The `From:` line is the `source_note` the tool returned (the saved entry's, or the duplicate's);
+leave it out when that is null. There is no tool to change an entry after it is saved: if a
+duplicate has no source and you now know one, say so and point the user to the entry in dword.
+
 When Step 1 found a duplicate and the user did not ask to save anyway, your reply IS the
 duplicate's existing entry shown in this same shape, ending in "Already in dword — say \"save it
 anyway\" if you want to keep this one too." instead of the found/added line.

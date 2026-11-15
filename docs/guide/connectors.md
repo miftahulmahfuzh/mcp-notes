@@ -172,6 +172,12 @@ What `dword_vocab_add` guarantees, whoever calls it:
 3. **`verdict: "none"`:** Claude writes the insight (what the line asserts, in at most 220
    characters, and two or three concrete everyday situations it fits, at most 120 each, always
    in English) and calls `dword_journal_add`. The entry is saved ready to read.
+4. **"Where from?" is filled when the source is known.** A source you name goes in as written. A
+   `/j` typed in a session where a film or episode was played or discussed, with or without "this
+   movie's quote:" in front, is saved with that title (`How to Make a Killing (2026)`,
+   `MobLand S01E03, Plan B`). When you point at a film the session has not seen, Claude takes this
+   machine's newest play from `movies_history` if it started within 12 hours. Otherwise the field
+   stays empty; it is never guessed from the line itself.
 
 `dword_journal_add` runs the identical check itself, so a duplicate cannot slip in by skipping
 the first call. A failed or unavailable embedding never blocks a save: the result carries
