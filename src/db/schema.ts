@@ -59,6 +59,10 @@ import {
  * deleted because files are gone), their companies, people, credits and episodes, the files seen
  * on each host (soft-deleted) and the play events (never deleted). src/movies/repo.ts
  * (`MoviesRepo`) is their only writer.
+ * Migration 0020 (direct streaming) adds `stream_providers` (the provider registry, shared by both
+ * machines, loaded from claude/streaming/direct/providers.seed.json at every start) and
+ * `stream_provider_health` (one row per provider and host). src/directStream/repo.ts
+ * (`DirectStreamRepo`) is their only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -1217,6 +1221,72 @@ export const moviePlays = pgTable(
   ],
 )
 
+/** The closed sets of the stream tables (migration 0020). The CHECK constraints enforce the same lists. */
+export const STREAM_ID_KINDS = ['tmdb', 'imdb'] as const
+export type StreamIdKind = (typeof STREAM_ID_KINDS)[number]
+/** A provider's last outcome on a host. A skipped provider (browser-only, no template) is not one: a skip leaves health alone. */
+export const STREAM_HEALTH_OUTCOMES = ['resolved', 'no_stream', 'bot_check', 'error'] as const
+export type StreamHealthOutcome = (typeof STREAM_HEALTH_OUTCOMES)[number]
+export const STREAM_MANIFEST_KINDS = ['hls', 'dash', 'mp4'] as const
+export type StreamManifestKind = (typeof STREAM_MANIFEST_KINDS)[number]
+
+/**
+ * The direct-streaming provider registry (migration 0020), shared by both machines. A provider is an
+ * embed address template keyed by the TMDB (or IMDb) id: `movie` has `{id}`, `tv` adds `{season}` and
+ * `{episode}` (null: no episode template known). `origin_site` null means the row comes from the
+ * checked-in seed, which the daemon syncs at every start; a site's address means /update-cloud-source
+ * added it, and the seed never rewrites it. Nothing deletes a provider.
+ */
+export const streamProviders = pgTable(
+  'stream_providers',
+  {
+    name: text('name').primaryKey(),
+    idKind: text('id_kind').$type<StreamIdKind>().notNull().default('tmdb'),
+    movie: text('movie').notNull(),
+    tv: text('tv'),
+    browserOnly: boolean('browser_only').notNull().default(false),
+    /** What the seed or the site says; this host's measurement is in stream_provider_health. */
+    enSubtitle: boolean('en_subtitle'),
+    notes: text('notes').notNull().default(''),
+    originSite: text('origin_site'),
+    addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [check('stream_providers_id_kind_check', sql`${t.idKind} in ('tmdb', 'imdb')`)],
+)
+
+/**
+ * What resolving a provider through this host's streaming Chrome has shown (migration 0020): one row
+ * per provider and host, written after every resolve. `recent_s` keeps the last ten times to a
+ * stream, newest last; the median is computed at read time.
+ */
+export const streamProviderHealth = pgTable(
+  'stream_provider_health',
+  {
+    name: text('name')
+      .notNull()
+      .references(() => streamProviders.name, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    host: text('host').notNull(),
+    lastOutcome: text('last_outcome').$type<StreamHealthOutcome>().notNull(),
+    lastDetail: text('last_detail').notNull().default(''),
+    successes: integer('successes').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true, mode: 'date' }),
+    lastFailureAt: timestamp('last_failure_at', { withTimezone: true, mode: 'date' }),
+    recentS: real('recent_s').array().notNull().default(sql`'{}'::real[]`),
+    manifestKind: text('manifest_kind').$type<StreamManifestKind>(),
+    bestHeight: integer('best_height'),
+    enSubtitle: boolean('en_subtitle'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.name, t.host] }),
+    check('stream_provider_health_outcome_check', sql`${t.lastOutcome} in ('resolved', 'no_stream', 'bot_check', 'error')`),
+    check('stream_provider_health_manifest_kind_check', sql`${t.manifestKind} in ('hls', 'dash', 'mp4')`),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -1253,3 +1323,5 @@ export type MovieCreditRow = typeof movieCredits.$inferSelect
 export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
 export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
+export type StreamProviderRow = typeof streamProviders.$inferSelect
+export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect

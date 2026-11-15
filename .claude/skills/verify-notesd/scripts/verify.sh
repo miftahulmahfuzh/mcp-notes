@@ -5,13 +5,16 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
 #                                       built from ${SEER_DIR:-~/seer}/db/migrations (reviews are real, billed)
 #                                       --movies turns the Movies library on against a generated video tree,
 #                                       a fake TMDB and a fake vlc.exe/curl.exe (scripts/movies/); else it is off
+#                                       --direct-stream turns direct streaming on (implies --movies) against a
+#                                       fake resolver and a fixture stream host (tests/fixtures/direct-stream/);
+#                                       without it NOTESD_DIRECT_STREAM=off is pinned
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
@@ -74,7 +77,7 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0 movies=0
+  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
@@ -82,6 +85,7 @@ cmd_up() {
       --sessions) sessions=1 ;;
       --adversary) adversary=1 ;;
       --movies) movies=1 ;;
+      --direct-stream) direct=1; movies=1 ;;
       *) die "up: unknown flag $a" ;;
     esac
   done
@@ -158,6 +162,16 @@ cmd_up() {
     [ -s "$dir/movies/tmdb.port" ] || die "--movies: the fake TMDB did not start (log: $dir/movies/tmdb.out; verify.sh down $run)"
     tmdb_port="$(cat "$dir/movies/tmdb.port")"
   fi
+  # --direct-stream: a fixture stream host and a fake resolver from tests/fixtures/direct-stream/. Never a
+  # provider and never the streaming Chrome: the real resolver opens the owner's Chrome on Windows.
+  if [ "$direct" = 1 ]; then
+    mkdir -p "$dir/direct"
+    setsid node "$root/tests/fixtures/direct-stream/upstream.mjs" --info "$dir/direct/upstream.json" \
+      --log "$dir/direct/upstream.jsonl" </dev/null >"$dir/direct/upstream.out" 2>&1 &
+    echo $! >"$dir/upstream.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/direct/upstream.json" ] && break; sleep 0.25; done
+    [ -s "$dir/direct/upstream.json" ] || die "--direct-stream: the fixture stream host did not start (log: $dir/direct/upstream.out; verify.sh down $run)"
+  fi
 
   # Real env wins over .env.local, so these pin the instance to the run's own state.
   # OPENROUTER_API_KEY='' turns embeddings off (search reports fallback) unless --embed.
@@ -206,6 +220,18 @@ cmd_up() {
   else
     env+=(NOTESD_MOVIES=off)
   fi
+  # NOTESD_DIRECT_STREAM=off unless --direct-stream: a --movies run never runs the real resolver.
+  # Under --direct-stream the resolver is the fake, unless the caller set NOTESD_DIRECT_STREAM_CLI
+  # (phase 6's playcheck wrapper, run only when the owner expects the streaming Chrome to move).
+  if [ "$direct" = 1 ]; then
+    env+=(
+      NOTESD_DIRECT_STREAM=on
+      "NOTESD_DIRECT_STREAM_CLI=${NOTESD_DIRECT_STREAM_CLI:-$root/tests/fixtures/direct-stream/fake-cli.mjs}"
+      "DIRECT_STREAM_FAKE_DIR=$dir/direct"
+    )
+  else
+    env+=(NOTESD_DIRECT_STREAM=off)
+  fi
   {
     echo "repo=$root"
     echo "head=$(git -C "$root" rev-parse --short HEAD)"
@@ -213,6 +239,7 @@ cmd_up() {
     echo "embed=$embed"
     echo "adversary=$adversary"
     echo "movies=$movies"
+    echo "direct_stream=$direct"
     [ "$adversary" = 1 ] && echo "seer_migrations=$seer_src"
   } >"$dir/meta"
 
@@ -236,6 +263,7 @@ cmd_up() {
   echo "EVIDENCE=$dir/evidence"
   echo "LOG=$dir/daemon.log"
   if [ "$movies" = 1 ]; then echo "MOVIES=$dir/movies"; fi
+  if [ "$direct" = 1 ]; then echo "DIRECT=$dir/direct"; fi
 }
 
 cmd_doctor() {
@@ -389,6 +417,12 @@ stop_run() {
   if [ -f "$dir/tmdb.pid" ]; then
     kill -TERM -- "-$(cat "$dir/tmdb.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/tmdb.pid")" 2>/dev/null || true
   fi
+  # --direct-stream: the fixture stream host was started by `up`; keep its request log and the fake resolver's calls.
+  if [ -f "$dir/upstream.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/upstream.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/upstream.pid")" 2>/dev/null || true
+  fi
+  if [ -f "$dir/direct/upstream.jsonl" ]; then cp "$dir/direct/upstream.jsonl" "$dir/evidence/direct-upstream-requests.jsonl"; fi
+  if [ -f "$dir/direct/calls.jsonl" ]; then cp "$dir/direct/calls.jsonl" "$dir/evidence/direct-resolver-calls.jsonl"; fi
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi

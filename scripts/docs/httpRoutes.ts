@@ -208,6 +208,22 @@ export const HTTP_GROUPS: HttpGroup[] = [
     },
   },
   {
+    title: 'Direct streaming',
+    intro:
+      'With `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or no direct-stream service, every route here answers 503 `direct_stream_off` before any other check. ' +
+      'A session lives in this daemon\'s memory only: its id is 32 random characters, it ends 4 hours after its last request or 24 hours after it began, and a restart ends it; an unknown or ended one answers 403 `unknown_session`. Guide: [streaming.md](../streaming.md#direct-streaming).',
+    routes: {
+      'POST /api/stream/play':
+        '`{kind, tmdb_id, season?, episode?, resume_s?}` (`season` and `episode` together, `tv` only): resolve the title through the provider registry, record each provider\'s health on this machine, then open the player page full screen in the streaming Chrome. 200 `{ok: true, page_url, session, attempts}` with `session` as the route below. 502 `no_source` with every provider\'s `attempts`; 502 `resolve_failed` with `reason` (`no_chrome`, `chrome_not_reachable`, `script_failed`, ...); 502 `open_failed` with `session_id` and `page_url`. 400 `invalid_json` / `invalid_body`. Same-origin only.',
+      'GET /api/stream/sessions/:id':
+        'What the player page needs: `{session_id, kind, tmdb_id, season, episode, title, provider, manifest_kind, manifest_url, subtitles, best_height, resume_s, created_at, refreshed_at, expires_at}`. `manifest_url` and each subtitle `url` are pass-through addresses on this daemon; an `.srt` track is served as WebVTT, and each track says whether it is `english`. 403 `unknown_session`.',
+      'GET /api/stream/sessions/:id/p':
+        'The pass-through. Query: `u` (the stream host address), `vtt=1` (hand a subtitle file back as WebVTT). Fetches `u` with only the `Referer`, `Origin` and `User-Agent` the resolve captured and the player\'s `Range`, and streams the answer back with the host\'s status, also in `X-Notesd-Upstream`. HLS playlists and DASH manifests come back with every address rewritten to this route. 403 `unknown_session`; 403 `forbidden_host`, and nothing is fetched, when `u` is not on a host the session\'s resolve returned or that a playlist, manifest or redirect fetched through the session named. 502 `upstream_error`.',
+      'POST /api/stream/sessions/:id/refresh':
+        'Resolve the session\'s title again (a token expired) and keep the same session id and page: returns the session like the route above. 502 `no_source` / `resolve_failed` leave the session as it was. 403 `unknown_session`. Same-origin only.',
+    },
+  },
+  {
     title: 'Debug',
     routes: {
       'GET /api/debug/egress': 'Rows and approximate bytes returned per query shape since the daemon started, largest first, plus the Neon quota breaker (`quota.tripped`, `quota.resumes_at`). `{enabled: false}` with `NOTESD_EGRESS_METER=off`. Loopback only. See [architecture.md](../architecture.md#neon).',

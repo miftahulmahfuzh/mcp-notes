@@ -34,26 +34,41 @@ export interface ScriptRunnerOptions {
   timeoutMs?: number;
 }
 
+export interface JsonScriptOptions {
+  /** Names the script in errors: `<label> failed: ...`, `<label> printed no JSON: ...`. */
+  label: string;
+  nodeBin: string;
+  /** Script path first, then its arguments. */
+  argv: string[];
+  timeoutMs: number;
+}
+
+/**
+ * Runs `node <argv...>` and returns the one JSON object it prints. A script that exits non-zero with
+ * its answer on stdout still answers (both streaming CLIs do that for a failure they can name).
+ * Shared by the streaming sites and direct streaming (src/directStream/runner.ts).
+ */
+export async function runJsonScript(options: JsonScriptOptions): Promise<unknown> {
+  let stdout: string;
+  try {
+    ({ stdout } = await run(options.nodeBin, options.argv, { timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024 }));
+  } catch (err) {
+    const out = (err as { stdout?: unknown }).stdout;
+    if (typeof out !== 'string' || out.trim() === '') {
+      throw new Error(`${options.label} failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+    }
+    stdout = out;
+  }
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    throw new Error(`${options.label} printed no JSON: ${stdout.slice(0, 200)}`);
+  }
+}
+
 export function scriptRunner(options: ScriptRunnerOptions = {}): StreamingRunner {
   const nodeBin = options.nodeBin ?? process.execPath;
   const cliPath = options.cliPath ?? DEFAULT_STREAMING_CLI;
-  const timeout = options.timeoutMs ?? STREAMING_TIMEOUT_MS;
-  return async (site, args) => {
-    let stdout: string;
-    try {
-      ({ stdout } = await run(nodeBin, [cliPath, site, ...args], { timeout, maxBuffer: 8 * 1024 * 1024 }));
-    } catch (err) {
-      // The script exits 1 with its answer on stdout when a site cannot be read or a film did not start.
-      const out = (err as { stdout?: unknown }).stdout;
-      if (typeof out !== 'string' || out.trim() === '') {
-        throw new Error(`streaming script failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
-      }
-      stdout = out;
-    }
-    try {
-      return JSON.parse(stdout) as unknown;
-    } catch {
-      throw new Error(`streaming script printed no JSON: ${stdout.slice(0, 200)}`);
-    }
-  };
+  const timeoutMs = options.timeoutMs ?? STREAMING_TIMEOUT_MS;
+  return (site, args) => runJsonScript({ label: 'streaming script', nodeBin, argv: [cliPath, site, ...args], timeoutMs });
 }

@@ -23,6 +23,7 @@ import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
 import { defaultSessionResumer, sessionResumeRoutes } from './sessionResume.js';
 import { debugApiRoutes } from './debugApi.js';
+import { directStreamRoutes } from './directStreamApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -97,8 +98,9 @@ export function mcpToolDeps(
  * transcript, context, search, usage), sessionResumeRoutes (project-session-graph phase 9:
  * resume/spawn into tmux, own Origin only), adversaryApiRoutes (seer-adversarial phase 5: the Seer
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
- * (movies-library phases 4 and 5: library, user state, sync, playback), staticRoutes (P6, last: it
- * owns the SPA fallback; it reserves /api, so the order is for clarity).
+ * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
+ * (direct-streaming phase 3: play, the player's session, the pass-through, refresh), staticRoutes
+ * (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   const app = new Hono();
@@ -128,6 +130,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
   app.route('/', moviesApiRoutes(deps));
   app.route('/', moviesPlayRoutes(deps));
+  app.route('/', directStreamRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

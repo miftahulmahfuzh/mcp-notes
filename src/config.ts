@@ -117,6 +117,30 @@ export interface StreamingConfig {
   enabled: boolean
 }
 
+export const DEFAULT_STREAM_FRESH_DAYS = 7
+/** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
+export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'cli.mjs')
+
+/** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
+export interface DirectStreamConfig {
+  /**
+   * `NOTESD_DIRECT_STREAM`, default on. It also needs NOTESD_MOVIES on. `off`: every /api/stream/*
+   * route answers direct_stream_off, the seed is not loaded and the resolver is never run.
+   */
+  enabled: boolean
+  /** `NOTESD_STREAM_FRESH_DAYS`, default 7: how long a stream source verified on this host counts as playable. */
+  freshDays: number
+  /** `NOTESD_DIRECT_STREAM_CLI`, absolute, default DEFAULT_DIRECT_STREAM_CLI: the resolver script run as `node <cli>`. */
+  cli: string
+}
+
+/** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
+export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
+  enabled: false,
+  freshDays: DEFAULT_STREAM_FRESH_DAYS,
+  cli: DEFAULT_DIRECT_STREAM_CLI,
+}
+
 /** Seer Adversarial reviewer (src/adversary/*). */
 export interface AdversaryConfig {
   /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
@@ -268,6 +292,8 @@ export interface Config {
   movies: MoviesConfig
   /** The streaming tools. Absent (a config built by a test) is the same as `enabled: false`. */
   streaming?: StreamingConfig
+  /** Direct streaming. Absent (a config built by a test) is the same as `enabled: false`. */
+  directStream?: DirectStreamConfig
 }
 
 export interface LoadConfigOptions {
@@ -562,6 +588,14 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
   }
 }
 
+export function parseDirectStream(env: Record<string, string | undefined>): DirectStreamConfig {
+  return {
+    enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
+    freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
+    cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
+  }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
@@ -580,6 +614,8 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
  * NOTESD_CURL_EXE, NOTESD_VLC_HEALTH_MS, NOTESD_VLC_EXTRA_ARGS, NOTESD_MOVIES_FALLBACK_MODEL
  * (relative roots or ini, a path as a Done folder name, a non-http TMDB base, a port above 65535,
  * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
+ * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI
+ * (a freshness window below 1 or a relative resolver path throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
@@ -611,5 +647,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     dword: parseDword(env),
     movies: parseMovies(env),
     streaming: { enabled: parseSwitch('NOTESD_STREAMING', env.NOTESD_STREAMING) },
+    directStream: parseDirectStream(env),
   }
 }

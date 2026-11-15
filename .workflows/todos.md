@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 15
+**Total Active Tasks**: 14
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 15
+- P1 High: 14
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 7
-- Completed: 107
+- Blocked: 5
+- Completed: 108
 
 ---
 
@@ -85,20 +85,11 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
   - **Depends on**: P1-NOTES-A111
   - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
-- [ ] **P1-NOTES-A113** Phase 3: Registry tables, DirectStreamService, sessions and the pass-through
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: everything under "Daemon" in Shared contracts; `src/config.ts`, `src/deps.ts`, `src/daemon.ts`, `src/http/app.ts` wiring; migration `0020`; the "Direct streaming" section of `docs/guide/streaming.md` (heading, "The resolver" from phase 1's draft, providers, sessions and the pass-through, answers), `docs/guide/architecture.md` rows, the configuration section, the `scripts/docs/httpRoutes.ts` group, the `README.md` line; `verify.sh up --direct-stream`, `scripts/direct-stream/journey.sh`, `features/direct-streaming.md` and its README row. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; migration `0020_stream_providers` applies on a fresh database; J1-J8 pass and the neighbor check passes.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 3 of 10)
-  - **Satisfies**: R1, R2 — R1: "Follow D7 for build order: resolver, provider registry, [...] first" with "D1-D4 are the owner's and binding (English subtitle sources first; [...])"; R2: "daemon proxy and player page" with "one click to a full-screen film" · criteria: R1.4, R2.1, R2.2, R2.6
-  - **Depends on**: P1-NOTES-A111
-  - **Plan**: `.workflows/plan/P1-NOTES-A113.md`
 - [ ] **P1-NOTES-A114** Phase 4: The player page
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `web/stream.html`, `web/src/stream/*`, `web/src/testing/streamFakes.ts`, the Vite input, `src/http/static.ts` for `/stream/<id>`, `package.json` (hls.js, dash.js); `?muted=1`, `window.notesdStream` (with `start()`), the refresh rule on `X-Notesd-Upstream`; jsdom tests; the "The player" subsection of `docs/guide/streaming.md`; architecture's Pages row; the player lines of `features/direct-streaming.md`; `scripts/stream/{make-hls-fixture.sh,player.steps.mjs}`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and `npm run build` pass; `web/dist/stream.html` exists and loads `/assets/stream-*.js`; the `player.steps.mjs` transcript has `J1 PASS`, `API PASS`, `J3 PASS`, `J2 PASS`, `MUTED PASS` and `CDN PASS`.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 4 of 10)
   - **Satisfies**: R2 — "daemon proxy and player page" with "one click to a full-screen film" · criteria: R2.3, R2.5
   - **Depends on**: P1-NOTES-A113
@@ -107,7 +98,7 @@
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: everything under "Movies store" in Shared contracts; `src/db/schema.ts` + migration `0021`; `src/movies/{repo,types,state,read,service,streams}.ts` (including `TitleDetail.stream_sources` and the one freshness rule); the position route in `src/http/directStreamApi.ts`; the hooks passed to phase 3's builder in `src/daemon.ts`; the position route and the `GET /api/movies/:id` `stream_sources` sentence in `scripts/docs/httpRoutes.ts`; `docs/guide/movies.md` ("What is stored", "Watch state", "Two machines", "Where the code is"); integration tests. Exit criteria: `npm run typecheck`, `npm test`, `npm run test:int` and `npm run docs:check` pass; J1, J2 and J3 pass; the movies journey still passes.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 5 of 10)
   - **Satisfies**: R2, R5 — R2: "daemon proxy and player page" with "one click to a full-screen film"; R5: "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R2.4, R5.4 (store half)
   - **Depends on**: P1-NOTES-A113
@@ -168,6 +159,23 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A113** Phase 3: Registry tables, DirectStreamService, sessions and the pass-through
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under "Daemon" in Shared contracts; `src/config.ts`, `src/deps.ts`, `src/daemon.ts`, `src/http/app.ts` wiring; migration `0020`; the "Direct streaming" section of `docs/guide/streaming.md` (heading, "The resolver" from phase 1's draft, providers, sessions and the pass-through, answers), `docs/guide/architecture.md` rows, the configuration section, the `scripts/docs/httpRoutes.ts` group, the `README.md` line; `verify.sh up --direct-stream`, `scripts/direct-stream/journey.sh`, `features/direct-streaming.md` and its README row. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the two integration files pass; migration `0020_stream_providers` applies on a fresh database; J1-J8 pass and the neighbor check passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 3 of 10)
+  - **Satisfies**: R1, R2 — R1: "Follow D7 for build order: resolver, provider registry, [...] first" with "D1-D4 are the owner's and binding (English subtitle sources first; [...])"; R2: "daemon proxy and player page" with "one click to a full-screen film" · criteria: R1.4, R2.1, R2.2, R2.6
+  - **Depends on**: P1-NOTES-A111
+  - **Plan**: `.workflows/plan/P1-NOTES-A113.md`
+  - **Completed**: 2026-11-15 20:13
+  - **Method**: /implement
+  - **Files**: src/config.ts, src/streaming/service.ts, src/db/schema.ts, drizzle/0020_stream_providers.sql, drizzle/meta/0020_snapshot.json, drizzle/meta/_journal.json, src/directStream/types.ts, src/directStream/rewrite.ts, src/directStream/sessions.ts, src/directStream/runner.ts, src/directStream/repo.ts, src/directStream/passThrough.ts, src/directStream/service.ts, src/http/directStreamApi.ts, src/deps.ts, src/http/app.ts, src/daemon.ts, tests/fixtures/direct-stream/upstream.mjs, tests/fixtures/direct-stream/fake-cli.mjs, tests/integration/setup.ts, tests/integration/directStream.repo.int.test.ts, tests/integration/directStream.api.int.test.ts, tests/unit/config.test.ts, tests/unit/directStream/rewrite.test.ts, tests/unit/directStream/sessions.test.ts, tests/unit/directStream/runner.test.ts, tests/unit/directStream/seed.test.ts, tests/unit/directStream/build.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, docs/guide/architecture.md, README.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/direct-stream/journey.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/README.md, .workflows/todos.md, .workflows/plan/DIRECT_STREAMING_PLAN.md
+  - **Proof**: verified-first-pass — 9 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-201027-424492/evidence (J1,J3,J4,J5); /home/miftah/.local/state/notesd-verify/1115-201051-427528/evidence (J7); /home/miftah/.local/state/notesd-verify/1115-201057-427954/evidence (neighbor: movies journey PASS 12 stages)
+  - **Drift**:
+    - No code drift: every plan anchor matched the tree at a9db223. The worktree already had node_modules, so `npm ci` was not needed.
+  - **Decided**:
+    - Index names worktree direct-streaming / branch feature/direct-streaming, session runs in swarm wave worktree direct-streaming-p3 / phase-3-direct-streaming → proceeded here (rung 6: the swarm launched this phase in its own wave branch; the integrator merges it)
 - [x] **P1-NOTES-A111** Phase 1: Provider seed, sniffer and resolver CLI
   - **Difficulty**: HARD
   - **Type**: Feature

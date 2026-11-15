@@ -8,6 +8,7 @@ import type { MoviePlayer } from './movies/player.js';
 import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
 import type { StreamingRunner } from './streaming/service.js';
+import type { DirectStreamService } from './directStream/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -47,6 +48,12 @@ export interface AppDeps {
    * sets it unless NOTESD_STREAMING=off; null or absent (tests), the tools answer streaming_off.
    */
   streaming?: StreamingRunner | null;
+  /**
+   * Direct streaming (DIRECT_STREAMING_PLAN phase 3): registry, resolves, sessions and the
+   * pass-through. Null or absent when NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off or `movies` is
+   * null; every /api/stream/* route then answers 503 direct_stream_off.
+   */
+  directStream?: DirectStreamService | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

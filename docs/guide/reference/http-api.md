@@ -174,6 +174,17 @@ With `NOTESD_MOVIES=off` every route here answers 503 `movies_off`, except `GET 
 | `POST /api/movies/continue` | `{title?}`: what the `movies_continue` tool does: resume the latest unfinished episode or film, else start the next episode that is here (`action` `already_playing` when that file is already open in the followed VLC). Without `title`, the title of the newest play. Same errors as play; 400 `invalid_body`. Same-origin only. |
 | `GET /api/movies/player/health` | This machine's VLC health log: the newest samples, per-VLC run summaries, hang lines, video stalls (`stalls`), display-driver resets seen while VLC ran (`gpu_resets`) and crash incidents. Query: `limit` (samples, 1 to 2000, default 200; 400 `invalid_limit`). 503 `movies_off` without a monitor. |
 
+## Direct streaming
+
+With `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or no direct-stream service, every route here answers 503 `direct_stream_off` before any other check. A session lives in this daemon's memory only: its id is 32 random characters, it ends 4 hours after its last request or 24 hours after it began, and a restart ends it; an unknown or ended one answers 403 `unknown_session`. Guide: [streaming.md](../streaming.md#direct-streaming).
+
+| Route | What it does |
+| --- | --- |
+| `POST /api/stream/play` | `{kind, tmdb_id, season?, episode?, resume_s?}` (`season` and `episode` together, `tv` only): resolve the title through the provider registry, record each provider's health on this machine, then open the player page full screen in the streaming Chrome. 200 `{ok: true, page_url, session, attempts}` with `session` as the route below. 502 `no_source` with every provider's `attempts`; 502 `resolve_failed` with `reason` (`no_chrome`, `chrome_not_reachable`, `script_failed`, ...); 502 `open_failed` with `session_id` and `page_url`. 400 `invalid_json` / `invalid_body`. Same-origin only. |
+| `GET /api/stream/sessions/:id` | What the player page needs: `{session_id, kind, tmdb_id, season, episode, title, provider, manifest_kind, manifest_url, subtitles, best_height, resume_s, created_at, refreshed_at, expires_at}`. `manifest_url` and each subtitle `url` are pass-through addresses on this daemon; an `.srt` track is served as WebVTT, and each track says whether it is `english`. 403 `unknown_session`. |
+| `GET /api/stream/sessions/:id/p` | The pass-through. Query: `u` (the stream host address), `vtt=1` (hand a subtitle file back as WebVTT). Fetches `u` with only the `Referer`, `Origin` and `User-Agent` the resolve captured and the player's `Range`, and streams the answer back with the host's status, also in `X-Notesd-Upstream`. HLS playlists and DASH manifests come back with every address rewritten to this route. 403 `unknown_session`; 403 `forbidden_host`, and nothing is fetched, when `u` is not on a host the session's resolve returned or that a playlist, manifest or redirect fetched through the session named. 502 `upstream_error`. |
+| `POST /api/stream/sessions/:id/refresh` | Resolve the session's title again (a token expired) and keep the same session id and page: returns the session like the route above. 502 `no_source` / `resolve_failed` leave the session as it was. 403 `unknown_session`. Same-origin only. |
+
 ## Debug
 
 | Route | What it does |

@@ -125,6 +125,17 @@ The `/pahe`, `/idlix` and `/lk21` skills and the streaming tools are described i
 | `IDLIX_ORIGIN` | `https://z2.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). |
 | `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
 
+## Direct streaming
+
+Films played straight from a provider's stream host through the daemon, described in
+[streaming.md](../streaming.md#direct-streaming). It needs `NOTESD_MOVIES` on.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTESD_DIRECT_STREAM` | on | `off` turns direct streaming off on this machine: the provider seed is not loaded, every `/api/stream/*` route answers 503 `direct_stream_off` and the resolver never runs, so no Chrome tab is opened for it. It is off too whenever `NOTESD_MOVIES=off`. |
+| `NOTESD_STREAM_FRESH_DAYS` | `7` | How many days a stream source verified on this machine counts as playable. |
+| `NOTESD_DIRECT_STREAM_CLI` | `claude/streaming/direct/cli.mjs` in this checkout | Absolute path of the resolver the daemon runs as `node <path>`. `verify.sh up --direct-stream` points it at a fake; a relative path is rejected. |
+
 ## Install script and hooks
 
 Read by `scripts/install.sh`, `scripts/uninstall.sh` and the Claude Code hooks, not by the daemon.

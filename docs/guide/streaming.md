@@ -16,7 +16,7 @@ browser being driven on your screen.
 Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [What you can ask](#what-you-can-ask) · [How a film is started](#how-a-film-is-started) ·
 [The streaming Chrome](#the-streaming-chrome) · [In the chat bar](#in-the-chat-bar) ·
-[Adding a site](#adding-a-site) · [Failure answers](#failure-answers) ·
+[Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -255,6 +255,81 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 
 A failure never falls back to a guessed link.
 
+## Direct streaming
+
+Direct streaming plays a film straight from the stream host a provider uses, in a page notesd
+serves, with no site, countdown or advert in between. A provider is an embed address keyed by the
+TMDB id, such as `https://vidfast.pro/movie/{id}`. Resolving opens that address out of sight in
+the streaming Chrome, notes the manifest it asks for and the headers it sent, and closes the tab;
+playing hands the manifest to notesd's player page through the daemon. It needs `NOTESD_MOVIES`
+on, and `NOTESD_DIRECT_STREAM=off` turns it off: every `/api/stream/*` route then answers
+`direct_stream_off` and no Chrome tab is opened for it.
+
+### The resolver
+
+`claude/streaming/direct/cli.mjs resolve <movie|tv> <tmdb id> [season episode]` opens each
+provider's embed in a background tab of the streaming Chrome, muted, and keeps the first one that
+loads a stream: the manifest, the `Referer`, `Origin` and `User-Agent` its request carried, and the
+subtitle tracks seen (separate `.vtt`/`.srt` requests and tracks inside the manifest). Providers are
+tried with an English subtitle first, then by health on this host, then by quality (`order.mjs`). A
+provider whose page shows a bot check is recorded as `bot_check` and the next one is tried; nothing
+is clicked or disguised to get past it. Providers are data, `providers.seed.json`, 24 templates read
+from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
+`deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
+full screen in the streaming Chrome and starts the player with sound, as a click would.
+
+### Providers and their health
+
+- The providers are data. `claude/streaming/direct/providers.seed.json` is checked in; the daemon
+  loads it into the `stream_providers` table at every start, and both machines share that table.
+  An entry changed in the file updates its row. A provider added from a site keeps the site's
+  address in `origin_site` and is never rewritten by the seed. Nothing deletes a provider.
+- Health is per machine, in `stream_provider_health`: for each provider the last outcome
+  (`resolved`, `no_stream`, `bot_check`, `error`), counts, failures in a row, the last success and
+  failure, the last ten times to a stream, the manifest kind, the best quality and whether an
+  English subtitle was seen. It is written after every resolve, and the resolver reads it to
+  choose its order.
+- A provider skipped because it only plays in its own page (`browser_only`), or because it has no
+  episode address, is not a failure: its health is left alone.
+
+### Sessions and the pass-through
+
+A resolve makes a session, kept in the daemon's memory: a 32-character random id, the source, and
+the hosts it may reach. It ends 4 hours after its last request or 24 hours after it began, and a
+restart ends every session. The player page reads it from `GET /api/stream/sessions/<id>`.
+
+Stream hosts check `Referer`, which a page cannot set, so every request the player makes goes
+through `/api/stream/sessions/<id>/p?u=<address>`:
+
+- **Only the session's hosts.** The hosts the resolve returned (the manifest's and the
+  subtitles'), plus a host named inside a playlist or manifest fetched through the same session,
+  or by a redirect one of them answered. Anything else is refused with 403 `forbidden_host` before
+  any request is made, and an unknown or ended session gets 403 `unknown_session`. It is not an
+  open proxy.
+- **Only the captured headers.** `Referer`, `Origin` and `User-Agent` as the real Chrome sent them,
+  plus the player's `Range`. No cookie and nothing invented; Node's fetch adds only its usual
+  transport headers (`accept`, `accept-encoding`).
+- **Every address comes back through it.** HLS playlists (address lines and `URI="..."`
+  attributes) and DASH manifests (`BaseURL`, `Location`, segment templates, `SegmentURL`,
+  `Initialization`) are rewritten; a template's `$Number$`-style fields are left for the player to
+  fill in. Media streams through as it arrives, with the host's status, which is also in the
+  `X-Notesd-Upstream` header, so the player can tell an expired token from a refused session.
+- **Subtitles.** An `.srt` track is turned into WebVTT on the way, since a page shows only WebVTT.
+- When a token expires mid-film, `POST /api/stream/sessions/<id>/refresh` resolves again and keeps
+  the same session and page.
+
+### Direct streaming answers
+
+| Answer | Meaning |
+| --- | --- |
+| `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
+| `no_source` | No provider resolved the title; `attempts` lists each provider's outcome |
+| `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
+| `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
+| `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
+| `forbidden_host` | The address is not on a host the session may reach |
+| `upstream_error` | The stream host did not answer, or redirected too often |
+
 ## Where the code is
 
 | Path | What |
@@ -266,6 +341,9 @@ A failure never falls back to a guessed link.
 | `claude/skills/pahe/`, `idlix/`, `lk21/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
+| `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json` |
+| `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
+| `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |
 
@@ -281,3 +359,6 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
   `node claude/streaming/cli.mjs lk21 --play <film>`. Run it when the owner expects it. A
   throwaway daemon never has the streaming tools (`deps.streaming` is unset), so they answer
   `streaming_off` there.
+- Direct streaming: the feature map entry is `.claude/skills/verify-notesd/features/direct-streaming.md`.
+  `verify.sh up --direct-stream` drives it against a fake resolver and a fixture stream host, never
+  a provider or Chrome; every other throwaway run has it off.

@@ -23,6 +23,7 @@ import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
 import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
+import { buildDirectStreamService } from './directStream/service.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -142,10 +143,39 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   }
   // Builds nothing and runs nothing until a streaming tool is called.
   const streaming = config.streaming?.enabled ? scriptRunner() : null;
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies, moviesPlayer, moviesHealth, sessionEvents, streaming };
-  // The agent reaches notes through this daemon's own /mcp. The port is known only after
-  // listen() (config.port may be 0), and the first chat run can only start after that.
+  // The bound port, known only after listen() (config.port may be 0). The chat agent reaches notes
+  // through this daemon's own /mcp, and a direct-stream play opens this daemon's player page.
   let boundPort: number | null = null;
+  // Direct streaming: null with NOTESD_DIRECT_STREAM=off or NOTESD_MOVIES=off. The provider seed is
+  // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
+  const directStream = buildDirectStreamService(config, db, {
+    movies,
+    pageBase: () => `http://localhost:${boundPort ?? config.port}`,
+  });
+  if (directStream !== null) {
+    try {
+      const seeded = await directStream.syncSeed();
+      console.log(`[notesd] direct stream: on, ${seeded.total} providers in the seed (${seeded.inserted} new, ${seeded.updated} updated)`);
+    } catch (err) {
+      console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const deps: AppDeps = {
+    config,
+    db,
+    events,
+    service,
+    embedder,
+    imageEmbedder,
+    chat: chatHistory,
+    adversary,
+    movies,
+    moviesPlayer,
+    moviesHealth,
+    sessionEvents,
+    streaming,
+    directStream,
+  };
   let agent: AgentChatBackend | null = null;
   let chat: ChatBackend;
   if (options.chat !== undefined) {

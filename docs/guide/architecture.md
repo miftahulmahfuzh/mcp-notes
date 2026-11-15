@@ -34,9 +34,9 @@ three ways, plus background jobs.
 | File | Role |
 | --- | --- |
 | `src/main.ts` | Entry point: `loadConfig()`, `startDaemon()`, and a shutdown on `SIGINT` / `SIGTERM` that is forced after 10 s. |
-| `src/config.ts` | Builds `Config` from `.env.local` under the process environment (the environment wins). Every bad value throws `ConfigError` here, so nothing downstream re-validates. The `DEFAULT_*_CONFIG` literals have sessions, the adversary and movies off, so a test that builds a `Config` by hand starts none of them. |
-| `src/daemon.ts` | `startDaemon`: data dirs, embedders, `createDb`, `NotesService`, `ChatService`, the adversary, movies, player and health monitor (each null when off), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
-| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`). A subsystem that is off is `null` there, and its routes answer 503. |
+| `src/config.ts` | Builds `Config` from `.env.local` under the process environment (the environment wins). Every bad value throws `ConfigError` here, so nothing downstream re-validates. The `DEFAULT_*_CONFIG` literals have sessions, the adversary, movies and direct streaming off, so a test that builds a `Config` by hand starts none of them. |
+| `src/daemon.ts` | `startDaemon`: data dirs, embedders, `createDb`, `NotesService`, `ChatService`, the adversary, movies, player and health monitor, direct streaming (each null when off; direct streaming loads the provider seed), `createApp`, listen on loopback, then `startBackground`. Returns `stop()`, which closes them in the reverse order. |
+| `src/deps.ts` | `AppDeps`: what `startDaemon` hands to every router and job (`config`, `db`, `events`, `service`, `embedder`, `imageEmbedder`, `chat`, `adversary`, `movies`, `moviesPlayer`, `moviesHealth`, `sessionEvents`, `directStream`). A subsystem that is off is `null` there, and its routes answer 503. |
 | `src/http/app.ts` | `createApp(deps, options)`: mounts `/health`, `/mcp` and each router. `options` are the test seams (chat backend, reveal, sessions, resumer, Seer source). `mcpToolDeps` builds what the MCP tools get from the same `deps`. |
 | `src/background.ts` | `startBackground(deps)`: starts the jobs below and returns one stop function. |
 
@@ -67,6 +67,7 @@ The other stores follow the same pattern, one writer each:
 | `chat_*` | `ChatService` (`src/chat/service.ts`) |
 | `cc_*` session tables | `SessionsRepo` (`src/sessions/repo.ts`) |
 | `movie_*` | `MoviesRepo` (`src/movies/repo.ts`); a review is a normal note written through `NotesService` |
+| `stream_providers`, `stream_provider_health` | `DirectStreamRepo` (`src/directStream/repo.ts`) |
 | `adversary_reviews` | `src/adversary/reviewsRepo.ts` |
 | Seer's own database | `src/adversary/seerWriter.ts`, behind a table allow-list. The connector guard stays read-only |
 | daily-words | `src/dword/writer.ts`, additions only |
@@ -89,6 +90,7 @@ After editing the schema run `npm run db:generate`, then `npm run db:migrate`.
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
 | Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted. Watch state is derived at read time, never stored. |
+| Direct streaming | `stream_providers`, `stream_provider_health` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. |
 | Settings | `app_settings` | Key and JSON value shared by both machines: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
@@ -182,10 +184,11 @@ Single user, no authentication. The protections are about where a request comes 
 | --- | --- | --- |
 | Loopback bind | `src/config.ts`, `src/daemon.ts` | The daemon listens on `127.0.0.1` only. `NOTESD_HOST` set to anything else stops it at start. |
 | DNS-rebinding guard | `loopbackOnly` in `src/http/app.ts`, on `/mcp` | The request URL (from the `Host` header) must name loopback, and an `Origin`, when present, must be loopback. Claude Code sends no `Origin`. |
-| Same-origin routes | `sameOriginOnly` in `src/http/sameOrigin.ts` | The `Origin` must equal the request's own loopback origin, so only the wall's page can call them: delete forever, reveal in Explorer, chat edits and deletes, resume and summarize, the selected project, the adversary toggle and "Review now", every movie write and play. A `curl` without `Origin` gets 403 `forbidden_origin`. |
+| Same-origin routes | `sameOriginOnly` in `src/http/sameOrigin.ts` | The `Origin` must equal the request's own loopback origin, so only the wall's page can call them: delete forever, reveal in Explorer, chat edits and deletes, resume and summarize, the selected project, the adversary toggle and "Review now", every movie write and play, a direct-stream play or refresh. A `curl` without `Origin` gets 403 `forbidden_origin`. |
 | Capture header | `captureGuard` in `src/http/capture.ts` | The hook routes need loopback, a JSON body and `X-Notes-Capture: 1`. A custom header forces a CORS preflight, which notesd never answers, so a page on another origin cannot post. |
 | Loopback reads | `loopbackReadGuard` in `src/http/sessionsApi.ts` | `GET /api/sessions/context` and `GET /api/debug/egress`. |
 | Served files | `src/http/images.ts`, `files.ts` | Photos go out with `nosniff` and a sandbox CSP; other files always as attachments. Routes take ids, never paths. |
+| Stream pass-through | `src/directStream/passThrough.ts`, `GET /api/stream/sessions/:id/p` | Works only for a live session (a 32-character random id held in memory) and only towards hosts that session's resolve returned or that a playlist, manifest or redirect fetched through it named; anything else is refused before a request is made. It sends only the captured `Referer`, `Origin` and `User-Agent` and the player's `Range`. Not an open proxy. |
 | Read-only connectors | `src/connectors/guard.ts`, `sql.ts` | The `*_sql` tools accept a single read-only statement with a statement timeout. |
 | Claude children | `src/chat/env.ts` | Every Claude run notesd starts has API keys, base-URL and model overrides and the parent session's markers stripped from its environment, so it uses the owner's login. Session replies and summaries are redacted before they are stored (`src/sessions/redact.ts`). |
 
@@ -250,6 +253,7 @@ src/
   sessions/     ingest, forks, links, summaries, search, context window, resume, handoff
   adversary/    the Seer Adversarial reviewer and its read model
   movies/       scan, parse, match, TMDB, state, player, vlc/
+  directStream/ provider registry, resolves, sessions, the stream pass-through and its rewriting
   mcp/          the MCP server, its instructions and every tool
   http/         one router per area, the guards, the static fallback
   cli/          embed:backfill and embed:images:backfill
