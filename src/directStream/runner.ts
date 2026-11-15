@@ -57,6 +57,14 @@ const sourceSchema = z.object({
   subtitles: z.array(subtitleSchema).nullish(),
   best_height: z.number().int().positive().nullish(),
   en_subtitle: z.boolean().nullish(),
+  audio: z
+    .object({
+      languages: z.array(z.string()).nullish(),
+      tracks: z.number().int().nonnegative().nullish(),
+      original: z.boolean().nullish(),
+      track: z.object({ lang: z.string().nullish(), label: z.string().nullish() }).nullish(),
+    })
+    .nullish(),
   took_s: z.number().nonnegative().nullish(),
 });
 
@@ -112,6 +120,12 @@ export function parseResolveOutput(raw: unknown): ResolveOutput {
       subtitles,
       best_height: s.best_height ?? null,
       en_subtitle: s.en_subtitle ?? subtitles.some(isEnglish),
+      audio: s.audio === undefined || s.audio === null ? null : {
+              languages: s.audio.languages ?? [],
+              tracks: s.audio.tracks ?? 0,
+              original: s.audio.original ?? null,
+              track: s.audio.track === undefined || s.audio.track === null ? null : { lang: present(s.audio.track.lang), label: present(s.audio.track.label) },
+            },
       took_s: s.took_s ?? null,
     },
   };

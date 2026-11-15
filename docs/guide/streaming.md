@@ -300,7 +300,25 @@ loads a stream: the manifest, the `Referer`, `Origin` and `User-Agent` its reque
 subtitle tracks seen (separate `.vtt`/`.srt` requests and tracks inside the manifest). Providers are
 tried with an English subtitle first, then by health on this host, then by quality (`order.mjs`). A
 provider whose page shows a bot check is recorded as `bot_check` and the next one is tried; nothing
-is clicked or disguised to get past it. Providers are data, `providers.seed.json`, 24 templates read
+is clicked or disguised to get past it.
+
+**A dub is never a source.** The daemon passes the title's original language (TMDB's
+`original_language`, kept on `movie_titles.original_language`) as `--audio-lang`, and the resolver
+asks each stream what it speaks (`audio.mjs`) before keeping it:
+
+| What the stream says | What happens |
+| --- | --- |
+| Its manifest names audio tracks and one is the original language | Kept; the player selects that track, whatever the manifest's default is |
+| It names languages and none is the original (an English dub of a Korean series) | The provider is recorded as `dubbed` and the next one is tried |
+| Nothing names a language | Kept: it cannot be told apart from the original |
+
+A stream with one muxed audio has no track list, so its first media segment is read instead: the
+programme table of an MPEG-TS segment, or the track header of an MP4 one (at most three small
+requests, with the headers the manifest request carried). `dubbed` is about the title, not the
+provider, so it leaves the provider's health alone. When every stream is a dub the answer is
+`no_source`. A dub's separate English subtitle file is not wasted: when the stream that is kept
+has no English subtitle of its own, the file is added to its tracks (`borrowed_from` names the
+provider it came from). Providers are data, `providers.seed.json`, 24 templates read
 from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.
@@ -372,9 +390,19 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   page). A subtitle file whose first answer fails is asked for once more before the track is left
   out. With no English track, subtitles start off and the others can still be picked.
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
+- **Audio.** When the manifest names several audio tracks, the page selects the one in the
+  title's original language (the session's `audio.track`), never the manifest's default.
 - **Position.** The film starts at the session's `resume_s`. The page reports
-  `{ position_s, duration_s, ended }` to `POST /api/stream/sessions/<id>/position` every 5 seconds
-  while playing, on pause and at the end; it ignores the answer, a 404 included.
+  `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
+  5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
+  pause, on play, at the end, and once more as it closes (`closed`); it ignores the answer, a 404
+  included.
+- **On the Movies page.** Those reports are also what the Movies page shows: the title's poster
+  has a pulsing frame and a "playing" chip while it streams, and a steady one that reads "paused"
+  while it is paused, on the Stream side and in the Library. The title's page shows the same on its
+  poster, the line beside Play reads "playing in the stream player" or "paused in the stream
+  player" with the position, and a series names the episode and marks its row. The mark goes when
+  the film ends or the page closes, and 20 seconds after a page falls silent.
 - **An expired token.** When the stream host answers 401, 403 or 410 through the pass-through (the
   answer carries `X-Notesd-Upstream`), the page calls `POST /api/stream/sessions/<id>/refresh`,
   reads the session again and carries on from where it was. It does this at most three times for
@@ -444,7 +472,7 @@ Nothing starts when several titles match (the candidates come back with their ye
 title matches (`no_match`), when no episode is left after the last one played (`caught_up`), when
 the next episode airs after today (`not_aired`, with its air date), or when no provider resolves:
 then the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
-`skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
+`dubbed`, `skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
 
 ### `/update-cloud-source`: providers from another site
 

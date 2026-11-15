@@ -337,11 +337,28 @@ export interface PlayerSnapshot {
   video_stalled?: boolean;
 }
 
+/** The stream on screen in notesd's player page (direct streaming): the twin of `PlayerSnapshot`. */
+export interface StreamLiveSnapshot {
+  session_id: string;
+  title_id: string;
+  /** Null for a film. */
+  season: number | null;
+  episode: number | null;
+  provider: string;
+  state: 'playing' | 'paused';
+  /** Seconds. */
+  position: number;
+  duration: number | null;
+  last_report_at: string;
+}
+
 /** Phase 5's `GET /api/movies/player`. `available` false = no vlc.exe, interop or curl.exe on this machine. */
 export interface PlayerState {
   available: boolean;
   reason: string | null;
   current: PlayerSnapshot | null;
+  /** The stream the player page shows now; null when none (absent from an older daemon). */
+  stream?: StreamLiveSnapshot | null;
 }
 
 export interface ContinueTitleRef {
@@ -475,7 +492,7 @@ export async function fetchStatus(signal?: AbortSignal): Promise<MoviesStatusRes
 /** Phase 5's player state. Anything but `available: false` reads as available (the play route still answers `player_unavailable`). */
 export async function fetchPlayer(signal?: AbortSignal): Promise<PlayerState> {
   const p = await getJson<Partial<PlayerState>>('/api/movies/player', signal);
-  return { available: p.available !== false, reason: typeof p.reason === 'string' ? p.reason : null, current: p.current ?? null };
+  return { available: p.available !== false, reason: typeof p.reason === 'string' ? p.reason : null, current: p.current ?? null, stream: p.stream ?? null };
 }
 
 export async function searchTmdb(q: string, kind: TitleKind, signal?: AbortSignal): Promise<TmdbHitView[]> {

@@ -44,6 +44,21 @@ describe('parseResolveOutput', () => {
     expect(out.attempts.map((a) => a.outcome)).toEqual(['skipped_browser_only', 'resolved']);
   });
 
+  it("reads what the stream speaks, and a provider skipped as a dub", () => {
+    const audio = { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'kor', label: 'Korean' } };
+    const out = parseResolveOutput({
+      ...RESOLVED,
+      source: { ...RESOLVED.source, audio },
+      attempts: [{ provider: 'HyperLink', outcome: 'dubbed', took_s: 10.2, detail: 'audio is en, the original is ko' }, ...RESOLVED.attempts],
+    });
+    expect(out.ok && out.source.audio).toEqual(audio);
+    expect(out.attempts[0]).toEqual({ provider: 'HyperLink', outcome: 'dubbed', took_s: 10.2, detail: 'audio is en, the original is ko' });
+    const plain = parseResolveOutput(RESOLVED);
+    expect(plain.ok && plain.source.audio).toBeNull();
+    const muxed = parseResolveOutput({ ...RESOLVED, source: { ...RESOLVED.source, audio: { languages: [], tracks: 0, original: null, track: null } } });
+    expect(muxed.ok && muxed.source.audio).toEqual({ languages: [], tracks: 0, original: null, track: null });
+  });
+
   it('reads a failure with every attempt', () => {
     const out = parseResolveOutput({ ok: false, source: null, error: 'no_source', attempts: [{ provider: 'Videasy', outcome: 'bot_check', took_s: 4, detail: 'Just a moment...' }] });
     expect(out).toEqual({ ok: false, source: null, error: 'no_source', detail: '', attempts: [{ provider: 'Videasy', outcome: 'bot_check', took_s: 4, detail: 'Just a moment...' }] });

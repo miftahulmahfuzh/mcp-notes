@@ -2,7 +2,7 @@
 // The direct-streaming resolver: finds a playable stream for a film or an episode by opening
 // provider embeds in the streaming Chrome, out of sight and silent, and opens daemon pages there.
 // Usage:
-//   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>]
+//   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>]
 //   cli.mjs providers [--providers <file>] [--health <file>]
 //   cli.mjs open <http://localhost:<port>/...> [--fullscreen]
 //   cli.mjs templates <site url>   read a site's provider templates (plain requests, no browser)
@@ -12,13 +12,15 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeError, evaluateInChrome, sleep } from '../chrome.mjs';
 import { orderProviders } from './order.mjs';
+import { probeAudio } from './audio.mjs';
+import { normalizeLang } from './lang.mjs';
 import { resolveTitle } from './resolve.mjs';
 import { sniffEmbed } from './sniff.mjs';
 import { templatesCommand } from './templates.mjs';
 
 export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'providers.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url>';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url>';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -39,7 +41,7 @@ export class InputError extends Error {
   }
 }
 
-const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s']);
+const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang']);
 const SWITCH_FLAGS = new Set(['--fullscreen']);
 const WHOLE = /^\d+$/;
 const DAEMON_HOSTS = new Set(['localhost', '127.0.0.1']);
@@ -104,10 +106,13 @@ export function parseArgs(argv) {
   };
   switch (command) {
     case 'resolve': {
-      allow(['only', 'providers', 'health', 'deadline-s']);
+      allow(['only', 'providers', 'health', 'deadline-s', 'audio-lang']);
+      // The title's original language (TMDB's code): a stream that speaks only other languages is skipped as a dub.
+      const audioLang = flags['audio-lang'] === undefined ? null : normalizeLang(flags['audio-lang']);
+      if (flags['audio-lang'] !== undefined && audioLang === null) throw new InputError('usage', '--audio-lang is a language code such as ko, en or jpn');
       const deadlineS = flags['deadline-s'] === undefined ? null : wholeNumber(flags['deadline-s'], 1);
       if (flags['deadline-s'] !== undefined && deadlineS === null) throw new InputError('usage', '--deadline-s is a whole number of seconds, 1 or more');
-      return { command, ref: parseRef(rest), only: flags.only ?? null, providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS };
+      return { command, ref: parseRef(rest), only: flags.only ?? null, providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS, audioLang };
     }
     case 'providers':
       allow(['providers', 'health']);
@@ -286,7 +291,7 @@ export async function main(argv, io = {}) {
     print(result);
     return result.ok ? 0 : 1;
   }
-  const result = await resolveTitle(args.ref, { providers, health, sniff, only: args.only, deadlineS: args.deadlineS });
+  const result = await resolveTitle(args.ref, { providers, health, sniff, only: args.only, deadlineS: args.deadlineS, audioLang: args.audioLang, probeAudio });
   print(result);
   return result.ok ? 0 : 1;
 }

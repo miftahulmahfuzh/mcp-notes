@@ -20,6 +20,7 @@ import {
   type ResolveOutcome,
   type ResolveOutput,
   type ResolvedOutput,
+  type SourceAudio,
   type StreamRef,
   type StreamRefInput,
 } from './types.js';
@@ -41,6 +42,11 @@ export interface DirectStreamHooks {
   recordResolve?: (ref: StreamRef, result: ResolveOutput) => Promise<void>;
   /** Where a new session starts, in seconds, when the caller passed no `resumeS`. */
   resumeS?: (ref: StreamRef) => Promise<number | null>;
+  /**
+   * The title's original language (TMDB's code, "ko"): every resolve passes it to the resolver, which
+   * skips a stream dubbed into another language, and the player picks that audio track. Null: unknown.
+   */
+  originalLanguage?: (ref: StreamRef) => Promise<string | null>;
   /** The title the player shows; default `refLabel(ref)`. */
   titleLabel?: (ref: StreamRef) => Promise<string | null>;
 }
@@ -70,6 +76,10 @@ export interface SessionInfo {
   manifest_url: string;
   subtitles: SessionSubtitle[];
   best_height: number | null;
+  /** The title's original language (TMDB's code): the audio track the player picks. Null: unknown. */
+  audio_lang: string | null;
+  /** What the resolver heard in the stream; null when it was not asked. */
+  audio: SourceAudio | null;
   resume_s: number | null;
   created_at: string;
   refreshed_at: string;
@@ -158,7 +168,7 @@ export class DirectStreamService {
     let resumeS = options.resumeS ?? null;
     const hook = this.opts.hooks?.resumeS;
     if (resumeS === null && hook !== undefined) resumeS = await this.hookValue('resumeS', () => hook(ref));
-    return this.sessions.create(ref, out.source, out.attempts, resumeS);
+    return this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
   }
 
   /** Resolves, then opens this daemon's player page for the session full screen in the streaming Chrome. */
@@ -226,6 +236,7 @@ export class DirectStreamService {
    * `deadlineS` becomes the resolver's `--deadline-s` (phase 10's per-pass budget).
    */
   async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number } = {}): Promise<ResolveOutput> {
+    const audioLang = await this.audioLang(ref);
     return this.serial(async () => {
       const providers = await this.repo.providers();
       const health = await this.repo.healthFor(this.host);
@@ -243,6 +254,7 @@ export class DirectStreamService {
           ...(ref.kind === 'tv' ? [String(ref.season), String(ref.episode)] : []),
           ...(options.only !== undefined ? ['--only', options.only] : []),
           ...(options.deadlineS !== undefined ? ['--deadline-s', String(Math.max(1, Math.floor(options.deadlineS)))] : []),
+          ...(audioLang !== null ? ['--audio-lang', audioLang] : []),
           '--providers',
           providersFile,
           '--health',
@@ -321,6 +333,14 @@ export class DirectStreamService {
     });
   }
 
+  /** The originalLanguage hook's answer when it is a plain language code; else null (the resolver is then not asked to check). */
+  private async audioLang(ref: StreamRef): Promise<string | null> {
+    const hook = this.opts.hooks?.originalLanguage;
+    if (hook === undefined) return null;
+    const language = await this.hookValue('originalLanguage', () => hook(ref));
+    return language !== null && /^[A-Za-z]{2,3}$/.test(language) ? language.toLowerCase() : null;
+  }
+
   private async recordHealth(out: ResolveOutput, known: ReadonlySet<string>): Promise<void> {
     const rows: HealthAttempt[] = [];
     for (const a of out.attempts) {
@@ -361,6 +381,8 @@ export class DirectStreamService {
         };
       }),
       best_height: source.best_height,
+      audio_lang: session.audioLang,
+      audio: source.audio ?? null,
       resume_s: session.resumeS,
       created_at: session.createdAt.toISOString(),
       refreshed_at: session.refreshedAt.toISOString(),

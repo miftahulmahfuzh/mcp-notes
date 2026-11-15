@@ -5,9 +5,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { Db } from '../../src/db/client.js'
 import { moviePlays, movieTitles } from '../../src/db/schema.js'
 import { streamPositionRoutes } from '../../src/http/directStreamApi.js'
+import { moviesPlayRoutes } from '../../src/http/moviesPlayApi.js'
 import { getTitle, history, listStreamTitles, listTitles } from '../../src/movies/read.js'
 import { MoviesRepo, isFreshStreamSource, streamFreshSince } from '../../src/movies/repo.js'
 import { MovieEvents, type MovieChangeEvent } from '../../src/movies/service.js'
+import { STREAM_LIVE_TTL_MS, StreamLive, type StreamLiveSnapshot } from '../../src/movies/streamLive.js'
 import { MovieStreams, type MovieStreamsSource, type ResolveRecord, type StreamSessionRef } from '../../src/movies/streams.js'
 import type { TmdbClient } from '../../src/movies/tmdb.js'
 import type { NewMovieFile } from '../../src/movies/types.js'
@@ -93,10 +95,11 @@ describe('direct streaming in the movies store', () => {
     return new MovieStreams(moviesOf(host), { now: () => clock, log: () => undefined })
   }
 
-  function app(movies: MovieStreamsSource | null = moviesOf(), withService = true): Hono {
+  function app(movies: MovieStreamsSource | null = moviesOf(), withService = true, live: StreamLive | null = null): Hono {
     const a = new Hono()
     const directStream = withService ? { session: (id: string) => sessions.get(id) ?? null } : null
-    a.route('/', streamPositionRoutes({ movies, directStream }, { now: () => clock }))
+    a.route('/', streamPositionRoutes({ movies, directStream, live }, { now: () => clock }))
+    a.route('/', moviesPlayRoutes({ db, moviesPlayer: null, streamLive: live }))
     return a
   }
 
@@ -245,6 +248,105 @@ describe('direct streaming in the movies store', () => {
       const rows = await streamRows()
       expect(rows.find((r) => r.host === HOST)?.endedAt).toEqual(T0)
       expect(rows.find((r) => r.host === OTHER)?.endedAt).toBeNull()
+    })
+  })
+
+  describe('the stream on screen (GET /api/movies/player)', () => {
+    const onScreen = async (a: Hono) => ((await (await a.request('/api/movies/player')).json()) as { stream: StreamLiveSnapshot | null }).stream
+
+    it('says playing or paused with the position while the page reports, for a film and for an episode', async () => {
+      const live = new StreamLive(() => clock)
+      const a = app(moviesOf(), true, live)
+      sessions.set('sess-1', { id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'VidFast' } })
+      expect(await onScreen(a)).toBeNull()
+      await report(a, 'sess-1', { position_s: 120, duration_s: 8340, paused: false })
+      expect(await onScreen(a)).toEqual({
+        session_id: 'sess-1', title_id: 'movie-550', season: null, episode: null, provider: 'VidFast', state: 'playing', position: 120, duration: 8340, last_report_at: T0.toISOString(),
+      })
+      clock = at(1)
+      await report(a, 'sess-1', { position_s: 180, duration_s: 8340, paused: true })
+      expect(await onScreen(a)).toMatchObject({ state: 'paused', position: 180 })
+
+      // Another page starts an episode: the stream on screen is the one that reported last.
+      sessions.set('sess-2', { id: 'sess-2', ref: MOBLAND_S1E2, source: { provider: 'HyperLink' } })
+      await report(a, 'sess-2', { position_s: 5, duration_s: 3000 })
+      expect(await onScreen(a)).toMatchObject({ session_id: 'sess-2', title_id: 'tv-247718', season: 1, episode: 2, provider: 'HyperLink', state: 'playing' })
+    })
+
+    it("a paused page's beat keeps it on screen and writes nothing", async () => {
+      const live = new StreamLive(() => clock)
+      const a = app(moviesOf(), true, live)
+      sessions.set('sess-1', { id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'VidFast' } })
+      await report(a, 'sess-1', { position_s: 300, duration_s: 8340, paused: true })
+      const [row] = await streamRows()
+      for (let i = 1; i <= 6; i += 1) {
+        clock = new Date(T0.getTime() + i * 5_000)
+        const res = await report(a, 'sess-1', { position_s: 300, duration_s: 8340, paused: true, beat: true })
+        expect(await res.json()).toEqual({ ok: true, play_id: null, ended: false })
+      }
+      // Thirty seconds on, past the 20 s a silent page is kept: still paused, and the row untouched.
+      expect(await onScreen(a)).toMatchObject({ state: 'paused', position: 300 })
+      expect(await streamRows()).toEqual([row])
+      // A beat for a session that is not on screen is a normal report: it is written and shown.
+      sessions.set('sess-2', { id: 'sess-2', ref: MOBLAND_S1E2, source: { provider: 'HyperLink' } })
+      await report(a, 'sess-2', { position_s: 40, duration_s: 3000, paused: true, beat: true })
+      expect(await streamRows()).toHaveLength(2)
+      expect(await onScreen(a)).toMatchObject({ session_id: 'sess-2', state: 'paused' })
+    })
+
+    it('leaves the screen when the film ends, the page closes, or it falls silent for 20 s', async () => {
+      const live = new StreamLive(() => clock)
+      const a = app(moviesOf(), true, live)
+      sessions.set('sess-1', { id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'VidFast' } })
+      await report(a, 'sess-1', { position_s: 100, duration_s: 8340 })
+      await report(a, 'sess-1', { position_s: 130, duration_s: 8340, paused: true, closed: true })
+      expect(await onScreen(a)).toBeNull()
+      // The closing word still stores the position.
+      expect(await streamRows()).toMatchObject([{ positionS: 130, endedAt: null }])
+
+      await report(a, 'sess-1', { position_s: 140, duration_s: 8340 })
+      expect(await onScreen(a)).toMatchObject({ position: 140 })
+      clock = new Date(T0.getTime() + STREAM_LIVE_TTL_MS + 1)
+      expect(await onScreen(a)).toBeNull()
+
+      await report(a, 'sess-1', { position_s: 8340, duration_s: 8340, ended: true })
+      expect(await onScreen(a)).toBeNull()
+    })
+
+    it('answers no stream without the live state, and a report is still stored', async () => {
+      const a = app()
+      sessions.set('sess-1', { id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'VidFast' } })
+      expect((await report(a, 'sess-1', { position_s: 100, duration_s: 8340, paused: true, beat: true })).status).toBe(200)
+      expect(await streamRows()).toHaveLength(1)
+      expect(await onScreen(a)).toBeNull()
+    })
+  })
+
+  describe('the original language', () => {
+    it("reads a stored title's language from TMDB once, stores it, and answers it for an episode of the series", async () => {
+      await streams().ensureTitle(MOBLAND_S1E2)
+      await db.execute(sql`update movie_titles set original_language = null where id = 'tv-247718'`)
+      let asked = 0
+      const client = { ...tmdb(), originalLanguage: async () => { asked += 1; return 'ko' } }
+      const s = new MovieStreams(moviesOf(HOST, client), { now: () => clock, log: () => undefined })
+      expect(await s.originalLanguage(MOBLAND_S1E2)).toBe('ko')
+      expect(await s.originalLanguage(MOBLAND_S1E2)).toBe('ko')
+      expect(asked).toBe(1)
+      expect((await repo.titleById('tv-247718'))?.originalLanguage).toBe('ko')
+    })
+
+    it('asks TMDB for a title that is not stored, and answers null when nothing says', async () => {
+      const client = { ...tmdb(), originalLanguage: async () => 'ja' }
+      expect(await new MovieStreams(moviesOf(HOST, client), { log: () => undefined }).originalLanguage(FIGHT_CLUB)).toBe('ja')
+      expect(await repo.titleById('movie-550')).toBeNull()
+      expect(await new MovieStreams(moviesOf(HOST, null), { log: () => undefined }).originalLanguage(FIGHT_CLUB)).toBeNull()
+      expect(await streams().originalLanguage(FIGHT_CLUB)).toBeNull()
+    })
+
+    it('keeps the stored language when new TMDB metadata does not carry one', async () => {
+      await repo.upsertTitle({ ...movieMeta(550), originalLanguage: 'en' }, T0)
+      await repo.upsertTitle(movieMeta(550), at(1))
+      expect((await repo.titleById('movie-550'))?.originalLanguage).toBe('en')
     })
   })
 

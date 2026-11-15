@@ -19,6 +19,14 @@ export interface StreamSession {
   manifestKind: ManifestKind;
   subtitles: SessionSubtitle[];
   resumeS: number;
+  /** The manifest's audio track in the title's original language (`audio.track`): the engine selects it. Null: none named. */
+  audioTrack: AudioTrackRef | null;
+}
+
+/** An audio track as the manifest writes it. */
+export interface AudioTrackRef {
+  lang: string | null;
+  label: string | null;
 }
 
 /** A failed session call. `code` is the daemon's `error` (`unknown_session`, `no_source`, ...) or one of ours. */
@@ -38,6 +46,12 @@ export interface PositionReport {
   position_s: number;
   duration_s: number | null;
   ended: boolean;
+  /** The film is paused: the Movies page shows "paused" on its poster. */
+  paused: boolean;
+  /** Sent only to say the paused page is still open; the position did not move. */
+  beat?: boolean;
+  /** The page is closing: its last report. */
+  closed?: boolean;
 }
 
 const KINDS: readonly string[] = ['hls', 'dash', 'mp4'];
@@ -70,6 +84,8 @@ export function parseSession(json: unknown): StreamSession {
     }
   }
   const resume = o.resume_s;
+  const named = (o.audio as { track?: unknown } | null | undefined)?.track;
+  const track = typeof named === 'object' && named !== null ? (named as Record<string, unknown>) : null;
   return {
     id,
     title: text(o.title) ?? 'Stream',
@@ -77,6 +93,7 @@ export function parseSession(json: unknown): StreamSession {
     manifestKind: kind as ManifestKind,
     subtitles,
     resumeS: typeof resume === 'number' && Number.isFinite(resume) && resume > 0 ? resume : 0,
+    audioTrack: track === null || (text(track.lang) === null && text(track.label) === null) ? null : { lang: text(track.lang), label: text(track.label) },
   };
 }
 
@@ -129,13 +146,17 @@ export async function refreshSession(id: string, fetchImpl: typeof fetch): Promi
   return body !== null && typeof body.session_id === 'string' && body.session_id !== '' ? body.session_id : id;
 }
 
-/** Fire and forget: a 404 (no movies store yet, or a session it does not know) and every other failure are ignored. */
+/**
+ * Fire and forget: a 404 (no movies store yet, or a session it does not know) and every other failure are ignored.
+ * A closing page's report is sent `keepalive`, so it outlives the page.
+ */
 export async function postPosition(id: string, report: PositionReport, fetchImpl: typeof fetch): Promise<void> {
   try {
     await fetchImpl(positionUrl(id), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(report),
+      ...(report.closed === true ? { keepalive: true } : {}),
     });
   } catch {
     // ignored: the position is reported again in 5 s

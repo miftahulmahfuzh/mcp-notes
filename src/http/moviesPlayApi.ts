@@ -43,14 +43,16 @@ export function playErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'>): Hono {
+export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'> & Partial<Pick<AppDeps, 'streamLive'>>): Hono {
   const r = new Hono();
 
   r.get('/api/movies/player', async (c) => {
     const player = deps.moviesPlayer ?? null;
-    if (player === null) return c.json({ available: false, reason: 'movies_off', current: null });
+    // The stream on screen in the player page, if any (direct streaming): the twin of `current`.
+    const stream = deps.streamLive?.current() ?? null;
+    if (player === null) return c.json({ available: false, reason: 'movies_off', current: null, stream });
     const a = await player.availability();
-    return c.json({ available: a.available, reason: a.reason, current: player.current() });
+    return c.json({ available: a.available, reason: a.reason, current: player.current(), stream });
   });
 
   r.post('/api/movies/files/:fileId/play', sameOriginOnly, async (c) => {

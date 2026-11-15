@@ -100,6 +100,25 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Live: `/direct-stream saltburn` in Claude Code against the installed daemon. It resolves
   through the streaming Chrome and plays full screen with sound: the owner's to run.
 
+## Original audio, and the stream on screen
+- A dub is never a source: the resolver reads what each stream speaks (manifest audio tracks, else
+  the first segment's MPEG-TS programme table or MP4 track header), skips a stream in another
+  language than TMDB's `original_language` as `dubbed`, lends its English subtitle file to the
+  stream that is kept, and the player selects the manifest's original-language track. Proven by
+  `npx vitest run tests/unit/scripts/directAudio.test.ts tests/unit/directStream/runner.test.ts web/src/stream`
+  and `npm run test:int -- tests/integration/directStream.api.int.test.ts tests/integration/movies.streams.int.test.ts`
+  (`--audio-lang` reaches the resolver; the language is read from TMDB once and stored).
+- Live (owner's machine, out of sight, plays nothing):
+  `node claude/streaming/direct/cli.mjs resolve tv 293610 1 1 --audio-lang ko` answers HyperLink
+  `dubbed` ("audio is en, the original is ko") and another provider `resolved`.
+- The stream on screen: the player page's reports (`paused`, `beat`, `closed`) feed
+  `GET /api/movies/player` `stream`, and the Movies page marks the poster, the title page and the
+  episode row "playing" (pulsing) or "paused". Proven by `tests/integration/movies.streams.int.test.ts`
+  ("the stream on screen"), `web/src/stream/controller.test.tsx` and `web/src/App.stream.test.tsx`.
+  End to end on a throwaway daemon: `$V up --web --direct-stream`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/direct-stream/live.steps.mjs` (PLAYING, PAUSED,
+  PAGE and CLOSED PASS, with a screenshot of each).
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

@@ -395,6 +395,8 @@ provider returned a playable stream for it on this machine within the freshness 
 shown there, so every poster plays. A title with no file is not dimmed on this side, and there is
 no `gone` pill. The header says how many titles are verified and over how many days.
 
+![The Stream side: the titles verified to stream on this machine, with the same filters as the library](img/movies/stream.png)
+
 Titles get onto it by being streamed: `/direct-stream <title>` from Claude Code (see
 [streaming.md](streaming.md)), a play from this page, or the background prober when
 `NOTESD_STREAM_PROBER=on`. An empty Stream side says so, and with direct streaming off it says how
@@ -463,7 +465,9 @@ Rules worth knowing:
 - **The poster shows what is on.** While a play is followed, its title's poster in the grid has a
   pulsing frame and a "playing" chip; paused it is steady and reads "paused"; a VLC without video
   reads "no picture" in amber. The title's page shows the same on its poster, and the line beside
-  Play reads "playing in VLC", "paused in VLC" or "no picture in VLC" with the position.
+  Play reads "playing in VLC", "paused in VLC" or "no picture in VLC" with the position. A title
+  streaming in the player page is marked the same way, "playing" or "paused"
+  ([streaming.md](streaming.md#the-player)).
 - **notesd never stops or kills a VLC, and never touches one you opened yourself.** There is no
   stop, pause or seek command for you to send.
 - **A stopped VLC keeps the last real position.** When VLC reports `stopped` (you pressed stop, or

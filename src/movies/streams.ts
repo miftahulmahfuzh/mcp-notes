@@ -1,4 +1,5 @@
 import type { MoviesService } from './service.js';
+import { TmdbError, type TmdbClient, type TmdbTitleNames } from './tmdb.js';
 import { streamResumePosition } from './state.js';
 import { streamSlot, titleId, type MovieStreamSourceRow, type StreamPositionWrite, type StreamTarget, type TitleMetadata } from './types.js';
 
@@ -134,6 +135,26 @@ export class MovieStreams {
       if (visibilityChanged(before, after)) this.emit('stream', id);
     } catch (err) {
       this.log(`[notesd] direct stream: could not record the resolve of ${describeTarget(target)}: ${messageOf(err)}`);
+    }
+  }
+
+  /**
+   * The title's original language (TMDB's code, "ko"), for the resolver's dub check: the stored one,
+   * else TMDB's, which is then stored on the title when it has a row. Null when nothing says.
+   */
+  async originalLanguage(target: StreamTarget): Promise<string | null> {
+    try {
+      const id = titleId(target.kind, target.tmdbId);
+      const row = await this.movies.repo.titleById(id);
+      if (row !== null && row.originalLanguage !== null) return row.originalLanguage;
+      const tmdb: (TmdbClient & Partial<TmdbTitleNames>) | null = this.movies.tmdb;
+      if (tmdb === null || tmdb.originalLanguage === undefined) return null;
+      const language = await tmdb.originalLanguage(target.kind, target.tmdbId);
+      if (language !== null && row !== null) await this.movies.repo.setOriginalLanguage(id, language, this.now());
+      return language;
+    } catch (err) {
+      if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the original language of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
     }
   }
 

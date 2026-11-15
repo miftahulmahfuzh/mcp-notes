@@ -1,5 +1,5 @@
 import Hls, { ErrorTypes, Events, type MediaPlaylist } from 'hls.js';
-import { reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
+import { audioTrackIndex, reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
 
 /** X-Notesd-Upstream of a failed load: hls.js's default XhrLoader hands the XMLHttpRequest over as `networkDetails`. */
 function upstreamOf(details: unknown): string | null {
@@ -9,7 +9,7 @@ function upstreamOf(details: unknown): string | null {
   return null;
 }
 
-export function createHlsEngine({ video, src, startAt, handlers }: EngineRequest): PlayerEngine {
+export function createHlsEngine({ video, src, startAt, handlers, audioTrack }: EngineRequest): PlayerEngine {
   if (!Hls.isSupported()) {
     handlers.onFatal('hls_unsupported');
     return { setQuality() {}, setEmbeddedSubtitle() {}, destroy() {} };
@@ -23,6 +23,9 @@ export function createHlsEngine({ video, src, startAt, handlers }: EngineRequest
 
   hls.on(Events.MANIFEST_PARSED, (_event, data) => {
     subtitleTracks = data.subtitleTracks;
+    // The original-language audio, never the manifest's default when that is a dub.
+    const audio = audioTrackIndex(data.audioTracks.map((t) => ({ lang: t.lang ?? null, label: t.name })), audioTrack);
+    if (audio !== -1) hls.audioTrack = audio;
     handlers.onReady({
       qualities: data.levels.map((level, index) => ({
         index,

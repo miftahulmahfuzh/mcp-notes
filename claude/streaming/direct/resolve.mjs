@@ -1,9 +1,12 @@
 // Resolving a film or an episode: try providers in order, open each embed with the sniffer, and
-// keep the first one that loaded a stream. Pure apart from the injected sniffer.
+// keep the first one that loaded a stream in the title's original language. Pure apart from the
+// injected sniffer and audio probe.
 import { ChromeError } from '../chrome.mjs';
+import { isOriginalAudio } from './audio.mjs';
+import { normalizeLang } from './lang.mjs';
 import { orderProviders } from './order.mjs';
 
-export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'skipped_browser_only', 'skipped_no_template']);
+export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'dubbed', 'skipped_browser_only', 'skipped_no_template']);
 
 /** Failures that would hit every provider the same way: stop instead of trying the rest. */
 const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
@@ -149,11 +152,8 @@ function bestHeight(hit, kind) {
   return best;
 }
 
-/**
- * The stream in one capture: the manifest, the headers its request carried, the subtitle tracks
- * seen, the best height. Null when the capture holds no stream.
- */
-export function pickSource(sniff) {
+/** The capture's stream request: `{ hit, kind }`, or null when it holds none. */
+function bestHit(sniff) {
   const hits = Array.isArray(sniff?.hits) ? sniff.hits : [];
   let best = null;
   for (const hit of hits) {
@@ -163,6 +163,22 @@ export function pickSource(sniff) {
     const r = rank(hit, kind);
     if (best === null || r < best.rank) best = { hit, kind, rank: r };
   }
+  return best;
+}
+
+/** The text of the manifest pickSource chose ('' when the capture kept none): the audio probe reads it. */
+export function manifestBody(sniff) {
+  const body = bestHit(sniff)?.hit.body;
+  return typeof body === 'string' ? body : '';
+}
+
+/**
+ * The stream in one capture: the manifest, the headers its request carried, the subtitle tracks
+ * seen, the best height. Null when the capture holds no stream.
+ */
+export function pickSource(sniff) {
+  const hits = Array.isArray(sniff?.hits) ? sniff.hits : [];
+  const best = bestHit(sniff);
   if (best === null) return null;
   const { hit, kind } = best;
   const body = typeof hit.body === 'string' ? hit.body : '';
@@ -195,8 +211,20 @@ function describe(found) {
  * the sniffer (sniffEmbed in use, a fake in tests); every call gets the same options object.
  * `deadlineS` (null: none): once that many seconds have passed, no further provider is sniffed and
  * the answer is `error: "deadline"` (it says nothing about the title).
+ *
+ * `audioLang` is the title's original language (TMDB's code, "ko"); with it and `probeAudio`
+ * (audio.mjs in use, a fake in tests) a stream that speaks only other languages is a dub: its
+ * provider is recorded as `dubbed` and the next one is tried. A stream whose language nothing
+ * names is kept. The source carries `audio: { languages, tracks, original, track }`.
+ *
+ * A dub's separate English subtitle files are not thrown away: when the stream that is kept has
+ * no English subtitle of its own, they are added to its tracks with `borrowed_from` naming the
+ * provider (the same episode, so the timing fits), and `en_subtitle` stays the provider's own.
  */
-export async function resolveTitle(ref, { providers, health = {}, sniff, only = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null }) {
+export async function resolveTitle(
+  ref,
+  { providers, health = {}, sniff, only = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
+) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
   let candidates = orderProviders(providers, health);
   if (only !== null) {
@@ -204,6 +232,8 @@ export async function resolveTitle(ref, { providers, health = {}, sniff, only = 
     if (candidates.length === 0) return { ok: false, ...base, source: null, error: 'unknown_provider', detail: `no provider named ${only}`, attempts: [] };
   }
   const attempts = [];
+  /** English subtitle files seen at providers skipped as dubs. */
+  const spare = [];
   const begun = clock();
   for (const [index, provider] of candidates.entries()) {
     if (provider.browser_only) {
@@ -231,8 +261,31 @@ export async function resolveTitle(ref, { providers, health = {}, sniff, only = 
     const tookS = seconds(clock() - started);
     const found = pickSource(sniffed);
     if (found) {
-      attempts.push(attempt(provider, 'resolved', tookS, describe(found)));
-      return { ok: true, ...base, source: { provider: provider.name, embed_url: url, ...found, took_s: tookS }, attempts };
+      let audio = null;
+      if (audioLang !== null && probeAudio !== null) {
+        const heard = await probeAudio({ ...found, manifest_body: manifestBody(sniffed) });
+        // The manifest's track in the original language, as written: the player picks it by these.
+        const own = (heard.named ?? []).find((t) => t.language === normalizeLang(audioLang)) ?? null;
+        audio = {
+          languages: heard.languages,
+          tracks: heard.tracks,
+          original: isOriginalAudio(heard.languages, audioLang),
+          track: own === null ? null : { lang: own.lang ?? null, label: own.label ?? null },
+        };
+        if (audio.original === false) {
+          attempts.push(attempt(provider, 'dubbed', tookS, `audio is ${heard.languages.join(', ')}, the original is ${normalizeLang(audioLang)}`));
+          for (const t of found.subtitles) {
+            if (t.source === 'request' && isEnglish(t) && !spare.some((s) => s.url === t.url)) spare.push({ ...t, lang: t.lang ?? 'en', borrowed_from: provider.name });
+          }
+          continue;
+        }
+      }
+      const heardAs = audio === null || audio.languages.length === 0 ? '' : `, audio ${audio.languages.join('/')}`;
+      const borrowed = found.en_subtitle ? [] : spare;
+      const lent = borrowed.length === 0 ? '' : `, English subtitle from ${[...new Set(borrowed.map((t) => t.borrowed_from))].join(', ')}`;
+      attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
+      const source = { provider: provider.name, embed_url: url, ...found, subtitles: [...found.subtitles, ...borrowed], audio, took_s: tookS };
+      return { ok: true, ...base, source, attempts };
     }
     if (sniffed.bot_check) {
       attempts.push(attempt(provider, 'bot_check', tookS, sniffed.bot_check_reason ?? 'bot check'));

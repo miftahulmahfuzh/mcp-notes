@@ -1,5 +1,5 @@
 import { MediaPlayer, type MediaInfo } from 'dashjs';
-import { reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
+import { audioTrackIndex, reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
 
 /** X-Notesd-Upstream of a response the interceptor saw (dash.js 5 lower-cases header names in `headers`). */
 function upstreamOf(response: unknown): string | null {
@@ -16,7 +16,7 @@ function describe(event: unknown): string {
   }
 }
 
-export function createDashEngine({ video, src, startAt, handlers }: EngineRequest): PlayerEngine {
+export function createDashEngine({ video, src, startAt, handlers, audioTrack }: EngineRequest): PlayerEngine {
   const player = MediaPlayer().create();
   let textTracks: MediaInfo[] = [];
   let live = true;
@@ -29,6 +29,10 @@ export function createDashEngine({ video, src, startAt, handlers }: EngineReques
   player.on(MediaPlayer.events.STREAM_INITIALIZED, () => {
     if (!live) return;
     textTracks = player.getTracksFor('text');
+    // The original-language audio, never the manifest's default when that is a dub.
+    const audioTracks = player.getTracksFor('audio');
+    const audio = audioTrackIndex(audioTracks.map((t) => ({ lang: t.lang, label: t.labels[0]?.text ?? null })), audioTrack);
+    if (audio !== -1 && audioTracks[audio] !== undefined) player.setCurrentTrack(audioTracks[audio]);
     handlers.onReady({
       qualities: player.getRepresentationsByType('video').map((rep, index) => ({
         index,

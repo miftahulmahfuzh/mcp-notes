@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_REFRESHES, POSITION_INTERVAL_MS, StreamController } from './controller';
-import { classifyRefusal } from './engine';
+import { audioTrackIndex, classifyRefusal } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 
@@ -52,9 +52,32 @@ describe('parseSession', () => {
         { url: '/y', lang: null, label: 'English (CC)', english: true },
       ],
       resumeS: 42.5,
+      audioTrack: null,
     });
-    expect(parseSession({ session_id: 'S1', manifest_url: '/m', manifest_kind: 'mp4' })).toMatchObject({ title: 'Stream', subtitles: [], resumeS: 0 });
+    expect(parseSession({ session_id: 'S1', manifest_url: '/m', manifest_kind: 'mp4' })).toMatchObject({ title: 'Stream', subtitles: [], resumeS: 0, audioTrack: null });
+    // The manifest's original-language audio track, as the resolve named it.
+    const audio = { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'kor', label: 'Korean' } };
+    expect(parseSession(streamSessionJson({ audio })).audioTrack).toEqual({ lang: 'kor', label: 'Korean' });
+    expect(parseSession(streamSessionJson({ audio: { ...audio, track: null } })).audioTrack).toBeNull();
     expect(() => parseSession({ id: 'S1', manifest_url: '/m', manifest_kind: 'mp4' })).toThrow('bad_session');
+  });
+
+  it('finds the original-language audio track among a manifest\'s, by tag and name', () => {
+    const tracks = [{ lang: 'en', label: 'English' }, { lang: 'kor', label: 'Korean' }, { lang: 'kor', label: 'Korean (Commentary)' }];
+    expect(audioTrackIndex(tracks, { lang: 'kor', label: 'Korean' })).toBe(1);
+    expect(audioTrackIndex(tracks, { lang: 'KOR', label: 'Korean (Commentary)' })).toBe(2);
+    // The name moved on (a refreshed manifest): the tag still finds it.
+    expect(audioTrackIndex(tracks, { lang: 'kor', label: 'Original' })).toBe(1);
+    expect(audioTrackIndex([{ lang: null, label: 'Korean' }], { lang: null, label: 'Korean' })).toBe(0);
+    expect(audioTrackIndex(tracks, { lang: 'ja', label: 'Japanese' })).toBe(-1);
+    expect(audioTrackIndex(tracks, null)).toBe(-1);
+  });
+
+  it('hands the session\'s audio track to the engine', async () => {
+    const audio = { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'kor', label: 'Korean' } };
+    const { controller, made } = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ audio })) });
+    await controller.start();
+    expect(made[0]?.req.audioTrack).toEqual({ lang: 'kor', label: 'Korean' });
   });
 
   it('reads ?muted=1, and tells an expired token from a session notesd refused', () => {
@@ -195,7 +218,7 @@ describe('StreamController: subtitles and quality (R2.3)', () => {
 });
 
 describe('StreamController: positions', () => {
-  it('posts every 5 s while playing, on pause and at the end; a 404 changes nothing', async () => {
+  it('posts every 5 s while the page is open, on pause, on play and at the end; a 404 changes nothing', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
     void t.controller.start();
@@ -204,22 +227,42 @@ describe('StreamController: positions', () => {
     Object.assign(t.media, { currentTime: 12.34, duration: 600, paused: false });
 
     await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
-    expect(t.posts()).toEqual([{ position_s: 12.3, duration_s: 600, ended: false }]);
+    expect(t.posts()).toEqual([{ position_s: 12.3, duration_s: 600, ended: false, paused: false }]);
 
-    t.media.paused = true;
-    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
-    expect(t.posts()).toHaveLength(1);
-
-    t.media.currentTime = 15;
+    // Paused: the pause itself is reported, then a beat every 5 s says the page is still open.
+    Object.assign(t.media, { currentTime: 15, paused: true });
     t.fire('pause');
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.posts().slice(1)).toEqual([
+      { position_s: 15, duration_s: 600, ended: false, paused: true },
+      { position_s: 15, duration_s: 600, ended: false, paused: true, beat: true },
+    ]);
+
+    // Play again is said at once.
+    t.media.paused = false;
+    t.fire('play');
     Object.assign(t.media, { currentTime: 600, ended: true });
     t.fire('ended');
-    await vi.waitFor(() => expect(t.posts()).toHaveLength(3));
-    expect(t.posts().slice(1)).toEqual([
-      { position_s: 15, duration_s: 600, ended: false },
-      { position_s: 600, duration_s: 600, ended: true },
+    await vi.waitFor(() => expect(t.posts()).toHaveLength(5));
+    expect(t.posts().slice(3)).toEqual([
+      { position_s: 15, duration_s: 600, ended: false, paused: false },
+      { position_s: 600, duration_s: 600, ended: true, paused: false },
     ]);
     expect(t.controller.getState()).toMatchObject({ stage: 'ready', reportedS: 600, error: null });
+  });
+
+  it('says the page is closing with its last position, in a request that outlives it', async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 90, duration: 600, paused: true });
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.waitFor(() => expect(t.posts()).toEqual([{ position_s: 90, duration_s: 600, ended: false, paused: true, closed: true }]));
+    // After dispose the page says nothing more.
+    t.controller.dispose();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(t.posts()).toHaveLength(1);
   });
 });
 
@@ -267,7 +310,7 @@ describe('StreamController: refresh and continue (R2.5)', () => {
     t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
     t.media.currentTime = 30;
     t.fire('pause');
-    await vi.waitFor(() => expect(t.posts(`${S2}/position`)).toEqual([{ position_s: 30, duration_s: null, ended: false }]));
+    await vi.waitFor(() => expect(t.posts(`${S2}/position`)).toEqual([{ position_s: 30, duration_s: null, ended: false, paused: false }]));
   });
 
   it('continues from resume_s when the token is refused before anything played', async () => {

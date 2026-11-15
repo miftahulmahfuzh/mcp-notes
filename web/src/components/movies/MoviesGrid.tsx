@@ -1,7 +1,7 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { PlayerState, TitleListItem } from '../../moviesApi';
-import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
+import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, tileLivePlace, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
 
 const KIND_ICON: Record<KindFilter, Icon> = { all: SquaresFour, movie: FilmSlate, tv: Television };
@@ -72,7 +72,7 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, si
         <div className="mv-grid" role="list" aria-label="Posters">
           {shown.map((t) => (
             <div key={t.id} role="listitem">
-              <PosterTile title={t} side={side} live={tileLive(t.id, player)} onOpen={onOpen} />
+              <PosterTile title={t} side={side} live={tileLive(t.id, player)} livePlace={tileLivePlace(t.id, player)} onOpen={onOpen} />
             </div>
           ))}
         </div>

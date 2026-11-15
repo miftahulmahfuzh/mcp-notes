@@ -71,6 +71,15 @@ describe('TmdbTitleNames', () => {
     expect(await client.alternativeTitles('tv', 293610)).toEqual(['Doctor X', 'Doctora X']);
   });
 
+  it("reads a title's original language in one request, null when TMDB does not know it", async () => {
+    const f = routedFetch({ '/tv/293610': { id: 293610, name: 'Doctor X: Mafia in White', original_language: 'ko' }, '/movie/1': { id: 1, title: 'X', original_language: '' } });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    expect(await client.originalLanguage('tv', 293610)).toBe('ko');
+    expect(await client.originalLanguage('movie', 1)).toBeNull();
+    expect(await client.originalLanguage('movie', 404)).toBeNull();
+    expect(f.urls.map((u) => u.pathname)).toEqual(['/tv/293610', '/movie/1', '/movie/404']);
+  });
+
   it('answers no names for a title TMDB does not know', async () => {
     expect(await createTmdbClient(CONFIG, routedFetch({}).fetch).alternativeTitles('tv', 1)).toEqual([]);
   });

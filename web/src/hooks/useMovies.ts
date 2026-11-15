@@ -16,7 +16,7 @@ import {
   type UnmatchedFile,
 } from '../moviesApi';
 import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageActive';
-import { detailIsFor } from '../lib/movies';
+import { anyLive, detailIsFor } from '../lib/movies';
 import type { MoviesRoute } from '../lib/route';
 
 /** Every minute while the tab is visible: picks up a sync or a play on the other laptop (its events never reach this daemon). */
@@ -73,7 +73,7 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   const title = route.title;
   const wantUnmatched = route.unmatched;
   const wantStream = route.stream === true && !route.unmatched;
-  const playing = player !== null && player.current !== null;
+  const playing = anyLive(player);
 
   useEffect(() => {
     if (!enabled) return;

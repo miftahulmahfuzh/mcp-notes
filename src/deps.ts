@@ -9,6 +9,7 @@ import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
+import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
@@ -55,6 +56,8 @@ export interface AppDeps {
    * null; every /api/stream/* route then answers 503 direct_stream_off.
    */
   directStream?: DirectStreamService | null;
+  /** The stream on screen in the player page (src/movies/streamLive.ts); null or absent with the movie library off. */
+  streamLive?: StreamLive | null;
   /**
    * The direct-streaming prober (phase 10). The daemon always sets it: a DisabledProber unless
    * NOTESD_STREAM_PROBER=on and everything it needs is there. Absent (tests), GET /api/stream/prober

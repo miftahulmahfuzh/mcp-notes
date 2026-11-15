@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
-import { episodeAction, episodeCode, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
+import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
 import { FileFlags, FileRow, Meter, PlayButton, StreamAltButton, TrailerButton, WatchedButton } from './parts';
 
 export interface EpisodeListProps {
@@ -94,6 +94,8 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
   /** The stream behind a file here (R5.5: the file stays the default). */
   const alt = act.kind === 'vlc' ? act.stream : null;
   const source = act.kind === 'stream' ? act.target.source : alt !== null ? alt.source : null;
+  /** This episode is the one on screen, in VLC or in the stream player. */
+  const live = episodeLive(detail.id, e, player);
   const cls = `${!e.has_file && side === 'library' ? 'mv-row none' : e.deleted ? 'mv-row del' : 'mv-row'}${focused ? ' focus' : ''}`;
   return (
     <li
@@ -115,6 +117,11 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
           </span>
         )}
         {file !== null ? <FileFlags file={file} /> : side === 'library' && <span className="mv-flag">no file</span>}
+        {live !== null && (
+          <span className={`mv-flag mv-now ${live}`} role="status" aria-label={`${code}: ${TILE_LIVE_LABEL[live]}`}>
+            {TILE_LIVE_LABEL[live]}
+          </span>
+        )}
         {source !== null && source.fresh && (
           <span className="mv-flag" data-tip={streamSourceText(source)}>
             verified

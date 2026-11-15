@@ -116,6 +116,8 @@ export interface TmdbCatalog {
 export interface TmdbTitleNames {
   /** A title's alternative titles in every country, in TMDB's order, without blanks. A title TMDB does not know (404) answers []. */
   alternativeTitles(kind: TitleKind, tmdbId: number): Promise<string[]>;
+  /** TMDB's `original_language` of a title ("ko"), in one request; null when TMDB does not know the title or its language. */
+  originalLanguage(kind: TitleKind, tmdbId: number): Promise<string | null>;
 }
 
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
@@ -173,6 +175,7 @@ const MovieDetailsSchema = z.object({
   id: intId,
   title: z.string(),
   original_title: text,
+  original_language: text,
   release_date: text,
   overview: text,
   poster_path: text,
@@ -205,6 +208,7 @@ const TvDetailsSchema = z.object({
   id: intId,
   name: z.string(),
   original_name: text,
+  original_language: text,
   first_air_date: text,
   overview: text,
   poster_path: text,
@@ -273,6 +277,8 @@ const PersonSearchSchema = z.object({
     .array(z.object({ id: intId, name: z.string(), known_for_department: text, profile_path: text, popularity: num }))
     .nullish(),
 });
+
+const OriginalLanguageSchema = z.object({ original_language: text });
 
 /** `/movie/{id}/alternative_titles` answers `titles`, `/tv/{id}/alternative_titles` answers `results`. */
 const AlternativeTitlesSchema = z.object({
@@ -698,6 +704,7 @@ export function createTmdbClient(
         tmdbId: raw.id,
         title: raw.title,
         originalTitle: orNull(raw.original_title) ?? raw.title,
+        originalLanguage: orNull(raw.original_language),
         year: yearOf(releaseDate),
         releaseDate,
         overview: raw.overview ?? '',
@@ -746,6 +753,7 @@ export function createTmdbClient(
         tmdbId: raw.id,
         title: raw.name,
         originalTitle: orNull(raw.original_name) ?? raw.name,
+        originalLanguage: orNull(raw.original_language),
         year: yearOf(releaseDate),
         releaseDate,
         overview: raw.overview ?? '',
@@ -837,6 +845,11 @@ export function createTmdbClient(
       if (json === null) return [];
       const raw = decode(AlternativeTitlesSchema, json, `${kind} ${tmdbId} alternative titles`);
       return [...(raw.titles ?? []), ...(raw.results ?? [])].flatMap((t) => orNull(t.title) ?? []);
+    },
+
+    async originalLanguage(kind, tmdbId) {
+      const json = await getOrNull(`/${kind}/${tmdbId}`, {});
+      return json === null ? null : orNull(decode(OriginalLanguageSchema, json, `${kind} ${tmdbId}`).original_language);
     },
   };
 }

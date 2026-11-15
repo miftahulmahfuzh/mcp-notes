@@ -1,20 +1,22 @@
 import type { MouseEvent } from 'react';
 import type { TitleListItem } from '../../moviesApi';
-import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type MoviesSide, type TileLive } from '../../lib/movies';
+import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type LivePlace, type MoviesSide, type TileLive } from '../../lib/movies';
 import { moviesHref } from '../../lib/route';
 import { Poster } from './Poster';
 
 export interface PosterTileProps {
   title: TitleListItem;
-  /** This title is in the VLC notesd follows. */
+  /** This title is on screen: in the VLC notesd follows, or in the stream player. */
   live?: TileLive | null;
+  /** Where `live` is playing. */
+  livePlace?: LivePlace;
   /** The Stream side: never dimmed as gone, and the link opens the title on the Stream side. */
   side?: MoviesSide;
   onOpen: (titleId: string) => void;
 }
 
 /** One poster: state chip, progress bar while in progress, caption below. A real link, so a middle click opens a tab. */
-export function PosterTile({ title: t, live = null, side = 'library', onOpen }: PosterTileProps) {
+export function PosterTile({ title: t, live = null, livePlace = 'VLC', side = 'library', onOpen }: PosterTileProps) {
   const gone = isGone(t, side);
   const badge = stateBadge(t.state);
   const progress = tileProgress(t);
@@ -31,7 +33,7 @@ export function PosterTile({ title: t, live = null, side = 'library', onOpen }: 
         <Poster key={t.poster_url ?? 'none'} url={t.poster_url} title={t.title} year={t.year} />
         {live === null && badge !== null && <span className={`mv-badge ${t.state}`}>{badge}</span>}
         {live !== null && (
-          <span className={`mv-badge mv-now ${live}`} role="status" aria-label={`${t.title}: ${TILE_LIVE_LABEL[live]} in VLC`}>
+          <span className={`mv-badge mv-now ${live}`} role="status" aria-label={`${t.title}: ${TILE_LIVE_LABEL[live]} in ${livePlace}`}>
             {TILE_LIVE_LABEL[live]}
           </span>
         )}

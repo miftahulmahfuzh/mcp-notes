@@ -142,7 +142,9 @@ export class StreamController {
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('seeking', this.onTime);
     this.video.addEventListener('pause', this.onPause);
+    this.video.addEventListener('play', this.onPlay);
     this.video.addEventListener('ended', this.onEnded);
+    this.video.ownerDocument.defaultView?.addEventListener('pagehide', this.onClose);
     this.timer = setInterval(this.onTick, POSITION_INTERVAL_MS);
     let session: StreamSession;
     try {
@@ -180,7 +182,9 @@ export class StreamController {
     this.video.removeEventListener('timeupdate', this.onTime);
     this.video.removeEventListener('seeking', this.onTime);
     this.video.removeEventListener('pause', this.onPause);
+    this.video.removeEventListener('play', this.onPlay);
     this.video.removeEventListener('ended', this.onEnded);
+    this.video.ownerDocument.defaultView?.removeEventListener('pagehide', this.onClose);
     this.engine?.destroy();
     this.engine = null;
     for (const track of this.fileTracks) {
@@ -246,6 +250,7 @@ export class StreamController {
         video: this.video,
         src: session.manifestUrl,
         startAt,
+        audioTrack: session.audioTrack,
         handlers: {
           onReady: (ready) => {
             if (current()) this.onReady(ready);
@@ -343,24 +348,45 @@ export class StreamController {
     if (this.state.stage === 'ready' && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 
+  // Every 5 s while the page is open: the position while it plays, and a beat while it is paused, so
+  // the Movies page knows the film is still on screen (src/movies/streamLive.ts).
   private readonly onTick = (): void => {
-    if (this.state.stage === 'ready' && !this.video.paused && !this.video.ended) this.report(false);
+    if (this.state.stage !== 'ready' || this.video.ended) return;
+    this.report(this.video.paused ? { beat: true } : {});
   };
 
   private readonly onPause = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report(false);
+    if (this.state.stage === 'ready' && !this.video.ended) this.report();
+  };
+
+  // Play after a pause: say so at once, not at the next tick.
+  private readonly onPlay = (): void => {
+    if (this.state.stage === 'ready' && !this.video.ended) this.report();
   };
 
   private readonly onEnded = (): void => {
-    if (this.state.stage === 'ready') this.report(true);
+    if (this.state.stage === 'ready') this.report({ ended: true });
   };
 
-  private report(ended: boolean): void {
+  // The tab or the window closes: the last position, and the film is no longer on screen.
+  private readonly onClose = (): void => {
+    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+  };
+
+  private report(extra: { ended?: boolean; beat?: boolean; closed?: boolean } = {}): void {
     if (this.session === null) return;
+    const ended = extra.ended === true;
     const duration = Number.isFinite(this.video.duration) && this.video.duration > 0 ? this.video.duration : null;
     const position = ended && duration !== null ? duration : this.video.currentTime;
     if (!(position > 0)) return;
-    const report = { position_s: round1(position), duration_s: duration === null ? null : round1(duration), ended };
+    const report = {
+      position_s: round1(position),
+      duration_s: duration === null ? null : round1(duration),
+      ended,
+      paused: !ended && this.video.paused,
+      ...(extra.beat === true ? { beat: true } : {}),
+      ...(extra.closed === true ? { closed: true } : {}),
+    };
     this.set({ reportedS: report.position_s });
     void postPosition(this.sessionId, report, this.deps.fetch);
   }

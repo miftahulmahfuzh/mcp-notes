@@ -227,6 +227,24 @@ describe('POST /api/stream/play', () => {
   });
 });
 
+describe('the original language', () => {
+  it("passes the title's original language to the resolver and to the player's session", async () => {
+    const { app } = await ready('host-a', { originalLanguage: async () => 'KO' });
+    const json = await played(app);
+    expect(json.session).toMatchObject({ audio_lang: 'ko', audio: null });
+    const [resolve] = await calls();
+    expect(resolve?.slice(resolve.indexOf('--audio-lang'), resolve.indexOf('--audio-lang') + 2)).toEqual(['--audio-lang', 'ko']);
+  });
+
+  it('asks for no audio check when the language is unknown, is not a code, or its hook fails', async () => {
+    for (const originalLanguage of [async () => null, async () => 'korean (south)', async () => Promise.reject(new Error('tmdb down'))]) {
+      const { app } = await ready('host-a', { originalLanguage });
+      expect((await played(app)).session.audio_lang).toBeNull();
+    }
+    expect((await calls()).filter((c) => c.includes('--audio-lang'))).toEqual([]);
+  });
+});
+
 describe('the pass-through', () => {
   it('fetches the master playlist with the captured headers and rewrites every address in it', async () => {
     const { app } = await ready();

@@ -24,6 +24,7 @@ import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
+import { StreamLive } from './movies/streamLive.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
@@ -170,6 +171,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         : {
             recordResolve: (ref, result) => movieStreams.recordResolve(ref, result),
             resumeS: (ref) => movieStreams.resumeS(ref),
+            originalLanguage: (ref) => movieStreams.originalLanguage(ref),
           },
   });
   if (directStream !== null) {
@@ -195,6 +197,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     sessionEvents,
     streaming,
     directStream,
+    streamLive: movies === null ? null : new StreamLive(),
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.

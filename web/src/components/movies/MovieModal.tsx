@@ -21,6 +21,8 @@ import {
   TILE_LIVE_LABEL,
   tileLive,
   type PlayButtonState,
+  anyLive,
+  streamLive,
 } from '../../lib/movies';
 import { isConfirmOpen } from '../ConfirmDialog';
 import { isLightboxOpen } from '../Lightbox';
@@ -53,7 +55,7 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-  const playing = player !== null && player.current !== null;
+  const playing = anyLive(player);
 
   useEffect(() => {
     setDetail(null);
@@ -142,8 +144,11 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   /** The followed play, when it is what the pop-up shows: the title, or for an episode's id that episode's file. */
   const current = player?.current ?? null;
   const live = detail !== null && current !== null && current.title_id === detail.id && (episode === null || episode.files.some((f) => f.id === current.file_id)) ? current : null;
-  /** playing / paused / stalled, as on the poster in the grid; null when it is not in VLC (or VLC is stopped). */
-  const now = live === null || detail === null ? null : tileLive(detail.id, player);
+  /** This title's stream on screen (for an episode's id: that episode's), when VLC does not show it. */
+  const shown = live !== null || detail === null ? null : streamLive(detail.id, player);
+  const streaming = shown !== null && (episode === null || (shown.season === episode.season && shown.episode === episode.episode)) ? shown : null;
+  /** playing / paused / stalled, as on the poster in the grid; null when it is not on screen (or VLC is stopped). */
+  const now = detail === null ? null : live !== null ? tileLive(detail.id, player) : (streaming?.state ?? null);
   /** A series' pop-up names the episode VLC has open. */
   const liveEpisode = live === null || detail === null || episode !== null ? null : (detail.seasons.flatMap((s) => s.episodes).find((e) => e.files.some((f) => f.id === live.file_id)) ?? null);
 
@@ -215,6 +220,8 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
                 </button>
                 {live !== null ? (
                   <LiveStatus live={live} now={now} what={liveEpisode !== null ? episodeCode(liveEpisode.season, liveEpisode.episode) : null} />
+                ) : streaming !== null ? (
+                  <LiveStatus live={streaming} now={streaming.state} place="the stream player" what={episode === null ? episodeCode(streaming.season, streaming.episode) || null : null} />
                 ) : (
                   <span className="mm-notice" role="status">
                     {notice ?? play.label}

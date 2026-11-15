@@ -314,7 +314,7 @@ describe('the command', () => {
     expect(printed).toHaveLength(1);
     const out = printed[0] as Json;
     expect(Object.keys(out)).toEqual(['ok', 'kind', 'tmdb_id', 'season', 'episode', 'source', 'attempts']);
-    expect(Object.keys(out.source)).toEqual(['provider', 'embed_url', 'manifest_url', 'manifest_kind', 'headers', 'subtitles', 'best_height', 'en_subtitle', 'took_s']);
+    expect(Object.keys(out.source)).toEqual(['provider', 'embed_url', 'manifest_url', 'manifest_kind', 'headers', 'subtitles', 'best_height', 'en_subtitle', 'audio', 'took_s']);
     expect(out).toMatchObject({
       ok: true,
       kind: 'movie',

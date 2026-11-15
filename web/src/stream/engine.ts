@@ -1,4 +1,4 @@
-import type { ManifestKind } from './session';
+import type { AudioTrackRef, ManifestKind } from './session';
 
 export interface Quality {
   /** The engine's own index for this rendition. */
@@ -49,7 +49,21 @@ export interface EngineRequest {
   src: string;
   /** Seconds to start at; 0 = the start. */
   startAt: number;
+  /** The audio track to play (the title's original language) when the manifest names several; null: the manifest's default. */
+  audioTrack?: AudioTrackRef | null;
   handlers: EngineHandlers;
+}
+
+/**
+ * The index of the wanted audio track among a manifest's: the same language tag, and the same
+ * name when both have one. -1 when `wanted` is null or no track fits.
+ */
+export function audioTrackIndex(tracks: readonly AudioTrackRef[], wanted: AudioTrackRef | null | undefined): number {
+  if (wanted === null || wanted === undefined) return -1;
+  const sameLang = (t: AudioTrackRef): boolean => (t.lang ?? '').toLowerCase() === (wanted.lang ?? '').toLowerCase();
+  const exact = tracks.findIndex((t) => sameLang(t) && (t.label ?? '') === (wanted.label ?? ''));
+  if (exact !== -1) return exact;
+  return wanted.lang === null ? tracks.findIndex((t) => t.label === wanted.label) : tracks.findIndex(sameLang);
 }
 
 export type CreateEngine = (request: EngineRequest) => Promise<PlayerEngine>;

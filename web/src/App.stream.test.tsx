@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Note } from './types';
-import type { StreamListResponse } from './moviesApi';
+import type { PlayerState, StreamListResponse, StreamLiveSnapshot } from './moviesApi';
 import { makeNote } from './testing/fixtures';
 import { FIGHT_CLUB, MOVIE_STREAMABLE, PLAYER_IDLE, SERIES_STREAMABLE, STATUS, STREAM_LIST, TITLES } from './testing/movieFixtures';
 import { STREAM_OFF_TEXT } from './lib/movies';
@@ -17,6 +17,14 @@ let streamList: StreamListResponse;
 let playAnswer: { status: number; body: Record<string, unknown> };
 /** Stands in for phase 5: a failed play marks the title's source stale, so the next list lacks it. */
 let dropOnFailure: string | null;
+/** What GET /api/movies/player answers. */
+let player: PlayerState;
+
+/** The stream the player page reports: Fight Club, or (with season and episode) an episode of MobLand. */
+const streaming = (over: Partial<StreamLiveSnapshot> = {}): PlayerState => ({
+  ...PLAYER_IDLE,
+  stream: { session_id: 'S1', title_id: 'movie-550', season: null, episode: null, provider: 'VidFast', state: 'playing', position: 754, duration: 8340, last_report_at: '2026-11-16T00:00:00.000Z', ...over },
+});
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
@@ -25,6 +33,7 @@ beforeEach(() => {
   streamList = STREAM_LIST;
   playAnswer = { status: 200, body: { ok: true } };
   dropOnFailure = null;
+  player = PLAYER_IDLE;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -44,7 +53,7 @@ beforeEach(() => {
       if (url === '/api/movies') return json({ titles: TITLES });
       if (url === '/api/movies/stream') return json(streamList);
       if (url === '/api/movies/status') return json(STATUS);
-      if (url === '/api/movies/player') return json(PLAYER_IDLE);
+      if (url === '/api/movies/player') return json(player);
       if (url === '/api/movies/M-FC55' || url === '/api/movies/movie-550') return json(FIGHT_CLUB);
       if (url === '/api/movies/M-23T4' || url === '/api/movies/movie-467905') return json(MOVIE_STREAMABLE);
       if (url === '/api/movies/M-8TR4' || url === '/api/movies/tv-247718') return json(SERIES_STREAMABLE);
@@ -190,5 +199,61 @@ describe('App: the Stream side of /movies', () => {
     const s01e02 = within(document.querySelector('[data-episode="S01E02"]') as HTMLElement);
     expect(s01e02.getByRole('button', { name: 'Resume S01E02 at 20:00' })).toBeTruthy();
     expect(s01e02.getByRole('button', { name: 'Stream S01E02 (VidFast · 1080p · English subtitle)' })).toBeTruthy();
+  });
+
+  it('the poster of the title streaming in the player page says playing or paused, on both sides', async () => {
+    player = streaming();
+    at('/movies?side=stream');
+    const first = render(<App />);
+    const now = await screen.findByRole('status', { name: 'Fight Club: playing in the stream player' });
+    expect(now.textContent).toBe('playing');
+    expect(now.closest('a')!.className).toBe('mv-tile now playing');
+    expect(within(screen.getByRole('list', { name: 'Posters' })).getAllByRole('status')).toHaveLength(1);
+    first.unmount();
+
+    player = streaming({ state: 'paused' });
+    const second = render(<App />);
+    expect((await screen.findByRole('status', { name: 'Fight Club: paused in the stream player' })).closest('a')!.className).toBe('mv-tile now paused');
+    second.unmount();
+
+    // A stream of a title in the library marks its poster there too.
+    player = streaming({ title_id: 'movie-467905' });
+    at('/movies');
+    render(<App />);
+    expect((await screen.findByRole('status', { name: 'How to Make a Killing: playing in the stream player' })).closest('a')!.className).toBe('mv-tile now playing');
+  });
+
+  it("the title page shows the stream's state: a framed poster with the chip, and the position beside Play", async () => {
+    for (const state of ['playing', 'paused'] as const) {
+      player = streaming({ state });
+      at('/movies/M-FC55?side=stream');
+      const view = render(<App />);
+      const article = await screen.findByRole('article', { name: 'Fight Club' });
+      const status = await within(article).findByRole('status');
+      expect(status.textContent).toBe(`${state} in the stream player · 12:34 / 2:19:00`);
+      expect(status.className).toBe(`mv-live ${state}`);
+      const art = article.querySelector('.mv-detail-art') as HTMLElement;
+      expect(art.className).toBe(`mv-detail-art now ${state}`);
+      expect(art.querySelector('.mv-now')!.textContent).toBe(state);
+      view.unmount();
+    }
+    // Another title's stream marks nothing here.
+    player = streaming({ title_id: 'movie-467905' });
+    at('/movies/M-FC55?side=stream');
+    render(<App />);
+    const idle = await screen.findByRole('article', { name: 'Fight Club' });
+    expect(within(idle).queryByRole('status')).toBeNull();
+    expect((idle.querySelector('.mv-detail-art') as HTMLElement).className).toBe('mv-detail-art');
+  });
+
+  it("a series' page names the episode that is streaming and marks its row", async () => {
+    player = streaming({ title_id: 'tv-247718', season: 2, episode: 1, state: 'paused', position: 65, duration: 3000 });
+    at('/movies/M-8TR4?side=stream');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'MobLand' });
+    await waitFor(() => expect(article.querySelector('.mv-live')?.textContent).toBe('S02E01 · paused in the stream player · 1:05 / 50:00'));
+    const row = within(document.querySelector('[data-episode="S02E01"]') as HTMLElement).getByRole('status', { name: 'S02E01: paused' });
+    expect(row.className).toBe('mv-flag mv-now paused');
+    expect(within(document.querySelector('[data-episode="S01E02"]') as HTMLElement).queryByRole('status')).toBeNull();
   });
 });

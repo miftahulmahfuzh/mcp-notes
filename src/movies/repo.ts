@@ -161,6 +161,8 @@ export class MoviesRepo {
       const tmdbColumns = {
         title: meta.title,
         originalTitle: meta.originalTitle,
+        // Kept when this metadata does not say (older callers, a TMDB answer without it).
+        ...(meta.originalLanguage === undefined || meta.originalLanguage === null ? {} : { originalLanguage: meta.originalLanguage }),
         year: meta.year,
         releaseDate: meta.releaseDate,
         overview: meta.overview,
@@ -268,6 +270,16 @@ export class MoviesRepo {
   async titleById(id: string): Promise<MovieTitleRow | null> {
     const rows = await this.db.select().from(movieTitles).where(eq(movieTitles.id, id)).limit(1);
     return rows[0] ?? null;
+  }
+
+  /** Stores a title's original language (TMDB's code). False when the title is not stored. */
+  async setOriginalLanguage(id: string, language: string, now: Date = new Date()): Promise<boolean> {
+    const rows = await this.db
+      .update(movieTitles)
+      .set({ originalLanguage: language, updatedAt: now })
+      .where(eq(movieTitles.id, id))
+      .returning({ id: movieTitles.id });
+    return rows.length > 0;
   }
 
   /**

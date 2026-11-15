@@ -29,8 +29,12 @@ export function toStreamRef(input: StreamRefInput): StreamRef {
   return { kind: 'tv', tmdbId: input.tmdbId, season: input.season, episode: input.episode };
 }
 
-/** How one provider's try ended, as claude/streaming/direct/cli.mjs reports it. The two skips are not health. */
-export const RESOLVE_OUTCOMES = [...STREAM_HEALTH_OUTCOMES, 'skipped_browser_only', 'skipped_no_template'] as const;
+/**
+ * How one provider's try ended, as claude/streaming/direct/cli.mjs reports it. The two skips are not
+ * health, and neither is `dubbed` (a stream was found, in another language than the title's
+ * original): it is about the title, not the provider.
+ */
+export const RESOLVE_OUTCOMES = [...STREAM_HEALTH_OUTCOMES, 'dubbed', 'skipped_browser_only', 'skipped_no_template'] as const;
 export type ResolveOutcome = (typeof RESOLVE_OUTCOMES)[number];
 
 export const MANIFEST_KINDS = STREAM_MANIFEST_KINDS;
@@ -61,6 +65,18 @@ export interface SubtitleTrack {
   source: 'request' | 'manifest';
 }
 
+/** What a resolved stream speaks, as the resolver's audio probe read it (claude/streaming/direct/audio.mjs). */
+export interface SourceAudio {
+  /** Normalized codes ("ko"); empty when nothing names the language. */
+  languages: string[];
+  /** Audio tracks the manifest names; 0: one muxed audio. */
+  tracks: number;
+  /** One of `languages` is the title's original; null: unknown. Never false: a dub is not a source. */
+  original: boolean | null;
+  /** The manifest's audio track in the original language, as the manifest writes it; null: none named (one muxed audio). */
+  track: { lang: string | null; label: string | null } | null;
+}
+
 /** The resolver's `source`, normalized. */
 export interface ResolvedSource {
   provider: string;
@@ -71,6 +87,8 @@ export interface ResolvedSource {
   subtitles: SubtitleTrack[];
   best_height: number | null;
   en_subtitle: boolean;
+  /** Absent or null when the resolve was not told the title's original language. */
+  audio?: SourceAudio | null;
   took_s: number | null;
 }
 

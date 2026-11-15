@@ -104,6 +104,8 @@ export interface TitleMetadata {
   tmdbId: number;
   title: string;
   originalTitle: string;
+  /** TMDB's `original_language` ("ko"); absent or null when TMDB did not say. Never clears a stored one. */
+  originalLanguage?: string | null;
   year: number | null;
   /** `YYYY-MM-DD`. */
   releaseDate: string | null;

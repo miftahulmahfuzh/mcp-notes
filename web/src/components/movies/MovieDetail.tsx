@@ -25,6 +25,8 @@ import {
   type MoviesSide,
   type StreamTarget,
   type TrailerTarget,
+  streamLive,
+  episodeCode,
 } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
 import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from './parts';
@@ -75,7 +77,9 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const line = streamLine(d, side);
   const current = player?.current ?? null;
   const live = current !== null && current.title_id === d.id ? current : null;
-  /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is in VLC (or it is stopped). */
+  /** This title's stream on screen in the player page, when VLC does not show the title. */
+  const streaming = live === null ? streamLive(d.id, player) : null;
+  /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is on screen (or VLC is stopped). */
   const now = tileLive(d.id, player);
 
   const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText) => {
@@ -218,6 +222,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             </button>
             <Stars value={rating} onRate={(v) => void rate(v)} />
             {live !== null && <LiveStatus live={live} now={now} />}
+            {streaming !== null && <LiveStatus live={streaming} now={streaming.state} place="the stream player" what={episodeCode(streaming.season, streaming.episode) || null} />}
           </div>
           {d.overview !== '' && <p className="mv-overview">{d.overview}</p>}
           <ReviewField key={d.id} titleId={d.id} saved={d.review} onSaved={onChanged} onNotice={onNotice} />

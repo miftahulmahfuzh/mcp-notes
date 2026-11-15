@@ -1,13 +1,16 @@
 import { Broadcast, CheckCircle, Desktop, MonitorPlay, Play, Trash } from '@phosphor-icons/react';
-import type { FileView, PlayerSnapshot, PlayerState, ProgressView, WatchState } from '../../moviesApi';
-import { clock, dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, TILE_LIVE_LABEL, type MovieEntity, type PlayButtonState, type TileLive, type TrailerTarget } from '../../lib/movies';
+import type { FileView, PlayerState, ProgressView, WatchState } from '../../moviesApi';
+import { clock, dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, TILE_LIVE_LABEL, type LivePlace, type MovieEntity, type PlayButtonState, type TileLive, type TrailerTarget } from '../../lib/movies';
 
-/** The followed play beside the Play button: its state (`now` null = stopped) and position. `what` names the episode (`S01E02`). */
-export function LiveStatus({ live, now, what = null }: { live: PlayerSnapshot; now: TileLive | null; what?: string | null }) {
+/**
+ * The play on screen beside the Play button: its state (`now` null = stopped) and position, in the
+ * followed VLC or (`place`) the stream player. `what` names the episode (`S01E02`).
+ */
+export function LiveStatus({ live, now, what = null, place = 'VLC' }: { live: { position: number; duration: number | null }; now: TileLive | null; what?: string | null; place?: LivePlace }) {
   return (
     <span className={`mv-live ${now ?? 'stopped'}`} role="status">
       {what !== null ? `${what} · ` : ''}
-      {now === null ? 'stopped' : TILE_LIVE_LABEL[now]} in VLC
+      {now === null ? 'stopped' : TILE_LIVE_LABEL[now]} in {place}
       {` · ${clock(live.position)}`}
       {live.duration !== null ? ` / ${clock(live.duration)}` : ''}
     </span>

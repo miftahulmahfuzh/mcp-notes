@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import type { DirectStreamService } from '../directStream/service.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
+import type { StreamLive } from '../movies/streamLive.js';
 import { MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
@@ -61,7 +62,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -118,7 +119,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
   });
 
   // Phase 5: the player page's position reports (src/movies/streams.ts).
-  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream }));
+  r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null }));
 
   return r;
 }
@@ -126,17 +127,26 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
 /** Longest position or duration a report may carry, in seconds (11.5 days: a sanity bound, not a film's length). */
 const MAX_STREAM_SECONDS = 1_000_000;
 
-/** The player page's report (phase 4 posts it every 5 s and on pause and end). Unknown keys are dropped. */
+/**
+ * The player page's report: every 5 s while the page is open, on pause and at the end. `paused`
+ * says the film is paused; `beat` marks a report sent only to say the paused page is still open;
+ * `closed` is the page's last word as it closes. Unknown keys are dropped.
+ */
 const positionBody = z.object({
   position_s: z.number().finite().min(0).max(MAX_STREAM_SECONDS),
   duration_s: z.number().finite().positive().max(MAX_STREAM_SECONDS).nullable().optional(),
   ended: z.boolean().optional(),
+  paused: z.boolean().optional(),
+  beat: z.boolean().optional(),
+  closed: z.boolean().optional(),
 });
 
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
   movies: MovieStreamsSource | null;
   directStream?: { session(id: string): StreamSessionRef | null | Promise<StreamSessionRef | null> } | null;
+  /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
+  live?: StreamLive | null;
 }
 
 /**
@@ -145,6 +155,10 @@ export interface StreamPositionDeps {
  * 503 `direct_stream_off` without the service or the movies store; 404 `unknown_session` for a
  * session the daemon does not hold (the page ignores 404s); 404 `unknown_title` when the title
  * cannot be stored (no TMDB credential); 400 `invalid_body`.
+ *
+ * Each report also feeds the live state (src/movies/streamLive.ts): the session is the stream on
+ * screen until it ends or closes. A `beat` of a paused page that is already the stream on screen
+ * only keeps it there: the position did not move, so nothing is written.
  */
 export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date } = {}): Hono {
   const r = new Hono();
@@ -164,6 +178,16 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     if (session === null) {
       return c.json({ error: 'unknown_session', message: 'No live stream session has this id (it expired, or the daemon restarted).' }, 404);
     }
+    const live = deps.live ?? null;
+    const report = body.data;
+    const over = report.ended === true || report.closed === true;
+    if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
+      const on = live.current();
+      if (on !== null) {
+        live.report({ sessionId: session.id, titleId: on.title_id, ref: session.ref, provider: session.source.provider, positionS: report.position_s, durationS: report.duration_s ?? on.duration, paused: true });
+        return c.json({ ok: true, play_id: null, ended: false });
+      }
+    }
     const written = await new MovieStreams(movies, options).recordPosition(session, {
       positionS: body.data.position_s,
       durationS: body.data.duration_s ?? null,
@@ -171,6 +195,20 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     });
     if (written === null) {
       return c.json({ error: 'unknown_title', message: 'The title is not stored and TMDB cannot be asked for it; the play is not recorded.' }, 404);
+    }
+    if (live !== null) {
+      if (over) live.end(session.id);
+      else {
+        live.report({
+          sessionId: session.id,
+          titleId: written.play.titleId ?? '',
+          ref: session.ref,
+          provider: session.source.provider,
+          positionS: report.position_s,
+          durationS: report.duration_s ?? null,
+          paused: report.paused === true,
+        });
+      }
     }
     return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null });
   });

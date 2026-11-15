@@ -10,6 +10,7 @@ import type {
   PlayerState,
   ProgressView,
   SeasonView,
+  StreamLiveSnapshot,
   StreamListResponse,
   StreamRef,
   StreamSourceView,
@@ -367,12 +368,44 @@ export const ALREADY_PLAYING_NOTICE = 'already open in VLC: brought to the front
 
 export type TileLive = 'playing' | 'paused' | 'stalled';
 
-/** The followed play, when it is this title: what its poster shows. A stopped VLC shows nothing. */
-export function tileLive(titleId: string, player: PlayerState | null): TileLive | null {
+/** The followed VLC play, when it is this title: what its poster shows. A stopped VLC shows nothing. */
+function vlcLive(titleId: string, player: PlayerState | null): TileLive | null {
   const c = player?.current ?? null;
   if (c === null || c.title_id !== titleId) return null;
   if (c.video_stalled === true) return 'stalled';
   return c.state === 'playing' ? 'playing' : c.state === 'paused' ? 'paused' : null;
+}
+
+/** The stream on screen in the player page, when it is this title. */
+export function streamLive(titleId: string, player: PlayerState | null): StreamLiveSnapshot | null {
+  const s = player?.stream ?? null;
+  return s !== null && s.title_id === titleId ? s : null;
+}
+
+/** Where a title is on screen: the VLC notesd follows, or the stream player page. */
+export type LivePlace = 'VLC' | 'the stream player';
+
+/** What a title's poster shows while it is on screen: the followed VLC first, else its stream. Null when neither shows it. */
+export function tileLive(titleId: string, player: PlayerState | null): TileLive | null {
+  return vlcLive(titleId, player) ?? streamLive(titleId, player)?.state ?? null;
+}
+
+/** Where tileLive's answer is playing. */
+export function tileLivePlace(titleId: string, player: PlayerState | null): LivePlace {
+  return vlcLive(titleId, player) === null && streamLive(titleId, player) !== null ? 'the stream player' : 'VLC';
+}
+
+/** playing / paused when this episode is the one on screen (its file in the followed VLC, or its stream); else null. */
+export function episodeLive(titleId: string, e: EpisodeView, player: PlayerState | null): TileLive | null {
+  const c = player?.current ?? null;
+  if (c !== null && e.files.some((f) => f.id === c.file_id)) return vlcLive(titleId, player);
+  const s = streamLive(titleId, player);
+  return s !== null && s.season === e.season && s.episode === e.episode ? s.state : null;
+}
+
+/** Any play notesd follows right now, in VLC or in the stream player: the page then re-reads every few seconds. */
+export function anyLive(player: PlayerState | null): boolean {
+  return player !== null && (player.current !== null || (player.stream ?? null) !== null);
 }
 
 export const TILE_LIVE_LABEL: Record<TileLive, string> = { playing: 'playing', paused: 'paused', stalled: 'no picture' };
@@ -608,13 +641,15 @@ export interface WatchPosition {
 
 /**
  * Where the owner is in this title right now: the followed VLC when it shows this title (not
- * stopped), else a film's saved resume point. Null for a title that is finished, not started, or
+ * stopped), else its stream on screen, else a film's saved resume point. Null for a title that is finished, not started, or
  * a series nobody is playing (its position is per episode).
  */
 export function watchPosition(d: TitleDetail | null, player: PlayerState | null): WatchPosition | null {
   if (d === null || d.watched || d.state === 'finished') return null;
   const c = player?.current ?? null;
   if (c !== null && c.title_id === d.id && c.state !== 'stopped') return { at: c.position, of: c.duration };
+  const s = streamLive(d.id, player);
+  if (s !== null) return { at: s.position, of: s.duration };
   if (d.kind === 'tv') return null;
   const plan = playPlan(d);
   if (plan.kind !== 'file' || !(plan.file.resume_position_s > 0)) return null;

@@ -75,7 +75,7 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   year). One retry is worth it when the title has an obvious other form (an original-language
   title); say which name found it.
 - **Error `no_source`:** nothing started. Say no source could stream it, then one short line per
-  provider from `attempts` with its `outcome` (`no_stream`, `bot_check`, `error`,
+  provider from `attempts` with its `outcome` (`no_stream`, `bot_check`, `error`, `dubbed`,
   `skipped_browser_only`). Offer `/idlix` or `/lk21`. Do not call again unless asked.
 - **`direct_stream_off`:** direct streaming is off on this daemon (or this is the machine
   without it). Say so; offer `/idlix` or `/lk21`.
@@ -83,6 +83,12 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   `reason` in one line (`no_chrome`: Chrome is not installed on Windows; `chrome_not_reachable`:
   the streaming Chrome did not answer) and offer `/idlix` or `/lk21`.
 - **Another error:** report it in one line.
+
+A stream always plays in the title's original language. A provider whose stream is dubbed is
+skipped (`dubbed` in `attempts`: say so in a few words when it happened, since the next provider
+may be slower or lack a subtitle). `play.session.audio.original` is `true` when the stream names
+the original language and `null` when it names none; a dub never plays. An English subtitle a
+dub came with is lent to the stream that plays (`borrowed_from` on the track).
 
 Never start a stream the user did not ask for, and never because you recommended a film.
 Keep the answer short.
