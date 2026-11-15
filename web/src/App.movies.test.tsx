@@ -485,6 +485,47 @@ describe('App: Movies', () => {
     expect(h1()).toBe('MobLand.');
   });
 
+  it('the pop-up follows the play: outline and badge on the poster, the position beside Play, moving every 5 s', async () => {
+    chatSse = CHAT_SSE_IDS;
+    const e2 = SERIES.seasons[0]!.episodes[1]!;
+    const onE2 = (position: number, state: 'playing' | 'paused' = 'playing') => ({ ...PLAYING, current: { ...PLAYING.current!, title_id: SERIES.id, file_id: e2.file_id!, position, state } });
+    at('/movies');
+    render(<App />);
+    await screen.findByRole('list', { name: 'Posters' });
+    const box = screen.getByPlaceholderText('Ask about your movies');
+    fireEvent.change(box, { target: { value: 'what next?' } });
+    fireEvent.submit(box.closest('form') as HTMLFormElement);
+    fireEvent.click(await screen.findByRole('link', { name: 'M-0S12' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Movie M-0S12' });
+    await within(dialog).findByRole('heading', { name: 'Episode Two' });
+    expect(dialog.querySelector('.mm-art')!.className).toBe('mm-art');
+    expect(dialog.querySelector('.mv-live')).toBeNull();
+    // Another episode of the series in VLC does not mark this one.
+    player = { ...onE2(10), current: { ...onE2(10).current, file_id: SERIES.seasons[0]!.episodes[0]!.file_id! } };
+    fireEvent.click(dialog.querySelector('.mm-actions button') as HTMLButtonElement);
+    await waitFor(() => expect(calls.filter((c) => c === 'GET /api/movies/player').length).toBeGreaterThan(2));
+    expect(dialog.querySelector('.mm-art')!.className).toBe('mm-art');
+    // This episode in VLC: the mark, and the position moves with the 5 s poll.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      player = onE2(60);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await waitFor(() => expect(dialog.querySelector('.mm-art')!.className).toBe('mm-art now playing'));
+      expect(dialog.querySelector('.mv-now')!.textContent).toBe('playing');
+      expect(dialog.querySelector('.mv-live')!.textContent).toBe('playing in VLC · 1:00 / 1:52:00');
+      player = onE2(65, 'paused');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await waitFor(() => expect(dialog.querySelector('.mv-live')!.textContent).toBe('paused in VLC · 1:05 / 1:52:00'));
+      expect(dialog.querySelector('.mm-art')!.className).toBe('mm-art now paused');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('R5.5: the unmatched list shows each file with its reason and assigns a TMDB title', async () => {
     at('/movies');
     render(<App />);

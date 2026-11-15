@@ -76,11 +76,11 @@
 .mv-now::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
 .mv-now.playing::before { animation: repo-pulse 1.6s ease-in-out infinite; }
 .mv-now.stalled { background: var(--band-amber); }
-.mv-detail-art.now { position: relative; }
-.mv-tile.now .mv-art::after, .mv-detail-art.now::after { content: ""; position: absolute; inset: -5px; border: 2px solid var(--fg); pointer-events: none; }
-.mv-tile.now.playing .mv-art::after, .mv-detail-art.now.playing::after { animation: repo-pulse 1.6s ease-in-out infinite; }
-.mv-tile.now.stalled .mv-art::after, .mv-detail-art.now.stalled::after { border-color: var(--band-amber); }
-@media (prefers-reduced-motion: reduce) { .mv-now.playing::before, .mv-tile.now.playing .mv-art::after, .mv-detail-art.now.playing::after { animation: none; } }
+.mv-detail-art.now, .mm-art.now { position: relative; }
+.mv-tile.now .mv-art::after, .mv-detail-art.now::after, .mm-art.now::after { content: ""; position: absolute; inset: -5px; border: 2px solid var(--fg); pointer-events: none; }
+.mv-tile.now.playing .mv-art::after, .mv-detail-art.now.playing::after, .mm-art.now.playing::after { animation: repo-pulse 1.6s ease-in-out infinite; }
+.mv-tile.now.stalled .mv-art::after, .mv-detail-art.now.stalled::after, .mm-art.now.stalled::after { border-color: var(--band-amber); }
+@media (prefers-reduced-motion: reduce) { .mv-now.playing::before, .mv-tile.now.playing .mv-art::after, .mv-detail-art.now.playing::after, .mm-art.now.playing::after { animation: none; } }
 .mv-live.stalled { color: var(--band-amber); }
 .mv-live.playing { color: var(--fg); }
 .mv-live.paused::before, .mv-live.stalled::before, .mv-live.stopped::before { animation: none; }

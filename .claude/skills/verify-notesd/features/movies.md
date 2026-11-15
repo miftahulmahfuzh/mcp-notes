@@ -55,7 +55,8 @@
   (`movie_ids`, written by database triggers; `src/movies/ids.ts`). Tools, `GET /api/movies/<id>`
   and `/movies/<id>` on the wall take one; an episode's id opens its series scrolled to that
   episode. In wall chat an id is a link that opens the movie pop-up (Play, and a button to the
-  page); in Claude Code it is a link to the page (MCP instructions, the `note-links` mod).
+  page; while VLC has the title, or that episode, open it shows the outline, badge and position and
+  re-reads them every 5 s); in Claude Code it is a link to the page (MCP instructions, the `note-links` mod).
   Proof: journey stage 1, `tests/integration/movies.mcp.int.test.ts` ("movie ids"),
   `web/src/App.movies.test.tsx` (the pop-up).
 - Trailers: a title's details call also asks TMDB for its videos, and each season's call for that

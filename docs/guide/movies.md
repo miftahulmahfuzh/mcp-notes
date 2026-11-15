@@ -233,7 +233,7 @@ Where an id is accepted and shown:
 | `/movies/<id>` | Opens the title. An episode's id opens its series scrolled to that episode, with the row marked, even when the season has no file. |
 | `GET /api/movies/<id>` | Answers the title; an episode's id answers its series. |
 | Every `movies_*` tool | `title` takes a movie id. In `movies_get` an episode's id answers that episode first; in `movies_continue` it plays exactly that episode; in `movies_mark` it takes `watched` only. |
-| Wall chat | An id in an answer is a chip. Clicking it opens the movie pop-up (`MovieModal`) with Play and a button to the page (`web/src/lib/chatSegments.ts`). |
+| Wall chat | An id in an answer is a chip. Clicking it opens the movie pop-up (`MovieModal`) with Play and a button to the page (`web/src/lib/chatSegments.ts`). While VLC has that title open (for an episode's id, that episode) the pop-up follows it like the title's page: the outline and badge on the poster, and the state and position beside Play, re-read every five seconds. |
 | Claude Code | The MCP instructions tell Claude to write `[M-23T4](http://localhost:7317/movies/M-23T4)`, and the `note-links` mod links a bare id the same way. See [claude-code.md](claude-code.md). |
 
 A movie id written as a note link (`/?note=M-23T4`) still opens the movie, on the wall and in the

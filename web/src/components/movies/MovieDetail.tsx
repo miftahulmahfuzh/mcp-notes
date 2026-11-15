@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
 import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { CAST_LIMIT, clock, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, trailerTarget, type MovieEntity, type TrailerTarget } from '../../lib/movies';
+import { CAST_LIMIT, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, trailerTarget, type MovieEntity, type TrailerTarget } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
-import { EntityLink, FileRow, TrailerButton } from './parts';
+import { EntityLink, FileRow, LiveStatus, TrailerButton } from './parts';
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
@@ -165,13 +165,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
               <CheckCircle weight="duotone" />
             </button>
             <Stars value={rating} onRate={(v) => void rate(v)} />
-            {live !== null && (
-              <span className={`mv-live ${now ?? 'stopped'}`} role="status">
-                {now === null ? 'stopped' : TILE_LIVE_LABEL[now]} in VLC
-                {` · ${clock(live.position)}`}
-                {live.duration !== null ? ` / ${clock(live.duration)}` : ''}
-              </span>
-            )}
+            {live !== null && <LiveStatus live={live} now={now} />}
           </div>
           {d.overview !== '' && <p className="mv-overview">{d.overview}</p>}
           <ReviewField key={d.id} titleId={d.id} saved={d.review} onSaved={onChanged} onNotice={onNotice} />

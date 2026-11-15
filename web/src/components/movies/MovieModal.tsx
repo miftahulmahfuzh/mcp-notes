@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowSquareOut, Play, X } from '@phosphor-icons/react';
-import { continueTitle, errorCode, errorDetail, fetchMovie, fetchPlayer, playFile, type PlayerState, type TitleDetail } from '../../moviesApi';
+import { continueTitle, errorCode, errorDetail, fetchMovie, fetchPlayer, MOVIES_EVENTS_URL, playFile, type PlayerState, type TitleDetail } from '../../moviesApi';
 import {
   continueNotice,
   episodeByMovieId,
@@ -18,11 +18,16 @@ import {
   seasonsText,
   startedNotice,
   STATE_LABEL,
+  TILE_LIVE_LABEL,
+  tileLive,
   type PlayButtonState,
 } from '../../lib/movies';
 import { isConfirmOpen } from '../ConfirmDialog';
 import { isLightboxOpen } from '../Lightbox';
 import { isEditorOpen } from '../NoteEditor';
+import { PLAY_POLL_MS } from '../../hooks/useMovies';
+import { isPageVisible } from '../../lib/pageActive';
+import { LiveStatus } from './parts';
 import { Poster } from './Poster';
 import './MovieModal.css';
 
@@ -37,6 +42,8 @@ export interface MovieModalProps {
 /**
  * A movie id clicked in chat (`M-23T4`): what it names, with Play, as a pop-up over the current
  * page, the way a node id opens the node pop-up. An episode's id shows that episode and plays it.
+ * While VLC has it open the poster and the line beside Play follow the play, as on the title's page:
+ * re-read on `/api/movies/events` `changed`, and every 5 s while a play is followed.
  * Esc and a click outside close it, except while the editor, a lightbox or a confirm is up.
  */
 export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
@@ -45,15 +52,22 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   const [player, setPlayer] = useState<PlayerState | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const playing = player !== null && player.current !== null;
 
   useEffect(() => {
-    const ac = new AbortController();
     setDetail(null);
     setError(null);
     setNotice(null);
+  }, [movieId]);
+
+  useEffect(() => {
+    const ac = new AbortController();
     fetchMovie(movieId, ac.signal).then(
       (d) => {
-        if (!ac.signal.aborted) setDetail(d);
+        if (ac.signal.aborted) return;
+        setDetail(d);
+        setError(null);
       },
       (e: unknown) => {
         if (!ac.signal.aborted) setError(errorCode(e));
@@ -66,7 +80,21 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
       () => {},
     );
     return () => ac.abort();
-  }, [movieId]);
+  }, [movieId, tick]);
+
+  useEffect(() => {
+    const es = typeof EventSource === 'undefined' ? null : new EventSource(MOVIES_EVENTS_URL);
+    es?.addEventListener('changed', () => setTick((t) => t + 1));
+    return () => es?.close();
+  }, []);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(() => {
+      if (isPageVisible()) setTick((t) => t + 1);
+    }, PLAY_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [playing]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -107,8 +135,17 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
       setNotice(playErrorText(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
+      setTick((t) => t + 1);
     }
   };
+
+  /** The followed play, when it is what the pop-up shows: the title, or for an episode's id that episode's file. */
+  const current = player?.current ?? null;
+  const live = detail !== null && current !== null && current.title_id === detail.id && (episode === null || episode.files.some((f) => f.id === current.file_id)) ? current : null;
+  /** playing / paused / stalled, as on the poster in the grid; null when it is not in VLC (or VLC is stopped). */
+  const now = live === null || detail === null ? null : tileLive(detail.id, player);
+  /** A series' pop-up names the episode VLC has open. */
+  const liveEpisode = live === null || detail === null || episode !== null ? null : (detail.seasons.flatMap((s) => s.episodes).find((e) => e.files.some((f) => f.id === live.file_id)) ?? null);
 
   const facts =
     detail === null
@@ -148,14 +185,16 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
             </button>
           </span>
         </header>
-        {error !== null ? (
+        {/* A failed re-read keeps what is shown. */}
+        {error !== null && detail === null ? (
           <p className="mm-empty">{error === 'not_found' ? `No film or episode has the id ${movieId}.` : moviesErrorText(error)}</p>
         ) : detail === null ? (
           <p className="mm-empty">loading</p>
         ) : (
           <div className="mm-body">
-            <div className="mm-art">
+            <div className={now === null ? 'mm-art' : `mm-art now ${now}`}>
               <Poster key={detail.poster_url ?? 'none'} url={detail.poster_url} title={detail.title} year={detail.year} />
+              {now !== null && <span className={`mv-badge mv-now ${now}`}>{TILE_LIVE_LABEL[now]}</span>}
             </div>
             <div className="mm-info">
               <h2 className="mm-title">{episode !== null ? (episode.name ?? code) : name}</h2>
@@ -174,9 +213,13 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
                 <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={() => void start()}>
                   <Play weight="duotone" />
                 </button>
-                <span className="mm-notice" role="status">
-                  {notice ?? play.label}
-                </span>
+                {live !== null ? (
+                  <LiveStatus live={live} now={now} what={liveEpisode !== null ? episodeCode(liveEpisode.season, liveEpisode.episode) : null} />
+                ) : (
+                  <span className="mm-notice" role="status">
+                    {notice ?? play.label}
+                  </span>
+                )}
               </div>
               {overview !== '' && <p className="mm-overview">{overview}</p>}
             </div>

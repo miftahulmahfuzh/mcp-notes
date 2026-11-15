@@ -1,6 +1,18 @@
 import { CheckCircle, Desktop, MonitorPlay, Play, Trash } from '@phosphor-icons/react';
-import type { FileView, PlayerState, ProgressView, WatchState } from '../../moviesApi';
-import { dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, type MovieEntity, type PlayButtonState, type TrailerTarget } from '../../lib/movies';
+import type { FileView, PlayerSnapshot, PlayerState, ProgressView, WatchState } from '../../moviesApi';
+import { clock, dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, TILE_LIVE_LABEL, type MovieEntity, type PlayButtonState, type TileLive, type TrailerTarget } from '../../lib/movies';
+
+/** The followed play beside the Play button: its state (`now` null = stopped) and position. `what` names the episode (`S01E02`). */
+export function LiveStatus({ live, now, what = null }: { live: PlayerSnapshot; now: TileLive | null; what?: string | null }) {
+  return (
+    <span className={`mv-live ${now ?? 'stopped'}`} role="status">
+      {what !== null ? `${what} · ` : ''}
+      {now === null ? 'stopped' : TILE_LIVE_LABEL[now]} in VLC
+      {` · ${clock(live.position)}`}
+      {live.duration !== null ? ` / ${clock(live.duration)}` : ''}
+    </span>
+  );
+}
 
 /** R5.3: a deleted file says so; a present file on the other laptop says where it is. */
 export function FileFlags({ file }: { file: FileView }) {

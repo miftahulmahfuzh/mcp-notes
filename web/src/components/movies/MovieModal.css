@@ -4,6 +4,7 @@
 .mm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 20px; border-bottom: 1px solid var(--line); }
 .mm-head-actions { display: flex; align-items: center; gap: 4px; }
 .mm-body { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 24px; padding: 20px; }
+.mm-art { align-self: start; }
 .mm-title { margin: 0 0 4px; font-size: 26px; line-height: 1.1; font-weight: 400; letter-spacing: -.01em; }
 .mm-of { margin: 0 0 10px; color: var(--soft); font-size: 14px; }
 .mm-info .mv-facts { margin-top: 8px; }
