@@ -181,7 +181,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "965eb5d9bd23ba5a71493f5681d5e8217f12e04f",
       "depends_on": [
         2,
         5,
@@ -190,14 +190,14 @@
       ],
       "difficulty": "HARD",
       "n": 10,
-      "note": null,
+      "note": "prober behind NOTESD_STREAM_PROBER (default off), migration 0022 stream_probe_titles, GET /api/stream/prober, verify.sh --prober; decisions: probe-budget default 14 at 41.5 s/title from findings timings (plan placeholder said 15/38), ran in wave worktree direct-streaming-p10; PLAN.md status edit is uncommitted in the main checkout; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1115-233041-1115090/evidence /home/miftah/.local/state/notesd-verify/1115-233109-1117243/evidence",
       "package": "src/directStream",
       "plan": ".workflows/plan/direct-streaming/phase-10.md",
-      "reported_at": null,
+      "reported_at": "2026-11-15T23:35:56+07:00",
       "satisfies": [
         "R6"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A120",
       "title": "Candidates and the background prober, behind a setting"
     }
@@ -205,7 +205,7 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T23:25:16+07:00",
+  "updated": "2026-11-15T23:35:56+07:00",
   "verified_at": "2026-11-15T20:16:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
