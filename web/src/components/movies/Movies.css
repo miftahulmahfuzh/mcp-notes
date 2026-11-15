@@ -9,6 +9,10 @@
 .mv-note { font-family: var(--mono); font-size: 10.5px; color: var(--dim); letter-spacing: .03em; margin-right: 8px; }
 .mv-count { position: absolute; top: 2px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 999px; background: var(--fg); color: var(--bg); font-family: var(--mono); font-size: 9px; line-height: 14px; text-align: center; }
 .mv-tools .ibtn.on .mv-count { background: var(--bg); color: var(--fg); }
+/* The Library / Stream switch: one segmented pill, pushed to the toolbar's left edge. */
+.mv-side { display: inline-flex; align-items: center; gap: 2px; margin-right: auto; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
+.mv-tools .mv-side .ibtn:not(:hover):not(.on) { background: transparent; }
+.mv-stream-line { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--soft); letter-spacing: .03em; }
 .mv-empty { margin: 32px 0; font-family: var(--mono); font-size: 12px; color: var(--dim); letter-spacing: .03em; }
 .mv-off { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin: 48px 0; max-width: 560px; }
 .mv-off svg { font-size: 56px; color: var(--deep); }
@@ -106,7 +110,7 @@
 .mv-season-head { display: flex; align-items: center; gap: 8px; }
 .mv-season-h { font-size: 20px; font-weight: 400; letter-spacing: -.02em; margin: 0; padding: 10px 0 6px; }
 .mv-eps, .mv-files { list-style: none; margin: 0; padding: 0; }
-.mv-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 150px 32px 32px; gap: 14px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.mv-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 150px 32px minmax(32px, auto); gap: 14px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--line); }
 .mv-row.none { color: var(--dim); }
 .mv-row.focus { background: var(--line); box-shadow: inset 2px 0 0 var(--fg); }
 .mv-row.del .mv-row-name { color: var(--soft); text-decoration: line-through; text-decoration-color: var(--line-45); }
@@ -121,6 +125,7 @@
 .mv-meter-bar { height: 3px; background: var(--chip-bg); }
 .mv-meter-bar > span { display: block; height: 3px; background: var(--fg); }
 .mv-row .pbtn:disabled { opacity: .3; cursor: default; }
+.mv-row-play { display: inline-flex; justify-content: flex-end; gap: 2px; }
 
 /* unmatched */
 .mv-unm { list-style: none; margin: 0; padding: 18px 0 0; }
@@ -159,7 +164,7 @@
 @media (max-width: 760px) {
   .mv-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .mv-detail-art { max-width: 240px; }
-  .mv-row { grid-template-columns: 60px minmax(0, 1fr) 32px 32px; }
+  .mv-row { grid-template-columns: 60px minmax(0, 1fr) 32px minmax(32px, auto); }
   .mv-row > .mv-meter { display: none; }
   .mv-unm-row { grid-template-columns: minmax(0, 1fr) 40px; }
   .mv-unm-row > .mv-chip, .mv-unm-row > .mv-dim { display: none; }

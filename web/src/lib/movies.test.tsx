@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeFile, MOVIE, PLAYER_IDLE, PLAYING, SERIES, STATUS, TITLES } from '../testing/movieFixtures';
+import { FIGHT_CLUB, makeFile, makeSource, MOVIE, MOVIE_STREAMABLE, PLAYER_IDLE, PLAYING, SERIES, STATUS, TITLES } from '../testing/movieFixtures';
 import {
   clock,
   continueNotice,
@@ -28,6 +28,10 @@ import {
   stateCounts,
   type MoviesFilter,
   type MoviesView,
+  streamLabel,
+  streamLine,
+  streamTarget,
+  titleAction,
 } from './movies';
 
 const ids = (f: MoviesFilter) => TITLES.filter((t) => matchesFilter(t, f)).map((t) => t.id);
@@ -153,7 +157,7 @@ describe('detail text', () => {
   });
 
   it('count lines and empty states', () => {
-    const base: MoviesView = { titles: TITLES, listError: null, detail: null, detailError: null, unmatched: null, unmatchedError: null, status: STATUS };
+    const base: MoviesView = { titles: TITLES, listError: null, detail: null, detailError: null, unmatched: null, unmatchedError: null, status: STATUS, stream: null, streamError: null };
     expect(moviesCountLine(base, { title: null, unmatched: false })).toBe('3 titles: 2 films, 1 series. 2 in progress.');
     expect(moviesCountLine({ ...base, detail: MOVIE }, { title: 'movie-467905', unmatched: false })).toBe('2026 · film · 1h 52m · in progress.');
     expect(moviesCountLine({ ...base, listError: 'movies_off' }, { title: null, unmatched: false })).toBe('Movies are off on this daemon.');
@@ -184,5 +188,36 @@ describe('movie ids on the page', () => {
   it('a focused episode keeps its season on the page even when no machine holds a file of it', () => {
     expect(seasonsShown(SERIES).seasons.map((s) => s.season)).toEqual([1]);
     expect(seasonsShown(SERIES, 'M-0S21').seasons.map((s) => s.season)).toEqual([1, 2]);
+  });
+});
+
+describe('stream decisions', () => {
+  it('file first: a film with a file here plays it, and the fresh stream is the second icon (R5.5)', () => {
+    const a = titleAction(MOVIE_STREAMABLE, 'stream');
+    expect(a.kind).toBe('vlc');
+    if (a.kind !== 'vlc') return;
+    expect(a.plan).toEqual({ kind: 'file', file: MOVIE_STREAMABLE.files[0] });
+    expect(a.stream?.ref).toEqual({ kind: 'movie', tmdb_id: 467905 });
+    expect(titleAction(MOVIE, 'stream')).toMatchObject({ kind: 'vlc', stream: null });
+  });
+
+  it('no file here: Stream side streams; Library side streams only with a fresh source', () => {
+    expect(titleAction(FIGHT_CLUB, 'stream')).toMatchObject({ kind: 'stream', target: { ref: { kind: 'movie', tmdb_id: 550 }, code: '' } });
+    expect(titleAction(FIGHT_CLUB, 'library').kind).toBe('stream');
+    const stale = { ...FIGHT_CLUB, stream_sources: [makeSource(0, 0, { fresh: false, stale_at: '2026-11-14T10:00:00.000Z' })] };
+    expect(titleAction(stale, 'library')).toEqual({ kind: 'idle', plan: { kind: 'none' } });
+    expect(titleAction(stale, 'stream').kind).toBe('stream');
+  });
+
+  it('names the provider, the quality and the English subtitle', () => {
+    expect(streamLine(FIGHT_CLUB, 'stream')).toBe('Stream: VidFast · 2160p · English subtitle');
+    expect(streamLine(MOVIE, 'library')).toBeNull();
+    expect(streamLine(MOVIE, 'stream')).toBe('Stream: not verified yet; Play checks it');
+    const target = streamTarget(FIGHT_CLUB);
+    expect(target).not.toBeNull();
+    if (target === null) return;
+    expect(streamLabel(target, true)).toEqual({ label: 'Stream (VidFast · 2160p · English subtitle)', disabled: false });
+    expect(streamLabel(target, false)).toEqual({ label: 'Direct streaming is off on this machine', disabled: true });
+    expect(streamLine({ ...FIGHT_CLUB, stream_sources: [makeSource(0, 0, { en_subtitle: false, best_height: null })] }, 'stream')).toBe('Stream: VidFast · no English subtitle');
   });
 });

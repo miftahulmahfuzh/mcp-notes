@@ -1,7 +1,7 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { PlayerState, TitleListItem } from '../../moviesApi';
-import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, STATE_FILTERS, tileLive, type KindFilter, type MoviesFilter } from '../../lib/movies';
+import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
 
 const KIND_ICON: Record<KindFilter, Icon> = { all: SquaresFour, movie: FilmSlate, tv: Television };
@@ -13,17 +13,22 @@ export interface MoviesGridProps {
   filter: MoviesFilter;
   onFilter: (f: MoviesFilter) => void;
   onOpen: (titleId: string) => void;
+  /** `stream`: the Stream side's grid. A title there has no file by design, so nothing is "gone" and there is no gone pill. */
+  side?: MoviesSide;
 }
 
-/** The library: a filter row (state pills with counts, kind icons, a text filter), then one poster per title. */
-export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen }: MoviesGridProps) {
-  const counts = stateCounts(titles, filter);
-  const shown = sortTitles(titles.filter((t) => matchesFilter(t, filter)));
+/** The library or the Stream side: a filter row (state pills with counts, kind icons, a text filter), then one poster per title. */
+export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, side = 'library' }: MoviesGridProps) {
+  const counts = stateCounts(titles, filter, side);
+  const shown = sortTitles(
+    titles.filter((t) => matchesFilter(t, filter, side)),
+    side,
+  );
   return (
-    <section className="mv-lib mv-content" aria-label="Library">
+    <section className="mv-lib mv-content" aria-label={side === 'stream' ? 'Stream' : 'Library'}>
       <div className="mv-filter">
         <div className="mv-fstates" role="group" aria-label="State">
-          {STATE_FILTERS.map((s) => (
+          {stateFilters(side).map((s) => (
             <button
               key={s.key}
               type="button"
@@ -67,7 +72,7 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen }: 
         <div className="mv-grid" role="list" aria-label="Posters">
           {shown.map((t) => (
             <div key={t.id} role="listitem">
-              <PosterTile title={t} live={tileLive(t.id, player)} onOpen={onOpen} />
+              <PosterTile title={t} side={side} live={tileLive(t.id, player)} onOpen={onOpen} />
             </div>
           ))}
         </div>

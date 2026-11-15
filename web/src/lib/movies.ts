@@ -10,6 +10,9 @@ import type {
   PlayerState,
   ProgressView,
   SeasonView,
+  StreamListResponse,
+  StreamRef,
+  StreamSourceView,
   TitleDetail,
   TitleKind,
   TitleListItem,
@@ -23,6 +26,23 @@ export const UNMATCHED_HEADING = 'Unmatched.';
 export const MOVIES_HINT = 'Posters and credits come from TMDB. Play opens VLC on the machine that holds the file.';
 export const MOVIES_PILL_PLACEHOLDER = 'Ask about your movies';
 export const MOVIES_OFF_TEXT = 'Movies are off on this daemon. Set NOTESD_MOVIES=on and NOTESD_MOVIES_ROOTS, then restart notesd.';
+export const STREAM_HEADING = 'Stream.';
+export const STREAM_OFF_TEXT =
+  'Direct streaming is off on this machine. It runs with NOTESD_MOVIES on and NOTESD_DIRECT_STREAM unset or on; restart notesd after changing either.';
+export const STREAM_OPENING_NOTICE = 'opening in the streaming Chrome';
+
+/** Which side of `/movies` is shown: the files on your machines, or the titles verified to stream here. */
+export type MoviesSide = 'library' | 'stream';
+
+/** The unmatched list belongs to the Library side whatever the query says. */
+export function sideOf(route: MoviesRoute): MoviesSide {
+  return route.stream === true && !route.unmatched ? 'stream' : 'library';
+}
+
+/** The Stream side's empty grid: why it is empty and how a title gets onto it. */
+export function streamEmptyText(freshDays: number): string {
+  return `Nothing is verified to stream on this machine yet. A title shows here once a provider returned a playable stream for it on this machine in the last ${plural(freshDays, 'day')}: play one with /direct-stream <title> in Claude Code, or turn on the background prober (NOTESD_STREAM_PROBER=on) to fill this grid.`;
+}
 export const PLAYER_OFF_LABEL = 'VLC is not available on this machine';
 /** Producers beyond this are counted ("and 12 more"): TMDB lists every executive producer. */
 export const PRODUCER_LIMIT = 8;
@@ -99,9 +119,9 @@ export function seasonsText(n: number | null): string {
   return n === null ? '' : plural(n, 'season');
 }
 
-/** Gone: no file left on any machine. The tile is dimmed, never hidden. */
-export function isGone(t: TitleListItem): boolean {
-  return t.file_count === 0;
+/** Gone: no file left on any machine. The tile is dimmed, never hidden. A Stream title has no file by design: never gone there. */
+export function isGone(t: TitleListItem, side: MoviesSide = 'library'): boolean {
+  return side === 'library' && t.file_count === 0;
 }
 
 /** The bar under a poster while a title is in progress: how far into a film, or the share of episodes finished. */
@@ -132,6 +152,11 @@ export const STATE_FILTERS: readonly { key: StateFilter; label: string }[] = [
   { key: 'gone', label: 'gone' },
 ];
 
+/** The state pills a side shows: `gone` is about files, so the Stream side has none. */
+export function stateFilters(side: MoviesSide): readonly { key: StateFilter; label: string }[] {
+  return side === 'stream' ? STATE_FILTERS.filter((s) => s.key !== 'gone') : STATE_FILTERS;
+}
+
 export const KIND_FILTERS: readonly { key: KindFilter; label: string }[] = [
   { key: 'all', label: 'All kinds' },
   { key: 'movie', label: 'Films' },
@@ -139,7 +164,7 @@ export const KIND_FILTERS: readonly { key: KindFilter; label: string }[] = [
 ];
 
 /** `finished` includes `seen` (opened, position unknown). `gone` is about files, not state: it overlaps the others. */
-export function matchesFilter(t: TitleListItem, f: MoviesFilter): boolean {
+export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSide = 'library'): boolean {
   if (f.kind !== 'all' && t.kind !== f.kind) return false;
   const q = f.text.trim().toLowerCase();
   if (q !== '' && !`${t.title} ${t.year ?? ''}`.toLowerCase().includes(q)) return false;
@@ -153,31 +178,31 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter): boolean {
     case 'finished':
       return t.state === 'finished' || t.state === 'seen';
     case 'gone':
-      return isGone(t);
+      return isGone(t, side);
   }
 }
 
 /** How many titles each state pill would show under the current kind and text filter. */
-export function stateCounts(titles: TitleListItem[], f: MoviesFilter): Record<StateFilter, number> {
+export function stateCounts(titles: TitleListItem[], f: MoviesFilter, side: MoviesSide = 'library'): Record<StateFilter, number> {
   const out: Record<StateFilter, number> = { all: 0, unwatched: 0, in_progress: 0, finished: 0, gone: 0 };
   for (const t of titles) {
-    for (const s of STATE_FILTERS) if (matchesFilter(t, { ...f, state: s.key })) out[s.key] += 1;
+    for (const s of STATE_FILTERS) if (matchesFilter(t, { ...f, state: s.key }, side)) out[s.key] += 1;
   }
   return out;
 }
 
-function rank(t: TitleListItem): number {
-  if (isGone(t)) return 3;
+function rank(t: TitleListItem, side: MoviesSide): number {
+  if (isGone(t, side)) return 3;
   if (t.state === 'in_progress') return 0;
   if (t.state === 'unwatched') return 1;
   return 2;
 }
 
 /** In progress first (what to continue), then unwatched (what to start), then finished, then gone; newest play, newest year, title. */
-export function sortTitles(titles: TitleListItem[]): TitleListItem[] {
+export function sortTitles(titles: TitleListItem[], side: MoviesSide = 'library'): TitleListItem[] {
   return [...titles].sort(
     (a, b) =>
-      rank(a) - rank(b) ||
+      rank(a, side) - rank(b, side) ||
       (b.last_played_at ?? '').localeCompare(a.last_played_at ?? '') ||
       (b.year ?? 0) - (a.year ?? 0) ||
       a.title.localeCompare(b.title),
@@ -225,6 +250,106 @@ export function playLabel(plan: PlayPlan, player: PlayerState | null): PlayButto
   if (plan.kind === 'continue') return { label: 'Continue: resume the open episode or play the next one', disabled: false };
   const at = plan.file.resume_position_s;
   return { label: at > 0 ? `Resume at ${clock(at)}` : 'Play', disabled: false };
+}
+
+/** A stream the page can start: the body of POST /api/stream/play, what it names (`S01E02`; '' for a film) and this machine's source row for it. */
+export interface StreamTarget {
+  ref: StreamRef;
+  code: string;
+  source: StreamSourceView | null;
+}
+
+/** This machine's source row for a film (season 0, episode 0) or one episode; null when none was ever recorded. */
+export function sourceOf(d: TitleDetail, season: number, episode: number): StreamSourceView | null {
+  return d.stream_sources.find((s) => s.season === season && s.episode === episode) ?? null;
+}
+
+export function episodeStreamTarget(d: TitleDetail, e: EpisodeView): StreamTarget {
+  return {
+    ref: { kind: 'tv', tmdb_id: d.tmdb_id, season: e.season, episode: e.episode },
+    code: episodeCode(e.season, e.episode),
+    source: sourceOf(d, e.season, e.episode),
+  };
+}
+
+/**
+ * What streaming the whole title starts: the film, or a series' first episode (season 1 on) that is
+ * not finished, else its first episode. Null for a series with no episode listed.
+ */
+export function streamTarget(d: TitleDetail): StreamTarget | null {
+  if (d.kind === 'movie') return { ref: { kind: 'movie', tmdb_id: d.tmdb_id }, code: '', source: sourceOf(d, 0, 0) };
+  const episodes = d.seasons.filter((s) => s.season >= 1).flatMap((s) => s.episodes);
+  const next = episodes.find((e) => e.state !== 'finished' && e.state !== 'seen') ?? episodes[0];
+  return next === undefined ? null : episodeStreamTarget(d, next);
+}
+
+function isFresh(t: StreamTarget | null): t is StreamTarget {
+  return t !== null && t.source !== null && t.source.fresh;
+}
+
+/**
+ * The big Play button. File first (R5.5): a file on this machine always plays in VLC, and a fresh
+ * stream is then the second icon. Without a file here it streams on the Stream side, or on the
+ * Library side when a fresh source exists; otherwise it keeps today's disabled reason.
+ */
+export type TitleAction =
+  | { kind: 'vlc'; plan: { kind: 'file'; file: FileView } | { kind: 'continue' }; stream: StreamTarget | null }
+  | { kind: 'stream'; target: StreamTarget }
+  | { kind: 'idle'; plan: { kind: 'elsewhere'; host: string } | { kind: 'none' } };
+
+export function titleAction(d: TitleDetail, side: MoviesSide): TitleAction {
+  const plan = playPlan(d);
+  const target = streamTarget(d);
+  if (plan.kind === 'file' || plan.kind === 'continue') return { kind: 'vlc', plan, stream: isFresh(target) ? target : null };
+  if (target !== null && (side === 'stream' || isFresh(target))) return { kind: 'stream', target };
+  return { kind: 'idle', plan };
+}
+
+/** One episode row's play icon, by the same rule as the title's. */
+export type EpisodeAction = { kind: 'vlc'; file: FileView; stream: StreamTarget | null } | { kind: 'stream'; target: StreamTarget } | { kind: 'idle' };
+
+export function episodeAction(d: TitleDetail, e: EpisodeView, side: MoviesSide): EpisodeAction {
+  const file = primaryFile(e);
+  const target = episodeStreamTarget(d, e);
+  if (file !== null && file.available) return { kind: 'vlc', file, stream: isFresh(target) ? target : null };
+  if (side === 'stream' || isFresh(target)) return { kind: 'stream', target };
+  return { kind: 'idle' };
+}
+
+/** `VidFast · 2160p · English subtitle`. */
+export function streamSourceText(s: StreamSourceView): string {
+  const sub = s.en_subtitle === true ? 'English subtitle' : s.en_subtitle === false ? 'no English subtitle' : 'subtitle unknown';
+  return [s.provider, s.best_height !== null ? `${s.best_height}p` : '', sub].filter((x) => x !== '').join(' · ');
+}
+
+/** The stream line on a title's page: provider, quality and English subtitle; null when there is nothing to say. */
+export function streamLine(d: TitleDetail, side: MoviesSide): string | null {
+  if (d.kind === 'tv') {
+    const verified = new Set(d.stream_sources.filter((s) => s.fresh).map((s) => `${s.season}x${s.episode}`)).size;
+    if (verified > 0) return `Stream: ${plural(verified, 'episode')} verified on this machine; any other episode is checked when you play it`;
+    return side === 'stream' ? 'Stream: an episode is checked when you play it' : null;
+  }
+  const s = sourceOf(d, 0, 0);
+  if (s !== null && s.fresh) return `Stream: ${streamSourceText(s)}`;
+  if (s !== null && s.stale_at !== null) return `Stream: no source answered on ${dayText(s.stale_at)}`;
+  return side === 'stream' ? 'Stream: not verified yet; Play checks it' : null;
+}
+
+/** A stream button's label: what it starts and from where, or why it cannot. */
+export function streamLabel(t: StreamTarget, enabled: boolean): PlayButtonState {
+  if (!enabled) return { label: 'Direct streaming is off on this machine', disabled: true };
+  const what = t.code === '' ? 'Stream' : `Stream ${t.code}`;
+  const s = t.source;
+  if (s !== null && s.fresh) return { label: `${what} (${streamSourceText(s)})`, disabled: false };
+  if (s !== null && s.stale_at !== null) return { label: `${what}: no source answered last time, try again`, disabled: false };
+  return { label: `${what}: checked when it starts`, disabled: false };
+}
+
+/** What a failed stream play says. `no_source`: phase 5 marked the source stale, so a film leaves the Stream grid. */
+export function streamErrorText(code: string, detail: string | null, t: StreamTarget, title: string): string {
+  if (code === 'no_source') return t.code === '' ? `no provider could stream ${title} now; it leaves the Stream grid` : `no provider could stream ${t.code} now`;
+  if (code === 'direct_stream_off') return 'direct streaming is off on this machine';
+  return detail ?? `could not stream ${t.code === '' ? title : t.code} (${code})`;
 }
 
 /** A row's play icon. `what` names the row: `S01E02`, or `this file`. */
@@ -305,8 +430,12 @@ export interface SeasonsShown {
   hidden: number;
 }
 
-/** `focus`: an episode's movie id whose season is shown even when no machine holds a file of it. */
-export function seasonsShown(d: TitleDetail, focus: string | null = null): SeasonsShown {
+/**
+ * `focus`: an episode's movie id whose season is shown even when no machine holds a file of it.
+ * The Stream side lists every season: any episode can be streamed, and is verified when clicked.
+ */
+export function seasonsShown(d: TitleDetail, focus: string | null = null, side: MoviesSide = 'library'): SeasonsShown {
+  if (side === 'stream') return { seasons: d.seasons.filter((s) => s.episodes.length > 0), hidden: 0 };
   const seasons = d.seasons.filter((s) => s.episodes.some((e) => e.has_file || (focus !== null && e.movie_id === focus)));
   return { seasons, hidden: d.seasons.length - seasons.length };
 }
@@ -356,10 +485,13 @@ export interface MoviesView {
   unmatched: UnmatchedFile[] | null;
   unmatchedError: string | null;
   status: MoviesStatusResponse | null;
+  /** The Stream side's list; null until it is asked for (only on the Stream side). */
+  stream: StreamListResponse | null;
+  streamError: string | null;
 }
 
 export function isMoviesOff(s: MoviesView): boolean {
-  return s.listError === 'movies_off' || s.detailError === 'movies_off' || s.unmatchedError === 'movies_off';
+  return s.listError === 'movies_off' || s.detailError === 'movies_off' || s.unmatchedError === 'movies_off' || s.streamError === 'movies_off';
 }
 
 export function moviesErrorText(code: string, titleId: string | null = null): string {
@@ -420,6 +552,7 @@ export function detailIsFor(d: TitleDetail | null, segment: string | null): d is
 export function moviesHeading(s: MoviesView, route: MoviesRoute): string {
   if (route.unmatched) return UNMATCHED_HEADING;
   if (detailIsFor(s.detail, route.title)) return `${s.detail.title}.`;
+  if (route.title === null && sideOf(route) === 'stream') return STREAM_HEADING;
   return MOVIES_HEADING;
 }
 
@@ -435,6 +568,13 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
     if (s.detailError !== null) return moviesErrorText(s.detailError, route.title);
     if (!detailIsFor(s.detail, route.title)) return 'Loading.';
     return `${factsLine(s.detail)}.`;
+  }
+  if (sideOf(route) === 'stream') {
+    if (s.streamError !== null) return moviesErrorText(s.streamError);
+    if (s.stream === null) return 'Loading the Stream titles.';
+    if (!s.stream.enabled) return 'Direct streaming is off on this machine.';
+    const n = s.stream.titles.length;
+    return n === 0 ? 'Nothing verified to stream on this machine yet.' : `${plural(n, 'title')} verified to stream on this machine in the last ${plural(s.stream.fresh_days, 'day')}.`;
   }
   if (s.listError !== null) return moviesErrorText(s.listError);
   if (s.titles === null) return 'Loading the library.';
@@ -490,7 +630,7 @@ export interface MoviesAskExtra {
 export function moviesChatMessage(text: string, route: MoviesRoute, detail: TitleDetail | null, extra: MoviesAskExtra = {}): string {
   let where: string;
   if (route.unmatched) where = 'unmatched files';
-  else if (route.title === null) where = 'library';
+  else if (route.title === null) where = sideOf(route) === 'stream' ? 'stream' : 'library';
   else if (detailIsFor(detail, route.title)) where = `${detail.title}${detail.year !== null ? ` (${detail.year})` : ''} · ${detail.movie_id ?? route.title}`;
   else where = route.title;
   const p = extra.position ?? null;
