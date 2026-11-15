@@ -6,7 +6,7 @@ import { loadConfig } from '../config.js';
 import { resolveDwordUserId } from '../connectors/dword/user.js';
 import { CONNECTOR_SETTINGS_FILE, connectorSettings, resolveRepoDir } from '../connectors/env.js';
 import { toObjects } from '../connectors/rows.js';
-import type { Connector } from '../connectors/types.js';
+import { ConnectorError, type Connector } from '../connectors/types.js';
 import {
   INSIGHT_MEANING_MAX_CHARS,
   INSIGHT_MEANING_MIN_CHARS,
@@ -27,6 +27,7 @@ import { run } from './tools.js';
 
 const FIND_SIMILAR = 'dword_journal_find_similar';
 const ADD = 'dword_journal_add';
+const SET_SOURCE = 'dword_journal_set_source';
 
 /* ------------------------------------------------------------- shapes ------------------------------------------------------------- */
 
@@ -232,6 +233,12 @@ const insightField = z
   })
   .describe("Claude's own explanation (D2: dword's GLM prompts are not called).");
 
+const SET_SOURCE_DESCRIPTION =
+  'Sets or clears the "Where from?" note (source_note) of one existing daily-words journal entry, by its id. Nothing else changes: the ' +
+  "line and its insight stay as they are, and the entry's share is kept (daily-words' own rule for a note-only edit). Use it when an " +
+  'entry was saved without its source and the source is now known, e.g. a line from the film watched in this session. Find the id with ' +
+  'dword_journal_find_similar on the line. There is no tool that edits the text or the insight. Returns { updated: true, entry }.';
+
 const FIND_SIMILAR_DESCRIPTION =
   "Checks whether the owner's daily-words journal already has this saying or something close to it. Layer 1: an exact match after " +
   "normalizing whitespace, smart quotes and accents (a re-paste of the same line). Layer 2, only on a Layer 1 miss: cosine distance " +
@@ -359,6 +366,40 @@ export function registerDwordJournalCurated(server: McpServer, connector: Connec
           },
           embedded,
           ...(check.layer2Skipped ? { layer2_skipped: true as const } : {}),
+        };
+      }),
+  );
+
+  server.registerTool(
+    SET_SOURCE,
+    {
+      title: "Set where a daily-words journal entry is from",
+      description: SET_SOURCE_DESCRIPTION,
+      inputSchema: {
+        id: z.string().uuid().describe('The entry id (a uuid), from dword_journal_find_similar or dword_journal_add. Never invent one.'),
+        source_note: z
+          .string()
+          .trim()
+          .max(JOURNAL_SOURCE_NOTE_MAX)
+          .nullable()
+          .describe(`Where the line came from, e.g. "How to Make a Killing (2026)". At most ${JOURNAL_SOURCE_NOTE_MAX} characters. null or "" clears it.`),
+      },
+    },
+    async ({ id, source_note }) =>
+      run(async () => {
+        const row = await writer.setJournalSource(id, source_note === null || source_note.length === 0 ? null : source_note);
+        if (row === null) throw new ConnectorError(`daily-words has no journal entry ${id} for the owner.`);
+        return {
+          updated: true,
+          entry: {
+            id: row.id,
+            text: row.text,
+            source_note: row.sourceNote,
+            insight: row.insight,
+            insight_status: row.insightStatus,
+            created_at: row.createdAt,
+            updated_at: row.updatedAt,
+          },
         };
       }),
   );

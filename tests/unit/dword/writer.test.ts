@@ -14,6 +14,8 @@ const INSERT_EMBEDDING =
 const INSERT_UNEMBEDDED =
   "INSERT INTO journal_entry_embeddings (entry_id, user_id, status, text_sha, norm_sha, failed_reason) VALUES ($1, $2, 'failed', $3, $4, $5)";
 
+const SET_SOURCE = 'UPDATE journal_entries SET source_note = $2, updated_at = now()\nWHERE id = $1 AND user_id = $3\nRETURNING id, text, source_note';
+
 describe('assertWritable (dword write allow-list)', () => {
   it.each([
     [INSERT_VOCAB, 'vocab_entries'],
@@ -21,6 +23,7 @@ describe('assertWritable (dword write allow-list)', () => {
     [INSERT_JOURNAL, 'journal_entries'],
     [INSERT_EMBEDDING, 'journal_entry_embeddings'],
     [INSERT_UNEMBEDDED, 'journal_entry_embeddings'],
+    [SET_SOURCE, 'journal_entries'],
   ])('allows %s', (sql, table) => {
     expect(assertWritable(sql)).toBe(table);
   });
@@ -32,6 +35,11 @@ describe('assertWritable (dword write allow-list)', () => {
     'INSERT INTO users (id, email) VALUES ($1, $2)',
     'UPDATE users SET email = $1 WHERE id = $2',
     'UPDATE journal_entries SET text = $1 WHERE id = $2',
+    'UPDATE journal_entries SET source_note = $2, updated_at = now() WHERE id = $1 RETURNING id',
+    'UPDATE journal_entries SET source_note = $2, updated_at = now() WHERE user_id = $3 RETURNING id',
+    'UPDATE journal_entries SET source_note = $2, updated_at = now(), text = $4 WHERE id = $1 AND user_id = $3 RETURNING id',
+    'UPDATE journal_entries SET source_note = $2, insight = null WHERE id = $1 AND user_id = $3 RETURNING id',
+    'UPDATE journal_entries SET source_note = $2, updated_at = now() WHERE id = $1 AND user_id = $3 OR true RETURNING id',
     "UPDATE journal_entry_embeddings SET status = 'failed' WHERE entry_id = $1",
     'UPDATE vocab_entries SET definition = $1 WHERE id = $2',
     'UPDATE vocab_entries SET origin_term = $1 WHERE id = $2',

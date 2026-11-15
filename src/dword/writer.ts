@@ -43,14 +43,24 @@ const STATEMENT = /^\s*(INSERT\s+INTO|UPDATE)\s+([A-Za-z_][A-Za-z0-9_.]*)\s/i;
 const ORIGIN_ATTACH_ONLY =
   /^\s*UPDATE\s+vocab_entries\s+SET\s+origin_term\s*=\s*\$\d+\s*,\s*origin_language\s*=\s*\$\d+\s*,\s*origin_context\s*=\s*\$\d+\s+WHERE\s+[\s\S]*\borigin_term\s+IS\s+NULL\b/i;
 
+/**
+ * The one UPDATE of `journal_entries` ever allowed: its source note ("Where from?"), with
+ * `updated_at`, of one entry of one user. The text and the insight are never touched: daily-words
+ * clears the insight and revokes the share when the text changes, and keeps both when only the
+ * note does (its `updateEntry`).
+ */
+const JOURNAL_SOURCE_ONLY =
+  /^\s*UPDATE\s+journal_entries\s+SET\s+source_note\s*=\s*\$\d+\s*,\s*updated_at\s*=\s*now\(\)\s+WHERE\s+id\s*=\s*\$\d+\s+AND\s+user_id\s*=\s*\$\d+\s+RETURNING\b[^;]*$/i;
+
 export class DwordWriteError extends Error {
   override name = 'DwordWriteError';
 }
 
 /**
  * Refuses any statement outside the dword write contract before it reaches the database: one
- * statement, INSERT into one of WRITABLE_TABLES, or the single allowed UPDATE of
- * `vocab_entries`'s origin columns. No DELETE, ever. Returns the table.
+ * statement, INSERT into one of WRITABLE_TABLES, the single allowed UPDATE of `vocab_entries`'s
+ * origin columns, or the single allowed UPDATE of a journal entry's source note. No DELETE, ever.
+ * Returns the table.
  */
 export function assertWritable(sql: string): WritableTable {
   if (sql.includes(';')) throw new DwordWriteError('the dword writer sends one statement at a time');
@@ -60,6 +70,10 @@ export function assertWritable(sql: string): WritableTable {
   const table = (match[2] ?? '').toLowerCase();
   if (!(WRITABLE_TABLES as readonly string[]).includes(table)) {
     throw new DwordWriteError(`the dword writer may not write ${table}`);
+  }
+  if (verb === 'UPDATE' && table === 'journal_entries') {
+    if (!JOURNAL_SOURCE_ONLY.test(sql)) throw new DwordWriteError('journal_entries may only have source_note set, for one id of one user');
+    return table;
   }
   if (verb === 'UPDATE' && table !== 'vocab_entries') {
     throw new DwordWriteError(`${table} is never updated`);
@@ -156,6 +170,12 @@ RETURNING id`;
 
 const INSERT_JOURNAL_ENTRY_SQL = `INSERT INTO journal_entries (user_id, text, source_note, insight, insight_status)
 VALUES ($1, $2, $3, $4::jsonb, 'ready')
+RETURNING id, text, source_note, insight, insight_status,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS updated_at`;
+
+const SET_JOURNAL_SOURCE_SQL = `UPDATE journal_entries SET source_note = $2, updated_at = now()
+WHERE id = $1 AND user_id = $3
 RETURNING id, text, source_note, insight, insight_status,
   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
   to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS updated_at`;
@@ -283,6 +303,15 @@ export class DwordWriter {
       const row = result.rows[0];
       if (row === undefined) throw new DwordWriteError('journal_entries insert returned no row');
       return toJournalEntryRow(row);
+    });
+  }
+
+  /** Sets or clears (null) one entry's source note. Null when the entry does not exist or belongs to someone else. */
+  async setJournalSource(entryId: string, sourceNote: string | null): Promise<JournalEntryRow | null> {
+    return this.withClient(async (exec, userId) => {
+      const result = await exec(SET_JOURNAL_SOURCE_SQL, [entryId, sourceNote, userId]);
+      const row = result.rows[0];
+      return row === undefined ? null : toJournalEntryRow(row);
     });
   }
 

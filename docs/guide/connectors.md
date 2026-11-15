@@ -40,7 +40,7 @@ Each system has the same three layers, and Claude is told to use them in this or
 | `expenses` | [`expenses_spending`](reference/mcp-tools.md#expenses_spending), [`expenses_months`](reference/mcp-tools.md#expenses_months), [`expenses_get`](reference/mcp-tools.md#expenses_get) |
 | `runs` | [`runs_list`](reference/mcp-tools.md#runs_list), [`runs_get`](reference/mcp-tools.md#runs_get), [`runs_review`](reference/mcp-tools.md#runs_review) |
 | `seer` | [`seer_leaderboard`](reference/mcp-tools.md#seer_leaderboard), [`seer_positions`](reference/mcp-tools.md#seer_positions), [`seer_sera_best`](reference/mcp-tools.md#seer_sera_best) |
-| `dword` | [`dword_vocab_lookup`](reference/mcp-tools.md#dword_vocab_lookup), [`dword_vocab_add`](reference/mcp-tools.md#dword_vocab_add), [`dword_journal_find_similar`](reference/mcp-tools.md#dword_journal_find_similar), [`dword_journal_add`](reference/mcp-tools.md#dword_journal_add) |
+| `dword` | [`dword_vocab_lookup`](reference/mcp-tools.md#dword_vocab_lookup), [`dword_vocab_add`](reference/mcp-tools.md#dword_vocab_add), [`dword_journal_find_similar`](reference/mcp-tools.md#dword_journal_find_similar), [`dword_journal_add`](reference/mcp-tools.md#dword_journal_add), [`dword_journal_set_source`](reference/mcp-tools.md#dword_journal_set_source) |
 
 Units and dates are the apps' own. Days are calendar days in Asia/Jakarta (WIB) and a week runs
 Monday to Sunday. Money is whole rupiah, except Seer, which is US dollars and counts New York
@@ -178,6 +178,11 @@ What `dword_vocab_add` guarantees, whoever calls it:
    `MobLand S01E03, Plan B`). When you point at a film the session has not seen, Claude takes this
    machine's newest play from `movies_history` if it started within 12 hours. Otherwise the field
    stays empty; it is never guessed from the line itself.
+5. **An entry saved without its source can get one later.** When the duplicate that comes back has
+   no source and the source is now known, Claude calls `dword_journal_set_source` with the entry's
+   id. That is the only edit there is: it sets or clears the note of one entry of the owner and
+   leaves the line, its insight and its share alone, which is daily-words' own rule for a
+   note-only edit. The text and the insight cannot be changed from here.
 
 `dword_journal_add` runs the identical check itself, so a duplicate cannot slip in by skipping
 the first call. A failed or unavailable embedding never blocks a save: the result carries

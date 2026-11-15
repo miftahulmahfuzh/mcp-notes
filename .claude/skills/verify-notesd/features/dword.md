@@ -3,7 +3,8 @@
 A fourth connector system, `dword`, points at the user's separate `daily-words` app's Postgres
 database and is the first connector that **writes**: `dword_vocab_lookup`/`dword_vocab_add` look up
 or add a `vocab_entries` row; `dword_journal_find_similar`/`dword_journal_add` look up or add a
-`journal_entries` row. Read-only `dword_schema`/`dword_sql` also exist (Phase 1), for anything the
+`journal_entries` row, and `dword_journal_set_source` sets or clears the source note of one
+(`tests/integration/connectors/dword.journal.curated.int.test.ts`). Read-only `dword_schema`/`dword_sql` also exist (Phase 1), for anything the
 curated tools cannot answer.
 
 ## Claude Code skills (phase 5)

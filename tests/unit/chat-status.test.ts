@@ -13,14 +13,14 @@ import {
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 21 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 22 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
     expect(MOVIE_TOOL_NAMES).toHaveLength(6);
-    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(21);
-    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 21 + 2);
+    expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(22);
+    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 22 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -131,6 +131,7 @@ describe('captionForToolUse', () => {
     expect(captionForToolUse(n('dword_vocab_add'), { term: 'perch' })).toBe('saving a word');
     expect(captionForToolUse(n('dword_journal_find_similar'), { text: 'x' })).toBe('checking for a similar saying');
     expect(captionForToolUse(n('dword_journal_add'), { text: 'x' })).toBe('saving a saying');
+    expect(captionForToolUse(n('dword_journal_set_source'), { id: 'x', source_note: 'y' })).toBe('noting where a saying is from');
   });
 
   it('captions every other connector tool with the generic one-per-system caption', () => {

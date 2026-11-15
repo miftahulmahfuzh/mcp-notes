@@ -227,4 +227,45 @@ describeWithRepo('dword', 'dword journal curated tools', () => {
     const second = await call<{ verdict: string; inserted: boolean }>('dword_journal_add', { text: saying, insight });
     expect(second).toMatchObject({ verdict: 'duplicate', inserted: false });
   });
+
+  it('dword_journal_set_source sets and clears the source of one entry and leaves its text, insight and share alone', async () => {
+    const insight = {
+      meaning: 'Any large undertaking is completed by starting and then continuing one increment at a time.',
+      whenItApplies: ['Facing a long project and not knowing where to start', 'Putting off a goal because it feels far away'],
+    };
+    const added = await call<{ entry: JournalMatchEntry & { source_note: string | null } }>('dword_journal_add', {
+      text: 'The journey of a thousand miles begins with a single step',
+      insight,
+    });
+    expect(added.entry.source_note).toBeNull();
+    const other = await call<{ entry: JournalMatchEntry }>('dword_journal_add', { text: 'the obstacle is the way', insight });
+
+    const set = await call<{ updated: boolean; entry: { id: string; text: string; source_note: string | null; insight: unknown; insight_status: string } }>(
+      'dword_journal_set_source',
+      { id: added.entry.id, source_note: '  How to Make a Killing (2026) ' },
+    );
+    expect(set).toMatchObject({
+      updated: true,
+      entry: { id: added.entry.id, text: 'The journey of a thousand miles begins with a single step', source_note: 'How to Make a Killing (2026)', insight, insight_status: 'ready' },
+    });
+    const found = await call<JournalDuplicateResult>('dword_journal_find_similar', { text: 'The journey of a thousand miles begins with a single step' });
+    expect(found.entries[0]).toMatchObject({ id: added.entry.id, source_note: 'How to Make a Killing (2026)' });
+    const untouched = await call<JournalDuplicateResult>('dword_journal_find_similar', { text: 'the obstacle is the way' });
+    expect(untouched.entries[0]).toMatchObject({ id: other.entry.id, source_note: null });
+
+    const cleared = await call<{ entry: { source_note: string | null } }>('dword_journal_set_source', { id: added.entry.id, source_note: null });
+    expect(cleared.entry.source_note).toBeNull();
+  });
+
+  it('dword_journal_set_source refuses an id that is not the owner\'s entry, and anything that is not a uuid', async () => {
+    const strangerId = randomUUID();
+    const entryId = randomUUID();
+    await seedSystem('dword', 'INSERT INTO users (id, email) VALUES ($1, $2)', [strangerId, 'stranger@example.com']);
+    await seedSystem('dword', 'INSERT INTO journal_entries (id, user_id, text) VALUES ($1, $2, $3)', [entryId, strangerId, 'not yours']);
+    await expect(call('dword_journal_set_source', { id: entryId, source_note: 'x' })).rejects.toThrow(/no journal entry/);
+    await expect(call('dword_journal_set_source', { id: randomUUID(), source_note: 'x' })).rejects.toThrow(/no journal entry/);
+    await expect(call('dword_journal_set_source', { id: 'abc', source_note: 'x' })).rejects.toThrow();
+    const rows = await withAdmin(systemDbUrl('dword'), (c) => c.query('SELECT source_note FROM journal_entries WHERE id = $1', [entryId]));
+    expect(rows.rows[0]?.source_note).toBeNull();
+  });
 });

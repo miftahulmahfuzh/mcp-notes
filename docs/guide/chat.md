@@ -350,7 +350,7 @@ which picks did Claude object to today, and how has its record been?
 ```
 
 daily-words (`dword_vocab_lookup`, `dword_vocab_add`, `dword_journal_find_similar`,
-`dword_journal_add`):
+`dword_journal_add`, `dword_journal_set_source`):
 
 ```text
 add the word perch, as in "the bird's perch"

@@ -18,12 +18,13 @@ export const CONNECTOR_TOOL_NAMES = {
     'dword_vocab_add',
     'dword_journal_find_similar',
     'dword_journal_add',
+    'dword_journal_set_source',
   ],
 } as const satisfies Record<SystemId, readonly string[]>;
 
 export type ConnectorToolName = (typeof CONNECTOR_TOOL_NAMES)[SystemId][number];
 
-/** Every name, flattened in the order above (21 with dword's six). */
+/** Every name, flattened in the order above (22 with dword's seven). */
 export const ALL_CONNECTOR_TOOL_NAMES: readonly ConnectorToolName[] = CONNECTOR_SYSTEMS.flatMap(
   (id): ConnectorToolName[] => [...CONNECTOR_TOOL_NAMES[id]],
 );

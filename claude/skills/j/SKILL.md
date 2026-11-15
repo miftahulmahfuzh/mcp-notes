@@ -10,7 +10,8 @@ The text after `/j` is one saved line — a proverb, maxim, sentence from a book
 phrasing the user liked — to look up or add in the user's personal journal app, daily-words
 (dword), reached through the `notes` MCP server's `dword_journal_find_similar` and
 `dword_journal_add` tools (`mcp__notes__dword_journal_find_similar`,
-`mcp__notes__dword_journal_add`). Do not answer from memory: dword's own database is the source of
+`mcp__notes__dword_journal_add`), plus `dword_journal_set_source` for an entry saved without its
+source. Do not answer from memory: dword's own database is the source of
 truth for whether this line is already saved.
 
 ## Step 1: check for a near-duplicate first
@@ -104,8 +105,15 @@ When it applies:
 Found in dword, already saved. / Added to dword.
 ```
 The `From:` line is the `source_note` the tool returned (the saved entry's, or the duplicate's);
-leave it out when that is null. There is no tool to change an entry after it is saved: if a
-duplicate has no source and you now know one, say so and point the user to the entry in dword.
+leave it out when that is null.
+
+A duplicate with no source, when Step 2 gives you one: call `dword_journal_set_source` with
+`{ "id": <the duplicate's id>, "source_note": <the source> }` and say in one line that the source
+was added. It changes nothing else. Do the same when the user asks to set, fix or clear where an
+entry is from ("that quote was from Dune", "remove the source"): find the entry with
+`dword_journal_find_similar` on its line, then set it (`null` clears it). Never overwrite a source
+that is already there unless the user asks. The line and its insight cannot be edited from here:
+for those, point the user to the entry in dword.
 
 When Step 1 found a duplicate and the user did not ask to save anyway, your reply IS the
 duplicate's existing entry shown in this same shape, ending in "Already in dword — say \"save it

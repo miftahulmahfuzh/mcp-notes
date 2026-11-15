@@ -86,6 +86,7 @@ export const DWORD_TOOL_NAMES = [
   'dword_vocab_add',
   'dword_journal_find_similar',
   'dword_journal_add',
+  'dword_journal_set_source',
 ] as const;
 
 export type DwordToolName = (typeof DWORD_TOOL_NAMES)[number];
@@ -232,6 +233,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'checking for a similar saying';
     case 'dword_journal_add':
       return 'saving a saying';
+    case 'dword_journal_set_source':
+      return 'noting where a saying is from';
     default:
       return connectorCaption(tool);
   }
