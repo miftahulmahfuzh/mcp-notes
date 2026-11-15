@@ -1,12 +1,23 @@
-// Pictures for docs/guide/movies.md. Run by scripts/docs/capture.mjs:
+// Pictures for docs/guide/movies.md. Run by scripts/docs/capture.mjs. They come from two places:
 //
-//   npm run docs:shots -- movies
-//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- movies    also retake chat-answer.png and chat-movie-id.png
+//   npm run docs:shots -- --live movies                       the owner's real library (most pictures)
+//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the three chat pictures (billed)
+//   npm run docs:shots -- movies                              unmatched.png and assign.png only
 //
-// The instance is `verify.sh up --movies`: a generated video library, a fake TMDB that draws its own
-// posters and a fake vlc.exe / curl.exe. Nothing here reaches a real VLC, TMDB or video folder.
-// The two chat pictures need one answer from the wall's chat, which is a real, billed Claude run, so
-// they are retaken only when DOCS_SHOTS_CHAT=1; without it the pictures in the repo are kept.
+// The owner wants this guide to show their real library, so `live` below takes the grid, a film,
+// a series, the trailer pop-up, the filter clip and the page of whatever VLC is playing from the
+// daemon on 7317. It only looks: it clicks filters, opens the trailer pop-up and reads pages. It
+// never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
+// pictures send real, billed questions (they are stored in the chat history), so they are retaken
+// only with DOCS_SHOTS_CHAT=1.
+//
+// The unmatched list shows the names of files that could not be placed, which is not something to
+// publish from a real disk, and assigning a title writes. Those two pictures therefore come from
+// the throwaway instance (`verify.sh up --movies`: a generated library, a fake TMDB, a fake VLC),
+// which is all the default export takes. It must never write a picture that `live` takes.
+//
+// play.gif needs a real play, which would close the film the owner has open and add a play to
+// their history. It is not taken here: retake it by hand when that is wanted.
 import { execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,14 +28,12 @@ const run = promisify(execFile);
 
 export const up = ['--movies'];
 
-const KILLING = 'movie-467905'; // How to Make a Killing
-const OLDBOY = 'movie-990004';
-const MOBLAND = 'tv-247718';
+// The owner's library (--live): a finished film with stars and a review, and a series.
+const LIVE_FILM = 'movie-10681'; // WALL·E
+const LIVE_FILM_DIRECTOR = 'Andrew Stanton';
+const LIVE_SERIES = 'tv-247718'; // MobLand
 const VIEWPORT = { width: 1280, height: 800 };
 const TALL = { width: 1280, height: 1060 };
-const REVIEW =
-  'Glen Powell is having too much fun and so was I. The plan gets sillier with every cousin, and the ' +
-  'last twenty minutes still land. Margaret Qualley steals the two scenes she is in. Rewatch with A.';
 
 async function until(what, fn, { tries = 80, everyMs = 500 } = {}) {
   for (let i = 0; i < tries; i++) {
@@ -40,18 +49,6 @@ async function video(file) {
   mkdirSync(path.dirname(file), { recursive: true });
   await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'lavfi', '-i', 'color=c=0x1d2630:s=32x18:r=1', '-t', '960', '-c:v', 'mpeg4', '-q:v', '31', '-an', file]);
 }
-
-/** Play one file in the fake VLC up to `seconds`, then let VLC "exit" so the play closes there. */
-async function playTo({ v, fetchJson }, fileId, seconds) {
-  await fetchJson('POST', `/api/movies/files/${fileId}/play`, {});
-  await until(`the play of file ${fileId}`, async () => (await fetchJson('GET', '/api/movies/player')).current?.file_id === fileId);
-  await v('vlc', 'at', String(seconds));
-  await until(`file ${fileId} at ${seconds} s`, async () => ((await fetchJson('GET', '/api/movies/player')).current?.position ?? 0) >= seconds);
-  await v('vlc', 'quit');
-  await until(`the play of file ${fileId} to close`, async () => (await fetchJson('GET', '/api/movies/player')).current === null);
-}
-
-const fileOf = (detail, season, episode) => detail.files.find((f) => !f.deleted && f.season === season && f.episode === episode);
 
 export async function seed(ctx) {
   const { fetchJson } = ctx;
@@ -73,15 +70,6 @@ export async function seed(ctx) {
     },
     { tries: 30, everyMs: 0 },
   );
-
-  // A finished film with stars and a review, a series one and a half episodes in. Oldboy stays unwatched;
-  // the fixture already has a film in a Done folder and two deleted films from VLC's recent list.
-  const killing = await fetchJson('GET', `/api/movies/${KILLING}`);
-  await playTo(ctx, killing.files.find((f) => !f.deleted).id, 900);
-  await fetchJson('POST', `/api/movies/${KILLING}/user`, { rating: 4, review: REVIEW });
-  const mobland = await fetchJson('GET', `/api/movies/${MOBLAND}`);
-  await playTo(ctx, fileOf(mobland, 1, 1).id, 930);
-  await playTo(ctx, fileOf(mobland, 1, 2).id, 412);
 }
 
 async function postersLoaded(page) {
@@ -92,43 +80,8 @@ async function postersLoaded(page) {
   });
 }
 
-export default async ({ page, base, shot, clip, v, fetchJson }) => {
-  // The poster grid in mixed states.
-  await page.goto(`${base}/movies`);
-  await page.getByRole('list', { name: 'Posters' }).waitFor();
-  await postersLoaded(page);
-  await shot('grid');
-
-  // A film: facts, Play, watched flag, stars, review, credits, cast. A taller window, so the whole
-  // page is in one picture with the pill where it really sits.
-  await page.setViewportSize(TALL);
-  await page.goto(`${base}/movies/${KILLING}`);
-  await page.getByRole('textbox', { name: 'Review' }).waitFor();
-  await page.getByRole('region', { name: 'Cast' }).waitFor();
-  await postersLoaded(page);
-  await shot('film');
-
-  // A series: one row per episode, each with its movie id and progress. Scrolled to the end first,
-  // so the rows sit above the pill.
-  await page.goto(`${base}/movies/${MOBLAND}`);
-  const episodes = page.getByRole('region', { name: 'Episodes' });
-  await episodes.getByText('Eye for an Eye').waitFor();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await shot('episodes', { locator: episodes });
-
-  // Continue on the series resumes S01E02 in the (fake) VLC; the page follows the position.
-  await page.getByRole('button', { name: /^Continue/ }).click();
-  await page.getByText(/playing in VLC · /).waitFor();
-  await v('vlc', 'at', '520');
-  await page.getByText(/playing in VLC · 8:4\d/).waitFor({ timeout: 20000 });
-  await page.mouse.move(640, 240);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await postersLoaded(page);
-  await shot('playing');
-  await page.setViewportSize(VIEWPORT);
-  await v('vlc', 'quit');
-  await until('the play to close', async () => (await fetchJson('GET', '/api/movies/player')).current === null);
-
+/** The throwaway instance: only the two pictures that must not come from a real disk. */
+export default async ({ page, base, shot }) => {
   // The unmatched list, one row per reason, and the dialog that assigns a title by hand.
   await page.goto(`${base}/movies/unmatched`);
   const unmatched = page.getByRole('region', { name: 'Unmatched files' });
@@ -141,6 +94,69 @@ export default async ({ page, base, shot, clip, v, fetchJson }) => {
   await postersLoaded(page);
   await shot('assign', { locator: dialog });
   await page.keyboard.press('Escape');
+};
+
+async function answerDone(page) {
+  await page.locator('.answer-body').first().waitFor({ timeout: 180000 });
+  await page.waitForFunction(
+    () => {
+      const body = document.querySelector('.answer-body');
+      return body !== null && (body.textContent ?? '').trim().length > 40 && !body.textContent.includes('▍') && document.querySelector('.answer [role="status"]') === null;
+    },
+    null,
+    { timeout: 240000 },
+  );
+  await page.waitForTimeout(1500);
+}
+
+/** The owner's real library, from the live daemon. Looks only: see the header. */
+export async function live({ page, base, shot, clip, fetchJson }) {
+  // The poster grid.
+  await page.goto(`${base}/movies`);
+  await page.getByRole('list', { name: 'Posters' }).waitFor();
+  await postersLoaded(page);
+  await shot('grid');
+
+  // A film: facts, Play, the trailer icon, watched flag, stars, review, credits, cast. A taller
+  // window, so the whole page is in one picture with the pill where it really sits.
+  await page.setViewportSize(TALL);
+  await page.goto(`${base}/movies/${LIVE_FILM}`);
+  await page.getByRole('textbox', { name: 'Review' }).waitFor();
+  await page.getByRole('region', { name: 'Cast' }).waitFor();
+  await postersLoaded(page);
+  await page.mouse.move(640, 60);
+  await shot('film');
+
+  // The trailer pop-up over the film's page.
+  await page.setViewportSize(VIEWPORT);
+  await page.getByRole('button', { name: 'Watch the trailer' }).click();
+  const trailer = page.getByRole('dialog', { name: /^Trailer of / });
+  await trailer.locator('iframe').waitFor();
+  await page.waitForTimeout(6000);
+  await shot('trailer');
+  await page.keyboard.press('Escape');
+  await trailer.waitFor({ state: 'hidden' });
+
+  // A series: one row per episode, each with its movie id and progress, and the season's trailer icon.
+  await page.setViewportSize(TALL);
+  await page.goto(`${base}/movies/${LIVE_SERIES}`);
+  const episodes = page.getByRole('region', { name: 'Episodes' });
+  await episodes.getByText(/^S01E01$/).first().waitFor();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await shot('episodes', { locator: episodes });
+  await page.setViewportSize(VIEWPORT);
+
+  // The page of the title VLC has open right now, if it has one. Nothing is started for it.
+  const { current } = await fetchJson('GET', '/api/movies/player');
+  if (current?.title_id) {
+    await page.goto(`${base}/movies/${current.title_id}`);
+    await page.getByText(/(playing|paused) in VLC · /).waitFor({ timeout: 20000 });
+    await postersLoaded(page);
+    await page.mouse.move(640, 60);
+    await shot('playing');
+  } else {
+    console.log('movies: VLC has nothing open, playing.png is kept as it is');
+  }
 
   // Filtering the grid: state pills, the kind icons, the text filter.
   await clip('filter', async (tab) => {
@@ -160,33 +176,26 @@ export default async ({ page, base, shot, clip, v, fetchJson }) => {
     await tab.waitForTimeout(1100);
   });
 
-  // Play on a film: VLC starts, the page shows the position, and Play becomes Resume when VLC exits.
-  // After every still, because it leaves Oldboy in progress.
-  await clip('play', async (tab) => {
-    await tab.goto(`${base}/movies/${OLDBOY}`);
-    await tab.getByRole('button', { name: 'Play', exact: true }).waitFor();
-    await postersLoaded(tab);
-    await tab.waitForTimeout(600);
-    await tab.getByRole('button', { name: 'Play', exact: true }).click();
-    await tab.getByText(/playing in VLC · /).waitFor();
-    await v('vlc', 'at', '300');
-    await tab.getByText(/playing in VLC · 5:\d\d/).waitFor({ timeout: 20000 });
-    await tab.waitForTimeout(900);
-    await v('vlc', 'quit');
-    await tab.getByRole('button', { name: /^Resume at 5:/ }).waitFor({ timeout: 20000 });
-    await tab.getByRole('button', { name: /^Resume at 5:/ }).hover();
-    await tab.waitForTimeout(1200);
-  });
-
-  // One chat answer with movie ids, and the pop-up an id opens. One billed message: see the header.
+  // Three billed questions: a name on a film's page asking about itself, one answer with movie
+  // ids, and the pop-up an id opens. See the header.
   if (process.env.DOCS_SHOTS_CHAT === '1') {
-    await page.goto(`${base}/movies/${MOBLAND}`);
-    const ask = page.getByTestId('movies-pill').getByRole('textbox', { name: 'Ask about MobLand' });
-    await ask.fill('Which episode did I stop in, and which one is next? Two short sentences.');
-    await page.getByTestId('movies-pill').getByRole('button', { name: 'Send' }).click();
+    await page.setViewportSize(TALL);
+    await page.goto(`${base}/movies/${LIVE_FILM}`);
+    await page.getByRole('region', { name: 'Cast' }).waitFor();
+    await postersLoaded(page);
+    await page.getByLabel('Credits').getByRole('button', { name: LIVE_FILM_DIRECTOR, exact: true }).first().click();
+    await answerDone(page);
+    await page.mouse.move(640, 60);
+    await shot('ask-name');
+    await page.setViewportSize(VIEWPORT);
+
+    await page.goto(`${base}/movies/${LIVE_SERIES}`);
+    const pill = page.getByTestId('movies-pill');
+    await pill.getByRole('textbox', { name: /^Ask about / }).fill('Which episode did I stop in, and which one is next? Two short sentences.');
+    await pill.getByRole('button', { name: 'Send' }).click();
     const link = page.locator('.answer-body [data-movie-link]').first();
     await link.waitFor({ timeout: 180000 });
-    await page.waitForFunction(() => !document.querySelector('.answer-body')?.textContent?.includes('▍'), null, { timeout: 180000 });
+    await answerDone(page);
     await page.mouse.move(640, 120);
     await shot('chat-answer', { locator: page.locator('.answer') });
     await link.click();
@@ -195,4 +204,4 @@ export default async ({ page, base, shot, clip, v, fetchJson }) => {
     await postersLoaded(page);
     await shot('chat-movie-id', { locator: popup });
   }
-};
+}

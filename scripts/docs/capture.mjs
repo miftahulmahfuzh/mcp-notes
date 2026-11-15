@@ -1,17 +1,20 @@
 #!/usr/bin/env node
-// Retake the pictures in docs/guide from a throwaway daemon. Never the live one on 7317.
+// Retake the pictures in docs/guide from a throwaway daemon. The live daemon on 7317 is used
+// only with --live, and only by a guide whose owner wants their real data shown (movies).
 //
 //   npm run docs:shots -- wall movies     retake those guides' pictures
 //   npm run docs:shots -- --all           retake every guide's pictures
 //   npm run docs:shots -- --keep wall     leave the instance up afterwards (prints RUN and URL)
 //   npm run docs:shots -- --run RUN wall  drive an instance that is already up (no seed, no down)
 //   npm run docs:shots -- --no-build wall trust web/dist as built (several captures at once must not rebuild it)
+//   npm run docs:shots -- --live movies   take a guide's real-data pictures from the live daemon (read-only)
 //
 // Each name is scripts/docs/shots/<name>.mjs and writes docs/guide/img/<name>/*.{png,gif}:
 //
 //   export const up = ['--movies']                      // extra `verify.sh up` flags
 //   export async function seed({ v, base, fetchJson })  // optional: fill the instance first
 //   export default async ({ page, base, shot, clip, v, fetchJson }) => { ... }
+//   export async function live({ page, base, shot, clip, fetchJson })   // optional: the --live pictures
 //
 //   shot(name, { locator, fullPage })   PNG of the viewport, of one element, or of the whole page
 //   clip(name, async (page) => {...})   GIF of what the callback does in a fresh tab
@@ -20,6 +23,10 @@
 //
 // The instance is the verify-notesd one (.claude/skills/verify-notesd): its own database, port,
 // data dir and CLAUDE_HOME, so the pictures only ever show seeded data.
+//
+// --live starts and stops nothing: it opens the daemon that is already running (DOCS_LIVE_URL,
+// default http://127.0.0.1:7317) and calls the module's `live` export, which must only look.
+// A module's default export never overwrites a picture its `live` export takes.
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -40,6 +47,8 @@ const GIF_FPS = 10;
 
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
+const live = args.includes('--live');
+const LIVE_URL = (process.env.DOCS_LIVE_URL ?? 'http://127.0.0.1:7317').replace(/\/+$/, '');
 const runAt = args.indexOf('--run');
 const existingRun = runAt >= 0 ? args[runAt + 1] : null;
 const names = args.includes('--all')
@@ -67,7 +76,11 @@ async function capture(name, webBuilt) {
 
   let id = existingRun;
   let base;
-  if (id) {
+  if (live) {
+    if (typeof mod.live !== 'function') throw new Error(`${name}.mjs has no live export: its pictures come from the throwaway daemon`);
+    id = 'live';
+    base = LIVE_URL;
+  } else if (id) {
     base = `http://127.0.0.1:${(await run('cat', [path.join(os.homedir(), '.local/state/notesd-verify', id, 'port')])).stdout.trim()}`;
   } else {
     // The pictures must show the checkout's own web app, so the first instance rebuilds it.
@@ -91,7 +104,7 @@ async function capture(name, webBuilt) {
 
   const browser = await chromium.launch();
   try {
-    if (!existingRun && mod.seed) await mod.seed({ v, base, fetchJson, root: ROOT });
+    if (!live && !existingRun && mod.seed) await mod.seed({ v, base, fetchJson, root: ROOT });
 
     const context = await browser.newContext({ viewport: VIEWPORT, colorScheme: 'dark' });
     const page = await context.newPage();
@@ -121,11 +134,13 @@ async function capture(name, webBuilt) {
       }
     };
 
-    await mod.default({ page, base, shot, clip, v, fetchJson, root: ROOT });
+    if (live) await mod.live({ page, base, shot, clip, fetchJson, root: ROOT });
+    else await mod.default({ page, base, shot, clip, v, fetchJson, root: ROOT });
     await context.close();
   } finally {
     await browser.close();
-    if (existingRun || keep) console.log(`${name}: left up. ${VERIFY} down ${id}`);
+    if (live) console.log(`${name}: the live daemon at ${base} was only looked at`);
+    else if (existingRun || keep) console.log(`${name}: left up. ${VERIFY} down ${id}`);
     else await verify('down', id).catch((e) => console.error(`${name}: down failed: ${e.message}`));
   }
 }

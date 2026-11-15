@@ -54,7 +54,7 @@ scripts/install.sh           # idempotent: build, systemd user unit, MCP registr
 - **New or changed HTTP route:** describe it in `scripts/docs/httpRoutes.ts`, then `npm run docs:gen`.
 - **New environment variable:** add a row to `docs/guide/reference/configuration.md` (a name that is not a setting goes in `scripts/docs/envVars.ts` with a reason).
 - **Changed behaviour:** update the subsystem's guide. Never hand-edit the two generated reference files, and never copy tool, route or env tables into a guide or the README.
-- **Changed UI:** retake the pictures with `npm run docs:shots -- <guide>`. Pictures come only from the throwaway daemon with seeded data, never from the live one. A picture nothing shows fails the test.
+- **Changed UI:** retake the pictures with `npm run docs:shots -- <guide>`. Pictures come from the throwaway daemon with seeded data. The one exception is the movies guide, which the owner wants to show their real library: its pictures are retaken with `npm run docs:shots -- --live movies` (read-only against the live daemon; `DOCS_SHOTS_CHAT=1` adds the billed chat pictures), and plain `docs:shots -- movies` retakes only `unmatched.png` and `assign.png`. Never replace a real-library picture with a fixture one. A picture nothing shows fails the test.
 - Keep `README.md` short: one line per subsystem and a link. Detail goes in the guide.
 
 ## Architecture

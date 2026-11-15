@@ -6,17 +6,21 @@ video up on TMDB, shows the result as a poster grid at `/movies`, plays files in
 follows the position while they play. Six `movies_*` MCP tools answer questions about it from
 Claude Code (`/n ...`) and from the wall's chat.
 
-![The poster grid: one in progress, one unwatched, two finished, two with no file left](img/movies/grid.png)
+![The poster grid of a real library: a film paused in VLC first, then the titles in progress](img/movies/grid.png)
 
-Every picture and example on this page comes from the generated library of `verify.sh up --movies`
-(six titles, a fake TMDB that draws its own posters, a fake VLC). The titles, ids and paths are that
-fixture's, not anyone's real library.
+The pictures on this page show the owner's real library, taken from the running daemon without
+pressing anything that writes (see [Proving a change](#proving-a-change)). Two are the exception:
+the unmatched list and the assign dialog show a generated library, because the names of files a
+scan could not place are not something to publish from a real disk. The tool calls in the tables
+further down were run against that same generated library of `verify.sh up --movies` (six titles,
+a fake TMDB, a fake VLC), so their titles, ids and paths are the fixture's.
 
 Contents: [Setup](#setup) · [What is stored](#what-is-stored) · [The scan](#the-scan) ·
 [Trailers](#trailers) ·
 [Movie ids](#movie-ids) · [Watch state](#watch-state) · [The Movies page](#the-movies-page) ·
 [Playback](#playback) · [Continue and "play something"](#continue-and-play-something) ·
-[The VLC health log](#the-vlc-health-log) · [Two machines](#two-machines) ·
+[The VLC health log](#the-vlc-health-log) ·
+[Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug) · [Two machines](#two-machines) ·
 [What you can ask](#what-you-can-ask) · [Off switches and failure answers](#off-switches-and-failure-answers) ·
 [Quirks and limits](#quirks-and-limits) · [Where the code is](#where-the-code-is) ·
 [Proving a change](#proving-a-change)
@@ -288,7 +292,7 @@ count, genres, kind and state; then Play, the trailer, the watched flag, the sta
 the credits (studios, created by, directed by, written by, produced by) and the cast with their
 characters (the first 18, with an icon for the rest).
 
-![A film's page: id, facts, Play, watched flag, stars, review, credits, cast and its file](img/movies/film.png)
+![A film's page: id, facts, Play, the trailer icon, watched flag, stars, review, credits and cast](img/movies/film.png)
 
 - **Play.** On a film the button reads "Play" or "Resume at 5:06". On a series it is Continue:
   resume the open episode or play the next one (see
@@ -301,6 +305,9 @@ characters (the first 18, with an icon for the rest).
   YouTube" and opens a YouTube search for the title in a new tab. On a series every season heading
   has its own icon, which plays that season's trailer or searches for it the same way. VLC is not
   involved, so it works for a file on the other machine and for a title with no file left.
+
+  ![The trailer pop-up over a film's page](img/movies/trailer.png)
+
 - **Watched flag.** The check icon sets or clears the title's watched flag, for the films whose
   credits you skip.
 - **Stars.** 0 to 5, whole stars.
@@ -314,7 +321,7 @@ characters (the first 18, with an icon for the rest).
   play icon. A deleted file is flagged "deleted" with its date in the tooltip; a file on the other
   machine is flagged "on <host>". Seasons with no file anywhere are counted, not listed.
 
-![A series' episodes: finished, in progress at 43 %, unwatched](img/movies/episodes.png)
+![A series' episodes: the season's trailer icon, the first episode in progress at 5 %, the rest unwatched](img/movies/episodes.png)
 
 **The pill.** The bar at the bottom asks the wall's chat about the page. On the grid it reads "Ask
 about your movies"; on a title's page it reads "Ask about <title>", and "this film", "this
@@ -332,6 +339,8 @@ click sends one question through the pill at once, with no Enter and no page cha
 | A studio | "Tell me about StudioCanal and list their other films and series. Mark the ones in my library." |
 | A character | "Who is Ruth, played by Jessica Henwick, in this film?" |
 | A genre | "Recommend other Comedy films similar to How to Make a Killing: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library." |
+
+![The answer after a click on the director's name: who he is, then his films, with the one in the library as a movie id](img/movies/ask-name.png)
 
 - A person's TMDB id rides on the first line (`· person 1202689`), so a shared name cannot answer
   about someone else.
@@ -359,7 +368,7 @@ and the open title every five seconds.
 
 ## Playback
 
-![A series page while its second episode plays in VLC](img/movies/playing.png)
+![A film's page while VLC has it paused: "paused" on the poster and the position beside the stars](img/movies/playing.png)
 
 Play, Continue and `movies_continue` all end in `MoviePlayer` (`src/movies/player.ts`):
 
@@ -381,6 +390,10 @@ Play, Continue and `movies_continue` all end in `MoviePlayer` (`src/movies/playe
    play closes at the last position read.
 
 ![Play on a film: VLC starts, the page follows the position, Play becomes Resume](img/movies/play.gif)
+
+This clip is one day older than the other pictures: the page had no trailer icon and no clickable
+names yet. Taking it again means starting a real play, which closes the film that is open and
+adds a play to the history, so it is retaken by hand and not by the screenshot script.
 
 Rules worth knowing:
 
@@ -493,15 +506,74 @@ freezes after the fact.
   at most 2000), a summary per VLC run (including memory growth per minute, and per paused minute,
   which is the leak signal), the hang lines, the stalls, the driver resets and the incidents. There
   is no page and no tool for it.
-- **Tracing a problem.** The `/trace-vlc-bug` skill (`claude/skills/trace-vlc-bug`) reads this log
-  together with VLC's windows and counters, the Windows event logs and screenshots into
-  `<NOTES_DATA_DIR>/movies/vlc-traces/<stamp>/`, and holds the table of known causes. On a machine
-  whose graphics driver resets, `NOTESD_VLC_EXTRA_ARGS=--vout=wingdi --avcodec-hw=none` keeps VLC
-  off Direct3D, the one setting measured to play through a reset.
+- **Tracing a problem.** The `/trace-vlc-bug` skill reads this log together with everything else
+  that can explain a broken VLC: see [Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug).
 
 The monitor only reads on the Windows side. It needs `tasklist.exe`; without `powershell.exe`
 samples keep pid and working set only, and there are no Windows events. It is off with
 `NOTESD_VLC_HEALTH_MS=0`, with no roots, and outside WSL.
+
+## Tracing a VLC problem: `/trace-vlc-bug`
+
+When VLC crashes, freezes, opens a crash dialog or plays sound with no picture, type what you saw
+after `/trace-vlc-bug` in any Claude Code session. It works for a VLC notesd started and for one
+you opened by hand. It is a Claude Code skill (`claude/skills/trace-vlc-bug`); the chat bar has no
+way to run it.
+
+```text
+/trace-vlc-bug
+/trace-vlc-bug vlc crashed again
+/trace-vlc-bug the movie won't play after I paused it
+/trace-vlc-bug there is a hole where the video should be
+/trace-vlc-bug vlc shows a black screen but I can hear the sound
+/trace-vlc-bug vlc opened a crash dialog instead of the film
+why did vlc die last night?
+check the vlc logs
+```
+
+Leave the broken VLC open until it is done: a stuck VLC is the evidence, and the skill never
+closes, restarts or replaces one. If the cure is to close it, it says so and you close it.
+
+**What it collects.** `trace.sh` (with `collect.ps1` on the Windows side) writes one folder,
+`<NOTES_DATA_DIR>/movies/vlc-traces/<stamp>/`:
+
+| File | What it holds |
+| --- | --- |
+| `windows.txt` | Every `vlc.exe` (memory, handles, whether it responds, its command line with the password redacted), its windows, its frame counters read twice, the graphics driver version, display-driver events, application crashes and hangs, sleep and resume |
+| `health.json` | `GET /api/movies/player/health`: samples, run summaries, driver resets, stalls, hangs, incidents |
+| `player.json` | The play notesd follows now, with `video_stalled` |
+| `notesd.log`, `vlc-health-tail.jsonl` | The daemon's lines about VLC; the raw tail of the health log |
+| `screen*.jpg` | The desktop as it is, and two shots 2 seconds apart with each VLC in front |
+| `vlc-<pid>.log` | VLC's own log, when it was started with `--logfile` |
+
+Claude reads the screenshots too. A VLC that answers, has a window of the right size and holds
+steady memory can still be showing nothing: only the frame counters and two identical screenshots
+prove it.
+
+**What it matches.** The skill holds a table of causes already found on this machine:
+
+| What the evidence shows | Cause |
+| --- | --- |
+| A `Display` event 4101 during the play, then `playing` with the clock advancing and the frame counters frozen | The graphics driver reset itself and VLC lost its video device. VLC 3 never rebuilds it |
+| A small "VLC media player just crashed" dialog and no film | An earlier crash left a dump; the dialog blocks playback until it is answered |
+| VLC's HTTP interface stops answering while the process lives | A real hang inside VLC |
+| `vlc.exe` is gone and an Application Error (1000) names it | VLC crashed; the faulting module says where |
+| Memory climbs while paused | A leak during pause |
+| Everything stops at the same second | WSL or Windows went down (sleep, shutdown), not VLC |
+| notesd never got an answer after launch | VLC took over 20 seconds to open its interface, or a dialog was in the way |
+
+**What comes back.** What happened, with times in WIB; the cause; the evidence that proves it;
+and what to do now. It says so plainly when the evidence does not settle it. The finding is saved
+as a note tagged `#vlc #bug #mcp-notes #movies` and linked to the session, and a cause that was
+not in the table is added to the skill.
+
+**Options it uses.** `trace.sh --front` brings each VLC to the front for the two screenshots and
+gives focus back. `--probe` is for a paused VLC, whose frozen counters prove nothing: it plays it
+for 6 seconds and pauses it again. `--hours N` widens the Windows event window (default 6).
+
+**The fix measured on this machine.** `NOTESD_VLC_EXTRA_ARGS=--vout=wingdi --avcodec-hw=none`
+keeps VLC off Direct3D, the one setting that played through a driver reset. The other video
+outputs lost the picture or crashed.
 
 ## Two machines
 
@@ -821,7 +893,15 @@ $V down RUN
 - Unit tests: `tests/unit/movies/` (the VLC pieces) and `web/src/App.movies.test.tsx`.
 - Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, play,
   continue, recents, MCP, health, health crash).
-- The pictures on this page: `npm run docs:shots -- movies` (`scripts/docs/shots/movies.mjs`). The
-  two chat pictures need one billed chat answer and are retaken only with `DOCS_SHOTS_CHAT=1`.
+- The pictures on this page come from two places (`scripts/docs/shots/movies.mjs`):
+  - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:
+    the grid, a film, the trailer pop-up, a series' episodes, the filter clip, and the page of the
+    title VLC has open (kept as it is when VLC has nothing open). It only looks: no Play, no mark,
+    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks three billed
+    questions for `ask-name.png`, `chat-answer.png` and `chat-movie-id.png`; they stay in the chat
+    history.
+  - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway
+    instance. It never touches a picture the live run takes.
+  - `play.gif` is retaken by hand, because it needs a real play.
 - Never drive Play or `movies_continue` on the live daemon, and never give a run a root under
   `/mnt/c`.

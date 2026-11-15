@@ -214,7 +214,7 @@ The guides under `docs/guide/` are checked against the code.
 | --- | --- |
 | `npm run docs:gen` | Writes `reference/mcp-tools.md` from the tools the MCP server registers and `reference/http-api.md` from the daemon's route table plus the descriptions in `scripts/docs/httpRoutes.ts`. Opens no database and no socket. |
 | `npm run docs:check` | Reports every problem and exits 1 when there is one. |
-| `npm run docs:shots -- <guide>...` | `scripts/docs/capture.mjs`: retakes that guide's pictures by running `scripts/docs/shots/<guide>.mjs` with Playwright against a throwaway verify-notesd instance, never the live daemon. `--all` for every guide, `--keep` to leave the instance up, `--no-build` to trust `web/dist`. |
+| `npm run docs:shots -- <guide>...` | `scripts/docs/capture.mjs`: retakes that guide's pictures by running `scripts/docs/shots/<guide>.mjs` with Playwright against a throwaway verify-notesd instance. `--all` for every guide, `--keep` to leave the instance up, `--no-build` to trust `web/dist`. `--live` is the one case that opens the live daemon: it runs a script's `live` export, which only looks, and only the movies guide has one (its pictures show the real library; see [movies.md](movies.md#proving-a-change)). |
 
 `tests/unit/docs/reference.test.ts` runs the same checks as `docs:check`, so `npm test` fails when:
 

@@ -163,5 +163,6 @@ Read by the picture scripts under `scripts/docs/shots/` (`npm run docs:shots`).
 | --- | --- | --- |
 | `DOCS_CHAT_BILLED` | unset | `1` lets the chat guide's shots send real chat messages (a billed Claude agent). Unset: those pictures are kept as they are. |
 | `DOCS_CHAT_STEPS` | `answer,image,reply` | Which of the billed chat steps run when `DOCS_CHAT_BILLED=1`. |
-| `DOCS_SHOTS_CHAT` | unset | `1` lets the movies guide's shots retake the one picture that needs a real chat answer. |
+| `DOCS_SHOTS_CHAT` | unset | `1` lets the movies guide's live shots (`docs:shots -- --live movies`) retake the three pictures that need real chat answers. They are billed and stay in the chat history. |
+| `DOCS_LIVE_URL` | `http://127.0.0.1:7317` | The running daemon that `docs:shots -- --live` looks at. Only the movies guide has live pictures. |
 | `VERIFY_HOME` | `~/.local/state/notesd-verify` | Where the verify-notesd skill keeps the state of its throwaway instances; the sessions shots find their instance's `CLAUDE_HOME` there. |
