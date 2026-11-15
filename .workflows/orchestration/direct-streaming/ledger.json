@@ -17,7 +17,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Provider seed, sniffer and resolver CLI"
     },
@@ -205,6 +205,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "direct-streaming",
-  "updated": "2026-11-15T19:52:42+07:00",
+  "updated": "2026-11-15T19:53:20+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/direct-streaming"
 }
