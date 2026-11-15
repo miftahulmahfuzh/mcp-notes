@@ -389,11 +389,7 @@ Play, Continue and `movies_continue` all end in `MoviePlayer` (`src/movies/playe
 7. Every `NOTESD_VLC_POLL_MS` the position is read into the play's one row. When VLC exits, the
    play closes at the last position read.
 
-![Play on a film: VLC starts, the page follows the position, Play becomes Resume](img/movies/play.gif)
-
-This clip is one day older than the other pictures: the page had no trailer icon and no clickable
-names yet. Taking it again means starting a real play, which closes the film that is open and
-adds a play to the history, so it is retaken by hand and not by the screenshot script.
+![Resume on a film in progress: VLC starts, the poster and the line beside the stars follow the position, and the button moves on to the new resume point](img/movies/play.gif)
 
 Rules worth knowing:
 
@@ -902,6 +898,10 @@ $V down RUN
     history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway
     instance. It never touches a picture the live run takes.
-  - `play.gif` is retaken by hand, because it needs a real play.
+  - `DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies` retakes `play.gif` and nothing else.
+    It is the one live picture that writes: it plays a film that is already in progress for a
+    few seconds, which opens a VLC on screen and adds a play to the history, and it closes the
+    VLC it opened and no other. A VLC that was open before stays open but is no longer followed.
+    Run it only when asked.
 - Never drive Play or `movies_continue` on the live daemon, and never give a run a root under
   `/mnt/c`.

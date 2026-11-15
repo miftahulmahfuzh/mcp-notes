@@ -16,8 +16,11 @@
 // the throwaway instance (`verify.sh up --movies`: a generated library, a fake TMDB, a fake VLC),
 // which is all the default export takes. It must never write a picture that `live` takes.
 //
-// play.gif needs a real play, which would close the film the owner has open and add a play to
-// their history. It is not taken here: retake it by hand when that is wanted.
+// play.gif needs a real play: a VLC opens on the owner's screen, a play is added to their history
+// and the VLC they had open stops being followed. It is retaken only with DOCS_SHOTS_PLAY=1, on a
+// film that is already in progress, and only the VLC it opened is closed afterwards:
+//
+//   DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies
 import { execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -32,6 +35,9 @@ export const up = ['--movies'];
 const LIVE_FILM = 'movie-10681'; // WALL·E
 const LIVE_FILM_DIRECTOR = 'Andrew Stanton';
 const LIVE_SERIES = 'tv-247718'; // MobLand
+const LIVE_PLAY_FILM = 'movie-670'; // Oldboy: in progress already, so one more short play changes nothing
+const TASKLIST = '/mnt/c/Windows/System32/tasklist.exe';
+const TASKKILL = '/mnt/c/Windows/System32/taskkill.exe';
 const VIEWPORT = { width: 1280, height: 800 };
 const TALL = { width: 1280, height: 1060 };
 
@@ -109,8 +115,45 @@ async function answerDone(page) {
   await page.waitForTimeout(1500);
 }
 
-/** The owner's real library, from the live daemon. Looks only: see the header. */
+async function vlcPids() {
+  const { stdout } = await run(TASKLIST, ['/FI', 'IMAGENAME eq vlc.exe', '/FO', 'CSV', '/NH']);
+  return stdout.split(/\r?\n/).map((line) => /^"vlc\.exe","(\d+)"/i.exec(line)?.[1]).filter(Boolean);
+}
+
+/** The play clip: one real play of LIVE_PLAY_FILM. Closes the VLC it opened and no other. */
+async function playClip({ base, clip, fetchJson }) {
+  const before = new Set(await vlcPids());
+  let opened = [];
+  try {
+    await clip('play', async (tab) => {
+      await tab.goto(`${base}/movies/${LIVE_PLAY_FILM}`);
+      const play = tab.locator('button.mv-play');
+      await play.waitFor();
+      await postersLoaded(tab);
+      await tab.waitForTimeout(900);
+      await play.click();
+      await tab.getByText(/playing in VLC · /).waitFor({ timeout: 40000 });
+      opened = (await vlcPids()).filter((pid) => !before.has(pid));
+      await tab.waitForTimeout(9000);
+      // Without /F this asks the window to close, as its X does, so VLC exits cleanly.
+      for (const pid of opened) await run(TASKKILL, ['/PID', pid]).catch(() => {});
+      await tab.getByRole('button', { name: /^Resume at / }).waitFor({ timeout: 30000 });
+      await tab.getByRole('button', { name: /^Resume at / }).hover();
+      await tab.waitForTimeout(1500);
+    });
+  } finally {
+    const left = (await vlcPids()).filter((pid) => opened.includes(pid));
+    for (const pid of left) await run(TASKKILL, ['/PID', pid]).catch(() => {});
+    const { current } = await fetchJson('GET', '/api/movies/player');
+    console.log(`movies: play clip opened VLC ${opened.join(', ') || 'none'}; still running: ${left.join(', ') || 'none'}; followed now: ${current?.name ?? 'nothing'}`);
+  }
+}
+
+/** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY=1: see the header. */
 export async function live({ page, base, shot, clip, fetchJson }) {
+  // Alone, so a retake of the clip does not also retake every still.
+  if (process.env.DOCS_SHOTS_PLAY === '1') return playClip({ base, clip, fetchJson });
+
   // The poster grid.
   await page.goto(`${base}/movies`);
   await page.getByRole('list', { name: 'Posters' }).waitFor();
