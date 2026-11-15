@@ -53,6 +53,9 @@ export function manifestKind(hit) {
   if (body.startsWith('#EXTM3U')) return 'hls';
   if (/<MPD[\s>]/.test(body.slice(0, 4000))) return 'dash';
   const mime = String(hit.mime ?? '').toLowerCase();
+  // A page is never a stream, whatever its address ends in: a provider that is down answers its
+  // `demo-video.mp4` with an HTML page (VidRock, 2026-11-15), and playing it ends in a media error.
+  if (mime.startsWith('text/html')) return null;
   const file = pathOf(hit.url);
   if (mime.includes('mpegurl') || /\.m3u8$/i.test(file)) return 'hls';
   if (mime.includes('dash+xml') || /\.mpd$/i.test(file)) return 'dash';

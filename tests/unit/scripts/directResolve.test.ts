@@ -203,6 +203,14 @@ describe('picking the stream out of a capture', () => {
     expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/master.m3u8', status: 403, body: MASTER })] }))).toBeNull();
     expect(pickSource(capture())).toBeNull();
   });
+
+  it('does not take a page for a stream because its address ends in .mp4', () => {
+    const page = hit({ url: 'https://vidrock.net/demo-video.mp4', mime: 'text/html; charset=utf-8' });
+    expect(pickSource(capture({ hits: [page] }))).toBeNull();
+    expect(pickSource(capture({ hits: [{ ...page, mime: 'video/mp4' }] }))?.manifest_kind).toBe('mp4');
+    // A playlist is known by its body, whatever the host calls it.
+    expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/master.m3u8', mime: 'text/html', body: MASTER })] }))?.manifest_kind).toBe('hls');
+  });
 });
 
 describe('resolving a title (R1.1, R1.3)', () => {
