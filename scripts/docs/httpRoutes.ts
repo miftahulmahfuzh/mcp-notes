@@ -204,7 +204,7 @@ export const HTTP_GROUPS: HttpGroup[] = [
       'GET /api/movies/player': '`{available, reason, current}`: whether playback works on this machine and the play notesd is following now, if any.',
       'POST /api/movies/files/:fileId/play': 'Start VLC on the file at its resume point (the last position; the start when there is none or it was finished). 202 `{ok: true, play}`. 404 `not_found` / `not_on_this_machine`, 410 `file_missing`, 409 `player_unavailable` with `reason`. Same-origin only.',
       'POST /api/movies/continue': '`{title?}`: what the `movies_continue` tool does: resume the latest unfinished episode or film, else start the next episode that is here. Without `title`, the title of the newest play. Same errors as play; 400 `invalid_body`. Same-origin only.',
-      'GET /api/movies/player/health': 'This machine\'s VLC health log: the newest samples, per-VLC run summaries, hang lines and crash incidents. Query: `limit` (samples, 1 to 2000, default 200; 400 `invalid_limit`). 503 `movies_off` without a monitor.',
+      'GET /api/movies/player/health': 'This machine\'s VLC health log: the newest samples, per-VLC run summaries, hang lines, video stalls (`stalls`), display-driver resets seen while VLC ran (`gpu_resets`) and crash incidents. Query: `limit` (samples, 1 to 2000, default 200; 400 `invalid_limit`). 503 `movies_off` without a monitor.',
     },
   },
   {

@@ -6,7 +6,7 @@ import { nodeProbe, onceAsync, runWslpath, type DetectProbe } from '../http/reve
 import type { MoviesRepo } from './repo.js';
 import type { MoviesService } from './service.js';
 import { resumePosition } from './state.js';
-import { curlStatusReader, type VlcEndpoint, type VlcState, type VlcStatus, type VlcStatusReader } from './vlc/http.js';
+import { curlStatusReader, type VlcEndpoint, type VlcState, type VlcStatus, type VlcStatusReader, type VlcVideoCounters } from './vlc/http.js';
 import {
   detectPlayerEnv,
   newHttpPassword,
@@ -19,7 +19,7 @@ import {
 import { tmdbResolver } from './sync.js';
 import { nodeRecentsFs, recentsSyncHook, type RecentsFs } from './vlc/recents.js';
 import type { VlcForegrounder } from './vlc/foreground.js';
-import type { HangEvent, HangOutcome, PidCheck, PlayerHealthLink, TrackedVlc } from './vlc/health.js';
+import type { HangEvent, HangOutcome, PidCheck, PlayerHealthLink, StallOutcome, TrackedVlc, VideoStallEvent } from './vlc/health.js';
 
 type FileRow = typeof movieFiles.$inferSelect;
 
@@ -41,6 +41,16 @@ export const MAX_READ_ERRORS = 6;
  * process not yet gone) does not log a false hang.
  */
 export const HANG_AFTER_SILENT_POLLS = 2;
+/**
+ * The video-stall rule: this many polls in a row that read `playing` with the clock ahead of the
+ * previous poll and neither video counter (`decodedvideo`, `displayedpictures`) moved, after the
+ * counters were seen moving in this play. That is a VLC whose Direct3D device was removed (a
+ * display-driver reset): it answers, plays sound and shows no picture. The play stays open; only
+ * a restart of that VLC brings the picture back.
+ * MEASURED 2026-11-15, VLC 3.0.21 on Intel Arc: true with the default direct3d11 output; the
+ * direct3d9 and directdraw outputs also freeze but keep counting, so they are not caught.
+ */
+export const STALL_AFTER_FROZEN_POLLS = 3;
 
 export type PlayErrorCode = 'not_found' | 'not_on_this_machine' | 'player_unavailable' | 'file_missing';
 
@@ -135,6 +145,8 @@ export interface PlayerSnapshot {
   duration: number | null;
   started_at: string;
   last_read_at: string | null;
+  /** VLC says it plays and its clock advances, but it decodes and shows no new frame. */
+  video_stalled: boolean;
 }
 
 export interface PlayerAvailability {
@@ -167,6 +179,18 @@ interface Tracked {
   hung: boolean;
   /** The vlc.exe pid the monitor matched when the hang started. */
   hangPid: number | null;
+  /** The counters and clock of the previous poll that read `playing`; null after any other poll. */
+  lastVideo: VlcVideoCounters | null;
+  lastPlayingTime: number | null;
+  /** The counters moved between two polls of this play (never for an audio file). */
+  videoSeen: boolean;
+  frozenPolls: number;
+  /** The first frozen poll of the current run of them. */
+  frozenSince: Date | null;
+  /** Between a video stall's start and end lines. */
+  stalled: boolean;
+  stalledSince: Date | null;
+  stallPid: number | null;
 }
 
 function message(err: unknown): string {
@@ -227,6 +251,7 @@ export class MoviePlayer {
       duration: t.duration,
       started_at: t.startedAt.toISOString(),
       last_read_at: t.lastReadAt === null ? null : t.lastReadAt.toISOString(),
+      video_stalled: t.stalled,
     };
   }
 
@@ -249,6 +274,9 @@ export class MoviePlayer {
       pausedSince: t.pausedSince,
       silentSince: t.silentSince,
       hung: t.hung,
+      videoStalled: t.stalled,
+      decodedVideo: t.lastVideo?.decoded ?? null,
+      displayedPictures: t.lastVideo?.displayed ?? null,
     };
   }
 
@@ -338,6 +366,14 @@ export class MoviePlayer {
       silentSince: null,
       hung: false,
       hangPid: null,
+      lastVideo: null,
+      lastPlayingTime: null,
+      videoSeen: false,
+      frozenPolls: 0,
+      frozenSince: null,
+      stalled: false,
+      stalledSince: null,
+      stallPid: null,
     };
     this.tracked = t;
     if (this.closed) await this.finish(t, 'shutdown');
@@ -429,6 +465,8 @@ export class MoviePlayer {
         t.state = r.status.state;
         if (r.status.state === 'paused') t.pausedSince ??= this.now();
         else t.pausedSince = null;
+        await this.checkVideo(t, r.status);
+        if (t.ended) return;
         // Stopped (user pressed stop, or the media ended) reads time 0 / length 0: keep the last real position.
         if (r.status.state === 'stopped') return;
         t.position = r.status.time;
@@ -505,6 +543,67 @@ export class MoviePlayer {
     t.hangPid = null;
   }
 
+  /** The video-stall rule (STALL_AFTER_FROZEN_POLLS). A paused or stopped poll only clears the comparison; a stall outlives a pause. */
+  private async checkVideo(t: Tracked, status: VlcStatus): Promise<void> {
+    const v = status.video ?? null;
+    const prev = t.lastVideo;
+    const prevTime = t.lastPlayingTime;
+    if (status.state !== 'playing' || v === null) {
+      t.lastVideo = null;
+      t.lastPlayingTime = null;
+      t.frozenPolls = 0;
+      t.frozenSince = null;
+      return;
+    }
+    t.lastVideo = v;
+    t.lastPlayingTime = status.time;
+    if (prev === null || prevTime === null) return;
+    if (v.decoded > prev.decoded || v.displayed > prev.displayed) {
+      t.videoSeen = true;
+      t.frozenPolls = 0;
+      t.frozenSince = null;
+      this.endStall(t, 'recovered');
+      return;
+    }
+    // Counters that went down belong to a new item; a clock that did not advance proves nothing.
+    if (v.decoded < prev.decoded || v.displayed < prev.displayed || !t.videoSeen || !(status.time > prevTime)) return;
+    t.frozenPolls += 1;
+    t.frozenSince ??= this.now();
+    if (t.frozenPolls < STALL_AFTER_FROZEN_POLLS || t.stalled) return;
+    const check = await this.deps.health?.processAlive(t.ep);
+    if (t.ended) return;
+    t.stalled = true;
+    t.stalledSince = t.frozenSince;
+    t.stallPid = check?.kind === 'alive' ? check.pid : null;
+    this.deps.health?.onVideoStall?.({ ...this.stallBase(t), phase: 'start' });
+    this.log(
+      `[movies] VLC${t.stallPid === null ? '' : ` pid ${t.stallPid}`} of play ${t.playId} (${t.file.name}) plays without video at ${Math.round(status.time)} s: ` +
+        'its clock advances and no frame is decoded or shown (a display-driver reset removes its video device; close and replay it)',
+    );
+  }
+
+  private stallBase(t: Tracked): Omit<VideoStallEvent, 'phase' | 'outcome'> {
+    return {
+      pid: t.stallPid,
+      port: t.ep.port,
+      playId: t.playId,
+      fileId: t.file.id,
+      name: t.file.name,
+      positionS: t.lastPlayingTime ?? t.position,
+      stalledSince: t.stalledSince ?? this.now(),
+    };
+  }
+
+  /** Writes the stall's end line once; a no-op when the play is not stalled. */
+  private endStall(t: Tracked, outcome: StallOutcome): void {
+    if (!t.stalled) return;
+    this.deps.health?.onVideoStall?.({ ...this.stallBase(t), phase: 'end', outcome });
+    this.log(`[movies] VLC of play ${t.playId} (${t.file.name}) video stall ended: ${outcome}`);
+    t.stalled = false;
+    t.stalledSince = null;
+    t.stallPid = null;
+  }
+
   /** Ends tracking once: stop polling, close a hang, then close the play row at the last position read. */
   private async finish(t: Tracked, why: EndWhy, fromTick = false): Promise<void> {
     if (t.ended) return;
@@ -515,6 +614,7 @@ export class MoviePlayer {
     }
     if (this.tracked === t) this.tracked = null;
     this.endHang(t, why === 'exited' ? 'exited' : 'tracking_ended');
+    this.endStall(t, why === 'exited' ? 'exited' : 'tracking_ended');
     if (!fromTick && t.inFlight !== null) await t.inFlight;
     await this.deps.repo.endPlay(t.playId, { positionS: t.position, durationS: t.duration }, new Date());
     this.deps.onChange?.(t.file);

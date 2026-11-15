@@ -336,7 +336,7 @@ The session side of these hooks (parent links, their sources, the graph) is expl
 1. Registers the `notes` MCP server at user scope (it removes and re-adds it, so a port change is
    picked up).
 2. Symlinks each skill folder in `claude/skills/` into `~/.claude/skills/`: `n`, `migrate`, `v`,
-   `j`, `redo` and `check-seer-adversarial-nightly`. It refuses to replace a real directory.
+   `j`, `redo`, `check-seer-adversarial-nightly` and `trace-vlc-bug`. It refuses to replace a real directory.
 3. Runs `scripts/claude-hooks.mjs install`, which merges the six hook entries into
    `~/.claude/settings.json`.
 4. Runs `scripts/claude-hooks.mjs retention`, which raises `cleanupPeriodDays` to 3650 when it is

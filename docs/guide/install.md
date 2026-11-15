@@ -50,7 +50,7 @@ and restarted. Each run:
 | Linger | `loginctl enable-linger $USER`, so the unit starts when the distro boots, not when you first open a shell. When that needs a password the script says so: run `sudo loginctl enable-linger $USER` once. |
 | Health | Waits up to 30 s for `GET http://127.0.0.1:7317/health`, and prints the journal when it does not answer. |
 | MCP registration | `claude mcp remove --scope user notes`, then `claude mcp add --scope user --transport http notes http://localhost:7317/mcp`. |
-| Skills | Symlinks `n`, `migrate`, `v`, `j`, `redo` and `check-seer-adversarial-nightly` from `claude/skills/` into `~/.claude/skills/`. |
+| Skills | Symlinks `n`, `migrate`, `v`, `j`, `redo`, `check-seer-adversarial-nightly` and `trace-vlc-bug` from `claude/skills/` into `~/.claude/skills/`. |
 | Hooks | `scripts/claude-hooks.mjs` merges six hooks into `~/.claude/settings.json` (user scope, so every repo), keeping everything else: notes-capture, notes-link, notes-paste, notes-prompt, notes-session, notes-spawn. A copy of the original file is kept once as `settings.json.bak-notes-hooks`. What each hook does is in [claude-code.md](claude-code.md). |
 | Transcript retention | Raises `cleanupPeriodDays` in the same file to at least 3650 (`NOTES_CLAUDE_RETENTION_DAYS`), so Claude Code keeps the transcripts the session graph reads. A higher value is kept. |
 | Verification | Prints each check and exits non-zero unless the unit is active, `/health` answers, `claude mcp list` shows `notes` connected, and one real chat message through the daemon ends with `event: done`. |
@@ -263,7 +263,7 @@ It stops and removes the unit, runs `claude mcp remove --scope user notes`, remo
 keeping every other setting. It keeps:
 
 - the data dir (`~/mcp-notes-data`) and the database;
-- the other skill symlinks (`migrate`, `v`, `j`, `redo`, `check-seer-adversarial-nightly`):
+- the other skill symlinks (`migrate`, `v`, `j`, `redo`, `check-seer-adversarial-nightly`, `trace-vlc-bug`):
   remove them from `~/.claude/skills/` by hand;
 - the hooks' state in `~/.local/state/notes-capture` and `settings.json.bak-notes-hooks`;
 - the raised `cleanupPeriodDays` (lowering it would let Claude Code delete old transcripts);

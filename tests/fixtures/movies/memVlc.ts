@@ -7,6 +7,8 @@ export interface MemInstance {
   time: number;
   length: number;
   up: boolean;
+  /** `stats.decodedvideo` / `stats.displayedpictures`; absent: status.json without stats. */
+  video?: { decoded: number; displayed: number };
 }
 
 export class MemVlc implements VlcLauncher, VlcStatusReader {
@@ -29,7 +31,7 @@ export class MemVlc implements VlcLauncher, VlcStatusReader {
     const i = this.instances.get(ep.port);
     if (i === undefined || !i.up) return { kind: 'gone' };
     if (i.password !== ep.password) return { kind: 'unauthorized' };
-    return { kind: 'ok', status: { state: i.state, time: i.time, length: i.length } };
+    return { kind: 'ok', status: { state: i.state, time: i.time, length: i.length, ...(i.video === undefined ? {} : { video: { ...i.video } }) } };
   }
 
   async status(_curl: string, ep: VlcEndpoint): Promise<VlcReply> {

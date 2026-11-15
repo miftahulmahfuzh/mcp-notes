@@ -12,8 +12,11 @@ import {
   lastJsonLine,
   powershellArgs,
   powershellEventLogReader,
+  powershellGpuEventReader,
   type EventLogReader,
   type EventsResult,
+  type GpuEventReader,
+  type GpuEventsResult,
   type UncleanSampling,
 } from './incidents.js';
 
@@ -39,6 +42,12 @@ export const REPORT_INCIDENTS = 20;
 /** close() waits this long at most for a start-up incident still reading the Windows event log. */
 export const INCIDENT_WAIT_ON_CLOSE_MS = 3000;
 export const CMD_MAX_CHARS = 600;
+/** Each sampling tick asks for display-driver events this far back; lines already written are skipped. */
+export const GPU_EVENTS_OVERLAP_MS = 2 * 60_000;
+/** A video stall's start line names the display-driver events of this long before it. */
+export const STALL_GPU_LOOKBACK_MS = 60 * 60_000;
+export const REPORT_STALLS = 50;
+export const REPORT_GPU_RESETS = 50;
 
 // ---- Log records: one JSON object per line. The schemas are the boundary for reading the file back.
 
@@ -53,6 +62,10 @@ const samplePlaySchema = z.object({
   paused_s: z.number().nullable(),
   http_silent_s: z.number().nullable(),
   hung: z.boolean(),
+  /** Absent on lines written before the video-stall rule. */
+  video_stalled: z.boolean().optional(),
+  decoded_video: z.number().nullable().optional(),
+  displayed_pictures: z.number().nullable().optional(),
 });
 const sampleSchema = z.object({
   kind: z.literal('sample'),
@@ -100,6 +113,41 @@ const winFaultEventSchema = z.object({
   exception_code: z.string().nullable(),
   message: z.string().nullable(),
 });
+const winGpuEventSchema = z.object({
+  time: z.string(),
+  event_id: z.number(),
+  provider: z.string(),
+  message: z.string().nullable(),
+});
+/** One display-driver event seen while a vlc.exe existed: which VLCs it hit, and the followed play at that moment. */
+const gpuResetSchema = z.object({
+  kind: z.literal('gpu_reset'),
+  ...stamp,
+  time: z.string(),
+  event_id: z.number(),
+  provider: z.string(),
+  message: z.string().nullable(),
+  vlc_pids: z.array(z.number()),
+  play: samplePlaySchema.nullable(),
+});
+const stallOutcomeSchema = z.enum(['recovered', 'exited', 'tracking_ended']);
+/** A VLC that says `playing` with its clock advancing and its video counters frozen. */
+const videoStallSchema = z.object({
+  kind: z.literal('video_stall'),
+  ...stamp,
+  phase: z.enum(['start', 'end']),
+  pid: z.number().nullable(),
+  port: z.number(),
+  play_id: z.number(),
+  file_id: z.number(),
+  name: z.string(),
+  position_s: z.number(),
+  stalled_s: z.number(),
+  outcome: stallOutcomeSchema.nullable(),
+  /** Start lines: the display-driver events of the hour before, the usual cause. */
+  gpu_events: z.array(winGpuEventSchema),
+  gpu_events_error: z.string().nullable(),
+});
 const incidentSchema = z.object({
   kind: z.literal('incident'),
   ...stamp,
@@ -112,8 +160,19 @@ const incidentSchema = z.object({
   open_play: samplePlaySchema.nullable(),
   events: z.array(winFaultEventSchema),
   events_error: z.string().nullable(),
+  /** Absent on lines written before display-driver events were read. */
+  gpu_events: z.array(winGpuEventSchema).optional(),
 });
-const recordSchema = z.discriminatedUnion('kind', [startSchema, sampleSchema, idleSchema, hangSchema, cleanStopSchema, incidentSchema]);
+const recordSchema = z.discriminatedUnion('kind', [
+  startSchema,
+  sampleSchema,
+  idleSchema,
+  hangSchema,
+  cleanStopSchema,
+  incidentSchema,
+  gpuResetSchema,
+  videoStallSchema,
+]);
 
 export type SamplePlay = z.infer<typeof samplePlaySchema>;
 export type SampleRecord = z.infer<typeof sampleSchema>;
@@ -125,6 +184,10 @@ export type IdleRecord = z.infer<typeof idleSchema>;
 export type CleanStopRecord = z.infer<typeof cleanStopSchema>;
 export type WinFaultEvent = z.infer<typeof winFaultEventSchema>;
 export type IncidentRecord = z.infer<typeof incidentSchema>;
+export type WinGpuEvent = z.infer<typeof winGpuEventSchema>;
+export type GpuResetRecord = z.infer<typeof gpuResetSchema>;
+export type StallOutcome = z.infer<typeof stallOutcomeSchema>;
+export type VideoStallRecord = z.infer<typeof videoStallSchema>;
 export type HealthRecord = z.infer<typeof recordSchema>;
 
 /** One log line -> a record; null for a blank, torn or foreign line. */
@@ -412,6 +475,10 @@ export interface TrackedVlc {
   pausedSince: Date | null;
   silentSince: Date | null;
   hung: boolean;
+  /** The video-stall rule (MoviePlayer.checkVideo). */
+  videoStalled?: boolean;
+  decodedVideo?: number | null;
+  displayedPictures?: number | null;
 }
 
 /** Whether the vlc.exe behind an endpoint still exists. `unknown`: no command lines to match. */
@@ -429,10 +496,23 @@ interface HangEventBase {
 
 export type HangEvent = (HangEventBase & { phase: 'start' }) | (HangEventBase & { phase: 'end'; outcome: HangOutcome });
 
-/** What MoviePlayer needs from the monitor for the hang rule (R8.3). */
+interface StallEventBase {
+  pid: number | null;
+  port: number;
+  playId: number;
+  fileId: number;
+  name: string;
+  positionS: number;
+  stalledSince: Date;
+}
+
+export type VideoStallEvent = (StallEventBase & { phase: 'start' }) | (StallEventBase & { phase: 'end'; outcome: StallOutcome });
+
+/** What MoviePlayer needs from the monitor for the hang rule (R8.3) and the video-stall rule. */
 export interface PlayerHealthLink {
   processAlive(ep: VlcEndpoint): Promise<PidCheck>;
   onHang(e: HangEvent): void;
+  onVideoStall?(e: VideoStallEvent): void;
 }
 
 function secondsSince(since: Date | null, now: Date): number | null {
@@ -441,6 +521,22 @@ function secondsSince(since: Date | null, now: Date): number | null {
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+function samplePlay(t: TrackedVlc, now: Date): SamplePlay {
+  return {
+    play_id: t.playId,
+    file_id: t.fileId,
+    name: t.name,
+    state: t.state,
+    position_s: round1(t.positionS),
+    paused_s: t.state === 'paused' ? secondsSince(t.pausedSince, now) : null,
+    http_silent_s: secondsSince(t.silentSince, now),
+    hung: t.hung,
+    video_stalled: t.videoStalled ?? false,
+    decoded_video: t.decodedVideo ?? null,
+    displayed_pictures: t.displayedPictures ?? null,
+  };
 }
 
 /** One sample line. `play` only on the VLC whose command line carries the tracked play's password. */
@@ -456,19 +552,7 @@ export function sampleRecord(host: string, now: Date, p: VlcProcess, tracked: Tr
     handles: p.handles,
     proc_started_at: p.startedAt,
     ours: p.commandLine === null ? null : startedByNotesd(p.commandLine),
-    play:
-      t === null
-        ? null
-        : {
-            play_id: t.playId,
-            file_id: t.fileId,
-            name: t.name,
-            state: t.state,
-            position_s: round1(t.positionS),
-            paused_s: t.state === 'paused' ? secondsSince(t.pausedSince, now) : null,
-            http_silent_s: secondsSince(t.silentSince, now),
-            hung: t.hung,
-          },
+    play: t === null ? null : samplePlay(t, now),
     cmd: withCmd && p.commandLine !== null ? redactCommandLine(p.commandLine) : null,
   };
 }
@@ -487,6 +571,41 @@ export function hangRecord(host: string, now: Date, e: HangEvent): HangRecord {
     position_s: round1(e.positionS),
     silent_s: secondsSince(e.silentSince, now) ?? 0,
     outcome: e.phase === 'end' ? e.outcome : null,
+  };
+}
+
+export function videoStallRecord(host: string, now: Date, e: VideoStallEvent, gpu: GpuEventsResult | null): VideoStallRecord {
+  return {
+    kind: 'video_stall',
+    ts: now.toISOString(),
+    host,
+    phase: e.phase,
+    pid: e.pid,
+    port: e.port,
+    play_id: e.playId,
+    file_id: e.fileId,
+    name: e.name,
+    position_s: round1(e.positionS),
+    stalled_s: secondsSince(e.stalledSince, now) ?? 0,
+    outcome: e.phase === 'end' ? e.outcome : null,
+    gpu_events: gpu?.kind === 'ok' ? gpu.events : [],
+    gpu_events_error: gpu?.kind === 'error' ? gpu.message : null,
+  };
+}
+
+/** A display-driver event while VLC ran. `play` only when the followed VLC is among the processes. */
+export function gpuResetRecord(host: string, now: Date, e: WinGpuEvent, processes: readonly VlcProcess[], tracked: TrackedVlc | null): GpuResetRecord {
+  const ours = tracked !== null && processes.some((p) => p.commandLine !== null && p.commandLine.includes(tracked.password));
+  return {
+    kind: 'gpu_reset',
+    ts: now.toISOString(),
+    host,
+    time: e.time,
+    event_id: e.event_id,
+    provider: e.provider,
+    message: e.message,
+    vlc_pids: processes.map((p) => p.pid),
+    play: ours && tracked !== null ? samplePlay(tracked, now) : null,
   };
 }
 
@@ -594,6 +713,10 @@ export interface HealthReport extends HealthStatus {
   samples: SampleRecord[];
   runs: VlcRunSummary[];
   hangs: HangRecord[];
+  /** Video stalls: playing, clock advancing, no new frames. */
+  stalls: VideoStallRecord[];
+  /** Display-driver events (4101: the driver was reset) seen while a vlc.exe existed. */
+  gpu_resets: GpuResetRecord[];
   incidents: IncidentRecord[];
   last_start: StartRecord | null;
 }
@@ -611,6 +734,8 @@ export function healthReport(records: readonly HealthRecord[], o: { host: string
     samples: samples.slice(-o.limit),
     runs: summarizeRuns(samples),
     hangs: hangs.slice(-REPORT_HANGS),
+    stalls: records.filter((r): r is VideoStallRecord => r.kind === 'video_stall').slice(-REPORT_STALLS),
+    gpu_resets: records.filter((r): r is GpuResetRecord => r.kind === 'gpu_reset').slice(-REPORT_GPU_RESETS),
     incidents: incidents.slice(-REPORT_INCIDENTS),
     last_start: lastStart,
   };
@@ -632,6 +757,8 @@ export interface HealthMonitorDeps {
   makeLister?: (env: HealthEnv) => ProcessLister;
   /** Default: powershellEventLogReader when powershell.exe exists, else null. */
   makeEvents?: (env: HealthEnv) => EventLogReader | null;
+  /** Default: powershellGpuEventReader when powershell.exe exists, else null. */
+  makeGpuEvents?: (env: HealthEnv) => GpuEventReader | null;
   now?: () => Date;
   log?: (line: string) => void;
   maxLogBytes?: number;
@@ -640,7 +767,7 @@ export interface HealthMonitorDeps {
 type Mode =
   | { kind: 'not_started' }
   | { kind: 'off'; reason: HealthOffReason }
-  | { kind: 'on'; env: HealthEnv; lister: ProcessLister; events: EventLogReader | null };
+  | { kind: 'on'; env: HealthEnv; lister: ProcessLister; events: EventLogReader | null; gpu: GpuEventReader | null };
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -649,7 +776,8 @@ function message(err: unknown): string {
 /**
  * Samples every vlc.exe on this host into the health log (R8.1), writes an incident at start when
  * the previous run died while sampling (R8.2), records the player's hangs (R8.3) and answers the
- * health route (R8.5). Read only on the Windows side: it never kills, pauses or restarts a VLC.
+ * health route (R8.5). While a vlc.exe exists it also writes one `gpu_reset` line per display-driver
+ * event, and a `video_stall` line when the player reports frozen video. Read only on the Windows side: it never kills, pauses or restarts a VLC.
  */
 export class HealthMonitor implements PlayerHealthLink {
   readonly store: HealthLog;
@@ -661,6 +789,12 @@ export class HealthMonitor implements PlayerHealthLink {
   private sampling = false;
   private listErrorLogged = false;
   private cmdLogged = new Set<number>();
+  private gpuErrorLogged = false;
+  /** `time|event id` of the display-driver events already written, newest last. */
+  private gpuSeen: string[] = [];
+  private gpuCheckedTo: Date | null = null;
+  /** Stall lines are written in order, each start after its event read. */
+  private stallQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: HealthMonitorDeps) {
     this.store = new HealthLog(deps.logDir, deps.host, deps.maxLogBytes ?? MAX_LOG_BYTES);
@@ -696,6 +830,12 @@ export class HealthMonitor implements PlayerHealthLink {
         : d.env.powershell === null
           ? null
           : powershellEventLogReader(d.env.powershell);
+    const gpu =
+      this.deps.makeGpuEvents !== undefined
+        ? this.deps.makeGpuEvents(d.env)
+        : d.env.powershell === null
+          ? null
+          : powershellGpuEventReader(d.env.powershell);
     const startedAt = this.now();
     const previous = analyzePreviousRun(this.store.readTail(TAIL_BYTES));
     this.store.append({
@@ -707,14 +847,14 @@ export class HealthMonitor implements PlayerHealthLink {
       process_detail: d.env.powershell !== null,
       previous: previous.kind,
     });
-    this.mode = { kind: 'on', env: d.env, lister, events };
+    this.mode = { kind: 'on', env: d.env, lister, events, gpu };
     this.say(
       `[notesd] vlc health: sampling vlc.exe every ${Math.round(this.deps.intervalMs / 1000)} s into ${this.store.file}` +
         (d.env.powershell === null ? ' (no powershell.exe: pid and working set only)' : ''),
     );
     if (previous.kind === 'unclean_sampling') {
       this.say(`[notesd] vlc health: the previous run stopped uncleanly at ${previous.lastRecordAt} while vlc.exe was sampled; writing an incident`);
-      this.incident = this.recordIncident(previous, events, startedAt).catch((err: unknown) =>
+      this.incident = this.recordIncident(previous, events, gpu, startedAt).catch((err: unknown) =>
         this.say(`[notesd] vlc health: incident failed: ${message(err)}`),
       );
     }
@@ -726,11 +866,12 @@ export class HealthMonitor implements PlayerHealthLink {
     if (this.incident !== null) await this.incident;
   }
 
-  private async recordIncident(previous: UncleanSampling, events: EventLogReader | null, startedAt: Date): Promise<void> {
+  private async recordIncident(previous: UncleanSampling, events: EventLogReader | null, gpu: GpuEventReader | null, startedAt: Date): Promise<void> {
     const window = incidentWindow(previous, startedAt);
     const result: EventsResult =
       events === null ? { kind: 'error', message: 'no powershell.exe: Windows events not read' } : await events.read(window.from, window.to);
-    const record = buildIncident({ host: this.deps.host, now: this.now(), previous, window, events: result });
+    const gpuEvents = gpu === null ? undefined : await gpu.read(window.from, window.to);
+    const record = buildIncident({ host: this.deps.host, now: this.now(), previous, window, events: result, ...(gpuEvents === undefined ? {} : { gpuEvents }) });
     this.store.append(record);
     this.say(
       `[notesd] vlc health: incident written: ${record.samples.length} sample(s), ${record.events.length} Windows fault event(s)` +
@@ -771,6 +912,7 @@ export class HealthMonitor implements PlayerHealthLink {
       if (this.sampling) this.store.append({ kind: 'idle', ts: now.toISOString(), host: this.deps.host });
       this.sampling = false;
       this.cmdLogged.clear();
+      this.gpuCheckedTo = null;
       return 0;
     }
     const tracked = this.deps.tracked();
@@ -782,7 +924,31 @@ export class HealthMonitor implements PlayerHealthLink {
     }
     this.cmdLogged = logged;
     this.sampling = true;
+    await this.recordGpuResets(now, listing.processes, tracked);
     return listing.processes.length;
+  }
+
+  /** One `gpu_reset` line per display-driver event not yet written. Only runs while a vlc.exe exists. */
+  private async recordGpuResets(now: Date, processes: readonly VlcProcess[], tracked: TrackedVlc | null): Promise<void> {
+    if (this.mode.kind !== 'on' || this.mode.gpu === null) return;
+    const from = new Date((this.gpuCheckedTo ?? now).getTime() - GPU_EVENTS_OVERLAP_MS - this.deps.intervalMs);
+    const result = await this.mode.gpu.read(from, now);
+    if (this.closed) return;
+    if (result.kind === 'error') {
+      if (!this.gpuErrorLogged) this.say(`[notesd] vlc health: reading display-driver events failed: ${result.message}`);
+      this.gpuErrorLogged = true;
+      return;
+    }
+    this.gpuErrorLogged = false;
+    this.gpuCheckedTo = now;
+    for (const e of result.events) {
+      const key = `${e.time}|${e.event_id}`;
+      if (this.gpuSeen.includes(key)) continue;
+      this.gpuSeen.push(key);
+      if (this.gpuSeen.length > 200) this.gpuSeen.shift();
+      this.store.append(gpuResetRecord(this.deps.host, this.now(), e, processes, tracked));
+      this.say(`[notesd] vlc health: display driver event ${e.event_id} at ${e.time} while vlc.exe ran (pid ${processes.map((p) => p.pid).join(', ')}): ${e.message ?? ''}`);
+    }
   }
 
   async processAlive(ep: VlcEndpoint): Promise<PidCheck> {
@@ -803,6 +969,22 @@ export class HealthMonitor implements PlayerHealthLink {
     } catch (err) {
       this.say(`[notesd] vlc health: could not write a hang line: ${message(err)}`);
     }
+  }
+
+  /** A start line waits for the display-driver events of the hour before it; lines keep their order. */
+  onVideoStall(e: VideoStallEvent): void {
+    const mode = this.mode;
+    if (mode.kind !== 'on' || this.closed) return;
+    this.stallQueue = this.stallQueue
+      .then(async () => {
+        let gpu: GpuEventsResult | null = null;
+        if (e.phase === 'start' && mode.gpu !== null) {
+          const now = this.now();
+          gpu = await mode.gpu.read(new Date(Math.min(now.getTime(), e.stalledSince.getTime()) - STALL_GPU_LOOKBACK_MS), now);
+        }
+        this.store.append(videoStallRecord(this.deps.host, this.now(), e, gpu));
+      })
+      .catch((err: unknown) => this.say(`[notesd] vlc health: could not write a video stall line: ${message(err)}`));
   }
 
   status(): HealthStatus {
@@ -829,6 +1011,7 @@ export class HealthMonitor implements PlayerHealthLink {
       this.timer = null;
     }
     if (this.inFlight !== null) await this.inFlight;
+    await this.stallQueue;
     if (this.incident !== null) {
       let waiter: NodeJS.Timeout | undefined;
       await Promise.race([
@@ -851,6 +1034,7 @@ export interface VlcHealthOptions {
   probe?: DetectProbe;
   makeLister?: (env: HealthEnv) => ProcessLister;
   makeEvents?: (env: HealthEnv) => EventLogReader | null;
+  makeGpuEvents?: (env: HealthEnv) => GpuEventReader | null;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -867,6 +1051,7 @@ export function buildVlcHealth(o: VlcHealthOptions): HealthMonitor {
     tracked: o.tracked,
     ...(o.makeLister !== undefined ? { makeLister: o.makeLister } : {}),
     ...(o.makeEvents !== undefined ? { makeEvents: o.makeEvents } : {}),
+    ...(o.makeGpuEvents !== undefined ? { makeGpuEvents: o.makeGpuEvents } : {}),
     ...(o.now !== undefined ? { now: o.now } : {}),
     ...(o.log !== undefined ? { log: o.log } : {}),
   });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { execCapture, type ExecFn } from './http.js';
-import type { HangRecord, HealthRecord, IncidentRecord, SamplePlay, SampleRecord, WinFaultEvent } from './health.js';
+import type { HangRecord, HealthRecord, IncidentRecord, SamplePlay, SampleRecord, WinFaultEvent, WinGpuEvent } from './health.js';
 
 /** Samples of the dead run an incident keeps (20 min at the default 30 s). */
 export const INCIDENT_SAMPLES = 40;
@@ -165,6 +165,67 @@ export function powershellEventLogReader(powershell: string, exec: ExecFn = exec
   };
 }
 
+/**
+ * The graphics driver's own events (System log, provider `Display`) between two instants. 4101 is
+ * "Display driver <name> stopped responding and has successfully recovered": every Direct3D device
+ * is removed, and a VLC 3 that was drawing with one keeps running with a dead picture.
+ * MEASURED 2026-11-15 on Intel Arc (igfxn): a 4101 while VLC was paused left it answering HTTP,
+ * `Responding: True`, its clock advancing on play and its video counters frozen.
+ */
+export const DISPLAY_DRIVER_RESET_ID = 4101;
+
+export function gpuEventsScript(from: Date, to: Date): string {
+  return [
+    "$ProgressPreference = 'SilentlyContinue'",
+    '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
+    `$from = [DateTimeOffset]::Parse('${from.toISOString()}').LocalDateTime`,
+    `$to = [DateTimeOffset]::Parse('${to.toISOString()}').LocalDateTime`,
+    "$ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Display'; StartTime = $from; EndTime = $to } -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ time = $_.TimeCreated.ToUniversalTime().ToString('o'); id = [int]$_.Id; provider = $_.ProviderName; message = $_.Message } })",
+    'ConvertTo-Json -InputObject $ev -Compress -Depth 3',
+  ].join('\n');
+}
+
+/** gpuEventsScript's stdout -> events, oldest first; null when it is not that JSON. */
+export function parseGpuEvents(stdout: string): WinGpuEvent[] | null {
+  const json = lastJsonLine(stdout);
+  if (json === null) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const parsed = z.union([z.array(rawEventSchema), rawEventSchema]).safeParse(raw);
+  if (!parsed.success) return null;
+  const list = Array.isArray(parsed.data) ? parsed.data : [parsed.data];
+  return list
+    .map((e) => ({
+      time: e.time,
+      event_id: e.id,
+      provider: e.provider,
+      message: e.message === undefined || e.message === null ? null : e.message.trim().slice(0, EVENT_MESSAGE_CHARS),
+    }))
+    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+}
+
+export type GpuEventsResult = { kind: 'ok'; events: WinGpuEvent[] } | { kind: 'error'; message: string };
+
+/** Reads the Windows System log's display-driver events. Read only; never throws. */
+export interface GpuEventReader {
+  read(from: Date, to: Date): Promise<GpuEventsResult>;
+}
+
+export function powershellGpuEventReader(powershell: string, exec: ExecFn = execCapture): GpuEventReader {
+  return {
+    async read(from, to) {
+      const r = await exec(powershell, powershellArgs(gpuEventsScript(from, to)), EVENTS_TIMEOUT_MS);
+      if (r.exitCode !== 0) return { kind: 'error', message: `powershell.exe exited ${r.exitCode}` };
+      const events = parseGpuEvents(r.stdout);
+      return events === null ? { kind: 'error', message: 'unreadable Get-WinEvent output' } : { kind: 'ok', events };
+    },
+  };
+}
+
 /** One incident line: the dead run's last samples, its hangs, the play it followed, and the in-window events. */
 export function buildIncident(input: {
   host: string;
@@ -172,6 +233,8 @@ export function buildIncident(input: {
   previous: UncleanSampling;
   window: { from: Date; to: Date };
   events: EventsResult;
+  /** Display-driver events in the same window; absent when they were not read. */
+  gpuEvents?: GpuEventsResult;
 }): IncidentRecord {
   const fromMs = input.window.from.getTime();
   const toMs = input.window.to.getTime();
@@ -201,5 +264,6 @@ export function buildIncident(input: {
     open_play: openPlay,
     events,
     events_error: input.events.kind === 'error' ? input.events.message : null,
+    gpu_events: input.gpuEvents?.kind === 'ok' ? input.gpuEvents.events : [],
   };
 }

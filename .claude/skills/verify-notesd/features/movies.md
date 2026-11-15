@@ -6,7 +6,11 @@
   `<dataDir>/movies/vlc-health-<host>.jsonl` (fsync'd lines: start, sample, idle, hang, clean_stop,
   incident). An unclean stop while sampling gives one incident on the next start with the Windows
   fault events around the last sample; a notesd VLC that stops answering while its process lives
-  gets a hang line and its play stays open. `GET /api/movies/player/health` returns it. Proof:
+  gets a hang line and its play stays open. While a `vlc.exe` exists each Windows `Display` event
+  (4101: the driver was reset) gets a `gpu_reset` line, and a followed VLC that says `playing`
+  with its clock advancing and its video counters frozen for three polls gets a `video_stall` line
+  and `video_stalled: true` on `GET /api/movies/player`. `GET /api/movies/player/health` returns it
+  (`stalls`, `gpu_resets`). Proof: `npx vitest run tests/unit/movies/vlc.videoStall.test.ts` and
   `npm run test:int -- tests/integration/movies.health.int.test.ts tests/integration/movies.healthCrash.int.test.ts`
   (fake Windows side `tests/fixtures/movies/fake-windows.mjs`; the crash test needs WSL interop and
   is `inconclusive` elsewhere). `verify.sh up --movies` pins it off.

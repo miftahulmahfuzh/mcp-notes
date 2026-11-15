@@ -3,11 +3,19 @@ import { VLC_HTTP_HOST } from './launch.js';
 
 export type VlcState = 'playing' | 'paused' | 'stopped';
 
-/** The three fields of `/requests/status.json` notesd uses. `time`/`length` are seconds. */
+/** VLC's running video counters (`stats.decodedvideo`, `stats.displayedpictures`): the video-stall rule compares two reads. */
+export interface VlcVideoCounters {
+  decoded: number;
+  displayed: number;
+}
+
+/** The fields of `/requests/status.json` notesd uses. `time`/`length` are seconds. */
 export interface VlcStatus {
   state: VlcState;
   time: number;
   length: number;
+  /** Absent when status.json carries no `stats` (nothing loaded, or not VLC's shape). */
+  video?: VlcVideoCounters;
 }
 
 export interface VlcEndpoint {
@@ -99,7 +107,17 @@ export function parseStatusJson(text: string): VlcStatus | null {
   const state = o.state;
   if (state !== 'playing' && state !== 'paused' && state !== 'stopped') return null;
   const seconds = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
-  return { state, time: seconds(o.time), length: seconds(o.length) };
+  const video = parseVideoCounters(o.stats);
+  return { state, time: seconds(o.time), length: seconds(o.length), ...(video === null ? {} : { video }) };
+}
+
+function parseVideoCounters(stats: unknown): VlcVideoCounters | null {
+  if (typeof stats !== 'object' || stats === null) return null;
+  const s = stats as Record<string, unknown>;
+  const count = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const decoded = count(s.decodedvideo);
+  const displayed = count(s.displayedpictures);
+  return decoded === null || displayed === null ? null : { decoded, displayed };
 }
 
 /**

@@ -388,7 +388,8 @@ freezes after the fact.
   state, position, seconds paused, seconds without an HTTP answer, and whether it is hung. The
   per-launch password is redacted from logged command lines.
 - **Where.** `<NOTES_DATA_DIR>/movies/vlc-health-<host>.jsonl`, one JSON object per line: `start`,
-  `sample`, `idle` (the last VLC went away), `hang`, `clean_stop`, `incident`. It is a file, fsync'd
+  `sample`, `idle` (the last VLC went away), `hang`, `gpu_reset`, `video_stall`, `clean_stop`,
+  `incident`. It is a file, fsync'd
   line by line, and not a database table, so the lines before a WSL or Windows crash are on disk
   even though the daemon died with it. The file is capped at 5 MB with one previous file kept.
 - **Incidents.** At start the tail of the log is read. If the previous run ended without a
@@ -399,9 +400,28 @@ freezes after the fact.
   one `hang` start line is written and the play stays open at its last position, however long the
   silence lasts. An end line follows when it answers again, exits, or tracking ends. When the
   process is gone the play closes at once.
+- **Driver resets.** While any `vlc.exe` exists, every sample also reads the Windows System log
+  for `Display` events and writes one `gpu_reset` line per new one, with the VLC pids and the
+  followed play at that moment. Event 4101 ("display driver stopped responding and has successfully
+  recovered") removes every Direct3D device, and VLC 3 never rebuilds its own: it keeps answering,
+  keeps its window and plays sound, with no picture. An incident lists the same events
+  (`gpu_events`).
+- **Video stalls.** The player reads VLC's `decodedvideo` and `displayedpictures` counters with
+  every poll. Three polls in a row that say `playing` with the clock ahead and neither counter
+  moved, in a play whose counters did move before, write one `video_stall` start line with the
+  display-driver events of the hour before it, and `GET /api/movies/player` answers
+  `video_stalled: true`. The play stays open and keeps following the clock. An end line follows
+  when frames come back, VLC exits or tracking ends. Only a VLC on the default `direct3d11` output
+  is caught: the `direct3d9` and `directdraw` outputs freeze the same way and keep counting.
 - **Reading it.** `GET /api/movies/player/health?limit=` returns the newest samples (default 200,
   at most 2000), a summary per VLC run (including memory growth per minute, and per paused minute,
-  which is the leak signal), the hang lines and the incidents. There is no page and no tool for it.
+  which is the leak signal), the hang lines, the stalls, the driver resets and the incidents. There
+  is no page and no tool for it.
+- **Tracing a problem.** The `/trace-vlc-bug` skill (`claude/skills/trace-vlc-bug`) reads this log
+  together with VLC's windows and counters, the Windows event logs and screenshots into
+  `<NOTES_DATA_DIR>/movies/vlc-traces/<stamp>/`, and holds the table of known causes. On a machine
+  whose graphics driver resets, `NOTESD_VLC_EXTRA_ARGS=--vout=wingdi --avcodec-hw=none` keeps VLC
+  off Direct3D, the one setting measured to play through a reset.
 
 The monitor only reads on the Windows side. It needs `tasklist.exe`; without `powershell.exe`
 samples keep pid and working set only, and there are no Windows events. It is off with
@@ -683,10 +703,11 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/ids.ts` | Movie id shape and lookup (ids are written by the database) |
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
-| `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule |
+| `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |
-| `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, crash incidents |
+| `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
+| `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
