@@ -7,7 +7,7 @@ import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
 import { errorCode, startSync } from '../moviesApi';
-import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, stalledText, unmatchedCount, type MoviesFilter } from '../lib/movies';
+import { emptyLibraryText, isMoviesOff, MOVIES_OFF_TEXT, detailIsFor, moviesErrorText, moviesPillPlaceholder, normalizeMovieId, NO_MOVIES_FILTER, stalledText, unmatchedCount, entityHint, entityQuestion, entitySearchQuery, type MovieEntity, type MoviesFilter } from '../lib/movies';
 import { NO_MOVIES_ROUTE, type MoviesRoute } from '../lib/route';
 import '../components/movies/Movies.css';
 
@@ -16,7 +16,15 @@ export interface MoviesPageProps {
   route: MoviesRoute;
   /** Push another movies URL (grid, a title, the unmatched list). */
   onRoute: (r: MoviesRoute) => void;
-  onAsk: (text: string, imageIds: string[]) => void;
+  onAsk: (text: string, imageIds: string[], entity?: MoviesEntityAsk) => void;
+  /** An answer is still streaming in the wall's answer panel: entity links wait for it. */
+  asking?: boolean;
+}
+
+/** What an entity link adds to its question: the person id for the agent, and what the Google icon under the answer searches. */
+export interface MoviesEntityAsk {
+  hint: string | null;
+  search: string;
 }
 
 function MoviesEmpty({ text }: { text: string }) {
@@ -35,7 +43,7 @@ function MoviesEmpty({ text }: { text: string }) {
  *   pill        "Ask about your movies"; "Ask about <title>" on a title's page
  * The filter lives here, so it survives opening a title and coming back.
  */
-export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
+export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: MoviesPageProps) {
   const { notice, show } = useNotice(6000);
   const [filter, setFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
   const [busy, setBusy] = useState(false);
@@ -73,7 +81,13 @@ export function MoviesPage({ store, route, onRoute, onAsk }: MoviesPageProps) {
   else if (route.title !== null) {
     if (store.detailError !== null) content = <MoviesEmpty text={moviesErrorText(store.detailError, route.title)} />;
     else if (!detailIsFor(store.detail, route.title)) content = <p className="mv-empty mv-content">loading</p>;
-    else content = <MovieDetail detail={store.detail} player={store.player} focus={normalizeMovieId(route.title)} onChanged={store.refresh} onNotice={show} />;
+    else {
+      const detail = store.detail;
+      const askEntity = (e: MovieEntity) => onAsk(entityQuestion(e, detail), [], { hint: entityHint(e), search: entitySearchQuery(e, detail) });
+      content = (
+        <MovieDetail detail={detail} player={store.player} focus={normalizeMovieId(route.title)} onChanged={store.refresh} onNotice={show} onEntity={askEntity} asking={asking} />
+      );
+    }
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
   else if (store.titles.length === 0) content = <MoviesEmpty text={emptyLibraryText(store.status)} />;

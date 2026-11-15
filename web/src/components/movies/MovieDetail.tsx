@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
 import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { CAST_LIMIT, clock, continueNotice, creditRows, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive } from '../../lib/movies';
+import { CAST_LIMIT, clock, continueNotice, creditGroups, kindLabel, playErrorText, playLabel, playPlan, releaseText, runtimeText, seasonsText, startedNotice, STATE_LABEL, TILE_LIVE_LABEL, tileLive, type MovieEntity } from '../../lib/movies';
 import { EpisodeList } from './EpisodeList';
-import { FileRow } from './parts';
+import { EntityLink, FileRow } from './parts';
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
@@ -16,6 +16,10 @@ export interface MovieDetailProps {
   /** Re-read the store after a write (the server's state wins). */
   onChanged: () => void;
   onNotice: (text: string) => void;
+  /** Asks about a person, studio, character or genre through the page's pill. Absent: the names are plain text. */
+  onEntity?: (e: MovieEntity) => void;
+  /** An answer is streaming: entity links wait. */
+  asking?: boolean;
 }
 
 /**
@@ -24,7 +28,7 @@ export interface MovieDetailProps {
  * directors, writers, producers; creators for a series), the cast with character names, then the
  * film's files or the series' episodes, each with progress and its deleted / other-machine flag.
  */
-export function MovieDetail({ detail: d, player, focus = null, onChanged, onNotice }: MovieDetailProps) {
+export function MovieDetail({ detail: d, player, focus = null, onChanged, onNotice, onEntity, asking = false }: MovieDetailProps) {
   const [watched, setWatched] = useState(d.watched);
   const [rating, setRating] = useState<number | null>(d.rating);
   const [busy, setBusy] = useState(false);
@@ -101,9 +105,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const facts = [
     d.release_date !== null ? `Released ${releaseText(d.release_date)}` : d.year !== null ? String(d.year) : '',
     d.kind === 'tv' ? seasonsText(d.season_count) : runtimeText(d.runtime_min),
-    d.genres.join(', '),
   ].filter((s) => s !== '');
-  const credits = creditRows(d);
+  const credits = creditGroups(d);
 
   return (
     <article className="mv-detail mv-content" aria-label={d.title} data-title={d.id}>
@@ -127,6 +130,16 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             {facts.map((f, i) => (
               <span key={i}>{f}</span>
             ))}
+            {d.genres.length > 0 && (
+              <span className="mv-genres">
+                {d.genres.map((g, i) => (
+                  <Fragment key={g}>
+                    {i > 0 && ', '}
+                    <EntityLink entity={{ kind: 'genre', name: g }} onAsk={onEntity} busy={asking} />
+                  </Fragment>
+                ))}
+              </span>
+            )}
             <span className="mv-chip">
               {kindLabel(d.kind)} · {STATE_LABEL[d.state]}
             </span>
@@ -159,17 +172,25 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           <ReviewField key={d.id} titleId={d.id} saved={d.review} onSaved={onChanged} onNotice={onNotice} />
           {credits.length > 0 && (
             <dl className="mv-credits" aria-label="Credits">
-              {credits.map(([k, v]) => (
-                <div key={k}>
-                  <dt>{k}</dt>
-                  <dd>{v}</dd>
+              {credits.map((g) => (
+                <div key={g.label}>
+                  <dt>{g.label}</dt>
+                  <dd>
+                    {g.entities.map((e, i) => (
+                      <Fragment key={`${e.name}-${i}`}>
+                        {i > 0 && ', '}
+                        <EntityLink entity={e} onAsk={onEntity} busy={asking} />
+                      </Fragment>
+                    ))}
+                    {g.more > 0 && ` and ${g.more} more`}
+                  </dd>
                 </div>
               ))}
             </dl>
           )}
         </div>
       </div>
-      <CastList cast={d.cast} />
+      <CastList cast={d.cast} onEntity={onEntity} asking={asking} />
       {d.kind === 'tv' ? (
         <EpisodeList detail={d} player={player} focus={focus} busy={busy} onPlay={playOne} onWatched={(f) => void toggleFileWatched(f)} />
       ) : (
@@ -187,7 +208,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
 }
 
 /** The cast with their character names; the first CAST_LIMIT, then an icon to show the rest. */
-function CastList({ cast }: { cast: CastCredit[] }) {
+function CastList({ cast, onEntity, asking }: { cast: CastCredit[]; onEntity: ((e: MovieEntity) => void) | undefined; asking: boolean }) {
   const [all, setAll] = useState(false);
   if (cast.length === 0) return null;
   const shown = all ? cast : cast.slice(0, CAST_LIMIT);
@@ -198,8 +219,14 @@ function CastList({ cast }: { cast: CastCredit[] }) {
       <ul className="mv-cast">
         {shown.map((c) => (
           <li key={c.person_id}>
-            <span className="mv-cast-n">{c.name}</span>
-            {c.character !== null && c.character !== '' && <span className="mv-cast-c">{c.character}</span>}
+            <span className="mv-cast-n">
+              <EntityLink entity={{ kind: 'person', name: c.name, personId: c.person_id, role: c.character === '' ? null : c.character, cast: true }} onAsk={onEntity} busy={asking} />
+            </span>
+            {c.character !== null && c.character !== '' && (
+              <span className="mv-cast-c">
+                <EntityLink entity={{ kind: 'character', name: c.character, actor: c.name, personId: c.person_id }} onAsk={onEntity} busy={asking} />
+              </span>
+            )}
           </li>
         ))}
       </ul>

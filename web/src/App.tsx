@@ -20,9 +20,10 @@ import { adversaryRouteFromLocation, hrefForView, moviesRouteFromLocation, NO_AD
 import { AdversaryPage } from './pages/AdversaryPage';
 import { useAdversary } from './hooks/useAdversary';
 import { adversaryChatMessage, adversaryCountLine, adversaryHeading } from './lib/adversary';
-import { MoviesPage } from './pages/MoviesPage';
+import { MoviesPage, type MoviesEntityAsk } from './pages/MoviesPage';
+import { fetchPlayer } from './moviesApi';
 import { useMovies } from './hooks/useMovies';
-import { moviesChatMessage, moviesCountLine, moviesHeading } from './lib/movies';
+import { googleSearchUrl, moviesChatMessage, moviesCountLine, moviesHeading, watchPosition } from './lib/movies';
 import { HISTORY_HEADING, historyCountLine } from './lib/timeline';
 import { HistoryPage } from './pages/HistoryPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -385,11 +386,25 @@ export function App() {
 
   /** The movies pill: the wall chat, with the page and the open title named on the first line (lib/movies moviesChatMessage). */
   const moviesDetail = movies.detail;
+  const moviesPlayer = movies.player;
+  /** The Google search of the entity link that asked the answer now shown; null for a typed question. */
+  const [entitySearch, setEntitySearch] = useState<{ query: string; url: string } | null>(null);
   const askMovies = useCallback(
-    (text: string, imageIds: string[]) => {
-      void askChat(moviesChatMessage(text, moviesRoute, moviesDetail), imageIds);
+    (text: string, imageIds: string[], entity?: MoviesEntityAsk) => {
+      void (async () => {
+        // The spoiler line must say where the owner is now, not where the page last saw them.
+        let player = moviesPlayer;
+        try {
+          player = await fetchPlayer();
+        } catch {
+          // The page's last reading stands.
+        }
+        const message = moviesChatMessage(text, moviesRoute, moviesDetail, { position: watchPosition(moviesDetail, player), hint: entity?.hint ?? null });
+        setEntitySearch(entity === undefined ? null : { query: message.trim(), url: googleSearchUrl(entity.search) });
+        await askChat(message, imageIds);
+      })();
     },
-    [askChat, moviesRoute, moviesDetail],
+    [askChat, moviesRoute, moviesDetail, moviesPlayer],
   );
 
   // Resolve a repo-less `/projects?node=` to the node's repo. The address bar is replaced (not pushed)
@@ -944,7 +959,7 @@ export function App() {
                 </>
               )}
               {view === 'movies' ? (
-                <MoviesPage store={movies} route={moviesRoute} onRoute={setMoviesRoute} onAsk={askMovies} />
+                <MoviesPage store={movies} route={moviesRoute} onRoute={setMoviesRoute} onAsk={askMovies} asking={chat.open && !chat.done} />
               ) : view === 'adversary' ? (
                 <AdversaryPage
                   store={adversary}
@@ -1006,6 +1021,7 @@ export function App() {
                 onClose={chat.close}
                 onJump={jump}
                 onFullScreen={openHistoryThread}
+                {...(entitySearch !== null && entitySearch.query === chat.query ? { searchUrl: entitySearch.url } : {})}
               />
             )}
             {view !== 'history' && view !== 'projects' && view !== 'adversary' && view !== 'movies' && (

@@ -291,6 +291,31 @@ director" or "the main character" mean that title. The page rides on the message
 (`[Movies · MobLand (2025) · M-CTGS]`). See [What you can ask](#what-you-can-ask) and
 [chat.md](chat.md).
 
+**Names you can click.** On a title's page every genre, studio, director, writer, producer, cast
+member and character is a link that looks like the text it replaces and underlines on hover. A
+click sends one question through the pill at once, with no Enter and no page change:
+
+| Click | Question sent |
+| --- | --- |
+| A person | "Tell me about Jessica Henwick (Ruth in this film) and list their other films and series. Mark the ones in my library." |
+| A studio | "Tell me about StudioCanal and list their other films and series. Mark the ones in my library." |
+| A character | "Who is Ruth, played by Jessica Henwick, in this film?" |
+| A genre | "Recommend other Comedy films similar to How to Make a Killing: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library." |
+
+- A person's TMDB id rides on the first line (`· person 1202689`), so a shared name cannot answer
+  about someone else.
+- One question at a time: the links wait while an answer is still streaming.
+- Under an answer that came from a link there is a Google icon, which opens a search for that
+  entity in a new tab. In any answer, a film, series or person that is not in the library is a
+  link to a web search for it; a title in the library is its movie id, as before.
+
+**No spoilers past where you are.** A question from a title you have started and not finished
+carries your position, read from the daemon at the moment you ask (`· at 45:15 of 1:45:28`): the
+followed VLC when it shows that title, else a film's saved resume point. The chat leaves out what
+happens after it and says so, unless you ask for spoilers outright. For a later message without
+that part, and in `/n`, Claude reads `last_play` from `movies_get` again before it talks about the
+plot, and never reuses a position from earlier in the conversation.
+
 **Toolbar.** Back to the library, the unmatched list with a count of this machine's unmatched and
 pending files (`/movies/unmatched`), and Rescan the library, which starts a pass at once.
 

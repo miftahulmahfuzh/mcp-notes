@@ -359,6 +359,15 @@ so "what did I watch" still answers after the file is gone.
   can click: `MobLand (2025), [M-8TR4](<wall>/movies/M-8TR4)`. `<wall>/movies/<movie id>`
   opens the title's page; an episode's id opens its series scrolled to that episode. It is the
   `url` the tools return.
+- Spoilers. Before you talk about the plot of a film or series the user has not finished (who a
+  character is, what happens, who dies, how it ends), call `movies_get` for it and read
+  `last_play` (`position_s` of `duration_s`, plus season and episode for a series). It is
+  rewritten every few seconds while VLC is open, so read it for every such question: never reuse
+  a position from earlier in the conversation and never work one out from an older answer.
+  MEASURED 2026-11-15: a death list was given "23 minutes in" from a resume answer that was 20
+  minutes old; the user was at 45:15. Leave out what comes after that point, say in one line
+  that you did, and give it only when the user asks for spoilers in so many words. A finished
+  title (`state` `finished`, or `watched_at` set) needs nothing held back.
 - `movies_off` means the movie library is not running on this daemon; say so in one line.
 
 ## Deleting

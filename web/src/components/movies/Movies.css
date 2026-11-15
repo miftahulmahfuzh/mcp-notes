@@ -64,6 +64,11 @@
 .mv-star.on { color: var(--fg); }
 .mv-star:hover { background: var(--hover); }
 .mv-stars-n { margin-left: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.mv-ent { all: unset; cursor: pointer; }
+.mv-ent:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.mv-ent:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
+.mv-ent:disabled { cursor: progress; }
+.mv-ent:disabled:hover { color: inherit; text-decoration: none; }
 .mv-live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .mv-live::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; animation: repo-pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mv-live::before { animation: none; } }

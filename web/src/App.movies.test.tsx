@@ -284,9 +284,103 @@ describe('App: Movies', () => {
     fireEvent.submit(box.closest('form') as HTMLFormElement);
     await waitFor(() => expect(postsTo('/api/chat')).toHaveLength(1));
     const message = String(postsTo('/api/chat')[0]?.message ?? '');
-    expect(message.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4]');
+    expect(message.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4 · at 45:00 of 1:52:00]');
     expect(message.split('\n').slice(1).join('\n')).toBe('what should I watch after this?');
     await screen.findByText('Watch MobLand next.');
+    expect(screen.queryByRole('link', { name: 'Search Google' })).toBeNull();
+  });
+
+  it('the first line says where the owner is now: the followed VLC read at the moment of asking, not the page\'s older reading', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    await screen.findByRole('article', { name: 'How to Make a Killing' });
+    player = { ...PLAYING, current: { ...PLAYING.current!, position: 2715, state: 'paused' } };
+    const box = screen.getByPlaceholderText('Ask about How to Make a Killing');
+    fireEvent.change(box, { target: { value: 'who is Becket?' } });
+    fireEvent.submit(box.closest('form') as HTMLFormElement);
+    await waitFor(() => expect(postsTo('/api/chat')).toHaveLength(1));
+    expect(String(postsTo('/api/chat')[0]?.message).split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4 · at 45:15 of 1:52:00]');
+  });
+
+  it('a person, a studio, a character and a genre on the title page each ask about themselves in one click, with a Google icon under the answer', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    const a = within(article);
+    const sent = () => postsTo('/api/chat').map((p) => String(p?.message));
+
+    fireEvent.click(within(a.getByRole('region', { name: 'Cast' })).getByRole('button', { name: 'Mara Example' }));
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    expect(sent()[0]).toBe(
+      '[Movies · How to Make a Killing (2026) · M-23T4 · at 45:00 of 1:52:00 · person 4]\nTell me about Mara Example (Julia in this film) and list their other films and series. Mark the ones in my library.',
+    );
+    await screen.findByText('Watch MobLand next.');
+    const google = await screen.findByRole('link', { name: 'Search Google' });
+    expect(google.getAttribute('href')).toBe('https://www.google.com/search?q=Mara%20Example%20movies%20and%20series');
+    expect(google.getAttribute('target')).toBe('_blank');
+
+    fireEvent.click(a.getByRole('button', { name: 'Julia' }));
+    await waitFor(() => expect(sent()).toHaveLength(2));
+    expect(sent()[1]!.split('\n')[1]).toBe('Who is Julia, played by Mara Example, in this film?');
+    expect(sent()[1]!.split('\n')[0]).toContain('· person 4]');
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Search Google' }).getAttribute('href')).toContain('Julia%20How%20to%20Make%20a%20Killing%202026%20character'));
+
+    fireEvent.click(a.getByRole('button', { name: 'Blumhouse Productions' }));
+    await waitFor(() => expect(sent()).toHaveLength(3));
+    expect(sent()[2]!.split('\n')[1]).toBe('Tell me about Blumhouse Productions and list their other films and series. Mark the ones in my library.');
+    expect(sent()[2]!.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4 · at 45:00 of 1:52:00]');
+
+    await screen.findByRole('link', { name: 'Search Google' });
+    fireEvent.click(a.getByRole('button', { name: 'Crime' }));
+    await waitFor(() => expect(sent()).toHaveLength(4));
+    expect(sent()[3]!.split('\n')[1]).toBe(
+      'Recommend other Crime films similar to How to Make a Killing: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library.',
+    );
+    const director = a.getAllByRole('button', { name: 'Ava Director' });
+    expect(director).toHaveLength(2);
+    await screen.findByRole('link', { name: 'Search Google' });
+    fireEvent.click(director[0]!);
+    await waitFor(() => expect(sent()).toHaveLength(5));
+    expect(sent()[4]!.split('\n')[1]).toBe('Tell me about Ava Director (director of this film) and list their other films and series. Mark the ones in my library.');
+  });
+
+  it('entity links wait while an answer is still streaming', async () => {
+    chatSse = 'event: accepted\ndata: {"thread_id":"t1"}\n\nevent: delta\ndata: {"text":"Thinking"}\n\n';
+    let release: () => void = () => {};
+    const hold = new Promise<void>((r) => (release = r));
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/chat') {
+          posts.push({ url: '/api/chat', body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null });
+          const enc = new TextEncoder();
+          return new Response(
+            new ReadableStream({
+              async start(c) {
+                c.enqueue(enc.encode(chatSse));
+                await hold;
+                c.enqueue(enc.encode('event: done\ndata: {}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        }
+        return real(input, init);
+      }),
+    );
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    const crime = within(article).getByRole('button', { name: 'Crime' }) as HTMLButtonElement;
+    fireEvent.click(crime);
+    await screen.findByText(/Thinking/);
+    expect(crime.disabled).toBe(true);
+    fireEvent.click(within(article).getByRole('button', { name: 'Comedy' }));
+    expect(postsTo('/api/chat')).toHaveLength(1);
+    release();
+    await waitFor(() => expect(crime.disabled).toBe(false));
   });
 
   it('a movie id in a chat answer opens the pop-up: the episode, Play, and the page scrolled to it', async () => {

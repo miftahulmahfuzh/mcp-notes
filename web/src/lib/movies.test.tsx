@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeFile, MOVIE, PLAYER_IDLE, SERIES, STATUS, TITLES } from '../testing/movieFixtures';
+import { makeFile, MOVIE, PLAYER_IDLE, PLAYING, SERIES, STATUS, TITLES } from '../testing/movieFixtures';
 import {
   clock,
   continueNotice,
@@ -8,6 +8,10 @@ import {
   filePlayLabel,
   matchesFilter,
   moviesChatMessage,
+  watchPosition,
+  creditGroups,
+  entityQuestion,
+  entitySearchQuery,
   moviesCountLine,
   moviesPillPlaceholder,
   detailIsFor,
@@ -35,6 +39,39 @@ describe('moviesChatMessage', () => {
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, MOVIE)).toBe('[Movies · How to Make a Killing (2026) · M-23T4]\ncast?');
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, { ...MOVIE, movie_id: null })).toBe('[Movies · How to Make a Killing (2026) · movie-467905]\ncast?');
     expect(moviesChatMessage('cast?', { title: 'movie-467905', unmatched: false }, SERIES)).toBe('[Movies · movie-467905]\ncast?');
+  });
+});
+
+describe('where the owner is in a title', () => {
+  it('is the followed VLC when it shows this title, else a film\'s resume point; nothing for a finished title, a stopped VLC or an idle series', () => {
+    expect(watchPosition(MOVIE, PLAYER_IDLE)).toEqual({ at: 2700, of: 6720 });
+    expect(watchPosition(MOVIE, { ...PLAYING, current: { ...PLAYING.current!, position: 2715 } })).toEqual({ at: 2715, of: 6720 });
+    expect(watchPosition(MOVIE, { ...PLAYING, current: { ...PLAYING.current!, position: 0, state: 'stopped' } })).toEqual({ at: 2700, of: 6720 });
+    expect(watchPosition(MOVIE, { ...PLAYING, current: { ...PLAYING.current!, title_id: 'tv-247718', position: 99 } })).toEqual({ at: 2700, of: 6720 });
+    expect(watchPosition({ ...MOVIE, state: 'finished' }, PLAYING)).toBeNull();
+    expect(watchPosition({ ...MOVIE, watched: true }, PLAYING)).toBeNull();
+    expect(watchPosition({ ...MOVIE, files: [makeFile(11, { title_id: MOVIE.id })] }, PLAYER_IDLE)).toBeNull();
+    expect(watchPosition(SERIES, PLAYER_IDLE)).toBeNull();
+    expect(watchPosition(SERIES, { ...PLAYING, current: { ...PLAYING.current!, title_id: SERIES.id, position: 610, duration: 3000 } })).toEqual({ at: 610, of: 3000 });
+    expect(watchPosition(null, PLAYING)).toBeNull();
+    expect(moviesChatMessage('who dies?', { title: 'movie-467905', unmatched: false }, MOVIE, { position: { at: 2715, of: 6720 }, hint: 'person 4' })).toBe(
+      '[Movies · How to Make a Killing (2026) · M-23T4 · at 45:15 of 1:52:00 · person 4]\nwho dies?',
+    );
+  });
+});
+
+describe('entity links', () => {
+  it('groups the credits as things to ask about, and words a series question as a series', () => {
+    expect(creditGroups(MOVIE).map((g) => [g.label, g.entities.map((e) => e.name), g.more])).toEqual([
+      ['Studios', ['Blumhouse Productions'], 0],
+      ['Directed by', ['Ava Director'], 0],
+      ['Written by', ['Ava Director'], 0],
+      ['Produced by', ['Pat Producer'], 0],
+    ]);
+    expect(entityQuestion({ kind: 'genre', name: 'Drama' }, SERIES)).toMatch(/^Recommend other Drama series similar to /);
+    expect(entityQuestion({ kind: 'person', name: 'X Y', personId: 9, role: null, cast: true }, MOVIE)).toBe('Tell me about X Y and list their other films and series. Mark the ones in my library.');
+    expect(entitySearchQuery({ kind: 'genre', name: 'Crime' }, MOVIE)).toBe('Crime films like How to Make a Killing 2026');
+    expect(entitySearchQuery({ kind: 'company', name: 'StudioCanal' }, MOVIE)).toBe('StudioCanal films and series');
   });
 });
 

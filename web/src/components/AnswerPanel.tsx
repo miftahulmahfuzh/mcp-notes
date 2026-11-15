@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { ArrowsOut, CaretDown, CaretUp, PushPin, X } from '@phosphor-icons/react';
+import { ArrowsOut, CaretDown, CaretUp, GoogleLogo, PushPin, X } from '@phosphor-icons/react';
 import { Lightbox } from './Lightbox';
 import { ChatInline } from './ChatText';
 import { chatImageUrl } from '../api';
@@ -27,6 +27,8 @@ export interface AnswerPanelProps {
   onJump: (id: string) => void;
   /** Phase 9: open the history page on this conversation's thread. Absent = no button. */
   onFullScreen?: () => void;
+  /** A web search for what the question was about (a Movies entity link). Absent = no icon. */
+  searchUrl?: string;
 }
 
 const NO_IMAGES: readonly string[] = [];
@@ -54,6 +56,7 @@ export function AnswerPanel({
   onClose,
   onJump,
   onFullScreen,
+  searchUrl,
 }: AnswerPanelProps) {
   // Phase 3 left the sent thumbnails inert; they open the Phase 2 Lightbox over the panel.
   const [viewing, setViewing] = useState<number | null>(null);
@@ -126,6 +129,13 @@ export function AnswerPanel({
               </p>
             );
           })}
+        </div>
+      )}
+      {!collapsed && done && searchUrl !== undefined && (
+        <div className="answer-foot">
+          <a className="pbtn hov" href={searchUrl} target="_blank" rel="noreferrer noopener" data-tip="Search Google" aria-label="Search Google">
+            <GoogleLogo weight="duotone" />
+          </a>
         </div>
       )}
       {!collapsed && done && usedIds.length > 0 && (

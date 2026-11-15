@@ -457,11 +457,111 @@ export function moviesPillPlaceholder(route: MoviesRoute, detail: TitleDetail | 
   return MOVIES_PILL_PLACEHOLDER;
 }
 
-export function moviesChatMessage(text: string, route: MoviesRoute, detail: TitleDetail | null): string {
+/** How far the owner is into the open title, read when the question is sent: the spoiler line. */
+export interface WatchPosition {
+  /** Seconds. */
+  at: number;
+  of: number | null;
+}
+
+/**
+ * Where the owner is in this title right now: the followed VLC when it shows this title (not
+ * stopped), else a film's saved resume point. Null for a title that is finished, not started, or
+ * a series nobody is playing (its position is per episode).
+ */
+export function watchPosition(d: TitleDetail | null, player: PlayerState | null): WatchPosition | null {
+  if (d === null || d.watched || d.state === 'finished') return null;
+  const c = player?.current ?? null;
+  if (c !== null && c.title_id === d.id && c.state !== 'stopped') return { at: c.position, of: c.duration };
+  if (d.kind === 'tv') return null;
+  const plan = playPlan(d);
+  if (plan.kind !== 'file' || !(plan.file.resume_position_s > 0)) return null;
+  return { at: plan.file.resume_position_s, of: plan.file.duration_s };
+}
+
+/** What a question from the Movies page carries besides its text. */
+export interface MoviesAskExtra {
+  /** Where the owner is in the open title (watchPosition), so the answer holds back what comes after. */
+  position?: WatchPosition | null;
+  /** `person 1202689`: the TMDB id of the person an entity link asked about. */
+  hint?: string | null;
+}
+
+export function moviesChatMessage(text: string, route: MoviesRoute, detail: TitleDetail | null, extra: MoviesAskExtra = {}): string {
   let where: string;
   if (route.unmatched) where = 'unmatched files';
   else if (route.title === null) where = 'library';
   else if (detailIsFor(detail, route.title)) where = `${detail.title}${detail.year !== null ? ` (${detail.year})` : ''} · ${detail.movie_id ?? route.title}`;
   else where = route.title;
-  return `[Movies · ${where}]\n${text}`;
+  const p = extra.position ?? null;
+  const at = p === null ? '' : ` · at ${clock(p.at)}${p.of !== null && p.of > 0 ? ` of ${clock(p.of)}` : ''}`;
+  const hint = extra.hint ? ` · ${extra.hint}` : '';
+  return `[Movies · ${where}${at}${hint}]\n${text}`;
+}
+
+/** Something on a title's page that can be asked about with one click. */
+export type MovieEntity =
+  | { kind: 'person'; name: string; personId: number; /** "Ruth" for a cast member, "director" for crew; null when unknown. */ role: string | null; cast: boolean }
+  | { kind: 'character'; name: string; actor: string; personId: number }
+  | { kind: 'company'; name: string }
+  | { kind: 'genre'; name: string };
+
+const workWord = (d: TitleDetail): string => (d.kind === 'tv' ? 'series' : 'film');
+
+/** The question an entity link sends. Never a pronoun for the person: a name does not say which. */
+export function entityQuestion(e: MovieEntity, d: TitleDetail): string {
+  const w = workWord(d);
+  if (e.kind === 'genre') {
+    return `Recommend other ${e.name} ${d.kind === 'tv' ? 'series' : 'films'} similar to ${d.title}: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library.`;
+  }
+  if (e.kind === 'character') return `Who is ${e.name}, played by ${e.actor}, in this ${w}?`;
+  if (e.kind === 'company') return `Tell me about ${e.name} and list their other films and series. Mark the ones in my library.`;
+  const role = e.role === null || e.role === '' ? '' : e.cast ? ` (${e.role} in this ${w})` : ` (${e.role} of this ${w})`;
+  return `Tell me about ${e.name}${role} and list their other films and series. Mark the ones in my library.`;
+}
+
+/** What the Google icon under the answer searches for. */
+export function entitySearchQuery(e: MovieEntity, d: TitleDetail): string {
+  const title = `${d.title}${d.year !== null ? ` ${d.year}` : ''}`;
+  if (e.kind === 'genre') return `${e.name} ${d.kind === 'tv' ? 'series' : 'films'} like ${title}`;
+  if (e.kind === 'character') return `${e.name} ${title} character`;
+  if (e.kind === 'company') return `${e.name} films and series`;
+  return `${e.name} movies and series`;
+}
+
+export function googleSearchUrl(query: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+export function entityHint(e: MovieEntity): string | null {
+  return e.kind === 'person' || e.kind === 'character' ? `person ${e.personId}` : null;
+}
+
+export function entityTip(e: MovieEntity): string {
+  if (e.kind === 'genre') return `Find ${e.name} titles like this one`;
+  if (e.kind === 'character') return `Ask who ${e.name} is`;
+  return `Ask about ${e.name}`;
+}
+
+export interface CreditGroup {
+  label: string;
+  entities: MovieEntity[];
+  /** People left out of a long list ("and 3 more"). */
+  more: number;
+}
+
+/** creditRows, as entities to click instead of joined text. */
+export function creditGroups(d: TitleDetail): CreditGroup[] {
+  const crew = (label: string, role: string, people: CrewCredit[], limit = Number.POSITIVE_INFINITY): CreditGroup => ({
+    label,
+    entities: people.slice(0, limit).map((c) => ({ kind: 'person', name: c.name, personId: c.person_id, role, cast: false })),
+    more: Math.max(0, people.length - limit),
+  });
+  const rows: CreditGroup[] = [];
+  if (d.companies.length > 0) rows.push({ label: 'Studios', entities: d.companies.map((c) => ({ kind: 'company', name: c.name })), more: 0 });
+  if (d.creators.length > 0) rows.push(crew('Created by', 'creator', d.creators));
+  if (d.directors.length > 0) rows.push(crew('Directed by', 'director', d.directors));
+  if (d.writers.length > 0) rows.push(crew('Written by', 'writer', d.writers));
+  if (d.producers.length > 0) rows.push(crew('Produced by', 'producer', d.producers, PRODUCER_LIMIT));
+  return rows;
 }

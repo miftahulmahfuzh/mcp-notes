@@ -69,8 +69,19 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/say which app could not be read and do not guess its numbers/);
   });
 
-  it('leaves link formatting to the panel', () => {
-    expect(prompt).not.toMatch(/markdown link|bare URL/i);
+  it('leaves the linking of ids to the panel; the one link it writes itself is a web search for a name outside the library', () => {
+    expect(prompt).not.toMatch(/bare URL/i);
+    expect(prompt.match(/markdown link/gi)).toHaveLength(1);
+    expect(prompt).toMatch(/not in the library, write the name as a markdown link to a web search for it/);
+    expect(prompt).toMatch(/a title that is in the library keeps its bare movie id instead and gets no such link/);
+  });
+
+  it('holds back spoilers past the position on the [Movies line and reads a fresh one when there is none', () => {
+    expect(prompt).toMatch(/"at 45:15 of 1:45:28" is how far the owner is into that title, read at the moment they sent this message/);
+    expect(prompt).toMatch(/Do not reveal what happens after that point/);
+    expect(prompt).toMatch(/call movies_get for the title first and read last_play/);
+    expect(prompt).toMatch(/never reuse a position from earlier in the conversation/);
+    expect(prompt).toMatch(/pass it to movies_person as person_id/);
   });
 
   it('says note files are visible by name, type and size but cannot be opened', () => {

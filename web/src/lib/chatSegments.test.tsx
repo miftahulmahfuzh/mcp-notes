@@ -64,6 +64,11 @@ describe('segmentChat: links', () => {
   });
   it('keeps an id that labels an external link part of that link', () => {
     expect(segmentChat('[A-B32](https://example.com/a)')).toEqual([{ kind: 'link', text: 'A-B32', href: 'https://example.com/a' }]);
+    expect(segmentChat('See [Glass Onion (2022)](https://www.google.com/search?q=Glass+Onion+2022+film) next.')).toEqual([
+      { kind: 'text', text: 'See ' },
+      { kind: 'link', text: 'Glass Onion (2022)', href: 'https://www.google.com/search?q=Glass+Onion+2022+film' },
+      { kind: 'text', text: ' next.' },
+    ]);
   });
   it('turns markdown links to the wall into note links, keeping the label', () => {
     expect(segmentChat('[A-B32](http://localhost:7317/?note=A-B32) and [that one](http://127.0.0.1:9000/?note=c-d45)')).toEqual([

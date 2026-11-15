@@ -15,7 +15,11 @@
   `tests/unit/movies/player.rejoin.test.ts`), a restarted daemon follows the notesd VLC that is
   still open again (same play row; `tests/integration/movies.play.int.test.ts`, "a restarted
   daemon"; off with the health log, so never in `verify.sh up --movies`), and the grid marks the followed title's poster
-  (playing / paused / no picture). `GET /api/movies/player/health` returns it
+  (playing / paused / no picture). On a title's page every genre, studio, crew member, cast
+  member and character is a button that sends its own question through the pill (person id and
+  the owner's position on the first line, a Google icon under the answer); the position is read
+  from `GET /api/movies/player` when the question is sent, and the chat prompt holds back plot
+  past it (`web/src/App.movies.test.tsx`, `tests/unit/chat-prompt.test.ts`). `GET /api/movies/player/health` returns it
   (`stalls`, `gpu_resets`). Proof: `npx vitest run tests/unit/movies/vlc.videoStall.test.ts` and
   `npm run test:int -- tests/integration/movies.health.int.test.ts tests/integration/movies.healthCrash.int.test.ts`
   (fake Windows side `tests/fixtures/movies/fake-windows.mjs`; the crash test needs WSL interop and

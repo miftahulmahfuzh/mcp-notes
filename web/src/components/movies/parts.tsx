@@ -1,6 +1,6 @@
 import { CheckCircle, Desktop, Play, Trash } from '@phosphor-icons/react';
 import type { FileView, PlayerState, ProgressView, WatchState } from '../../moviesApi';
-import { dayText, filePlayLabel, meterRatio, meterText, sizeText, type PlayButtonState } from '../../lib/movies';
+import { dayText, entityTip, filePlayLabel, meterRatio, meterText, sizeText, type MovieEntity, type PlayButtonState } from '../../lib/movies';
 
 /** R5.3: a deleted file says so; a present file on the other laptop says where it is. */
 export function FileFlags({ file }: { file: FileView }) {
@@ -74,5 +74,23 @@ export function FileRow({ file: f, player, busy, onPlay, onWatched }: FileRowPro
       <WatchedButton file={f} what="this file" onWatched={onWatched} />
       <PlayButton state={filePlayLabel(f, player, 'this file')} busy={busy} onClick={() => onPlay(f)} />
     </li>
+  );
+}
+
+export interface EntityLinkProps {
+  entity: MovieEntity;
+  /** Absent: plain text (the pop-up, which has no pill to ask through). */
+  onAsk?: ((e: MovieEntity) => void) | undefined;
+  /** An answer is still streaming: one question at a time. */
+  busy?: boolean;
+}
+
+/** A name on a title's page that asks about itself when clicked: looks like the text it replaces, underlined on hover. */
+export function EntityLink({ entity, onAsk, busy = false }: EntityLinkProps) {
+  if (onAsk === undefined) return <>{entity.name}</>;
+  return (
+    <button type="button" className="mv-ent" data-tip={entityTip(entity)} disabled={busy} onClick={() => onAsk(entity)}>
+      {entity.name}
+    </button>
   );
 }
