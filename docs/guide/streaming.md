@@ -369,7 +369,8 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   manifest needs it. Nothing comes from a CDN.
 - **English subtitles are on by default.** An English track inside the manifest comes first, then
   a separate English `.vtt` or `.srt` from the resolve (an `.srt` is converted to WebVTT in the
-  page). With no English track, subtitles start off and the others can still be picked.
+  page). A subtitle file whose first answer fails is asked for once more before the track is left
+  out. With no English track, subtitles start off and the others can still be picked.
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended }` to `POST /api/stream/sessions/<id>/position` every 5 seconds

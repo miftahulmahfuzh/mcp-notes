@@ -82,6 +82,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and the 24 providers. Never run `direct_stream_update_source` against the live daemon for a
   site with new providers unless the owner asked: it writes the shared registry and probes in
   the streaming Chrome.
+- Live playback probe (owner's machine only; providers are live): `node claude/streaming/direct/playcheck.mjs setup --dir ~/.local/state/notesd-playcheck`, then `NOTESD_DIRECT_STREAM_CLI=$HOME/.local/state/notesd-playcheck/cli.mjs $V up --web --direct-stream`, then `node claude/streaming/direct/playcheck.mjs run --daemon <URL> --dir ~/.local/state/notesd-playcheck --check play|dash|vidnest|subtitle|expiry --provider <name> movie 550`. It prints one JSON report with a verdict. It brings the streaming Chrome to the front in a normal window, muted: say so before running it. Results go into the Playback section of `docs/plans/2026-11-15-direct-streaming-findings.md` with `playcheck.mjs findings`, and `playcheck.mjs audit` checks that section against the seed.
 
 ## /direct-stream (find and play)
 - `direct_stream_find`, `direct_stream_play` (MCP, chat bar, `/direct-stream` skill): one film

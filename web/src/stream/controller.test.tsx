@@ -135,6 +135,28 @@ describe('StreamController: subtitles and quality (R2.3)', () => {
     expect(t.made[0].setEmbeddedSubtitle).toHaveBeenLastCalledWith(null);
   });
 
+  it('asks again for a subtitle file whose first answer failed, and gives up after the second', async () => {
+    const EN = `${S1}/p?u=en.vtt`;
+    const FR = `${S1}/p?u=fr.vtt`;
+    let enAsked = 0;
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ subtitles: [sessionTrack(FR, 'fr', 'French'), sessionTrack(EN, 'en', 'English')] })),
+      // Phase 6's finding: the stream host failed once (the pass-through's 502), then answered.
+      [`GET ${EN}`]: () => (++enAsked === 1 ? new Response('', { status: 502 }) : new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n')),
+      [`GET ${FR}`]: () => new Response('', { status: 502 }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+
+    expect(t.calls.filter((c) => c.url === EN)).toHaveLength(2);
+    expect(t.calls.filter((c) => c.url === FR)).toHaveLength(2);
+    const s = t.controller.getState();
+    expect(s.subtitles.map((o) => o.label)).toEqual(['English']);
+    expect(s.subtitle).toBe('file-1');
+    expect(s.log).toEqual(['subtitle French: http_502']);
+  });
+
   it('shows no subtitle when none is English, and a pick reaches the engine', async () => {
     const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
     void t.controller.start();
