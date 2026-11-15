@@ -232,6 +232,9 @@ cmd_up() {
   else
     env+=(NOTESD_DIRECT_STREAM=off)
   fi
+  # NOTESD_STREAMING=off always, and no flag turns it on: streaming_find / streaming_play would run
+  # the real claude/streaming/cli.mjs, which plays a film full screen in the owner's streaming Chrome.
+  env+=(NOTESD_STREAMING=off)
   {
     echo "repo=$root"
     echo "head=$(git -C "$root" rev-parse --short HEAD)"

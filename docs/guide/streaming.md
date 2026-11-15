@@ -8,6 +8,7 @@ fourth skill adds a site:
 | pahe.ink (downloads) | `/pahe <title> [year]` | Finds the title's page and links each release, BluRay first | Yes, through `WebFetch` |
 | idlix (streaming) | `/idlix <title> [year]` | Finds the title, starts the film, shows it full screen | Yes, through `streaming_play` |
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
+| A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
@@ -142,6 +143,31 @@ The rules behind those answers:
 - **A series is a link only.** It has episodes to choose, and on lk21 it lives on another site.
 - **A recommendation is not a request.** A film is never started because it was suggested.
 - **A film in the library plays in VLC** (`movies_continue`), unless you name the site.
+
+### `/direct-stream`: straight from a cloud source
+
+```text
+/direct-stream saltburn
+/direct-stream dune 2021
+this is a LOTR night. let's /direct-stream the first one
+/direct-stream the bear season 2 episode 3
+/direct-stream M-23T4
+can I stream saltburn directly?
+```
+
+| You type | What happens |
+| --- | --- |
+| `/direct-stream saltburn` | One film matches: it is resolved and plays full screen in the streaming Chrome, English subtitle on when a source has one |
+| `/direct-stream dune 2021` | The 2021 film. Without the year, Dune matches three titles: the answer lists them and starts nothing |
+| `this is a LOTR night. let's /direct-stream the first one` | Claude names the film first (The Lord of the Rings: The Fellowship of the Ring, 2001), then streams it |
+| `/direct-stream the bear` | A series: its seasons, and a question about which episode. Nothing starts |
+| `/direct-stream the bear season 2 episode 3` | That episode plays |
+| A film no source can stream | `no_source`, with what each provider did. Nothing starts |
+| `can I stream saltburn directly?` | A lookup: the match, and whether this laptop has a recently verified source |
+
+- **`/direct-stream` streams even a film you have.** Without it, a library film plays in VLC.
+- **A question is a lookup**, and **a recommendation is not a request**.
+- **It continues where the last stream stopped.**
 
 ### `/create-streaming-skill`: another site
 
@@ -365,6 +391,28 @@ The page keeps its state on `window.notesdStream` (stage, `kind`, `levels`, `lev
 choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
 play, and its `start()`.
 
+### `/direct-stream`
+
+`/direct-stream <title>` in Claude Code (the `claude/skills/direct-stream` skill) and the same
+words in the chat bar end in the same two MCP tools:
+
+- `direct_stream_find` looks the title up and says, per match, whether this laptop has a source
+  verified inside the freshness window. It resolves nothing and opens nothing.
+- `direct_stream_play` looks the title up, then hands one film or one episode to the daemon's
+  stream service: resolve, then the player page full screen in the streaming Chrome, from the
+  last stream position.
+
+The lookup (`src/directStream/lookup.ts`) reads titles already stored first (the library, and
+titles streamed before), then TMDB's film and series search. A result matches when its English
+or original name is the asked title and its year is the asked year when one was given: the rule
+of `claude/streaming/match.mjs`, ported, and a test keeps the two equal. A movie id (`M-23T4`,
+of a title or one episode) or a title key (`movie-550`) is taken as is.
+
+Nothing starts when several titles match (the candidates come back with their years), when a
+series is named without an episode (its seasons come back), or when no provider resolves: then
+the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
+`skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
+
 ## Where the code is
 
 | Path | What |
@@ -379,6 +427,9 @@ play, and its `start()`.
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json` |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
+| `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play` |
+| `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |
 

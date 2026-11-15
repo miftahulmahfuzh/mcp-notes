@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 13
+**Total Active Tasks**: 12
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 13
+- P1 High: 12
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 5
-- Completed: 109
+- Blocked: 4
+- Completed: 110
 
 ---
 
@@ -94,15 +94,6 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
   - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
-- [ ] **P1-NOTES-A117** Phase 7: `/direct-stream`: title lookup, tools, skill, chat bar
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: title lookup from words (`src/directStream/{match,lookup}.ts`; `StreamTarget` is phase 3's `StreamRef`), `direct_stream_find` and `direct_stream_play` in `src/mcp/directStreamTools.ts` (with `DirectStreamToolDeps`, `playFailure` reading `DirectStreamError`), `DIRECT_STREAM_TOOL_NAMES` and captions in `src/chat/status.ts`, `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `scope: 'all'` and the stream play source in `src/mcp/movieTools.ts`, `claude/skills/direct-stream/SKILL.md`, `SKILL_NAMES` in `scripts/install.sh`, the caption, allow-list and behaviour lines in `docs/guide/chat.md`, `npm run docs:gen`, the `/direct-stream` lines of `docs/guide/streaming.md`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the integration file pass; J1 to J5 and the neighbor check pass; `scripts/install.sh` links `~/.claude/skills/direct-stream`. The full-screen play with sound is the owner's to run (Follow-ups).
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 7 of 10)
-  - **Satisfies**: R3 — "the /direct-stream [...] skills first" · criteria: R3.1, R3.2, R3.3
-  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
-  - **Plan**: `.workflows/plan/P1-NOTES-A117.md`
 - [ ] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -141,6 +132,26 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A117** Phase 7: `/direct-stream`: title lookup, tools, skill, chat bar
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: title lookup from words (`src/directStream/{match,lookup}.ts`; `StreamTarget` is phase 3's `StreamRef`), `direct_stream_find` and `direct_stream_play` in `src/mcp/directStreamTools.ts` (with `DirectStreamToolDeps`, `playFailure` reading `DirectStreamError`), `DIRECT_STREAM_TOOL_NAMES` and captions in `src/chat/status.ts`, `src/chat/prompt.ts`, `src/mcp/instructions.ts`, `scope: 'all'` and the stream play source in `src/mcp/movieTools.ts`, `claude/skills/direct-stream/SKILL.md`, `SKILL_NAMES` in `scripts/install.sh`, the caption, allow-list and behaviour lines in `docs/guide/chat.md`, `npm run docs:gen`, the `/direct-stream` lines of `docs/guide/streaming.md`. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the integration file pass; J1 to J5 and the neighbor check pass; `scripts/install.sh` links `~/.claude/skills/direct-stream`. The full-screen play with sound is the owner's to run (Follow-ups).
+  - **Status**: complete
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 7 of 10)
+  - **Satisfies**: R3 — "the /direct-stream [...] skills first" · criteria: R3.1, R3.2, R3.3
+  - **Depends on**: P1-NOTES-A114, P1-NOTES-A115
+  - **Plan**: `.workflows/plan/P1-NOTES-A117.md`
+  - **Completed**: 2026-11-15 20:42
+  - **Method**: /implement
+  - **Files**: src/directStream/match.ts, src/directStream/lookup.ts, src/mcp/directStreamTools.ts, src/chat/status.ts, src/chat/prompt.ts, src/mcp/tools.ts, src/mcp/server.ts, src/mcp/instructions.ts, src/mcp/movieTools.ts, src/http/app.ts, scripts/install.sh, claude/skills/direct-stream/SKILL.md, tests/unit/directStream/match.test.ts, tests/unit/directStream/lookup.test.ts, tests/unit/mcp.directStreamTools.test.ts, tests/integration/directStream.lookup.int.test.ts, tests/unit/chat-status.test.ts, tests/unit/mcp.instructions.test.ts, tests/unit/chat-prompt.test.ts, docs/guide/reference/mcp-tools.md, docs/guide/streaming.md, docs/guide/chat.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh
+  - **Proof**: verified-after-fix — 5 journeys plus the neighbor check, evidence /home/miftah/.local/state/notesd-verify/1115-204158-555644/evidence
+  - **Drift**: No code drift: every anchor the plan quotes matched.
+    verify.sh did not pin NOTESD_STREAMING=off, so the first neighbor check played Saltburn from lk21 full screen (~20:40 WIB, one tab closed after); fixed in this commit by pinning it on every throwaway daemon, neighbor check re-run and passing.
+    Exit criterion 'scripts/install.sh links ~/.claude/skills/direct-stream' not exercised: inconclusive until install.sh runs on the merged branch.
+  - **Decided**: streaming_play answered a real play instead of streaming_off -> recorded as a harness gap, not re-run, verify.sh not edited (rung 1: invariant 8; verify.sh is outside this phase's Owns)
+    scripts/install.sh not run from the wave worktree -> deferred to landing (rung 4: Follow-ups, install runs on the merged branch)
+    feature-map /direct-stream entry placed before '## Gotchas' rather than at the file end (rung 6: fewer conflicts with peers appending)
+    verify.sh edited outside phase 7's Owns -> coordinator orch-direct-streaming assigned it (rung 1: invariants 6 and 8)
 - [x] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
   - **Difficulty**: HARD
   - **Type**: Feature

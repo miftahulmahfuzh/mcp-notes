@@ -58,6 +58,18 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   refresh, continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
 - The player against a real provider is phase 6's `playcheck.mjs` (muted, normal window).
 
+## /direct-stream (find and play)
+- `direct_stream_find`, `direct_stream_play` (MCP, chat bar, `/direct-stream` skill): one film
+  starts through the service, several matches and a series without an episode start nothing,
+  `no_source` carries every provider's outcome, off answers `direct_stream_off`. Proven with a
+  fake service by `npx vitest run tests/unit/mcp.directStreamTools.test.ts tests/unit/directStream`;
+  the stored-title lookup by `npm run test:int -- tests/integration/directStream.lookup.int.test.ts`;
+  the chat allow list, captions and prompt by `tests/unit/chat-status.test.ts tests/unit/chat-prompt.test.ts tests/unit/mcp.instructions.test.ts`.
+- Throwaway daemon: both tools answer `direct_stream_off` (`$V mcp RUN direct_stream_play '{"title":"saltburn"}'`).
+  That is the expected proof there; never wire the real resolver into a throwaway instance.
+- Live: `/direct-stream saltburn` in Claude Code against the installed daemon. It resolves
+  through the streaming Chrome and plays full screen with sound: the owner's to run.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

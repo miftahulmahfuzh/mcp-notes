@@ -13,6 +13,7 @@ import type { SessionResumer } from '../sessions/resume.js';
 import type { AdversaryService } from '../adversary/service.js';
 import type { MovieToolDeps } from './movieTools.js';
 import type { StreamingRunner } from '../streaming/service.js';
+import type { DirectStreamToolDeps } from './directStreamTools.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -40,6 +41,8 @@ export interface ToolDeps {
   movies?: MovieToolDeps | null;
   /** Runs the streaming sites' script for streaming_find / streaming_play. Omitted or null: both answer streaming_off. */
   streaming?: StreamingRunner | null;
+  /** Direct streaming behind direct_stream_find / direct_stream_play (DIRECT_STREAMING_PLAN phase 7). Omitted or null: both answer direct_stream_off. */
+  directStream?: DirectStreamToolDeps | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */

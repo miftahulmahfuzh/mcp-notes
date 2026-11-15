@@ -62,6 +62,7 @@ The status is a short caption for the tool call in progress. It clears when text
 | reading Seer Adversarial, reading Claude's verdicts, reading Claude's record | reading the adversary tools |
 | searching movies, reading a title, reading watch history, reading a filmography, marking a title, opening VLC | using the movie tools |
 | searching the streaming sites, starting a film | using the streaming tools |
+| looking for a stream, starting a stream | using the direct-streaming tools |
 | searching the web, reading a web page | calling WebSearch or WebFetch |
 
 ### Ids in an answer are links
@@ -160,6 +161,7 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
 | Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
 | Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
+| Direct streaming | `direct_stream_find`, `direct_stream_play` | `direct_stream_play` opens the player page full screen in the streaming Chrome |
 | Web | `WebSearch`, `WebFetch` | No |
 
 Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only) and the
@@ -193,6 +195,10 @@ These rules come from the system prompt, so they shape every answer:
   where a film can be watched, it calls `streaming_find` and answers with links. It never starts
   a film it was not asked to start. All three sites are described in
   [streaming.md](streaming.md).
+- Asked to stream a film or an episode directly ("/direct-stream saltburn", "stream it"), it calls
+  `direct_stream_play`, which plays it full screen in notesd's own player page in the streaming
+  Chrome. A question ("can I stream it directly?") is `direct_stream_find`, which starts nothing.
+  See [streaming.md](streaming.md#direct-stream).
 
 ### Claude first, GLM as fallback
 
