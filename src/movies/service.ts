@@ -29,7 +29,7 @@ const CLOSE_GRACE_MS = 5_000;
 /** `<dataDir>/movies`: the cwd of the Haiku name fallback. */
 export const MOVIES_SUBDIR = 'movies';
 
-export type MovieChangeReason = 'sync' | 'assign' | 'user' | 'play';
+export type MovieChangeReason = 'sync' | 'assign' | 'user' | 'play' | 'stream';
 
 /** Something about movies changed. Carries ids only: listeners re-read. */
 export interface MovieChangeEvent {
@@ -44,6 +44,8 @@ export type MovieEventListener = (event: MovieChangeEvent) => void;
 /**
  * In-process bus for movie changes. The service emits after a pass that wrote and after assign;
  * phase 4 emits 'user' after user-state writes and subscribes for SSE; phase 5 emits 'play'.
+ * Direct streaming emits 'play' when a stream play opens or closes and 'stream' when a title's
+ * stream source appears, or turns verified or stale (src/movies/streams.ts).
  */
 export class MovieEvents {
   private readonly emitter = new EventEmitter();

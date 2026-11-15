@@ -7,6 +7,7 @@ import type {
   MovieParsedName,
   MoviePlayRow,
   MoviePlaySource,
+  MovieStreamSourceRow,
   MovieTitleKind,
 } from '../db/schema.js';
 
@@ -17,13 +18,15 @@ import type {
  * TMDB match stores, phase 2 builds it, `MoviesRepo.upsertTitle` writes it).
  */
 
-export type { MovieFileRow, MoviePlayRow, MovieTitleRow } from '../db/schema.js';
+export type { MovieFileRow, MoviePlayRow, MovieStreamSourceRow, MovieTitleRow } from '../db/schema.js';
 
 export type TitleKind = MovieTitleKind;
 export type FileStatus = MovieFileStatus;
 export type FileReason = MovieFileReason;
 export type FileSource = MovieFileSource;
 export type PlaySource = MoviePlaySource;
+/** A file play's source. A `stream` play has no file (MoviesRepo.recordStreamPosition writes it). */
+export type FilePlaySource = Exclude<PlaySource, 'stream'>;
 export type CreditRole = MovieCreditRole;
 /** What the filename parser read, as stored in `movie_files.parsed`. */
 export type ParsedNameRecord = MovieParsedName;
@@ -155,11 +158,11 @@ export interface NewMovieFile {
   doneAt?: Date | null;
 }
 
-/** A play to open (`MoviesRepo.startPlay`). */
+/** A file play to open (`MoviesRepo.startPlay`). */
 export interface NewPlay {
   fileId: number;
   host: string;
-  source: PlaySource;
+  source: FilePlaySource;
   startedAt: Date;
   /** Where playback started; also the play's first `position_s`. */
   startPositionS: number | null;
@@ -221,3 +224,73 @@ export interface FilePlay {
 export type FileStateInput = Pick<MovieFileRow, 'deletedAt' | 'doneAt' | 'watchedAt' | 'durationS'>;
 /** What `fileState` reads from a play (`MoviesRepo.lastPlay`). */
 export type PlayStateInput = Pick<MoviePlayRow, 'positionS' | 'durationS'>;
+
+/**
+ * What a stream is of (direct streaming): a film, or one episode of a series. Phase 3's `StreamRef`
+ * has this shape; phase 3 validated it at its route.
+ */
+export interface StreamTarget {
+  kind: TitleKind;
+  tmdbId: number;
+  season?: number | null;
+  episode?: number | null;
+}
+
+/** Where a stream of one target is recorded. */
+export interface StreamSlot {
+  titleId: string;
+  /** On a `movie_plays` row: both null for a film (as on a film's file and its movie id). */
+  play: { season: number | null; episode: number | null };
+  /** On a `movie_stream_sources` row, whose primary key holds no null: 0 and 0 for a film. */
+  source: { season: number; episode: number };
+}
+
+/**
+ * The one mapping from a stream target to its rows. Null for a series without a whole season and
+ * episode (nothing can be streamed or recorded for it). Throws RangeError for a TMDB id `titleId`
+ * refuses.
+ */
+export function streamSlot(target: StreamTarget): StreamSlot | null {
+  const id = titleId(target.kind, target.tmdbId);
+  if (target.kind === 'movie') return { titleId: id, play: { season: null, episode: null }, source: { season: 0, episode: 0 } };
+  const season = target.season ?? null;
+  const episode = target.episode ?? null;
+  if (season === null || episode === null || !Number.isInteger(season) || !Number.isInteger(episode) || season < 0 || episode < 1) return null;
+  return { titleId: id, play: { season, episode }, source: { season, episode } };
+}
+
+/** One position report of the player page, ready to write (`MoviesRepo.recordStreamPosition`). */
+export interface StreamPositionInput {
+  sessionId: string;
+  titleId: string;
+  season: number | null;
+  episode: number | null;
+  provider: string;
+  host: string;
+  positionS: number;
+  durationS: number | null;
+  /** The player reached the end or the page closed the play: the row is closed. */
+  ended: boolean;
+  at: Date;
+}
+
+/** What a position report wrote: the session's row, whether this report opened it, whether it closed it. */
+export interface StreamPositionWrite {
+  play: MoviePlayRow;
+  created: boolean;
+  closed: boolean;
+}
+
+/** The row a resolve outcome is written to. */
+export interface StreamSourceKey {
+  titleId: string;
+  season: number;
+  episode: number;
+  host: string;
+  at: Date;
+}
+
+/** One resolve's outcome for `MoviesRepo.recordStreamSource`. Only `no_source` makes a row stale. */
+export type StreamSourceOutcome =
+  | (StreamSourceKey & { outcome: 'verified'; provider: string; manifestKind: string; bestHeight: number | null; enSubtitle: boolean })
+  | (StreamSourceKey & { outcome: 'stale'; failure: string });

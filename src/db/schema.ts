@@ -971,7 +971,7 @@ export const MOVIE_FILE_REASONS = ['too_short', 'no_match', 'low_confidence', 't
 export type MovieFileReason = (typeof MOVIE_FILE_REASONS)[number]
 export const MOVIE_FILE_SOURCES = ['scan', 'vlc_recents'] as const
 export type MovieFileSource = (typeof MOVIE_FILE_SOURCES)[number]
-export const MOVIE_PLAY_SOURCES = ['live', 'vlc_recents'] as const
+export const MOVIE_PLAY_SOURCES = ['live', 'vlc_recents', 'stream'] as const
 export type MoviePlaySource = (typeof MOVIE_PLAY_SOURCES)[number]
 export const MOVIE_CREDIT_ROLES = ['cast', 'director', 'writer', 'producer', 'creator'] as const
 export type MovieCreditRole = (typeof MOVIE_CREDIT_ROLES)[number]
@@ -1194,17 +1194,30 @@ export const movieFiles = pgTable(
 )
 
 /**
- * One play event of a file (migration 0017): a VLC that notesd started (`live`, updated while it
- * plays, closed with `ended_at`), or one entry of VLC's recent list (`vlc_recents`, one row per
- * distinct position seen). `position_s` null means "opened, position unknown". Never deleted.
+ * One play event (migration 0017; streams 0021). A file play: a VLC that notesd started (`live`,
+ * updated while it plays, closed with `ended_at`), or one entry of VLC's recent list
+ * (`vlc_recents`, one row per distinct position seen). A stream play (`stream`, direct streaming):
+ * the daemon's player page, one row per player session (`stream_session`), updated by its position
+ * reports. A file play has `file_id` and none of `title_id`, `season`, `episode`, `provider`,
+ * `stream_session`; a stream play has `title_id`, `provider` and `stream_session` and no file
+ * (`movie_plays_target_check`). A film's stream play has season and episode null. `position_s` null
+ * means "opened, position unknown". Never deleted.
  */
 export const moviePlays = pgTable(
   'movie_plays',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    fileId: bigint('file_id', { mode: 'number' })
-      .notNull()
-      .references(() => movieFiles.id, { onDelete: 'cascade' }),
+    /** The file played; null on a stream play. */
+    fileId: bigint('file_id', { mode: 'number' }).references(() => movieFiles.id, { onDelete: 'cascade' }),
+    /** A stream play's title; null on a file play, whose title is its file's. */
+    titleId: text('title_id').references(() => movieTitles.id),
+    /** A stream play's episode; both null for a film and on every file play. */
+    season: integer('season'),
+    episode: integer('episode'),
+    /** The direct-stream provider that served a stream play (`VidFast`). */
+    provider: text('provider'),
+    /** The player session of a stream play: at most one open row per session. */
+    streamSession: text('stream_session'),
     host: text('host').notNull(),
     source: text('source').$type<MoviePlaySource>().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
@@ -1217,7 +1230,57 @@ export const moviePlays = pgTable(
   (t) => [
     index('movie_plays_file_started_idx').on(t.fileId, t.startedAt.desc()),
     index('movie_plays_started_idx').on(t.startedAt.desc()),
-    check('movie_plays_source_check', sql`${t.source} in ('live', 'vlc_recents')`),
+    index('movie_plays_title_started_idx').on(t.titleId, t.startedAt.desc()).where(sql`${t.titleId} is not null`),
+    // MoviesRepo.recordStreamPosition's ON CONFLICT names this predicate word for word.
+    uniqueIndex('movie_plays_open_session_uniq').on(t.streamSession).where(sql`${t.endedAt} is null and ${t.streamSession} is not null`),
+    check('movie_plays_source_check', sql`${t.source} in ('live', 'vlc_recents', 'stream')`),
+    check(
+      'movie_plays_target_check',
+      sql`(${t.source} = 'stream' and ${t.fileId} is null and ${t.titleId} is not null and ${t.provider} is not null and ${t.streamSession} is not null and (${t.season} is null) = (${t.episode} is null))
+        or (${t.source} <> 'stream' and ${t.fileId} is not null and ${t.titleId} is null and ${t.season} is null and ${t.episode} is null and ${t.provider} is null and ${t.streamSession} is null)`,
+    ),
+  ],
+)
+
+/**
+ * What resolving a film or an episode on one host last gave (migration 0021, direct streaming).
+ * One row per (title, season, episode, host); a film is season 0, episode 0 (a primary key holds
+ * no null), an episode its own numbers. Written by MoviesRepo.recordStreamSource after every
+ * resolve: a success sets the provider, manifest kind, best height and English-subtitle flag,
+ * `verified_at`, and clears `stale_at`; a resolve that found no source sets `stale_at` and
+ * `failure` and keeps the last verified columns. A row with no verification yet is stale-only.
+ * "Fresh" (the Stream grid) is repo.ts `freshStreamSourceSql`.
+ */
+export const movieStreamSources = pgTable(
+  'movie_stream_sources',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    host: text('host').notNull(),
+    provider: text('provider'),
+    /** `hls`, `dash`, `mp4`: as the resolver reported it. Not a CHECK: a new kind needs no migration. */
+    manifestKind: text('manifest_kind'),
+    bestHeight: integer('best_height'),
+    enSubtitle: boolean('en_subtitle').notNull().default(false),
+    verifiedAt: timestamp('verified_at', { withTimezone: true, mode: 'date' }),
+    staleAt: timestamp('stale_at', { withTimezone: true, mode: 'date' }),
+    /** The resolve error that made the row stale (`no_source`); null while it is not stale. */
+    failure: text('failure'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.season, t.episode, t.host] }),
+    index('movie_stream_sources_host_verified_idx').on(t.host, t.verifiedAt.desc()),
+    check('movie_stream_sources_slot_check', sql`${t.season} >= 0 and ${t.episode} >= 0 and (${t.episode} > 0 or ${t.season} = 0)`),
+    check(
+      'movie_stream_sources_outcome_check',
+      sql`(${t.verifiedAt} is not null and ${t.provider} is not null and ${t.manifestKind} is not null)
+        or (${t.verifiedAt} is null and ${t.staleAt} is not null and ${t.provider} is null and ${t.manifestKind} is null and ${t.bestHeight} is null)`,
+    ),
+    check('movie_stream_sources_failure_check', sql`(${t.staleAt} is null) = (${t.failure} is null)`),
   ],
 )
 
@@ -1323,5 +1386,6 @@ export type MovieCreditRow = typeof movieCredits.$inferSelect
 export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
 export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
+export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect

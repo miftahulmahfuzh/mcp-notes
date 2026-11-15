@@ -21,6 +21,16 @@
   English subtitle shown by default (inside the manifest first, then a separate `.vtt`/`.srt`), a
   quality menu, start at `resume_s`, positions every 5 s and on pause/end, refresh-and-continue on
   401/403/410. Logic proven by `npx vitest run web/src/stream tests/unit/static.test.ts`.
+- Stream plays and verified sources (phase 5). The player page's position reports
+  (`POST /api/stream/sessions/:id/position`, same-origin) land on one `movie_plays` row per player
+  session (source `stream`, provider, no file); the title's and episode's state, history and the
+  resume position follow it like a VLC play. After every resolve this machine's
+  `movie_stream_sources` row is verified, or stale on `no_source` (a Chrome failure writes
+  nothing); a title is fresh while verified within `NOTESD_STREAM_FRESH_DAYS` and not stale. A
+  title known only from streams stays out of the Library grid. Proof:
+  `npm run test:int -- tests/integration/movies.streams.int.test.ts`; on a run, seed a stream play
+  with `verify.sh exec` and read `GET /api/movies/<id>` and `GET /api/movies` (journey J2 of
+  `.workflows/plan/direct-streaming/phase-5.md`).
 
 ## How to get to it (user POV)
 Play on a stream (phase 9) or `/direct-stream <title>` (phase 7) opens the player page full screen in

@@ -85,15 +85,6 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
   - **Depends on**: P1-NOTES-A111
   - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
-- [ ] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: everything under "Movies store" in Shared contracts; `src/db/schema.ts` + migration `0021`; `src/movies/{repo,types,state,read,service,streams}.ts` (including `TitleDetail.stream_sources` and the one freshness rule); the position route in `src/http/directStreamApi.ts`; the hooks passed to phase 3's builder in `src/daemon.ts`; the position route and the `GET /api/movies/:id` `stream_sources` sentence in `scripts/docs/httpRoutes.ts`; `docs/guide/movies.md` ("What is stored", "Watch state", "Two machines", "Where the code is"); integration tests. Exit criteria: `npm run typecheck`, `npm test`, `npm run test:int` and `npm run docs:check` pass; J1, J2 and J3 pass; the movies journey still passes.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 5 of 10)
-  - **Satisfies**: R2, R5 — R2: "daemon proxy and player page" with "one click to a full-screen film"; R5: "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R2.4, R5.4 (store half)
-  - **Depends on**: P1-NOTES-A113
-  - **Plan**: `.workflows/plan/P1-NOTES-A115.md`
 - [ ] **P1-NOTES-A116** Phase 6: Playback probe campaign: DASH, VidNest, subtitles, expiry
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -150,6 +141,24 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A115** Phase 5: Streams in the movies store: plays, verified sources, state
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: everything under "Movies store" in Shared contracts; `src/db/schema.ts` + migration `0021`; `src/movies/{repo,types,state,read,service,streams}.ts` (including `TitleDetail.stream_sources` and the one freshness rule); the position route in `src/http/directStreamApi.ts`; the hooks passed to phase 3's builder in `src/daemon.ts`; the position route and the `GET /api/movies/:id` `stream_sources` sentence in `scripts/docs/httpRoutes.ts`; `docs/guide/movies.md` ("What is stored", "Watch state", "Two machines", "Where the code is"); integration tests. Exit criteria: `npm run typecheck`, `npm test`, `npm run test:int` and `npm run docs:check` pass; J1, J2 and J3 pass; the movies journey still passes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 5 of 10)
+  - **Satisfies**: R2, R5 — R2: "daemon proxy and player page" with "one click to a full-screen film"; R5: "the Stream page [...] after" with "Stream is a switch at the top of /movies, not a side-panel entry; the Stream grid shows only verified titles" · criteria: R2.4, R5.4 (store half)
+  - **Depends on**: P1-NOTES-A113
+  - **Plan**: `.workflows/plan/P1-NOTES-A115.md`
+  - **Completed**: 2026-11-15 20:29
+  - **Method**: /implement
+  - **Files**: src/db/schema.ts, drizzle/0021_stream_plays.sql, drizzle/meta/0021_snapshot.json, drizzle/meta/_journal.json, src/movies/types.ts, src/movies/state.ts, src/movies/repo.ts, src/movies/read.ts, src/movies/service.ts, src/movies/streams.ts, src/http/directStreamApi.ts, src/daemon.ts, tests/fixtures/movies/rows.ts, tests/unit/movies/state.test.ts, tests/unit/movies/types.test.ts, tests/integration/movies.streams.int.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/movies.md, docs/guide/architecture.md, .claude/skills/verify-notesd/features/movies.md, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md, .workflows/plan/DIRECT_STREAMING_PLAN.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-202317-479183/evidence
+  - **Drift**:
+    - Line numbers shifted after phase 3 landed; all anchors found, no content drift.
+    - git fetch: origin/feature/direct-streaming still at b759e18, nothing to catch up.
+  - **Decided**:
+    - Step 9 'add movies to directStreamRoutes deps Pick' → made it optional (Pick<AppDeps,'directStream'> & Partial<Pick<AppDeps,'movies'>>), passing movies ?? null to streamPositionRoutes (rung 6 / narrower blast radius: phase 3's tests/integration/directStream.api.int.test.ts calls directStreamRoutes({directStream}) and is not this phase's file)
 - [x] **P1-NOTES-A114** Phase 4: The player page
   - **Difficulty**: HARD
   - **Type**: Feature

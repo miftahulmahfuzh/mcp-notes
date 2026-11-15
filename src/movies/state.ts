@@ -2,10 +2,11 @@ import type { FileStateInput, PlayStateInput, TitleKind, WatchState } from './ty
 
 /**
  * Watch state, derived at read time from a file row and its last play (MOVIES_LIBRARY_PLAN
- * R3.4). "Last play" is `MoviesRepo.lastPlay`: the newest play whose position is known, else the
- * newest play (whose position is then unknown). The same "reached the end" rule is written in SQL
- * in src/movies/repo.ts (`finishEventsSql`); tests/integration/movies.repo.int.test.ts proves the
- * two agree.
+ * R3.4), and from a film's or an episode's stream plays (direct streaming). "Last play" is
+ * `MoviesRepo.lastPlay` (or, for a stream, `MoviesRepo.lastStreamPlay`): the newest play whose
+ * position is known, else the newest play (whose position is then unknown). The same "reached the
+ * end" rule is written in SQL in src/movies/repo.ts (`finishEventsSql`, with a stream branch);
+ * tests/integration/movies.repo.int.test.ts and movies.streams.int.test.ts prove they agree.
  */
 
 /** A play at or past this share of the duration finishes the file. */
@@ -71,4 +72,51 @@ export function titleState(kind: TitleKind, fileStates: readonly WatchState[], w
   if (presentUnfinished) return 'in_progress';
   if (fileStates.some((s) => s === 'dropped' || s === 'removed_unwatched')) return 'dropped';
   return 'seen';
+}
+
+/**
+ * A streamed film or episode has one stream pseudo-source: a "file" that is never deleted, never
+ * flagged and has no duration of its own (only the player's reading counts), whose last play is
+ * its last stream play. Streams are never deleted, so the pseudo-source is finished, in_progress
+ * or unwatched.
+ */
+export const STREAM_SOURCE: FileStateInput = { deletedAt: null, doneAt: null, watchedAt: null, durationS: null };
+
+/** The state of a streamed film or episode, from its last stream play. */
+export function streamState(lastPlay: PlayStateInput): WatchState {
+  return fileState(STREAM_SOURCE, lastPlay);
+}
+
+/** Where the stream player resumes a film or an episode: its last stream play's position, 0 when none or finished. */
+export function streamResumePosition(lastPlay: PlayStateInput | null): number {
+  return resumePosition(STREAM_SOURCE, lastPlay);
+}
+
+/** One source of a film or an episode, as the slot rules read it: its state and when it was last played (ISO, null: never). */
+export interface SourceSummary {
+  state: WatchState;
+  playedAt: string | null;
+}
+
+function playedMs(at: string | null): number {
+  return at === null ? Number.NEGATIVE_INFINITY : Date.parse(at);
+}
+
+/** The stream decides a slot (its state, unless something is finished, and its progress) when it was played after the primary copy, or there is no copy. */
+export function streamLeads(primary: SourceSummary | null, stream: SourceSummary | null): boolean {
+  if (stream === null) return false;
+  if (primary === null) return true;
+  return playedMs(stream.playedAt) > playedMs(primary.playedAt);
+}
+
+/**
+ * One episode from its file copies and its stream. Copies: finished when any copy is, else the
+ * primary copy's state (read.ts `primaryFile`: present here first, then the newest play). The
+ * stream joins as one more copy: finished when it is; otherwise it decides when it leads
+ * (`streamLeads`). With no stream this is exactly the file-only rule.
+ */
+export function episodeState(anyCopyFinished: boolean, primary: SourceSummary | null, stream: SourceSummary | null): WatchState {
+  if (anyCopyFinished || stream?.state === 'finished') return 'finished';
+  if (stream !== null && streamLeads(primary, stream)) return stream.state;
+  return primary?.state ?? 'unwatched';
 }

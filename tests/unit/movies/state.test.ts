@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { FINISHED_RATIO, fileState, reachedEnd, resumePosition, titleState } from '../../../src/movies/state.js'
+import { FINISHED_RATIO, episodeState, fileState, reachedEnd, resumePosition, streamResumePosition, streamState, titleState, type SourceSummary } from '../../../src/movies/state.js'
 import { WATCH_STATES, type FileStateInput, type PlayStateInput, type WatchState } from '../../../src/movies/types.js'
 
 const DAY = new Date('2026-11-01T00:00:00.000Z')
@@ -90,5 +90,52 @@ describe('titleState', () => {
   it("the title's own watched flag finishes it", () => {
     expect(titleState('tv', ['unwatched'], true)).toBe('finished')
     expect(titleState('movie', [], true)).toBe('finished')
+  })
+})
+
+describe('streams (direct streaming)', () => {
+  it.each<[string, PlayStateInput, WatchState]>([
+    ['opened and left at 0', play(0, 6000), 'unwatched'],
+    ['partway', play(1200, 6000), 'in_progress'],
+    ['at 90% of what the player reported', play(5400, 6000), 'finished'],
+    ['just under 90%', play(5399, 6000), 'in_progress'],
+    ['with no duration reported, never finished', play(99_999, null), 'in_progress'],
+  ])('a stream %s is %s', (_name, p, expected) => {
+    expect(streamState(p)).toBe(expected)
+  })
+
+  it('a stream reads like a present file with the same play', () => {
+    for (const p of [play(0, 6000), play(1200, 6000), play(5400, 6000)]) {
+      expect(streamState(p)).toBe(fileState(file({ durationS: null }), p))
+    }
+  })
+
+  it('resumes a stream where it stopped, and from the start when there is none or it is finished', () => {
+    expect(streamResumePosition(play(1200, 6000))).toBe(1200)
+    expect(streamResumePosition(play(5800, 6000))).toBe(0)
+    expect(streamResumePosition(null)).toBe(0)
+  })
+
+  const src = (state: WatchState, playedAt: string | null): SourceSummary => ({ state, playedAt })
+  const D1 = '2026-11-01T20:00:00.000Z'
+  const D2 = '2026-11-02T20:00:00.000Z'
+  const D3 = '2026-11-03T20:00:00.000Z'
+
+  it.each<[string, boolean, SourceSummary | null, SourceSummary | null, WatchState]>([
+    ['no copy and no stream', false, null, null, 'unwatched'],
+    ['no copy, streamed partway', false, null, src('in_progress', D2), 'in_progress'],
+    ['a copy finished, the stream partway', true, src('finished', D1), src('in_progress', D2), 'finished'],
+    ['the stream finished, the copy unwatched', false, src('unwatched', null), src('finished', D2), 'finished'],
+    ['streamed after the copy was dropped', false, src('dropped', D1), src('in_progress', D2), 'in_progress'],
+    ['the copy played after the stream', false, src('in_progress', D3), src('unwatched', D2), 'in_progress'],
+    ['a copy never played, streamed partway', false, src('unwatched', null), src('in_progress', D2), 'in_progress'],
+    ['no stream: the primary copy decides, as before', false, src('removed_unwatched', null), null, 'removed_unwatched'],
+  ])('an episode: %s', (_name, anyFinished, primary, stream, expected) => {
+    expect(episodeState(anyFinished, primary, stream)).toBe(expected)
+  })
+
+  it("a film takes its stream's state into the precedence list", () => {
+    expect(titleState('movie', ['dropped', streamState(play(1200, 6000))])).toBe('in_progress')
+    expect(titleState('movie', [streamState(play(5500, 6000))])).toBe('finished')
   })
 })
