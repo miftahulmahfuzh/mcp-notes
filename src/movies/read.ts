@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   movieCompanies,
@@ -8,13 +8,15 @@ import {
   movieIds,
   moviePeople,
   moviePlays,
+  movieStreamSources,
   movieTitleCompanies,
   movieTitles,
   notes,
 } from '../db/schema.js';
 import { emptyTitleMovieIds, episodeKey, movieIdsOfTitles, type TitleMovieIds } from './ids.js';
+import { freshStreamSourceSql } from './repo.js';
 import { reviewText } from './reviewNote.js';
-import { FINISHED_RATIO, fileState, resumePosition, titleState } from './state.js';
+import { FINISHED_RATIO, episodeState, fileState, resumePosition, streamLeads, streamState, titleState, type SourceSummary } from './state.js';
 import { posterUrl, type TmdbSearchHit } from './tmdb.js';
 import { titleId as makeTitleId, type FileReason, type FileStatus, type ParsedNameRecord, type TitleKind, type WatchState } from './types.js';
 
@@ -49,7 +51,7 @@ export const IMAGE_SIZES = {
 // ---------- wire types ----------
 
 export type FileSource = 'scan' | 'vlc_recents';
-export type PlaySource = 'live' | 'vlc_recents';
+export type PlaySource = 'live' | 'vlc_recents' | 'stream';
 export type UnavailableReason = 'not_on_this_machine' | 'deleted';
 
 /** Which machine is asking, and where TMDB images live. */
@@ -173,7 +175,8 @@ export interface CastCredit {
 
 export interface PlayView {
   id: number;
-  file_id: number;
+  /** The file played; null for a stream play (source `stream`). */
+  file_id: number | null;
   title_id: string | null;
   title: string | null;
   kind: TitleKind | null;
@@ -183,11 +186,14 @@ export interface PlayView {
   episode_name: string | null;
   /** What was played: the episode's movie id, or the title's for a film. */
   movie_id: string | null;
-  file_name: string;
+  /** The file's name; null for a stream play. */
+  file_name: string | null;
   file_deleted: boolean;
   file_deleted_at: string | null;
   host: string;
   source: PlaySource;
+  /** The direct-stream provider of a stream play (`VidFast`); null for a file play. */
+  provider: string | null;
   started_at: string;
   ended_at: string | null;
   start_position_s: number | null;
@@ -221,7 +227,22 @@ export interface TitleDetail extends TitleListItem {
   seasons: SeasonView[];
   unplaced_files: FileView[];
   plays: PlayView[];
+  /** This host's verified stream sources (direct streaming): the film's, or each episode's. */
+  stream_sources: StreamSourceView[];
   metadata_fetched_at: string | null;
+}
+
+/** One verified stream source of this host, as the routes answer it (a film is season 0, episode 0). */
+export interface StreamSourceView {
+  host: string;
+  season: number;
+  episode: number;
+  provider: string;
+  manifest_kind: string;
+  best_height: number | null;
+  en_subtitle: boolean;
+  verified_at: string;
+  stale_at: string | null;
 }
 
 export interface ParsedView {
@@ -257,6 +278,7 @@ export interface TmdbHitView {
   year: number | null;
   overview: string;
   poster_url: string | null;
+  /** The title is in the Library (a title known only from streams is not). */
   in_library: boolean;
 }
 
@@ -281,6 +303,8 @@ export interface TitleFilter {
   finishedTo?: Date;
   sort?: TitleSort;
   limit?: number;
+  /** `library` (default): leave out titles known only from streams (invariant 10). `all`: every title. */
+  scope?: 'library' | 'all';
 }
 
 export interface HistoryFilter {
@@ -427,10 +451,51 @@ function primaryFile(files: readonly FileView[]): FileView | null {
   return sorted[0] ?? null;
 }
 
-/** An episode (or film) watched to the end in any copy is finished; otherwise its primary file decides. */
-function groupState(files: readonly FileView[]): WatchState {
-  if (files.some((f) => f.state === 'finished')) return 'finished';
-  return primaryFile(files)?.state ?? 'unwatched';
+/** The key of a title's stream slot: the film itself, or one episode (`<season>x<episode>`, buildSeasons' key). */
+const FILM_STREAM = 'film';
+
+function streamKey(season: number | null, episode: number | null): string {
+  return season === null || episode === null ? FILM_STREAM : `${season}x${episode}`;
+}
+
+/** A film's or an episode's stream pseudo-source (state.ts STREAM_SOURCE), from its last stream play. */
+interface StreamSlotView {
+  season: number | null;
+  episode: number | null;
+  state: WatchState;
+  progress: ProgressView;
+  last_played_at: string;
+  finished_at: string | null;
+}
+
+function streamSlotView(play: PlayRow): StreamSlotView {
+  const state = streamState(play);
+  return {
+    season: play.season,
+    episode: play.episode,
+    state,
+    progress: { position_s: play.positionS, duration_s: play.durationS, ratio: ratioOf(play.positionS, play.durationS) },
+    last_played_at: iso(play.startedAt),
+    finished_at: state === 'finished' ? iso(play.endedAt ?? play.updatedAt) : null,
+  };
+}
+
+function fileSummary(file: FileView | null): SourceSummary | null {
+  return file === null ? null : { state: file.state, playedAt: file.last_played_at };
+}
+
+function streamSummary(stream: StreamSlotView | null): SourceSummary | null {
+  return stream === null ? null : { state: stream.state, playedAt: stream.last_played_at };
+}
+
+/** The stream when it decides a slot's progress (state.ts streamLeads), else null. */
+function leadingStream(primary: FileView | null, stream: StreamSlotView | null): StreamSlotView | null {
+  return stream !== null && streamLeads(fileSummary(primary), streamSummary(stream)) ? stream : null;
+}
+
+/** An episode's state from its copies and its stream (state.ts episodeState; file-only episodes as before). */
+function slotState(files: readonly FileView[], stream: StreamSlotView | null): WatchState {
+  return episodeState(files.some((f) => f.state === 'finished'), fileSummary(primaryFile(files)), streamSummary(stream));
 }
 
 // ---------- titles ----------
@@ -439,10 +504,12 @@ interface TitleParts {
   files: FileView[];
   episodes: EpisodeRow[];
   ids: TitleMovieIds;
+  /** By streamKey: the film's stream, or each streamed episode's. */
+  streams: Map<string, StreamSlotView>;
 }
 
 function emptyParts(): TitleParts {
-  return { files: [], episodes: [], ids: emptyTitleMovieIds() };
+  return { files: [], episodes: [], ids: emptyTitleMovieIds(), streams: new Map() };
 }
 
 async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext): Promise<Map<string, TitleParts>> {
@@ -464,11 +531,28 @@ async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext):
           .from(movieEpisodes)
           .where(inArray(movieEpisodes.titleId, tvIds))
           .orderBy(asc(movieEpisodes.season), asc(movieEpisodes.episode));
+  // The last stream play of each streamed film or episode, in MoviesRepo.lastStreamPlay's order.
+  const streamRows = await db
+    .selectDistinctOn([moviePlays.titleId, moviePlays.season, moviePlays.episode])
+    .from(moviePlays)
+    .where(and(eq(moviePlays.source, 'stream'), inArray(moviePlays.titleId, ids)))
+    .orderBy(
+      moviePlays.titleId,
+      moviePlays.season,
+      moviePlays.episode,
+      sql`(${moviePlays.positionS} is not null) desc`,
+      desc(moviePlays.startedAt),
+      desc(moviePlays.id),
+    );
   for (const row of fileRows) {
     if (row.titleId === null) continue;
     parts.get(row.titleId)?.files.push(fileView(row, last.get(Number(row.id)) ?? null, ctx));
   }
   for (const row of episodeRows) parts.get(row.titleId)?.episodes.push(row);
+  for (const row of streamRows) {
+    if (row.titleId === null) continue;
+    parts.get(row.titleId)?.streams.set(streamKey(row.season, row.episode), streamSlotView(row));
+  }
   for (const [id, movieIdsOfTitle] of await movieIdsOfTitles(db, ids)) {
     const p = parts.get(id);
     if (p !== undefined) p.ids = movieIdsOfTitle;
@@ -481,10 +565,12 @@ interface EpisodeSlot {
   season: number;
   episode: number;
   files: FileView[];
+  stream: StreamSlotView | null;
 }
 
 function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): EpisodeView {
   const primary = primaryFile(slot.files);
+  const lead = leadingStream(primary, slot.stream);
   return {
     movie_id: ids.episodes.get(episodeKey(slot.season, slot.episode)) ?? null,
     season: slot.season,
@@ -494,39 +580,46 @@ function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): E
     runtime_min: slot.row?.runtimeMin ?? null,
     overview: slot.row?.overview ?? null,
     still_url: imageUrl(ctx, slot.row?.stillPath ?? null, IMAGE_SIZES.still),
-    state: groupState(slot.files),
+    state: slotState(slot.files, slot.stream),
     has_file: slot.files.length > 0,
     present_here: slot.files.some((f) => f.available),
     deleted: slot.files.length > 0 && slot.files.every((f) => f.deleted),
-    progress: primary?.progress ?? NO_PROGRESS,
-    last_played_at: latest(slot.files.map((f) => f.last_played_at)),
-    finished_at: latest(slot.files.map((f) => f.finished_at)),
+    progress: lead?.progress ?? primary?.progress ?? NO_PROGRESS,
+    last_played_at: latest([...slot.files.map((f) => f.last_played_at), slot.stream?.last_played_at]),
+    finished_at: latest([...slot.files.map((f) => f.finished_at), slot.stream?.finished_at]),
     file_id: primary?.id ?? null,
     files: slot.files,
   };
 }
 
-/** Episodes of a series: TMDB's list plus any (season, episode) only a file names. Specials (season 0) only with a file. */
+/** Episodes of a series: TMDB's list plus any (season, episode) only a file or a stream names. Specials (season 0) only with a file or a stream. */
 function buildSeasons(parts: TitleParts, ctx: ReadContext, trailers: Readonly<Record<string, string>>): { seasons: SeasonView[]; episodes: EpisodeView[]; unplaced: FileView[] } {
   const slots = new Map<string, EpisodeSlot>();
   const key = (s: number, e: number): string => `${s}x${e}`;
-  for (const row of parts.episodes) slots.set(key(row.season, row.episode), { row, season: row.season, episode: row.episode, files: [] });
+  const slotAt = (season: number, episode: number): EpisodeSlot => {
+    const k = key(season, episode);
+    let slot = slots.get(k);
+    if (slot === undefined) {
+      slot = { row: null, season, episode, files: [], stream: null };
+      slots.set(k, slot);
+    }
+    return slot;
+  };
+  for (const row of parts.episodes) slots.set(key(row.season, row.episode), { row, season: row.season, episode: row.episode, files: [], stream: null });
   const unplaced: FileView[] = [];
   for (const f of parts.files) {
     if (f.season === null || f.episode === null) {
       unplaced.push(f);
       continue;
     }
-    const k = key(f.season, f.episode);
-    let slot = slots.get(k);
-    if (slot === undefined) {
-      slot = { row: null, season: f.season, episode: f.episode, files: [] };
-      slots.set(k, slot);
-    }
-    slot.files.push(f);
+    slotAt(f.season, f.episode).files.push(f);
+  }
+  for (const stream of parts.streams.values()) {
+    if (stream.season === null || stream.episode === null) continue;
+    slotAt(stream.season, stream.episode).stream = stream;
   }
   const episodes = [...slots.values()]
-    .filter((s) => s.season >= 1 || s.files.length > 0)
+    .filter((s) => s.season >= 1 || s.files.length > 0 || s.stream !== null)
     .sort((a, b) => a.season - b.season || a.episode - b.episode)
     .map((s) => episodeView(s, parts.ids, ctx));
   const seasons: SeasonView[] = [];
@@ -548,6 +641,7 @@ interface BuiltTitle {
 function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize: string): BuiltTitle {
   const kind = t.kind as TitleKind;
   const files = parts.files;
+  const streams = [...parts.streams.values()];
   let state: WatchState;
   let progress: TitleProgress;
   let seasons: SeasonView[] = [];
@@ -565,9 +659,11 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
       episodes_present: built.episodes.filter((e) => e.present_here).length,
     };
   } else {
-    state = titleState('movie', files.map((f) => f.state));
+    // The film's stream is one more copy in the precedence list (state.ts titleState).
+    const stream = parts.streams.get(FILM_STREAM) ?? null;
+    state = titleState('movie', stream === null ? files.map((f) => f.state) : [...files.map((f) => f.state), stream.state]);
     const primary = primaryFile(files);
-    const p = primary?.progress ?? NO_PROGRESS;
+    const p = leadingStream(primary, stream)?.progress ?? primary?.progress ?? NO_PROGRESS;
     const duration = p.duration_s ?? (t.runtimeMin !== null ? t.runtimeMin * 60 : null);
     progress = { kind: 'movie', position_s: p.position_s, duration_s: duration, ratio: ratioOf(p.position_s, duration) };
   }
@@ -585,8 +681,8 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
     watched_at: isoOrNull(t.watchedAt),
     rating: t.rating,
     progress,
-    last_played_at: latest(files.map((f) => f.last_played_at)),
-    finished_at: latest([t.watchedAt, ...files.map((f) => f.finished_at)]),
+    last_played_at: latest([...files.map((f) => f.last_played_at), ...streams.map((s) => s.last_played_at)]),
+    finished_at: latest([t.watchedAt, ...files.map((f) => f.finished_at), ...streams.map((s) => s.finished_at)]),
     present_here: files.some((f) => f.available),
     file_count: files.filter((f) => !f.deleted).length,
     deleted_file_count: files.filter((f) => f.deleted).length,
@@ -633,9 +729,20 @@ function sortItems(items: TitleListItem[], sort: TitleSort): TitleListItem[] {
   }
 }
 
-/** The grid: every title matching the filter, with its derived state and progress. */
-export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext): Promise<TitleListItem[]> {
-  const where: SQL[] = [];
+/**
+ * Invariant 10 (direct streaming): the Library lists a title that has a file row (any host,
+ * deleted ones included), or that was never streamed nor stream-checked (a title stored before
+ * streams existed). A title known only from streams is left out; getTitle still opens it.
+ */
+function inLibrarySql(): SQL {
+  return sql`(exists (select 1 from movie_files lf where lf.title_id = movie_titles.id)
+    or (not exists (select 1 from movie_stream_sources ls where ls.title_id = movie_titles.id)
+        and not exists (select 1 from movie_plays lp where lp.title_id = movie_titles.id)))`;
+}
+
+/** Titles matching the filter and `scope` (a condition on `movie_titles`, or none), with their derived state and progress. */
+async function selectTitles(db: Db, filter: TitleFilter, ctx: ReadContext, scope: SQL | null): Promise<TitleListItem[]> {
+  const where: SQL[] = scope === null ? [] : [scope];
   if (filter.kind !== undefined) where.push(eq(movieTitles.kind, filter.kind));
   if (filter.q !== undefined) where.push(textMatch(filter.q));
   if (filter.company !== undefined) where.push(companyMatch(filter.company));
@@ -658,6 +765,21 @@ export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext):
   }
   const limit = clamp(filter.limit ?? DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT);
   return sortItems(items, filter.sort ?? 'recent').slice(0, limit);
+}
+
+/** The Library grid: every Library title matching the filter (every title with `scope: 'all'`), with its derived state and progress. */
+export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext): Promise<TitleListItem[]> {
+  return selectTitles(db, filter, ctx, filter.scope === 'all' ? null : inLibrarySql());
+}
+
+/**
+ * The Stream grid's titles (direct streaming, invariant 10): those with a source verified on
+ * `ctx.host` at or after `freshSince` and not stale (repo.ts freshStreamSourceSql), files or not.
+ * `filter.scope` is ignored. GET /api/movies/stream (phase 9) calls it with
+ * `streamFreshSince(now, config.directStream.freshDays)`.
+ */
+export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadContext, freshSince: Date): Promise<TitleListItem[]> {
+  return selectTitles(db, filter, ctx, freshStreamSourceSql(ctx.host, freshSince));
 }
 
 async function titleCompanies(db: Db, id: string, ctx: ReadContext): Promise<CompanyView[]> {
@@ -751,17 +873,38 @@ async function reviewOf(db: Db, noteId: string | null): Promise<{ review: string
   return row === undefined ? { review: '', noteId: null } : { review: reviewText(row.body), noteId };
 }
 
+/** The title's source rows on `host` that were ever verified (a stale-only row has nothing to show), in episode order. */
+async function streamSourceViews(db: Db, titleIdValue: string, host: string): Promise<StreamSourceView[]> {
+  const rows = await db
+    .select()
+    .from(movieStreamSources)
+    .where(and(eq(movieStreamSources.titleId, titleIdValue), eq(movieStreamSources.host, host), isNotNull(movieStreamSources.verifiedAt)))
+    .orderBy(asc(movieStreamSources.season), asc(movieStreamSources.episode));
+  return rows.map((r) => ({
+    host: r.host,
+    season: r.season,
+    episode: r.episode,
+    provider: r.provider ?? '',
+    manifest_kind: r.manifestKind ?? '',
+    best_height: r.bestHeight,
+    en_subtitle: r.enSubtitle,
+    verified_at: (r.verifiedAt as Date).toISOString(),
+    stale_at: r.staleAt === null ? null : r.staleAt.toISOString(),
+  }));
+}
+
 /** One title with every file (deleted and other hosts included), episodes, credits, review and recent plays. */
 export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<TitleDetail | null> {
   const [t] = await db.select().from(movieTitles).where(eq(movieTitles.id, id)).limit(1);
   if (t === undefined) return null;
   const parts = (await loadParts(db, [t], ctx)).get(t.id) ?? emptyParts();
   const built = buildTitle(t, parts, ctx, IMAGE_SIZES.detail);
-  const [companies, credits, review, plays] = await Promise.all([
+  const [companies, credits, review, plays, streamSources] = await Promise.all([
     titleCompanies(db, t.id, ctx),
     titleCredits(db, t.id),
     reviewOf(db, t.reviewNoteId),
     history(db, { titleId: t.id, limit: DETAIL_PLAY_LIMIT }),
+    streamSourceViews(db, t.id, ctx.host),
   ]);
   return {
     ...built.item,
@@ -787,57 +930,79 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
     seasons: built.seasons,
     unplaced_files: built.unplaced,
     plays,
+    stream_sources: streamSources,
     metadata_fetched_at: isoOrNull(t.metadataFetchedAt),
   };
 }
 
-/** Play events, newest first, with their file and title; deleted files included (history survives deletion). */
+/**
+ * Play events, newest first, with their file (a file play) and title; deleted files included
+ * (history survives deletion). A stream play has no file: its title, season and episode are its
+ * own (movie_plays_target_check keeps exactly one side set), and it names its provider.
+ */
 export async function history(db: Db, filter: HistoryFilter = {}): Promise<PlayView[]> {
+  const titleOf = sql<string | null>`coalesce(${movieFiles.titleId}, ${moviePlays.titleId})`;
+  const seasonOf = sql<number | null>`coalesce(${movieFiles.season}, ${moviePlays.season})`;
+  const episodeOf = sql<number | null>`coalesce(${movieFiles.episode}, ${moviePlays.episode})`;
   const where: SQL[] = [];
-  if (filter.titleId !== undefined) where.push(eq(movieFiles.titleId, filter.titleId));
+  if (filter.titleId !== undefined) {
+    const ofTitle = or(eq(movieFiles.titleId, filter.titleId), eq(moviePlays.titleId, filter.titleId));
+    if (ofTitle !== undefined) where.push(ofTitle);
+  }
   if (filter.fileId !== undefined) where.push(eq(moviePlays.fileId, filter.fileId));
   if (filter.host !== undefined) where.push(eq(moviePlays.host, filter.host));
   if (filter.from !== undefined) where.push(gte(moviePlays.startedAt, filter.from));
   if (filter.to !== undefined) where.push(lt(moviePlays.startedAt, filter.to));
   const limit = clamp(filter.limit ?? DEFAULT_HISTORY_LIMIT, 1, MAX_HISTORY_LIMIT);
   const rows = await db
-    .select({ play: moviePlays, file: movieFiles, titleName: movieTitles.title, titleKind: movieTitles.kind, episodeName: movieEpisodes.name, movieId: movieIds.id })
+    .select({
+      play: moviePlays,
+      file: movieFiles,
+      titleId: titleOf,
+      season: seasonOf,
+      episode: episodeOf,
+      titleName: movieTitles.title,
+      titleKind: movieTitles.kind,
+      episodeName: movieEpisodes.name,
+      movieId: movieIds.id,
+    })
     .from(moviePlays)
-    .innerJoin(movieFiles, eq(movieFiles.id, moviePlays.fileId))
-    .leftJoin(movieTitles, eq(movieTitles.id, movieFiles.titleId))
+    .leftJoin(movieFiles, eq(movieFiles.id, moviePlays.fileId))
+    .leftJoin(movieTitles, sql`${movieTitles.id} = ${titleOf}`)
     .leftJoin(
       movieEpisodes,
-      and(eq(movieEpisodes.titleId, movieFiles.titleId), eq(movieEpisodes.season, movieFiles.season), eq(movieEpisodes.episode, movieFiles.episode)),
+      and(sql`${movieEpisodes.titleId} = ${titleOf}`, sql`${movieEpisodes.season} = ${seasonOf}`, sql`${movieEpisodes.episode} = ${episodeOf}`),
     )
-    // The episode's id for a file with a season and episode, else the title's (season and episode null on both sides).
+    // The episode's id when the play names a season and episode, else the title's (season and episode null on both sides).
     .leftJoin(
       movieIds,
       and(
-        eq(movieIds.titleId, movieFiles.titleId),
-        sql`${movieIds.season} is not distinct from ${movieFiles.season}`,
-        sql`${movieIds.episode} is not distinct from ${movieFiles.episode}`,
+        sql`${movieIds.titleId} = ${titleOf}`,
+        sql`${movieIds.season} is not distinct from ${seasonOf}`,
+        sql`${movieIds.episode} is not distinct from ${episodeOf}`,
       ),
     )
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(moviePlays.startedAt), desc(moviePlays.id))
     .limit(limit);
-  return rows.map(({ play, file, titleName, titleKind, episodeName, movieId }) => {
-    const duration = play.durationS ?? file.durationS ?? null;
+  return rows.map(({ play, file, titleId, season, episode, titleName, titleKind, episodeName, movieId }) => {
+    const duration = play.durationS ?? file?.durationS ?? null;
     return {
       id: Number(play.id),
-      file_id: Number(play.fileId),
-      title_id: file.titleId,
+      file_id: play.fileId === null ? null : Number(play.fileId),
+      title_id: titleId,
       title: titleName ?? null,
       kind: (titleKind ?? null) as TitleKind | null,
-      season: file.season,
-      episode: file.episode,
+      season: season === null ? null : Number(season),
+      episode: episode === null ? null : Number(episode),
       episode_name: episodeName ?? null,
       movie_id: movieId ?? null,
-      file_name: file.name,
-      file_deleted: file.deletedAt !== null,
-      file_deleted_at: isoOrNull(file.deletedAt),
+      file_name: file?.name ?? null,
+      file_deleted: file !== null && file.deletedAt !== null,
+      file_deleted_at: isoOrNull(file?.deletedAt ?? null),
       host: play.host,
       source: play.source as PlaySource,
+      provider: play.provider,
       started_at: iso(play.startedAt),
       ended_at: isoOrNull(play.endedAt),
       start_position_s: play.startPositionS,
@@ -887,7 +1052,7 @@ export async function listUnmatched(db: Db, ctx: ReadContext): Promise<Unmatched
 export async function statusCounts(db: Db, ctx: ReadContext): Promise<StatusCounts> {
   const res = await db.execute<{ titles: number; files_here: number; unmatched_here: number; pending_here: number }>(sql`
     select
-      (select count(*)::int from movie_titles) as titles,
+      (select count(*)::int from movie_titles where ${inLibrarySql()}) as titles,
       (select count(*)::int from movie_files where host = ${ctx.host} and deleted_at is null and status = 'matched') as files_here,
       (select count(*)::int from movie_files where host = ${ctx.host} and deleted_at is null and status = 'unmatched') as unmatched_here,
       (select count(*)::int from movie_files where host = ${ctx.host} and deleted_at is null and status = 'pending') as pending_here
@@ -907,7 +1072,7 @@ export async function searchHitViews(db: Db, hits: readonly TmdbSearchHit[], ctx
   const known =
     ids.length === 0
       ? new Set<string>()
-      : new Set((await db.select({ id: movieTitles.id }).from(movieTitles).where(inArray(movieTitles.id, ids))).map((r) => r.id));
+      : new Set((await db.select({ id: movieTitles.id }).from(movieTitles).where(and(inArray(movieTitles.id, ids), inLibrarySql()))).map((r) => r.id));
   return hits.map((h, i) => {
     const id = ids[i] ?? makeTitleId(h.kind, h.tmdbId);
     return {

@@ -3,7 +3,9 @@
 The Movies library is notesd's record of the video files on your machines: which films and series
 you have, what you watched, when, and how far you got. It scans the folders you name, looks every
 video up on TMDB, shows the result as a poster grid at `/movies`, plays files in the Windows VLC and
-follows the position while they play. Six `movies_*` MCP tools answer questions about it from
+follows the position while they play. A second side of the same page, Stream, lists the titles a
+provider was verified to stream on this machine and plays them in the streaming Chrome (see
+[The Stream side](#the-stream-side)). Six `movies_*` MCP tools answer questions about it from
 Claude Code (`/n ...`) and from the wall's chat.
 
 ![The poster grid of a real library: a film paused in VLC first, then the titles in progress](img/movies/grid.png)
@@ -63,12 +65,19 @@ change behaviour:
 | Studios, people, credits | `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits` | Shared | Stored with the title on its first match: up to 40 cast with character names, and up to 20 each of directors, writers, producers and creators. |
 | Episode | `movie_episodes` | Shared | Every episode TMDB lists for a series, with name, air date, runtime and synopsis, whether or not you have its file. |
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
-| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list). Never deleted, and it outlives its file. |
+| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
+| Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
 `MoviesRepo` (`src/movies/repo.ts`) is the only writer of these tables. Watch state is not in any of
 them: it is derived when read. Posters and backdrops are not stored either: the page hotlinks them
 from `TMDB_IMAGE_BASE`, so both machines show them.
+
+A title first met through a stream is stored like any other (TMDB details, credits, episodes), but
+it stays out of the Library grid until it has a file: the Library lists titles with a file on
+either machine, and titles that were never streamed. Opened by id (`/movies/<id>`, `movies_get`)
+it shows like any title, with its stream plays. A title is on the Stream side only while one of
+its source rows on this machine was verified within `NOTESD_STREAM_FRESH_DAYS` and is not stale.
 
 ## The scan
 
@@ -265,14 +274,24 @@ A title's state comes from its files:
   when no file is left. Otherwise (something watched, nothing left on disk to watch) it is `dropped`
   when a file was dropped or deleted unwatched, else `seen`.
 - An episode with several copies is finished when any copy is.
+- A stream counts as one more copy. A streamed film or episode has one stream source whose last
+  play is its newest stream play. It is never deleted and has no duration of its own, so it is
+  `finished` at 90 % of the duration the player reported, `in_progress` when played past 0, and
+  `unwatched` otherwise. A film puts it in the precedence list with its files. An episode is
+  finished when any copy or the stream is; otherwise the stream decides when it was played after
+  the episode's primary copy (or there is no copy), and the primary copy decides when not.
 
 Play resumes at the last known position, or from the start when there is none or the file is
-finished.
+finished. The stream player resumes a film or an episode at its last stream play's position, from
+either machine, with the same rule.
 
 ## The Movies page
 
-The film-slate icon in the rail or sidebar opens `/movies`. The header counts titles, films, series
-and what is in progress.
+The film-slate icon in the rail or sidebar opens `/movies`. Two icons at the top left switch the
+page between its two sides: Library, the files on your machines (this section), and Stream, the
+titles verified to stream on this machine ([The Stream side](#the-stream-side)). Stream has no
+entry of its own in the rail or sidebar. The header counts titles, films, series and what is in
+progress.
 
 **The grid.** One poster per title; a series is one poster. In progress comes first, then
 unwatched, then finished, then titles with no file left, each by newest play. A chip names the
@@ -359,12 +378,46 @@ happens after it and says so, unless you ask for spoilers outright. For a later 
 that part, and in `/n`, Claude reads `last_play` from `movies_get` again before it talks about the
 plot, and never reuses a position from earlier in the conversation.
 
-**Toolbar.** Back to the library, the unmatched list with a count of this machine's unmatched and
-pending files (`/movies/unmatched`), and Rescan the library, which starts a pass at once.
+**Toolbar.** The Library / Stream switch, Back to the library (Back to Stream on a title opened
+from Stream), and on the Library side the unmatched list with a count of this machine's unmatched
+and pending files (`/movies/unmatched`) and Rescan the library, which starts a pass at once.
 
 **Live updates.** The page listens on `/api/movies/events` and reloads on every change, polls once
 a minute for changes made by the other machine, and while a play is followed re-reads the player
 and the open title every five seconds.
+
+### The Stream side
+
+The Stream icon at the top of `/movies` opens `/movies?side=stream`: the same poster grid and
+filters, filled from `GET /api/movies/stream` instead of the library. A title is on it only when a
+provider returned a playable stream for it on this machine within the freshness window
+(`NOTESD_STREAM_FRESH_DAYS`, 7 days by default) and its last try did not fail. Nothing else is
+shown there, so every poster plays. A title with no file is not dimmed on this side, and there is
+no `gone` pill. The header says how many titles are verified and over how many days.
+
+Titles get onto it by being streamed: `/direct-stream <title>` from Claude Code (see
+[streaming.md](streaming.md)), a play from this page, or the background prober when
+`NOTESD_STREAM_PROBER=on`. An empty Stream side says so, and with direct streaming off it says how
+to turn it on.
+
+A poster opens the title's page at `/movies/<id>?side=stream`, the same page as from the library
+(poster, facts, people, trailer, review), with one more line under the facts naming the stream
+source: provider, best quality and whether it has an English subtitle (`Stream: VidFast · 2160p ·
+English subtitle`).
+
+- **Play** asks the daemon to resolve the title and open the player full screen in the streaming
+  Chrome, with no further click; the page says "opening in the streaming Chrome". When no provider
+  answers, the source is marked stale, the page says "no provider could stream <title> now; it
+  leaves the Stream grid", and the title is gone from the grid on the refresh that follows.
+- **A file on this machine wins.** When a title has both a file here and a verified stream, Play
+  is still the VLC Play or Resume, and a second icon beside it streams instead. The same rule
+  holds on each episode row, and on the Library side a title with no file here but a verified
+  stream gets a stream Play too.
+- **Series** list every season on this side, not only the seasons with a file. Every episode has
+  a play icon; an episode without a verified stream is checked when you click it ("checked when
+  it starts"), and one with a verified stream carries a `verified` flag naming its source.
+- **The other machine** verifies its own titles. A title verified only on the other laptop is not
+  on this machine's Stream side, and its source is not offered here.
 
 ## Playback
 
@@ -581,6 +634,7 @@ Both machines use the same database and different disks.
 | Movie ids | Plays (history lists both machines' plays) |
 | Watched flag, rating, review | The unmatched list (this machine's files only) |
 | Posters (hotlinked TMDB URLs) | The scan, VLC, the player, the health log |
+| Stream plays (history lists both machines') | Stream sources: what each machine verified |
 
 - A file on the other machine has `available: false`. On the page its row says "on <host>" and its
   play icon is disabled; the big Play button reads "On <host>: play it on that machine".
@@ -589,6 +643,9 @@ Both machines use the same database and different disks.
 - "Continue" and "play something" only consider files on the machine that runs the daemon. Without
   a title, continue follows this machine's newest play, not the other's.
 - A title that exists only on the other machine still shows in the grid with its state.
+- A stream verified on one machine is not on the other's Stream side until that machine resolves
+  it too. Stream plays are history on both, and the stream player resumes from either machine's
+  last stream play.
 
 ## What you can ask
 
@@ -791,6 +848,8 @@ at all.
 | Situation | What answers |
 | --- | --- |
 | `NOTESD_MOVIES=off` | Every `/api/movies*` route: 503 `movies_off` (`GET /api/movies/player` answers `{available: false, reason: "movies_off"}`). Every tool: `movies_off: the movie library is not running on this server ...`. The page says how to turn it on. |
+| `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
+| No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
 | No TMDB credentials | Files are registered, all unmatched `no_tmdb_credentials`. Assign answers 503 `tmdb_off` for a title not stored yet. `movies_person` answers `tmdb_unavailable`. |
 | TMDB down | Files stay `pending` and retry every pass. Assign and TMDB search answer 502 `tmdb_error`; `movies_person` answers `tmdb_error`. |
@@ -855,18 +914,19 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/ids.ts` | Movie id shape and lookup (ids are written by the database) |
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
+| `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |
 | `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
-| `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
+| `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, the Stream list, unmatched, assign, user marks, sync, events; play, continue, player, health; the stream position report is in `src/http/directStreamApi.ts` |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
 | `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
-| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql` | The tables; the id sequence, function and triggers; the trailer columns |
+| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql`, `drizzle/0021_stream_plays.sql` | The tables; the id sequence, function and triggers; the trailer columns; stream plays and stream sources |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
 
 ## Proving a change
@@ -886,13 +946,14 @@ $V vlc RUN quit                                              # VLC "exits"; the 
 $V down RUN
 ```
 
-- Unit tests: `tests/unit/movies/` (the VLC pieces) and `web/src/App.movies.test.tsx`.
-- Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, play,
+- Unit tests: `tests/unit/movies/` (the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`.
+- Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream, play,
   continue, recents, MCP, health, health crash).
 - The pictures on this page come from two places (`scripts/docs/shots/movies.mjs`):
   - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:
     the grid, a film, the trailer pop-up, a series' episodes, the filter clip, and the page of the
-    title VLC has open (kept as it is when VLC has nothing open). It only looks: no Play, no mark,
+    title VLC has open (kept as it is when VLC has nothing open). It also takes `stream.png`, the Stream side, when
+    this machine has at least one verified title; it presses no Play there either. It only looks: no Play, no mark,
     no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks two billed
     questions for `ask-name.png` and `chat-answer.png`; they stay in the chat history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway

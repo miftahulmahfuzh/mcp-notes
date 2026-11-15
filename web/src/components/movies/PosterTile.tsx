@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { TitleListItem } from '../../moviesApi';
-import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type TileLive } from '../../lib/movies';
+import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type MoviesSide, type TileLive } from '../../lib/movies';
 import { moviesHref } from '../../lib/route';
 import { Poster } from './Poster';
 
@@ -8,22 +8,25 @@ export interface PosterTileProps {
   title: TitleListItem;
   /** This title is in the VLC notesd follows. */
   live?: TileLive | null;
+  /** The Stream side: never dimmed as gone, and the link opens the title on the Stream side. */
+  side?: MoviesSide;
   onOpen: (titleId: string) => void;
 }
 
 /** One poster: state chip, progress bar while in progress, caption below. A real link, so a middle click opens a tab. */
-export function PosterTile({ title: t, live = null, onOpen }: PosterTileProps) {
-  const gone = isGone(t);
+export function PosterTile({ title: t, live = null, side = 'library', onOpen }: PosterTileProps) {
+  const gone = isGone(t, side);
   const badge = stateBadge(t.state);
   const progress = tileProgress(t);
   const titleId = t.movie_id ?? t.id;
+  const href = moviesHref(side === 'stream' ? { title: titleId, unmatched: false, stream: true } : { title: titleId, unmatched: false });
   const open = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     onOpen(titleId);
   };
   return (
-    <a href={moviesHref({ title: titleId, unmatched: false })} className={['mv-tile', gone ? 'gone' : '', live !== null ? `now ${live}` : ''].filter((c) => c !== '').join(' ')} data-title={titleId} onClick={open}>
+    <a href={href} className={['mv-tile', gone ? 'gone' : '', live !== null ? `now ${live}` : ''].filter((c) => c !== '').join(' ')} data-title={titleId} onClick={open}>
       <span className="mv-art">
         <Poster key={t.poster_url ?? 'none'} url={t.poster_url} title={t.title} year={t.year} />
         {live === null && badge !== null && <span className={`mv-badge ${t.state}`}>{badge}</span>}

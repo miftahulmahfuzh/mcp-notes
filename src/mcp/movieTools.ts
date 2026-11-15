@@ -183,7 +183,7 @@ async function resolveTitleId(db: Db, ctx: ReadContext, query: string): Promise<
   const q = query.trim();
   if (normalizeMovieId(q) !== null) return (await resolveTitle(db, ctx, q)).titleId;
   if (TITLE_ID.test(q)) return q.toLowerCase();
-  const hits = await listTitles(db, { q, limit: 6 }, ctx);
+  const hits = await listTitles(db, { q, limit: 6, scope: 'all' }, ctx);
   if (hits.length === 0) {
     throw new MovieToolError(
       'not_found',
@@ -386,14 +386,14 @@ const GET_DESCRIPTION =
   'A series with more than 60 episodes (One Piece) answers with a summary per season too (seasons[]: season, episodes, first_episode, last_episode, finished, files_here = the episode numbers with a file on this machine as ranges, so a gap is a missing file): call again with season for that season\'s episodes, or with episode for one episode number ("One Piece episode 744" is title "one piece", episode 744). ' +
   'Returns the title (title, year, release_date, overview, genres, companies, credits: directors, writers, producers, creators and cast with character names, rating 0-5, watched_at, review_note_id and the review, state, poster_url, url), ' +
   'seasons (a series: seasons[].episodes[] with season, episode, name, air_date, state, deleted and progress per episode), files (every file ever seen, deleted ones too: id, host, path, season, episode, duration_s, state, available, first_seen_at, deleted_at = when the owner deleted it, done_at = moved into a Done folder, watched_at, last_play) ' +
-  'and plays (every play event, newest first: started_at, ended_at, position_s reached, duration_s, season, episode, episode_name, source "live" = VLC started by notesd or "vlc_recents" = read from VLC\'s recent list). ' +
+  'and plays (every play event, newest first: started_at, ended_at, position_s reached, duration_s, season, episode, episode_name, source "live" = VLC started by notesd, "vlc_recents" = read from VLC\'s recent list, or "stream" = the direct-stream player page, with provider for a stream play and no file). ' +
   'last_play is the newest play: "which MobLand episode did I watch last and when" is last_play.season / episode / episode_name / started_at, and it survives the file\'s deletion. ' +
   'Positions and durations are seconds; dates are ISO 8601 UTC. available: false means that file is on the other laptop (host).';
 
 const HISTORY_DESCRIPTION =
-  "The owner's play events across the library, newest first: { count, plays: [{ started_at, ended_at, position_s, duration_s, ratio, source, host, title_id, title, kind, file_id, season, episode, episode_name, file_deleted, file_deleted_at, url }] }. " +
+  "The owner's play events across the library, newest first: { count, plays: [{ started_at, ended_at, position_s, duration_s, ratio, source (live, vlc_recents or stream), provider (a stream play's provider, else null), host, title_id, title, kind, file_id, season, episode, episode_name, file_deleted, file_deleted_at, url }] }. " +
   'from / to filter on started_at ("what did I watch last night" is from = yesterday). title narrows to one title (movie id, title id or name). movie_id on a play is the episode that was played, or the film. ' +
-  'A play outlives its file: file_deleted_at says when the file was deleted. position_s null means VLC was opened but the position is unknown. Dates are ISO 8601 UTC; positions are seconds.';
+  'A play outlives its file: file_deleted_at says when the file was deleted. position_s null means VLC was opened but the position is unknown. Dates are ISO 8601 UTC; positions are seconds. A stream play has file_id null and file_deleted false.';
 
 const CONTINUE_DESCRIPTION =
   "Plays something in VLC on the owner's screen, on the machine that runs this server: VLC opens and notesd records the play, so call it only when the owner asked to play, resume or continue something. " +

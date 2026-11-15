@@ -1,6 +1,18 @@
 # Movies
 
 ## Sub-features
+- Stream side (direct-streaming phase 9). Two icons at the top of `/movies` (group "Library or
+  Stream") switch to `/movies?side=stream`: the same grid, fed by `GET /api/movies/stream`, which
+  lists only titles with a `movie_stream_sources` row for this host, not stale, verified inside
+  `NOTESD_STREAM_FRESH_DAYS`. No rail or sidebar entry. A title opened from it
+  (`/movies/<id>?side=stream`) shows a stream line (provider, quality, English subtitle); its Play
+  posts `POST /api/stream/play` once; `no_source` says so and the title leaves the grid on the
+  refresh. A file here stays the default Play, the stream a second icon (R5.5). Series list every
+  season, each episode streams when clicked. Proof: `web/src/App.stream.test.tsx`,
+  `tests/integration/movies.stream.int.test.ts`; on a `verify.sh up --web --direct-stream` run
+  (direct streaming on, phase 3's fake resolver), seed `movie_stream_sources` with `$V exec` (the
+  daemon writes it only after a resolve) and stub `POST /api/stream/play` with Playwright
+  `page.route` to choose its answer. Never give a throwaway run the real resolver.
 - VLC health (phase 9). Every `NOTESD_VLC_HEALTH_MS` (default 30 s; off at 0 or with no roots) each
   `vlc.exe` on this host is sampled through `tasklist.exe` / `powershell.exe` into
   `<dataDir>/movies/vlc-health-<host>.jsonl` (fsync'd lines: start, sample, idle, hang, clean_stop,
@@ -39,6 +51,10 @@
 - State, derived at read time: finished (manual watched flag, done signal, or last position >= 90 %),
   in progress, unwatched, dropped (deleted partway), removed unwatched (deleted, never played), seen
   (only "opened" observations from VLC's recent list).
+  A stream play (direct streaming) counts as one more copy of the film or episode and moves state
+  the same way; a title known only from streams is not in the grid but opens by id. Proof:
+  `npx vitest run tests/unit/movies/state.test.ts -t streams`,
+  `npm run test:int -- tests/integration/movies.streams.int.test.ts`.
 - User state: watched flag, 0-5 stars, review (a note tagged `#movie`, linked to the title).
 - Play/Resume: starts the Windows `vlc.exe` on this host's file at the resume second, reads its status
   through Windows `curl.exe` every `NOTESD_VLC_POLL_MS` into one play event, closes it when VLC exits.
@@ -72,7 +88,9 @@
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
 
 ## How to get to it (user POV)
-Wall: the Movies icon in the rail or sidebar -> `/movies` (poster grid) -> click a poster ->
+Wall: the Movies icon in the rail or sidebar -> `/movies` (poster grid; the Library / Stream icons
+at the top of the page switch to `/movies?side=stream`, the titles verified to stream on this
+machine) -> click a poster ->
 `/movies/<title id>` (detail, Play/Resume, watched, stars, review, episodes with progress and deleted
 flags). The unmatched list (`/movies/unmatched`) opens from the Movies page; pick a TMDB title for a
 file there. The pill bar asks the chat about the page; on a title's page it reads "Ask about <title>" and

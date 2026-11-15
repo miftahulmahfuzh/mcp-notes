@@ -117,6 +117,102 @@ export interface StreamingConfig {
   enabled: boolean
 }
 
+/**
+ * What one resolve costs. SPIKE_PROBE_TIMINGS are the spike's numbers (docs/plans/2026-11-15-
+ * direct-streaming-design.md): about 3 s for a provider that resolves, 35 s for one that shows
+ * nothing, and one such failure before the one that works.
+ */
+export interface ProbeTimings {
+  /** Seconds from opening an embed to a captured manifest, median over resolved attempts. */
+  median_resolve_s: number
+  /** Seconds a provider that returns nothing costs before the resolver moves on, median. */
+  median_fail_s: number
+  /** Failed attempts before the one that resolved, median over titles that resolved. */
+  median_failed_before_resolve: number
+}
+
+export const SPIKE_PROBE_TIMINGS: ProbeTimings = { median_resolve_s: 3, median_fail_s: 35, median_failed_before_resolve: 1 }
+
+/**
+ * The timings the prober defaults come from: the resolve campaign's timings block in
+ * docs/plans/2026-11-15-direct-streaming-findings.md (phase 2: resolve_s.p50, fail_s.p50), a spike
+ * number for any key the block lacks. tests/unit/directStream/proberDefaults.test.ts fails when
+ * these drift from the block.
+ */
+export const DEFAULT_PROBE_TIMINGS: ProbeTimings = { median_resolve_s: 8.3, median_fail_s: 33.2, median_failed_before_resolve: 1 }
+
+export const DEFAULT_STREAM_PROBE_MS = 1_200_000
+export const DEFAULT_STREAM_CATALOG_SIZE = 300
+export const DEFAULT_STREAM_IDLE_SECONDS = 600
+
+/** A pass may spend half the pause between passes, so the laptop always rests at least as long as a pass ran. */
+export function probePassSeconds(probeMs: number): number {
+  return Math.max(1, Math.floor(probeMs / 2000))
+}
+
+/** One title's expected seconds: the failing providers tried before the one that resolves, then that one. */
+export function probeSecondsPerTitle(t: ProbeTimings): number {
+  return t.median_resolve_s + t.median_failed_before_resolve * t.median_fail_s
+}
+
+/** NOTESD_STREAM_PROBE_BUDGET's default: the titles that fit in one pass's seconds, at least one. */
+export function defaultProbeBudget(probeMs: number, t: ProbeTimings = DEFAULT_PROBE_TIMINGS): number {
+  return Math.max(1, Math.floor(probePassSeconds(probeMs) / probeSecondsPerTitle(t)))
+}
+
+/** The direct-streaming prober (src/directStream/prober.ts). */
+export interface StreamProberConfig {
+  /**
+   * `NOTESD_STREAM_PROBER`, default OFF (unset or blank is off). `on` lets the daemon open
+   * out-of-sight tabs in the streaming Chrome by itself while the laptop is idle (D6).
+   */
+  enabled: boolean
+  /** `NOTESD_STREAM_CATALOG_SIZE`, default 300: fresh verified titles on this host before new candidates stop. */
+  catalogSize: number
+  /** `NOTESD_STREAM_PROBE_BUDGET`: resolves per pass, re-checks included. Default defaultProbeBudget(probeMs). */
+  probeBudget: number
+  /** `NOTESD_STREAM_IDLE_SECONDS`, default 600: Windows input-free seconds before a probe may start. */
+  idleSeconds: number
+  /** `NOTESD_STREAM_PROBE_MS`, default 1200000: pause between passes; a pass spends at most half. */
+  probeMs: number
+}
+
+/** Prober off, default limits. Tests build `Config` literals with it, so no hand-built config ever probes. */
+export const DEFAULT_STREAM_PROBER_CONFIG: StreamProberConfig = {
+  enabled: false,
+  catalogSize: DEFAULT_STREAM_CATALOG_SIZE,
+  probeBudget: defaultProbeBudget(DEFAULT_STREAM_PROBE_MS),
+  idleSeconds: DEFAULT_STREAM_IDLE_SECONDS,
+  probeMs: DEFAULT_STREAM_PROBE_MS,
+}
+
+export const DEFAULT_STREAM_FRESH_DAYS = 7
+/** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
+export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'cli.mjs')
+
+/** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
+export interface DirectStreamConfig {
+  /**
+   * `NOTESD_DIRECT_STREAM`, default on. It also needs NOTESD_MOVIES on. `off`: every /api/stream/*
+   * route answers direct_stream_off, the seed is not loaded and the resolver is never run.
+   */
+  enabled: boolean
+  /** `NOTESD_STREAM_FRESH_DAYS`, default 7: how long a stream source verified on this host counts as playable. */
+  freshDays: number
+  /** `NOTESD_DIRECT_STREAM_CLI`, absolute, default DEFAULT_DIRECT_STREAM_CLI: the resolver script run as `node <cli>`. */
+  cli: string
+  /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
+  prober: StreamProberConfig
+}
+
+/** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
+export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
+  enabled: false,
+  freshDays: DEFAULT_STREAM_FRESH_DAYS,
+  cli: DEFAULT_DIRECT_STREAM_CLI,
+  prober: DEFAULT_STREAM_PROBER_CONFIG,
+}
+
 /** Seer Adversarial reviewer (src/adversary/*). */
 export interface AdversaryConfig {
   /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
@@ -268,6 +364,8 @@ export interface Config {
   movies: MoviesConfig
   /** The streaming tools. Absent (a config built by a test) is the same as `enabled: false`. */
   streaming?: StreamingConfig
+  /** Direct streaming. Absent (a config built by a test) is the same as `enabled: false`. */
+  directStream?: DirectStreamConfig
 }
 
 export interface LoadConfigOptions {
@@ -562,6 +660,31 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
   }
 }
 
+export function parseDirectStream(env: Record<string, string | undefined>): DirectStreamConfig {
+  return {
+    enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
+    freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
+    cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
+    prober: parseStreamProber(env),
+  }
+}
+
+/** A switch that is off when unset or blank; otherwise the same words as parseSwitch. */
+function parseSwitchDefaultOff(name: string, raw: string | undefined): boolean {
+  return raw === undefined || raw.trim() === '' ? false : parseSwitch(name, raw)
+}
+
+export function parseStreamProber(env: Record<string, string | undefined>): StreamProberConfig {
+  const probeMs = parsePositiveInt('NOTESD_STREAM_PROBE_MS', env.NOTESD_STREAM_PROBE_MS, DEFAULT_STREAM_PROBE_MS)
+  return {
+    enabled: parseSwitchDefaultOff('NOTESD_STREAM_PROBER', env.NOTESD_STREAM_PROBER),
+    catalogSize: parsePositiveInt('NOTESD_STREAM_CATALOG_SIZE', env.NOTESD_STREAM_CATALOG_SIZE, DEFAULT_STREAM_CATALOG_SIZE),
+    probeBudget: parsePositiveInt('NOTESD_STREAM_PROBE_BUDGET', env.NOTESD_STREAM_PROBE_BUDGET, defaultProbeBudget(probeMs)),
+    idleSeconds: parsePositiveInt('NOTESD_STREAM_IDLE_SECONDS', env.NOTESD_STREAM_IDLE_SECONDS, DEFAULT_STREAM_IDLE_SECONDS),
+    probeMs,
+  }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
@@ -580,6 +703,10 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
  * NOTESD_CURL_EXE, NOTESD_VLC_HEALTH_MS, NOTESD_VLC_EXTRA_ARGS, NOTESD_MOVIES_FALLBACK_MODEL
  * (relative roots or ini, a path as a Done folder name, a non-http TMDB base, a port above 65535,
  * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
+ * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI
+ * (a freshness window below 1 or a relative resolver path throw ConfigError).
+ * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
+ * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
@@ -611,5 +738,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     dword: parseDword(env),
     movies: parseMovies(env),
     streaming: { enabled: parseSwitch('NOTESD_STREAMING', env.NOTESD_STREAMING) },
+    directStream: parseDirectStream(env),
   }
 }

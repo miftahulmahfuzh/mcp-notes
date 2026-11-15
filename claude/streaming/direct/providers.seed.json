@@ -1,0 +1,218 @@
+[
+  {
+    "name": "VidNest",
+    "id_kind": "tmdb",
+    "movie": "https://vidnest.fun/movie/{id}",
+    "tv": "https://vidnest.fun/tv/{id}/{season}/{episode}",
+    "browser_only": false,
+    "en_subtitle": false,
+    "notes": "campaign 2026-11-15: resolved hls 696p in 5.3 s; Fight Club: not_found, episodes"
+  },
+  {
+    "name": "Videasy",
+    "id_kind": "tmdb",
+    "movie": "https://player.videasy.net/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "VidKing",
+    "id_kind": "tmdb",
+    "movie": "https://www.vidking.net/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "Peachify",
+    "id_kind": "tmdb",
+    "movie": "https://peachify.top/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "Smashy",
+    "id_kind": "tmdb",
+    "movie": "https://player.smashystream.com/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-15: resolved hls ?p en in 8.3 s"
+  },
+  {
+    "name": "VidUp",
+    "id_kind": "tmdb",
+    "movie": "https://vidup.to/movie/{id}?autoPlay=true",
+    "tv": "https://vidup.to/tv/{id}/{season}/{episode}?autoPlay=true",
+    "browser_only": false,
+    "en_subtitle": false,
+    "notes": "campaign 2026-11-15: resolved hls 2160p in 8.3 s; episodes"
+  },
+  {
+    "name": "VidFast",
+    "id_kind": "tmdb",
+    "movie": "https://vidfast.pro/movie/{id}?autoPlay=true",
+    "tv": "https://vidfast.pro/tv/{id}/{season}/{episode}?autoPlay=true",
+    "browser_only": false,
+    "en_subtitle": false,
+    "notes": "campaign 2026-11-15: resolved hls 2160p in 11.8 s; needed_click, episodes"
+  },
+  {
+    "name": "VidLink",
+    "id_kind": "tmdb",
+    "movie": "https://vidlink.pro/movie/{id}?autoplay=true&title=true",
+    "tv": "https://vidlink.pro/tv/{id}/{season}/{episode}?autoplay=true&title=true",
+    "browser_only": false,
+    "en_subtitle": false,
+    "notes": "campaign 2026-11-15: resolved dash 480p in 7.4 s; episodes"
+  },
+  {
+    "name": "VidMov",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.mov/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: click_missed"
+  },
+  {
+    "name": "VidFyi",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.fyi/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: click_missed"
+  },
+  {
+    "name": "VidRock",
+    "id_kind": "tmdb",
+    "movie": "https://vidrock.net/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-15: resolved hls 1080p en in 7.1 s"
+  },
+  {
+    "name": "Movies111",
+    "id_kind": "tmdb",
+    "movie": "https://111movies.com/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: no_player"
+  },
+  {
+    "name": "NonTongo",
+    "id_kind": "tmdb",
+    "movie": "https://www.nontongo.win/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: bot_check"
+  },
+  {
+    "name": "VidSrc",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.me/embed/movie?tmdb={id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: click_missed"
+  },
+  {
+    "name": "HyperLink",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.wtf/api/1/movie/?id={id}&color=215fb3",
+    "tv": "https://vidsrc.wtf/api/1/tv/?id={id}&color=215fb3&s={season}&e={episode}",
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-15: resolved hls 1080p en in 10.5 s; Fight Club: not_found, episodes"
+  },
+  {
+    "name": "NexaStream",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.wtf/api/2/movie/?id={id}&color=215fb3",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-15: resolved hls 801p en in 10.3 s"
+  },
+  {
+    "name": "UltraBox",
+    "id_kind": "tmdb",
+    "movie": "https://player.vidplus.to/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "CloudBox",
+    "id_kind": "tmdb",
+    "movie": "https://vidify.top/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "UpCloud",
+    "id_kind": "tmdb",
+    "movie": "https://player.vidsrc.co/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "StreamVault",
+    "id_kind": "tmdb",
+    "movie": "https://hexa.watch/watch/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "MediaHub",
+    "id_kind": "tmdb",
+    "movie": "https://spencerdevs.xyz/movie/{id}?theme=215fb3",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: bot_check"
+  },
+  {
+    "name": "CloudPlay",
+    "id_kind": "tmdb",
+    "movie": "https://vidsrc.cc/v2/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "StreamBoxHD",
+    "id_kind": "tmdb",
+    "movie": "https://test.autoembed.cc/embed/movie/{id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  },
+  {
+    "name": "MovieVault",
+    "id_kind": "tmdb",
+    "movie": "https://rivestream.org/embed?type=movie&id={id}",
+    "tv": null,
+    "browser_only": false,
+    "en_subtitle": null,
+    "notes": "campaign 2026-11-15: unreachable"
+  }
+]

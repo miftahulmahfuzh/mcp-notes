@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ALL_CONNECTOR_TOOL_NAMES } from '../../src/connectors/names.js';
 import {
   ADVERSARY_TOOL_NAMES,
+  CLAUDE_CODE_ONLY_TOOL_NAMES,
+  DIRECT_STREAM_TOOL_NAMES,
   DWORD_TOOL_NAMES,
   MOVIE_TOOL_NAMES,
   STREAMING_TOOL_NAMES,
@@ -14,7 +16,7 @@ import {
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2 streaming tools, the 22 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2 streaming tools, the direct-streaming tools, the 22 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
@@ -22,7 +24,8 @@ describe('allowedChatTools', () => {
     expect(MOVIE_TOOL_NAMES).toHaveLength(6);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(22);
     expect(STREAMING_TOOL_NAMES).toHaveLength(2);
-    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 2 + 22 + 2);
+    expect(DIRECT_STREAM_TOOL_NAMES).toEqual(['direct_stream_find', 'direct_stream_play', 'direct_stream_sources', 'direct_stream_update_source']);
+    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 2 + (DIRECT_STREAM_TOOL_NAMES.length - CLAUDE_CODE_ONLY_TOOL_NAMES.length) + 22 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -36,11 +39,24 @@ describe('allowedChatTools', () => {
     for (const name of ADVERSARY_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of MOVIE_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of STREAMING_TOOL_NAMES) expect(tools).toContain(n(name));
+    for (const name of DIRECT_STREAM_TOOL_NAMES.filter((x) => !CLAUDE_CODE_ONLY_TOOL_NAMES.includes(x))) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of DWORD_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
     expect(tools.filter((t) => !t.startsWith('mcp__notes__'))).toEqual(['WebSearch', 'WebFetch']);
+  });
+
+  it('lets the chat bar list the stream providers but never add one', () => {
+    const tools = allowedChatTools();
+    expect(CLAUDE_CODE_ONLY_TOOL_NAMES).toEqual(['direct_stream_update_source']);
+    expect(tools).toContain(n('direct_stream_sources'));
+    expect(tools).not.toContain(n('direct_stream_update_source'));
+  });
+
+  it('captions the provider tools', () => {
+    expect(captionForToolUse(n('direct_stream_sources'), {})).toBe('reading the stream providers');
+    expect(captionForToolUse(n('direct_stream_update_source'), { site: 'https://ww6-fmovies.com/' })).toBe('adding stream providers');
   });
 
   it('captions the adversary tools', () => {
@@ -58,6 +74,8 @@ describe('allowedChatTools', () => {
     expect(captionForToolUse(n('movies_mark'), { title: 'tv-247718', rating: 4 })).toBe('marking a title');
     expect(captionForToolUse(n('streaming_find'), { title: 'pilot' })).toBe('searching the streaming sites');
     expect(captionForToolUse(n('streaming_play'), { site: 'idlix', title: 'pilot' })).toBe('starting a film');
+    expect(captionForToolUse(n('direct_stream_find'), { title: 'saltburn' })).toBe('looking for a stream');
+    expect(captionForToolUse(n('direct_stream_play'), { title: 'saltburn' })).toBe('starting a stream');
   });
 
   it('offers no tool that deletes permanently', () => {

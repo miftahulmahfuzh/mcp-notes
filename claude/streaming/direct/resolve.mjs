@@ -1,0 +1,245 @@
+// Resolving a film or an episode: try providers in order, open each embed with the sniffer, and
+// keep the first one that loaded a stream. Pure apart from the injected sniffer.
+import { ChromeError } from '../chrome.mjs';
+import { orderProviders } from './order.mjs';
+
+export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'skipped_browser_only', 'skipped_no_template']);
+
+/** Failures that would hit every provider the same way: stop instead of trying the rest. */
+const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
+const NO_OPTIONS = Object.freeze({});
+const SUBTITLE_EXT = /\.(vtt|srt)$/i;
+
+/** The embed address for a title, or null when the provider has no template for its kind. */
+export function embedUrl(provider, ref) {
+  const template = ref.kind === 'movie' ? provider.movie : provider.tv;
+  if (!template) return null;
+  return template
+    .replaceAll('{id}', String(ref.tmdbId))
+    .replaceAll('{season}', String(ref.season ?? ''))
+    .replaceAll('{episode}', String(ref.episode ?? ''));
+}
+
+function pathOf(url) {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '';
+  }
+}
+
+function dirOf(url) {
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname.replace(/[^/]*$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function absolute(address, base) {
+  try {
+    return new URL(address, base).href;
+  } catch {
+    return null;
+  }
+}
+
+const okStatus = (hit) => typeof hit.status === 'number' && hit.status >= 200 && hit.status < 300;
+
+/** hls, dash or mp4 for a hit that is a stream, else null. The body decides first. */
+export function manifestKind(hit) {
+  const body = typeof hit.body === 'string' ? hit.body.trimStart() : '';
+  if (body.startsWith('#EXTM3U')) return 'hls';
+  if (/<MPD[\s>]/.test(body.slice(0, 4000))) return 'dash';
+  const mime = String(hit.mime ?? '').toLowerCase();
+  // A page is never a stream, whatever its address ends in: a provider that is down answers its
+  // `demo-video.mp4` with an HTML page (VidRock, 2026-11-15), and playing it ends in a media error.
+  if (mime.startsWith('text/html')) return null;
+  const file = pathOf(hit.url);
+  if (mime.includes('mpegurl') || /\.m3u8$/i.test(file)) return 'hls';
+  if (mime.includes('dash+xml') || /\.mpd$/i.test(file)) return 'dash';
+  if (mime.startsWith('video/mp4') || /\.mp4$/i.test(file)) return 'mp4';
+  return null;
+}
+
+function rank(hit, kind) {
+  if (kind === 'dash') return 0;
+  if (kind === 'hls') return typeof hit.body === 'string' && hit.body.includes('#EXT-X-STREAM-INF') ? 0 : 1;
+  return 2;
+}
+
+/** HLS attribute list: KEY=value or KEY="value", comma separated. */
+function attributes(text) {
+  const out = {};
+  for (const m of text.matchAll(/([A-Z0-9-]+)=("([^"]*)"|[^,]*)/g)) out[m[1]] = m[3] ?? m[2];
+  return out;
+}
+
+function xmlAttr(text, name) {
+  return new RegExp(`\\b${name}="([^"]*)"`).exec(text)?.[1] ?? null;
+}
+
+function hlsSubtitles(body, base) {
+  const tracks = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith('#EXT-X-MEDIA:')) continue;
+    const a = attributes(line.slice('#EXT-X-MEDIA:'.length));
+    if (a.TYPE !== 'SUBTITLES' || !a.URI) continue;
+    const url = absolute(a.URI, base);
+    if (url) tracks.push({ url, lang: a.LANGUAGE ?? null, label: a.NAME ?? null, format: 'hls', source: 'manifest' });
+  }
+  return tracks;
+}
+
+function dashSubtitles(body, base) {
+  const tracks = [];
+  for (const m of body.matchAll(/<AdaptationSet\b([^>]*)>([\s\S]*?)<\/AdaptationSet>/g)) {
+    const attrs = m[1] ?? '';
+    const inner = m[2] ?? '';
+    const mime = xmlAttr(attrs, 'mimeType') ?? xmlAttr(inner, 'mimeType') ?? '';
+    const isText = xmlAttr(attrs, 'contentType') === 'text' || /^(text\/vtt|application\/ttml\+xml)/.test(mime);
+    if (!isText) continue;
+    const baseUrl = /<BaseURL>([^<]+)<\/BaseURL>/.exec(inner)?.[1];
+    const url = baseUrl ? absolute(baseUrl.trim().replace(/&amp;/g, '&'), base) : null;
+    if (!url) continue;
+    const format = mime.startsWith('application/ttml') ? 'ttml' : mime.startsWith('text/vtt') ? 'vtt' : 'dash';
+    tracks.push({ url, lang: xmlAttr(attrs, 'lang'), label: /<Label>([^<]*)<\/Label>/.exec(inner)?.[1] ?? null, format, source: 'manifest' });
+  }
+  return tracks;
+}
+
+function guessLang(url) {
+  let text;
+  try {
+    text = decodeURIComponent(url).toLowerCase();
+  } catch {
+    text = url.toLowerCase();
+  }
+  return /(?:^|[^a-z])(en|eng|english)(?:[^a-z]|$)/.test(text) ? 'en' : null;
+}
+
+function requestSubtitles(hits, skipDirs) {
+  const tracks = [];
+  for (const hit of hits) {
+    if (typeof hit.status === 'number' && !okStatus(hit)) continue;
+    const ext = SUBTITLE_EXT.exec(pathOf(hit.url))?.[1]?.toLowerCase() ?? (/^text\/vtt/i.test(String(hit.mime ?? '')) ? 'vtt' : null);
+    if (!ext) continue;
+    if (ext === 'vtt' && skipDirs.has(dirOf(hit.url))) continue;
+    tracks.push({ url: hit.url, lang: guessLang(hit.url), label: null, format: ext, source: 'request' });
+  }
+  return tracks;
+}
+
+/** An English track: lang en / eng / english (any region), or a label that says English. */
+export function isEnglish(track) {
+  const lang = String(track.lang ?? '').toLowerCase();
+  return /^(en|eng|english)([-_].*)?$/.test(lang) || /english/i.test(String(track.label ?? ''));
+}
+
+function bestHeight(hit, kind) {
+  const body = typeof hit.body === 'string' ? hit.body : '';
+  const pattern = kind === 'hls' ? /RESOLUTION=\d+x(\d+)/g : kind === 'dash' ? /\bheight="(\d+)"/g : null;
+  if (pattern === null) return null;
+  let best = null;
+  for (const m of body.matchAll(pattern)) {
+    const height = Number(m[1]);
+    if (best === null || height > best) best = height;
+  }
+  return best;
+}
+
+/**
+ * The stream in one capture: the manifest, the headers its request carried, the subtitle tracks
+ * seen, the best height. Null when the capture holds no stream.
+ */
+export function pickSource(sniff) {
+  const hits = Array.isArray(sniff?.hits) ? sniff.hits : [];
+  let best = null;
+  for (const hit of hits) {
+    if (!okStatus(hit)) continue;
+    const kind = manifestKind(hit);
+    if (kind === null) continue;
+    const r = rank(hit, kind);
+    if (best === null || r < best.rank) best = { hit, kind, rank: r };
+  }
+  if (best === null) return null;
+  const { hit, kind } = best;
+  const body = typeof hit.body === 'string' ? hit.body : '';
+  const inManifest = kind === 'hls' ? hlsSubtitles(body, hit.url) : kind === 'dash' ? dashSubtitles(body, hit.url) : [];
+  const skipDirs = new Set(inManifest.filter((t) => t.format === 'hls').map((t) => dirOf(t.url)));
+  const seen = new Set();
+  const subtitles = [...inManifest, ...requestSubtitles(hits, skipDirs)].filter((t) => (seen.has(t.url) ? false : (seen.add(t.url), true)));
+  return {
+    manifest_url: hit.url,
+    manifest_kind: kind,
+    headers: { referer: hit.referer ?? null, origin: hit.origin ?? null, user_agent: hit.user_agent ?? sniff.user_agent ?? null },
+    subtitles,
+    best_height: bestHeight(hit, kind),
+    en_subtitle: subtitles.some(isEnglish),
+  };
+}
+
+const seconds = (ms) => Math.round(ms / 100) / 10;
+const attempt = (provider, outcome, tookS, detail) => ({ provider: provider.name, outcome, took_s: tookS, detail });
+
+function describe(found) {
+  const height = found.best_height ? ` ${found.best_height}p` : '';
+  const english = found.en_subtitle ? ', English' : '';
+  return `${found.manifest_kind}${height}, ${found.subtitles.length} subtitle track(s)${english}`;
+}
+
+/**
+ * Resolves a title: providers in the D1 order, the first stream wins. `ref` is
+ * { kind: 'movie' | 'tv', tmdbId, season, episode }, already validated. `sniff(url, options)` is
+ * the sniffer (sniffEmbed in use, a fake in tests); every call gets the same options object.
+ * `deadlineS` (null: none): once that many seconds have passed, no further provider is sniffed and
+ * the answer is `error: "deadline"` (it says nothing about the title).
+ */
+export async function resolveTitle(ref, { providers, health = {}, sniff, only = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null }) {
+  const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
+  let candidates = orderProviders(providers, health);
+  if (only !== null) {
+    candidates = candidates.filter((p) => p.name.toLowerCase() === only.toLowerCase());
+    if (candidates.length === 0) return { ok: false, ...base, source: null, error: 'unknown_provider', detail: `no provider named ${only}`, attempts: [] };
+  }
+  const attempts = [];
+  const begun = clock();
+  for (const [index, provider] of candidates.entries()) {
+    if (provider.browser_only) {
+      attempts.push(attempt(provider, 'skipped_browser_only', 0, 'plays only inside its own page'));
+      continue;
+    }
+    const url = embedUrl(provider, ref);
+    if (url === null) {
+      attempts.push(attempt(provider, 'skipped_no_template', 0, `no ${ref.kind} template`));
+      continue;
+    }
+    if (deadlineS !== null && clock() - begun >= deadlineS * 1000) {
+      const left = candidates.length - index;
+      return { ok: false, ...base, source: null, error: 'deadline', detail: `stopped after ${seconds(clock() - begun)} s; ${left} provider(s) not tried`, attempts };
+    }
+    const started = clock();
+    let sniffed;
+    try {
+      sniffed = await sniff(url, sniffOptions);
+    } catch (err) {
+      attempts.push(attempt(provider, 'error', seconds(clock() - started), String(err?.message ?? err)));
+      if (err instanceof ChromeError && ABORTS.has(err.code)) return { ok: false, ...base, source: null, error: err.code, attempts };
+      continue;
+    }
+    const tookS = seconds(clock() - started);
+    const found = pickSource(sniffed);
+    if (found) {
+      attempts.push(attempt(provider, 'resolved', tookS, describe(found)));
+      return { ok: true, ...base, source: { provider: provider.name, embed_url: url, ...found, took_s: tookS }, attempts };
+    }
+    if (sniffed.bot_check) {
+      attempts.push(attempt(provider, 'bot_check', tookS, sniffed.bot_check_reason ?? 'bot check'));
+      continue;
+    }
+    const detail = `${sniffed.requests ?? 0} requests, ${sniffed.hits?.length ?? 0} media hits, ${sniffed.clicks ?? 0} clicks, ${sniffed.popups_closed ?? 0} advert tabs closed`;
+    attempts.push(attempt(provider, 'no_stream', tookS, detail));
+  }
+  return { ok: false, ...base, source: null, error: 'no_source', attempts };
+}

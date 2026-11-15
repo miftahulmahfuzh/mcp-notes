@@ -24,6 +24,8 @@ $V up --sessions      # seed CLAUDE_HOME with tests/fixtures/claude-home (Projec
 $V up --embed         # keep OPENROUTER_API_KEY: real embeddings, billed (default: off, search = fallback)
 $V up --adversary     # Seer reviewer ON against a throwaway Seer DB built from ${SEER_DIR:-~/seer}/db/migrations
 $V up --movies        # Movies ON against a generated video library, a fake TMDB and a fake vlc.exe/curl.exe
+$V up --direct-stream # Direct streaming ON (implies --movies) against a fake resolver and a fixture stream host
+$V up --direct-stream --prober  # the stream prober on (a pass every 5 s) over the fake resolver; --prober=off: setting unset
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,
@@ -45,6 +47,15 @@ Every run also pins `NOTESD_MOVIES=off`, so a throwaway daemon never scans the o
 `vlc.exe`/`curl.exe` wrappers (`scripts/movies/fake-vlc.mjs`) that record every launch and answer VLC's
 `status.json`. The filename fallback is pinned `off`, so nothing is billed. `scripts/movies/journey.sh RUN`
 drives the whole chain; see `features/movies.md`.
+
+Every run also pins `NOTESD_DIRECT_STREAM=off`, so a `--movies` run never runs the real resolver (it
+drives the owner's streaming Chrome on Windows). `--direct-stream` turns it on with
+`NOTESD_DIRECT_STREAM_CLI` pointing at `tests/fixtures/direct-stream/fake-cli.mjs` and a fixture stream
+host (`tests/fixtures/direct-stream/upstream.mjs`) under `<run>/direct/`: `mode` there picks the fake's
+next answer (`hls`, `dash`, `no_source`, `no_chrome`), `calls.jsonl` records every resolve and open,
+`upstream.jsonl` every request the host got. `scripts/direct-stream/journey.sh RUN` drives it; see
+`features/direct-streaming.md`. A `NOTESD_DIRECT_STREAM_CLI` in the caller's environment replaces the
+fake under `--direct-stream` (phase 6's `playcheck.mjs` wrapper uses this).
 
 ## Doctor
 
@@ -143,3 +154,11 @@ not implementation.
   failure. Semantic ranking needs `--embed`.
 - Never drive Play or `movies_continue` on the live daemon, and never give a run a `/mnt/c` root: both
   reach the owner's real VLC or folders. `up --movies` is the only way to drive Movies.
+- Never give a throwaway daemon the real `claude/streaming/direct/cli.mjs`: it opens tabs in the owner's
+  streaming Chrome. `up --direct-stream` is the only way to drive direct streaming; the one exception is
+  `playcheck.mjs`'s wrapper (`NOTESD_DIRECT_STREAM_CLI=<dir>/cli.mjs`), which records `open` and is run
+  only when the owner expects the streaming Chrome to come forward, muted.
+- `--prober` runs read Windows' idle time from `<run>/movies/idle_ms` (0 by default), so a pass stops at
+  `not_idle` before any resolve. Raising it lets the prober resolve through the run's resolver, which under
+  `--direct-stream` is the fake; never combine `--prober` with a real `NOTESD_DIRECT_STREAM_CLI`.
+  Probing is proven by `tests/unit/directStream/prober.test.ts`.

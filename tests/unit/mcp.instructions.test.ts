@@ -285,7 +285,8 @@ describe('buildInstructions: Movies', () => {
     const order = text.split('\n\n').map((s) => s.split('.')[0]);
     expect(order.indexOf('Movies')).toBe(order.indexOf('Connectors') + 1);
     expect(order.indexOf('Streaming')).toBe(order.indexOf('Movies') + 1);
-    expect(order.indexOf('Adversary')).toBe(order.indexOf('Streaming') + 1);
+    expect(order.indexOf('Direct streaming')).toBe(order.indexOf('Streaming') + 1);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('Direct streaming') + 1);
     expect(order.at(-1)).toBe('Sessions');
   });
 });
@@ -297,6 +298,18 @@ describe('buildInstructions: Streaming', () => {
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
     for (const word of ['streaming_find', 'streaming_play', 'idlix', 'lk21', 'only when the user asks to watch, play or put something on', 'never a link you built', 'F11']) {
+      expect(p).toContain(word);
+    }
+  });
+});
+
+describe('buildInstructions: Direct streaming', () => {
+  it('has one Direct streaming paragraph naming both tools, when a stream may start, and what starts nothing', () => {
+    const text = buildInstructions('Asia/Jakarta', 'http://localhost:4321');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Direct streaming.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['direct_stream_find', 'direct_stream_play', '/direct-stream saltburn', 'movies_continue unless the user says stream', 'a recommendation is not a request', 'The Lord of the Rings: The Fellowship of the Ring, 2001', 'no_source', 'attempts', 'F11', 'direct_stream_off']) {
       expect(p).toContain(word);
     }
   });

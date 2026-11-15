@@ -59,6 +59,10 @@ import {
  * deleted because files are gone), their companies, people, credits and episodes, the files seen
  * on each host (soft-deleted) and the play events (never deleted). src/movies/repo.ts
  * (`MoviesRepo`) is their only writer.
+ * Migration 0020 (direct streaming) adds `stream_providers` (the provider registry, shared by both
+ * machines, loaded from claude/streaming/direct/providers.seed.json at every start) and
+ * `stream_provider_health` (one row per provider and host). src/directStream/repo.ts
+ * (`DirectStreamRepo`) is their only writer.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -967,7 +971,7 @@ export const MOVIE_FILE_REASONS = ['too_short', 'no_match', 'low_confidence', 't
 export type MovieFileReason = (typeof MOVIE_FILE_REASONS)[number]
 export const MOVIE_FILE_SOURCES = ['scan', 'vlc_recents'] as const
 export type MovieFileSource = (typeof MOVIE_FILE_SOURCES)[number]
-export const MOVIE_PLAY_SOURCES = ['live', 'vlc_recents'] as const
+export const MOVIE_PLAY_SOURCES = ['live', 'vlc_recents', 'stream'] as const
 export type MoviePlaySource = (typeof MOVIE_PLAY_SOURCES)[number]
 export const MOVIE_CREDIT_ROLES = ['cast', 'director', 'writer', 'producer', 'creator'] as const
 export type MovieCreditRole = (typeof MOVIE_CREDIT_ROLES)[number]
@@ -1190,17 +1194,30 @@ export const movieFiles = pgTable(
 )
 
 /**
- * One play event of a file (migration 0017): a VLC that notesd started (`live`, updated while it
- * plays, closed with `ended_at`), or one entry of VLC's recent list (`vlc_recents`, one row per
- * distinct position seen). `position_s` null means "opened, position unknown". Never deleted.
+ * One play event (migration 0017; streams 0021). A file play: a VLC that notesd started (`live`,
+ * updated while it plays, closed with `ended_at`), or one entry of VLC's recent list
+ * (`vlc_recents`, one row per distinct position seen). A stream play (`stream`, direct streaming):
+ * the daemon's player page, one row per player session (`stream_session`), updated by its position
+ * reports. A file play has `file_id` and none of `title_id`, `season`, `episode`, `provider`,
+ * `stream_session`; a stream play has `title_id`, `provider` and `stream_session` and no file
+ * (`movie_plays_target_check`). A film's stream play has season and episode null. `position_s` null
+ * means "opened, position unknown". Never deleted.
  */
 export const moviePlays = pgTable(
   'movie_plays',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    fileId: bigint('file_id', { mode: 'number' })
-      .notNull()
-      .references(() => movieFiles.id, { onDelete: 'cascade' }),
+    /** The file played; null on a stream play. */
+    fileId: bigint('file_id', { mode: 'number' }).references(() => movieFiles.id, { onDelete: 'cascade' }),
+    /** A stream play's title; null on a file play, whose title is its file's. */
+    titleId: text('title_id').references(() => movieTitles.id),
+    /** A stream play's episode; both null for a film and on every file play. */
+    season: integer('season'),
+    episode: integer('episode'),
+    /** The direct-stream provider that served a stream play (`VidFast`). */
+    provider: text('provider'),
+    /** The player session of a stream play: at most one open row per session. */
+    streamSession: text('stream_session'),
     host: text('host').notNull(),
     source: text('source').$type<MoviePlaySource>().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
@@ -1213,7 +1230,176 @@ export const moviePlays = pgTable(
   (t) => [
     index('movie_plays_file_started_idx').on(t.fileId, t.startedAt.desc()),
     index('movie_plays_started_idx').on(t.startedAt.desc()),
-    check('movie_plays_source_check', sql`${t.source} in ('live', 'vlc_recents')`),
+    index('movie_plays_title_started_idx').on(t.titleId, t.startedAt.desc()).where(sql`${t.titleId} is not null`),
+    // MoviesRepo.recordStreamPosition's ON CONFLICT names this predicate word for word.
+    uniqueIndex('movie_plays_open_session_uniq').on(t.streamSession).where(sql`${t.endedAt} is null and ${t.streamSession} is not null`),
+    check('movie_plays_source_check', sql`${t.source} in ('live', 'vlc_recents', 'stream')`),
+    check(
+      'movie_plays_target_check',
+      sql`(${t.source} = 'stream' and ${t.fileId} is null and ${t.titleId} is not null and ${t.provider} is not null and ${t.streamSession} is not null and (${t.season} is null) = (${t.episode} is null))
+        or (${t.source} <> 'stream' and ${t.fileId} is not null and ${t.titleId} is null and ${t.season} is null and ${t.episode} is null and ${t.provider} is null and ${t.streamSession} is null)`,
+    ),
+  ],
+)
+
+/**
+ * What resolving a film or an episode on one host last gave (migration 0021, direct streaming).
+ * One row per (title, season, episode, host); a film is season 0, episode 0 (a primary key holds
+ * no null), an episode its own numbers. Written by MoviesRepo.recordStreamSource after every
+ * resolve: a success sets the provider, manifest kind, best height and English-subtitle flag,
+ * `verified_at`, and clears `stale_at`; a resolve that found no source sets `stale_at` and
+ * `failure` and keeps the last verified columns. A row with no verification yet is stale-only.
+ * "Fresh" (the Stream grid) is repo.ts `freshStreamSourceSql`.
+ */
+export const movieStreamSources = pgTable(
+  'movie_stream_sources',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    host: text('host').notNull(),
+    provider: text('provider'),
+    /** `hls`, `dash`, `mp4`: as the resolver reported it. Not a CHECK: a new kind needs no migration. */
+    manifestKind: text('manifest_kind'),
+    bestHeight: integer('best_height'),
+    enSubtitle: boolean('en_subtitle').notNull().default(false),
+    verifiedAt: timestamp('verified_at', { withTimezone: true, mode: 'date' }),
+    staleAt: timestamp('stale_at', { withTimezone: true, mode: 'date' }),
+    /** The resolve error that made the row stale (`no_source`); null while it is not stale. */
+    failure: text('failure'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.season, t.episode, t.host] }),
+    index('movie_stream_sources_host_verified_idx').on(t.host, t.verifiedAt.desc()),
+    check('movie_stream_sources_slot_check', sql`${t.season} >= 0 and ${t.episode} >= 0 and (${t.episode} > 0 or ${t.season} = 0)`),
+    check(
+      'movie_stream_sources_outcome_check',
+      sql`(${t.verifiedAt} is not null and ${t.provider} is not null and ${t.manifestKind} is not null)
+        or (${t.verifiedAt} is null and ${t.staleAt} is not null and ${t.provider} is null and ${t.manifestKind} is null and ${t.bestHeight} is null)`,
+    ),
+    check('movie_stream_sources_failure_check', sql`(${t.staleAt} is null) = (${t.failure} is null)`),
+  ],
+)
+
+/** The closed sets of the stream tables (migration 0020). The CHECK constraints enforce the same lists. */
+export const STREAM_ID_KINDS = ['tmdb', 'imdb'] as const
+export type StreamIdKind = (typeof STREAM_ID_KINDS)[number]
+/** A provider's last outcome on a host. A skipped provider (browser-only, no template) is not one: a skip leaves health alone. */
+export const STREAM_HEALTH_OUTCOMES = ['resolved', 'no_stream', 'bot_check', 'error'] as const
+export type StreamHealthOutcome = (typeof STREAM_HEALTH_OUTCOMES)[number]
+export const STREAM_MANIFEST_KINDS = ['hls', 'dash', 'mp4'] as const
+export type StreamManifestKind = (typeof STREAM_MANIFEST_KINDS)[number]
+
+/**
+ * The direct-streaming provider registry (migration 0020), shared by both machines. A provider is an
+ * embed address template keyed by the TMDB (or IMDb) id: `movie` has `{id}`, `tv` adds `{season}` and
+ * `{episode}` (null: no episode template known). `origin_site` null means the row comes from the
+ * checked-in seed, which the daemon syncs at every start; a site's address means /update-cloud-source
+ * added it, and the seed never rewrites it. Nothing deletes a provider.
+ */
+export const streamProviders = pgTable(
+  'stream_providers',
+  {
+    name: text('name').primaryKey(),
+    idKind: text('id_kind').$type<StreamIdKind>().notNull().default('tmdb'),
+    movie: text('movie').notNull(),
+    tv: text('tv'),
+    browserOnly: boolean('browser_only').notNull().default(false),
+    /** What the seed or the site says; this host's measurement is in stream_provider_health. */
+    enSubtitle: boolean('en_subtitle'),
+    notes: text('notes').notNull().default(''),
+    originSite: text('origin_site'),
+    addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [check('stream_providers_id_kind_check', sql`${t.idKind} in ('tmdb', 'imdb')`)],
+)
+
+/**
+ * What resolving a provider through this host's streaming Chrome has shown (migration 0020): one row
+ * per provider and host, written after every resolve. `recent_s` keeps the last ten times to a
+ * stream, newest last; the median is computed at read time.
+ */
+export const streamProviderHealth = pgTable(
+  'stream_provider_health',
+  {
+    name: text('name')
+      .notNull()
+      .references(() => streamProviders.name, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    host: text('host').notNull(),
+    lastOutcome: text('last_outcome').$type<StreamHealthOutcome>().notNull(),
+    lastDetail: text('last_detail').notNull().default(''),
+    successes: integer('successes').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true, mode: 'date' }),
+    lastFailureAt: timestamp('last_failure_at', { withTimezone: true, mode: 'date' }),
+    recentS: real('recent_s').array().notNull().default(sql`'{}'::real[]`),
+    manifestKind: text('manifest_kind').$type<StreamManifestKind>(),
+    bestHeight: integer('best_height'),
+    enSubtitle: boolean('en_subtitle'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.name, t.host] }),
+    check('stream_provider_health_outcome_check', sql`${t.lastOutcome} in ('resolved', 'no_stream', 'bot_check', 'error')`),
+    check('stream_provider_health_manifest_kind_check', sql`${t.manifestKind} in ('hls', 'dash', 'mp4')`),
+  ],
+)
+
+/** Where a prober candidate was listed (src/directStream/candidates.ts). The CHECK below keeps the same list. */
+export const STREAM_PROBE_LIST_SOURCES = ['recommended', 'genre', 'trending', 'popular'] as const
+export type StreamProbeListSource = (typeof STREAM_PROBE_LIST_SOURCES)[number]
+/** What one prober resolve came to. */
+export const STREAM_PROBE_OUTCOMES = ['verified', 'no_source', 'error'] as const
+export type StreamProbeOutcome = (typeof STREAM_PROBE_OUTCOMES)[number]
+
+/**
+ * The direct-streaming prober's candidates and backoff, per host (migration 0022). Written only by
+ * ProbeRepo in src/directStream/repo.ts. A row is listed (`list_source`, `list_rank`, `listed_at`
+ * all set) while the newest TMDB listing holds the title, and unlisted (all three null) after.
+ * `outcome`/`probed_at`/`failures`/`retry_after` are the last probe on this host: a failure sets
+ * `retry_after`, and a title is not probed again before it. Verified sources themselves live in
+ * movie_stream_sources.
+ */
+export const streamProbeTitles = pgTable(
+  'stream_probe_titles',
+  {
+    host: text('host').notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    listSource: text('list_source').$type<StreamProbeListSource>(),
+    listRank: integer('list_rank'),
+    listedAt: timestamp('listed_at', { withTimezone: true, mode: 'date' }),
+    probedAt: timestamp('probed_at', { withTimezone: true, mode: 'date' }),
+    outcome: text('outcome').$type<StreamProbeOutcome>(),
+    failures: integer('failures').notNull().default(0),
+    retryAfter: timestamp('retry_after', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.host, t.kind, t.tmdbId] }),
+    index('stream_probe_titles_listed_idx').on(t.host, t.kind, t.listRank),
+    check('stream_probe_titles_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check('stream_probe_titles_tmdb_id_check', sql`${t.tmdbId} > 0`),
+    check(
+      'stream_probe_titles_source_check',
+      sql`${t.listSource} is null or ${t.listSource} in ('recommended', 'genre', 'trending', 'popular')`,
+    ),
+    check(
+      'stream_probe_titles_listed_check',
+      sql`(${t.listSource} is null) = (${t.listRank} is null) and (${t.listSource} is null) = (${t.listedAt} is null)`,
+    ),
+    check(
+      'stream_probe_titles_outcome_check',
+      sql`(${t.outcome} is null) = (${t.probedAt} is null) and (${t.outcome} is null or ${t.outcome} in ('verified', 'no_source', 'error'))`,
+    ),
+    check(
+      'stream_probe_titles_backoff_check',
+      sql`${t.failures} >= 0 and (${t.outcome} is null or (${t.outcome} = 'verified' and ${t.failures} = 0 and ${t.retryAfter} is null) or (${t.outcome} <> 'verified' and ${t.failures} > 0 and ${t.retryAfter} is not null))`,
+    ),
   ],
 )
 
@@ -1253,3 +1439,7 @@ export type MovieCreditRow = typeof movieCredits.$inferSelect
 export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
 export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
+export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
+export type StreamProviderRow = typeof streamProviders.$inferSelect
+export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
+export type StreamProbeTitleRow = typeof streamProbeTitles.$inferSelect

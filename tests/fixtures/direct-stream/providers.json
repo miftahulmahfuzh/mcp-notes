@@ -1,0 +1,4 @@
+[
+  { "name": "FixtureCheck", "id_kind": "tmdb", "movie": "http://localhost:7398/check.html?id={id}", "tv": null, "browser_only": false, "en_subtitle": null, "notes": "answers like a Cloudflare check" },
+  { "name": "FixtureStream", "id_kind": "tmdb", "movie": "http://localhost:7398/stream.html?id={id}", "tv": null, "browser_only": false, "en_subtitle": null, "notes": "wants a click, then plays a tone and loads master.m3u8" }
+]

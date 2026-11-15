@@ -1,4 +1,4 @@
-import type { EpisodeView, FileView, MoviesStatusResponse, PlayerState, TitleDetail, TitleKind, TitleListItem, TmdbHitView, UnmatchedFile } from '../moviesApi';
+import type { EpisodeView, FileView, MoviesStatusResponse, PlayerState, StreamListResponse, StreamSourceView, TitleDetail, TitleKind, TitleListItem, TmdbHitView, UnmatchedFile } from '../moviesApi';
 
 export const HOST = 'lenovo';
 const ISO = '2026-11-10T12:00:00.000Z';
@@ -89,6 +89,7 @@ function detailOf(item: TitleListItem, over: Partial<TitleDetail>): TitleDetail 
     seasons: [],
     unplaced_files: [],
     plays: [],
+    stream_sources: [],
     metadata_fetched_at: ISO,
     ...over,
   };
@@ -281,3 +282,44 @@ export const PLAYING: PlayerState = {
 export const SEARCH: TmdbHitView[] = [
   { kind: 'movie', tmdb_id: 1125510, title_id: 'movie-1125510', title: 'Ne Zha 2', original_title: 'Ne Zha 2', year: 2025, overview: '', poster_url: null, in_library: false },
 ];
+
+/** One of this host's stream sources, fresh unless overridden. */
+export function makeSource(season: number, episode: number, over: Partial<StreamSourceView> = {}): StreamSourceView {
+  return {
+    host: HOST,
+    season,
+    episode,
+    provider: 'VidFast',
+    manifest_kind: 'hls',
+    best_height: 1080,
+    en_subtitle: true,
+    verified_at: ISO,
+    stale_at: null,
+    fresh: true,
+    ...over,
+  };
+}
+
+/** A film with no file anywhere: only its stream brings it to the page. */
+export const FIGHT_CLUB_ITEM = makeItem('movie-550', 'Fight Club', {
+  movie_id: 'M-FC55',
+  year: 1999,
+  poster_url: 'https://image.tmdb.org/t/p/w342/fc.jpg',
+  present_here: false,
+  file_count: 0,
+});
+
+export const FIGHT_CLUB: TitleDetail = detailOf(FIGHT_CLUB_ITEM, {
+  poster_url: 'https://image.tmdb.org/t/p/w500/fc.jpg',
+  overview: 'An insomniac office worker and a soap maker form an underground fight club.',
+  runtime_min: 139,
+  stream_sources: [makeSource(0, 0, { best_height: 2160 })],
+});
+
+/** How to Make a Killing with its file here and a fresh stream (R5.5: the file plays first). */
+export const MOVIE_STREAMABLE: TitleDetail = { ...MOVIE, stream_sources: [makeSource(0, 0, { provider: 'VidLink', manifest_kind: 'dash' })] };
+
+/** MobLand with S01E02 (whose file is here) verified to stream. */
+export const SERIES_STREAMABLE: TitleDetail = { ...SERIES, stream_sources: [makeSource(1, 2)] };
+
+export const STREAM_LIST: StreamListResponse = { enabled: true, titles: [FIGHT_CLUB_ITEM, KILLING_ITEM], fresh_days: 7 };

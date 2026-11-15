@@ -7,6 +7,9 @@ import {
   ConfigError,
   DEFAULT_ADVERSARY_CONFIG,
   DEFAULT_CHAT_CONFIG,
+  DEFAULT_DIRECT_STREAM_CLI,
+  DEFAULT_STREAM_PROBER_CONFIG,
+  DEFAULT_DIRECT_STREAM_CONFIG,
   DEFAULT_DWORD_CONFIG,
   DEFAULT_EMBEDDINGS_CONFIG,
   DEFAULT_MOVIES_CONFIG,
@@ -50,6 +53,7 @@ describe('loadConfig', () => {
       dword: DEFAULT_DWORD_CONFIG,
       movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
       streaming: { enabled: true },
+      directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -442,5 +446,18 @@ describe('movies config', () => {
     expect(movies({ NOTESD_VLC_EXTRA_ARGS: '--intf-foo --no-http-forward-cookies' }).vlc.extraArgs).toEqual(['--intf-foo', '--no-http-forward-cookies'])
     expect(movies({ NOTESD_VLC_HEALTH_MS: '5000' }).vlc.healthMs).toBe(5000)
     expect(DEFAULT_MOVIES_CONFIG.vlc).toMatchObject({ healthMs: 30_000, extraArgs: [] })
+  })
+
+  it('reads the direct streaming switch, freshness window and resolver path', () => {
+    const ds = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).directStream
+    expect(DEFAULT_DIRECT_STREAM_CONFIG.enabled).toBe(false)
+    expect(DEFAULT_DIRECT_STREAM_CLI.endsWith(path.join('claude', 'streaming', 'direct', 'cli.mjs'))).toBe(true)
+    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, prober: DEFAULT_STREAM_PROBER_CONFIG })
+    expect(ds({ NOTESD_DIRECT_STREAM: 'off' })?.enabled).toBe(false)
+    expect(ds({ NOTESD_STREAM_FRESH_DAYS: '3' })?.freshDays).toBe(3)
+    expect(ds({ NOTESD_DIRECT_STREAM_CLI: '/tmp/fake-cli.mjs' })?.cli).toBe('/tmp/fake-cli.mjs')
+    expect(() => ds({ NOTESD_DIRECT_STREAM: 'maybe' })).toThrow(ConfigError)
+    expect(() => ds({ NOTESD_STREAM_FRESH_DAYS: '0' })).toThrow(ConfigError)
+    expect(() => ds({ NOTESD_DIRECT_STREAM_CLI: 'relative/cli.mjs' })).toThrow(ConfigError)
   })
 })

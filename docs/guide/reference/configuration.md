@@ -125,6 +125,22 @@ The `/pahe`, `/idlix` and `/lk21` skills and the streaming tools are described i
 | `IDLIX_ORIGIN` | `https://z2.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). |
 | `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
 
+## Direct streaming
+
+Films played straight from a provider's stream host through the daemon, described in
+[streaming.md](../streaming.md#direct-streaming). It needs `NOTESD_MOVIES` on.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTESD_DIRECT_STREAM` | on | `off` turns direct streaming off on this machine: the provider seed is not loaded, every `/api/stream/*` route answers 503 `direct_stream_off` and the resolver never runs, so no Chrome tab is opened for it. It is off too whenever `NOTESD_MOVIES=off`. |
+| `NOTESD_STREAM_FRESH_DAYS` | `7` | How many days a stream source verified on this machine counts as playable. |
+| `NOTESD_DIRECT_STREAM_CLI` | `claude/streaming/direct/cli.mjs` in this checkout | Absolute path of the resolver the daemon runs as `node <path>`. `verify.sh up --direct-stream` points it at a fake; a relative path is rejected. |
+| `NOTESD_STREAM_PROBER` | off | `on` lets the background prober fill the Stream side of `/movies` by itself: while Windows is idle and nothing plays, it resolves TMDB candidates in a tab of the streaming Chrome, out of sight and without sound, and re-checks verified titles before they go stale. Needs direct streaming, movies, a TMDB credential and WSL with `powershell.exe`. See [streaming.md](../streaming.md#the-prober). |
+| `NOTESD_STREAM_CATALOG_SIZE` | 300 | How many titles with a fresh verified source the prober keeps on this machine. At this count it stops probing new candidates; re-checks go on. |
+| `NOTESD_STREAM_PROBE_BUDGET` | 14 | Resolves per prober pass, re-checks and new candidates together. The default is the titles that fit in a pass's seconds (half of `NOTESD_STREAM_PROBE_MS`) at 41.5 s a title, from the resolve campaign's timings; it follows `NOTESD_STREAM_PROBE_MS` when that is set. |
+| `NOTESD_STREAM_IDLE_SECONDS` | 600 | How long Windows must have had no keyboard or mouse input before the prober starts a resolve. It is read again before every resolve, and the pass stops as soon as it is shorter. |
+| `NOTESD_STREAM_PROBE_MS` | 1200000 | Pause between prober passes. A pass spends at most half of it. |
+
 ## Install script and hooks
 
 Read by `scripts/install.sh`, `scripts/uninstall.sh` and the Claude Code hooks, not by the daemon.

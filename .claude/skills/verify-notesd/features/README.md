@@ -16,7 +16,8 @@ feature, each with the same four sections: `Sub-features`, `How to get to it (us
 | Seer Adversarial: reviewer, verdicts in Seer, toggle, budget, read API, MCP, SSE, wall | [adversary.md](adversary.md) | background job (`up --adversary`), Seer DB, API, MCP, SSE, wall |
 | dword vocabulary (`/v`) and journal (`/j`) | [dword.md](dword.md) | MCP, Claude Code skills |
 | Egress meter and quota breaker (`/api/debug/egress`, `NOTESD_EGRESS_METER`) | [egress.md](egress.md) | HTTP (loopback) |
-| Movies: library sync, TMDB metadata, Play/Resume in VLC with progress, deleted vs watched, unmatched list, `movies_*` tools | [movies.md](movies.md) | background sync (`up --movies`), API, MCP, fake VLC, wall `/movies` |
+| Movies: library sync, TMDB metadata, Play/Resume in VLC with progress, deleted vs watched, unmatched list, the Stream side (titles verified to stream here), `movies_*` tools | [movies.md](movies.md) | background sync (`up --movies`), API, MCP, fake VLC, wall `/movies` |
+| Direct streaming: provider registry and health, play, sessions, the stream pass-through (`/api/stream/*`), background prober (`--prober`) | [direct-streaming.md](direct-streaming.md) | API, fake resolver and fixture stream host (`up --direct-stream`), database |
 
 Add an entry when a change ships a new user-facing feature; fix an entry when the app's behavior
 changed on purpose. A journey that fails because the app is broken is a product bug: report it,

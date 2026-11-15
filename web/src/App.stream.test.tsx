@@ -1,0 +1,194 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { Note } from './types';
+import type { StreamListResponse } from './moviesApi';
+import { makeNote } from './testing/fixtures';
+import { FIGHT_CLUB, MOVIE_STREAMABLE, PLAYER_IDLE, SERIES_STREAMABLE, STATUS, STREAM_LIST, TITLES } from './testing/movieFixtures';
+import { STREAM_OFF_TEXT } from './lib/movies';
+import { App } from './App';
+
+const notes: Note[] = [makeNote('A-B32', 'buy fennel #kitchen', { created: new Date().toISOString() })];
+
+let calls: string[];
+let posts: { url: string; body: Record<string, unknown> | null }[];
+let streamList: StreamListResponse;
+/** What phase 3's POST /api/stream/play answers. */
+let playAnswer: { status: number; body: Record<string, unknown> };
+/** Stands in for phase 5: a failed play marks the title's source stale, so the next list lacks it. */
+let dropOnFailure: string | null;
+const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+
+beforeEach(() => {
+  calls = [];
+  posts = [];
+  streamList = STREAM_LIST;
+  playAnswer = { status: 200, body: { ok: true } };
+  dropOnFailure = null;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      calls.push(`${method} ${url}`);
+      if (method === 'POST') posts.push({ url, body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null });
+      if (url.startsWith('/api/notes?')) return json({ notes, next_cursor: null });
+      if (url.startsWith('/api/tags')) return json([]);
+      if (method === 'POST' && url === '/api/stream/play') {
+        if (playAnswer.status >= 400 && dropOnFailure !== null) {
+          const gone = dropOnFailure;
+          streamList = { ...streamList, titles: streamList.titles.filter((t) => t.id !== gone) };
+        }
+        return json(playAnswer.body, playAnswer.status);
+      }
+      if (url === '/api/movies') return json({ titles: TITLES });
+      if (url === '/api/movies/stream') return json(streamList);
+      if (url === '/api/movies/status') return json(STATUS);
+      if (url === '/api/movies/player') return json(PLAYER_IDLE);
+      if (url === '/api/movies/M-FC55' || url === '/api/movies/movie-550') return json(FIGHT_CLUB);
+      if (url === '/api/movies/M-23T4' || url === '/api/movies/movie-467905') return json(MOVIE_STREAMABLE);
+      if (url === '/api/movies/M-8TR4' || url === '/api/movies/tv-247718') return json(SERIES_STREAMABLE);
+      if (method === 'POST' && url.startsWith('/api/movies/')) return json({}, 202);
+      return new Response('not found', { status: 404 });
+    }),
+  );
+  vi.stubGlobal('scrollTo', vi.fn());
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, writable: true, value: () => ({}) as Animation });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+  Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+  window.history.replaceState(null, '', '/');
+});
+
+const h1 = () => screen.queryByRole('heading', { level: 1 })?.textContent ?? null;
+const at = (url: string) => window.history.replaceState(null, '', url);
+const where = () => window.location.pathname + window.location.search;
+const rail = () => document.querySelector('.rail') as HTMLElement;
+const switcher = () => screen.getByRole('group', { name: 'Library or Stream' });
+const tileIds = () =>
+  within(screen.getByRole('list', { name: 'Posters' }))
+    .getAllByRole('listitem')
+    .map((t) => t.querySelector('a')?.getAttribute('data-title'));
+const streamPlays = () => posts.filter((p) => p.url === '/api/stream/play').map((p) => p.body);
+const vlcPlays = () => posts.filter((p) => /^\/api\/movies\/(files\/\d+\/play|continue)$/.test(p.url));
+const count = (call: string) => calls.filter((c) => c === call).length;
+
+describe('App: the Stream side of /movies', () => {
+  it('R5.1: the Stream switch at the top shows the Stream grid in the same page; the rail gains nothing', async () => {
+    at('/movies');
+    render(<App />);
+    await screen.findByRole('list', { name: 'Posters' });
+    const railBefore = within(rail()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    expect(count('GET /api/movies/stream')).toBe(0);
+    expect(within(switcher()).getByRole('button', { name: 'Library' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(within(switcher()).getByRole('button', { name: 'Stream' }));
+    await waitFor(() => expect(where()).toBe('/movies?side=stream'));
+    expect(h1()).toBe('Stream.');
+    // The header hint follows the side: nothing on the Stream side plays in VLC.
+    expect(screen.getByText(/Play streams the title full screen/)).toBeTruthy();
+    expect(screen.queryByText(/Play opens VLC/)).toBeNull();
+    await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
+    expect(within(switcher()).getByRole('button', { name: 'Stream' }).getAttribute('aria-pressed')).toBe('true');
+    // A title with no file is not "gone" on this side, and there is no gone pill.
+    expect(document.querySelector('.mv-tile.gone')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^gone/ })).toBeNull();
+    await screen.findByText(/2 titles verified to stream on this machine in the last 7 days\./);
+    expect(within(rail()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(railBefore);
+    expect(within(rail()).queryByRole('button', { name: /stream/i })).toBeNull();
+    fireEvent.click(within(switcher()).getByRole('button', { name: 'Library' }));
+    await waitFor(() => expect(where()).toBe('/movies'));
+    expect(h1()).toBe('Movies.');
+    expect(screen.getByText(/Play opens VLC/)).toBeTruthy();
+  });
+
+  it('R5.2: the Stream grid shows exactly the verified list; empty and off say why', async () => {
+    at('/movies?side=stream');
+    const first = render(<App />);
+    await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
+    // Library titles without a verified stream (MobLand, The Dog Stars) are not on this side.
+    expect(tileIds()).not.toContain('M-8TR4');
+    expect(tileIds()).not.toContain('movie-9001');
+    first.unmount();
+
+    streamList = { enabled: true, titles: [], fresh_days: 7 };
+    const second = render(<App />);
+    await waitFor(() => expect(document.querySelector('.mv-off')?.textContent).toContain('/direct-stream <title>'));
+    expect(document.querySelector('.mv-off')?.textContent).toContain('in the last 7 days');
+    second.unmount();
+
+    streamList = { enabled: false, reason: 'direct_stream_off', titles: [] };
+    render(<App />);
+    await screen.findByText(STREAM_OFF_TEXT);
+  });
+
+  it('R5.3: Play on a title opened from the Stream grid asks the daemon to stream it, once, with no other click', async () => {
+    at('/movies?side=stream');
+    render(<App />);
+    await waitFor(() => expect(tileIds()).toContain('M-FC55'));
+    fireEvent.click(screen.getByRole('link', { name: /Fight Club/ }));
+    await waitFor(() => expect(where()).toBe('/movies/M-FC55?side=stream'));
+    const article = within(await screen.findByRole('article', { name: 'Fight Club' }));
+    expect(article.getByTestId('stream-source').textContent).toBe('Stream: VidFast · 2160p · English subtitle');
+    fireEvent.click(article.getByRole('button', { name: 'Stream (VidFast · 2160p · English subtitle)' }));
+    await screen.findByText('opening in the streaming Chrome');
+    expect(streamPlays()).toEqual([{ kind: 'movie', tmdb_id: 550 }]);
+    expect(vlcPlays()).toEqual([]);
+  });
+
+  it('R5.4: a play that finds no source says so, and the title leaves the Stream grid', async () => {
+    playAnswer = { status: 502, body: { error: 'no_source', attempts: [{ provider: 'VidFast', outcome: 'no_stream', took_s: 9, detail: '' }] } };
+    dropOnFailure = 'movie-550';
+    at('/movies/M-FC55?side=stream');
+    render(<App />);
+    const article = within(await screen.findByRole('article', { name: 'Fight Club' }));
+    await waitFor(() => expect(count('GET /api/movies/stream')).toBeGreaterThan(0));
+    const before = count('GET /api/movies/stream');
+    fireEvent.click(article.getByRole('button', { name: 'Stream (VidFast · 2160p · English subtitle)' }));
+    await screen.findByText('no provider could stream Fight Club now; it leaves the Stream grid');
+    await waitFor(() => expect(count('GET /api/movies/stream')).toBeGreaterThan(before));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Stream' }));
+    await waitFor(() => expect(where()).toBe('/movies?side=stream'));
+    await waitFor(() => expect(tileIds()).toEqual(['M-23T4']));
+  });
+
+  it('direct streaming off: Play on a Stream title is disabled and says so', async () => {
+    streamList = { enabled: false, reason: 'direct_stream_off', titles: [] };
+    at('/movies/M-FC55?side=stream');
+    render(<App />);
+    const article = within(await screen.findByRole('article', { name: 'Fight Club' }));
+    await waitFor(() => expect((article.getByRole('button', { name: 'Direct streaming is off on this machine' }) as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it('R5.5: a title with a file here and a verified stream plays the file; the stream is the second icon', async () => {
+    for (const url of ['/movies/M-23T4?side=stream', '/movies/M-23T4']) {
+      posts = [];
+      at(url);
+      const view = render(<App />);
+      const article = within(await screen.findByRole('article', { name: 'How to Make a Killing' }));
+      fireEvent.click(article.getByRole('button', { name: 'Resume at 45:00' }));
+      await waitFor(() => expect(posts.filter((p) => p.url === '/api/movies/files/11/play')).toHaveLength(1));
+      expect(streamPlays()).toEqual([]);
+      fireEvent.click(article.getByRole('button', { name: 'Stream (VidLink · 1080p · English subtitle)' }));
+      await waitFor(() => expect(streamPlays()).toEqual([{ kind: 'movie', tmdb_id: 467905 }]));
+      view.unmount();
+    }
+  });
+
+  it('a series from the Stream side lists every season; an episode streams when clicked; a file here still plays in VLC', async () => {
+    at('/movies/M-8TR4?side=stream');
+    render(<App />);
+    const eps = within(await screen.findByRole('region', { name: 'Episodes' }));
+    expect(eps.getByText('Season 2')).toBeTruthy();
+    const s02e01 = within(document.querySelector('[data-episode="S02E01"]') as HTMLElement);
+    fireEvent.click(s02e01.getByRole('button', { name: 'Stream S02E01: checked when it starts' }));
+    await waitFor(() => expect(streamPlays()).toEqual([{ kind: 'tv', tmdb_id: 247718, season: 2, episode: 1 }]));
+    const s01e02 = within(document.querySelector('[data-episode="S01E02"]') as HTMLElement);
+    expect(s01e02.getByRole('button', { name: 'Resume S01E02 at 20:00' })).toBeTruthy();
+    expect(s01e02.getByRole('button', { name: 'Stream S01E02 (VidFast · 1080p · English subtitle)' })).toBeTruthy();
+  });
+});

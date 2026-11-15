@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         index: resolve(root, 'index.html'),
         fullscreen: resolve(root, 'fullscreen.html'),
+        stream: resolve(root, 'stream.html'),
       },
     },
   },
