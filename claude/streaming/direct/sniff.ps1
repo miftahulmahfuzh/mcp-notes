@@ -21,7 +21,10 @@ param(
   [int]$Linger = 4,
   # Seconds to wait after a bot check is seen, in case the page goes on to a stream by itself.
   [int]$BotGrace = 5,
-  [switch]$KeepTab
+  [switch]$KeepTab,
+  # Before the tab closes, read what the page and each attached frame show (video elements, iframe
+  # count, title, visible text). Read-only: nothing is clicked and nothing is played.
+  [switch]$Inspect
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -227,6 +230,46 @@ function New-Hit($m, $url, $headers, $type, $document, $status, $mime) {
   }
 }
 
+# Whether an mp4 answer says it is under 20 MB in all (Content-Range's total, else Content-Length).
+function Test-Clip($res) {
+  $total = 0L
+  $range = [string](Get-Header $res.headers 'Content-Range')
+  if ($range -match '/(\d+)\s*$') { $total = [long]$Matches[1] }
+  elseif ($res.status -eq 200) { [void][long]::TryParse([string](Get-Header $res.headers 'Content-Length'), [ref]$total) }
+  return ($total -gt 0 -and $total -lt 20MB)
+}
+
+# The inspection adds up to 12 x 1.5 s after the media state.
+if ($Inspect) { $cts.CancelAfter(($Seconds + 90) * 1000) }
+$InspectJs = @'
+(() => {
+  const videosIn = (doc) => Array.from(doc.querySelectorAll('video')).map((v) => ({
+    src: String(v.currentSrc || v.src || '').slice(0, 120),
+    ready_state: v.readyState,
+    paused: v.paused,
+    current_time: Math.round(v.currentTime || 0),
+    muted: v.muted,
+  }));
+  const videos = videosIn(document);
+  for (const frame of Array.from(document.querySelectorAll('iframe'))) {
+    try { if (frame.contentDocument) videos.push(...videosIn(frame.contentDocument)); } catch (e) {}
+  }
+  const text = document.body ? document.body.innerText.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+  return JSON.stringify({ url: location.href.slice(0, 200), title: document.title.slice(0, 120), text,
+    videos, iframes: document.querySelectorAll('iframe').length });
+})()
+'@
+
+# What one page or frame shows, or $null when it cannot be read (gone, or never answered).
+function Get-FrameReport([string]$session) {
+  try {
+    $reply = Wait-Reply (Send-Cdp 'Runtime.evaluate' @{ expression = $InspectJs; returnByValue = $true } $session) 1500
+    $value = $reply.result.result.value
+    if ($value) { return ($value | ConvertFrom-Json) }
+  } catch { }
+  return $null
+}
+
 while ((Get-Date) -lt $deadline) {
   $now = Get-Date
   if ($firstManifest -and ($now - $firstManifest).TotalSeconds -gt $Linger) { break }
@@ -306,6 +349,13 @@ while ((Get-Date) -lt $deadline) {
       if ($m.params.type -eq 'Document' -and (Get-Header $res.headers 'cf-mitigated') -eq 'challenge') {
         Set-BotCheck "cf-mitigated on $($res.url)"
       }
+      # A short mp4 (an advert clip, a button animation) is not the film: it is no hit, and it
+      # does not end the watch early.
+      if ($res.mimeType -match '^video/mp4' -and (Test-Clip $res)) {
+        if ($byRequest.ContainsKey($key)) { $hits.Remove($byRequest[$key]); $byRequest.Remove($key) }
+        if (-not @($hits | Where-Object { $_.url -match '\.mp4(\?|$)' })) { $firstMp4 = $null }
+        continue
+      }
       if ($byRequest.ContainsKey($key)) {
         $byRequest[$key].status = $res.status
         $byRequest[$key].mime = $res.mimeType
@@ -347,6 +397,15 @@ foreach ($session in @($pageSessions | Select-Object -First 12)) {
   }
 }
 
+$inspectReports = $null
+if ($Inspect) {
+  $inspectReports = New-Object System.Collections.ArrayList
+  foreach ($session in @($pageSessions | Select-Object -First 12)) {
+    $report = Get-FrameReport $session
+    if ($report) { [void]$inspectReports.Add($report) }
+  }
+}
+
 Close-Tab
 
 $outHits = @(foreach ($hit in @($hits | Select-Object -First 60)) {
@@ -379,4 +438,5 @@ Write-Output ([ordered]@{
   hosts = @($topHosts)
   media = $media
   hits = $outHits
+  inspect = $(if ($Inspect) { @($inspectReports) } else { $null })
 } | ConvertTo-Json -Depth 6 -Compress)

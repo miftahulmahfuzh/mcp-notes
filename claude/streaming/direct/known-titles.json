@@ -1,0 +1,5 @@
+[
+  { "label": "Fight Club (1999)", "kind": "movie", "tmdb_id": 550 },
+  { "label": "Sinners (2025)", "kind": "movie", "tmdb_id": 1233413 },
+  { "label": "Breaking Bad S02E03", "kind": "tv", "tmdb_id": 1396, "season": 2, "episode": 3 }
+]
