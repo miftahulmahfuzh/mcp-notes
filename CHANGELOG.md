@@ -5,6 +5,71 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0] - 2026-11-15
+
+Streaming sites (`/pahe`, `/idlix`, `/lk21`) from Claude Code and the chat bar, trailers and
+one-click name questions on a title's page, and a Movies page that knows what VLC is really
+doing.
+
+### Added
+
+- **Streaming sites** (`claude/streaming/*`, `docs/guide/streaming.md`): one command,
+  `cli.mjs`, with a module per site. `/idlix` and `/lk21` find a title, and for one matching
+  film start it and show it full screen in a real Chrome on Windows with its own profile
+  folder, driven through `cdp.ps1` (PowerShell, since WSL cannot reach Windows loopback). A
+  link counts only when the site's own search returned it.
+- **Streaming MCP tools** (`streaming_find`, `streaming_play`, `src/mcp/streamingTools.ts`,
+  `src/streaming/service.ts`): the daemon runs the same command, so the wall's chat bar can do
+  what the skills do. `NOTESD_STREAMING=off` turns them off; `IDLIX_ORIGIN` and `LK21_ORIGIN`
+  follow a site that moved.
+- **`/pahe`**: finds a title's page on pahe.ink from Claude Code and the chat bar, keeping the
+  search results whose name and year match, best source first.
+- **`/create-streaming-skill`**: records how a new site is looked at and added, with the
+  mistakes made on the first two.
+- **Trailers** (migration 0019): the newest official YouTube trailer is stored per title and
+  per season; a trailer icon beside Play and on each season heading plays it in a pop-up, or
+  opens a YouTube search when TMDB lists none. Older titles are looked up ten per sync pass,
+  and `movies_get` carries `trailer_url`.
+- **Ask about any name on a title page**: every genre, studio, crew member, cast member and
+  character is a link that sends its own question through the pill. A question from an
+  unfinished title carries the owner's position, and the chat leaves out what happens after it.
+- **VLC without picture is detected**: the health log writes a `gpu_reset` line per Windows
+  display-driver reset and a `video_stall` line when the followed VLC plays with frozen video
+  counters; `GET /api/movies/player` carries `video_stalled`. The Movies page shows an amber
+  alert, and the grid poster and the title page carry a playing / paused / no picture chip.
+- **`/trace-vlc-bug`**: collects the health log, VLC's windows and frame counters, Windows
+  events and screenshots into one evidence folder and matches them against the known causes.
+- **`dword_journal_set_source`**: sets or clears "Where from?" on a saved journal entry, the
+  one UPDATE the writer allows on `journal_entries`. `/j` fills it with the film or episode
+  watched in the session.
+- `scripts/install.sh` registers the five new skills (`trace-vlc-bug`, `pahe`, `idlix`,
+  `lk21`, `create-streaming-skill`). Re-run it after updating, and run `npm run db:migrate`
+  once for migration 0019.
+
+### Changed
+
+- **Play never opens the playing file twice**: Play or continue on the file notesd already
+  follows brings the open VLC to the front, tells it to play when paused and answers
+  `already_playing`. A followed VLC that is stopped, hung, gone or without video is not reused.
+- **A daemon restart keeps following its VLC**: at start the daemon lists its own `vlc.exe`
+  processes and reopens the play row of one that still plays. A VLC opened by hand is never
+  adopted.
+- The answer panel folds to its header line on a press or wheel turn outside it, so the names
+  under it on a title page can be clicked; a pinned panel stays open.
+- The movies guide shows the owner's real library: `npm run docs:shots -- --live movies` reads
+  the running daemon, and plain `docs:shots -- movies` retakes only the unmatched list and the
+  assign dialog (`DOCS_SHOTS_CHAT`, `DOCS_SHOTS_PLAY`, `DOCS_LIVE_URL`).
+- The adversary and connectors guides link Seer and the connector apps to their GitHub repos.
+
+### Fixed
+
+- Poster grid links use the canonical `/movies/M-xxxx` id instead of the internal
+  `movie-<tmdb>` / `tv-<tmdb>` key.
+- The streaming tools work from the daemon: PowerShell is named by its full path, since the
+  systemd unit's `PATH` has no Windows folders, and a play that arrives while the streaming
+  Chrome is closing is tried once more.
+- `/pahe` runs its search when the skill is reached through its `~/.claude/skills` symlink.
+
 ## [v0.6.0] - 2026-11-14
 
 Movies: a watched library on `/movies`, matched against TMDB and played through VLC, plus one
@@ -238,6 +303,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.7.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.4.0
