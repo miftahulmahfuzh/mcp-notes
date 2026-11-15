@@ -19,7 +19,7 @@ import {
 import { tmdbResolver } from './sync.js';
 import { nodeRecentsFs, recentsSyncHook, type RecentsFs } from './vlc/recents.js';
 import type { VlcForegrounder } from './vlc/foreground.js';
-import type { HangEvent, HangOutcome, PidCheck, PlayerHealthLink, StallOutcome, TrackedVlc, VideoStallEvent } from './vlc/health.js';
+import type { HangEvent, HangOutcome, NotesdVlc, PidCheck, PlayerHealthLink, StallOutcome, TrackedVlc, VideoStallEvent } from './vlc/health.js';
 
 type FileRow = typeof movieFiles.$inferSelect;
 
@@ -51,6 +51,10 @@ export const HANG_AFTER_SILENT_POLLS = 2;
  * direct3d9 and directdraw outputs also freeze but keep counting, so they are not caught.
  */
 export const STALL_AFTER_FROZEN_POLLS = 3;
+/** How many of this host's newest plays a VLC that outlived the daemon is matched against. */
+export const ADOPT_PLAYS = 10;
+/** A play row is written just after its VLC starts; clocks on the two sides may differ by this much. */
+export const ADOPT_CLOCK_SLACK_MS = 60_000;
 
 export type PlayErrorCode = 'not_found' | 'not_on_this_machine' | 'player_unavailable' | 'file_missing';
 
@@ -80,7 +84,7 @@ const UNAVAILABLE_MESSAGE: Record<PlayerUnavailableReason, string> = {
   launch_failed: 'vlc.exe could not be started.',
 };
 
-export type PlayerRepo = Pick<MoviesRepo, 'fileById' | 'lastPlay' | 'startPlay' | 'updatePlay' | 'endPlay' | 'closeOpenPlays'>;
+export type PlayerRepo = Pick<MoviesRepo, 'fileById' | 'lastPlay' | 'startPlay' | 'updatePlay' | 'endPlay' | 'closeOpenPlays' | 'recentLivePlays' | 'reopenPlay'>;
 
 export interface MoviePlayerDeps {
   repo: PlayerRepo;
@@ -116,6 +120,12 @@ export interface MoviePlayerDeps {
    * its failure never fails a play. Absent: VLC opens wherever Windows puts it.
    */
   foreground?: VlcForegrounder;
+  /**
+   * The running VLCs a previous daemon run started (buildVlcFinder). With it, start() follows the
+   * one that still plays this host's newest play again, so a restart of notesd does not orphan an
+   * open VLC. Absent: nothing is adopted.
+   */
+  findVlcs?: () => Promise<NotesdVlc[]>;
   /** Default `new Date()`: the paused and silent clocks. */
   now?: () => Date;
   log?: (line: string) => void;
@@ -232,9 +242,81 @@ export class MoviePlayer {
     return d.available ? { available: true, reason: null } : { available: false, reason: d.reason };
   }
 
-  /** Daemon start, before listening: close the plays a previous process left open. Returns how many. */
+  /**
+   * Daemon start, before listening: close the plays a previous process left open. Returns how many.
+   * Then, in the background and ahead of any play request, adopt a VLC that outlived that process.
+   */
   async start(): Promise<number> {
-    return this.deps.repo.closeOpenPlays(this.host);
+    const closed = await this.deps.repo.closeOpenPlays(this.host);
+    if (this.deps.findVlcs !== undefined) {
+      this.queue = this.queue.then(() => this.adopt()).catch((err: unknown) => this.log(`[movies] could not look for a VLC to follow again: ${message(err)}`));
+    }
+    return closed;
+  }
+
+  /** Resolves once start()'s adoption (and any play in progress) is done. */
+  async settled(): Promise<void> {
+    await this.queue;
+  }
+
+  /**
+   * Follows a VLC of a previous daemon run again. Among this host's newest plays, the first whose
+   * file name is in the command line of a running notesd VLC that started before the play and
+   * still answers with its password, not stopped: that play row is opened again and polling goes
+   * on from where VLC is now. The window is left where it is.
+   */
+  private async adopt(): Promise<void> {
+    if (this.closed || this.tracked !== null || this.deps.findVlcs === undefined) return;
+    const vlcs = await this.deps.findVlcs();
+    if (vlcs.length === 0 || this.closed) return;
+    const detection = await this.deps.detect();
+    if (!detection.available) return;
+    const env = detection.env;
+    for (const { play, file } of await this.deps.repo.recentLivePlays(this.host, ADOPT_PLAYS)) {
+      const vlc = vlcs.find(
+        (v) => v.commandLine.includes(file.name) && (v.startedAt === null || Date.parse(v.startedAt) <= play.startedAt.getTime() + ADOPT_CLOCK_SLACK_MS),
+      );
+      if (vlc === undefined) continue;
+      const ep: VlcEndpoint = { port: vlc.port, password: vlc.password };
+      const r = await this.deps.reader.status(env.curl, ep);
+      if (this.closed) return;
+      if (r.kind !== 'ok' || r.status.state === 'stopped') continue;
+      const row = play.endedAt === null ? play : await this.deps.repo.reopenPlay(play.id);
+      if (row === null) continue;
+      const t: Tracked = {
+        playId: row.id,
+        file,
+        env,
+        ep,
+        startedAt: row.startedAt,
+        state: r.status.state,
+        position: r.status.time,
+        duration: r.status.length > 0 ? r.status.length : file.durationS,
+        lastReadAt: null,
+        errors: 0,
+        timer: null,
+        inFlight: null,
+        ended: false,
+        pausedSince: r.status.state === 'paused' ? this.now() : null,
+        silentSince: null,
+        hung: false,
+        hangPid: null,
+        lastVideo: null,
+        lastPlayingTime: null,
+        videoSeen: false,
+        frozenPolls: 0,
+        frozenSince: null,
+        stalled: false,
+        stalledSince: null,
+        stallPid: null,
+      };
+      this.tracked = t;
+      this.deps.onChange?.(file);
+      this.log(`[movies] following VLC pid ${vlc.pid} on port ${vlc.port} again: play ${row.id} (${file.name}), ${r.status.state} at ${Math.round(t.position)} s`);
+      if (this.closed) await this.finish(t, 'shutdown');
+      else this.schedule(t);
+      return;
+    }
   }
 
   /** Plays are serialized so two clicks never race for a port or the tracked slot. */
@@ -679,6 +761,8 @@ export interface PlaybackOverrides {
   recentsFs?: RecentsFs;
   /** Movies phase 9: the health monitor (the hang rule). */
   health?: PlayerHealthLink;
+  /** The daemon passes buildVlcFinder(); absent, start() adopts nothing. */
+  findVlcs?: () => Promise<NotesdVlc[]>;
   /** The daemon passes windowsForegrounder(); absent, no window is raised. */
   foreground?: VlcForegrounder;
 }
@@ -701,6 +785,7 @@ export function buildMoviePlayback(service: PlaybackService, config: MoviesConfi
     ...(overrides.wslpath !== undefined ? { wslpath: overrides.wslpath } : {}),
     ...(overrides.health !== undefined ? { health: overrides.health } : {}),
     ...(overrides.foreground !== undefined ? { foreground: overrides.foreground } : {}),
+    ...(overrides.findVlcs !== undefined ? { findVlcs: overrides.findVlcs } : {}),
     // Play start and end only: the web reloads its whole list on every `changed`.
     onChange: (file) => service.events.changed('play', { fileIds: [file.id], titleIds: file.titleId === null ? [] : [file.titleId] }),
   });

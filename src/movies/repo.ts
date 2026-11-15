@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client.js';
 import {
@@ -464,6 +464,27 @@ export class MoviesRepo {
       .where(and(eq(moviePlays.host, host), eq(moviePlays.source, 'live'), isNull(moviePlays.endedAt)))
       .returning({ id: moviePlays.id });
     return rows.length;
+  }
+
+  /** This host's newest live plays with their files, newest first: what a VLC that outlived the daemon is matched against. */
+  async recentLivePlays(host: string, limit: number): Promise<FilePlay[]> {
+    return this.db
+      .select({ play: moviePlays, file: movieFiles })
+      .from(moviePlays)
+      .innerJoin(movieFiles, eq(movieFiles.id, moviePlays.fileId))
+      .where(and(eq(moviePlays.host, host), eq(moviePlays.source, 'live')))
+      .orderBy(desc(moviePlays.startedAt), desc(moviePlays.id))
+      .limit(limit);
+  }
+
+  /** Opens a closed live play again: the VLC it followed is still running. Null when it is unknown or already open. */
+  async reopenPlay(playId: number, now: Date = new Date()): Promise<MoviePlayRow | null> {
+    const rows = await this.db
+      .update(moviePlays)
+      .set({ endedAt: null, updatedAt: now })
+      .where(and(eq(moviePlays.id, playId), eq(moviePlays.source, 'live'), isNotNull(moviePlays.endedAt)))
+      .returning();
+    return rows[0] ?? null;
   }
 
   /** Opens a play event; its position starts at `startPositionS`. */

@@ -12,7 +12,9 @@
   and `video_stalled: true` on `GET /api/movies/player`, which the Movies page shows as an amber
   alert line and "no picture in VLC" on the title (`web/src/App.movies.test.tsx`). Play or continue
   on the file already followed opens no second VLC (`already_playing`,
-  `tests/unit/movies/player.rejoin.test.ts`), and the grid marks the followed title's poster
+  `tests/unit/movies/player.rejoin.test.ts`), a restarted daemon follows the notesd VLC that is
+  still open again (same play row; `tests/integration/movies.play.int.test.ts`, "a restarted
+  daemon"; off with the health log, so never in `verify.sh up --movies`), and the grid marks the followed title's poster
   (playing / paused / no picture). `GET /api/movies/player/health` returns it
   (`stalls`, `gpu_resets`). Proof: `npx vitest run tests/unit/movies/vlc.videoStall.test.ts` and
   `npm run test:int -- tests/integration/movies.health.int.test.ts tests/integration/movies.healthCrash.int.test.ts`

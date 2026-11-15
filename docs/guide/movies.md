@@ -333,6 +333,12 @@ Rules worth knowing:
   starts no second VLC: the open one comes to the front and plays if it was paused
   (`already_playing`). A followed VLC that is stopped, hung, without video or no longer answering
   is not reused, and a new one starts as usual.
+- **A restart of notesd does not orphan an open VLC.** At start the daemon lists the `vlc.exe`
+  processes it started earlier (the same `tasklist.exe` / `powershell.exe` read as the health log,
+  and off with it). Among this machine's ten newest plays, the first whose file name is in the
+  command line of such a VLC that started before the play and still answers with its password, not
+  stopped, is followed again: its play row is opened again and the position goes on from where VLC
+  is. The window is not touched. A VLC you opened yourself is never adopted.
 - **The poster shows what is on.** While a play is followed, its title's poster in the grid has a
   pulsing frame and a "playing" chip; paused it is steady and reads "paused"; a VLC without video
   reads "no picture" in amber.

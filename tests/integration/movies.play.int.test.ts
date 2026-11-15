@@ -11,6 +11,7 @@ import { moviePlays } from '../../src/db/schema.js';
 import { moviesPlayRoutes } from '../../src/http/moviesPlayApi.js';
 import { revealRoutes, type RevealDeps } from '../../src/http/reveal.js';
 import { MoviePlayer } from '../../src/movies/player.js';
+import type { NotesdVlc } from '../../src/movies/vlc/health.js';
 import { MoviesRepo } from '../../src/movies/repo.js';
 import { curlStatusReader } from '../../src/movies/vlc/http.js';
 import { spawnVlcLauncher, type PlayerDetection } from '../../src/movies/vlc/launch.js';
@@ -73,7 +74,7 @@ describe.skipIf(!existsSync(CURL))('movies playback with a fake VLC', () => {
     return bin;
   }
 
-  async function makePlayer(o: { detection?: PlayerDetection; vlcEnv?: Record<string, string>; readyTimeoutMs?: number } = {}): Promise<MoviePlayer> {
+  async function makePlayer(o: { detection?: PlayerDetection; vlcEnv?: Record<string, string>; readyTimeoutMs?: number; findVlcs?: () => Promise<NotesdVlc[]> } = {}): Promise<MoviePlayer> {
     const vlc = await vlcBin(o.vlcEnv);
     const player = new MoviePlayer({
       repo: new MoviesRepo(h.deps.db),
@@ -88,6 +89,7 @@ describe.skipIf(!existsSync(CURL))('movies playback with a fake VLC', () => {
       readyIntervalMs: 50,
       playingTimeoutMs: 2000,
       log: () => {},
+      ...(o.findVlcs !== undefined ? { findVlcs: o.findVlcs } : {}),
     });
     players.push(player);
     return player;
@@ -294,6 +296,52 @@ describe.skipIf(!existsSync(CURL))('movies playback with a fake VLC', () => {
     const row = await playRow(stale);
     expect(row.positionS).toBe(500);
     expect(row.endedAt?.toISOString()).toBe('2026-11-13T10:00:00.000Z');
+  });
+
+  it('a restarted daemon follows the VLC it left open again: the same play row goes on, and Play starts no second VLC', async () => {
+    const player = await makePlayer();
+    const fileId = await seedFilm({ lastPosition: 1200 });
+    const { play } = (await (await post(appFor(player), `/api/movies/files/${fileId}/play`)).json()) as { play: { play_id: number } };
+    await vi.waitFor(async () => expect((await playRow(play.play_id)).positionS).toBeGreaterThan(1260), { timeout: 5000, interval: 100 });
+    await player.close();
+    const closed = await playRow(play.play_id);
+    expect(closed.endedAt).not.toBeNull();
+    const [launch] = await launches();
+    const survivor: NotesdVlc = {
+      pid: launch!.pid,
+      port: basePort,
+      password: argOf(launch!.argv, '--http-password'),
+      startedAt: new Date(closed.startedAt.getTime() - 2000).toISOString(),
+      commandLine: launch!.argv.join(' '),
+    };
+
+    const restarted = await makePlayer({ findVlcs: async () => [survivor] });
+    expect(await restarted.start()).toBe(0);
+    await restarted.settled();
+    expect(restarted.current()).toMatchObject({ play_id: play.play_id, file_id: fileId, port: basePort, state: 'playing' });
+    expect((await playRow(play.play_id)).endedAt).toBeNull();
+    await vi.waitFor(async () => expect((await playRow(play.play_id)).positionS).toBeGreaterThan(closed.positionS! + 30), { timeout: 5000, interval: 100 });
+
+    const again = (await (await post(appFor(restarted), `/api/movies/files/${fileId}/play`)).json()) as { play: { play_id: number; already_playing?: boolean } };
+    expect(again.play).toMatchObject({ play_id: play.play_id, already_playing: true });
+    expect(await launches()).toHaveLength(1);
+    expect(await h.deps.db.select().from(moviePlays).where(eq(moviePlays.fileId, fileId))).toHaveLength(2);
+  });
+
+  it('adopts nothing when no VLC survived, when the survivor plays another file, or when it does not know the password', async () => {
+    const player = await makePlayer();
+    const fileId = await seedFilm({ lastPosition: 1200 });
+    const { play } = (await (await post(appFor(player), `/api/movies/files/${fileId}/play`)).json()) as { play: { play_id: number } };
+    await player.close();
+    const [launch] = await launches();
+    const base: NotesdVlc = { pid: launch!.pid, port: basePort, password: argOf(launch!.argv, '--http-password'), startedAt: null, commandLine: launch!.argv.join(' ') };
+    for (const found of [[], [{ ...base, commandLine: 'vlc.exe --http-password x C:\\fake\\Another.Film.mkv' }], [{ ...base, password: 'f'.repeat(32) }]]) {
+      const restarted = await makePlayer({ findVlcs: async () => found });
+      await restarted.start();
+      await restarted.settled();
+      expect(restarted.current()).toBeNull();
+      expect((await playRow(play.play_id)).endedAt).not.toBeNull();
+    }
   });
 
   it('answers file_missing for a deleted file, and refuses a foreign Origin', async () => {

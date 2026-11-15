@@ -460,6 +460,47 @@ export function startedByNotesd(cmd: string): boolean {
   return /--extraintf(?:=|\s+)"?http\b/i.test(cmd) && /--http-password(?:=|\s+)"?[0-9a-f]{32}\b/i.test(cmd);
 }
 
+/** A running vlc.exe that notesd started, with the endpoint read from its command line. */
+export interface NotesdVlc {
+  pid: number;
+  port: number;
+  /** Used in memory to reach that VLC again; never logged. */
+  password: string;
+  /** ISO 8601 UTC. */
+  startedAt: string | null;
+  commandLine: string;
+}
+
+/** The VLCs notesd started among a listing, newest process first. */
+export function notesdVlcs(processes: readonly VlcProcess[]): NotesdVlc[] {
+  const out: NotesdVlc[] = [];
+  for (const p of processes) {
+    const cmd = p.commandLine;
+    if (cmd === null || !startedByNotesd(cmd)) continue;
+    const port = /--http-port(?:=|\s+)"?(\d{1,5})\b/i.exec(cmd)?.[1];
+    const password = /--http-password(?:=|\s+)"?([0-9a-f]{32})\b/i.exec(cmd)?.[1];
+    if (port === undefined || password === undefined) continue;
+    out.push({ pid: p.pid, port: Number(port), password, startedAt: p.startedAt, commandLine: cmd });
+  }
+  const at = (v: NotesdVlc): number => (v.startedAt === null ? 0 : Date.parse(v.startedAt) || 0);
+  return out.sort((a, b) => at(b) - at(a));
+}
+
+/**
+ * How the daemon finds the VLCs a previous run started (MoviePlayer.adopt). Null when the health
+ * log is off (NOTESD_VLC_HEALTH_MS=0, no roots): then nothing on the Windows side is read. The
+ * finder answers [] outside WSL, without PowerShell (no command lines) or when the listing fails.
+ */
+export function buildVlcFinder(config: MoviesConfig, probe: DetectProbe = nodeProbe(), exec: ExecFn = execCapture): (() => Promise<NotesdVlc[]>) | null {
+  if (config.roots.length === 0 || config.vlc.healthMs === 0) return null;
+  return async () => {
+    const d = await detectHealthEnv(probe);
+    if (!d.available || d.env.powershell === null) return [];
+    const listing = await windowsProcessLister(d.env, exec).list();
+    return listing.kind === 'ok' && listing.detail ? notesdVlcs(listing.processes) : [];
+  };
+}
+
 // ---- The player's side.
 
 /** What the player tells the monitor about the play it follows (MoviePlayer.healthView()). */
