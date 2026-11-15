@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 15
+**Total Active Tasks**: 14
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 15
+- P1 High: 14
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 107
+- Completed: 108
 
 ---
 
@@ -76,15 +76,6 @@
   - **Satisfies**: R5 — Optional egress logging (plus a quota circuit breaker)
   - **Depends on**: none
   - **Plan**: `.workflows/plan/P1-NOTES-A089.md`
-- [ ] **P1-NOTES-A112** Phase 2: Resolve probe campaign: 24 providers, failures, episodes, token lifetime
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `claude/streaming/direct/known-titles.json` (the one known-titles list), `claude/streaming/direct/campaign.mjs`, `docs/plans/2026-11-15-direct-streaming-findings.md` (its tables, the `campaign:timings` block, the `## Playback` heading for phase 6), the seed fields the findings fill (`tv`, `en_subtitle`, `browser_only`, `notes`), and the `-Inspect` switch in phase 1's `sniff.ps1` / `sniff.mjs` (quoted as phase 1 writes them). Diagnoses Videasy, VidKing and CloudPlay by name. Exit criteria: `campaign.mjs check` prints `"ok": true`; the findings file has a row for each of the 24 providers and the sections "Why three returned nothing" (each with a named cause), "Series episodes" and "Token lifetime" with measured data; the seed carries the measured values; `npm run typecheck`, `npm test` and `npm run docs:check` pass.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 2 of 10)
-  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
-  - **Depends on**: P1-NOTES-A111
-  - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
 - [ ] **P1-NOTES-A113** Phase 3: Registry tables, DirectStreamService, sessions and the pass-through
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -168,6 +159,31 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A112** Phase 2: Resolve probe campaign: 24 providers, failures, episodes, token lifetime
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/direct/known-titles.json` (the one known-titles list), `claude/streaming/direct/campaign.mjs`, `docs/plans/2026-11-15-direct-streaming-findings.md` (its tables, the `campaign:timings` block, the `## Playback` heading for phase 6), the seed fields the findings fill (`tv`, `en_subtitle`, `browser_only`, `notes`), and the `-Inspect` switch in phase 1's `sniff.ps1` / `sniff.mjs` (quoted as phase 1 writes them). Diagnoses Videasy, VidKing and CloudPlay by name. Exit criteria: `campaign.mjs check` prints `"ok": true`; the findings file has a row for each of the 24 providers and the sections "Why three returned nothing" (each with a named cause), "Series episodes" and "Token lifetime" with measured data; the seed carries the measured values; `npm run typecheck`, `npm test` and `npm run docs:check` pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 2 of 10)
+  - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.1, R7.2
+  - **Depends on**: P1-NOTES-A111
+  - **Plan**: `.workflows/plan/P1-NOTES-A112.md`
+  - **Completed**: 2026-11-15 23:11
+  - **Method**: /implement
+  - **Files**: claude/streaming/direct/campaign.mjs, claude/streaming/direct/known-titles.json, claude/streaming/direct/providers.seed.json, claude/streaming/direct/sniff.ps1, claude/streaming/direct/sniff.mjs, tests/unit/scripts/directCampaign.test.ts, tests/unit/scripts/directResolve.test.ts, docs/plans/2026-11-15-direct-streaming-findings.md, .workflows/todos.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-direct-streaming-p2/d2150049-3554-4a3a-9628-bf0ae301ff20/scratchpad/proof-p2
+  - **Drift**:
+    - Phase 1's directResolve.test.ts pinned the seed's learned values (tv null, en_subtitle null, order from an unlearned seed), against phase 2's Interface Contract; those four tests now check shapes and read the seed with learned fields blanked.
+    - The live campaign found 8 of 24 providers resolving; 10 are unreachable (DNS failures, Cloudflare 52x), including all three of the spike's silent providers (Videasy, VidKing, CloudPlay).
+    - J4's prose expected checks: 3 with --max-min 2; the schedule (0, 2) gives 2 checks. Passed on last_ok_min 2 / schedule_done.
+    - Token lifetime watch still running detached (log ~/.local/state/notesd-direct-campaign/lifetime-20261115T131053Z.jsonl): valid at least 120 min at writing, address claims 360 min; phase 6 refreshes the table.
+  - **Decided**:
+    - Phase 1 tests pinned seed values that this phase fills → unpinned them in tests/unit/scripts/directResolve.test.ts (rung 1: invariant 1, npm test passes at the end of every phase; the phase's Interface Contract says phase 1's tests do not pin them)
+    - diagnose() named dead hosts no_player and an advert page's 404 not_found → added error-page/Cloudflare-52x → unreachable, ignore text of an unrelated host, and rediagnose() at report time (rung 2: exit criteria need a truthful named cause per provider)
+    - VidMov 'resolved' an advert mp4 clip → sniff.ps1 drops mp4 answers under 20 MB (rung 3: plan Step 6.4, smallest sniffer change a finding demands; resolve.mjs is phase 1's and untouched)
+    - bot_check flag on NonTongo/MediaHub looks like Cloudflare's passive script → left as is, recorded in the findings (rung 1: invariant 2, a bot check is an outcome)
+    - click_missed for the vidsrc.sh family (VidMov, VidFyi, VidSrc) → no nested-frame click built (tie-break: do exactly what the exit criteria demand)
+    - Probes in the 13:39-13:43 UTC window (another session's lk21 play used the same Chrome) → NonTongo, VidSrc, HyperLink re-run with VidMov in rerun-1; their rows come from the re-run
 - [x] **P1-NOTES-A111** Phase 1: Provider seed, sniffer and resolver CLI
   - **Difficulty**: HARD
   - **Type**: Feature

@@ -86,6 +86,7 @@ export function parseSniffReply(stdout) {
     hosts: list(reply.hosts),
     media: { elements: num(reply.media?.elements), audible: num(reply.media?.audible) },
     hits: list(reply.hits),
+    inspect: reply.inspect === null || reply.inspect === undefined ? null : list(reply.inspect),
   };
 }
 
@@ -101,6 +102,7 @@ export async function sniffEmbed(url, options = {}) {
     '-UrlB64', b64(url), '-MuteJsB64', b64(MUTE_SCRIPT), '-MediaJsB64', b64(MEDIA_EXPRESSION),
     '-Port', String(port), '-Seconds', String(seconds), '-Linger', String(linger), '-BotGrace', String(botGraceS),
   ];
+  if (options.inspect === true) args.push('-Inspect');
   let stdout;
   try {
     // powershell.exe cannot start in a Linux-only folder.
