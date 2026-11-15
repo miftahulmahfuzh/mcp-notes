@@ -25,6 +25,7 @@ $V up --embed         # keep OPENROUTER_API_KEY: real embeddings, billed (defaul
 $V up --adversary     # Seer reviewer ON against a throwaway Seer DB built from ${SEER_DIR:-~/seer}/db/migrations
 $V up --movies        # Movies ON against a generated video library, a fake TMDB and a fake vlc.exe/curl.exe
 $V up --direct-stream # Direct streaming ON (implies --movies) against a fake resolver and a fixture stream host
+$V up --direct-stream --prober  # the stream prober on (a pass every 5 s) over the fake resolver; --prober=off: setting unset
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,
@@ -157,3 +158,7 @@ not implementation.
   streaming Chrome. `up --direct-stream` is the only way to drive direct streaming; the one exception is
   `playcheck.mjs`'s wrapper (`NOTESD_DIRECT_STREAM_CLI=<dir>/cli.mjs`), which records `open` and is run
   only when the owner expects the streaming Chrome to come forward, muted.
+- `--prober` runs read Windows' idle time from `<run>/movies/idle_ms` (0 by default), so a pass stops at
+  `not_idle` before any resolve. Raising it lets the prober resolve through the run's resolver, which under
+  `--direct-stream` is the fake; never combine `--prober` with a real `NOTESD_DIRECT_STREAM_CLI`.
+  Probing is proven by `tests/unit/directStream/prober.test.ts`.

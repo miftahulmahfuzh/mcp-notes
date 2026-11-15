@@ -8,6 +8,7 @@ import {
   DEFAULT_ADVERSARY_CONFIG,
   DEFAULT_CHAT_CONFIG,
   DEFAULT_DIRECT_STREAM_CLI,
+  DEFAULT_STREAM_PROBER_CONFIG,
   DEFAULT_DIRECT_STREAM_CONFIG,
   DEFAULT_DWORD_CONFIG,
   DEFAULT_EMBEDDINGS_CONFIG,
@@ -451,7 +452,7 @@ describe('movies config', () => {
     const ds = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).directStream
     expect(DEFAULT_DIRECT_STREAM_CONFIG.enabled).toBe(false)
     expect(DEFAULT_DIRECT_STREAM_CLI.endsWith(path.join('claude', 'streaming', 'direct', 'cli.mjs'))).toBe(true)
-    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI })
+    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, prober: DEFAULT_STREAM_PROBER_CONFIG })
     expect(ds({ NOTESD_DIRECT_STREAM: 'off' })?.enabled).toBe(false)
     expect(ds({ NOTESD_STREAM_FRESH_DAYS: '3' })?.freshDays).toBe(3)
     expect(ds({ NOTESD_DIRECT_STREAM_CLI: '/tmp/fake-cli.mjs' })?.cli).toBe('/tmp/fake-cli.mjs')

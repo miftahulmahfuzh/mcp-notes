@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
   STREAM_ID_KINDS,
+  moviePlays,
+  movieTitles,
+  streamProbeTitles,
   streamProviderHealth,
   streamProviders,
   type StreamHealthOutcome,
@@ -12,6 +15,10 @@ import {
   type StreamProviderHealthRow,
   type StreamProviderRow,
 } from '../db/schema.js';
+import { freshStreamSourceSql } from '../movies/repo.js';
+import type { TitleKind } from '../movies/tmdb.js';
+import type { ListedCandidate } from './candidates.js';
+import type { ProbeRecord, ProbeStore, ProbeTarget } from './prober.js';
 import type { ResolvedSource } from './types.js';
 
 /** How many of a provider's latest times to a stream are kept per host. */
@@ -327,5 +334,159 @@ export class DirectStreamRepo {
       .onConflictDoNothing({ target: streamProviders.name })
       .returning({ name: streamProviders.name });
     return inserted.map((row) => row.name);
+  }
+}
+
+/** Rows per INSERT when a listing is written. */
+const LISTING_CHUNK = 500;
+
+function toTarget(kind: unknown, tmdbId: unknown, season: unknown, episode: unknown): ProbeTarget {
+  const k: TitleKind = kind === 'tv' ? 'tv' : 'movie';
+  return {
+    kind: k,
+    tmdbId: Number(tmdbId),
+    season: k === 'tv' ? Number(season) : null,
+    episode: k === 'tv' ? Number(episode) : null,
+  };
+}
+
+/**
+ * The direct-streaming prober's storage (phase 10): the only writer of stream_probe_titles, and
+ * the prober's reads of movie_stream_sources, movie_plays and movie_titles (never their writer:
+ * MoviesRepo is, through DirectStreamService.resolve's hooks).
+ */
+export class ProbeRepo implements ProbeStore {
+  constructor(private readonly db: Db) {}
+
+  /** Titles with a fresh source on `host` as of `since` (phase 5's freshStreamSourceSql), each counted once. */
+  async freshCount(host: string, since: Date): Promise<number> {
+    const res = await this.db.execute<{ n: number | string }>(
+      sql`select count(*) as n from movie_titles where ${freshStreamSourceSql(host, since)}`,
+    );
+    return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /** Verified, not stale sources on `host` verified at or before `dueBefore`, oldest first: what a pass re-checks. */
+  async dueRechecks(host: string, dueBefore: Date, limit: number): Promise<ProbeTarget[]> {
+    const res = await this.db.execute<{ kind: string; tmdb_id: number; season: number; episode: number }>(sql`
+      select t.kind, t.tmdb_id, s.season, s.episode
+      from movie_stream_sources s
+      join movie_titles t on t.id = s.title_id
+      where s.host = ${host}
+        and s.verified_at is not null
+        and s.verified_at <= ${dueBefore}
+        and s.stale_at is null
+      order by s.verified_at asc, s.title_id asc, s.season asc, s.episode asc
+      limit ${limit}`);
+    return res.rows.map((r) => toTarget(r.kind, r.tmdb_id, r.season, r.episode));
+  }
+
+  /** When this host's candidate listing was last written; null before the first one. */
+  async listedAt(host: string): Promise<Date | null> {
+    const [row] = await this.db
+      .select({ at: max(streamProbeTitles.listedAt) })
+      .from(streamProbeTitles)
+      .where(eq(streamProbeTitles.host, host));
+    return row?.at ?? null;
+  }
+
+  /**
+   * Replaces this host's listing in one transaction: every title is unlisted, then `entries` are
+   * listed with their ranks. Probe outcomes and backoff survive, also for titles that left the lists.
+   * `entries` hold each (kind, tmdbId) once (rankKind dedupes).
+   */
+  async replaceListing(host: string, entries: readonly ListedCandidate[], at: Date): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(streamProbeTitles)
+        .set({ listSource: null, listRank: null, listedAt: null })
+        .where(eq(streamProbeTitles.host, host));
+      for (let i = 0; i < entries.length; i += LISTING_CHUNK) {
+        const chunk = entries.slice(i, i + LISTING_CHUNK);
+        await tx
+          .insert(streamProbeTitles)
+          .values(chunk.map((e) => ({ host, kind: e.kind, tmdbId: e.tmdbId, listSource: e.source, listRank: e.rank, listedAt: at })))
+          .onConflictDoUpdate({
+            target: [streamProbeTitles.host, streamProbeTitles.kind, streamProbeTitles.tmdbId],
+            set: {
+              listSource: sql`excluded.list_source`,
+              listRank: sql`excluded.list_rank`,
+              listedAt: sql`excluded.listed_at`,
+            },
+          });
+      }
+    });
+  }
+
+  /**
+   * Listed titles of `kind` the prober may probe now, best rank first: out of backoff, and with no
+   * source on `host` that is fresh as of `freshSince` (never a title already verified fresh).
+   */
+  async eligible(host: string, kind: TitleKind, now: Date, freshSince: Date, limit: number): Promise<ProbeTarget[]> {
+    const res = await this.db.execute<{ tmdb_id: number }>(sql`
+      select c.tmdb_id
+      from stream_probe_titles c
+      where c.host = ${host}
+        and c.kind = ${kind}
+        and c.list_source is not null
+        and (c.retry_after is null or c.retry_after <= ${now})
+        and not exists (
+          select 1 from movie_titles
+          where movie_titles.id = c.kind || '-' || c.tmdb_id::text and ${freshStreamSourceSql(host, freshSince)}
+        )
+      order by c.list_rank asc
+      limit ${limit}`);
+    return res.rows.map((r) => ({ kind, tmdbId: Number(r.tmdb_id), season: null, episode: null }));
+  }
+
+  /** Failed probes in a row of one title on `host`; 0 when it was never probed. */
+  async failures(host: string, kind: TitleKind, tmdbId: number): Promise<number> {
+    const [row] = await this.db
+      .select({ failures: streamProbeTitles.failures })
+      .from(streamProbeTitles)
+      .where(and(eq(streamProbeTitles.host, host), eq(streamProbeTitles.kind, kind), eq(streamProbeTitles.tmdbId, tmdbId)));
+    return row?.failures ?? 0;
+  }
+
+  /** Writes one probe's outcome. A re-check of a title no list holds creates an unlisted row. */
+  async record(host: string, r: ProbeRecord): Promise<void> {
+    await this.db
+      .insert(streamProbeTitles)
+      .values({
+        host,
+        kind: r.kind,
+        tmdbId: r.tmdbId,
+        probedAt: r.probedAt,
+        outcome: r.outcome,
+        failures: r.failures,
+        retryAfter: r.retryAfter,
+      })
+      .onConflictDoUpdate({
+        target: [streamProbeTitles.host, streamProbeTitles.kind, streamProbeTitles.tmdbId],
+        set: { probedAt: r.probedAt, outcome: r.outcome, failures: r.failures, retryAfter: r.retryAfter },
+      });
+  }
+
+  /**
+   * True when a play on `host` is open and was updated at or after `since`: the VLC notesd follows,
+   * or a stream whose player page posts its position (phase 5 keeps both on movie_plays).
+   */
+  async activePlay(host: string, since: Date): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: moviePlays.id })
+      .from(moviePlays)
+      .where(and(eq(moviePlays.host, host), isNull(moviePlays.endedAt), gte(moviePlays.updatedAt, since)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /** The TMDB genre names stored on these titles, by title id. */
+  async titleGenres(ids: readonly string[]): Promise<Map<string, string[]>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: movieTitles.id, genres: movieTitles.genres })
+      .from(movieTitles)
+      .where(inArray(movieTitles.id, [...ids]));
+    return new Map(rows.map((r) => [r.id, r.genres]));
   }
 }

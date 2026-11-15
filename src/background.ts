@@ -37,7 +37,8 @@ export interface BackgroundOptions {
  * session summary worker (summaries only with `options.sessionSummarizer`) and, with an embedder,
  * the reply embedding worker (one vector per Claude reply of this host's sessions). With
  * `deps.adversary`, the Seer Adversarial reviewer's poll loop. With deps.movies, the movies
- * library's poll loop over NOTESD_MOVIES_ROOTS.
+ * library's poll loop over NOTESD_MOVIES_ROOTS. With deps.streamProber enabled
+ * (NOTESD_STREAM_PROBER=on), the direct-streaming prober's loop.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -177,6 +178,13 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // Direct streaming phase 10: the prober, built by the daemon (off by default), started here, closed on stop.
+  const prober = deps.streamProber ?? null;
+  if (prober !== null) {
+    console.log(prober.startLine());
+    prober.start();
+  }
+
   // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
   const meter = dbInstruments(deps.db)?.meter;
   const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
@@ -198,6 +206,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       sessionSummaries?.close(),
       deps.adversary?.close(),
       deps.movies?.close(),
+      prober?.close(),
     ]);
   };
 }

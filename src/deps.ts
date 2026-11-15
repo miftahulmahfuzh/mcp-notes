@@ -9,6 +9,7 @@ import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
+import type { StreamProberHandle } from './directStream/prober.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -54,6 +55,12 @@ export interface AppDeps {
    * null; every /api/stream/* route then answers 503 direct_stream_off.
    */
   directStream?: DirectStreamService | null;
+  /**
+   * The direct-streaming prober (phase 10). The daemon always sets it: a DisabledProber unless
+   * NOTESD_STREAM_PROBER=on and everything it needs is there. Absent (tests), GET /api/stream/prober
+   * reports it off. Started and closed by startBackground.
+   */
+  streamProber?: StreamProberHandle | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

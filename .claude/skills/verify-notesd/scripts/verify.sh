@@ -5,7 +5,7 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--prober]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
@@ -15,6 +15,10 @@
 #                                       --direct-stream turns direct streaming on (implies --movies) against a
 #                                       fake resolver and a fixture stream host (tests/fixtures/direct-stream/);
 #                                       without it NOTESD_DIRECT_STREAM=off is pinned
+#                                       --prober (needs --direct-stream) turns the stream prober on, a pass every
+#                                       5 s; the fake powershell.exe reports $MOVIES/idle_ms (0: someone is
+#                                       typing). --prober=off: the prober setting unset. Without either the prober
+#                                       is pinned off.
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
@@ -77,7 +81,7 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0
+  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 prober=""
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
@@ -86,9 +90,12 @@ cmd_up() {
       --adversary) adversary=1 ;;
       --movies) movies=1 ;;
       --direct-stream) direct=1; movies=1 ;;
+      --prober) prober=on ;;
+      --prober=on|--prober=off) prober="${a#--prober=}" ;;
       *) die "up: unknown flag $a" ;;
     esac
   done
+  [ -z "$prober" ] || [ "$direct" = 1 ] || die "up: --prober needs --direct-stream (direct streaming on, its fake resolver, the fake TMDB and fake powershell.exe)"
   local root run dir db
   root="$(repo_root)"
   [ -f "$root/package.json" ] && grep -q '"name": "mcp-notes"' "$root/package.json" || die "$root is not an mcp-notes checkout"
@@ -152,8 +159,15 @@ cmd_up() {
     node_bin="$(command -v node)"
     printf '#!/bin/sh\nexec "%s" "%s" vlc --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/vlc.exe"
     printf '#!/bin/sh\nexec "%s" "%s" curl --state "%s" -- "$@"\n' "$node_bin" "$HERE/movies/fake-vlc.mjs" "$dir/movies/vlc" >"$dir/movies/bin/curl.exe"
-    # The fake powershell.exe: notesd runs it to put VLC's window in front. It logs the call and finds no window.
-    printf '#!/bin/sh\necho "$(date -Is) $#" >>"%s"\necho "{\\"found\\":false}"\n' "$dir/movies/vlc/powershell.log" >"$dir/movies/bin/powershell.exe"
+    # The fake powershell.exe: notesd runs it to put VLC's window in front (it finds no window) and,
+    # with --prober, to read Windows' idle time, which it takes from movies/idle_ms (0: someone is typing).
+    echo 0 >"$dir/movies/idle_ms"
+    cat >"$dir/movies/bin/powershell.exe" <<EOF
+#!/bin/sh
+echo "\$(date -Is) \$#" >>"$dir/movies/vlc/powershell.log"
+idle=\$(cat "$dir/movies/idle_ms" 2>/dev/null || echo 0)
+echo "{\"found\":false,\"idle_ms\":\$idle}"
+EOF
     chmod +x "$dir/movies/bin/vlc.exe" "$dir/movies/bin/curl.exe" "$dir/movies/bin/powershell.exe"
     setsid node "$HERE/movies/fake-tmdb.mjs" --data "$HERE/movies/tmdb.json" \
       --port-file "$dir/movies/tmdb.port" --log "$dir/movies/tmdb.log" </dev/null >"$dir/movies/tmdb.out" 2>&1 &
@@ -232,6 +246,14 @@ cmd_up() {
   else
     env+=(NOTESD_DIRECT_STREAM=off)
   fi
+  # NOTESD_STREAM_PROBER=off unless --prober: a throwaway daemon never probes on its own. --prober=off
+  # leaves the setting blank, which is how "unset" reaches the daemon (the real environment wins over
+  # .env.local). Direct streaming itself is --direct-stream (fake resolver).
+  case "$prober" in
+    on) env+=(NOTESD_STREAM_PROBER=on NOTESD_STREAM_PROBE_MS=5000) ;;
+    off) env+=(NOTESD_STREAM_PROBER=) ;;
+    *) env+=(NOTESD_STREAM_PROBER=off) ;;
+  esac
   # NOTESD_STREAMING=off always, and no flag turns it on: streaming_find / streaming_play would run
   # the real claude/streaming/cli.mjs, which plays a film full screen in the owner's streaming Chrome.
   env+=(NOTESD_STREAMING=off)
@@ -243,6 +265,7 @@ cmd_up() {
     echo "adversary=$adversary"
     echo "movies=$movies"
     echo "direct_stream=$direct"
+    echo "prober=${prober:-pinned_off}"
     [ "$adversary" = 1 ] && echo "seer_migrations=$seer_src"
   } >"$dir/meta"
 

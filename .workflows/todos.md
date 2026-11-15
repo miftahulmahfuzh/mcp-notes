@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-15
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 2
-- Completed: 112
+- Completed: 113
 
 ---
 
@@ -85,15 +85,6 @@
   - **Satisfies**: R7 — "The brief's untested list (token lifetime, DASH and VidNest playback, series episodes, subtitles in our player, the other 18 providers, why three providers returned nothing) should become explicit early work, not assumptions." · criteria: R7.3
   - **Depends on**: P1-NOTES-A112, P1-NOTES-A114
   - **Plan**: `.workflows/plan/P1-NOTES-A116.md`
-- [ ] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: TMDB list calls in `src/movies/tmdb.ts`, candidates, `src/directStream/{prober,idle,candidates}.ts`, `ProbeRepo` in `src/directStream/repo.ts` (freshness through phase 5's `freshStreamSourceSql`), migration `0022`, the prober settings (in phase 3's `DirectStreamConfig`), `GET /api/stream/prober`, `src/background.ts`, `verify.sh --prober` on top of `--direct-stream`, the fake TMDB's lists, "The prober" subsection, configuration rows. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the new integration file pass. A `--direct-stream` throwaway daemon with the prober setting unset reports `off_reason: "setting_off"` and writes no probe row; with `--direct-stream --prober` it lists the fake TMDB's titles as ranked candidates and holds every pass at `not_idle` with zero probes. Unit tests prove off, not-idle, budget (probes, seconds and each resolve's deadline), catalog size and re-check order.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 10 of 10)
-  - **Satisfies**: R6 — "background prober after" with "D5 and D6 are proposed and not yet confirmed by the owner: plan them as late phases behind a setting, and list them as the owner's to confirm" · criteria: R6.1, R6.2, R6.3
-  - **Depends on**: P1-NOTES-A112, P1-NOTES-A115, P1-NOTES-A118, P1-NOTES-A119
-  - **Plan**: `.workflows/plan/P1-NOTES-A120.md`
 
 ### [P2] Medium
 
@@ -104,6 +95,24 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: TMDB list calls in `src/movies/tmdb.ts`, candidates, `src/directStream/{prober,idle,candidates}.ts`, `ProbeRepo` in `src/directStream/repo.ts` (freshness through phase 5's `freshStreamSourceSql`), migration `0022`, the prober settings (in phase 3's `DirectStreamConfig`), `GET /api/stream/prober`, `src/background.ts`, `verify.sh --prober` on top of `--direct-stream`, the fake TMDB's lists, "The prober" subsection, configuration rows. Exit criteria: `npm run typecheck`, `npm test`, `npm run docs:check` and the new integration file pass. A `--direct-stream` throwaway daemon with the prober setting unset reports `off_reason: "setting_off"` and writes no probe row; with `--direct-stream --prober` it lists the fake TMDB's titles as ranked candidates and holds every pass at `not_idle` with zero probes. Unit tests prove off, not-idle, budget (probes, seconds and each resolve's deadline), catalog size and re-check order.
+  - **Status**: complete
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/direct-streaming/PLAN.md` (phase 10 of 10)
+  - **Satisfies**: R6 — "background prober after" with "D5 and D6 are proposed and not yet confirmed by the owner: plan them as late phases behind a setting, and list them as the owner's to confirm" · criteria: R6.1, R6.2, R6.3
+  - **Depends on**: P1-NOTES-A112, P1-NOTES-A115, P1-NOTES-A118, P1-NOTES-A119
+  - **Plan**: `.workflows/plan/P1-NOTES-A120.md`
+  - **Completed**: 2026-11-15 23:40
+  - **Method**: /implement
+  - **Files**: src/movies/tmdb.ts, src/config.ts, src/db/schema.ts, drizzle/0022_stream_probe.sql, drizzle/meta/_journal.json, drizzle/meta/0022_snapshot.json, src/directStream/repo.ts, src/directStream/idle.ts, src/directStream/candidates.ts, src/directStream/prober.ts, src/deps.ts, src/daemon.ts, src/background.ts, src/http/streamProberApi.ts, src/http/app.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, docs/guide/architecture.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/movies/fake-tmdb.mjs, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/features/README.md, tests/unit/movies/tmdb.lists.test.ts, tests/unit/config.streamProber.test.ts, tests/unit/config.test.ts, tests/unit/directStream/idle.test.ts, tests/unit/directStream/candidates.test.ts, tests/unit/directStream/prober.test.ts, tests/unit/directStream/proberDefaults.test.ts, tests/unit/directStream/proberRoute.test.ts, tests/integration/streamProber.int.test.ts
+  - **Proof**: verified-first-pass — 6 journeys, evidence /home/miftah/.local/state/notesd-verify/1115-233041-1115090/evidence (J2), /home/miftah/.local/state/notesd-verify/1115-233109-1117243/evidence (J4), /home/miftah/.local/state/notesd-verify/1115-233117-1117925/evidence (movies neighbor journey)
+  - **Drift**: Plan line numbers were against d996abb; anchors moved after phases 3-9 landed, code applied at the same anchors by content. No functional drift.
+    Migration 0022 generated by drizzle matches the plan's SQL exactly.
+  - **Decided**: Index names worktree direct-streaming / feature/direct-streaming; ran in the swarm's per-phase worktree direct-streaming-p10 / phase-10-direct-streaming -> proceed (rung 6: swarm wave worktree cut by the coordinator from 0d36384)
+    DEFAULT_PROBE_TIMINGS set from the findings block: resolve 8.3 s, fail 33.2 s, failed-before-resolve keeps the spike's 1 -> default probe budget 14 at 41.5 s a title; configuration.md says 14 / 41.5 s instead of the plan's placeholder 15 / 38 s (rung 3: plan Step 2 + proberDefaults.test.ts)
 
 - [x] **P1-NOTES-A118** Phase 8: `/update-cloud-source`: template reader, registry tools, skill
   - **Difficulty**: NORMAL

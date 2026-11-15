@@ -1350,6 +1350,59 @@ export const streamProviderHealth = pgTable(
   ],
 )
 
+/** Where a prober candidate was listed (src/directStream/candidates.ts). The CHECK below keeps the same list. */
+export const STREAM_PROBE_LIST_SOURCES = ['recommended', 'genre', 'trending', 'popular'] as const
+export type StreamProbeListSource = (typeof STREAM_PROBE_LIST_SOURCES)[number]
+/** What one prober resolve came to. */
+export const STREAM_PROBE_OUTCOMES = ['verified', 'no_source', 'error'] as const
+export type StreamProbeOutcome = (typeof STREAM_PROBE_OUTCOMES)[number]
+
+/**
+ * The direct-streaming prober's candidates and backoff, per host (migration 0022). Written only by
+ * ProbeRepo in src/directStream/repo.ts. A row is listed (`list_source`, `list_rank`, `listed_at`
+ * all set) while the newest TMDB listing holds the title, and unlisted (all three null) after.
+ * `outcome`/`probed_at`/`failures`/`retry_after` are the last probe on this host: a failure sets
+ * `retry_after`, and a title is not probed again before it. Verified sources themselves live in
+ * movie_stream_sources.
+ */
+export const streamProbeTitles = pgTable(
+  'stream_probe_titles',
+  {
+    host: text('host').notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    listSource: text('list_source').$type<StreamProbeListSource>(),
+    listRank: integer('list_rank'),
+    listedAt: timestamp('listed_at', { withTimezone: true, mode: 'date' }),
+    probedAt: timestamp('probed_at', { withTimezone: true, mode: 'date' }),
+    outcome: text('outcome').$type<StreamProbeOutcome>(),
+    failures: integer('failures').notNull().default(0),
+    retryAfter: timestamp('retry_after', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.host, t.kind, t.tmdbId] }),
+    index('stream_probe_titles_listed_idx').on(t.host, t.kind, t.listRank),
+    check('stream_probe_titles_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check('stream_probe_titles_tmdb_id_check', sql`${t.tmdbId} > 0`),
+    check(
+      'stream_probe_titles_source_check',
+      sql`${t.listSource} is null or ${t.listSource} in ('recommended', 'genre', 'trending', 'popular')`,
+    ),
+    check(
+      'stream_probe_titles_listed_check',
+      sql`(${t.listSource} is null) = (${t.listRank} is null) and (${t.listSource} is null) = (${t.listedAt} is null)`,
+    ),
+    check(
+      'stream_probe_titles_outcome_check',
+      sql`(${t.outcome} is null) = (${t.probedAt} is null) and (${t.outcome} is null or ${t.outcome} in ('verified', 'no_source', 'error'))`,
+    ),
+    check(
+      'stream_probe_titles_backoff_check',
+      sql`${t.failures} >= 0 and (${t.outcome} is null or (${t.outcome} = 'verified' and ${t.failures} = 0 and ${t.retryAfter} is null) or (${t.outcome} <> 'verified' and ${t.failures} > 0 and ${t.retryAfter} is not null))`,
+    ),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -1389,3 +1442,4 @@ export type MoviePlayRow = typeof moviePlays.$inferSelect
 export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
+export type StreamProbeTitleRow = typeof streamProbeTitles.$inferSelect

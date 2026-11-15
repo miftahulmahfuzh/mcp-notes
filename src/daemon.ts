@@ -25,6 +25,7 @@ import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc
 import { buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -195,6 +196,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streaming,
     directStream,
   };
+  // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
+  // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
+  deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
   let agent: AgentChatBackend | null = null;
   let chat: ChatBackend;
   if (options.chat !== undefined) {

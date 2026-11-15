@@ -1,5 +1,5 @@
 // fake-tmdb.mjs: a TMDB v3 stand-in for `verify.sh up --movies`. Serves tmdb.json (search, details
-// with credits and videos, seasons, people) and generated PNG posters on 127.0.0.1, on any free port.
+// with credits and videos, seasons, people, the prober's lists) and generated PNG posters on 127.0.0.1, on any free port.
 //   node fake-tmdb.mjs --data tmdb.json --port-file FILE --log FILE
 // The daemon reaches it through TMDB_API_BASE=http://127.0.0.1:<port>/3 and
 // TMDB_IMAGE_BASE=http://127.0.0.1:<port>/t/p. Every request is appended to the log, with
@@ -91,6 +91,17 @@ const personSummary = (p) => ({
 const page = (results) => ({ page: 1, results, total_pages: 1, total_results: results.length })
 const byId = (list, id) => list.find((x) => String(x.id) === String(id))
 const notFound = () => [404, { success: false, status_code: 34, status_message: 'The resource you requested could not be found.' }]
+const byPopularity = (list) => [...list].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+// Every list has one page: page 2 and later are empty.
+const firstPageOnly = (s, results) => (Number(s.get('page') ?? 1) > 1 ? [] : results)
+function listOf(kind, keep = () => true) {
+  return kind === 'movie' ? byPopularity(movies.filter(keep)).map(movieSummary) : byPopularity(tvs.filter(keep)).map(tvSummary)
+}
+function genresOf(kind) {
+  const seen = new Map()
+  for (const x of kind === 'movie' ? movies : tvs) for (const g of x.genres) seen.set(g.id, g.name)
+  return [...seen].map(([id, name]) => ({ id, name }))
+}
 
 function searchMovies(s) {
   return search(movies, s.get('query'), ['title', 'original_title'], 'release_date', s.get('primary_release_year') ?? s.get('year'))
@@ -125,6 +136,20 @@ function route(url) {
     ])]
   }
   if (p === '/search/person') return [200, page(search(people, s.get('query'), ['name'], null, null).map(personSummary))]
+  // The stream prober's lists: trending and popular are every title of the kind by popularity,
+  // discover keeps one genre, recommendations are the kind's other titles.
+  if ((m = p.match(/^\/trending\/(movie|tv)\/(?:day|week)$/))) return [200, page(firstPageOnly(s, listOf(m[1])))]
+  if ((m = p.match(/^\/(movie|tv)\/popular$/))) return [200, page(firstPageOnly(s, listOf(m[1])))]
+  if ((m = p.match(/^\/genre\/(movie|tv)\/list$/))) return [200, { genres: genresOf(m[1]) }]
+  if ((m = p.match(/^\/discover\/(movie|tv)$/))) {
+    const want = s.get('with_genres')
+    return [200, page(firstPageOnly(s, listOf(m[1], (x) => !want || x.genres.some((g) => String(g.id) === want))))]
+  }
+  if ((m = p.match(/^\/(movie|tv)\/(\d+)\/recommendations$/))) {
+    const x = byId(m[1] === 'movie' ? movies : tvs, m[2])
+    if (!x) return notFound()
+    return [200, page(firstPageOnly(s, listOf(m[1], (y) => y.id !== x.id)))]
+  }
   if ((m = p.match(/^\/movie\/(\d+)$/))) {
     const x = byId(movies, m[1])
     return x ? [200, x] : notFound()

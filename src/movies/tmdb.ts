@@ -81,6 +81,34 @@ export interface TmdbClient {
   personCredits(personId: number): Promise<TmdbPersonCredit[]>;
 }
 
+/** A TMDB genre (`/genre/{kind}/list`): its id, which discover takes, and its English name. */
+export interface TmdbGenre {
+  id: number;
+  name: string;
+}
+
+/** The ready-made TMDB lists `TmdbCatalog.list` reads. */
+export type TmdbListName = 'trending' | 'popular';
+
+/** Discover keeps titles with at least this many votes, so obscure titles that no provider carries stay out. */
+export const DISCOVER_MIN_VOTES = 100;
+
+/**
+ * Lists of titles for the direct-streaming prober's candidates (src/directStream/candidates.ts).
+ * Each call reads one page (TMDB pages hold 20 titles). Kept apart from TmdbClient, so the
+ * library's fakes of TmdbClient stay valid; createTmdbClient returns both.
+ */
+export interface TmdbCatalog {
+  /** `trending`: this week's trending titles of `kind`; `popular`: TMDB's popular list. */
+  list(name: TmdbListName, kind: TitleKind, page?: number): Promise<TmdbSearchHit[]>;
+  /** TMDB's genres for `kind`. */
+  genres(kind: TitleKind): Promise<TmdbGenre[]>;
+  /** The most popular titles of one genre with at least DISCOVER_MIN_VOTES votes. */
+  discoverByGenre(kind: TitleKind, genreId: number, page?: number): Promise<TmdbSearchHit[]>;
+  /** TMDB's recommendations for one title. A title TMDB does not know (404) answers []. */
+  recommendations(kind: TitleKind, tmdbId: number, page?: number): Promise<TmdbSearchHit[]>;
+}
+
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
 export interface TmdbClientConfig {
   token: string | null;
@@ -236,6 +264,8 @@ const PersonSearchSchema = z.object({
     .array(z.object({ id: intId, name: z.string(), known_for_department: text, profile_path: text, popularity: num }))
     .nullish(),
 });
+
+const GenreListSchema = z.object({ genres: z.array(z.object({ id: intId, name: z.string() })).nullish() });
 
 const PersonCreditSchema = z.object({
   id: intId,
@@ -464,6 +494,39 @@ function searchHit(
   };
 }
 
+function movieHits(raw: z.infer<typeof MovieSearchSchema>): TmdbSearchHit[] {
+  return (raw.results ?? []).map((r) =>
+    searchHit('movie', {
+      id: r.id,
+      title: r.title,
+      original: r.original_title,
+      date: r.release_date,
+      overview: r.overview,
+      poster: r.poster_path,
+      popularity: r.popularity,
+    }),
+  );
+}
+
+function tvHits(raw: z.infer<typeof TvSearchSchema>): TmdbSearchHit[] {
+  return (raw.results ?? []).map((r) =>
+    searchHit('tv', {
+      id: r.id,
+      title: r.name,
+      original: r.original_name,
+      date: r.first_air_date,
+      overview: r.overview,
+      poster: r.poster_path,
+      popularity: r.popularity,
+    }),
+  );
+}
+
+/** A page of titles of `kind` (trending, popular, discover, recommendations share the search shape). */
+function hitsOf(kind: TitleKind, json: unknown, what: string): TmdbSearchHit[] {
+  return kind === 'movie' ? movieHits(decode(MovieSearchSchema, json, what)) : tvHits(decode(TvSearchSchema, json, what));
+}
+
 function personCredit(c: PersonCreditJson, credit: 'cast' | 'crew'): TmdbPersonCredit | null {
   const kind: TitleKind | null = c.media_type === 'movie' ? 'movie' : c.media_type === 'tv' ? 'tv' : null;
   if (kind === null) return null;
@@ -492,7 +555,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient {
+): TmdbClient & TmdbCatalog {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -726,6 +789,32 @@ export function createTmdbClient(
         if (entry !== null) out.push(entry);
       }
       return out;
+    },
+
+    async list(name, kind, page = 1) {
+      const path = name === 'trending' ? `/trending/${kind}/week` : `/${kind}/popular`;
+      return hitsOf(kind, await get(path, { page }), `${kind} ${name} list`);
+    },
+
+    async genres(kind) {
+      const raw = decode(GenreListSchema, await get(`/genre/${kind}/list`, {}), `${kind} genre list`);
+      return (raw.genres ?? []).map((g) => ({ id: g.id, name: g.name }));
+    },
+
+    async discoverByGenre(kind, genreId, page = 1) {
+      const json = await get(`/discover/${kind}`, {
+        with_genres: genreId,
+        sort_by: 'popularity.desc',
+        'vote_count.gte': DISCOVER_MIN_VOTES,
+        include_adult: false,
+        page,
+      });
+      return hitsOf(kind, json, `${kind} discover genre ${genreId}`);
+    },
+
+    async recommendations(kind, tmdbId, page = 1) {
+      const json = await getOrNull(`/${kind}/${tmdbId}/recommendations`, { page });
+      return json === null ? [] : hitsOf(kind, json, `${kind} ${tmdbId} recommendations`);
     },
   };
 }

@@ -223,6 +223,8 @@ export const HTTP_GROUPS: HttpGroup[] = [
       'POST /api/stream/sessions/:id/refresh':
         'Resolve the session\'s title again (a token expired) and keep the same session id and page: returns the session like the route above. 502 `no_source` / `resolve_failed` leave the session as it was. 403 `unknown_session`. Same-origin only.',
       'POST /api/stream/sessions/:id/position': '`{position_s, duration_s?, ended?}` from the player page, every 5 s and on pause and end: written on the one open `movie_plays` row (source `stream`) of this session, which the first report opens and `ended: true` closes; opening one closes this machine\'s other open stream play. The title\'s watch state derives from it as from a VLC play. 200 `{ok: true, play_id, ended}`. 400 `invalid_body`, 404 `unknown_session` / `unknown_title` (the title is not stored and TMDB cannot give it: the play is not recorded; the page ignores it), 503 `direct_stream_off`. Same-origin only.',
+      'GET /api/stream/prober':
+        'The background prober of this machine: `{enabled, off_reason, host, running, next_pass_at, settings, catalog: {size, fresh}, last_pass}`. `off_reason` says why it does not run: `setting_off` (the default), `movies_off`, `direct_stream_off`, `no_tmdb`, or `not_linux` / `no_interop` / `no_powershell` when the Windows idle time cannot be read. `last_pass` counts re-checks, probes and failures, and `stopped` says why the pass ended (`not_idle`, `busy`, `probe_budget`, `time_budget`, `catalog_full`, `no_candidates`, `chrome_unavailable`, `error`, `closed`). Starts nothing. 503 `direct_stream_off` without direct streaming.',
     },
   },
   {
