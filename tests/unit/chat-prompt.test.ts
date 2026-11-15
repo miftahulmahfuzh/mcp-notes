@@ -188,4 +188,13 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/do not open the page or follow its download buttons/);
     expect(prompt).toMatch(/a recommendation alone is not a request for a link/);
   });
+
+  it('starts a film on idlix or lk21 only when asked, and looks up with streaming_find otherwise', () => {
+    expect(prompt).toMatch(/A message that starts with \/idlix or \/lk21 followed by a title/);
+    expect(prompt).toMatch(/call streaming_play with that site, the title and the year when you know it/);
+    expect(prompt).toMatch(/is a lookup, not a request to play: call streaming_find/);
+    expect(prompt).toMatch(/list the matches and ask which one, then call streaming_play again with the chosen match's url/);
+    expect(prompt).toMatch(/Never build or guess a link to these sites/);
+    expect(prompt).toMatch(/Do not start a film because you recommended it; only when asked/);
+  });
 });

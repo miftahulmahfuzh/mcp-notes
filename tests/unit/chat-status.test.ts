@@ -4,6 +4,7 @@ import {
   ADVERSARY_TOOL_NAMES,
   DWORD_TOOL_NAMES,
   MOVIE_TOOL_NAMES,
+  STREAMING_TOOL_NAMES,
   NOTES_TOOL_NAMES,
   SESSION_TOOL_NAMES,
   allowedChatTools,
@@ -13,14 +14,15 @@ import {
 const n = (name: string): string => `mcp__notes__${name}`;
 
 describe('allowedChatTools', () => {
-  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 22 connector tools, WebSearch and WebFetch', () => {
+  it('is exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2 streaming tools, the 22 connector tools, WebSearch and WebFetch', () => {
     const tools = allowedChatTools();
     expect(NOTES_TOOL_NAMES).toHaveLength(19);
     expect(SESSION_TOOL_NAMES).toHaveLength(5);
     expect(ADVERSARY_TOOL_NAMES).toHaveLength(3);
     expect(MOVIE_TOOL_NAMES).toHaveLength(6);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(22);
-    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 22 + 2);
+    expect(STREAMING_TOOL_NAMES).toHaveLength(2);
+    expect(tools).toHaveLength(19 + 5 + 3 + 6 + 2 + 22 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
     expect(tools).toContain('mcp__notes__create_image');
@@ -33,6 +35,7 @@ describe('allowedChatTools', () => {
     for (const name of SESSION_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ADVERSARY_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of MOVIE_TOOL_NAMES) expect(tools).toContain(n(name));
+    for (const name of STREAMING_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of ALL_CONNECTOR_TOOL_NAMES) expect(tools).toContain(n(name));
     for (const name of DWORD_TOOL_NAMES) expect(tools).toContain(n(name));
     expect(tools).toContain('WebSearch');
@@ -53,6 +56,8 @@ describe('allowedChatTools', () => {
     expect(captionForToolUse(n('movies_continue'), {})).toBe('opening VLC');
     expect(captionForToolUse(n('movies_person'), { name: 'Margaret Qualley' })).toBe('reading a filmography');
     expect(captionForToolUse(n('movies_mark'), { title: 'tv-247718', rating: 4 })).toBe('marking a title');
+    expect(captionForToolUse(n('streaming_find'), { title: 'pilot' })).toBe('searching the streaming sites');
+    expect(captionForToolUse(n('streaming_play'), { site: 'idlix', title: 'pilot' })).toBe('starting a film');
   });
 
   it('offers no tool that deletes permanently', () => {

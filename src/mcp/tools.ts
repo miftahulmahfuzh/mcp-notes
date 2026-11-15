@@ -12,6 +12,7 @@ import type { SessionsReadDeps } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
 import type { AdversaryService } from '../adversary/service.js';
 import type { MovieToolDeps } from './movieTools.js';
+import type { StreamingRunner } from '../streaming/service.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -37,6 +38,8 @@ export interface ToolDeps {
   adversary?: AdversaryService | null;
   /** The movie library behind the movies_* tools (MOVIES_LIBRARY_PLAN phase 7). Omitted or null: every movie tool answers movies_off. */
   movies?: MovieToolDeps | null;
+  /** Runs the streaming sites' script for streaming_find / streaming_play. Omitted or null: both answer streaming_off. */
+  streaming?: StreamingRunner | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */

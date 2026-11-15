@@ -715,75 +715,8 @@ at all.
   TMDB; rate or review one episode.
 - **Titles you do not have:** there is no TMDB title search and no wish list. `movies_person` is
   the only way to see films outside the library, and "films like this" is a web search checked
-  against `movies_list`.
-
-## Finding a title on pahe.ink
-
-A title the library does not have can be looked up on pahe.ink, the site the films are downloaded
-from. It is a lookup only: nothing is downloaded and nothing is stored.
-
-```text
-/pahe no other choice
-/pahe ready or not 2019
-```
-
-- **In Claude Code** the `/pahe` skill (`claude/skills/pahe`) runs `search.mjs`, which fetches
-  `https://pahe.ink/?s=<title>` and reads only the search results, not the page's menus and
-  featured posts.
-- **In the chat bar** the same request, or "find it on pahe" after a recommendation, reads that
-  page with `WebFetch`.
-
-The answer is a link per matching release, BluRay first, then WEB-DL. A result matches when its
-name is the asked title, and its year is the asked year when one was given; without a year, a
-remake and its original are both shown. The search is fuzzy, so most results are unrelated: with
-no exact match the answer shows up to three near misses, or says the site does not have the title
-and gives the search link. A link is never built by hand, because the addresses are irregular,
-and the lookup stops at the title's page: the download buttons behind it are not followed.
-
-## Finding and playing a title on idlix
-
-The same lookup for idlix, the streaming site: `/idlix no other choice`, `/idlix la brea`,
-`/idlix ready or not 2019`. It answers with a link per matching film (`/movie/...`) or series
-(`/series/...`), with the film's quality or the series' number of seasons.
-
-It works only in Claude Code, not in the chat bar. idlix sits behind Cloudflare, which answers
-403 to `curl`, to `WebFetch` and to a headless browser, so the `/idlix` skill
-(`claude/skills/idlix`) asks from inside a real Chrome on Windows:
-
-- `search.mjs` starts `cdp.ps1` through `powershell.exe`. WSL cannot reach Windows loopback, so
-  the half that talks to Chrome has to run on the Windows side, as with VLC.
-- `cdp.ps1` uses a Chrome with its own profile folder, `%LOCALAPPDATA%\notesd-idlix-chrome`, and
-  DevTools port 9333. Chrome refuses a debugging port on the default profile, so your everyday
-  Chrome, its tabs and its logins are never touched. When that Chrome is not running it is
-  started minimized, and it stays open for the next search: about 4 seconds cold, under a second
-  warm.
-- Inside a tab on the site it runs the request the site's own search box makes
-  (`/api/search?q=...`) and reads the JSON. A lookup clicks and types nothing.
-
-`/idlix <title>` with exactly one matching film also puts the film on (`search.mjs --play`). The
-skill's Chrome window comes to the front and opens the film's page, and the script clicks play,
-closes the advertising tab that click opens, waits through the site's countdown, presses the
-site's own "Skip Ad" when the advert offers it, and once the film is running makes the window
-full screen with the player stretched over it. That takes about 25 seconds. F11 leaves full
-screen. Things to know:
-
-- The film plays in the skill's Chrome, not in your own browser. A link opens a fresh page, and
-  a page that is already playing cannot be handed over through one. That Chrome has no ad
-  blocker.
-- The countdown stops while the page is hidden, so Chrome is started with
-  `--disable-features=CalculateNativeWinOcclusion` (a covered window still counts as visible)
-  and the window is brought to the front. Minimizing it during the wait stops the flow; the
-  answer says at which stage, and asking again starts over.
-- The page's own full-screen button is refused for a click that does not come from the keyboard
-  or mouse, so the full screen is the F11 kind plus a style that stretches the player. Esc
-  removes the style.
-- Several matches, or a series, start nothing: the answer lists the links, and
-  `search.mjs --play-url <url>` plays the one you pick.
-
-A result matches when its English or original-language name is the asked title, and its year is
-the asked year when one was given. The site changes host from time to time (`z1`, `z2`, ...):
-set `IDLIX_ORIGIN=https://<host>` for the script when it has moved. When Cloudflare blocks the
-real Chrome too, the skill says so and gives no link; it never guesses one.
+  against `movies_list`. Finding such a film on pahe.ink, or finding and playing it on idlix or
+  lk21, is in [streaming.md](streaming.md).
 
 ## Off switches and failure answers
 
@@ -859,8 +792,6 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |
 | `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
-| `claude/skills/pahe/` | The `/pahe` skill and its `search.mjs` |
-| `claude/skills/idlix/` | The `/idlix` skill: `search.mjs` and `cdp.ps1`, the Windows half that talks to Chrome |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |

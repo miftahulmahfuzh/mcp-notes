@@ -111,6 +111,12 @@ export const DEFAULT_ADVERSARY_GATHER_MAX_TURNS = 20
 export const DEFAULT_ADVERSARY_STOCK_TIMEOUT_MS = 420_000
 export const DEFAULT_ADVERSARY_POLL_MS = 600_000
 
+/** The streaming tools, streaming_find and streaming_play (src/streaming/*). */
+export interface StreamingConfig {
+  /** `NOTESD_STREAMING`, default on. `off`: the tools answer streaming_off and no script is ever run. */
+  enabled: boolean
+}
+
 /** Seer Adversarial reviewer (src/adversary/*). */
 export interface AdversaryConfig {
   /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
@@ -260,6 +266,8 @@ export interface Config {
   dword: DwordConfig
   /** The movies library. `enabled: false` starts nothing (DEFAULT_MOVIES_CONFIG in tests). */
   movies: MoviesConfig
+  /** The streaming tools. Absent (a config built by a test) is the same as `enabled: false`. */
+  streaming?: StreamingConfig
 }
 
 export interface LoadConfigOptions {
@@ -602,5 +610,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     adversary: parseAdversary(env),
     dword: parseDword(env),
     movies: parseMovies(env),
+    streaming: { enabled: parseSwitch('NOTESD_STREAMING', env.NOTESD_STREAMING) },
   }
 }

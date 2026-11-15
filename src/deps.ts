@@ -7,6 +7,7 @@ import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import type { MoviePlayer } from './movies/player.js';
 import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
+import type { StreamingRunner } from './streaming/service.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -41,6 +42,11 @@ export interface AppDeps {
    * is null. Read by GET /api/movies/player/health.
    */
   moviesHealth?: HealthMonitor | null;
+  /**
+   * Runs claude/streaming/cli.mjs for the streaming tools (src/mcp/streamingTools.ts). The daemon
+   * sets it unless NOTESD_STREAMING=off; null or absent (tests), the tools answer streaming_off.
+   */
+  streaming?: StreamingRunner | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

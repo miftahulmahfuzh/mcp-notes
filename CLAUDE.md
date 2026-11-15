@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Connectors, daily-words (`/v`, `/j`) | `docs/guide/connectors.md` |
 | Seer Adversarial (`/adversary`) | `docs/guide/adversary.md` |
 | Movies (`/movies`), VLC | `docs/guide/movies.md` |
+| Streaming and download sites (`/pahe`, `/idlix`, `/lk21`) | `docs/guide/streaming.md` |
 | Wiring, data model, disk layout, limitations | `docs/guide/architecture.md` |
 | Install, tests, docs tooling | `docs/guide/install.md` |
 | Tools, routes, settings | `docs/guide/reference/{mcp-tools,http-api,configuration}.md` |
@@ -82,6 +83,10 @@ The rules that are easy to break. The guides have the rest.
   - The roots are polled, never watched (`/mnt/c` is drvfs and sends no inotify events).
   - Play starts the Windows `vlc.exe` and reads its status with Windows `curl.exe` (WSL NAT cannot reach Windows loopback). Never reuse or kill a VLC notesd did not start.
   - `NOTESD_MOVIES=off` or no roots starts nothing; tests use `DEFAULT_MOVIES_CONFIG` (off) and inject every path and binary.
+- **Streaming sites** (`claude/streaming/*`): one command, `cli.mjs`, with a module per site in `sites/`. The `/idlix` and `/lk21` skills and the daemon's `streaming_find` / `streaming_play` tools (`src/mcp/streamingTools.ts`, through `scriptRunner` in `src/streaming/service.ts`) all run it; nothing else talks to a site.
+  - Playing drives a real Chrome on Windows through `cdp.ps1` (PowerShell, because WSL cannot reach Windows loopback), with its own profile folder. Never the owner's everyday Chrome, never a Chrome it did not start, and never a disguised client to get past a site's bot check.
+  - A link counts only when a site's search returned it; a film starts only when asked, and only when exactly one film matches.
+  - A new site follows `claude/skills/create-streaming-skill`, and is added to `sites/index.mjs` and `STREAMING_SITES` together (a test compares them). Tests use a fake runner; `deps.streaming` unset answers `streaming_off`.
 - **Claude Code integration lives in `claude/`:** skills (symlinked into `~/.claude/skills` by `install.sh`), six hooks (`claude/hooks/notes-capture|link|paste|prompt|session|spawn.mjs`, merged into `~/.claude/settings.json` by `scripts/claude-hooks.mjs`; `notes-prompt` must stay I/O-free when no node id matches), and the `note-links` mod (own tsconfig and tests).
 - **Web app** (`web/`, Vite + React 19, Phosphor icons) is built to `web/dist` and served statically by the daemon; `web/fullscreen.html` is the separate full-screen photo page (`/full/:imageId`).
 - **DB:** Drizzle schema in `src/db/schema.ts`, SQL migrations in `drizzle/`. The pooled Neon host is used by the daemon, the direct host by migrations; a non-Neon URL goes through `node-postgres`.

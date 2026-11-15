@@ -115,6 +115,16 @@ The library and playback are described in [movies.md](../movies.md).
 | `NOTESD_TASKLIST_EXE` | `/mnt/c/Windows/System32/tasklist.exe` | The Windows tasklist the health log runs each interval. Missing: the health log is off. Read from the process environment only. |
 | `NOTESD_POWERSHELL_EXE` | `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` | Reads each `vlc.exe`'s memory and handles and the Windows events for a crash incident, and puts a VLC that notesd starts in front. Missing: thinner samples, and VLC opens behind the window in use. Read from the process environment only. |
 
+## Streaming sites
+
+The `/pahe`, `/idlix` and `/lk21` skills and the streaming tools are described in [streaming.md](../streaming.md).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTESD_STREAMING` | on | `off` turns the `streaming_find` and `streaming_play` tools off on this machine: both answer `streaming_off` and no script is run. The skills are not affected. |
+| `IDLIX_ORIGIN` | `https://z2.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). |
+| `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
+
 ## Install script and hooks
 
 Read by `scripts/install.sh`, `scripts/uninstall.sh` and the Claude Code hooks, not by the daemon.
@@ -129,7 +139,6 @@ See [install.md](../install.md).
 | `NOTES_PASTE_STRATEGY` | `updatedInput` | `deny` registers the notes-paste hook in its fallback mode (see `claude/hooks/notes-paste.mjs`). The installer writes it into the hook's command; the hook reads it. |
 | `NOTES_CLAUDE_RETENTION_DAYS` | `3650` | The minimum `cleanupPeriodDays` the installer writes to `~/.claude/settings.json`, so Claude Code keeps the transcripts the session graph reads. A higher value already there is kept. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's own setting. When it is an absolute path the notes-session hook looks for the running-session registry there. The daemon passes it through to the Claude children it starts, because the login lives there. |
-| `IDLIX_ORIGIN` | `https://z2.idlixku.com` | Not for `.env.local`. The address the `/idlix` skill's `search.mjs` asks; set it in the shell when the site has moved to another host. See [movies.md](../movies.md#finding-and-playing-a-title-on-idlix). |
 
 ## Tests
 

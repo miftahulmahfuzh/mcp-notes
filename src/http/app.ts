@@ -81,6 +81,7 @@ export function mcpToolDeps(
     sessions: sessionsReadDeps(deps, sessionOverrides),
     adversary: deps.adversary,
     movies: movieToolDeps(deps),
+    streaming: deps.streaming ?? null,
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };

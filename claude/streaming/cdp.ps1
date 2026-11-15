@@ -1,22 +1,29 @@
-# The Windows half of the /idlix skill. idlix answers only a real browser, so this evaluates one
-# JavaScript expression in a tab of a real Chrome over the DevTools protocol and prints the
-# protocol's reply as one line of JSON. Chrome runs with its own profile folder, apart from the
-# user's everyday Chrome, and is started minimized when it is not already up.
+# The Windows half of the streaming skills (/idlix, /lk21, ...). It evaluates one JavaScript
+# expression in a tab of a real Chrome over the DevTools protocol and prints the protocol's reply
+# as one line of JSON. Chrome runs with its own profile folder, apart from the user's everyday
+# Chrome, and is started minimized when it is not already up. WSL cannot reach Windows loopback,
+# which is why this half is PowerShell.
 param(
+  # The site: where a new tab opens, and which tabs count as the site's own.
   [Parameter(Mandatory = $true)][string]$Origin,
   [Parameter(Mandatory = $true)][string]$JsB64,
   [int]$Port = 9333,
   [int]$TimeoutS = 45,
+  # Evaluate inside the embedded frame whose address matches this pattern (a player on another
+  # host) and not in the site's own page. The answer is { cdp_error: no_frame } when there is none.
+  [string]$FrameMatch = '',
   # Take the window out of the taskbar and put the tab in front before evaluating.
   [switch]$Show,
   # With -Show: 'normal', or 'fullscreen' for the whole window, as F11 does.
   [string]$WindowState = 'normal',
-  # Close every tab that is not on the site: the advertising tabs a click on the player opens.
-  # They take the front, and the site's countdown stops while its own tab is behind one.
+  # Close every tab that is not on the site: the advertising tabs a click on a player opens.
+  # They take the front, and a site's countdown stops while its own tab is behind one.
   [switch]$CloseOtherTabs
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+$ProfileName = 'notesd-stream-chrome'
 
 function Fail([string]$code, [string]$detail) {
   Write-Output (@{ cdp_error = $code; detail = $detail } | ConvertTo-Json -Compress)
@@ -28,8 +35,12 @@ function Test-Chrome {
 }
 
 # Windows PowerShell hands the JSON array back as one object; the pipe unrolls it.
-function Get-Tabs {
+function Get-Targets {
   try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 3 | ForEach-Object { $_ } } catch { }
+}
+
+function Get-HostOf([string]$url) {
+  try { return ([Uri]$url).Host } catch { return '' }
 }
 
 $originHost = ([Uri]$Origin).Host
@@ -43,11 +54,11 @@ if (-not (Test-Chrome)) {
   ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
   if (-not $chrome) { Fail 'no_chrome' 'chrome.exe was not found' }
   # Chrome refuses a debugging port on the default profile, so this one has its own folder.
-  $profileDir = Join-Path $env:LOCALAPPDATA 'notesd-idlix-chrome'
+  $profileDir = Join-Path $env:LOCALAPPDATA $ProfileName
   Start-Process -FilePath $chrome -WindowStyle Minimized -ArgumentList @(
     "--remote-debugging-port=$Port", "--user-data-dir=`"$profileDir`"",
     '--no-first-run', '--no-default-browser-check', '--start-minimized',
-    # Without this a window covered by another one counts as hidden, and the site's countdown
+    # Without this a window covered by another one counts as hidden, and a site's countdown
     # before a film stops until the window is uncovered.
     '--disable-features=CalculateNativeWinOcclusion', $Origin
   )
@@ -58,7 +69,7 @@ if (-not (Test-Chrome)) {
 }
 
 if ($CloseOtherTabs) {
-  Get-Tabs | Where-Object { $_.type -eq 'page' -and $_.url -notmatch '^(chrome|about|devtools):' -and ([Uri]$_.url).Host -ne $originHost } | ForEach-Object {
+  Get-Targets | Where-Object { $_.type -eq 'page' -and $_.url -notmatch '^(chrome|about|devtools):' -and (Get-HostOf $_.url) -ne $originHost } | ForEach-Object {
     try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/close/$($_.id)" -TimeoutSec 3 | Out-Null } catch { }
   }
 }
@@ -67,8 +78,8 @@ if ($CloseOtherTabs) {
 $tab = $null
 $opened = $false
 while (-not $tab) {
-  $onSite = @(Get-Tabs | Where-Object { $_.type -eq 'page' -and ([Uri]$_.url).Host -eq $originHost })
-  $tab = $onSite | Where-Object { $_.title -and $_.title -ne $_.url -and $_.title -notmatch '^(Just a moment|z\d*\.)' } | Select-Object -First 1
+  $onSite = @(Get-Targets | Where-Object { $_.type -eq 'page' -and (Get-HostOf $_.url) -eq $originHost })
+  $tab = $onSite | Where-Object { $_.title -and $_.title -ne $_.url -and $_.title -notmatch '^Just a moment' -and $_.title -ne $originHost } | Select-Object -First 1
   if ($tab) { break }
   if ($onSite.Count -eq 0 -and -not $opened) {
     Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$Port/json/new?$Origin" -TimeoutSec 5 | Out-Null
@@ -79,24 +90,29 @@ while (-not $tab) {
 }
 
 $js = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($JsB64))
-$ws = New-Object System.Net.WebSockets.ClientWebSocket
 $cts = New-Object System.Threading.CancellationTokenSource
 $cts.CancelAfter([Math]::Max(5, [int]($deadline - (Get-Date)).TotalSeconds) * 1000)
 $script:nextId = 0
 
+function Open-Socket([string]$url) {
+  $socket = New-Object System.Net.WebSockets.ClientWebSocket
+  $socket.ConnectAsync([Uri]$url, $cts.Token).Wait()
+  return $socket
+}
+
 # Sends one DevTools call and returns its reply as text; events (no id) are skipped.
-function Invoke-Cdp([string]$method, $params) {
+function Invoke-Cdp($socket, [string]$method, $params) {
   $script:nextId++
   $id = $script:nextId
   $msg = @{ id = $id; method = $method; params = $params } | ConvertTo-Json -Depth 6 -Compress
   $bytes = [Text.Encoding]::UTF8.GetBytes($msg)
-  $ws.SendAsync((New-Object System.ArraySegment[byte] -ArgumentList @(, $bytes)), 'Text', $true, $cts.Token).Wait()
+  $socket.SendAsync((New-Object System.ArraySegment[byte] -ArgumentList @(, $bytes)), 'Text', $true, $cts.Token).Wait()
   $buf = New-Object byte[] 65536
   while ($true) {
     $ms = New-Object IO.MemoryStream
     do {
       $seg = New-Object System.ArraySegment[byte] -ArgumentList @(, $buf)
-      $r = $ws.ReceiveAsync($seg, $cts.Token)
+      $r = $socket.ReceiveAsync($seg, $cts.Token)
       $r.Wait()
       $ms.Write($buf, 0, $r.Result.Count)
     } while (-not $r.Result.EndOfMessage)
@@ -105,21 +121,26 @@ function Invoke-Cdp([string]$method, $params) {
   }
 }
 
+# userGesture: a click made by the expression counts as the user's, so a video may start with sound.
+function Invoke-Expression-In($socket, [string]$expression) {
+  return Invoke-Cdp $socket 'Runtime.evaluate' @{ expression = $expression; awaitPromise = $true; returnByValue = $true; userGesture = $true }
+}
+
 try {
-  $ws.ConnectAsync([Uri]$tab.webSocketDebuggerUrl, $cts.Token).Wait()
+  $page = Open-Socket $tab.webSocketDebuggerUrl
   if ($Show) {
-    $window = (Invoke-Cdp 'Browser.getWindowForTarget' @{}) | ConvertFrom-Json
-    Invoke-Cdp 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = 'normal' } } | Out-Null
+    $window = (Invoke-Cdp $page 'Browser.getWindowForTarget' @{}) | ConvertFrom-Json
+    Invoke-Cdp $page 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = 'normal' } } | Out-Null
     if ($WindowState -ne 'normal') {
-      Invoke-Cdp 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = $WindowState } } | Out-Null
+      Invoke-Cdp $page 'Browser.setWindowBounds' @{ windowId = $window.result.windowId; bounds = @{ windowState = $WindowState } } | Out-Null
     }
-    Invoke-Cdp 'Page.bringToFront' @{} | Out-Null
+    Invoke-Cdp $page 'Page.bringToFront' @{} | Out-Null
     # The page keeps behaving as focused when the user clicks into another window.
-    Invoke-Cdp 'Emulation.setFocusEmulationEnabled' @{ enabled = $true } | Out-Null
-    # A window behind another one counts as hidden and the site's countdown stops, so it has to
-    # be the foreground window. The browser process is the one without a --type argument.
+    Invoke-Cdp $page 'Emulation.setFocusEmulationEnabled' @{ enabled = $true } | Out-Null
+    # A window behind another one may count as hidden, so it has to be the foreground window.
+    # The browser process is the one without a --type argument.
     $browser = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
-      Where-Object { $_.CommandLine -match 'notesd-idlix-chrome' -and $_.CommandLine -notmatch '--type=' } | Select-Object -First 1
+      Where-Object { $_.CommandLine -match $ProfileName -and $_.CommandLine -notmatch '--type=' } | Select-Object -First 1
     if ($browser) {
       $shell = New-Object -ComObject WScript.Shell
       # Windows lets a background program take the foreground only right after a key press; a
@@ -129,8 +150,21 @@ try {
       Start-Sleep -Milliseconds 300
     }
   }
-  # userGesture: a click made by the expression counts as the user's, so a video may start with sound.
-  $text = Invoke-Cdp 'Runtime.evaluate' @{ expression = $js; awaitPromise = $true; returnByValue = $true; userGesture = $true }
+  if ($FrameMatch) {
+    $frame = Get-Targets | Where-Object { $_.type -eq 'iframe' -and $_.url -match $FrameMatch } | Select-Object -First 1
+    if (-not $frame) { Fail 'no_frame' "no embedded frame matches $FrameMatch" }
+    $text = Invoke-Expression-In (Open-Socket $frame.webSocketDebuggerUrl) $js
+  } else {
+    $text = Invoke-Expression-In $page $js
+    # An expression that answers { click: { x, y } } asks for a real mouse click at that point of
+    # the page. It reaches a player inside a frame from another host, which script cannot.
+    $click = ($text | ConvertFrom-Json).result.result.value.click
+    if ($click) {
+      foreach ($type in 'mouseMoved', 'mousePressed', 'mouseReleased') {
+        Invoke-Cdp $page 'Input.dispatchMouseEvent' @{ type = $type; x = [int]$click.x; y = [int]$click.y; button = 'left'; buttons = 1; clickCount = 1 } | Out-Null
+      }
+    }
+  }
 } catch {
   Fail 'cdp_failed' $_.Exception.GetBaseException().Message
 }

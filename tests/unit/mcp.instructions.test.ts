@@ -284,7 +284,20 @@ describe('buildInstructions: Movies', () => {
     expect(p).toContain('[Title](http://localhost:4321/movies/<title id>)');
     const order = text.split('\n\n').map((s) => s.split('.')[0]);
     expect(order.indexOf('Movies')).toBe(order.indexOf('Connectors') + 1);
-    expect(order.indexOf('Adversary')).toBe(order.indexOf('Movies') + 1);
+    expect(order.indexOf('Streaming')).toBe(order.indexOf('Movies') + 1);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('Streaming') + 1);
     expect(order.at(-1)).toBe('Sessions');
+  });
+});
+
+describe('buildInstructions: Streaming', () => {
+  it('has one Streaming paragraph naming both tools and when a film may be started', () => {
+    const text = buildInstructions('Asia/Jakarta', 'http://localhost:4321');
+    const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Streaming.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0]!;
+    for (const word of ['streaming_find', 'streaming_play', 'idlix', 'lk21', 'only when the user asks to watch, play or put something on', 'never a link you built', 'F11']) {
+      expect(p).toContain(word);
+    }
   });
 });

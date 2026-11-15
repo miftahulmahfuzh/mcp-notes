@@ -5,15 +5,7 @@
 - Threads and messages persisted; edit, delete, restore messages; chat about an image.
 - `/n` exchanges captured from Claude Code via `POST /api/capture/claude-code`.
 
-- A title asked for on pahe.ink ("/pahe no other choice") is answered with a link per matching
-  release. The parser is proven by `npx vitest run tests/unit/scripts/paheSearch.test.ts` and the
-  live site by `node claude/skills/pahe/search.mjs no other choice` (free, reads pahe.ink); the
-  chat bar's side is prompt text, covered by `tests/unit/chat-prompt.test.ts`.
-- `/idlix` is Claude Code only (the chat bar cannot reach the site). Its matching is proven by
-  `npx vitest run tests/unit/scripts/idlixSearch.test.ts`, and the live path by
-  `node claude/skills/idlix/search.mjs no other choice`, which opens a minimized Chrome on Windows.
-  `search.mjs --play <film>` is proven only live: it takes over the screen and starts the film
-  with sound, so run it when the owner expects it.
+- Finding and playing films on pahe.ink, idlix and lk21 from the chat bar: see `streaming.md`.
 
 ## How to get to it (user POV)
 The bar at the bottom of the wall, `Send`; `Chat history` in the sidebar.

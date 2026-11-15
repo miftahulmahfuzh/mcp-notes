@@ -61,6 +61,7 @@ The status is a short caption for the tool call in progress. It clears when text
 | searching sessions, reading a session, reading a session transcript, counting session tokens, opening a session in tmux | using the session tools |
 | reading Seer Adversarial, reading Claude's verdicts, reading Claude's record | reading the adversary tools |
 | searching movies, reading a title, reading watch history, reading a filmography, marking a title, opening VLC | using the movie tools |
+| searching the streaming sites, starting a film | using the streaming tools |
 | searching the web, reading a web page | calling WebSearch or WebFetch |
 
 ### Ids in an answer are links
@@ -158,6 +159,7 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | daily-words | every `dword_*` tool | Yes: words and sayings |
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
 | Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
+| Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
 | Web | `WebSearch`, `WebFetch` | No |
 
 Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only) and the
@@ -184,8 +186,13 @@ These rules come from the system prompt, so they shape every answer:
 - It calls `movies_continue` only when asked to play, resume or continue something.
 - Asked for a title on pahe.ink ("/pahe no other choice", "find it on pahe"), it reads the site's
   search page with `WebFetch` and answers with a link per matching release, BluRay first, as the
-  `/pahe` skill does (see [movies.md](movies.md#finding-a-title-on-paheink)). It never builds a
-  pahe.ink link itself and does not open the download buttons.
+  `/pahe` skill does. It never builds a pahe.ink link itself and does not open the download
+  buttons.
+- Asked to watch a film on idlix or lk21 ("/idlix no other choice", "put it on lk21"), it calls
+  `streaming_play`, which starts the film full screen in the streaming Chrome window. Asked only
+  where a film can be watched, it calls `streaming_find` and answers with links. It never starts
+  a film it was not asked to start. All three sites are described in
+  [streaming.md](streaming.md).
 
 ### Claude first, GLM as fallback
 

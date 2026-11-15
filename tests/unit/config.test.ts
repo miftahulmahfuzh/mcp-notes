@@ -49,6 +49,7 @@ describe('loadConfig', () => {
       adversary: { ...DEFAULT_ADVERSARY_CONFIG, enabled: true, dispatchNightly: true },
       dword: DEFAULT_DWORD_CONFIG,
       movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
+      streaming: { enabled: true },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })

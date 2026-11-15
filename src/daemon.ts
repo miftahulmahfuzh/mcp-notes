@@ -23,6 +23,7 @@ import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
 import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
+import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
 
@@ -139,7 +140,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         : `[notesd] movies: playback off (${playback.reason})`,
     );
   }
-  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies, moviesPlayer, moviesHealth, sessionEvents };
+  // Builds nothing and runs nothing until a streaming tool is called.
+  const streaming = config.streaming?.enabled ? scriptRunner() : null;
+  const deps: AppDeps = { config, db, events, service, embedder, imageEmbedder, chat: chatHistory, adversary, movies, moviesPlayer, moviesHealth, sessionEvents, streaming };
   // The agent reaches notes through this daemon's own /mcp. The port is known only after
   // listen() (config.port may be 0), and the first chat run can only start after that.
   let boundPort: number | null = null;

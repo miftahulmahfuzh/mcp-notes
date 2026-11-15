@@ -45,6 +45,7 @@ You mostly do not open it to find things. You ask:
 | Connectors | Read-only answers from expense-tracking, run-insights and Seer; `/v` and `/j` write to daily-words | [connectors](docs/guide/connectors.md) |
 | Seer Adversarial | Claude reviews each Seer pick before the open; twin books show whether its objections paid | [adversary](docs/guide/adversary.md) |
 | Movies | Your video folders as a TMDB poster library, watch history, Play and Resume in VLC, [every question you can ask](docs/guide/movies.md#what-you-can-ask) | [movies](docs/guide/movies.md) |
+| Streaming | `/pahe`, `/idlix` and `/lk21` find a film on those sites; the last two start it full screen, from Claude Code or the chat bar | [streaming](docs/guide/streaming.md) |
 
 <table>
 <tr>

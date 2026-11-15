@@ -72,6 +72,14 @@ export const MOVIE_TOOL_NAMES = [
 export type MovieToolName = (typeof MOVIE_TOOL_NAMES)[number];
 
 /**
+ * The streaming tools (src/mcp/streamingTools.ts): streaming_find looks a title up on the
+ * streaming sites; streaming_play starts a film full screen in the streaming Chrome.
+ */
+export const STREAMING_TOOL_NAMES = ['streaming_find', 'streaming_play'] as const;
+
+export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
+
+/**
  * The four curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
  * src/mcp/dwordJournalTools.ts). Named here only so `captionForToolUse` can give each one its own caption
  * and so this file's tests can assert on them by name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES,
@@ -101,8 +109,8 @@ export const CONNECTOR_CAPTIONS = Object.fromEntries(
 const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
- * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 21
- * connector tools and WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes
+ * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2
+ * streaming tools, the connector tools and WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes
  * CHAT_BAR_BRAIN_PLAN invariant 4; SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN
  * phase 3 adds `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
  * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
@@ -117,6 +125,7 @@ export function allowedChatTools(): string[] {
     ...SESSION_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...ADVERSARY_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     ...MOVIE_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
+    ...STREAMING_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
     // dword's six tool names (dword_schema, dword_sql, and DWORD_TOOL_NAMES above) arrive here
     // already, because CONNECTOR_SYSTEMS includes 'dword' (DWORD_CONNECTOR_PLAN phase 1).
     ...ALL_CONNECTOR_TOOL_NAMES.map((name) => `${MCP_PREFIX}${name}`),
@@ -225,6 +234,10 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'reading a filmography';
     case 'movies_mark':
       return 'marking a title';
+    case 'streaming_find':
+      return 'searching the streaming sites';
+    case 'streaming_play':
+      return 'starting a film';
     case 'dword_vocab_lookup':
       return 'looking up a word';
     case 'dword_vocab_add':
