@@ -1,12 +1,15 @@
 // The WSL half of driving the streaming Chrome: starts cdp.ps1 through powershell.exe and reads
 // its one line of JSON.
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
-const POWERSHELL = 'powershell.exe';
+// The daemon runs under systemd without the Windows folders on its PATH, so name the usual place.
+const POWERSHELL_PATH = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+const POWERSHELL = existsSync(POWERSHELL_PATH) ? POWERSHELL_PATH : 'powershell.exe';
 const CDP_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cdp.ps1');
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -102,6 +102,10 @@ Things that went wrong, so check them:
   expression again (see the loop in `sites/lk21.mjs`).
 - **The old page answered.** Right after `location.assign`, the expression may still run in the
   page being left. Check `location.href` in the answer and retry (see `sites/idlix.mjs`).
+- **It worked in the terminal and not from the chat bar.** The daemon runs under systemd without
+  the Windows folders on its `PATH` (`spawn powershell.exe ENOENT`). `chrome.mjs` names
+  PowerShell by its full path for that reason; do the same for any other Windows program, and
+  always test a new site through the daemon too (step 8).
 - **The page's own full-screen button does nothing.** `requestFullscreen` is refused ("not
   granted") for anything but a real key or mouse press, even with a real DevTools click. Do not
   spend time on it: `play.mjs` puts the window in full screen and stretches the element named
@@ -182,6 +186,15 @@ node ~/.claude/skills/<name>/search.mjs <a series>              # kind: series
 node ~/.claude/skills/<name>/search.mjs zzqqxx nothing          # no matches, ok: true
 node ~/.claude/skills/<name>/search.mjs --play <film>           # playing: true, fullscreen: true
 node ~/.claude/skills/<name>/search.mjs --play <film>           # again: it must work from a page already playing
+```
+
+Then through the daemon, which is the chat bar's path (rebuild and restart it first when
+`src/` changed):
+
+```sh
+curl -s -X POST http://127.0.0.1:7317/mcp -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"streaming_play","arguments":{"site":"<name>","title":"<film>"}}}'
 ```
 
 Close the streaming Chrome once and run a play from a cold start as well. Then commit, push,

@@ -1,6 +1,6 @@
 // Playing a title on a streaming site: the part every site shares. A site module (sites/*.mjs)
 // says how its own player is started; this opens the page, runs that, and fills the screen.
-import { evaluateInChrome, sleep } from './chrome.mjs';
+import { ChromeError, evaluateInChrome, sleep } from './chrome.mjs';
 
 /**
  * Stretches the player over the page, for a window that is already full screen. A page's own
@@ -38,7 +38,14 @@ export async function playTitle(site, url) {
   if (pathname === null) return { playing: false, error: `not a title page on ${site.origin}: ${url}` };
   const evalPage = (expression, options) => evaluateInChrome(site.origin, expression, options);
   try {
-    await evalPage(`location.assign(${JSON.stringify(pathname)}); 'ok'`, { show: true, closeOtherTabs: true });
+    const open = () => evalPage(`location.assign(${JSON.stringify(pathname)}); 'ok'`, { show: true, closeOtherTabs: true });
+    // A Chrome that is just closing still answers its port and then drops the call. Once more
+    // starts a fresh one.
+    await open().catch(async (err) => {
+      if (!(err instanceof ChromeError)) throw err;
+      await sleep(2500);
+      return open();
+    });
     await sleep(1500);
     const film = await site.start({ evalPage, sleep, pathname });
     if (!film?.playing) return { ...film, playing: false };
