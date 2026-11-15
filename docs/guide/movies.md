@@ -13,7 +13,6 @@ Every picture and example on this page comes from the generated library of `veri
 fixture's, not anyone's real library.
 
 Contents: [Setup](#setup) · [What is stored](#what-is-stored) · [The scan](#the-scan) ·
-[Trailers](#trailers) ·
 [Movie ids](#movie-ids) · [Watch state](#watch-state) · [The Movies page](#the-movies-page) ·
 [Playback](#playback) · [Continue and "play something"](#continue-and-play-something) ·
 [The VLC health log](#the-vlc-health-log) · [Two machines](#two-machines) ·
@@ -55,7 +54,7 @@ change behaviour:
 
 | Thing | Table | Scope | Lifetime |
 | --- | --- | --- | --- |
-| Title | `movie_titles` | Shared by both machines | One per TMDB film (`movie-<tmdb id>`) or series (`tv-<tmdb id>`). Never deleted, even when every file is gone. Holds the poster path, release date, synopsis, runtime, genres, the trailers (see [Trailers](#trailers)), and your watched flag, rating and review link. |
+| Title | `movie_titles` | Shared by both machines | One per TMDB film (`movie-<tmdb id>`) or series (`tv-<tmdb id>`). Never deleted, even when every file is gone. Holds the poster path, release date, synopsis, runtime, genres, and your watched flag, rating and review link. |
 | Studios, people, credits | `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits` | Shared | Stored with the title on its first match: up to 40 cast with character names, and up to 20 each of directors, writers, producers and creators. |
 | Episode | `movie_episodes` | Shared | Every episode TMDB lists for a series, with name, air date, runtime and synopsis, whether or not you have its file. |
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
@@ -87,8 +86,6 @@ One pass (`src/movies/sync.ts`), in order:
    `too_short`. Unreadable: unmatched, `probe_failed`. No `ffprobe` binary: new files wait.
 6. Parse the path, ask TMDB, store the title's metadata the first time a title is matched.
 7. Read VLC's recent list (see [Films opened from Explorer](#films-opened-from-explorer)).
-8. Look up the trailers of up to ten titles that were stored before trailers were kept (see
-   [Trailers](#trailers)).
 
 A pass that wrote anything emits `changed` on `/api/movies/events`, and the page reloads.
 
@@ -129,28 +126,7 @@ spec is the table in `tests/fixtures/movies/filenames.ts`.
 `src/movies/tmdb.ts` is the only module that talks to TMDB. When TMDB cannot be reached at all
 (network error, timeout, 401, 403, 429 or 5xx) the pass stops calling it, the remaining files stay
 `pending` with `tmdb_error`, and the next pass retries them. A title's metadata is fetched once,
-when it is first matched; it is not refreshed afterwards. The one exception is the trailers of a
-title stored before trailers were kept.
-
-### Trailers
-
-TMDB lists the videos of every film, series and season, and notesd keeps one of them per title and
-one per season: its YouTube video id, in `movie_titles.trailer_key` and `season_trailers`. Nothing
-is searched on the web and YouTube's API is never called, so there is no key and no cost.
-
-- **Where it comes from.** The title's details request asks for its videos in the same call
-  (`append_to_response=videos`), and so does each season's request. A new title costs no extra
-  request.
-- **Which video.** `pickTrailer` (`src/movies/tmdb.ts`) looks only at YouTube videos of type
-  Trailer or Teaser. A trailer beats a teaser, an official video beats an unofficial one, and among
-  equals the newest wins. Featurettes, clips and videos on other sites are never used.
-- **Titles stored earlier.** A title with no `trailers_checked_at` was stored before trailers were
-  kept. Each pass asks TMDB for the videos of up to ten of them (`TRAILER_BACKFILL_PER_PASS`): one
-  request for the title and one per season its episode list names. A title is marked checked
-  whether or not TMDB lists a trailer, and when TMDB no longer has it (404). When TMDB cannot be
-  reached the rest wait for the next pass. Both machines share the result.
-- **Once.** Like the rest of the metadata, a title's trailers are read once. A trailer TMDB adds
-  later does not arrive on its own.
+when it is first matched; it is not refreshed afterwards.
 
 ### The Haiku fallback
 
@@ -284,7 +260,7 @@ opening a title and coming back.
 ![Filtering the grid by state, kind and text](img/movies/filter.gif)
 
 **A title's page** (`/movies/<id>`): the poster, the movie id, release date, runtime or season
-count, genres, kind and state; then Play, the trailer, the watched flag, the stars, the synopsis, the review,
+count, genres, kind and state; then Play, the watched flag, the stars, the synopsis, the review,
 the credits (studios, created by, directed by, written by, produced by) and the cast with their
 characters (the first 18, with an icon for the rest).
 
@@ -294,13 +270,6 @@ characters (the first 18, with an icon for the rest).
   resume the open episode or play the next one (see
   [Continue](#continue-and-play-something)). It is disabled with the reason as its label when the
   file is on the other machine, when no file is left, or when VLC cannot be started here.
-- **Trailer.** The screen icon beside Play plays the title's trailer from YouTube in a pop-up
-  over the page, starting at once. The pop-up's header has a link that opens the same video on
-  YouTube, for the videos whose owner does not allow playing them on other sites, and Esc, the X
-  or a click outside closes it. When TMDB lists no trailer the same icon reads "Find the trailer on
-  YouTube" and opens a YouTube search for the title in a new tab. On a series every season heading
-  has its own icon, which plays that season's trailer or searches for it the same way. VLC is not
-  involved, so it works for a file on the other machine and for a title with no file left.
 - **Watched flag.** The check icon sets or clears the title's watched flag, for the films whose
   credits you skip.
 - **Stars.** 0 to 5, whole stars.
@@ -509,7 +478,7 @@ Both machines use the same database and different disks.
 
 | Shared | Per host |
 | --- | --- |
-| Titles, metadata, credits, episodes, trailers | Files (each row names its host) |
+| Titles, metadata, credits, episodes | Files (each row names its host) |
 | Movie ids | Plays (history lists both machines' plays) |
 | Watched flag, rating, review | The unmatched list (this machine's files only) |
 | Posters (hotlinked TMDB URLs) | The scan, VLC, the player, the health log |
@@ -579,7 +548,6 @@ Differences between the two places:
 | `/n which MobLand episode did I watch last, and when?` | `movies_get {"title":"mobland"}`, read `last_play` | Both |
 | `/n who directed M-WXCR and who is in it?` | `movies_get {"title":"M-WXCR"}`, read `directors`, `cast` | Both |
 | `/n what did I write about How to Make a Killing?` | `movies_get {"title":"How to Make a Killing"}`, read `review` | Both |
-| `/n show me the trailer of How to Make a Killing` | `movies_get {"title":"How to Make a Killing"}`, read `trailer_url` | Both |
 | `/n what is M-8LOU about?` | `movies_get {"title":"M-8LOU"}`, read `asked.episode` | Both |
 | `/n list MobLand season 1 with ids` | `movies_get {"title":"tv-247718","season":1}` | Both |
 | `/n do I have episode 3 of MobLand?` | `movies_get {"title":"mobland","episode":3}`, read `has_file`, `present_here` | Both |
@@ -589,9 +557,6 @@ Differences between the two places:
 | `Any trivia about this film?` (pill on a title's page) | `movies_get` for the year, then web search | Wall chat |
 | `/n what is Citizen of a Kind about? who is the woman at the front in the thumbnail?` | `movies_get {"title":"Citizen of a Kind"}`, read `overview`, `cast`; the poster image itself answers who is in front | Both |
 
-- `trailer_url` is the trailer on YouTube, or null when TMDB lists none; `trailer_key` is its video
-  id, and each season carries its own `trailer_key`. No tool plays a trailer: Claude answers with
-  the link.
 - The answer has the title's facts and credits, `seasons[].episodes[]` (each with `movie_id`,
   `state`, `has_file`, `present_here`, `deleted`, `progress`), `files` (every file ever seen, deleted
   ones too), `plays` newest first and `last_play`.
@@ -775,9 +740,6 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 - **Metadata is fetched once.** New episodes of a running series, or corrections on TMDB, do not
   arrive on their own. A file whose episode TMDB did not list still gets a row and an id from its
   file name.
-- **A trailer can refuse to play in the pop-up.** Some owners do not allow their videos on other
-  sites, and YouTube then shows "Video unavailable" inside the player. The link in the pop-up's
-  header opens it on YouTube.
 - **The Haiku fallback is billed** to your `claude` login, one short call per unclear file. The
   throwaway instance of `verify.sh` pins it off.
 - **Films opened from Explorer are seen late.** VLC writes its recent list when it exits, and the
@@ -818,10 +780,10 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
-| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal` |
+| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
-| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql` | The tables; the id sequence, function and triggers; the trailer columns |
+| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql` | The tables; the id sequence, function and triggers |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
 
 ## Proving a change
