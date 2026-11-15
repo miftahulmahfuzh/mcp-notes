@@ -69,9 +69,10 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/say which app could not be read and do not guess its numbers/);
   });
 
-  it('leaves the linking of ids to the panel; the one link it writes itself is a web search for a name outside the library', () => {
+  it('leaves the linking of ids to the panel; the links it writes itself are a web search for a name outside the library and a pahe.ink result', () => {
     expect(prompt).not.toMatch(/bare URL/i);
-    expect(prompt.match(/markdown link/gi)).toHaveLength(1);
+    expect(prompt.match(/markdown link/gi)).toHaveLength(2);
+    expect(prompt).toMatch(/each written as a markdown link whose text is the result's title and whose target is the URL the page gave/);
     expect(prompt).toMatch(/not in the library, write the name as a markdown link to a web search for it/);
     expect(prompt).toMatch(/a title that is in the library keeps its bare movie id instead and gets no such link/);
   });
@@ -177,5 +178,14 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/Call movies_get with that id first/);
     expect(prompt).toMatch(/Trivia, production stories and reception are a WebSearch/);
     expect(prompt).toMatch(/"Films like this" is a WebSearch for similar films/);
+  });
+
+  it('finds a title on pahe.ink with WebFetch and never builds the link itself', () => {
+    expect(prompt).toMatch(/call WebFetch on https:\/\/pahe\.ink\/\?s= followed by the title with a plus sign for each space and without the year/);
+    expect(prompt).toMatch(/keep only the results whose name is the asked title, and whose year is the asked year when you know it/);
+    expect(prompt).toMatch(/BluRay first, then WEB-DL/);
+    expect(prompt).toMatch(/Never build or guess a pahe\.ink link yourself/);
+    expect(prompt).toMatch(/do not open the page or follow its download buttons/);
+    expect(prompt).toMatch(/a recommendation alone is not a request for a link/);
   });
 });

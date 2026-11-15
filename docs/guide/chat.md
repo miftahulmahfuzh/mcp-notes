@@ -182,6 +182,10 @@ These rules come from the system prompt, so they shape every answer:
   with the daily-words tools, as `/v` and `/j` do. There is no slash-command parser in the chat
   bar: it reads plain language, and a message that starts with `/v` or `/j` means the same.
 - It calls `movies_continue` only when asked to play, resume or continue something.
+- Asked for a title on pahe.ink ("/pahe no other choice", "find it on pahe"), it reads the site's
+  search page with `WebFetch` and answers with a link per matching release, BluRay first, as the
+  `/pahe` skill does (see [movies.md](movies.md#finding-a-title-on-paheink)). It never builds a
+  pahe.ink link itself and does not open the download buttons.
 
 ### Claude first, GLM as fallback
 

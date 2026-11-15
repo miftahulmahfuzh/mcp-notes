@@ -5,6 +5,11 @@
 - Threads and messages persisted; edit, delete, restore messages; chat about an image.
 - `/n` exchanges captured from Claude Code via `POST /api/capture/claude-code`.
 
+- A title asked for on pahe.ink ("/pahe no other choice") is answered with a link per matching
+  release. The parser is proven by `npx vitest run tests/unit/scripts/paheSearch.test.ts` and the
+  live site by `node claude/skills/pahe/search.mjs no other choice` (free, reads pahe.ink); the
+  chat bar's side is prompt text, covered by `tests/unit/chat-prompt.test.ts`.
+
 ## How to get to it (user POV)
 The bar at the bottom of the wall, `Send`; `Chat history` in the sidebar.
 
