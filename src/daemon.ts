@@ -23,6 +23,7 @@ import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
 import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
 import { buildMoviesService } from './movies/service.js';
+import { MovieStreams } from './movies/streams.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
@@ -141,6 +142,17 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         : `[notesd] movies: playback off (${playback.reason})`,
     );
   }
+  // Direct streaming phase 5: stream plays and verified sources are written to the movies store.
+  // Player sessions live in memory, so a stream play the previous run left open is closed here.
+  const movieStreams = movies === null ? null : new MovieStreams(movies);
+  if (movieStreams !== null) {
+    try {
+      const closed = await movieStreams.closeLeftOpen();
+      if (closed > 0) console.log(`[notesd] direct stream: closed ${closed} stream play(s) left open by the previous run at their last position`);
+    } catch (err) {
+      console.error(`[notesd] direct stream: could not close stale stream plays: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   // Builds nothing and runs nothing until a streaming tool is called.
   const streaming = config.streaming?.enabled ? scriptRunner() : null;
   // The bound port, known only after listen() (config.port may be 0). The chat agent reaches notes
@@ -151,6 +163,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const directStream = buildDirectStreamService(config, db, {
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
+    hooks:
+      movieStreams === null
+        ? undefined
+        : {
+            recordResolve: (ref, result) => movieStreams.recordResolve(ref, result),
+            resumeS: (ref) => movieStreams.resumeS(ref),
+          },
   });
   if (directStream !== null) {
     try {

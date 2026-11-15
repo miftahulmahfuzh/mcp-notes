@@ -39,6 +39,10 @@
 - State, derived at read time: finished (manual watched flag, done signal, or last position >= 90 %),
   in progress, unwatched, dropped (deleted partway), removed unwatched (deleted, never played), seen
   (only "opened" observations from VLC's recent list).
+  A stream play (direct streaming) counts as one more copy of the film or episode and moves state
+  the same way; a title known only from streams is not in the grid but opens by id. Proof:
+  `npx vitest run tests/unit/movies/state.test.ts -t streams`,
+  `npm run test:int -- tests/integration/movies.streams.int.test.ts`.
 - User state: watched flag, 0-5 stars, review (a note tagged `#movie`, linked to the title).
 - Play/Resume: starts the Windows `vlc.exe` on this host's file at the resume second, reads its status
   through Windows `curl.exe` every `NOTESD_VLC_POLL_MS` into one play event, closes it when VLC exits.

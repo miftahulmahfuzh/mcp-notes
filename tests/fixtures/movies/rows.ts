@@ -33,9 +33,14 @@ export function fileRow(over: Partial<FileRow> & Pick<FileRow, 'id'>): FileRow {
   };
 }
 
-/** A full movie_plays row (ended), overridable. */
+/** A full movie_plays row (an ended file play), overridable. */
 export function playRow(over: Partial<PlayRow> & Pick<PlayRow, 'id' | 'fileId'>): PlayRow {
   return {
+    titleId: null,
+    season: null,
+    episode: null,
+    provider: null,
+    streamSession: null,
     host: 'this-host',
     source: 'live',
     startedAt: T0,

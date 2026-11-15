@@ -63,12 +63,19 @@ change behaviour:
 | Studios, people, credits | `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits` | Shared | Stored with the title on its first match: up to 40 cast with character names, and up to 20 each of directors, writers, producers and creators. |
 | Episode | `movie_episodes` | Shared | Every episode TMDB lists for a series, with name, air date, runtime and synopsis, whether or not you have its file. |
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
-| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list). Never deleted, and it outlives its file. |
+| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
+| Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
 `MoviesRepo` (`src/movies/repo.ts`) is the only writer of these tables. Watch state is not in any of
 them: it is derived when read. Posters and backdrops are not stored either: the page hotlinks them
 from `TMDB_IMAGE_BASE`, so both machines show them.
+
+A title first met through a stream is stored like any other (TMDB details, credits, episodes), but
+it stays out of the Library grid until it has a file: the Library lists titles with a file on
+either machine, and titles that were never streamed. Opened by id (`/movies/<id>`, `movies_get`)
+it shows like any title, with its stream plays. A title is on the Stream side only while one of
+its source rows on this machine was verified within `NOTESD_STREAM_FRESH_DAYS` and is not stale.
 
 ## The scan
 
@@ -265,9 +272,16 @@ A title's state comes from its files:
   when no file is left. Otherwise (something watched, nothing left on disk to watch) it is `dropped`
   when a file was dropped or deleted unwatched, else `seen`.
 - An episode with several copies is finished when any copy is.
+- A stream counts as one more copy. A streamed film or episode has one stream source whose last
+  play is its newest stream play. It is never deleted and has no duration of its own, so it is
+  `finished` at 90 % of the duration the player reported, `in_progress` when played past 0, and
+  `unwatched` otherwise. A film puts it in the precedence list with its files. An episode is
+  finished when any copy or the stream is; otherwise the stream decides when it was played after
+  the episode's primary copy (or there is no copy), and the primary copy decides when not.
 
 Play resumes at the last known position, or from the start when there is none or the file is
-finished.
+finished. The stream player resumes a film or an episode at its last stream play's position, from
+either machine, with the same rule.
 
 ## The Movies page
 
@@ -581,6 +595,7 @@ Both machines use the same database and different disks.
 | Movie ids | Plays (history lists both machines' plays) |
 | Watched flag, rating, review | The unmatched list (this machine's files only) |
 | Posters (hotlinked TMDB URLs) | The scan, VLC, the player, the health log |
+| Stream plays (history lists both machines') | Stream sources: what each machine verified |
 
 - A file on the other machine has `available: false`. On the page its row says "on <host>" and its
   play icon is disabled; the big Play button reads "On <host>: play it on that machine".
@@ -589,6 +604,9 @@ Both machines use the same database and different disks.
 - "Continue" and "play something" only consider files on the machine that runs the daemon. Without
   a title, continue follows this machine's newest play, not the other's.
 - A title that exists only on the other machine still shows in the grid with its state.
+- A stream verified on one machine is not on the other's Stream side until that machine resolves
+  it too. Stream plays are history on both, and the stream player resumes from either machine's
+  last stream play.
 
 ## What you can ask
 
@@ -855,18 +873,19 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/ids.ts` | Movie id shape and lookup (ids are written by the database) |
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
+| `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |
 | `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
-| `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health |
+| `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, unmatched, assign, user marks, sync, events; play, continue, player, health; the stream position report is in `src/http/directStreamApi.ts` |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
 | `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
-| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql` | The tables; the id sequence, function and triggers; the trailer columns |
+| `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql`, `drizzle/0021_stream_plays.sql` | The tables; the id sequence, function and triggers; the trailer columns; stream plays and stream sources |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
 
 ## Proving a change

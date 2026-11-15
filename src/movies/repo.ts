@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client.js';
 import {
@@ -8,10 +8,12 @@ import {
   movieFiles,
   moviePeople,
   moviePlays,
+  movieStreamSources,
   movieTitleCompanies,
   movieTitles,
   type MovieFileRow,
   type MoviePlayRow,
+  type MovieStreamSourceRow,
   type MovieTitleRow,
 } from '../db/schema.js';
 import { FINISHED_RATIO } from './state.js';
@@ -28,6 +30,9 @@ import {
   type NewPlay,
   type PlayReading,
   type RecentsObservation,
+  type StreamPositionInput,
+  type StreamPositionWrite,
+  type StreamSourceOutcome,
   type TitleKind,
   type TitleMetadata,
   type TitleTrailers,
@@ -62,6 +67,31 @@ export function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
+/**
+ * The freshness rule of a stream source row (direct streaming, invariant 10), in its three forms,
+ * kept together: a row of `host`, verified at or after `since`, and not stale. A stale row (a
+ * resolve that found no source) leaves the Stream grid until a resolve verifies it again, which
+ * clears `stale_at`. tests/integration/movies.streams.int.test.ts proves the forms agree.
+ */
+function freshCondition(host: string, since: Date): SQL {
+  return sql`s.host = ${host} and s.stale_at is null and s.verified_at >= ${since}`;
+}
+
+/** SQL, inside a query over `movie_titles`: the title has a fresh source on `host`. */
+export function freshStreamSourceSql(host: string, since: Date): SQL {
+  return sql`exists (select 1 from movie_stream_sources s where s.title_id = movie_titles.id and ${freshCondition(host, since)})`;
+}
+
+/** JS: the same rule on one row. */
+export function isFreshStreamSource(row: Pick<MovieStreamSourceRow, 'host' | 'staleAt' | 'verifiedAt'>, host: string, since: Date): boolean {
+  return row.host === host && row.staleAt === null && row.verifiedAt !== null && row.verifiedAt.getTime() >= since.getTime();
+}
+
+/** The start of the freshness window: `freshDays` (NOTESD_STREAM_FRESH_DAYS) before `now`. */
+export function streamFreshSince(now: Date, freshDays: number): Date {
+  return new Date(now.getTime() - freshDays * 86_400_000);
+}
+
 function classificationColumns(c: FileClassification): { status: FileStatus; titleId: string | null; reason: FileReason | null } {
   switch (c.status) {
     case 'matched':
@@ -80,9 +110,11 @@ function samePosition(a: number | null, b: number | null): boolean {
 
 /**
  * Every moment a title or one of its files became finished, as (title_id, at): the title's manual
- * flag, a file's manual flag, a file's done signal, and every play that reached FINISHED_RATIO of
- * its duration (the play's reading, else the file's; state.ts `reachedEnd` is the same rule). A
- * play still open counts at its last update. Comparisons run in double precision, as in JS.
+ * flag, a file's manual flag, a file's done signal, every file play that reached FINISHED_RATIO of
+ * its duration (the play's reading, else the file's; state.ts `reachedEnd` is the same rule), and
+ * every stream play that reached it of the player's reading (state.ts `streamState`: a stream has
+ * no duration of its own). A play still open counts at its last update. Comparisons run in double
+ * precision, as in JS.
  */
 function finishEventsSql(): SQL {
   return sql`
@@ -97,13 +129,21 @@ function finishEventsSql(): SQL {
     where f.title_id is not null
       and p.position_s is not null
       and coalesce(p.duration_s, f.duration_s) > 0
-      and p.position_s::double precision >= ${FINISHED_RATIO}::double precision * coalesce(p.duration_s, f.duration_s)::double precision`;
+      and p.position_s::double precision >= ${FINISHED_RATIO}::double precision * coalesce(p.duration_s, f.duration_s)::double precision
+    union all
+    select p.title_id, coalesce(p.ended_at, p.updated_at)
+    from movie_plays p
+    where p.source = 'stream'
+      and p.position_s is not null
+      and p.duration_s > 0
+      and p.position_s::double precision >= ${FINISHED_RATIO}::double precision * p.duration_s::double precision`;
 }
 
 /**
  * The only writer of the `movie_*` tables (MOVIES_LIBRARY_PLAN invariant 2): the sync pass,
- * routes, MCP tools and the player all write through it. It also holds the reads those callers
- * share. Titles are never deleted, files only soft-deleted, plays never deleted.
+ * routes, MCP tools, the player and the direct-stream recorder (src/movies/streams.ts) all write
+ * through it. It also holds the reads those callers share. Titles are never deleted, files only
+ * soft-deleted, plays never deleted.
  */
 export class MoviesRepo {
   constructor(private readonly db: Db) {}
@@ -622,6 +662,175 @@ export class MoviesRepo {
       .orderBy(desc(moviePlays.startedAt), desc(moviePlays.id))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  // ---------- streams (direct streaming) ----------
+
+  /**
+   * Daemon start: player sessions live in memory, so every stream play of `host` the previous
+   * process left open is closed at the last position it wrote (`ended_at = updated_at`). Returns how many.
+   */
+  async closeOpenStreamPlays(host: string): Promise<number> {
+    const rows = await this.db
+      .update(moviePlays)
+      .set({ endedAt: sql`${moviePlays.updatedAt}` })
+      .where(and(eq(moviePlays.host, host), eq(moviePlays.source, 'stream'), isNull(moviePlays.endedAt)))
+      .returning({ id: moviePlays.id });
+    return rows.length;
+  }
+
+  /**
+   * One position report of the player page. The session's open row gets the position (its first
+   * report opens it, starting at that position); `ended` closes it. Opening a row closes this
+   * host's other open stream plays at their last update (one screen, one film). A report with
+   * `ended` for a session whose row is already closed writes nothing. At most one open row per
+   * session (`movie_plays_open_session_uniq`), so two reports at once still write one row.
+   */
+  async recordStreamPosition(input: StreamPositionInput): Promise<StreamPositionWrite> {
+    return this.db.transaction(async (tx) => {
+      const [open] = await tx
+        .select({ id: moviePlays.id })
+        .from(moviePlays)
+        .where(and(eq(moviePlays.streamSession, input.sessionId), isNull(moviePlays.endedAt)))
+        .limit(1);
+      if (open === undefined && input.ended) {
+        const [last] = await tx
+          .select()
+          .from(moviePlays)
+          .where(eq(moviePlays.streamSession, input.sessionId))
+          .orderBy(desc(moviePlays.id))
+          .limit(1);
+        if (last !== undefined) return { play: last, created: false, closed: false };
+      }
+      await tx
+        .update(moviePlays)
+        .set({ endedAt: sql`${moviePlays.updatedAt}` })
+        .where(
+          and(
+            eq(moviePlays.host, input.host),
+            eq(moviePlays.source, 'stream'),
+            isNull(moviePlays.endedAt),
+            ne(moviePlays.streamSession, input.sessionId),
+          ),
+        );
+      const rows = await tx
+        .insert(moviePlays)
+        .values({
+          fileId: null,
+          titleId: input.titleId,
+          season: input.season,
+          episode: input.episode,
+          provider: input.provider,
+          streamSession: input.sessionId,
+          host: input.host,
+          source: 'stream',
+          startedAt: input.at,
+          endedAt: null,
+          startPositionS: input.positionS,
+          positionS: input.positionS,
+          durationS: input.durationS,
+          updatedAt: input.at,
+        })
+        .onConflictDoUpdate({
+          target: moviePlays.streamSession,
+          // Must match the partial unique index movie_plays_open_session_uniq.
+          targetWhere: sql`ended_at is null and stream_session is not null`,
+          set: {
+            positionS: sql`excluded.position_s`,
+            durationS: sql`coalesce(excluded.duration_s, ${moviePlays.durationS})`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        })
+        // xmax = 0 only on a freshly inserted row version (the standard upsert "was it new" test).
+        .returning({ ...getTableColumns(moviePlays), inserted: sql<boolean>`(xmax = 0)` });
+      const row = rows[0];
+      if (row === undefined) throw new Error('movie_plays upsert returned no row');
+      const { inserted, ...play } = row;
+      if (!input.ended) return { play, created: inserted, closed: false };
+      const [ended] = await tx
+        .update(moviePlays)
+        .set({ endedAt: input.at, updatedAt: input.at })
+        .where(eq(moviePlays.id, play.id))
+        .returning();
+      return { play: ended ?? play, created: inserted, closed: true };
+    });
+  }
+
+  /** The stream play `streamState` reads for a film (season and episode null) or an episode, from any host: lastPlay's order. */
+  async lastStreamPlay(titleIdValue: string, season: number | null, episode: number | null): Promise<MoviePlayRow | null> {
+    const rows = await this.db
+      .select()
+      .from(moviePlays)
+      .where(
+        and(
+          eq(moviePlays.source, 'stream'),
+          eq(moviePlays.titleId, titleIdValue),
+          sql`${moviePlays.season} is not distinct from ${season}::integer`,
+          sql`${moviePlays.episode} is not distinct from ${episode}::integer`,
+        ),
+      )
+      .orderBy(sql`(${moviePlays.positionS} is not null) desc`, desc(moviePlays.startedAt), desc(moviePlays.id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Writes one resolve's outcome on its (title, season, episode, host) row. Verified: provider,
+   * manifest kind, best height, English subtitle, `verified_at`, and `stale_at`/`failure` cleared.
+   * Stale: `stale_at` and `failure` set, the last verified columns kept (a first failure makes a
+   * stale-only row). Returns the row before and after, so the caller can tell whether the Stream
+   * grid changed.
+   */
+  async recordStreamSource(input: StreamSourceOutcome): Promise<{ before: MovieStreamSourceRow | null; after: MovieStreamSourceRow }> {
+    const key = and(
+      eq(movieStreamSources.titleId, input.titleId),
+      eq(movieStreamSources.season, input.season),
+      eq(movieStreamSources.episode, input.episode),
+      eq(movieStreamSources.host, input.host),
+    );
+    const values =
+      input.outcome === 'verified'
+        ? {
+            provider: input.provider,
+            manifestKind: input.manifestKind,
+            bestHeight: input.bestHeight,
+            enSubtitle: input.enSubtitle,
+            verifiedAt: input.at,
+            staleAt: null,
+            failure: null,
+            updatedAt: input.at,
+          }
+        : { staleAt: input.at, failure: input.failure, updatedAt: input.at };
+    return this.db.transaction(async (tx) => {
+      const [before] = await tx.select().from(movieStreamSources).where(key).limit(1).for('update');
+      const [after] = await tx
+        .insert(movieStreamSources)
+        .values({ titleId: input.titleId, season: input.season, episode: input.episode, host: input.host, ...values })
+        .onConflictDoUpdate({
+          target: [movieStreamSources.titleId, movieStreamSources.season, movieStreamSources.episode, movieStreamSources.host],
+          set: values,
+        })
+        .returning();
+      if (after === undefined) throw new Error('movie_stream_sources upsert returned no row');
+      return { before: before ?? null, after };
+    });
+  }
+
+  /** Titles with a fresh source on `host` (`freshCondition`), by id. */
+  async freshStreamTitleIds(host: string, since: Date): Promise<string[]> {
+    const res = await this.db.execute<{ title_id: string }>(
+      sql`select distinct s.title_id from movie_stream_sources s where ${freshCondition(host, since)} order by s.title_id`,
+    );
+    return res.rows.map((r) => r.title_id);
+  }
+
+  /** One title's source rows on `host`, the film's or each episode's, in episode order (phase 9's stream block). */
+  async streamSourcesOfTitle(titleIdValue: string, host: string): Promise<MovieStreamSourceRow[]> {
+    return this.db
+      .select()
+      .from(movieStreamSources)
+      .where(and(eq(movieStreamSources.titleId, titleIdValue), eq(movieStreamSources.host, host)))
+      .orderBy(asc(movieStreamSources.season), asc(movieStreamSources.episode));
   }
 
   // ---------- history (R3.8) ----------
