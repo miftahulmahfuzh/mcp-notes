@@ -9,6 +9,7 @@
 //   wyzie         as ok, and the fake Wyzie Subs below lists an English file
 //   sync          as wyzie, and the fake Wyzie Synced below fits a subtitle
 // Every request is one line of <state>/requests.jsonl: {at, path, user_agent, mode}.
+// <state>/delay-ms, when present, holds every answer back that many milliseconds (a slow subtitle service).
 //
 // It is also a fake Wyzie Subs (the phase 6 addendum; never the real one): GET /search?id=&language=en&format=srt
 // &key= answers Wyzie's list, and /c/<id> the file. Only in mode `wyzie` does the list hold an English file (7001,
@@ -85,7 +86,21 @@ async function sync(req, res, now) {
   });
 }
 
+const delayMs = () => {
+  try {
+    return Math.max(0, Number(readFileSync(path.join(state, 'delay-ms'), 'utf8').trim()) || 0);
+  } catch {
+    return 0;
+  }
+};
+
 const server = http.createServer((req, res) => {
+  const wait = delayMs();
+  if (wait > 0) setTimeout(() => handle(req, res), wait);
+  else handle(req, res);
+});
+
+function handle(req, res) {
   const url = new URL(req.url ?? '/', 'http://fake.local');
   const now = mode();
   const pathname = decodeURIComponent(url.pathname);
@@ -140,7 +155,7 @@ const server = http.createServer((req, res) => {
   const subtitles = now === 'empty' ? [] : [...(byHash ? [entry('9001', 'hash.srt', 'h')] : []), entry('9002', 'id.srt', 'i'), entry('9003', 'french.srt', 'i', 'fre')];
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ subtitles, cacheMaxAge: 0 }));
-});
+}
 server.listen(0, '127.0.0.1', () => {
   writeFileSync(info, JSON.stringify({ origin: `http://127.0.0.1:${server.address().port}` }));
 });

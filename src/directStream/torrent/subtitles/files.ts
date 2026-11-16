@@ -117,59 +117,6 @@ export function hasEnglishSubtitleFile(files: readonly TorrentFileInfo[], subtit
   return rankSubtitleFiles(files, subtitleIndexes, videoName).some((pick) => pick.lang === 'en');
 }
 
-/** How many of the best candidates have their file lists read before the first is opened (R3.2). */
-export const FILE_LIST_CANDIDATES = 3;
-/** A candidate whose file list has not arrived by then keeps its place. */
-export const FILE_LIST_TIMEOUT_MS = 15_000;
-
-/** One candidate's files as pickFile read them. */
-export interface CandidateFileList {
-  files: readonly TorrentFileInfo[];
-  video: number;
-  subtitles: readonly number[];
-}
-
-export interface FileListDeps<C> {
-  /** Opens the candidate's torrent (metadata only, nothing selected) and answers pickFile's reading, or null. */
-  listFiles: (candidate: C) => Promise<CandidateFileList | null>;
-  /** Leaves a torrent opened here that will not be tried first. */
-  release: (infoHash: string) => void | Promise<void>;
-  log?: (line: string) => void;
-  count?: number;
-}
-
-/**
- * R3.2: the ranked candidates with the first of the best `count` whose files hold an English
- * subtitle file moved to the front. The file lists are read in parallel; a candidate whose list
- * does not come keeps its place. Every torrent opened here except the one tried first is released.
- * With fewer than two candidates nothing is opened.
- */
-export async function orderByFileLists<C extends { infoHash: string; name: string }>(candidates: readonly C[], deps: FileListDeps<C>): Promise<C[]> {
-  const count = deps.count ?? FILE_LIST_CANDIDATES;
-  const top = candidates.slice(0, count);
-  if (top.length < 2) return [...candidates];
-  const lists = await Promise.all(top.map((c) => deps.listFiles(c).catch(() => null)));
-  const english = top.findIndex((_, i) => {
-    const list = lists[i] ?? null;
-    if (list === null) return false;
-    const videoName = list.files.find((f) => f.index === list.video)?.name ?? '';
-    return hasEnglishSubtitleFile(list.files, list.subtitles, videoName);
-  });
-  const first = english === -1 ? 0 : english;
-  for (const [i, c] of top.entries()) {
-    if (i === first) continue;
-    try {
-      await deps.release(c.infoHash);
-    } catch {
-      // A torrent that cannot be released is left to the engine's own clearing.
-    }
-  }
-  if (first === 0) return [...candidates];
-  const chosen = top[first]!;
-  deps.log?.(`[notesd] direct stream: ${chosen.name} is tried first: its files hold an English subtitle`);
-  return [chosen, ...candidates.filter((c) => c !== chosen)];
-}
-
 /** Phase 1's TorrentStreams as this phase reads it: a file's absolute path once it is complete, else null. */
 export interface TorrentFilePaths {
   filePath(infoHash: string, index: number): string | null | Promise<string | null>;

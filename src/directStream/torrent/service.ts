@@ -25,6 +25,7 @@ import {
   type TorrentHandle,
   type TorrentMap,
   type TorrentPick,
+  type TorrentStats,
   type TorrentStatus,
 } from './types.js';
 
@@ -197,6 +198,25 @@ export class TorrentStreams {
     }
     live.users -= 1;
     if (live.users === 0) await this.settle(hash, live);
+  }
+
+  /**
+   * One user fewer, and with none left the swarm is left at once, finished or not: a torrent that lost the choice
+   * to another, or whose file does not play. What it downloaded stays until the prune. Unknown: ignored.
+   */
+  async drop(infoHash: string): Promise<void> {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    if (hash === null || live === undefined) return;
+    if (live.users > 0) live.users -= 1;
+    if (live.users === 0) await this.leave(hash, live, 'it is not the torrent that plays');
+  }
+
+  /** The peers connected and the download rate of a torrent in the swarm, now; null when it is not in it. */
+  stats(infoHash: string): TorrentStats | null {
+    const hash = normalizeInfoHash(infoHash);
+    const live = hash === null ? undefined : this.active.get(hash);
+    return live === undefined ? null : live.handle.stats();
   }
 
   /** This host's best record of a title with a chosen video: a ready one first, then the most recent. */

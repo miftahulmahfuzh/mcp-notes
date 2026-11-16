@@ -589,6 +589,7 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | --- | --- |
 | `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
 | `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried |
+| `pending` | Not an error: `direct_stream_play` answered `started: false, pending: true` because the play outlasted 45 s. See [A play that is being started](#a-play-that-is-being-started) |
 | `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
 | `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
 | `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
@@ -601,6 +602,34 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | `no_tmux` | The report button: the snapshot was written to `dir`, but no tmux server is running to open Claude Code in |
 | `spawn_failed` | The report button: the snapshot was written to `dir`, but the claude binary could not be run or tmux refused the window (`message`) |
 | `report_off` | The report button: this daemon has no evidence log to snapshot |
+
+### A play that is being started
+
+A play is in flight from the moment it is asked for until its player page reports: a cloud resolve
+(up to minutes through many providers), a torrent's indexes and swarms, the page being opened.
+
+- **One play per title.** A second ask for the same film or episode from the same source (no
+  provider, `cloud`, `torrent`, or one provider's name) while the first is in flight joins it: one
+  resolve, one page.
+- **It counts as busy.** `GET /api/movies/player` lists it in `starting`
+  (`{kind, tmdb_id, season, episode, title, provider, since, stage}`; `stage` says what is being
+  done: `asking the cloud providers`, `asking the torrent indexes`,
+  `opening 3 torrents: <releases>`, `opening the player page`) and answers `busy: true`, though
+  `stream` is still null. A play whose page was opened stays there until the page reports (it is
+  then `stream`), says it closed, or 30 s pass. `scripts/install.sh` reads `busy` and does not
+  restart the daemon under it ([install.md](install.md#it-never-restarts-under-a-film)).
+- **The tool answers within 45 s.** Claude Code gives an MCP request 60 s, and the daemon's `/mcp`
+  answers only when the tool is done; a torrent play that took 95 s was answered
+  `The operation timed out.` and its attempts were lost. `direct_stream_play` now waits 45 s
+  (`PLAY_ANSWER_MS` in `src/mcp/directStreamTools.ts`) and then answers
+  `{started: false, pending: true, since, waited_s, stage, attempts}` with the attempts finished
+  so far. The play goes on in the daemon and opens the player by itself. The same call again joins
+  it, or answers its outcome (kept 10 minutes for that): `started: true`, or the error with every
+  attempt. `POST /api/stream/play` (the Movies page) waits for the play as before.
+- **A play that started nothing is in the daemon's log**, whoever waited:
+  `direct stream: play of TMDB movie 818647 (torrent) started nothing after 96.2 s: no_source, 8 attempt(s)`,
+  then one line per attempt (`direct stream:   attempt Torrent: <release>: no_stream after 20 s (...)`).
+  A play that never made a session has no snapshot; these lines are its record.
 
 ### The player
 
@@ -1336,12 +1365,21 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   only when they answer `no_source` (or the resolve cannot run because the streaming Chrome is down: a torrent needs
   no Chrome) at the torrent source. The Movies page's Play and the player's previous and next buttons go the same way.
 - **How a torrent is chosen.** The title's IMDb id comes from TMDB (`external_ids`; a series is asked by its own id
-  with the season and episode). The finder asks the torrent indexes and ranks what they list. The daemon then tries at
-  most five torrents in that order, within 90 seconds: the file list from the swarm (20 s at most), the film's file
-  (an episode's file inside a season pack), and ffprobe reading its header through the daemon's file route. A file
-  whose audio names only languages other than the title's original is `dubbed` and skipped, as a dubbed cloud stream
-  is; a file Chrome cannot play as is (MKV, HEVC, AC3, DTS) is `unplayable` and skipped; a torrent with no file list
-  or too little data in time is `no_stream`. The first that passes plays.
+  with the season and episode). The finder asks the torrent indexes and ranks what they list. An index's seed count
+  is not the swarm (a film listed with 16 seeds had 3 peers), so the daemon asks the swarms themselves: it opens the
+  best three torrents side by side, and for each reads the file list from the swarm (20 s at most), picks the film's
+  file (an episode's file inside a season pack), starts downloading it and has ffprobe read its header through the
+  daemon's file route (30 s at most). A file whose audio names only languages other than the title's original is
+  `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
+  torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
+  one listed, up to six torrents and 90 seconds in all.
+- **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds. Of those
+  whose headers arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected,
+  or a download rate at or above the film's own bitrate) before one that does not; one whose files hold an English
+  subtitle file; the one with more peers connected; the one the finder ranked higher. Its attempt says what was
+  measured: `16 seeds listed; 3 peers connected, 1.7 Mbps for a 2.6 Mbps film`. The others are `skipped` ("its header
+  arrived too", "still opening when ... was chosen"), leave their swarms at once, and are first in line for the
+  shuffle button.
 - **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;
   Torrentio, and every release named `S21E109`, count it as the 109th of that season. Asked by TMDB's number,
   Torrentio lists nothing. So the query also carries the episode's place in its season's stored list (`alt`, from
@@ -1349,10 +1387,16 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   (`absoluteEpisode`). Torrentio is asked by the place in the season; a release or file that names its season fits
   by either number (`episodeFitOf` in `find/release.ts`), and a name with no season fits only by the running
   number: `One Piece - 1000` is the episode, `One Piece - 109` is not.
-- **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index asked
-  (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`), then
-  `Torrent: <release>` for each torrent tried. When none plays the answer is `no_source` with all of them; after a
-  resolve that could not run it stays `resolve_failed` with the torrent attempts added.
+- **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index
+  (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`, `skipped` when it was
+  not asked), then `Torrent: <release>` for each torrent opened, in the finder's order. When none plays the answer is
+  `no_source` with all of them; after a resolve that could not run it stays `resolve_failed` with the torrent
+  attempts added.
+- **An index that keeps failing is left out for a while.** The finder remembers, for this run of the daemon, how many
+  plays in a row an index answered `error` (a timeout or a failure). After three it is not asked for 30 minutes: its
+  attempt is `skipped` and says so, and the play does not wait for its timeout. Then it is asked again, and one more
+  failure leaves it out for another 30 minutes. An index that answers, with torrents or with none, starts from zero.
+  A bot check is never counted and never skipped: it stays `bot_check`.
 - **The session.** `provider` is `Torrent`, `manifest_kind` `mp4`, `manifest_url` the torrent's file route
   (`/api/stream/torrent/<hash>/f/<index>`), and `session.torrent` names the info hash, the file, the release, the
   index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The pass-through refuses
@@ -1369,10 +1413,11 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Subtitles** come from the subtitle tiers, asked in order (the sections below add them: kept, files, embedded,
   service, borrow, whisper) until one answers anything; every tier answers only English tracks, or the torrent's one
   subtitle file that names no language. Each tier asked is an attempt `Subtitles: <tier>` (`resolved`, `no_stream`,
-  `error`, or `skipped` with the reason). The tiers that hold up a play share one budget of 40 seconds from the moment
-  the chain starts: one that would start after it is spent is `skipped`, and one still running when it runs out is an
-  `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the background, so
-  they are never counted.
+  `error`, or `skipped` with the reason). The film does not wait for them: see
+  [Subtitles for a torrent](#subtitles-for-a-torrent). The waiting tiers share one budget of 40 seconds from the
+  moment the chain starts: one that would start after it is spent is `skipped`, and one still running when it runs
+  out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
+  background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
   title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (YTS timed out
   from this network once, so it can be turned off). Every request says it is notesd; a bot check is the outcome
@@ -1401,8 +1446,11 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   picture until the pieces arrive (the file route fetches the pieces of the asked range first) and
   the film plays on. The page's log says `waiting for the torrent at 200 s`.
 - **No automatic move.** A torrent that buffers is still filling, so the page never asks for another
-  source by itself; its `stalled at` lines still go to the stream evidence log. The shuffle button,
-  `Another torrent (S)`, moves to the next torrent, and the line over the picture names its release.
+  source by itself; its `stalled at` lines still go to the stream evidence log. A move throws away what
+  is on disk and starts the next torrent from nothing, and a pause fills a slow one; the choice at the
+  start already took the swarm that delivered. The shuffle button, `Another torrent (S)`, moves to the
+  next torrent (first the ones whose headers also arrived at the start), and the line over the picture
+  names its release.
 - **No pause cache.** A pause asks for no stream cache: the download is already on this machine.
 - `window.notesdStream.torrent` holds `infoHash`, `name`, `index`, `seeds`, `state`, `peers`,
   `downKbps` (kilobits per second), `progress` (0 to 1) and `fetching`; `cachedRanges` holds the
@@ -1465,8 +1513,19 @@ answer's `attempts` list each one asked as `Subtitles: <tier>`.
    is skipped when the torrent was the fall-through after the cloud providers answered
    `no_source`. Its failure never stops the play.
 
-These four hold up a play for at most 40 s together: one that would start later is `skipped`, and
-the play goes on without a subtitle.
+**The film starts before the search ends.** The play waits for the chain for 1.5 s
+(`NOTESD_TORRENT_SUBTITLE_WAIT_MS`), which is enough for a kept file. After that the session is
+answered and the page opens with no subtitle yet: the play's `attempts` hold `Subtitles: pending`
+in place of the tiers, and the chain goes on behind the film. When it ends, the track is put on
+the session and its `subtitle_rev` goes up; the open page reads that number in the answer to its
+position reports (every 5 s), reads the session again and shows the subtitle, as it does for a
+synced one. The tiers' attempts then take the place of `Subtitles: pending` in the session (a
+snapshot of it lists them), and the daemon log says
+`subtitles of <hash start> arrived behind the play, 21.9 s after the search began (...)`. On
+2026-11-17 a film waited 22 s for this search before its first frame.
+
+Behind the play the four tiers still share 40 s: one that would start later is `skipped`, and the
+film goes on without a subtitle.
 
 A subtitle matched by title or borrowed from a provider may be cut for another release, so its
 lines can come early or late. With a Wyzie key it is re-timed behind the play (see
@@ -1474,9 +1533,8 @@ lines can come early or late. With a Wyzie key it is re-timed behind the play (s
 keys move the lines 50 ms at a time, and the delay is kept for the title (see
 [The player](#the-player)).
 
-Before the first torrent is opened, the file lists of the best three candidates are read in
-parallel (metadata only), and one whose files hold an English subtitle is tried first. The
-others leave their swarms at once.
+A torrent whose files hold an English subtitle file is preferred when the torrents opened side by
+side deliver alike (see [Playing from a torrent](#playing-from-a-torrent), "Which of them plays").
 
 Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
 
@@ -1673,6 +1731,9 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
   loopback, DHT and trackers off) and `npm run test:int -- tests/integration/directStream.torrents.int.test.ts`;
   on a throwaway daemon `verify.sh up --torrent`, then `scripts/torrent/torrent.sh RUN` (the feature map's
   "Torrents" section). No throwaway daemon ever joins a real swarm.
+- A torrent play that starts fast (the side-by-side choice, subtitles behind the film, the pending
+  answer, `starting` and the installer's check, an index left out): `scripts/torrent/speed.sh RUN` on
+  `NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500 verify.sh up --torrent`; see the feature map entry.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real

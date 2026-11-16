@@ -178,7 +178,8 @@ A play needs nothing extra: `direct_stream_play` uses this laptop's cache of the
 
 `/direct-stream <title>` and "stream it" mean start it: call `direct_stream_play` once with
 `title`, `year` when known, `kind` when known, and `season` and `episode` when the user named
-them. It takes 5 to 40 seconds; wait for it.
+them. It takes 5 to 40 seconds; wait for it. The tool always answers within about 45 seconds:
+a play that needs longer answers `pending: true` (see step 3).
 "stream it from a torrent", TM and TS are `provider: "torrent"`: only the torrent source is asked.
 NTM and NTS are `provider: "cloud"`: only the cloud providers are asked, and never a torrent.
 
@@ -196,6 +197,12 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
 
 ## Step 3: answer
 
+- **`started: false` with `pending: true`:** the play is still being started in the daemon (a
+  torrent whose swarm is slow, a resolve through many providers), and the player opens by itself
+  when a source plays. Say in one line that it is still starting and what is being tried (`stage`,
+  and the `attempts` finished so far), then call `direct_stream_play` again with exactly the same
+  arguments: that joins the play in flight and never starts a second one. Do not try another
+  source meanwhile.
 - **`started: true`:** one line: the title (with its year and movie id when it has one), the
   provider and whether an English subtitle is on (from `play`), that it plays full screen in the
   streaming Chrome window, and that a double click (or F, Esc, F11) leaves full screen. For a
@@ -206,6 +213,8 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   When `play.session.torrent` is set (provider `Torrent`), say it plays from a torrent: name the release
   (`torrent.name`), and say it downloads while it plays (`state: "downloading"`) or plays from this laptop's
   disk (`ready`, no `Index:` or `Torrent:` attempt: no index and no swarm was asked).
+  When `attempts` holds `Subtitles: pending`, the film started before the subtitle search ended: say
+  the subtitle appears by itself in a moment, not that there is none.
 - **`skipped_play: "several_matches"`:** one line per candidate with its year and kind; ask which
   one. When the user picks, call `direct_stream_play` again with that candidate's `movie_id`
   (or its exact title and year when it has none).

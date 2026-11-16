@@ -157,6 +157,7 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_DIR` | `<NOTES_DATA_DIR>/movies/torrents` | Absolute path of the folder where this machine keeps its torrent downloads, one folder per info hash. The other machine keeps its own; a relative path is rejected. |
 | `NOTESD_TORRENT_UPLOAD_KBPS` | 100 | The upload cap in kB/s (1 kB = 1000 bytes), all torrents together. A torrent client uploads to its peers while it downloads; this keeps that small. |
 | `NOTESD_TORRENT_KEEP_DAYS` | 7 | A download not played for this many days is deleted with its files. |
+| `NOTESD_TORRENT_SUBTITLE_WAIT_MS` | 1500 | How long a torrent play may wait for its subtitle before the film starts without one; the search then goes on behind the play and the player adds the track when it arrives. See [streaming.md](../streaming.md#subtitles-for-a-torrent). |
 | `NOTESD_TORRENT_DISCOVERY` | on | `off`: no DHT and no trackers, so peers come only from `NOTESD_TORRENT_PEERS`. `verify.sh up --torrent` sets it with a loopback seeder. |
 | `NOTESD_TORRENT_PEERS` | unset | `host:port` addresses, separated by `,`, added as a peer to every torrent. For the verify harness's loopback seeder; empty in normal use. |
 | `NOTESD_TORRENT_MIN_SEEDS` | the finder's own | A torrent with fewer seeds than this is never picked. See [streaming.md](../streaming.md#playing-from-a-torrent). |
@@ -191,6 +192,8 @@ See [install.md](../install.md).
 | `NODE_BIN` | `node` on `PATH`, then `~/tools/node-v22.23.1-linux-x64/bin/node` | The Node 22 binary the unit and the hooks run with. |
 | `CLAUDE_BIN` | `claude` on `PATH`, then next to node | The `claude` CLI used to register the MCP server. Its real path becomes the unit's `NOTESD_CLAUDE_BIN`. |
 | `SKIP_CHAT_CHECK` | unset | `1` skips the one real chat message in the installer's verification (offline runs). |
+| `NOTES_INSTALL_FORCE` | `0` | `1` lets the installer restart the daemon while a film plays or a play is being started. Same as `--force`. Without it the installer changes nothing and exits 75 ([install.md](../install.md#it-never-restarts-under-a-film)). |
+| `NOTES_INSTALL_WAIT_SECONDS` | `21600` | How long `scripts/install.sh --wait` waits for the daemon to be idle before it gives up with exit 75. |
 | `NOTES_SKIP_HOOKS` | `0` | `1` leaves `~/.claude/settings.json` alone: no hooks, no `cleanupPeriodDays`. Same as `--skip-hooks`. |
 | `NOTES_PASTE_STRATEGY` | `updatedInput` | `deny` registers the notes-paste hook in its fallback mode (see `claude/hooks/notes-paste.mjs`). The installer writes it into the hook's command; the hook reads it. |
 | `NOTES_CLAUDE_RETENTION_DAYS` | `3650` | The minimum `cleanupPeriodDays` the installer writes to `~/.claude/settings.json`, so Claude Code keeps the transcripts the session graph reads. A higher value already there is kept. |

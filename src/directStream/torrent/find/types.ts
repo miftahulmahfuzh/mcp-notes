@@ -113,7 +113,8 @@ export interface TorrentCandidate {
   release: ReleaseInfo;
 }
 
-export type IndexOutcome = 'ok' | 'empty' | 'error' | 'bot_check';
+/** `skipped`: the index was not asked, because it failed several plays in a row (IndexHealth in find.ts); only an attempt carries it. */
+export type IndexOutcome = 'ok' | 'empty' | 'error' | 'bot_check' | 'skipped';
 
 export interface IndexAnswer {
   outcome: IndexOutcome;

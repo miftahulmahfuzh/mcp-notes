@@ -340,6 +340,10 @@ EOF
   if [ "$torrent" = 1 ]; then
     env+=(
       "NOTESD_TORRENT_REMUX=${NOTESD_TORRENT_REMUX:-on}"
+      # The subtitle journeys (subtitles.sh, synced.sh, codenames.sh) read a play's subtitle in its answer, so the
+      # play waits for the whole chain here. torrent/speed.sh needs the daemon's own wait: start its run with
+      # NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500.
+      "NOTESD_TORRENT_SUBTITLE_WAIT_MS=${NOTESD_TORRENT_SUBTITLE_WAIT_MS:-40000}"
     )
   fi
   # Torrent phase 6: a throwaway daemon never asks the real subtitle services (.env.local may hold the owner's

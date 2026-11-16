@@ -520,6 +520,9 @@ Rules worth knowing:
 `GET /api/movies/player` says whether playback works here (`available`, and a `reason` such as
 `no_interop`, `no_vlc`, `no_curl`) and which play is followed. The same check feeds
 `movies_playback` in `GET /api/capabilities`.
+It also answers `stream` (the stream on screen), `starting` (stream plays still being started) and
+`busy`, true while any of the three is there: what `scripts/install.sh` reads before it restarts
+the daemon ([streaming.md](streaming.md#a-play-that-is-being-started)).
 
 ## Continue and "play something"
 

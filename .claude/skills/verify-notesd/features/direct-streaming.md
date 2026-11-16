@@ -404,7 +404,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   session: `provider: "Torrent"`, `manifest_kind: "mp4"`, `manifest_url` `/api/stream/torrent/<hash>/f/<index>`,
   `session.torrent` `{info_hash, file_index, name, index, state, seeds}`. Attempts after the cloud's:
   `Index: <name>` per index, `Torrent: <release>` per torrent (`resolved`, `no_stream`, `dubbed`, `unplayable`,
-  `error`). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
+  `error`, `skipped` for one that lost the choice). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
   end release the torrent; reading the session again takes it back. `NOTESD_TORRENT=off`: 503 `torrent_off` for a
   named torrent play, everything else as before.
 - Logic: `npx vitest run tests/unit/directStream/torrentProbe.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/config.torrentFinder.test.ts tests/unit/mcp.directStreamTools.test.ts`.
@@ -424,6 +424,36 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `journey.sh RUN seed ...` (whose `seed` stage expects the run's first resolve) run `journey.sh` first.
 - The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
   after about 40 s, longer than the 20 s a play waits for a torrent's file list.
+
+## A torrent play that starts fast, survives and answers
+- **Busy while starting.** A stream play in flight (a cloud resolve, a torrent's indexes and swarms, a page opened
+  under 30 s ago that does not report yet) is listed in `GET /api/movies/player` `starting`
+  (`{kind, tmdb_id, season, episode, title, provider, since, stage}`) and makes `busy` true while `stream` is still
+  null. `scripts/install.sh` reads `busy` before the build and before the restart: busy exits 75 with nothing
+  changed (`--wait` waits, `--force` restarts anyway, `--check-idle` only asks).
+- **Chosen by the swarm.** The best three torrents are opened side by side; of those whose headers arrive (2 s of
+  settling after the first), the one whose swarm delivers plays (6 peers or more, or a rate at or above the film's
+  bitrate), then an English subtitle file, then more peers, then the finder's order. Its attempt names the peers
+  and the rate; the others are `skipped`, leave at once and lead the shuffle button's list. Six torrents and 90 s
+  at most.
+- **Subtitles behind the film.** A play answered before its chain ended holds `Subtitles: pending`; the session's
+  subtitle and `subtitle_rev` 1 arrive behind it, and the page loads the track on its next position report.
+- **An answer within 45 s.** `direct_stream_play` answers `started: false, pending: true` with `stage` and the
+  attempts so far when the play outlasts 45 s; the same call again joins the play or reads its outcome. Every
+  attempt of a play that started nothing is in the daemon's log (`started nothing after`, then `attempt` lines).
+- **A dead index is left out.** Three `error` plays in a row (a timeout or a failure): `Index: <name>` is `skipped`
+  for 30 minutes of this daemon and gets no request. Never for a `bot_check`.
+- Logic: `npx vitest run tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/playInFlight.test.ts tests/unit/directStream/torrent/find/indexHealth.test.ts tests/unit/scripts/installGuard.test.ts tests/unit/mcp.directStreamTools.test.ts tests/unit/config.torrent.test.ts`.
+- Throwaway daemon: `NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500 $V up --torrent` (the daemon's own subtitle wait), then
+  `.claude/skills/verify-notesd/scripts/torrent/speed.sh RUN` (stages `race subtitles pending index`, about two
+  minutes; `index` last, since it leaves the fake index out for the rest of the run). It ends with
+  `speed: PASS (race subtitles pending index)`. A dead swarm is a `candidates.json` entry whose info hash nobody
+  seeds; `<run>/torrent/index-mode` also takes `hang` (never answers) and `slow:<ms>`; `$SUBS/delay-ms` holds every
+  answer of the fake subtitle service back. The stage `pending` asks `scripts/install.sh`'s own `check_idle`
+  (sourced, pointed at the run, never at 7317) while the play is in flight (`evidence/speed-check-idle.txt`).
+- Not driven: two live swarms of different health (loopback has one seeder; `chooseOrder` and the race are
+  unit-tested with fake swarms), and the open player page taking a late first subtitle (the page's reload on
+  `subtitle_rev` is `subtitles-synced.steps.mjs`'s; here the session and the position answer are read).
 
 ## Torrent remux (a file Chrome cannot play as is)
 - A torrent file the probe marks not `direct` (MKV, AC3/E-AC3/DTS, HEVC) with H.264, HEVC, AV1 or VP9 video plays as
@@ -457,7 +487,10 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   hold one `Subtitles: <tier>` line per tier asked. Files are WebVTT under
   `<data dir>/movies/torrents/<hash>/.notesd-subs/`, served by
   `GET /api/stream/torrent/:hash/sub/:name`; the page shows the English one (or the lone unnamed one)
-  by default. Of the best three candidates, one whose files hold an English subtitle is tried first.
+  by default. Among torrents whose swarms deliver alike, one whose files hold an English subtitle plays.
+  The film does not wait for the chain past 1.5 s (`NOTESD_TORRENT_SUBTITLE_WAIT_MS`); `up --torrent`
+  sets 40 s so these journeys read the subtitle in the play's answer (see "A torrent play that starts
+  fast" for the daemon's own wait).
 - Logic: `npx vitest run tests/unit/directStream/torrent/subtitles tests/unit/directStream/torrent/subtitleRoute.test.ts`.
 - Throwaway daemon: `$V up --web --direct-stream --torrent` (note RUN, `TORRENT=`, `SUBS=`), then
   `.claude/skills/verify-notesd/scripts/torrent/subtitles.sh RUN` (all stages, about four minutes;

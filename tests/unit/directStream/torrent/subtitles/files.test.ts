@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SubtitleShelf } from '../../../../../src/directStream/torrent/subtitles/disk.js';
-import { filesTier, orderByFileLists, rankSubtitleFiles, subtitleFlavor, subtitleLanguage, type CandidateFileList } from '../../../../../src/directStream/torrent/subtitles/files.js';
+import { filesTier, rankSubtitleFiles, subtitleFlavor, subtitleLanguage } from '../../../../../src/directStream/torrent/subtitles/files.js';
 import type { SubtitleContext } from '../../../../../src/directStream/torrent/subtitles/chain.js';
 import { REST_OF_CONTEXT } from './context.js';
 import type { TorrentFileInfo } from '../../../../../src/directStream/torrent/types.js';
@@ -54,33 +54,6 @@ describe('rankSubtitleFiles (R3.1)', () => {
     expect(rankSubtitleFiles([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.srt')], [1], 'Film.mp4')).toEqual([{ file: file(1, 'Film/Film.srt'), lang: null, label: '' }]);
     expect(rankSubtitleFiles([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.srt'), file(2, 'Film/Film.2.srt')], [1, 2], 'Film.mp4')).toEqual([]);
     expect(rankSubtitleFiles([file(0, 'Film/Film.mp4'), file(1, 'Film/Film.fr.srt')], [1], 'Film.mp4')).toEqual([]);
-  });
-});
-
-describe('orderByFileLists (R3.2)', () => {
-  const list = (subs: string[]): CandidateFileList => ({ files: [file(0, 'Film/Film.mp4'), ...subs.map((s, i) => file(i + 1, s))], video: 0, subtitles: subs.map((_, i) => i + 1) });
-  const cands = [{ infoHash: 'a', name: 'A' }, { infoHash: 'b', name: 'B' }, { infoHash: 'c', name: 'C' }, { infoHash: 'd', name: 'D' }];
-
-  it('moves the first of the best three with an English file to the front and releases the others', async () => {
-    const released: string[] = [];
-    const lists: Record<string, CandidateFileList | null> = { a: list([]), b: null, c: list(['Film/Film.en.srt']), d: list(['Film/Film.en.srt']) };
-    const out = await orderByFileLists(cands, { listFiles: async (c) => lists[c.infoHash] ?? null, release: (h) => void released.push(h) });
-    expect(out.map((c) => c.infoHash)).toEqual(['c', 'a', 'b', 'd']);
-    expect(released.sort()).toEqual(['a', 'b']);
-  });
-
-  it('keeps the order when the first already has one, or none has', async () => {
-    const released: string[] = [];
-    const out = await orderByFileLists(cands, { listFiles: async (c) => (c.infoHash === 'a' ? list(['Film/English.srt']) : list([])), release: (h) => void released.push(h) });
-    expect(out.map((c) => c.infoHash)).toEqual(['a', 'b', 'c', 'd']);
-    expect(released.sort()).toEqual(['b', 'c']);
-    expect((await orderByFileLists(cands, { listFiles: async () => list([]), release: () => undefined })).map((c) => c.infoHash)).toEqual(['a', 'b', 'c', 'd']);
-  });
-
-  it('opens nothing for a single candidate', async () => {
-    let opened = 0;
-    await orderByFileLists([cands[0]!], { listFiles: async () => (opened++, null), release: () => undefined });
-    expect(opened).toBe(0);
   });
 });
 

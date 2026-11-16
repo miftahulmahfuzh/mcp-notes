@@ -4,7 +4,7 @@ import { eztvIndex } from './eztv.js';
 import { DEFAULT_RANK_SETTINGS, rankCandidates, type RankSettings } from './rank.js';
 import { torrentioIndex } from './torrentio.js';
 import { ytsIndex } from './yts.js';
-import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContext, TorrentCandidate, TorrentIndex, TorrentQuery } from './types.js';
+import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContext, IndexOutcome, TorrentCandidate, TorrentIndex, TorrentQuery } from './types.js';
 
 /**
  * Asks the JSON torrent indexes for a film or one episode by IMDb id and answers ranked candidates
@@ -17,6 +17,52 @@ export const TORRENT_INDEX_USER_AGENT = 'notesd (personal notes daemon; torrent 
 export const DEFAULT_INDEX_TIMEOUT_MS = 10_000;
 /** Candidates answered at most (phase 3 keeps the rest for the shuffle button). */
 export const DEFAULT_MAX_CANDIDATES = 20;
+
+/** An index that failed or timed out this many plays in a row is left out for INDEX_COOL_DOWN_MS. */
+export const INDEX_FAILURES_TO_SKIP = 3;
+export const INDEX_COOL_DOWN_MS = 30 * 60_000;
+
+/**
+ * What the finder remembers of each index between plays, in memory (one per daemon run): how many times in a row
+ * it answered `error` (a timeout or a failure), and until when it is left out. An index that listed something, or
+ * nothing, starts from zero again. A bot check is never counted and never skipped: it stays the answer `bot_check`.
+ * After the cool-down the index is asked again; one more failure leaves it out for another cool-down.
+ */
+export class IndexHealth {
+  private readonly failures = new Map<string, number>();
+  private readonly until = new Map<string, number>();
+
+  constructor(
+    private readonly options: { failures?: number; coolDownMs?: number; now?: () => number } = {},
+  ) {}
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
+
+  /** Why the index is not asked now, or null. */
+  skipReason(name: string): string | null {
+    const until = this.until.get(name);
+    if (until === undefined) return null;
+    const leftMs = until - this.now();
+    if (leftMs <= 0) {
+      this.until.delete(name);
+      return null;
+    }
+    return `not asked: it failed or timed out ${this.failures.get(name) ?? 0} times in a row; asked again in ${Math.max(1, Math.ceil(leftMs / 60_000))} min`;
+  }
+
+  record(name: string, outcome: IndexOutcome): void {
+    if (outcome === 'ok' || outcome === 'empty') {
+      this.failures.delete(name);
+      return;
+    }
+    if (outcome !== 'error') return;
+    const count = (this.failures.get(name) ?? 0) + 1;
+    this.failures.set(name, count);
+    if (count >= (this.options.failures ?? INDEX_FAILURES_TO_SKIP)) this.until.set(name, this.now() + (this.options.coolDownMs ?? INDEX_COOL_DOWN_MS));
+  }
+}
 
 export interface IndexBases {
   torrentio: string;
@@ -52,6 +98,8 @@ export interface FindOptions extends Partial<RankSettings> {
   /** Default TORRENT_INDEX_USER_AGENT; phase 3 may pass one with the daemon's version. */
   userAgent?: string;
   signal?: AbortSignal;
+  /** The indexes' failures between plays; an index it leaves out is a `skipped` attempt. Unset: every index is asked every time. */
+  health?: IndexHealth;
 }
 
 /** Torrentio, apibay, EZTV, and YTS unless `yts` is false. */
@@ -71,6 +119,7 @@ interface AskSettings {
   userAgent: string;
   timeoutMs: number;
   signal: AbortSignal | null;
+  health: IndexHealth | null;
 }
 
 interface Asked {
@@ -88,6 +137,8 @@ function seconds(ms: number): number {
 }
 
 async function askOne(index: TorrentIndex, query: TorrentQuery, run: AskSettings): Promise<{ attempt: IndexAttempt; candidates: TorrentCandidate[] }> {
+  const skip = run.health?.skipReason(index.name) ?? null;
+  if (skip !== null) return { attempt: { index: index.name, outcome: 'skipped', detail: skip, took_s: 0, listed: 0 }, candidates: [] };
   const started = Date.now();
   const limitMs = Math.min(index.timeoutMs ?? run.timeoutMs, run.timeoutMs);
   const controller = new AbortController();
@@ -119,6 +170,8 @@ async function askOne(index: TorrentIndex, query: TorrentQuery, run: AskSettings
     clearTimeout(timer);
     run.signal?.removeEventListener('abort', onParentAbort);
   }
+  // A caller that gave up says nothing of the index.
+  if (!run.signal?.aborted) run.health?.record(index.name, answer.outcome);
   return {
     attempt: { index: index.name, outcome: answer.outcome, detail: answer.detail, took_s: seconds(Date.now() - started), listed: answer.candidates.length },
     candidates: answer.candidates,
@@ -144,6 +197,7 @@ export async function findCandidates(query: TorrentQuery, options: FindOptions =
     userAgent: options.userAgent ?? TORRENT_INDEX_USER_AGENT,
     timeoutMs: options.timeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS,
     signal: options.signal ?? null,
+    health: options.health ?? null,
   };
   const forKind = (list: readonly TorrentIndex[]): TorrentIndex[] => list.filter((i) => i.kinds === undefined || i.kinds.includes(asked.kind));
 

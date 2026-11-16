@@ -3,7 +3,8 @@
 # On a `verify.sh up --web --torrent` run (phase 1's loopback fixture torrent, the fake index, the fake resolver):
 #   fallback  the fake resolver answers no_source; POST /api/stream/play of How to Make a Killing (TMDB movie 467905)
 #             answers 200 from the torrent: provider Torrent, manifest_url the fixture's file route, attempts = the
-#             cloud's, then "Index: torrentio", then "Torrent: <release>" resolved; exactly one more resolve ran.
+#             cloud's, then "Index: torrentio", then "Torrent: <release>" resolved (then its "Subtitles: <tier>"
+#             attempts); exactly one more resolve ran.
 #   named     direct_stream_play over MCP with provider "torrent" for The Dog Stars (movie-990002) while the fake
 #             resolver would answer (mode hls): started true, provider Torrent, no resolve ran, one more open naming
 #             the session's page, and bytes 0-99 of manifest_url answer 206 with exactly 100 bytes.
@@ -84,8 +85,8 @@ for s in "${WANTED[@]}"; do
       [ "$(jq -r .session.provider <<<"$BODY")" = Torrent ] || fail "provider is $(jq -r .session.provider <<<"$BODY")"
       [ "$(jq -r .session.torrent.info_hash <<<"$BODY")" = "$(HASH)" ] || fail "torrent is $(jq -c .session.torrent <<<"$BODY")"
       [[ "$(jq -r .session.manifest_url <<<"$BODY")" == "/api/stream/torrent/$(HASH)/f/"* ]] || fail "manifest_url is $(jq -r .session.manifest_url <<<"$BODY")"
-      order="$(jq -r '[.attempts[] | (if (.provider | startswith("Index: ")) then "I" elif (.provider | startswith("Torrent: ")) then "T" else "C" end)] | join("")' <<<"$BODY")"
-      [[ "$order" =~ ^C+I+T+$ ]] || fail "attempts are not cloud, then index, then torrent: $(jq -c '[.attempts[] | [.provider, .outcome]]' <<<"$BODY")"
+      order="$(jq -r '[.attempts[] | (if (.provider | startswith("Index: ")) then "I" elif (.provider | startswith("Torrent: ")) then "T" elif (.provider | startswith("Subtitles: ")) then "S" else "C" end)] | join("")' <<<"$BODY")"
+      [[ "$order" =~ ^C+I+T+S*$ ]] || fail "attempts are not cloud, then index, then torrent: $(jq -c '[.attempts[] | [.provider, .outcome]]' <<<"$BODY")"
       [ "$(jq -r '[.attempts[] | select(.provider | startswith("Torrent: "))][-1].outcome' <<<"$BODY")" = resolved ] || fail "the last torrent attempt did not resolve"
       [ "$(calls_of resolve)" = $((before + 1)) ] || fail "expected exactly one cloud resolve"
       keep_sid "$(jq -r .session.session_id <<<"$BODY")"

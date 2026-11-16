@@ -121,6 +121,19 @@ describe('direct-stream MCP tools', () => {
     await c.close();
   });
 
+  it('direct_stream_play answers a play that outlasted its wait as pending, not as an error and not with silence', async () => {
+    const attempts = [{ provider: 'Index: yts', outcome: 'error', took_s: 6, detail: 'timed out after 6 s' }];
+    const f = fakeDeps({ play: vi.fn(async () => ({ pending: true, since: '2026-11-16T20:49:31.000Z', waited_s: 45, stage: 'opening 3 torrents: A; B; C', attempts })) });
+    const c = await connect(f.deps);
+    const r = await c.call('direct_stream_play', { title: 'saltburn', provider: 'torrent' });
+    expect(r.isError).not.toBe(true);
+    const out = json(r);
+    expect(out).toMatchObject({ started: false, pending: true, title: { title: 'Saltburn' }, since: '2026-11-16T20:49:31.000Z', waited_s: 45, stage: 'opening 3 torrents: A; B; C', attempts });
+    expect(out.next).toMatch(/call direct_stream_play again with exactly the same arguments/);
+    expect(out).not.toHaveProperty('play');
+    await c.close();
+  });
+
   it("direct_stream_play says when the play came from this machine's cache", async () => {
     const f = fakeDeps({
       play: vi.fn(async () => ({ page_url: 'http://localhost:7317/stream/s1', session: { session_id: 's1', provider: 'HyperLink', cached: { id: 'c1', state: 'ready', height: 720 } }, attempts: [] })),

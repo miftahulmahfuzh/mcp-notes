@@ -77,7 +77,11 @@ export interface DirectStreamToolDeps {
   rememberAlias(candidate: TitleCandidate, name: string): Promise<boolean>;
   /** Default: the clock. */
   now?: () => Date;
-  /** DirectStreamService.play: resolve, then open the player page full screen in the streaming Chrome, resuming where the last stream stopped. */
+  /**
+   * DirectStreamService.playWithin: resolve, then open the player page full screen in the streaming Chrome, resuming
+   * where the last stream stopped. Answers the play, or `{ pending: true, since, waited_s, stage, attempts }` when
+   * it outlasted PLAY_ANSWER_MS: the play goes on in the daemon, and the same call again joins it.
+   */
   play(target: StreamTarget, provider?: string): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
@@ -95,6 +99,27 @@ export interface DirectStreamToolDeps {
   providers(): Promise<ProviderView[]>;
   /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
   updateSource(site: string, pages?: WatchPages): Promise<UpdateSourceAnswer>;
+}
+
+/**
+ * direct_stream_play answers within this, whatever the play does. Claude Code gives an MCP request over HTTP 60 s
+ * to answer (the daemon's /mcp answers plain JSON, so nothing reaches the client before the tool is done), and the
+ * chat bar reaches the same tool the same way: on 2026-11-17 a torrent play that took 95 s answered the client
+ * "The operation timed out." after 66 s and its attempts were lost. 45 s leaves the title lookup before the play
+ * and the answer's way back inside the 60.
+ */
+export const PLAY_ANSWER_MS = 45_000;
+
+/** A play that outlasted PLAY_ANSWER_MS, as DirectStreamService.playWithin answers it. */
+function pendingPlay(play: unknown): { since: string; waited_s: number; stage: string; attempts: unknown[] } | null {
+  const p = play as { pending?: unknown; since?: unknown; waited_s?: unknown; stage?: unknown; attempts?: unknown } | null;
+  if (p === null || typeof p !== 'object' || p.pending !== true) return null;
+  return {
+    since: typeof p.since === 'string' ? p.since : '',
+    waited_s: typeof p.waited_s === 'number' ? p.waited_s : 0,
+    stage: typeof p.stage === 'string' ? p.stage : '',
+    attempts: Array.isArray(p.attempts) ? p.attempts : [],
+  };
 }
 
 /** The tool deps of a running daemon, or null when direct streaming (or the movie library under it) is off. */
@@ -116,7 +141,10 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
       const id = await new MovieStreams(movies).ensureTitle({ kind: candidate.kind, tmdbId: candidate.tmdbId });
       return id === null ? false : movies.repo.addTitleAlias(id, normalizeName(name));
     },
-    play: (target, provider) => service.play(target, provider === undefined ? {} : { provider }),
+    play: async (target, provider) => {
+      const out = await service.playWithin(target, provider === undefined ? {} : { provider }, PLAY_ANSWER_MS);
+      return out.pending ? out : out.result;
+    },
     freshSource: async (target) => {
       // Phase 5's one freshness rule: this host's row of the film (0, 0) or the episode, fresh as of now.
       const season = target.kind === 'tv' ? target.season : 0;
@@ -154,6 +182,8 @@ const FIND_DESCRIPTION =
 const PLAY_DESCRIPTION =
   'Stream one film, or one episode of a series, directly: the daemon finds a cloud source (providers with an English subtitle first), then opens its own player page full screen in the streaming Chrome window on the Windows side, ' +
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
+  'It always answers within about 45 seconds. A play that needs longer (a torrent whose swarm is slow, a cloud resolve through many providers) answers started false with pending true, stage (what is being tried now) and attempts (those finished so far): ' +
+  'the play goes on in the daemon and the player opens by itself when a source plays. Say it is still starting, then call again with the same arguments, which joins that play and never starts a second one. ' +
   'Before a provider\'s stream of a title plays for the first time the daemon looks at two frames of it and passes over a cinema recording or a copy with a burned-in advert for the next provider (its attempt says "picture: watermark" or "picture: recording"; "picture: clean" is the one that plays), which adds 10 to 40 seconds to a first play. When no provider had a proper copy, the first one found plays: say so. ' +
   'provider asks one named provider only (a name from direct_stream_sources) and passes over a cache: for "stream it from VidLink", or when the stream that started is a cinema recording or a dub and another provider is known to be clean. ' +
   'provider "torrent" asks only the torrent source: a torrent of the title found by its IMDb id, downloaded from the swarm while it plays and served by this daemon (for "stream it from a torrent"). ' +
@@ -171,7 +201,7 @@ const PLAY_DESCRIPTION =
   'or no_match: did_you_mean lists titles close to the words, none of them the asked name; show them with their years and ask which. When the owner picks one, call again with its title_key (or movie_id) and asked_as set to the name the owner first used, ' +
   'so that name finds the title from then on. Never pass asked_as for a name the owner did not use. ' +
   'The error no_source means no provider and no torrent could stream it, and nothing started: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, unplayable, skipped_browser_only, skipped_no_template); when no provider resolved, the torrent source was tried before answering, and its attempts follow: "Index: <name>" for each torrent index asked and "Torrent: <release>" for each torrent tried (dubbed: its audio is another language; unplayable: Chrome cannot play the file as is; no_stream: no file list or too little data from the swarm in time). Offer /idlix or /lk21. ' +
-  'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked. The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
+  'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Several torrents are opened side by side and the one whose swarm delivers plays: its attempt names the peers connected and the rate, and the others are skipped ("its header arrived too", "still opening"). An index that failed three plays in a row is skipped for half an hour ("Index: <name>" skipped). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked; "Subtitles: pending" means the film started before the subtitle search ended, and the player adds the track when it arrives (say so). The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'When this machine holds a cache of the film or episode (made with direct_stream_cache), the play comes from it: play.session.cached is { id, state, height }. state ready plays from disk with no provider asked (attempts is empty, and it works with the internet down); state downloading plays what is on disk and fetches each part not there yet as the film reaches it. A failed cache, or one made on the other machine, is not used: the play resolves as usual. ' +
@@ -659,6 +689,19 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         const stored = async (): Promise<TitleCandidate> => (c.movieId === null ? ((await d.library.byKey(c.kind, c.tmdbId)) ?? c) : c);
         try {
           const play = provider === undefined ? await d.play(target) : await d.play(target, provider);
+          const pending = pendingPlay(play);
+          if (pending !== null) {
+            return ok({
+              started: false,
+              pending: true,
+              title: candidateView(await stored(), wall),
+              ...picked,
+              ...pending,
+              next:
+                'Not started yet, and not failed: the daemon is still starting it and opens the player by itself as soon as a source plays. Tell the owner in one line that it is still being started and what is being tried (stage), with the attempts so far when there are any. ' +
+                'Then call direct_stream_play again with exactly the same arguments: that joins the play in flight (it never starts a second one) and answers its outcome, or pending again. Do not try another source or another tool meanwhile.',
+            });
+          }
           return ok({
             started: true,
             title: candidateView(await stored(), wall),

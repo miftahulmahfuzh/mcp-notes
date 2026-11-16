@@ -246,7 +246,7 @@ describe.skipIf(!existsSync(CURL))('movies playback with a fake VLC', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'player_unavailable', reason: 'no_vlc' });
     expect(await (await off.request('/api/capabilities')).json()).toEqual({ reveal: false, movies_playback: false });
-    expect(await (await off.request('/api/movies/player')).json()).toEqual({ available: false, reason: 'no_vlc', current: null, stream: null });
+    expect(await (await off.request('/api/movies/player')).json()).toEqual({ available: false, reason: 'no_vlc', current: null, stream: null, starting: [], busy: false });
     expect(await launches()).toEqual([]);
     const on = appFor(await makePlayer());
     expect(await (await on.request('/api/capabilities')).json()).toEqual({ reveal: false, movies_playback: true });
