@@ -62,6 +62,8 @@ WAIT_IDLE=0
 CHECK_IDLE_ONLY=0
 WAIT_IDLE_SECONDS="${NOTES_INSTALL_WAIT_SECONDS:-21600}"
 WAIT_IDLE_EVERY=20
+# 9 readings 20 s apart: three minutes, longer than a play takes to resolve.
+OLD_DAEMON_QUIET_CHECKS=9
 CHAT_URL="http://127.0.0.1:$PORT/api/chat"
 MCP_URL="http://localhost:$PORT/mcp"
 DEFAULT_NODE="$HOME/tools/node-v22.23.1-linux-x64/bin/node"
@@ -323,7 +325,18 @@ guard_idle() {
   fi
   log "waiting until notesd is idle (at most ${WAIT_IDLE_SECONDS}s):"
   printf '%s\n' "$reasons" | sed 's/^/  /'
-  while [[ -n "$reasons" ]]; do
+  # A daemon from before `starting` shows nothing while a play is being resolved (up to about 150 s), so with one
+  # the wait goes on until it has looked idle OLD_DAEMON_QUIET_CHECKS times in a row.
+  local quiet=0 need=1
+  while :; do
+    if [[ -z "$reasons" ]]; then
+      quiet=$(( quiet + 1 ))
+      need=1
+      if ! daemon_lists_starting; then need="$OLD_DAEMON_QUIET_CHECKS"; fi
+      if (( quiet >= need )); then break; fi
+    else
+      quiet=0
+    fi
     if (( waited >= WAIT_IDLE_SECONDS )); then
       printf 'BUSY: notesd was still busy after %ss; nothing was restarted (exit %s).\n' "$waited" "$BUSY_EXIT" >&2
       exit "$BUSY_EXIT"
@@ -333,6 +346,17 @@ guard_idle() {
     reasons="$(busy_reasons)"
   done
   log "notesd is idle after ${waited}s"
+}
+
+# True when the running daemon's answer lists the plays being started (or no daemon answers at all).
+daemon_lists_starting() {
+  local body
+  body="$(curl -fsS --max-time 5 "$PLAYER_URL" 2>/dev/null)" || return 0
+  printf '%s' "$body" | "$NODE_BIN" -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+      try { process.exit(Array.isArray(JSON.parse(raw).starting) ? 0 : 1); } catch { process.exit(0); }
+    });' 2>/dev/null
 }
 
 # --check-idle: the one question, and nothing else.

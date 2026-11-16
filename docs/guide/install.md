@@ -79,7 +79,9 @@ a page opened less than 30 s ago). A play in that last state shows no `stream` y
 | `scripts/install.sh --force` | Installs and restarts anyway, and says what it interrupts. Same as `NOTES_INSTALL_FORCE=1`. |
 | `scripts/install.sh --check-idle` | Only asks: exit 0 when idle, 75 when busy. Nothing is built or restarted. |
 
-A daemon that does not answer, or an older one whose answer has no `busy`, counts as idle. Anything
+A daemon that does not answer counts as idle. An older daemon, whose answer has no `starting`,
+shows nothing while a play is being resolved: a plain run trusts its `stream` and `current`, and
+`--wait` goes on only after it has looked idle nine times in a row (three minutes). Anything
 that restarts notesd on its own (a session landing a change, a deferred install) uses one of these
 and never its own reading of the route.
 
