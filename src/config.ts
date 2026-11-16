@@ -232,6 +232,38 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
   prober: DEFAULT_STREAM_PROBER_CONFIG,
 }
 
+/** `claude/streaming/torrent/whisper.py` in this checkout: the Whisper worker the torrent source runs (torrent phase 8). */
+export const DEFAULT_TORRENT_WHISPER_SCRIPT = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'whisper.py')
+export const DEFAULT_TORRENT_WHISPER_MODEL = 'small'
+export const DEFAULT_TORRENT_WHISPER_THREADS = 8
+/** Five minutes of audio per Whisper run: cues come in steps of this, well ahead of the picture (a 5-minute stretch took 2.5 s on 8 threads). */
+export const DEFAULT_TORRENT_WHISPER_STRETCH_S = 300
+export const MIN_TORRENT_WHISPER_STRETCH_S = 5
+
+/**
+ * Whisper, the last subtitle tier of a torrent session (src/directStream/torrent/subtitles/whisper.ts).
+ * Off carries nothing else: no folder, no model, no worker.
+ */
+export type TorrentWhisperConfig =
+  | { enabled: false }
+  | {
+      /** `NOTESD_TORRENT_WHISPER`, default on. `off`: no Whisper tier and no worker. */
+      enabled: true
+      /** `NOTESD_TORRENT_WHISPER_DIR`, absolute, default `<dataDir>/whisper`: `venv/`, `models/` and `hf/` (scripts/install.sh fills it). */
+      dir: string
+      /** `NOTESD_TORRENT_WHISPER_PYTHON`, absolute, default `<dir>/venv/bin/python`. */
+      python: string
+      /** `NOTESD_TORRENT_WHISPER_MODEL`, default `small`: a faster-whisper model name or Hugging Face repo id. */
+      model: string
+      /** `NOTESD_TORRENT_WHISPER_THREADS`, default 8: CPU threads of the worker. */
+      threads: number
+      /** `NOTESD_TORRENT_WHISPER_STRETCH_S`, default 300, at least 5: seconds of audio per Whisper run. */
+      stretchS: number
+    }
+
+/** Whisper off. DEFAULT_TORRENT_CONFIG carries it, so no test that builds a Config literal ever starts a worker. */
+export const DEFAULT_TORRENT_WHISPER_CONFIG: TorrentWhisperConfig = { enabled: false }
+
 export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
 /** `NOTESD_FFMPEG_BIN`: the ffmpeg the torrent source runs (remux, subtitle extraction, Whisper's audio cuts). Declared here, before DEFAULT_TORRENT_CONFIG reads it. */
@@ -361,6 +393,8 @@ export interface TorrentConfig {
   wyzieUrl: string | null
   /** 1337x and ext.to, the finder's fallback (phase 9). Unset: DEFAULT_TORRENT_SITES_CONFIG. */
   sites?: TorrentSitesConfig
+  /** Whisper, the last subtitle tier (torrent phase 8). */
+  whisper: TorrentWhisperConfig
 }
 
 /**
@@ -382,6 +416,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   wyzieKey: null,
   wyzieUrl: null,
   sites: DEFAULT_TORRENT_SITES_CONFIG,
+  whisper: DEFAULT_TORRENT_WHISPER_CONFIG,
 }
 
 /** Seer Adversarial reviewer (src/adversary/*). */
@@ -913,6 +948,30 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     wyzieKey: (env.WYZIE_API_KEY ?? '').trim() || null,
     wyzieUrl: parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL),
     sites: parseTorrentSites(env),
+    whisper: parseTorrentWhisper(env, dataDir),
+  }
+}
+
+const WHISPER_MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+export function parseTorrentWhisper(env: Record<string, string | undefined>, dataDir: string): TorrentWhisperConfig {
+  if (!parseSwitch('NOTESD_TORRENT_WHISPER', env.NOTESD_TORRENT_WHISPER)) return { enabled: false }
+  const dir = parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_DIR', env.NOTESD_TORRENT_WHISPER_DIR) ?? path.join(dataDir, 'whisper')
+  const model = env.NOTESD_TORRENT_WHISPER_MODEL?.trim() || DEFAULT_TORRENT_WHISPER_MODEL
+  if (!WHISPER_MODEL_NAME.test(model) || model.includes('..')) {
+    throw new ConfigError(`NOTESD_TORRENT_WHISPER_MODEL must be a model name such as small or a repo id, got "${env.NOTESD_TORRENT_WHISPER_MODEL}"`)
+  }
+  const stretchS = parsePositiveInt('NOTESD_TORRENT_WHISPER_STRETCH_S', env.NOTESD_TORRENT_WHISPER_STRETCH_S, DEFAULT_TORRENT_WHISPER_STRETCH_S)
+  if (stretchS < MIN_TORRENT_WHISPER_STRETCH_S) {
+    throw new ConfigError(`NOTESD_TORRENT_WHISPER_STRETCH_S must be at least ${MIN_TORRENT_WHISPER_STRETCH_S}, got "${env.NOTESD_TORRENT_WHISPER_STRETCH_S}"`)
+  }
+  return {
+    enabled: true,
+    dir,
+    python: parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_PYTHON', env.NOTESD_TORRENT_WHISPER_PYTHON) ?? path.join(dir, 'venv', 'bin', 'python'),
+    model,
+    threads: parsePositiveInt('NOTESD_TORRENT_WHISPER_THREADS', env.NOTESD_TORRENT_WHISPER_THREADS, DEFAULT_TORRENT_WHISPER_THREADS),
+    stretchS,
   }
 }
 
@@ -970,6 +1029,9 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
  * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL (a number below 1 or a non-http address throw ConfigError),
  * NOTESD_FFMPEG_BIN.
+ * Torrent Whisper keys: NOTESD_TORRENT_WHISPER, NOTESD_TORRENT_WHISPER_DIR, NOTESD_TORRENT_WHISPER_PYTHON,
+ * NOTESD_TORRENT_WHISPER_MODEL, NOTESD_TORRENT_WHISPER_THREADS, NOTESD_TORRENT_WHISPER_STRETCH_S (a relative
+ * folder or Python, a model name with spaces or `..`, or a stretch under 5 s throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.

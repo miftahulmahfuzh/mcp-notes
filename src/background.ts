@@ -234,6 +234,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       // Before the torrents: ffmpeg stops reading the file route first.
       deps.torrentRemux?.close(),
       streamCache?.close(),
+      deps.torrentWhisper?.close(),
       torrents?.close(),
     ]);
   };

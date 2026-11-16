@@ -9,6 +9,9 @@
 # tells it its node id) and notes-spawn (PreToolUse on Bash, records a hand-rolled tmux `claude`
 # launch so the child links to its parent). It also raises Claude Code's cleanupPeriodDays so
 # the transcripts the session graph ingests are not deleted after 30 days.
+# It also installs Whisper for the torrent source's last subtitle tier: a Python virtual
+# environment in <data dir>/whisper/venv with faster-whisper, and the model .env.local names
+# (NOTESD_TORRENT_WHISPER_MODEL, default small), unless .env.local turns torrents or Whisper off.
 #
 # Idempotent: run it again after every pull. The unit runs code from the checkout this script
 # lives in, so run it from the checkout you want the daemon to use (normally ~/mcp-notes).
@@ -55,6 +58,9 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 SKIP_HOOKS="${NOTES_SKIP_HOOKS:-0}"
 PASTE_STRATEGY="${NOTES_PASTE_STRATEGY:-updatedInput}"
 RETENTION_DAYS="${NOTES_CLAUDE_RETENTION_DAYS:-3650}"
+ENV_LOCAL="$REPO_DIR/.env.local"
+WHISPER_PACKAGE="faster-whisper==1.2.1"
+WHISPER_SCRIPT="$REPO_DIR/claude/streaming/torrent/whisper.py"
 
 log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -66,7 +72,7 @@ parse_args() {
     case "$arg" in
       --skip-hooks) SKIP_HOOKS=1 ;;
       -h|--help)
-        sed -n '2,29p' "${BASH_SOURCE[0]}"
+        sed -n '2,32p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
       *) die "unknown argument: $arg (try --help)" ;;
@@ -177,6 +183,79 @@ build() {
 make_data_dir() {
   log "data dir $DATA_DIR"
   mkdir -p "$DATA_DIR"
+}
+
+# The last value of NAME in .env.local (quotes stripped), or nothing. The daemon reads the same file.
+env_local_value() {
+  [[ -f "$ENV_LOCAL" ]] || return 0
+  sed -n "s/^[[:space:]]*$1=//p" "$ENV_LOCAL" | tail -n 1 \
+    | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+# True for the words the daemon reads as off.
+is_off() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    off|0|false|no) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A Python 3.9+ that can make a virtual environment. Ubuntu's own python3 has no ensurepip until
+# python3-venv is installed; that is tried with sudo -n, never with a password prompt.
+whisper_base_python() {
+  local py
+  for py in "$(command -v python3 || true)" "$HOME/miniconda3/bin/python3" /usr/bin/python3; do
+    [[ -n "$py" && -x "$py" ]] || continue
+    if "$py" -c 'import sys, ensurepip, venv; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+      printf '%s\n' "$py"
+      return 0
+    fi
+  done
+  if [[ -x /usr/bin/python3 ]] && sudo -n apt-get install -y python3-venv >/dev/null 2>&1 \
+     && /usr/bin/python3 -c 'import ensurepip, venv' >/dev/null 2>&1; then
+    printf '%s\n' /usr/bin/python3
+    return 0
+  fi
+  return 1
+}
+
+# Whisper for the torrent source's last subtitle tier (src/directStream/torrent/subtitles/whisper.ts).
+# Idempotent: a venv that already has WHISPER_PACKAGE is kept, and the model is downloaded once.
+# Any failure warns and returns: the daemon then starts without a Whisper tier and says so.
+install_whisper() {
+  if is_off "$(env_local_value NOTESD_TORRENT)" || is_off "$(env_local_value NOTESD_TORRENT_WHISPER)"; then
+    log "Whisper: torrents or Whisper are off in $ENV_LOCAL, skipping"
+    return 0
+  fi
+  local dir model venv py base ready
+  dir="$(env_local_value NOTESD_TORRENT_WHISPER_DIR)"
+  dir="${dir:-$DATA_DIR/whisper}"
+  model="$(env_local_value NOTESD_TORRENT_WHISPER_MODEL)"
+  model="${model:-small}"
+  venv="$dir/venv"
+  py="$venv/bin/python"
+  mkdir -p "$dir/models" "$dir/hf"
+  if [[ -x "$py" ]] && "$py" -I -c 'import importlib.metadata as m, sys; sys.exit(0 if m.version("faster-whisper") == sys.argv[1] else 1)' "${WHISPER_PACKAGE#*==}" >/dev/null 2>&1; then
+    log "Whisper: $WHISPER_PACKAGE already in $venv"
+  else
+    if ! base="$(whisper_base_python)"; then
+      warn "Whisper: no Python 3.9+ here can make a virtual environment (Ubuntu: python3-venv). Torrent sessions get no Whisper subtitles until one can."
+      return 0
+    fi
+    log "Whisper: virtual environment $venv (from $base), pip install $WHISPER_PACKAGE"
+    if ! "$base" -m venv --clear "$venv" >/dev/null 2>&1 \
+       || ! "$py" -m pip install --quiet --disable-pip-version-check "$WHISPER_PACKAGE"; then
+      warn "Whisper: could not install $WHISPER_PACKAGE into $venv. Torrent sessions get no Whisper subtitles; re-run to try again."
+      return 0
+    fi
+  fi
+  log "Whisper: model $model in $dir/models (downloaded once: about 460 MB for small)"
+  if ready="$(HF_HOME="$dir/hf" HF_HUB_DISABLE_TELEMETRY=1 "$py" -I "$WHISPER_SCRIPT" --model "$model" --threads 2 --models-dir "$dir/models" --download-only 2>/dev/null | tail -n 1)" \
+     && [[ "$ready" != *'"ready": false'* ]]; then
+    log "Whisper: ready ${ready}"
+  else
+    warn "Whisper: model $model could not be loaded (${ready:-no answer}). The daemon downloads it on the first Whisper play instead."
+  fi
 }
 
 install_unit() {
@@ -364,6 +443,7 @@ main() {
   install_deps
   build
   make_data_dir
+  install_whisper
   install_unit
   enable_linger
   wait_for_health

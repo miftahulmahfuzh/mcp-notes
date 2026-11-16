@@ -172,6 +172,12 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_SUBTITLE_URL` | `https://opensubtitles-v3.strem.io` | The subtitle service asked for an English subtitle when a torrent holds no subtitle file (Stremio's OpenSubtitles add-on; no key). One plain request by the file's OpenSubtitles hash, then one by the IMDb id, each saying it is notesd. `off`: never asked; a cloud provider's subtitle is tried next. See [streaming.md](../streaming.md#subtitles-for-a-torrent). |
 | `WYZIE_API_KEY` | unset | A Wyzie Subs key (a secret, kept in `.env.local`). Set: Wyzie is asked for the English subtitle before the add-on above, for at most 12 s. Unset or blank: Wyzie is never asked. The key is never logged or written into a play's attempts or a kept file. |
 | `NOTESD_TORRENT_WYZIE_URL` | `https://sub.wyzie.io` | Where Wyzie Subs is asked when `WYZIE_API_KEY` is set. `off`: never asked, key or not. |
+| `NOTESD_TORRENT_WHISPER` | on | `off`: no Whisper tier. A torrent session whose other subtitle tiers find nothing plays without an English subtitle, and no Whisper worker ever starts. `scripts/install.sh` then skips installing it. See [streaming.md](../streaming.md#whisper-the-last-resort). |
+| `NOTESD_TORRENT_WHISPER_DIR` | `<NOTES_DATA_DIR>/whisper` | Absolute path of the folder holding Whisper's virtual environment (`venv/`), its models (`models/`) and Hugging Face's cache (`hf/`). `scripts/install.sh` installs into the same folder. A relative path is rejected. |
+| `NOTESD_TORRENT_WHISPER_PYTHON` | `<NOTESD_TORRENT_WHISPER_DIR>/venv/bin/python` | Absolute path of the Python that runs `claude/streaming/torrent/whisper.py`. When it is not there at start, the tier is off and the daemon log says so. |
+| `NOTESD_TORRENT_WHISPER_MODEL` | `small` | The faster-whisper model: `tiny`, `base`, `small`, `medium`, `large-v3`, an `.en` variant, or a Hugging Face repo id. Downloaded once into the models folder (`small`: about 460 MB). |
+| `NOTESD_TORRENT_WHISPER_THREADS` | `8` | CPU threads of the Whisper worker, which runs at a lower priority than the daemon. |
+| `NOTESD_TORRENT_WHISPER_STRETCH_S` | `300` | Seconds of audio transcribed at a time, at least 5. A stretch's cues arrive together. |
 
 ## Install script and hooks
 

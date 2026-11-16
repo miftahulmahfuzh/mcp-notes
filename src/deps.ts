@@ -14,6 +14,7 @@ import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
+import type { WhisperTier } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -113,6 +114,11 @@ export interface AppDeps {
    * evidence log are on; null or absent, POST /api/stream/sessions/:id/report answers 503 report_off.
    */
   streamReporter?: StreamReporter | null;
+  /**
+   * Whisper, the last subtitle tier of a torrent session (torrent phase 8). Null or absent with
+   * Whisper off or not installed; startBackground's stop closes it, which ends its worker.
+   */
+  torrentWhisper?: WhisperTier | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

@@ -9,6 +9,7 @@ import { SubtitleShelf, keptTier } from './disk.js';
 import { embeddedTier, type EmbeddedSubtitles } from './embedded.js';
 import { ffmpegAssConverter, filesTier, type AssConverter } from './files.js';
 import { serviceTier } from './service.js';
+import type { WhisperTier } from './whisper.js';
 
 /**
  * Where a torrent session's English subtitle comes from (torrent phase 3 ships the chain; phase 6 adds kept, files,
@@ -89,7 +90,8 @@ export interface SubtitleTierDeps {
   convertAss?: AssConverter;
   /** The extraction of a file's English text track into a growing cue feed (phase 7); null with torrents off. */
   embedded?: EmbeddedSubtitles | null;
-  // Phase 8: whisper.
+  /** Whisper, the last tier (phase 8); null when off or not installed. */
+  whisper?: WhisperTier | null;
 }
 
 /** The daemon's subtitle tiers, in order. Each later phase inserts its tiers at its comment. */
@@ -104,8 +106,9 @@ export function buildSubtitleTiers(deps: SubtitleTierDeps): SubtitleTier[] {
     ...(deps.embedded == null ? [] : [embeddedTier(deps.embedded)]),
     // Phase 6: service, borrow. The service tier is left out when neither service may be asked.
     ...(deps.subtitleUrl === null && wyzie === null ? [] : [serviceTier({ baseUrl: deps.subtitleUrl, wyzie, fetch: deps.fetch, torrents: deps.torrents, shelf, log: deps.log })]),
-    borrowTier({ lend: deps.lend, shelf }),
+    borrowTier({ lend: deps.lend, shelf, whisperCovers: deps.whisper != null }),
     // Phase 8: whisper.
+    ...(deps.whisper == null ? [] : [deps.whisper]),
   ];
 }
 

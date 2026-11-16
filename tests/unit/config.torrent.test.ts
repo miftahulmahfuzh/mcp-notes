@@ -6,7 +6,7 @@ const DATA = '/srv/notes';
 
 describe('torrent settings', () => {
   it('are on, under <dataDir>/movies/torrents, capped at 100 kB/s and kept 7 days by default', () => {
-    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', sites: DEFAULT_TORRENT_SITES_CONFIG });
+    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
   });
 
   it('read every variable', () => {
@@ -22,7 +22,7 @@ describe('torrent settings', () => {
         },
         DATA,
       ),
-    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', sites: DEFAULT_TORRENT_SITES_CONFIG });
+    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
   });
 
   it('refuse a relative folder, a zero cap or keep, and a peer without a port', () => {

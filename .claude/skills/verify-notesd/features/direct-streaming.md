@@ -479,6 +479,25 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
   seeds and 40-hex `info_hash`).
 
+## Torrent subtitles: Whisper, the last resort
+
+- When the torrent's subtitle file, the subtitle service, the cloud borrow and the embedded text track
+  all give no English subtitle, the session answers at once with a subtitle `{label: "English (Whisper)",
+  lang: "en", growing: true}` whose cues arrive stretch by stretch in phase 7's cue feed and show in the
+  player as they come; once the file is transcribed to the end the feed says `complete` (the subtitle stays
+  `growing: true`: it is a cue feed). English titles are
+  transcribed, others translated (`task` in each worker request).
+- Off: `NOTESD_TORRENT_WHISPER=off`, or no Python at `NOTESD_TORRENT_WHISPER_PYTHON`: no Whisper track,
+  one daemon log line (`torrent whisper: off` / `no Python at ...`).
+- Proof: `npx vitest run tests/unit/directStream/torrent/whisper.test.ts tests/unit/directStream/torrent/whisperConfig.test.ts tests/unit/scripts/installWhisper.test.ts`;
+  on a run, journeys J1 and J2 of `.workflows/plan/torrent-stream-source/phase-8.md` with the fake worker
+  `tests/fixtures/torrent/fake-whisper.mjs` (`NOTESD_TORRENT_WHISPER_PYTHON=<it>`,
+  `NOTESD_TORRENT_WHISPER_STRETCH_S=5`; `FAKE_WHISPER_DELAY_MS`, `FAKE_WHISPER_LOG`, `FAKE_WHISPER_MODE`);
+  the real model by J3 (`npx tsx scripts/whisper-sample.ts`, scratch install, never the live data dir).
+- Gotcha: a run's Whisper folder is `<run>/data/whisper`, which has no venv, so the tier is off on a
+  throwaway daemon unless `NOTESD_TORRENT_WHISPER_PYTHON` is set in the caller's shell (verify.sh passes
+  it through). Never point it at `~/mcp-notes-data/whisper`.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is
