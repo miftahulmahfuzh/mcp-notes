@@ -158,6 +158,26 @@ export class MovieStreams {
     }
   }
 
+  /**
+   * What the player page calls the stream, in its tab and over the video: `Saltburn (2023)` for a
+   * film, `Doctor X: Mafia in White S01E01` for an episode. Null when the title is not stored
+   * (the page then shows the TMDB reference).
+   */
+  async titleLabel(target: StreamTarget): Promise<string | null> {
+    try {
+      const row = await this.movies.repo.titleById(titleId(target.kind, target.tmdbId));
+      if (row === null) return null;
+      if (target.kind === 'movie') return row.year === null ? row.title : `${row.title} (${row.year})`;
+      const pad = (n: number): string => String(n).padStart(2, '0');
+      return target.season === undefined || target.season === null || target.episode === undefined || target.episode === null
+        ? row.title
+        : `${row.title} S${pad(target.season)}E${pad(target.episode)}`;
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the title of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
   /** Phase 3's resume hook: where a new session starts (state.ts streamResumePosition). 0 on any failure. */
   async resumeS(target: StreamTarget): Promise<number> {
     try {

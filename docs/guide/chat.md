@@ -60,7 +60,7 @@ The status is a short caption for the tool call in progress. It clears when text
 | looking up a word, saving a word, checking for a similar saying, saving a saying | using daily-words |
 | searching sessions, reading a session, reading a session transcript, counting session tokens, opening a session in tmux | using the session tools |
 | reading Seer Adversarial, reading Claude's verdicts, reading Claude's record | reading the adversary tools |
-| searching movies, reading a title, reading watch history, reading a filmography, marking a title, opening VLC | using the movie tools |
+| searching movies, reading a title, reading watch history, reading a filmography, marking a title, looking at a title's pictures, opening VLC | using the movie tools |
 | searching the streaming sites, starting a film | using the streaming tools |
 | looking for a stream, starting a stream, reading the stream providers | using the direct-streaming tools |
 | searching the web, reading a web page | calling WebSearch or WebFetch |
@@ -159,7 +159,7 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | Connectors | every `expenses_*`, `runs_*`, `seer_*` tool | No, read-only |
 | daily-words | every `dword_*` tool | Yes: words and sayings |
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
-| Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
+| Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_pictures`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
 | Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
 | Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources` | `direct_stream_play` opens the player page full screen in the streaming Chrome; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only |
 | Web | `WebSearch`, `WebFetch` | No |

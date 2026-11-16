@@ -119,6 +119,14 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `$V ui RUN .claude/skills/verify-notesd/scripts/direct-stream/live.steps.mjs` (PLAYING, PAUSED,
   PAGE and CLOSED PASS, with a screenshot of each).
 
+## Full screen, the player's name, and looking at a poster
+- The page takes its own full screen in `start()` (a double click leaves it from the first play);
+  the window is made full screen only as a fallback. The tab and the line over the picture name the
+  title (`Series S01E01`). `movies_pictures` hands the model a title's poster, backdrop and episode
+  still as images. Proven by `npx vitest run tests/unit/scripts/directResolve.test.ts web/src/stream/StreamApp.test.tsx tests/unit/mcp.movieTools.test.ts`
+  and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
+- Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

@@ -384,6 +384,31 @@ describe('the command', () => {
     expect(parseArgs(['open', 'http://127.0.0.1:7317/x'])).toEqual({ command: 'open', url: 'http://127.0.0.1:7317/x', fullscreen: false });
   });
 
+  it("a full-screen open leaves full screen to the page, and makes the window full screen only when the page did not take it", async () => {
+    const run = async (answer: string) => {
+      const asked: Array<[string, Json]> = [];
+      const evaluate = async (_origin: string, expression: string, options: Json): Promise<unknown> => {
+        asked.push([expression, options]);
+        return expression === START_EXPRESSION ? answer : 'ok';
+      };
+      const result = await openInChrome('http://localhost:7317/stream/abc', { fullscreen: true }, { evaluate, wait: async () => {} });
+      return { result, asked };
+    };
+    // The page went full screen itself: the window is never made full screen (F11's kind, which a double click cannot leave).
+    const own = await run('started');
+    expect(own.result).toMatchObject({ ok: true, started: true });
+    expect(own.asked.map((a) => a[1])).toEqual([{ show: true, windowState: 'normal' }, {}]);
+    // The film started but Chrome did not give the page the screen: the window takes it.
+    const windowed = await run('windowed');
+    expect(windowed.result).toMatchObject({ ok: true, started: true });
+    expect(windowed.asked.at(-1)).toEqual(["'ok'", { show: true, windowState: 'fullscreen' }]);
+    // The page never exposed start(): the same fallback.
+    const never = await run('waiting');
+    expect(never.result).toMatchObject({ ok: true, started: false });
+    expect(never.asked.at(-1)).toEqual(["'ok'", { show: true, windowState: 'fullscreen' }]);
+    expect(START_EXPRESSION).toContain('document.fullscreenElement');
+  });
+
   it('a full-screen open starts the film with sound through the page, and never for a muted check (D2)', async () => {
     const asked: Array<[string, string, Json]> = [];
     let tries = 0;
@@ -396,13 +421,15 @@ describe('the command', () => {
     const wait = async (): Promise<void> => {};
     const played = await openInChrome('http://localhost:7317/stream/abc', { fullscreen: true }, { evaluate, wait });
     expect(played).toEqual({ ok: true, url: 'http://localhost:7317/stream/abc', fullscreen: true, started: true });
-    expect(asked[0]).toEqual(['http://localhost:7317', "location.assign(\"/stream/abc\"); 'ok'", { show: true, windowState: 'fullscreen' }]);
+    expect(asked[0]).toEqual(['http://localhost:7317', "location.assign(\"/stream/abc\"); 'ok'", { show: true, windowState: 'normal' }]);
     expect(asked.slice(1).map((a) => a[1])).toEqual([START_EXPRESSION, START_EXPRESSION, START_EXPRESSION]);
 
     asked.length = 0;
     const muted = await openInChrome('http://127.0.0.1:7317/stream/abc?muted=1', { fullscreen: true }, { evaluate, wait });
     expect(muted).toMatchObject({ ok: true, started: null });
     expect(asked.map((a) => a[1])).not.toContain(START_EXPRESSION);
+    // A page that will not start itself still gets the screen, from the window.
+    expect(asked[0]?.[2]).toEqual({ show: true, windowState: 'fullscreen' });
     expect(wantsStart('http://localhost:7317/stream/abc', false)).toBe(false);
     expect(wantsStart('http://localhost:7317/stream/abc?muted=1', true)).toBe(false);
 

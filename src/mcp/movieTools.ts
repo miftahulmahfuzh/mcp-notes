@@ -16,7 +16,7 @@ import { parseDateBound } from '../notes/dates.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
 import { errorResult, jsonResult, type ToolDeps } from './tools.js';
 
-const [LIST, GET, HISTORY, CONTINUE, PERSON, MARK] = MOVIE_TOOL_NAMES;
+const [LIST, GET, HISTORY, CONTINUE, PERSON, MARK, PICTURES] = MOVIE_TOOL_NAMES;
 
 export const MOVIES_LIST_DEFAULT_LIMIT = 50;
 export const MOVIES_LIST_MAX_LIMIT = 200;
@@ -65,6 +65,26 @@ export interface MovieToolDeps {
   continueTitle(title: string | null): Promise<ContinueResult>;
   /** "play something": a random title that can be played here (continue.ts playSomething); opens VLC. */
   playSomething(): Promise<SomethingResult>;
+  /** One TMDB picture (a poster, backdrop or episode still address under `imageBase`) as bytes, for movies_pictures. Throws when it cannot be read. */
+  fetchPicture(url: string): Promise<{ data: Buffer; mime: string }>;
+}
+
+/** A picture larger than this is not handed to the model. */
+export const PICTURE_MAX_BYTES = 4_000_000;
+export const PICTURE_TIMEOUT_MS = 10_000;
+
+/** The real fetchPicture: one GET of an address under `imageBase`, an image answer only, capped at PICTURE_MAX_BYTES. */
+export function tmdbPictureFetcher(imageBase: string, fetchImpl: typeof fetch = fetch): MovieToolDeps['fetchPicture'] {
+  return async (url) => {
+    if (!url.startsWith(imageBase)) throw new Error('not a TMDB picture address');
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(PICTURE_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`TMDB answered ${res.status}`);
+    const mime = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!mime.startsWith('image/')) throw new Error(`TMDB answered ${mime === '' ? 'no content type' : mime}, not a picture`);
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > PICTURE_MAX_BYTES) throw new Error(`the picture is ${data.length} bytes, over the ${PICTURE_MAX_BYTES} limit`);
+    return { data, mime };
+  };
 }
 
 /** The movie tool deps for a running daemon, or null when the library is off. */
@@ -93,6 +113,7 @@ export function movieToolDeps(deps: AppDeps): MovieToolDeps | null {
       if (player === null) throw new MovieToolError('movies_off', 'playback is not running on this server.');
       return playSomething({ db: deps.db, player });
     },
+    fetchPicture: tmdbPictureFetcher(deps.config.movies.tmdb.imageBase),
   };
 }
 
@@ -411,6 +432,14 @@ const PERSON_DESCRIPTION =
   'role "cast" or "crew" narrows the list; unseen_only drops what the owner has seen. Recommend from seen: false entries and use web search for reviews or anything newer than TMDB lists. ' +
   'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
 
+const PICTURES_DESCRIPTION =
+  "Look at the pictures of a film, series or episode: its poster (the picture the Movies page shows for the title, which the owner may call its thumbnail, cover or poster), " +
+  'its backdrop (the wide picture behind the heading of its page) and, when title is an episode\'s movie id, that episode\'s still. ' +
+  'Each picture comes back as an image after one line saying which it is, so you can see it: call this whenever the owner asks what a poster, thumbnail, cover or picture shows, ' +
+  'who is on it, or what it looks like, and answer from what you see. Never say you cannot see a title\'s picture, and never describe one from memory or from a web page, without calling this first. ' +
+  'To name a person on it, compare with the cast from movies_get (the lead is usually on the poster) and say when you are inferring. ' +
+  'title is a movie id (M-23T4), a title id (movie-467905, tv-247718) or the name. A picture TMDB lacks, or one that cannot be loaded, comes back as a line saying so. Read-only.';
+
 const MARK_DESCRIPTION =
   "Sets the owner's own marks. On a title (title = movie id, title id or name; an episode's movie id takes watched only and marks that episode): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it) and review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review). " +
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
@@ -726,6 +755,60 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
           credits,
         };
       });
+    },
+  );
+
+  server.registerTool(
+    PICTURES,
+    {
+      title: "Look at a title's pictures",
+      description: PICTURES_DESCRIPTION,
+      inputSchema: {
+        title: titleField.describe('The film, series or episode: a movie id (M-23T4; an episode\'s id adds that episode\'s picture), a title id, or its name.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ title }): Promise<CallToolResult> => {
+      const m = deps.movies;
+      if (!m) return off();
+      try {
+        const ctx = ctxOf(m);
+        const resolved = await resolveTitle(deps.db, ctx, title);
+        const detail = await getTitle(deps.db, resolved.titleId, ctx);
+        if (detail === null) throw new MovieToolError('not_found', `no title ${resolved.titleId} is stored.`);
+        const name = `${detail.title}${detail.year === null ? '' : ` (${detail.year})`}${detail.movie_id === null ? '' : ` ${detail.movie_id}`}`;
+        const wanted: { what: string; url: string | null }[] = [];
+        const target = resolved.target;
+        if (target !== null && target.season !== null && target.episode !== null) {
+          const episode = detail.seasons.flatMap((s) => s.episodes).find((e) => e.season === target.season && e.episode === target.episode);
+          const code = `S${String(target.season).padStart(2, '0')}E${String(target.episode).padStart(2, '0')}`;
+          wanted.push({
+            what: `Episode picture of ${name} ${code}${episode?.name ? ` "${episode.name}"` : ''}: the still TMDB keeps for this episode.`,
+            url: episode?.still_url ?? null,
+          });
+        }
+        wanted.push({
+          what: `Poster of ${name}: the picture the Movies page shows for this title, as its thumbnail in the grid and on its own page.`,
+          url: detail.poster_url,
+        });
+        wanted.push({ what: `Backdrop of ${name}: the wide picture behind the heading of its page.`, url: detail.backdrop_url });
+        const content: CallToolResult['content'] = [];
+        for (const { what, url } of wanted) {
+          if (url === null) {
+            content.push({ type: 'text', text: `${what}\n(TMDB has no such picture for it)` });
+            continue;
+          }
+          try {
+            const picture = await m.fetchPicture(url);
+            content.push({ type: 'text', text: what }, { type: 'image', data: picture.data.toString('base64'), mimeType: picture.mime });
+          } catch (err) {
+            content.push({ type: 'text', text: `${what}\n(the picture could not be loaded: ${err instanceof Error ? err.message : String(err)})` });
+          }
+        }
+        return { content };
+      } catch (err) {
+        return movieErrorResult(err);
+      }
     },
   );
 

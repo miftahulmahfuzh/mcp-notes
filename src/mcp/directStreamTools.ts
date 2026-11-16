@@ -127,7 +127,7 @@ const PLAY_DESCRIPTION =
   'The error no_source means no provider could stream it: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, skipped_browser_only, skipped_no_template), and nothing started; offer /idlix or /lk21. ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
-  'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
+  'Tell the owner it plays in the streaming Chrome window and that a double click, F, Esc or F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
 const SOURCES_DESCRIPTION =
   'List the direct-streaming providers in the registry both machines share: each one\'s name, film and episode address templates ' +
@@ -458,8 +458,8 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             play,
             next:
               choice === null
-                ? 'Say it is playing full screen in the streaming Chrome window, and that F11 leaves full screen.'
-                : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that F11 leaves full screen.',
+                ? 'Say it is playing full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.'
+                : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.',
           });
         } catch (err) {
           const failure = playFailure(err);

@@ -278,7 +278,7 @@ describe('buildInstructions: Movies', () => {
     const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Movies.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
-    for (const word of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark', 'last_play', 'never invent', 'not_on_this_machine', 'opens VLC']) {
+    for (const word of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark', 'movies_pictures', 'last_play', 'never invent', 'not_on_this_machine', 'opens VLC']) {
       expect(p).toContain(word);
     }
     expect(p).toContain('[Title](http://localhost:4321/movies/<title id>)');

@@ -5,7 +5,7 @@ you have, what you watched, when, and how far you got. It scans the folders you 
 video up on TMDB, shows the result as a poster grid at `/movies`, plays files in the Windows VLC and
 follows the position while they play. A second side of the same page, Stream, lists the titles a
 provider was verified to stream on this machine and plays them in the streaming Chrome (see
-[The Stream side](#the-stream-side)). Six `movies_*` MCP tools answer questions about it from
+[The Stream side](#the-stream-side)). Seven `movies_*` MCP tools answer questions about it from
 Claude Code (`/n ...`) and from the wall's chat.
 
 ![The poster grid of a real library: a film paused in VLC first, then the titles in progress](img/movies/grid.png)
@@ -808,6 +808,7 @@ Differences between the two places:
 | `/n mark M-OHSV watched` | `movies_mark {"title":"M-OHSV","watched":true}` (that episode's files) | Both |
 | `/n mark that file watched` | `movies_mark {"file_id":9,"watched":true}` with an id from `movies_get` `files[].id` | Both |
 | `/n find my review that mentions Glen Powell` | `search {"query":"Glen Powell"}` (the review is a note) | Both |
+| `/n who is the woman on the poster of M-CNJ0?` | `movies_pictures {"title":"M-CNJ0"}`: the poster and backdrop come back as images Claude looks at (an episode's id adds its still), then `movies_get` for the cast | Both |
 
 - Pass exactly one of `title` or `file_id`, and at least one change.
 - Rating and review belong to a title. An episode's movie id and a `file_id` take `watched` only;

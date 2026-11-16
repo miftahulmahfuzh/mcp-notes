@@ -63,6 +63,9 @@ const fakePlayer: Pick<MoviePlayer, 'host' | 'play'> = {
   },
 };
 
+/** Every address movies_pictures asked for. */
+const pictures: string[] = [];
+
 function text(r: ToolResult): string {
   return r.content.map((c) => c.text ?? '').join('\n');
 }
@@ -96,6 +99,11 @@ beforeAll(async () => {
     },
     // Phase 5's ContinueDeps: the real continue rule over the seeded rows, with a recording player.
     // Phase 5's ContinueDeps: the real continue rule over the seeded rows (seeded paths count as on disk), with a recording player.
+    fetchPicture: async (url) => {
+      pictures.push(url);
+      if (url.includes('broken')) throw new Error('TMDB answered 404');
+      return { data: Buffer.from(`picture of ${url}`), mime: 'image/jpeg' };
+    },
     continueTitle: (title) => continueTitle({ db: h.deps.db, player: fakePlayer, exists: async () => true }, title),
     playSomething: () => playSomething({ db: h.deps.db, player: fakePlayer, exists: async () => true }, () => nextRandom()),
   };
@@ -117,6 +125,7 @@ beforeEach(async () => {
   lib = await seedLibrary(h.deps.db);
   played.length = 0;
   reviews.length = 0;
+  pictures.length = 0;
   nextRandom = Math.random;
 });
 
@@ -126,7 +135,7 @@ interface ListBody {
 }
 
 describe('movie MCP tools', () => {
-  it('registers the six tools and the instructions explain them', async () => {
+  it('registers the seven tools and the instructions explain them', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).filter((n) => n.startsWith('movies_'));
     expect(names.sort()).toEqual([...MOVIE_TOOL_NAMES].sort());
     expect(client.getInstructions() ?? '').toContain('Movies.');
@@ -384,6 +393,39 @@ describe('movie MCP tools', () => {
       expect(mobland?.movie_id).toBe(await idOf('tv-247718', 1, 2));
       const film = res.plays.find((p) => p.title_id === 'movie-1002');
       expect(film?.movie_id).toBe(await idOf('movie-1002'));
+    });
+  });
+
+  describe('movies_pictures', () => {
+    type Block = { type: string; text?: string; data?: string; mimeType?: string };
+    const blocks = async (title: string): Promise<Block[]> => (await call('movies_pictures', { title })).content as Block[];
+
+    it("hands back a title's poster and backdrop as images, each after a line saying which it is", async () => {
+      await h.deps.db.execute(sql`update movie_titles set poster_path = '/gap-poster.jpg', backdrop_path = '/gap-backdrop.jpg' where id = 'tv-1004'`);
+      const out = await blocks('tv-1004');
+      expect(out.map((b) => b.type)).toEqual(['text', 'image', 'text', 'image']);
+      expect(out[0]?.text).toMatch(/^Poster of Series Gap.* M-[0-9A-Z]{4}: the picture the Movies page shows for this title, as its thumbnail in the grid and on its own page\.$/);
+      expect(out[1]).toMatchObject({ mimeType: 'image/jpeg', data: Buffer.from('picture of https://image.tmdb.org/t/p/w500/gap-poster.jpg').toString('base64') });
+      expect(out[2]?.text).toMatch(/^Backdrop of Series Gap/);
+      expect(pictures).toEqual(['https://image.tmdb.org/t/p/w500/gap-poster.jpg', 'https://image.tmdb.org/t/p/w1280/gap-backdrop.jpg']);
+    });
+
+    it("an episode's movie id adds that episode's still first; a picture TMDB lacks or that fails to load is a line, not an error", async () => {
+      await h.deps.db.execute(sql`update movie_titles set poster_path = '/broken.jpg', backdrop_path = null where id = 'tv-1004'`);
+      await h.deps.db.execute(sql`update movie_episodes set still_path = '/gap-two.jpg' where title_id = 'tv-1004' and season = 1 and episode = 2`);
+      const ids = await h.deps.db.execute(sql`select id from movie_ids where title_id = 'tv-1004' and season = 1 and episode = 2`);
+      const out = await blocks((ids.rows[0] as { id: string }).id);
+      expect(out.map((b) => b.type)).toEqual(['text', 'image', 'text', 'text']);
+      expect(out[0]?.text).toMatch(/^Episode picture of Series Gap.* S01E02 "Gap Two"/);
+      expect(out[2]?.text).toMatch(/^Poster of Series Gap[^\n]*\n\(the picture could not be loaded: TMDB answered 404\)$/);
+      expect(out[3]?.text).toMatch(/^Backdrop of Series Gap[^\n]*\n\(TMDB has no such picture for it\)$/);
+    });
+
+    it('answers not_found for a title that is not in the library', async () => {
+      const r = await call('movies_pictures', { title: 'no such film anywhere' });
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/^not_found:/);
+      expect(pictures).toEqual([]);
     });
   });
 

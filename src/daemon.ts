@@ -172,6 +172,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             recordResolve: (ref, result) => movieStreams.recordResolve(ref, result),
             resumeS: (ref) => movieStreams.resumeS(ref),
             originalLanguage: (ref) => movieStreams.originalLanguage(ref),
+            titleLabel: (ref) => movieStreams.titleLabel(ref),
           },
   });
   if (directStream !== null) {

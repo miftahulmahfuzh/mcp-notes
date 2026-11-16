@@ -55,7 +55,8 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
 
 - **`started: true`:** one line: the title (with its year and movie id when it has one), the
   provider and whether an English subtitle is on (from `play`), that it plays full screen in the
-  streaming Chrome window, and that F11 leaves full screen. For a series also the season and
+  streaming Chrome window, and that a double click (or F, Esc, F11) leaves full screen. For a
+  series also the season and
   episode, and with `picked` why that one: carried on from where it stopped (`resume`), the next
   episode (`next`), or the first (`first`).
 - **`skipped_play: "several_matches"`:** one line per candidate with its year and kind; ask which

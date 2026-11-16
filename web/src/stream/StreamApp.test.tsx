@@ -110,6 +110,29 @@ describe('StreamApp', () => {
     expect(document.title).not.toBe(location.host);
   });
 
+  it("start() takes the page's own full screen before it plays, so a double click leaves it again", async () => {
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl } = routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });
+    const order: string[] = [];
+    document.documentElement.requestFullscreen = vi.fn(async () => {
+      order.push('fullscreen');
+    });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    await settle();
+    const video = el.querySelector('video')!;
+    video.play = vi.fn(async () => {
+      order.push('play');
+    });
+    await act(async () => {
+      await window.notesdStream?.start();
+    });
+    expect(order[0]).toBe('fullscreen');
+    expect(order).toContain('play');
+    expect(document.documentElement.requestFullscreen).toHaveBeenCalledTimes(1);
+  });
+
   it('under ?muted=1 the mute and full-screen controls do nothing and start() resolves false', async () => {
     const { made, createEngine } = fakeEngines();
     const { fetchImpl } = routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });

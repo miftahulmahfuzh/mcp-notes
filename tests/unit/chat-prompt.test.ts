@@ -166,9 +166,12 @@ describe('buildChatSystemPrompt', () => {
   });
 
   it('names the movie tools and keeps movies_continue for explicit play requests', () => {
-    for (const name of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark']) {
+    for (const name of ['movies_list', 'movies_get', 'movies_history', 'movies_continue', 'movies_person', 'movies_mark', 'movies_pictures']) {
       expect(prompt).toContain(name);
     }
+    // A question about a poster or thumbnail is answered by looking at it.
+    expect(prompt).toMatch(/call movies_pictures with the title's movie id and answer from what you see/);
+    expect(prompt).toMatch(/never answer that you cannot see the picture/);
     expect(prompt).toMatch(/movies_continue opens VLC on the owner's screen, so call it only when the owner asks to play, resume or continue something/);
     expect(prompt).toMatch(/"continue what I watched last night" is movies_continue with no title/);
   });

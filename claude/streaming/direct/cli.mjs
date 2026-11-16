@@ -24,11 +24,13 @@ export const USAGE =
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
- * window.notesdStream.start() (unmute and play). cdp.ps1 evaluates with userGesture: true, so
- * Chrome lets the film start with sound. 'waiting' while the page has not exposed it yet.
+ * window.notesdStream.start() (go full screen, unmute and play). cdp.ps1 evaluates with
+ * userGesture: true, so Chrome lets the page go full screen and the film start with sound.
+ * 'waiting' while the page has not exposed it yet; 'started' when the page is full screen,
+ * 'windowed' when it started but Chrome did not give it the screen.
  */
 export const START_EXPRESSION =
-  "(async () => { const s = window.notesdStream; if (!s || typeof s.start !== 'function') return 'waiting'; await s.start(); return 'started'; })()";
+  "(async () => { const s = window.notesdStream; if (!s || typeof s.start !== 'function') return 'waiting'; await s.start(); return document.fullscreenElement ? 'started' : 'windowed'; })()";
 /** Tries of START_EXPRESSION, START_WAIT_MS apart: 15 s for the page to load and read its session. */
 export const START_TRIES = 30;
 export const START_WAIT_MS = 500;
@@ -217,12 +219,18 @@ export function wantsStart(url, fullscreen) {
  * Other tabs are left alone: a resolve may have one open. With `fullscreen` (and no `muted=1`),
  * it then calls the player's start() as a user gesture so the film plays with sound (D2); a page
  * that never exposes start() leaves `started: false` and the page's own muted start stands.
+ *
+ * Full screen is the page's own (start() asks for it), not the window's: the page can leave its
+ * own full screen, so a double click, F or Esc works from the first play, while a window made
+ * full screen as F11 does can only be left with F11. The window is made full screen only when the
+ * page will not start (`muted=1`) or did not get the screen.
  * `evaluate` and `wait` are test seams (evaluateInChrome and sleep in use).
  */
 export async function openInChrome(url, { fullscreen }, { evaluate = evaluateInChrome, wait = sleep } = {}) {
   const target = new URL(url);
   const where = `${target.pathname}${target.search}${target.hash}`;
-  const go = () => evaluate(target.origin, `location.assign(${JSON.stringify(where)}); 'ok'`, { show: true, windowState: fullscreen ? 'fullscreen' : 'normal' });
+  const starts = wantsStart(url, fullscreen);
+  const go = () => evaluate(target.origin, `location.assign(${JSON.stringify(where)}); 'ok'`, { show: true, windowState: fullscreen && !starts ? 'fullscreen' : 'normal' });
   try {
     // A Chrome that is just closing still answers its port and then drops the call. Once more
     // starts a fresh one (as claude/streaming/play.mjs does).
@@ -235,16 +243,23 @@ export async function openInChrome(url, { fullscreen }, { evaluate = evaluateInC
     return { ok: false, url, error: err instanceof ChromeError ? err.code : 'open_failed', detail: String(err?.message ?? err) };
   }
   let started = null;
-  if (wantsStart(url, fullscreen)) {
+  if (starts) {
     started = false;
+    let ownFullscreen = false;
     for (let i = 0; i < START_TRIES && !started; i++) {
       await wait(START_WAIT_MS);
       try {
         // The tab is the one just navigated (cdp.ps1 picks the loaded tab on the daemon's host).
-        started = (await evaluate(target.origin, START_EXPRESSION, {})) === 'started';
+        const answer = await evaluate(target.origin, START_EXPRESSION, {});
+        started = answer === 'started' || answer === 'windowed';
+        ownFullscreen = answer === 'started';
       } catch {
         // The page is still loading (no title yet, so cdp.ps1 finds no tab): try again.
       }
+    }
+    if (!ownFullscreen) {
+      // The page did not take the screen itself: the window does, as before.
+      await evaluate(target.origin, "'ok'", { show: true, windowState: 'fullscreen' }).catch(() => {});
     }
   }
   return { ok: true, url, fullscreen, started };

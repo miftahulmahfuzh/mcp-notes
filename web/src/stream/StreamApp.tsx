@@ -29,7 +29,7 @@ export interface NotesdStream extends StreamState {
   levels: number[];
   /** The chosen quality's engine index; -1 for auto. */
   level: number;
-  /** Unmute and play once ready; false (and nothing done) under ?muted=1. */
+  /** Go full screen (the page's own, so a double click leaves it), then unmute and play once ready; false (and nothing done) under ?muted=1. */
   start: () => Promise<boolean>;
 }
 
@@ -248,8 +248,13 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     document.title = state.title.trim() === '' ? 'Stream' : state.title;
   }, [state.title]);
   useEffect(() => {
-    window.notesdStream = notesdStreamOf(state, () => controller?.playWithSound() ?? Promise.resolve(false));
-  }, [state, controller]);
+    window.notesdStream = notesdStreamOf(state, async () => {
+      if (muted || controller === null) return false;
+      // First, while the caller's user gesture still counts: Chrome gives the screen only then.
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.().catch(() => {});
+      return controller.playWithSound();
+    });
+  }, [state, controller, muted]);
 
   const togglePlay = useCallback(() => {
     if (video === null) return;

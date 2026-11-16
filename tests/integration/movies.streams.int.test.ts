@@ -322,6 +322,19 @@ describe('direct streaming in the movies store', () => {
     })
   })
 
+  describe('the name the player page shows', () => {
+    it('names a film with its year and an episode as the series with S01E02; null for a title that is not stored', async () => {
+      expect(await streams().titleLabel(FIGHT_CLUB)).toBeNull()
+      await streams().ensureTitle(FIGHT_CLUB)
+      await streams().ensureTitle(MOBLAND_S1E2)
+      const film = await repo.titleById('movie-550')
+      const series = await repo.titleById('tv-247718')
+      expect(await streams().titleLabel(FIGHT_CLUB)).toBe(`${film?.title} (${film?.year})`)
+      expect(await streams().titleLabel(MOBLAND_S1E2)).toBe(`${series?.title} S01E02`)
+      expect(await streams().titleLabel({ kind: 'tv', tmdbId: 247718, season: 12, episode: 104 })).toBe(`${series?.title} S12E104`)
+    })
+  })
+
   describe('the original language', () => {
     it("reads a stored title's language from TMDB once, stores it, and answers it for an episode of the series", async () => {
       await streams().ensureTitle(MOBLAND_S1E2)

@@ -378,8 +378,15 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 ### The player
 
 `/stream/<session id>` is the page a direct-stream play opens in the streaming Chrome. It is a
-separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wall. The resolver's
-`open --fullscreen` makes the window full screen; the page fills the window.
+separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wall.
+
+- **Full screen is the page's own.** The resolver's `open --fullscreen` calls the page's `start()`
+  the way a click would, and `start()` asks Chrome for full screen before it plays. So a double
+  click on the picture, F, the full-screen icon, Esc or F11 all leave it, from the first play on. A
+  window made full screen as F11 does can only be left with F11, so the window is made full
+  screen only as a fallback: when the page did not get the screen, or for a `?muted=1` check.
+- **Its name.** The tab and the line over the picture read `Saltburn (2023)` for a film and
+  `Doctor X: Mafia in White S01E01` for an episode.
 
 - **It plays what the session names.** The page reads `GET /api/stream/sessions/<id>` and plays its
   manifest through the pass-through: HLS with hls.js, DASH with dash.js, a plain file in the

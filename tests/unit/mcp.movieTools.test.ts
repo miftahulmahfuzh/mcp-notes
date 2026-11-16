@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it, vi } from 'vitest';
 import { MOVIE_TOOL_NAMES } from '../../src/chat/status.js';
 import type { Db } from '../../src/db/client.js';
-import { MOVIES_OFF, registerMovieTools, type MovieToolDeps } from '../../src/mcp/movieTools.js';
+import { MOVIES_OFF, registerMovieTools, tmdbPictureFetcher, type MovieToolDeps } from '../../src/mcp/movieTools.js';
 import type { ContinueResult } from '../../src/movies/continue.js';
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> };
@@ -17,6 +17,7 @@ function fakeMovies(over: Partial<MovieToolDeps> = {}): MovieToolDeps {
     setTitleUser: vi.fn(async () => {}),
     setFileWatched: vi.fn(async () => {}),
     saveReview: vi.fn(async () => null),
+    fetchPicture: vi.fn(async () => ({ data: Buffer.from('jpg'), mime: 'image/jpeg' })),
     continueTitle: vi.fn(async (): Promise<ContinueResult> => ({ action: 'no_match', query: null })),
     playSomething: vi.fn(async () => ({ result: { action: 'no_match', query: null } as ContinueResult, candidates: 0 })),
     ...over,
@@ -51,10 +52,11 @@ const MINIMAL_ARGS: Record<string, Record<string, unknown>> = {
   movies_continue: {},
   movies_person: { name: 'Margaret Qualley' },
   movies_mark: { title: 'mobland', watched: true },
+  movies_pictures: { title: 'mobland' },
 };
 
 describe('movie MCP tools without a database', () => {
-  it('registers exactly the six names; only movies_continue and movies_mark write', async () => {
+  it('registers exactly the seven names; only movies_continue and movies_mark write', async () => {
     const c = await connect(fakeMovies());
     const { tools } = await c.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...MOVIE_TOOL_NAMES].sort());
@@ -145,5 +147,23 @@ describe('movie MCP tools without a database', () => {
     expect(r.isError).toBe(true);
     expect(text(r)).toMatch(/^invalid_input: /);
     await c.close();
+  });
+});
+
+describe('tmdbPictureFetcher', () => {
+  const BASE = 'https://image.tmdb.org/t/p';
+  const answering = (body: string, init: ResponseInit) => (async () => new Response(body, init)) as unknown as typeof fetch;
+
+  it('reads a picture under the image base, with its type', async () => {
+    const got = await tmdbPictureFetcher(BASE, answering('jpg-bytes', { headers: { 'content-type': 'image/jpeg; charset=binary' } }))(`${BASE}/w500/p.jpg`);
+    expect(got).toEqual({ data: Buffer.from('jpg-bytes'), mime: 'image/jpeg' });
+  });
+
+  it('refuses an address elsewhere without a request, an error answer, and an answer that is not a picture', async () => {
+    const never = vi.fn();
+    await expect(tmdbPictureFetcher(BASE, never as unknown as typeof fetch)('https://elsewhere.example/p.jpg')).rejects.toThrow('not a TMDB picture address');
+    expect(never).not.toHaveBeenCalled();
+    await expect(tmdbPictureFetcher(BASE, answering('no', { status: 404 }))(`${BASE}/w500/p.jpg`)).rejects.toThrow('TMDB answered 404');
+    await expect(tmdbPictureFetcher(BASE, answering('<html>', { headers: { 'content-type': 'text/html' } }))(`${BASE}/w500/p.jpg`)).rejects.toThrow('not a picture');
   });
 });
