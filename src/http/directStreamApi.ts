@@ -121,6 +121,16 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
   });
 
+  // The player page, when the film keeps stalling: another provider under the same session id.
+  r.post('/api/stream/sessions/:id/source', sameOriginOnly, async (c) => {
+    try {
+      const answer = await service().switchSource(c.req.param('id'));
+      return c.json({ ...answer.session, switched: answer.switched, reason: answer.reason, from: answer.from });
+    } catch (err) {
+      return directStreamErrorResponse(c, err);
+    }
+  });
+
   // The player's previous / next episode buttons: a new session for the neighbouring episode.
   r.post('/api/stream/sessions/:id/episode', sameOriginOnly, async (c) => {
     const body = episodeBody.safeParse(await c.req.json().catch(() => null));

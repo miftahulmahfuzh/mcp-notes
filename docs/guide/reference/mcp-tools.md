@@ -271,7 +271,7 @@ Find films and series on TMDB to stream, by anything but a title: kind (movie or
 
 **List the direct-streaming providers** · read-only
 
-List the direct-streaming providers in the registry both machines share: each one's name, film and episode address templates ({id} is the TMDB id), whether it plays only in its own page (browser_only), whether it is known to offer an English subtitle, the aggregator site it was added from (origin_site, null for the checked-in seed) and when, and this machine's health for it (last success and failure, consecutive failures, median seconds to a stream, best quality). Health is per machine: the other laptop measures its own. Read-only: nothing opens and nothing is probed.
+List the direct-streaming providers in the registry both machines share: each one's name, film and episode address templates ({id} is the TMDB id), whether it plays only in its own page (browser_only), whether it is known to offer an English subtitle, the aggregator site it was added from (origin_site, null for the checked-in seed) and when, and this machine's health for it (last success and failure, consecutive failures, median seconds to a stream, best quality). Health is per machine: the other laptop measures its own. delivery says how the provider's stream host delivered the last play from it on this machine in the last three days: verdict good or bad (bad: a quarter of its segment requests failed, or the player kept stalling), with requests, failed, stalls and median_kbps; null when nothing played from it lately. A provider with a bad delivery is tried after the others. Read-only: nothing opens and nothing is probed.
 
 No arguments.
 

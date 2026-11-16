@@ -387,6 +387,39 @@ audio, an English subtitle file).
 - A provider skipped because it only plays in its own page (`browser_only`), or because it has no
   episode address, is not a failure: its health is left alone.
 
+### How a provider delivers
+
+A resolve says a provider names a stream. Only a play says whether its host then hands the
+segments over: One Piece 787 resolved on HyperLink in 19 s, and its host then answered 97 of 130
+segment requests with 503. So each provider also has a **delivery** verdict on this machine, read
+from the [stream evidence log](#reporting-a-stream-bug-report-stream-bug) every time it is needed
+and never stored (`src/directStream/delivery.ts`).
+
+- **A run** is one session's time on one provider: its media requests through the pass-through,
+  and the player's `stalled` and `recovering` lines. A request the player gave up (a seek) or
+  notesd refused itself is left out.
+- **Bad:** a quarter or more of at least 12 media requests failed (a 4xx or 5xx, or no answer),
+  or the player stalled 3 times or more at 2 or more per ten minutes. **Good:** 12 requests or
+  more and neither. A shorter run says nothing.
+- The newest run of the last three days gives the verdict, so a host that got better is seen as
+  soon as something plays from it again. A play from the cache makes no request and says nothing.
+- **The order.** The daemon writes each verdict into the health file a resolve reads, and the
+  resolver tries a provider with a bad delivery after the others of its subtitle tier
+  (`order.mjs`: English subtitle, then delivery, then health, quality, speed). `--skip <name,name>`
+  leaves providers out altogether.
+- **While it plays.** The player counts a stall when the film waits for data for 1.5 s or more
+  (a seek gets 5 s more; a pause is not a wait), again every 10 s while it stays frozen, and
+  each network recovery. Three within two minutes, and
+  it asks `POST /api/stream/sessions/<id>/source`: the daemon resolves the title again without
+  the provider on screen, while the film plays on. When another provider answers, the session
+  takes its source under the same id and the page loads it at the position it had reached; the
+  log says `source: HyperLink -> VidNest Anime at 312 s`. The session never goes back to a
+  provider it left, a token refresh included. With no other source the film stays as it is
+  (`source kept: no_other_source`). At most two moves per session, one ask per two minutes;
+  a play from the cache and a `?muted=1` check never move.
+- `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
+  `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
+
 ### Sessions and the pass-through
 
 A resolve makes a session, kept in the daemon's memory: a 32-character random id, the source, and
@@ -1026,6 +1059,7 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
+| `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
 | `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |

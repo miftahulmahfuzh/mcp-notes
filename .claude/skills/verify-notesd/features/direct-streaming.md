@@ -104,6 +104,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `recovering` with the spinner, positions still posted, plays on from 80 s once they answer) and
   `SPENT PASS` (every load aborted: five restarts over 40 s or more, then
   `Playback stopped (networkError manifestLoadError).`), with a screenshot of each.
+- A film that keeps stalling moves to another provider (same fixture and `up --web --direct-stream` as the
+  DASH expiry below, on its own run: it counts the resolves in `calls.jsonl`):
+  `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/source-switch.steps.mjs`
+  (about one minute). The transcript has `SWITCH PASS` (segment loads failed past the buffer: three
+  stalls, one `POST .../source`, the film plays on from 100 s on another provider), `SWITCH SESSION PASS`
+  (same session id, the second resolve carries `--skip <first provider>`, the evidence log holds
+  `created` then `switched`), `DELIVERY PASS` (`direct_stream_sources` shows the provider it left with
+  `delivery.verdict: "bad"`) and `ORDER PASS` (the next resolve's health file marks it). The verdict's
+  rules are `npx vitest run tests/unit/directStream/delivery.test.ts`.
 - A DASH token that expires, end to end (the real page and dash.js, the daemon's pass-through and
   DASH rewriting, the fake resolver, the fixture stream host; Chromium, nothing of the owner's):
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-dash-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-dash")`,

@@ -17,6 +17,7 @@ import {
   reportStreamBug,
   SessionError,
   switchEpisode,
+  switchSource,
   type EpisodeNumber,
   type ManifestKind,
   type PlayerLogLine,
@@ -28,6 +29,18 @@ import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from '.
 
 export const POSITION_INTERVAL_MS = 5_000;
 export const MAX_REFRESHES = 3;
+/** The film waiting for data this long is a stall; a shorter wait is not counted. */
+export const STALL_MIN_MS = 1_500;
+/** This many stalls (or network recoveries) within the window, and the page asks for another source. */
+export const STALLS_TO_SWITCH = 3;
+export const STALL_WINDOW_MS = 120_000;
+/** A film still waiting is counted again this often. */
+export const STALL_REPEAT_MS = 10_000;
+/** A wait this soon after a seek is the seek's own. */
+export const SEEK_GRACE_MS = 5_000;
+/** At most this many moves to another provider per session, and one ask per cooldown. */
+export const MAX_SOURCE_SWITCHES = 2;
+export const SOURCE_SWITCH_COOLDOWN_MS = 120_000;
 const LOG_MAX = 20;
   /** The daemon refuses a longer line or a bigger batch (src/http/streamEvidenceApi.ts). */
   const EVENT_TEXT_MAX = 2_000;
@@ -132,6 +145,13 @@ export class StreamController {
   private fileTracks: FileTrack[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  /** When the film stalled lately (ms), for the move to another source. */
+  private stalls: number[] = [];
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSeekAt = 0;
+  private sourceSwitches = 0;
+  private lastSourceAskAt = 0;
+  private askingSource = false;
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
@@ -185,6 +205,9 @@ export class StreamController {
   async start(): Promise<void> {
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('seeking', this.onTime);
+    this.video.addEventListener('seeking', this.onSeek);
+    this.video.addEventListener('waiting', this.onWaiting);
+    this.video.addEventListener('playing', this.onMoving);
     this.video.addEventListener('pause', this.onPause);
     this.video.addEventListener('play', this.onPlay);
     this.video.addEventListener('ended', this.onEnded);
@@ -244,6 +267,9 @@ export class StreamController {
     this.fileTracks = [];
     this.sessionId = nextId;
     this.lastPositionS = 0;
+    this.stalls = [];
+    this.sourceSwitches = 0;
+    this.lastSourceAskAt = 0;
     this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
@@ -306,6 +332,10 @@ export class StreamController {
     this.timer = null;
     this.video.removeEventListener('timeupdate', this.onTime);
     this.video.removeEventListener('seeking', this.onTime);
+    this.video.removeEventListener('seeking', this.onSeek);
+    this.video.removeEventListener('waiting', this.onWaiting);
+    this.video.removeEventListener('playing', this.onMoving);
+    this.clearStallTimer();
     this.video.removeEventListener('pause', this.onPause);
     this.video.removeEventListener('play', this.onPlay);
     this.video.removeEventListener('ended', this.onEnded);
@@ -482,6 +512,109 @@ export class StreamController {
     const at = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
     this.set({ stage: 'recovering' });
     this.note(`recovering ${attempt}/${NETWORK_RETRY_LIMIT} after ${message} at ${round1(at)} s`);
+    this.countStall();
+  }
+
+  private clearStallTimer(): void {
+    if (this.stallTimer !== null) clearTimeout(this.stallTimer);
+    this.stallTimer = null;
+  }
+
+  private readonly onSeek = (): void => {
+    this.lastSeekAt = Date.now();
+    this.clearStallTimer();
+  };
+
+  // The film ran out of data while it should be playing. A wait that outlasts STALL_MIN_MS is a
+  // stall; a seek's own wait, a pause and the first load are not.
+  private readonly onWaiting = (): void => {
+    if (this.state.stage !== 'ready' || this.video.paused) return;
+    // A seek's own wait is not a stall, unless it outlasts the grace.
+    this.armStall(STALL_MIN_MS + Math.max(0, this.lastSeekAt + SEEK_GRACE_MS - Date.now()));
+  };
+
+  // A film that stays frozen is counted again every STALL_REPEAT_MS, so one long freeze moves the
+  // source as three short ones do. `playing`, a seek and a pause end the wait.
+  private armStall(delayMs: number): void {
+    this.clearStallTimer();
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      if (this.disposed || this.state.stage !== 'ready' || this.video.paused) return;
+      this.note(`stalled at ${round1(this.video.currentTime)} s`);
+      this.countStall();
+      if (this.state.stage === 'ready') this.armStall(STALL_REPEAT_MS);
+    }, delayMs);
+  }
+
+  private readonly onMoving = (): void => {
+    this.clearStallTimer();
+  };
+
+  private countStall(): void {
+    const now = Date.now();
+    this.stalls = [...this.stalls.filter((at) => now - at < STALL_WINDOW_MS), now];
+    if (this.stalls.length >= STALLS_TO_SWITCH) void this.changeSource();
+  }
+
+  /**
+   * The film keeps stalling: ask the daemon for another provider of the same title. The film on
+   * screen plays on while the daemon resolves; only when another provider answered does the page
+   * load its stream, at the position it had reached. A cached play has no provider to leave, and a
+   * muted check never moves (it measures the provider it was given).
+   */
+  private async changeSource(): Promise<void> {
+    const now = Date.now();
+    if (
+      this.disposed ||
+      this.askingSource ||
+      this.mutedMode ||
+      this.session === null ||
+      this.session.cached !== null ||
+      !this.onFilm() ||
+      this.sourceSwitches >= MAX_SOURCE_SWITCHES ||
+      (this.lastSourceAskAt > 0 && now - this.lastSourceAskAt < SOURCE_SWITCH_COOLDOWN_MS)
+    ) {
+      return;
+    }
+    this.askingSource = true;
+    this.lastSourceAskAt = now;
+    const asked = this.sessionId;
+    this.note(`${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: asking for another source`);
+    this.stalls = [];
+    try {
+      const answer = await switchSource(asked, this.deps.fetch);
+      if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
+      if (!answer.switched) {
+        this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
+        return;
+      }
+      this.sourceSwitches += 1;
+      const continueAt = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
+      this.generation += 1;
+      this.engine?.destroy();
+      this.engine = null;
+      this.ready = null;
+      this.clearFileTracks();
+      this.session = answer.session;
+      this.subtitleChosen = false;
+      this.set({ stage: 'refreshing', kind: answer.session.manifestKind, qualities: [], quality: -1, subtitles: [], cached: answer.session.cached });
+      this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
+      await this.loadFileSubtitles(answer.session);
+      if (this.disposed || this.session !== answer.session) return;
+      await this.attach(answer.session, continueAt);
+    } catch (err) {
+      if (!this.disposed && this.sessionId === asked) this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+    } finally {
+      this.askingSource = false;
+    }
+  }
+
+  private clearFileTracks(): void {
+    for (const track of this.fileTracks) {
+      track.element.remove();
+      this.deps.revokeTextUrl(track.url);
+    }
+    this.fileTracks = [];
   }
 
   /** A load succeeded after a restart: back to the film (or to loading, when it never played since attach). */
@@ -568,6 +701,7 @@ export class StreamController {
   };
 
   private readonly onPause = (): void => {
+    this.clearStallTimer();
     if (this.onFilm() && !this.video.ended) this.report();
   };
 

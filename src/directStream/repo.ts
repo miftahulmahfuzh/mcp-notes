@@ -23,6 +23,7 @@ import type { TitleKind } from '../movies/tmdb.js';
 import type { ListedCandidate } from './candidates.js';
 import type { ProbeRecord, ProbeStore, ProbeTarget } from './prober.js';
 import type { ResolvedSource, StreamRef } from './types.js';
+import type { Delivery, DeliveryVerdict } from './delivery.js';
 
 /** How many of a provider's latest times to a stream are kept per host. */
 export const RECENT_TIMINGS = 10;
@@ -106,6 +107,8 @@ export interface ProviderHealthJson {
   last_success_at: string | null;
   last_failure_at: string | null;
   consecutive_failures: number;
+  /** How the provider's host delivered its last play here (delivery.ts); set by the service, never stored. */
+  delivery?: DeliveryVerdict | null;
 }
 
 export function median(values: readonly number[]): number | null {
@@ -138,6 +141,8 @@ export interface ProviderView extends ProviderSeedJson {
   origin_site: string | null;
   added_at: string;
   /** This host's health; null until a resolve tried the provider here. */
+  /** The provider's last play on this host, from the stream evidence log (delivery.ts); null: none recent or long enough. */
+  delivery: Delivery | null;
   health:
     | (ProviderHealthJson & {
         last_outcome: StreamHealthOutcome;
@@ -154,6 +159,7 @@ export function providerView(row: StreamProviderRow, health: StreamProviderHealt
     ...providerSeedJson(row),
     origin_site: row.originSite,
     added_at: row.addedAt.toISOString(),
+    delivery: null,
     health:
       health === null
         ? null

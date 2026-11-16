@@ -35,6 +35,8 @@ export interface StreamSession {
   refreshedAt: Date;
   /** Times a refresh replaced the source (a token expired); 0 for a fresh session. */
   refreshes: number;
+  /** Providers this session left because their stream stalled (switchSource): no later resolve of the session tries them. */
+  avoid: string[];
   lastUsedAt: Date;
 }
 
@@ -92,6 +94,7 @@ export class SessionStore {
       createdAt: at,
       refreshedAt: at,
       refreshes: 0,
+      avoid: [],
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);

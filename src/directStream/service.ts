@@ -7,6 +7,7 @@ import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
 import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
+import { deliveryByProvider, type Delivery } from './delivery.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
@@ -162,6 +163,18 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 
 function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcome {
   return (STREAM_HEALTH_OUTCOMES as readonly string[]).includes(outcome);
+}
+
+/** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
+const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 } as const;
+
+/** switchSource's answer: the session as it is now, and whether it moved to another provider. */
+export interface SwitchSourceAnswer {
+  switched: boolean;
+  reason: 'cached' | 'no_other_source' | null;
+  /** The provider the player was on when it asked. */
+  from: string;
+  session: SessionInfo;
 }
 
 /**
@@ -353,7 +366,7 @@ export class DirectStreamService {
     }
     let out: ResolvedOutput;
     try {
-      out = await this.resolveSource(session.ref);
+      out = await this.resolveSource(session.ref, undefined, session.avoid);
     } catch (err) {
       safeRecord(this.evidence, sessionRecord(session, 'refresh_failed', err instanceof DirectStreamError ? `${err.code}: ${err.message}` : messageOf(err)));
       throw err;
@@ -361,6 +374,39 @@ export class DirectStreamService {
     this.sessions.replaceSource(session, out.source, out.attempts);
     safeRecord(this.evidence, sessionRecord(session, 'refreshed', null));
     return this.sessionInfo(session);
+  }
+
+  /**
+   * The player says the stream keeps stalling: move the session to another provider under the same
+   * id. The title is resolved again without the provider it plays from (and those it left before);
+   * when one answers, the session takes its source and never goes back. `switched: false` leaves the
+   * session as it was: `cached` (a cache has no provider to leave) or `no_other_source`. The
+   * recordResolve hook runs only for a resolve that found a source, so a title whose other providers
+   * all failed is not marked stale while it plays. Throws `unknown_session`.
+   */
+  async switchSource(id: string): Promise<SwitchSourceAnswer> {
+    const session = this.sessions.get(id);
+    if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    if (session.cache !== null) return { switched: false, reason: 'cached', from: session.source.provider, session: await this.sessionInfo(session) };
+    const from = session.source.provider;
+    const out = await this.runResolve(session.ref, { skip: [...session.avoid, from] });
+    if (!out.ok) {
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} stalls on ${from} and no other provider answered (${out.error})`);
+      return { switched: false, reason: 'no_other_source', from, session: await this.sessionInfo(session) };
+    }
+    const hook = this.opts.hooks?.recordResolve;
+    if (hook !== undefined) {
+      try {
+        await hook(session.ref, out);
+      } catch (err) {
+        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
+      }
+    }
+    session.avoid.push(from);
+    this.sessions.replaceSource(session, out.source, out.attempts);
+    safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from ${from} to ${out.source.provider} (the stream stalled)`);
+    return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
   }
 
   /**
@@ -451,9 +497,24 @@ export class DirectStreamService {
 
   /** Every provider with this host's health. */
   async providers(): Promise<ProviderView[]> {
-    const [rows, health] = await Promise.all([this.repo.providers(), this.repo.healthFor(this.host)]);
+    const [rows, health, delivery] = await Promise.all([this.repo.providers(), this.repo.healthFor(this.host), this.delivery()]);
     const byName = new Map(health.map((h) => [h.name, h]));
-    return rows.map((row) => providerView(row, byName.get(row.name) ?? null));
+    return rows.map((row) => ({ ...providerView(row, byName.get(row.name) ?? null), delivery: delivery.get(row.name) ?? null }));
+  }
+
+  /**
+   * Each provider's delivery on this host, from the evidence log (delivery.ts). Empty without a log
+   * that can be read, or when reading it fails: delivery only orders providers, it never fails a resolve.
+   */
+  async delivery(): Promise<Map<string, Delivery>> {
+    const recent = this.evidence?.recent;
+    if (recent === undefined) return new Map();
+    try {
+      return deliveryByProvider(await recent.call(this.evidence), this.now().getTime());
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the evidence log for the providers' delivery: ${messageOf(err)}`);
+      return new Map();
+    }
   }
 
   /**
@@ -461,27 +522,35 @@ export class DirectStreamService {
    * (one at a time), and records each provider's outcome for this host. Never throws for a failed
    * resolve: `{ok: false}` names why (`no_source`, or `script_failed` / `bad_output` / the resolver's
    * error). Does not call the recordResolve hook. Phase 8 probes one provider with `{ only }`;
-   * `deadlineS` becomes the resolver's `--deadline-s` (phase 10's per-pass budget).
+   * `deadlineS` becomes the resolver's `--deadline-s` (phase 10's per-pass budget). `skip` names
+   * providers the resolver must not try (a session that left them, switchSource). The health file
+   * also carries each provider's delivery, which the resolver's order puts before its resolve health.
    */
-  async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number } = {}): Promise<ResolveOutput> {
+  async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number; skip?: readonly string[] } = {}): Promise<ResolveOutput> {
     const audioLang = await this.audioLang(ref);
     const anime = await this.animeRef(ref);
     return this.serial(async () => {
       const providers = await this.repo.providers();
       const health = await this.repo.healthFor(this.host);
+      const healthJson = healthMap(health);
+      for (const [name, delivery] of await this.delivery()) {
+        healthJson[name] = { ...(healthJson[name] ?? NO_HEALTH), delivery: delivery.verdict };
+      }
+      const skip = (options.skip ?? []).filter((name) => name !== '' && !name.includes(','));
       const dir = await mkdtemp(path.join(tmpdir(), 'notesd-direct-'));
       let out: ResolveOutput;
       try {
         const providersFile = path.join(dir, 'providers.json');
         const healthFile = path.join(dir, 'health.json');
         await writeFile(providersFile, JSON.stringify(providers.map(providerSeedJson)));
-        await writeFile(healthFile, JSON.stringify(healthMap(health)));
+        await writeFile(healthFile, JSON.stringify(healthJson));
         const args = [
           'resolve',
           ref.kind,
           String(ref.tmdbId),
           ...(ref.kind === 'tv' ? [String(ref.season), String(ref.episode)] : []),
           ...(options.only !== undefined ? ['--only', options.only] : []),
+          ...(skip.length > 0 ? ['--skip', skip.join(',')] : []),
           ...(options.deadlineS !== undefined ? ['--deadline-s', String(Math.max(1, Math.floor(options.deadlineS)))] : []),
           ...(audioLang !== null ? ['--audio-lang', audioLang] : []),
           ...(anime !== null ? ['--anime', `${anime.id}:${anime.episode}`] : []),
@@ -544,8 +613,8 @@ export class DirectStreamService {
   }
 
   /** runResolve, then the recordResolve hook, then a typed failure. */
-  private async resolveSource(ref: StreamRef, deadlineS?: number): Promise<ResolvedOutput> {
-    const out = await this.runResolve(ref, deadlineS === undefined ? {} : { deadlineS });
+  private async resolveSource(ref: StreamRef, deadlineS?: number, skip: readonly string[] = []): Promise<ResolvedOutput> {
+    const out = await this.runResolve(ref, { ...(deadlineS === undefined ? {} : { deadlineS }), skip });
     const hook = this.opts.hooks?.recordResolve;
     if (hook !== undefined) {
       try {

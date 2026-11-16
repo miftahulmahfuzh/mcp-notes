@@ -36,7 +36,7 @@ const TEXT_MAX_CHARS = 2000;
 const WARN_EVERY_MS = 60_000;
 
 export const REQUEST_OUTCOMES = ['end', 'aborted', 'error', 'refused'] as const;
-export const SESSION_EVENTS = ['created', 'refreshed', 'refresh_failed'] as const;
+export const SESSION_EVENTS = ['created', 'refreshed', 'refresh_failed', 'switched'] as const;
 
 const requestSchema = z.object({
   type: z.literal('request'),
@@ -99,6 +99,8 @@ export type EvidenceInput = DistributiveOmit<EvidenceRecord, 'at'>;
 /** Where evidence goes. StreamEvidence is the real one; `record` must return at once and never throw. */
 export interface EvidenceSink {
   record(input: EvidenceInput): void;
+  /** The newest records, oldest first, everything recorded so far included (delivery.ts reads them). A sink without it is not read. */
+  recent?(): Promise<EvidenceRecord[]>;
 }
 
 /** Hands a record to the sink and swallows anything it throws: evidence never fails an answer. */
@@ -232,7 +234,7 @@ export function sessionSource(session: StreamSession, expiresAt: Date): SessionS
   };
 }
 
-/** A session made, refreshed, or whose refresh failed: what the log keeps after the session is gone. */
+/** A session made, refreshed, moved to another provider, or whose refresh failed: what the log keeps after the session is gone. */
 export function sessionRecord(session: StreamSession, event: SessionEvent, error: string | null): EvidenceInput {
   return {
     type: 'session',
@@ -503,6 +505,11 @@ export class StreamEvidence implements EvidenceSink {
       if (r !== null) out.push(r);
     }
     return out;
+  }
+
+  async recent(): Promise<EvidenceRecord[]> {
+    await this.flushed();
+    return this.readTail(EVIDENCE_TAIL_BYTES);
   }
 
   /** GET /api/stream/evidence: the newest `limit` records, oldest first, of one session or of all. */

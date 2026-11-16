@@ -1,6 +1,7 @@
 // The order providers are tried in, the one place it lives (decision D1): a provider known to
-// offer an English subtitle first, unknown next, known without one last; then health; then the
-// best quality; then the quickest; then the order of the list.
+// offer an English subtitle first, unknown next, known without one last; then delivery (a provider
+// whose last play on this machine kept stalling goes last); then health; then the best quality;
+// then the quickest; then the order of the list.
 
 /** 0: has an English subtitle, 1: not known, 2: has none. A measured value beats the seed's. */
 export function englishTier(provider, health) {
@@ -19,13 +20,23 @@ export function healthRank(health) {
   return health.last_success_at ? 0 : 1;
 }
 
+/**
+ * 1: the provider's stream host refused segments or kept the player waiting the last time something
+ * played from it here (the daemon reads that from its stream evidence log); 0: it delivered, or
+ * nothing played from it lately. Before healthRank: a provider that resolves and then stalls is
+ * worse to watch than one that still has to prove it resolves.
+ */
+export function deliveryRank(health) {
+  return health?.delivery === 'bad' ? 1 : 0;
+}
+
 /** The providers in the order a resolve tries them. Does not drop any; the resolver skips. */
 export function orderProviders(providers, health = {}) {
   const keyed = providers.map((provider, index) => {
     const h = Object.hasOwn(health, provider.name) ? health[provider.name] : null;
     return {
       provider,
-      key: [englishTier(provider, h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
+      key: [englishTier(provider, h), deliveryRank(h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
     };
   });
   keyed.sort((a, b) => {

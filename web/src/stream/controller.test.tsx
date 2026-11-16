@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_REFRESHES, POSITION_INTERVAL_MS, StreamController } from './controller';
+import { MAX_REFRESHES, MAX_SOURCE_SWITCHES, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -730,5 +730,116 @@ describe('StreamController: the report button (R4)', () => {
     const { controller } = await failed(() => jsonResponse({ error: 'unknown_session' }, 403));
     await controller.reportBug();
     expect(controller.getState().bugReport).toEqual({ status: 'failed', code: 'unknown_session' });
+  });
+});
+
+describe('a film that keeps stalling', () => {
+  const SOURCE = `POST ${S1}/source`;
+  const moved = (over: Record<string, unknown> = {}) =>
+    jsonResponse({ ...streamSessionJson({ manifest_url: `${S1}/p?u=m2`, provider: 'VidNest Anime' }), switched: true, reason: null, from: 'HyperLink', ...over });
+
+  async function playing(routes: Record<string, (call: FetchCall) => Response>, session: Record<string, unknown> = {}, opts: { muted?: boolean } = {}) {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson(session)), ...routes }, opts);
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const stall = async (ms = STALL_MIN_MS) => {
+      t.fire('waiting');
+      await vi.advanceTimersByTimeAsync(ms);
+      t.fire('playing');
+    };
+    const asks = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/source`);
+    return { ...t, stall, asks };
+  }
+
+  it('asks for another source after three stalls and plays it from where the film was', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    for (let i = 1; i < STALLS_TO_SWITCH; i++) await t.stall();
+    expect(t.asks()).toHaveLength(0);
+    t.media.currentTime = 312;
+    await t.stall();
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.asks()).toHaveLength(1);
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.made[1].req).toMatchObject({ src: `${S1}/p?u=m2`, startAt: 312 });
+    expect(t.controller.getState().log).toEqual(expect.arrayContaining(['stalled at 312 s', '3 stalls in 120 s: asking for another source', 'source: HyperLink -> VidNest Anime at 312 s']));
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null });
+  });
+
+  it('keeps the film when no other source answers, and does not ask again inside the cooldown', async () => {
+    const t = await playing({ [SOURCE]: () => moved({ switched: false, reason: 'no_other_source' }) });
+    for (let i = 0; i < STALLS_TO_SWITCH * 2; i++) await t.stall();
+    await vi.waitFor(() => expect(t.controller.getState().log).toContain('source kept: no_other_source'));
+    expect(t.asks()).toHaveLength(1);
+    expect(t.made).toHaveLength(1);
+    expect(t.made[0].destroy).not.toHaveBeenCalled();
+    expect(t.controller.getState().stage).toBe('ready');
+    await vi.advanceTimersByTimeAsync(SOURCE_SWITCH_COOLDOWN_MS);
+    for (let i = 0; i < STALLS_TO_SWITCH; i++) await t.stall();
+    expect(t.asks()).toHaveLength(2);
+  });
+
+  it('moves at most twice in one session', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    for (let n = 1; n <= MAX_SOURCE_SWITCHES + 1; n++) {
+      for (let i = 0; i < STALLS_TO_SWITCH; i++) await t.stall();
+      if (n <= MAX_SOURCE_SWITCHES) {
+        await vi.waitFor(() => expect(t.made).toHaveLength(n + 1));
+        t.made[n].req.handlers.onReady({ qualities: [], subtitles: [] });
+      }
+      await vi.advanceTimersByTimeAsync(SOURCE_SWITCH_COOLDOWN_MS);
+    }
+    expect(t.asks()).toHaveLength(MAX_SOURCE_SWITCHES);
+  });
+
+  it('does not count a short wait, a wait after a seek or a wait while paused', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    for (let i = 0; i < 5; i++) await t.stall(STALL_MIN_MS - 100);
+    for (let i = 0; i < 5; i++) {
+      t.fire('seeking');
+      await t.stall();
+    }
+    await vi.advanceTimersByTimeAsync(10_000);
+    t.media.paused = true;
+    for (let i = 0; i < 5; i++) await t.stall();
+    expect(t.asks()).toHaveLength(0);
+    expect(t.controller.getState().log.some((line) => line.startsWith('stalled'))).toBe(false);
+  });
+
+  it('counts one long freeze again and again, a freeze after a seek once the grace is over', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    t.fire('seeking');
+    t.fire('waiting');
+    await vi.advanceTimersByTimeAsync(SEEK_GRACE_MS + STALL_MIN_MS - 100);
+    expect(t.controller.getState().log.some((line) => line.startsWith('stalled'))).toBe(false);
+    await vi.advanceTimersByTimeAsync(100 + STALL_REPEAT_MS);
+    expect(t.asks()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(STALL_REPEAT_MS);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.asks()).toHaveLength(1);
+  });
+
+  it('never leaves a cache, and a muted check never moves', async () => {
+    const cached = await playing({ [SOURCE]: () => moved() }, { cached: { id: 'c1', state: 'ready', height: 480 } });
+    for (let i = 0; i < STALLS_TO_SWITCH; i++) await cached.stall();
+    expect(cached.asks()).toHaveLength(0);
+    vi.useRealTimers();
+    const muted = await playing({ [SOURCE]: () => moved() }, {}, { muted: true });
+    for (let i = 0; i < STALLS_TO_SWITCH; i++) await muted.stall();
+    expect(muted.asks()).toHaveLength(0);
+  });
+
+  it('counts a network recovery as a stall', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    for (let i = 1; i <= STALLS_TO_SWITCH; i++) {
+      t.made[0].req.handlers.onRecovering(1, 'networkError fragLoadError');
+      t.made[0].req.handlers.onRecovered();
+    }
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.asks()).toHaveLength(1);
   });
 });

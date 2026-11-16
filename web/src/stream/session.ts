@@ -152,6 +152,7 @@ export function sessionIdFromLocation(loc: Pick<Location, 'pathname'>): string |
 export const sessionUrl = (id: string): string => `/api/stream/sessions/${encodeURIComponent(id)}`;
 export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
+export const sourceUrl = (id: string): string => `${sessionUrl(id)}/source`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
@@ -183,6 +184,35 @@ export async function refreshSession(id: string, fetchImpl: typeof fetch): Promi
   if (!res.ok) throw new SessionError(await errorCode(res), res.status);
   const body = (await res.json().catch(() => null)) as { session_id?: unknown } | null;
   return body !== null && typeof body.session_id === 'string' && body.session_id !== '' ? body.session_id : id;
+}
+
+/** POST /api/stream/sessions/:id/source: the session as it is now, and whether it moved to another provider. */
+export interface SourceSwitch {
+  switched: boolean;
+  /** Why not: `cached`, `no_other_source`. */
+  reason: string | null;
+  from: string | null;
+  provider: string | null;
+  session: StreamSession;
+}
+
+/**
+ * Asks the daemon for another provider of the session's title (the film keeps stalling). It
+ * resolves without the provider on screen, which takes seconds, like a play. Throws SessionError
+ * with the daemon's code (`unknown_session`, ...).
+ */
+export async function switchSource(id: string, fetchImpl: typeof fetch): Promise<SourceSwitch> {
+  let res: Response;
+  try {
+    res = await fetchImpl(sourceUrl(id), { method: 'POST' });
+  } catch {
+    throw new SessionError('network', 0);
+  }
+  if (!res.ok) throw new SessionError(await errorCode(res), res.status);
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const session = parseSession(body);
+  const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+  return { switched: body?.switched === true, reason: text(body?.reason), from: text(body?.from), provider: text(body?.provider), session };
 }
 
 /**

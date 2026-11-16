@@ -7,9 +7,10 @@
 //                  token in <dir>/token; upstream.mjs refuses every older token. hls_token: raises
 //                  <dir>/token by one and answers upstream.mjs's tokened HLS film under that token,
 //                  with a Korean original-language audio track)
-//   calls.jsonl    one line per call, appended: {"at", "args"}
+//   calls.jsonl    one line per call, appended: {"at", "args"}; a resolve given --health adds "bad_delivery",
+//                  the providers that file marks with delivery "bad"
 // `resolve` answers like the real CLI, reading --providers and skipping browser-only rows: with two or
-// more usable providers the first is a bot_check and the second resolves; with one, it resolves; with
+// more usable providers (those --skip names are not usable) the first is a bot_check and the second resolves; with one, it resolves; with
 // none, no_source. `open` answers {"ok": true}.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,7 +31,10 @@ function flag(name) {
 
 function main() {
   if (!dir) return print({ ok: false, error: 'fake_not_configured', detail: 'set DIRECT_STREAM_FAKE_DIR' }, 2);
-  appendFileSync(path.join(dir, 'calls.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), args })}\n`);
+  const healthFile = args[0] === 'resolve' ? flag('--health') : null;
+  const health = healthFile && existsSync(healthFile) ? JSON.parse(readFileSync(healthFile, 'utf8')) : null;
+  const badDelivery = health === null ? undefined : Object.keys(health).filter((name) => health[name]?.delivery === 'bad');
+  appendFileSync(path.join(dir, 'calls.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), args, bad_delivery: badDelivery })}\n`);
   if (args[0] === 'open') return print({ ok: true, url: args[1] ?? null, fullscreen: args.includes('--fullscreen') });
   if (args[0] !== 'resolve') return print({ ok: false, error: 'usage', detail: `unknown command ${args[0] ?? ''}` }, 2);
   const positional = [];
@@ -50,11 +54,14 @@ function main() {
   };
   const modeFile = path.join(dir, 'mode');
   const mode = (existsSync(modeFile) ? readFileSync(modeFile, 'utf8').trim() : '') || 'hls';
+  // --skip <name,name>: providers a session left (the real resolver drops them the same way).
+  const skipped = (flag('--skip') ?? '').split(',').filter(Boolean);
   const providersFile = flag('--providers');
   const providers = providersFile
     ? JSON.parse(readFileSync(providersFile, 'utf8'))
         .filter((p) => !p.browser_only)
         .map((p) => p.name)
+        .filter((name) => !skipped.includes(name))
     : [];
   if (mode === 'no_chrome') return print({ ok: false, ...ref, source: null, error: 'no_chrome', detail: 'fake: Chrome is not installed', attempts: [] }, 1);
   if (mode === 'no_source' || providers.length === 0) {

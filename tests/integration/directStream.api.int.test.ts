@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
+import type { EvidenceInput, EvidenceRecord, EvidenceSink } from '../../src/directStream/evidence.js';
 import { DirectStreamRepo } from '../../src/directStream/repo.js';
 import { directStreamScriptRunner } from '../../src/directStream/runner.js';
 import { DirectStreamService, type DirectStreamHooks, type SessionInfo } from '../../src/directStream/service.js';
@@ -68,7 +69,7 @@ async function calls(): Promise<string[][]> {
   }
 }
 
-function service(host = 'host-a', hooks: DirectStreamHooks = {}): DirectStreamService {
+function service(host = 'host-a', hooks: DirectStreamHooks = {}, evidence: EvidenceSink | null = null): DirectStreamService {
   return new DirectStreamService({
     repo: new DirectStreamRepo(db),
     runner: directStreamScriptRunner({ cliPath: FAKE_CLI }),
@@ -84,6 +85,7 @@ function service(host = 'host-a', hooks: DirectStreamHooks = {}): DirectStreamSe
     sessions: new SessionStore(() => clock),
     now: () => clock,
     log: () => undefined,
+    evidence,
   });
 }
 
@@ -461,6 +463,73 @@ describe('POST /api/stream/sessions/:id/refresh', () => {
   });
 });
 
+describe('POST /api/stream/sessions/:id/source', () => {
+  const source = (app: Hono, sid: string) => app.request(`/api/stream/sessions/${sid}/source`, { method: 'POST', headers: SAME_ORIGIN });
+  type SourceJson = SessionInfo & { switched: boolean; reason: string | null; from: string };
+
+  it('moves the session to another provider under the same id, never back, and keeps it when there is none left', async () => {
+    const { app } = await ready();
+    const { session } = await played(app);
+    const sid = session.session_id;
+    expect(session.provider).toBe('Bravo');
+    records = [];
+    const res = await source(app, sid);
+    expect(res.status).toBe(200);
+    const moved = (await res.json()) as SourceJson;
+    expect(moved).toMatchObject({ session_id: sid, provider: 'Alpha', switched: true, reason: null, from: 'Bravo' });
+    expect((await calls()).at(-1)).toEqual(expect.arrayContaining(['resolve', '--skip', 'Bravo']));
+    // The move is a resolve that found a source: the title's source is recorded.
+    expect(records.map((r) => r.result.ok)).toEqual([true]);
+    expect((await app.request(moved.manifest_url)).status).toBe(200);
+
+    // A token refresh after the move does not go back to the provider it left.
+    const refreshed = await app.request(`/api/stream/sessions/${sid}/refresh`, { method: 'POST', headers: SAME_ORIGIN });
+    expect(((await refreshed.json()) as SessionInfo).provider).toBe('Alpha');
+    expect((await calls()).at(-1)).toEqual(expect.arrayContaining(['--skip', 'Bravo']));
+
+    records = [];
+    const again = (await (await source(app, sid)).json()) as SourceJson;
+    expect(again).toMatchObject({ session_id: sid, provider: 'Alpha', switched: false, reason: 'no_other_source', from: 'Alpha' });
+    expect((await calls()).at(-1)).toEqual(expect.arrayContaining(['--skip', 'Bravo,Alpha']));
+    // Nothing found: the title is not marked stale while it plays.
+    expect(records).toEqual([]);
+    expect((await app.request(moved.manifest_url)).status).toBe(200);
+  });
+
+  it('is same-origin only and answers unknown_session for an ended one', async () => {
+    const { app } = await ready();
+    const { session } = await played(app);
+    const cross = await app.request(`/api/stream/sessions/${session.session_id}/source`, { method: 'POST', headers: { origin: 'https://evil.example' } });
+    expect(cross.status).toBe(403);
+    expect((await source(app, 'A'.repeat(32))).status).toBe(403);
+  });
+
+  it('hands the resolver each provider\'s delivery from the evidence log, and shows it with the providers', async () => {
+    const kept: EvidenceRecord[] = [];
+    const sink: EvidenceSink = {
+      record: (input: EvidenceInput) => {
+        kept.push({ ...input, at: clock.toISOString() } as EvidenceRecord);
+      },
+      recent: async () => kept,
+    };
+    const svc = service('host-a', {}, sink);
+    await svc.syncSeed();
+    const app = appFor(svc);
+    for (let i = 0; i < 20; i++) {
+      sink.record({
+        type: 'request', session: 'x'.repeat(32), provider: 'Bravo', stream_host: 'cdn.example', path: '/s.ts', range: null, kind: 'media',
+        status: 503, answer: 503, ttfb_ms: 100, bytes: 190, duration_ms: 300, kbps: null, redirects: 0, outcome: 'end', error: null,
+      });
+    }
+    await played(app);
+    const call = JSON.parse((await readFile(path.join(fakeDir, 'calls.jsonl'), 'utf8')).trim().split('\n')[0] ?? '{}') as { bad_delivery?: string[] };
+    expect(call.bad_delivery).toEqual(['Bravo']);
+    const shown = await svc.providers();
+    expect(shown.find((p) => p.name === 'Bravo')?.delivery).toMatchObject({ verdict: 'bad', requests: 20, failed: 20 });
+    expect(shown.find((p) => p.name === 'Alpha')?.delivery).toBeNull();
+  });
+});
+
 describe('direct_stream_off', () => {
   it('answers direct_stream_off on every route without the service, before any other check', async () => {
     const app = appFor(null);
@@ -470,6 +539,7 @@ describe('direct_stream_off', () => {
       ['GET', `/api/stream/sessions/${id}`],
       ['GET', `/api/stream/sessions/${id}/p?u=${encodeURIComponent(`${up.origin}/hls/master.m3u8`)}`],
       ['POST', `/api/stream/sessions/${id}/refresh`],
+      ['POST', `/api/stream/sessions/${id}/source`],
     ];
     for (const [method, p] of routes) {
       const res = await app.request(p, method === 'POST' ? { method, headers: { 'content-type': 'application/json' }, body: '{"kind":"movie","tmdb_id":550}' } : { method });

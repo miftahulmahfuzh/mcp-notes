@@ -277,12 +277,17 @@ function describe(found) {
  */
 export async function resolveTitle(
   ref,
-  { providers, health = {}, sniff, only = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
+  { providers, health = {}, sniff, only = null, skip = [], sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
 ) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
   let candidates = orderProviders(providers, health);
   // An anime goes to the anime embeds first: they are asked for the original audio with English subtitles.
   if (ref.anime) candidates = [...candidates.filter((p) => p.id_kind === 'anilist'), ...candidates.filter((p) => p.id_kind !== 'anilist')];
+  // A session that left a provider because its stream stalled asks for another one.
+  if (skip.length > 0) {
+    const left = new Set(skip.map((name) => name.toLowerCase()));
+    candidates = candidates.filter((p) => !left.has(p.name.toLowerCase()));
+  }
   if (only !== null) {
     candidates = candidates.filter((p) => p.name.toLowerCase() === only.toLowerCase());
     if (candidates.length === 0) return { ok: false, ...base, source: null, error: 'unknown_provider', detail: `no provider named ${only}`, attempts: [] };

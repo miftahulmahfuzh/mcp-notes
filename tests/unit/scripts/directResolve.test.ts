@@ -120,7 +120,7 @@ describe('reading providers and health', () => {
 
   it('fills what a health entry leaves out, and refuses a list', () => {
     expect(readHealth('{"VidFast":{"en_subtitle":true}}')).toEqual({
-      VidFast: { en_subtitle: true, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 },
+      VidFast: { en_subtitle: true, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0, delivery: null },
     });
     expect(() => readHealth('[]')).toThrow(/keyed by provider name/);
     expect(() => readHealth('{"A":{"best_height":"tall"}}')).toThrow(/best_height/);
@@ -149,6 +149,20 @@ describe('the order providers are tried in (R1.2)', () => {
     );
     expect(names(orderProviders(list, health))).toEqual(['P3', 'P2', 'P4', 'P1']);
     expect(names(orderProviders([provider('X'), provider('Y')], {}))).toEqual(['X', 'Y']);
+  });
+
+  it('puts a provider whose last play here kept stalling after the ones that delivered, whatever its health', () => {
+    const list = [provider('Laggy', { en_subtitle: true }), provider('Fresh', { en_subtitle: true }), provider('Failing', { en_subtitle: true }), provider('NoSub', { en_subtitle: false })];
+    const health = readHealth(
+      JSON.stringify({
+        Laggy: { last_success_at: '2026-11-15T10:00:00Z', best_height: 2160, delivery: 'bad' },
+        Failing: { consecutive_failures: 4 },
+        NoSub: { last_success_at: '2026-11-15T10:00:00Z', delivery: 'good' },
+      }),
+    );
+    // An English subtitle still comes first: Laggy stays ahead of a provider known to have none.
+    expect(names(orderProviders(list, health))).toEqual(['Fresh', 'Failing', 'Laggy', 'NoSub']);
+    expect(readHealth('{"A":{"delivery":"bad"},"B":{"delivery":"slow"},"C":{}}')).toMatchObject({ A: { delivery: 'bad' }, B: { delivery: null }, C: { delivery: null } });
   });
 
   it('lets what this host measured override the seed', () => {
@@ -271,6 +285,18 @@ describe('resolving a title (R1.1, R1.3)', () => {
     expect(one.source.provider).toBe('Beta');
     const none = await resolveTitle(MOVIE, { providers: [provider('Alpha')], sniff, only: 'Zeta' });
     expect(none).toMatchObject({ ok: false, error: 'unknown_provider', attempts: [] });
+  });
+
+  it('never tries a provider named by --skip', async () => {
+    const { sniff, calls } = fakeSniffer({ 'alpha.example': streamCapture(), 'beta.example': streamCapture() });
+    const other = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff, skip: ['alpha'] });
+    expect(calls.map((c) => c.url)).toEqual(['https://beta.example/movie/550']);
+    expect(other.source.provider).toBe('Beta');
+    expect(other.attempts.map((a: Json) => a.provider)).toEqual(['Beta']);
+    const none = await resolveTitle(MOVIE, { providers: [provider('Alpha'), provider('Beta')], sniff, skip: ['Alpha', 'Beta'] });
+    expect(none).toMatchObject({ ok: false, error: 'no_source', attempts: [] });
+    expect(parseArgs(['resolve', 'movie', '550', '--skip', 'Alpha, Beta'])).toMatchObject({ skip: ['Alpha', 'Beta'] });
+    expect(parseArgs(['resolve', 'movie', '550'])).toMatchObject({ skip: [] });
   });
 
   it('tries no further provider once its deadline has passed, and says deadline, not no_source', async () => {

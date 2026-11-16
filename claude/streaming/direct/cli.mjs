@@ -2,7 +2,7 @@
 // The direct-streaming resolver: finds a playable stream for a film or an episode by opening
 // provider embeds in the streaming Chrome, out of sight and silent, and opens daemon pages there.
 // Usage:
-//   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>]
+//   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--skip <name,name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>]
 //   cli.mjs providers [--providers <file>] [--health <file>]
 //   cli.mjs open <http://localhost:<port>/...> [--fullscreen]
 //   cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]
@@ -24,7 +24,7 @@ export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)),
 /** The anime embeds (keyed by AniList id), tried for a resolve that carries --anime. The daemon loads both files into its registry. */
 export const ANIME_SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'anime.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] [--anime <AniList id>:<episode>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--skip <name,name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] [--anime <AniList id>:<episode>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -47,7 +47,7 @@ export class InputError extends Error {
   }
 }
 
-const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang', '--anime', '--watch', '--episode']);
+const VALUE_FLAGS = new Set(['--only', '--skip', '--providers', '--health', '--deadline-s', '--audio-lang', '--anime', '--watch', '--episode']);
 const SWITCH_FLAGS = new Set(['--fullscreen', '--no-chrome']);
 const WHOLE = /^\d+$/;
 const DAEMON_HOSTS = new Set(['localhost', '127.0.0.1']);
@@ -112,7 +112,7 @@ export function parseArgs(argv) {
   };
   switch (command) {
     case 'resolve': {
-      allow(['only', 'providers', 'health', 'deadline-s', 'audio-lang', 'anime']);
+      allow(['only', 'skip', 'providers', 'health', 'deadline-s', 'audio-lang', 'anime']);
       // An anime's AniList id and the episode as AniList counts it ("21:730"): the anime embeds are keyed by them.
       const animeParts = flags.anime === undefined ? null : /^(\d+):(\d+)$/.exec(flags.anime);
       if (flags.anime !== undefined && (animeParts === null || Number(animeParts[1]) < 1 || Number(animeParts[2]) < 1)) {
@@ -124,7 +124,7 @@ export function parseArgs(argv) {
       if (flags['audio-lang'] !== undefined && audioLang === null) throw new InputError('usage', '--audio-lang is a language code such as ko, en or jpn');
       const deadlineS = flags['deadline-s'] === undefined ? null : wholeNumber(flags['deadline-s'], 1);
       if (flags['deadline-s'] !== undefined && deadlineS === null) throw new InputError('usage', '--deadline-s is a whole number of seconds, 1 or more');
-      return { command, ref: { ...parseRef(rest), anime }, only: flags.only ?? null, providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS, audioLang };
+      return { command, ref: { ...parseRef(rest), anime }, only: flags.only ?? null, skip: (flags.skip ?? '').split(',').map((name) => name.trim()).filter(Boolean), providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS, audioLang };
     }
     case 'providers':
       allow(['providers', 'health']);
@@ -224,6 +224,8 @@ export function readHealth(text) {
       last_success_at: string('last_success_at'),
       last_failure_at: string('last_failure_at'),
       consecutive_failures: Math.floor(number('consecutive_failures') ?? 0),
+      // The daemon's verdict on the provider's last play here (order.mjs deliveryRank).
+      delivery: h.delivery === 'bad' || h.delivery === 'good' ? h.delivery : null,
     };
   }
   return health;
@@ -330,7 +332,7 @@ export async function main(argv, io = {}) {
     print(result);
     return result.ok ? 0 : 1;
   }
-  const result = await resolveTitle(args.ref, { providers, health, sniff, only: args.only, deadlineS: args.deadlineS, audioLang: args.audioLang, probeAudio });
+  const result = await resolveTitle(args.ref, { providers, health, sniff, only: args.only, skip: args.skip, deadlineS: args.deadlineS, audioLang: args.audioLang, probeAudio });
   print(result);
   return result.ok ? 0 : 1;
 }
