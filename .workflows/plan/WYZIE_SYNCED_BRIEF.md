@@ -46,3 +46,27 @@ A torrent session's English subtitle that came from outside the torrent (the `se
 ## Landing
 
 When it is proven: commit on `feature/wyzie-synced`, merge to `main`, push, and remove the worktree and branch, the way the torrent set landed (see `git log` on main: `merge(torrent-stream-source)`). Then rebuild and restart the daemon (`scripts/install.sh` is idempotent) **only if nothing is streaming** (`GET http://127.0.0.1:7317/api/movies/player` shows no `stream`, and VLC is not playing): a restart ends every stream session. If something is playing, land the code, skip the restart, and say so in the last message.
+
+## Addendum: cloud streams
+
+Sent on 2026-11-17 by the session that wrote this brief (analyze-torrent-stream-source), from the owner: "can we extend this subtitle feature for streaming non-torrent as well? look at M-GSZP. i am streaming it right now. can you add subtitle to it?" It reuses the two things above: replacing a session's subtitle with a revision the page notices, and the sync job.
+
+### The case
+
+- M-GSZP is Allen (2026), TMDB movie 1518204, original language en. It plays from HyperLink (HLS, 1080p), moved onto this machine's stream cache by a pause, and its session has `subtitles: []`: no provider had an English track.
+- Wyzie has it: `GET /search?id=1518204&language=en&format=srt` answers 5 subtitles written by people; Wyzie takes the TMDB id as it is, so no IMDb id is needed. The keyless OpenSubtitles add-on answered nothing for it.
+
+### What to build
+
+1. When a cloud session is made (resolve, a play from the stream cache, a move to the cache on a pause, switchSource, switchEpisode, refresh) and its source has no English subtitle (isEnglish over its tracks; the lone unnamed file the page shows by default counts as having one), ask the outside subtitle services the torrent `service` tier uses: Wyzie first when `WYZIE_API_KEY` is set (ranked with an empty release: plain before hearing-impaired, then downloads), then the OpenSubtitles add-on (it needs the IMDb id: the imdbId hook). Pull the shared part out of the torrent tier rather than copying it.
+2. It must not slow a play: a short inline wait (about 4 s), otherwise it finishes in the background and bumps the session's subtitle revision, so the open page takes it the way it takes a synced file.
+3. Keep the file per title on this machine, not per session: a folder under the data directory keyed by the title ref (`movie-<tmdb id>`, `tv-<tmdb id>-s<season>e<episode>`), served by a local route like the torrent's `/sub/` route (same closed name pattern, WebVTT). A later play of the title on this machine, from any provider or from the cache, uses the kept file with no request. A per-host file; nothing goes in the database.
+4. Label it `English (Wyzie)` / `English (OpenSubtitles)`. In the session's subtitles it is a local subtitle (`localSubtitle`), never an address through the pass-through, and never copied into `session.source.subtitles`.
+5. Wyzie Synced for it, under the same `NOTESD_TORRENT_WYZIE_SYNC` switch and the same horizons: the audio comes from the stream (the cache's local playlist when the session is on the cache, else the manifest with the captured Referer / Origin / User-Agent, as `src/directStream/picture.ts` gives them to ffmpeg), in the background, once per title and machine. A sync that fails leaves the unsynced file in place.
+6. A title with a provider subtitle in English is left exactly as it is today: no request, no sync.
+7. `direct_stream_dialogue` answers `no_subtitle` when the resolved source has no English track: when a kept or fetched outside file exists for the title, read the dialogue from it instead. Only if it is a few lines; say in the last message whether it was done.
+8. No new variable; the configuration rows and the guide must say the settings apply to every stream session. Tests: a cloud session with no English track gets the outside file (fake fetch), one with an English track asks nothing, the kept file is reused, the page reloads on the revision. Prove it on the throwaway daemon's `--direct-stream` fixture stream host (a source with no subtitle) with the fake subtitle service.
+
+### Landing, changed
+
+The owner is watching Allen (paused at about 2 minutes, on the cache). Land the code, and restart only when `GET /api/movies/player` shows no `stream` and no VLC play. If the film is still on screen then, do not restart; say so in the last message.

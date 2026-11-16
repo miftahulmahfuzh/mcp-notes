@@ -1,7 +1,9 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
+import { fileResponse } from '../directStream/cache/serve.js';
 import type { DirectStreamService } from '../directStream/service.js';
+import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
 import type { StreamLive } from '../movies/streamLive.js';
 import { MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
@@ -70,7 +72,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -159,6 +161,14 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
   });
 
+  // A title's English subtitle from outside its stream (WebVTT), kept per title on this machine (titleSubtitles.ts).
+  r.get('/api/stream/subs/:title/:name', async (c) => {
+    const name = c.req.param('name');
+    const file = deps.titleSubtitles?.file(c.req.param('title'), name) ?? null;
+    if (file !== null && (await isFile(file))) return fileResponse(file, name, c.req.header('range') ?? null);
+    return c.json({ error: 'not_found', message: 'This machine has no subtitle file by that name for that title.' }, 404);
+  });
+
   // Phase 5: the player page's position reports (src/movies/streams.ts).
   r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null }));
 
@@ -185,11 +195,14 @@ const positionBody = z.object({
   closed: z.boolean().optional(),
 });
 
+/** The session a report is for: `subtitleRev` counts the times its subtitle changed since the play started (a torrent session's, else a cloud session's outside one). */
+type PositionSession = StreamSessionRef & { torrent?: { subtitleRev: number } | null; outside?: { subtitleRev: number } };
+
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
   movies: MovieStreamsSource | null;
   /** `letGo`: the page closed or the film ended, so the session lets go of its torrent (torrent phase 3). */
-  directStream?: { session(id: string): StreamSessionRef | null | Promise<StreamSessionRef | null>; letGo?(id: string): void } | null;
+  directStream?: { session(id: string): PositionSession | null | Promise<PositionSession | null>; letGo?(id: string): void } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
 }
@@ -204,6 +217,9 @@ export interface StreamPositionDeps {
  * Each report also feeds the live state (src/movies/streamLive.ts): the session is the stream on
  * screen until it ends or closes. A `beat` of a paused page that is already the stream on screen
  * only keeps it there: the position did not move, so nothing is written.
+ *
+ * Every 200 carries `subtitle_rev`, the session's count of subtitle changes (Wyzie Synced re-timed
+ * it, or an outside subtitle arrived late): the page loads its subtitle again when the number changes.
  */
 export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: () => Date } = {}): Hono {
   const r = new Hono();
@@ -226,13 +242,14 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     const live = deps.live ?? null;
     const report = body.data;
     const over = report.ended === true || report.closed === true;
+    const subtitleRev = session.torrent?.subtitleRev ?? session.outside?.subtitleRev ?? 0;
     // Torrent phase 3: the page is gone or the film is over, so the session lets go of its torrent (a reload takes it again).
     if (over) service.letGo?.(session.id);
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {
         live.report({ sessionId: session.id, titleId: on.title_id, ref: session.ref, provider: session.source.provider, positionS: report.position_s, durationS: report.duration_s ?? on.duration, paused: true });
-        return c.json({ ok: true, play_id: null, ended: false });
+        return c.json({ ok: true, play_id: null, ended: false, subtitle_rev: subtitleRev });
       }
     }
     const written = await new MovieStreams(movies, options).recordPosition(session, {
@@ -257,7 +274,7 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
         });
       }
     }
-    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null });
+    return c.json({ ok: true, play_id: written.play.id, ended: written.play.endedAt !== null, subtitle_rev: subtitleRev });
   });
   return r;
 }

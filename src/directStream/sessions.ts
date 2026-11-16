@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { CacheSubtitleView, SessionCache } from './cachePlay.js';
 import { absoluteHttp } from './rewrite.js';
 import type { TorrentCandidate, TorrentQuery } from './torrent/find/index.js';
+import type { SyncTarget } from './torrent/subtitles/synced.js';
 import type { ManifestKind, ResolveAttempt, ResolvedSource, StreamRef } from './types.js';
 
 /** A session ends this long after its last request (the player fetches every few seconds while it plays). */
@@ -38,6 +39,11 @@ export interface SessionTorrent {
   /** `mp4` (the file as is); phase 5 adds `hls` for its remux. */
   manifestKind: Extract<ManifestKind, 'mp4' | 'hls'>;
   subtitles: CacheSubtitleView[];
+  /**
+   * Counts the times Wyzie Synced replaced `subtitles` after the play started (torrent/subtitles/synced.ts); 0 at
+   * first. The player page reads it in the answer to its position reports and loads the subtitle again when it changes.
+   */
+  subtitleRev: number;
   /** The candidates after this one, in the finder's order, for the shuffle button (switchSource). */
   candidates: TorrentCandidate[];
   durationS: number | null;
@@ -78,6 +84,12 @@ export interface StreamSession {
   cache: SessionCache | null;
   /** The torrent the session plays from (torrent phase 3); null: not a torrent. Never set together with `cache`. */
   torrent: SessionTorrent | null;
+  /**
+   * The title's English subtitle from outside the stream, for a cloud session whose source has none
+   * (outsideSubtitles.ts): `subtitles` is [] until there is one, `subtitleRev` counts the times it changed after
+   * the page first read the session, and `stop` aborts when the session ends (its sync stops). Never a torrent's.
+   */
+  outside: SyncTarget & { stop: AbortController };
   readonly createdAt: Date;
   refreshedAt: Date;
   /** Times a refresh replaced the source (a token expired); 0 for a fresh session. */
@@ -145,6 +157,7 @@ export class SessionStore {
       audioLang,
       cache,
       torrent: null,
+      outside: { subtitles: [], subtitleRev: 0, stop: new AbortController() },
       createdAt: at,
       refreshedAt: at,
       refreshes: 0,
@@ -238,6 +251,7 @@ export class SessionStore {
 
   private drop(session: StreamSession): void {
     this.sessions.delete(session.id);
+    session.outside.stop.abort();
     for (const listener of this.endListeners) {
       try {
         listener(session);

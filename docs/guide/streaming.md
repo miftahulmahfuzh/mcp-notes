@@ -513,6 +513,32 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 - When a token expires mid-film, `POST /api/stream/sessions/<id>/refresh` resolves again and keeps
   the same session and page.
 
+### A stream with no English subtitle
+
+Some providers stream a title with no English track at all. When a cloud session is read (a
+resolve, a play from the stream cache, a move to the cache on a pause, another source, a refresh)
+and its source has no English subtitle to show (no English track, and not the lone unnamed file
+the page shows by default), the daemon asks the subtitle services a torrent asks: Wyzie Subs first
+when `WYZIE_API_KEY` is set (by the IMDb id, else the TMDB id; a plain file before a
+hearing-impaired one, then the more downloaded), then the OpenSubtitles add-on
+(`NOTESD_TORRENT_SUBTITLE_URL`, by the IMDb id).
+
+- **Kept per title on this machine**, under `<NOTES_DATA_DIR>/movies/stream-subs/<movie-550 |
+  tv-1396-s1e2>/`, and served by `GET /api/stream/subs/<title>/<name>`. A later play of the title
+  here, from any provider or from the cache, shows the kept file and asks nothing. The other
+  machine asks for its own.
+- **It never holds up a play** for more than 4 s. A slower answer arrives behind the play: the
+  session's `subtitle_rev` goes up and the open page loads the subtitle (see [The player](#the-player)).
+- **In the session** it is one more entry of `subtitles`, named `English (Wyzie)` or
+  `English (OpenSubtitles)`, with a local address. It is never fetched through the pass-through and
+  never part of the resolved source.
+- **Re-timed** to the stream's audio by [Wyzie Synced](#wyzie-synced-a-subtitle-re-timed-to-the-audio);
+  a sync that fails leaves the file as it is.
+- A title the services have nothing for is not asked about again for six hours. A stream with an
+  English subtitle of its own is left exactly as it is: no request, no sync. A torrent session has
+  its own subtitle tiers (see [Subtitles for a torrent](#subtitles-for-a-torrent)).
+- `direct_stream_dialogue` reads the outside file when the resolved source has no English track.
+
 ### Stream evidence
 
 Every answer the pass-through gives goes to this machine's evidence log,
@@ -605,6 +631,12 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   control bar. Chrome's own drawing sat on the last line under the bar. The `<video>` is styled
   `opacity: 0.999`: in full screen with the controls faded, Chrome on Windows hands an opaque
   video to a hardware overlay drawn over the rest of the page, which hid every subtitle.
+- **A subtitle that changes while the film plays.** The answer to each position report carries the
+  session's `subtitle_rev`. When it is no longer the number the page read with the session, the
+  page reads the session again and loads its subtitle files anew, without touching the film: a
+  subtitle re-timed by [Wyzie Synced](#wyzie-synced-a-subtitle-re-timed-to-the-audio) (the line
+  over the picture says `Subtitles synced` and the delay below goes back to 0), or an outside
+  subtitle that arrived after the play started. Subtitles the viewer turned off stay off.
 - **Subtitle delay.** G shows the subtitles 50 ms earlier and H 50 ms later, as in VLC (hold the
   key to go on); the line over the picture reads `Subtitle delay +250 ms`. It is for a subtitle
   that came from another provider than the picture. The delay is kept per title in the page's
@@ -1329,14 +1361,56 @@ These four hold up a play for at most 40 s together: one that would start later 
 the play goes on without a subtitle.
 
 A subtitle matched by title or borrowed from a provider may be cut for another release, so its
-lines can come early or late. The player's G and H keys move them 50 ms at a time, and the delay
-is kept for the title (see [The player](#the-player)).
+lines can come early or late. With a Wyzie key it is re-timed behind the play (see
+[Wyzie Synced](#wyzie-synced-a-subtitle-re-timed-to-the-audio)). Without one, the player's G and H
+keys move the lines 50 ms at a time, and the delay is kept for the title (see
+[The player](#the-player)).
 
 Before the first torrent is opened, the file lists of the best three candidates are read in
 parallel (metadata only), and one whose files hold an English subtitle is tried first. The
 others leave their swarms at once.
 
 Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
+
+### Wyzie Synced: a subtitle re-timed to the audio
+
+A subtitle from outside the stream is timed for some release, often not the one that plays. With
+`WYZIE_API_KEY` set (a Wyzie Pro key), such a subtitle is re-timed against the film's own audio
+after the play has started:
+
+- **Which subtitles.** A torrent session's subtitle from the subtitle service or from a cloud
+  provider (tiers 3 and 4, also when a replay answers it from the kept file), and a cloud
+  session's outside subtitle (see [A stream with no English subtitle](#a-stream-with-no-english-subtitle)).
+  A file of the torrent, the track inside its video file and a Whisper track are already in step
+  and are never synced.
+- **How.** ffmpeg cuts the audio from the start of the film in stretches of five minutes: from the
+  torrent's own file route, which waits for bytes not downloaded yet, or from the cloud stream (this
+  machine's cache of it when the session plays from the cache, else the provider's manifest with
+  the headers the resolve captured). Silero VAD (`claude/streaming/torrent/vad.py`, run with
+  Whisper's Python; no model is downloaded) finds where people talk, and those stretches of speech,
+  never the audio, go to Wyzie (`POST /sync`), which tries its top five English subtitles of the
+  title and answers the one that fits best, moved and stretched to fit.
+- **How much of the film.** The first 30 minutes, then the first 60, then the whole film, each only
+  when the one before did not line up (Wyzie's 422); a film shorter than 30 minutes goes straight
+  to the whole of it. Any other failure ends the job.
+- **The synced file replaces the old one.** It is kept as the chosen subtitle (a torrent's
+  `synced-<file index>.vtt`, a title's `synced.vtt`), named **English (Wyzie, synced)**, and the
+  session's `subtitle_rev` goes up. The open player page reads that number in the answer to its
+  position reports (every 5 s), reads the session again and loads the new file: the film, its
+  position and whether subtitles are on stay as they are. The line over the picture says
+  `Subtitles synced`, and the G/H delay kept for the title goes back to 0, since it was set
+  against the old timing.
+- **Once.** One sync per torrent file (or per title, for a cloud stream) on this machine. Its
+  outcome is kept beside the subtitle (`synced-<file index>.json`, `synced.json`: the offset, the
+  frame-rate fix, the confidence, never an address). After a success, or after Wyzie said no
+  subtitle lines up, a replay asks nothing and plays what is kept. A failure that may pass (no
+  answer, the key's limit, a cut that failed) is tried again by the next play. A job stops when
+  the session lets go of the film and starts over with the next play.
+- **Cost.** 60 requests of the key per successful sync; a refused or failed one is free.
+- **Limits.** Without Whisper's Python (`scripts/install.sh` installs it; the Whisper tier itself
+  may be off) nothing is synced and the daemon log says so. A cloud stream's audio is downloaded a
+  second time for the cut, at the provider's speed. `NOTESD_TORRENT_WYZIE_SYNC=off` turns the whole
+  thing off. Neither the key nor a download token is ever logged or kept.
 
 ### The subtitle track inside the file
 
@@ -1451,6 +1525,8 @@ To see what a site lists, by hand:
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |
+| `src/directStream/torrent/subtitles/synced.ts`, `claude/streaming/torrent/vad.py` | Wyzie Synced: the `POST /sync` client, the background job and its outcome file; the speech detector |
+| `src/directStream/outsideSubtitles.ts`, `titleSubtitles.ts` | A cloud stream with no English subtitle: asking the subtitle services, the per-title folder and its files |
 | `src/directStream/torrent/subtitles/whisper.ts`, `claude/streaming/torrent/whisper.py` | Whisper, the last subtitle tier of a torrent session: the tier, the ffmpeg audio cutter, the worker client and the faster-whisper worker |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |

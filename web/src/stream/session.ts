@@ -30,6 +30,8 @@ export interface StreamSession {
   cached: CachedInfo | null;
   /** Played from a torrent on this machine (torrent-stream-source phase 3); null: not a torrent. Never set together with `cached`. */
   torrent: TorrentInfo | null;
+  /** How many times the daemon replaced `subtitles` since the play started (Wyzie Synced re-timed a torrent's subtitle). The answer to a position report carries the number now. */
+  subtitleRev: number;
 }
 
 export interface EpisodeNumber {
@@ -173,6 +175,7 @@ export function parseSession(json: unknown): StreamSession {
     nextEpisode: episodeNumber(o.next_episode),
     cached: torrent === null ? cachedInfo(o.cached) : null,
     torrent,
+    subtitleRev: count(o.subtitle_rev) ?? 0,
   };
 }
 
@@ -390,19 +393,24 @@ export async function switchEpisode(id: string, to: 'prev' | 'next', fetchImpl: 
 }
 
 /**
- * Fire and forget: a 404 (no movies store yet, or a session it does not know) and every other failure are ignored.
- * A closing page's report is sent `keepalive`, so it outlives the page.
+ * A 404 (no movies store yet, or a session it does not know) and every other failure are ignored.
+ * A closing page's report is sent `keepalive`, so it outlives the page. Answers the session's
+ * `subtitle_rev` as the daemon has it now (StreamSession.subtitleRev), or null when it did not say.
  */
-export async function postPosition(id: string, report: PositionReport, fetchImpl: typeof fetch): Promise<void> {
+export async function postPosition(id: string, report: PositionReport, fetchImpl: typeof fetch): Promise<number | null> {
   try {
-    await fetchImpl(positionUrl(id), {
+    const res = await fetchImpl(positionUrl(id), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(report),
       ...(report.closed === true ? { keepalive: true } : {}),
     });
+    if (!res.ok || report.closed === true) return null;
+    const body = (await res.json().catch(() => null)) as { subtitle_rev?: unknown } | null;
+    return count(body?.subtitle_rev);
   } catch {
     // ignored: the position is reported again in 5 s
+    return null;
   }
 }
 

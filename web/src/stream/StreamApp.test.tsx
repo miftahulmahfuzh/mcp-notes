@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, torrentLabel } from './StreamApp';
+import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, SYNCED_NOTICE, SYNCED_NOTICE_MS, torrentLabel } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -357,6 +357,45 @@ describe('the subtitle delay line', () => {
     expect(delayText(250)).toBe('Subtitle delay +250 ms');
     expect(delayText(-50)).toBe('Subtitle delay −50 ms');
     expect(delayText(0)).toBe('Subtitle delay 0 ms');
+  });
+});
+
+describe('the line after Wyzie Synced re-timed the subtitle', () => {
+  it('says "Subtitles synced" once, for a moment', async () => {
+    const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
+    let rev = 0;
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl } = routeFetch({
+      'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ subtitle_rev: rev, subtitles: rev === 0 ? [] : [{ url: '/s.vtt', lang: 'en', label: 'English (Wyzie, synced)', format: 'vtt', source: 'request', english: true }], torrent: { info_hash: HASH, name: 'Film', index: null, state: 'ready', seeds: null }, manifest_kind: 'mp4' })),
+      'GET /s.vtt': () => new Response('WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nIn step.\n', { status: 200 }),
+      'POST /api/stream/sessions/S1/position': () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: rev }),
+    });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    const notices = () => [...el.querySelectorAll('.st-notice')].map((n) => n.textContent);
+    const video = el.querySelector('video')!;
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 30 });
+    const report = async () => {
+      act(() => void video.dispatchEvent(new Event('pause')));
+      await settle();
+    };
+    await report();
+    expect(notices()).toEqual([]);
+    rev = 1;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await report();
+      expect(notices()).toEqual([SYNCED_NOTICE]);
+      expect(SYNCED_NOTICE).toBe('Subtitles synced');
+      await act(async () => void vi.advanceTimersByTime(SYNCED_NOTICE_MS + 10));
+      expect(notices()).toEqual([]);
+      // Later reports carry the same number: the line does not come back.
+      await report();
+      expect(notices()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

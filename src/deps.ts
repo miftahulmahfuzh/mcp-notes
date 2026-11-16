@@ -14,6 +14,8 @@ import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
+import type { TitleSubtitleShelf } from './directStream/titleSubtitles.js';
+import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
 import type { WhisperTier } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
@@ -119,6 +121,14 @@ export interface AppDeps {
    * Whisper off or not installed; startBackground's stop closes it, which ends its worker.
    */
   torrentWhisper?: WhisperTier | null;
+  /**
+   * Wyzie Synced: the background re-timing of a stream session's subtitle that came from outside the
+   * stream (a torrent's service or borrowed file, a cloud session's outside file). Null or absent when
+   * off or with no Wyzie key. startBackground's stop closes it, which stops its jobs.
+   */
+  torrentSync?: SubtitleSync | null;
+  /** Where a title's outside subtitle is kept on this machine (`<data dir>/movies/stream-subs`); the `/api/stream/subs` route reads it. Null or absent without direct streaming. */
+  titleSubtitles?: TitleSubtitleShelf | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

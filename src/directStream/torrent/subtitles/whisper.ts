@@ -75,6 +75,8 @@ export interface Transcriber {
 export interface StretchRequest {
   /** The file route, absolute (ffmpeg reads it with Range requests). */
   url: string;
+  /** ffmpeg arguments for this input, before `-i` (a stream host's headers, for Wyzie Synced on a cloud stream). */
+  inputArgs?: readonly string[];
   startS: number;
   lengthS: number;
   /** The WAV to write. */
@@ -170,6 +172,7 @@ export function cutArgs(request: StretchRequest): string[] {
   return [
     '-v', 'error', '-nostdin', '-y',
     '-ss', String(request.startS), '-t', String(request.lengthS),
+    ...(request.inputArgs ?? []),
     '-i', request.url,
     '-map', '0:a:0', '-vn', '-sn', '-dn',
     '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',

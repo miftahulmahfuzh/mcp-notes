@@ -119,6 +119,7 @@ Only text and metadata are in Postgres. Bytes live under `NOTES_DATA_DIR` (defau
   movies/vlc-health-<host>.jsonl     the VLC health log, fsync'd, 5 MB plus one previous file
   movies/stream-cache/<id>/          a stream cache: local playlists, segments, keys, subtitle (NOTESD_STREAM_CACHE_DIR)
   movies/torrents/<info hash>/       a torrent download: the chosen video and subtitle files (NOTESD_TORRENT_DIR)
+  movies/stream-subs/<title>/        a title's English subtitle from a subtitle service, for cloud streams that have none
 ```
 
 `cache/` can be deleted at any time; everything in it is rebuilt on request
