@@ -53,7 +53,7 @@ Every run also pins `NOTESD_DIRECT_STREAM=off`, so a `--movies` run never runs t
 drives the owner's streaming Chrome on Windows). `--direct-stream` turns it on with
 `NOTESD_DIRECT_STREAM_CLI` pointing at `tests/fixtures/direct-stream/fake-cli.mjs` and a fixture stream
 host (`tests/fixtures/direct-stream/upstream.mjs`) under `<run>/direct/`: `mode` there picks the fake's
-next answer (`hls`, `dash`, `dash_film`, `no_source`, `no_chrome`), `calls.jsonl` records every resolve and open,
+next answer (`hls`, `dash`, `dash_film`, `hls_token`, `no_source`, `no_chrome`), `calls.jsonl` records every resolve and open,
 `upstream.jsonl` every request the host got. `scripts/direct-stream/journey.sh RUN` drives it; see
 `features/direct-streaming.md`. A `NOTESD_DIRECT_STREAM_CLI` in the caller's environment replaces the
 fake under `--direct-stream` (phase 6's `playcheck.mjs` wrapper uses this).
@@ -141,6 +141,10 @@ not implementation.
 
 ## Gotchas
 
+- Every run's tmux is a recording fake (`scripts/stream/fake-tmux.sh`, `NOTESD_TMUX_BIN`), so the
+  player's report button opens nothing on the owner's screen: its calls are in
+  `$TMUX_FAKE/calls.log` (`up` prints `TMUX_FAKE=`); `touch $TMUX_FAKE/down` acts as no tmux
+  server, `touch $TMUX_FAKE/fail-new-window` as a refused window.
 - `--web` matters: without it the wall serves whatever `web/dist` was built last, which may not
   be your change. `up` builds web only when `web/dist` is missing or `--web` is passed.
 - Never drive these in verification, because they reach outside the sandbox: `POST .../reveal`

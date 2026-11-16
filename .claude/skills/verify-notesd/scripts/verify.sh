@@ -197,6 +197,7 @@ EOF
   # Real env wins over .env.local, so these pin the instance to the run's own state.
   # OPENROUTER_API_KEY='' turns embeddings off (search reports fallback) unless --embed.
   # NOTESD_ADVERSARY=off unless --adversary: a throwaway daemon never reviews the owner's real Seer.
+  mkdir -p "$dir/tmux"
   local -a env=(
     DATABASE_URL="$(db_url "$db")"
     NOTESD_PORT=0
@@ -204,6 +205,12 @@ EOF
     CLAUDE_HOME="$dir/claude"
     NOTES_WORKTREES_DIR="$dir/worktrees"
     NOTESD_SWARM_SCRIPT="$dir/no-swarm.py"
+    # A throwaway daemon never writes into the owner's stream cache folder (.env.local may name one).
+    NOTESD_STREAM_CACHE_DIR="$dir/data/movies/stream-cache"
+    # Every run's tmux is the recording fake: the report button and resume never open a window in
+    # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
+    NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"
+    NOTESD_FAKE_TMUX_DIR="$dir/tmux"
   )
   [ "$embed" = 1 ] || env+=(OPENROUTER_API_KEY=)
   if [ "$adversary" = 1 ]; then
@@ -299,6 +306,7 @@ EOF
   echo "URL=http://127.0.0.1:$port"
   echo "EVIDENCE=$dir/evidence"
   echo "LOG=$dir/daemon.log"
+  echo "TMUX_FAKE=$dir/tmux"
   if [ "$movies" = 1 ]; then echo "MOVIES=$dir/movies"; fi
   if [ "$direct" = 1 ]; then echo "DIRECT=$dir/direct"; fi
 }

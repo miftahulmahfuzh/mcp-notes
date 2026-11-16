@@ -9,7 +9,7 @@ import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
-import type { Config } from './config.js';
+import { REPO_ROOT, type Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -22,14 +22,19 @@ import { NotesService } from './notes/service.js';
 import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
 import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
-import { buildMoviesService } from './movies/service.js';
+import { MOVIES_SUBDIR, buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { buildStreamCache } from './directStream/cache/service.js';
+import { DirectStreamRepo } from './directStream/repo.js';
+import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
+import { StreamReporter } from './directStream/report.js';
+import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -167,9 +172,27 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
   // null with NOTESD_ANIME_MAP_URL=off: no lookup is made and an anime resolves like any series.
   const animeMapper = createAnimeMapper({ baseUrl: config.directStream?.animeMapUrl ?? null });
+  // The stream on screen in the player page: built here so the evidence log can ask for it.
+  const streamLive = movies === null ? null : new StreamLive();
+  // Stream bug reporting phase 1: this machine's stream evidence log. The service records every
+  // pass-through answer and session change into it; a snapshot reads the live session back through
+  // the service (a closure: the service is built next) and the stream on screen through streamLive.
+  const streamEvidence =
+    movies === null || config.directStream?.enabled !== true
+      ? null
+      : new StreamEvidence({
+          dir: join(config.dataDir, MOVIES_SUBDIR),
+          host: movies.host,
+          source: (id) => directStream?.evidenceSource(id) ?? null,
+          onScreen: () => streamLive?.current()?.session_id ?? null,
+        });
   const directStream = buildDirectStreamService(config, db, {
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
+    evidence: streamEvidence,
+    // Phase 6: a play reads this host's stream cache first. Phase 5 builds it after this service, so
+    // it is read at play time (deps exists by then).
+    caches: () => deps.streamCache?.player() ?? null,
     hooks:
       movieStreams === null
         ? undefined
@@ -190,6 +213,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
+  // asked; startBackground carries unfinished ones on.
+  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
   // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
   const movieStories =
     movies === null
@@ -217,12 +243,29 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     sessionEvents,
     streaming,
     directStream,
+    streamCache,
     movieStories,
-    streamLive: movies === null ? null : new StreamLive(),
+    streamLive,
+    streamEvidence,
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
+  // The player's report button (stream-cache-and-bug-report phase 4): phase 1's snapshot, then a
+  // tmux window running claude on /report-stream-bug in this checkout. Nothing runs until a click.
+  const reportStream = deps.directStream ?? null;
+  const reportEvidence = deps.streamEvidence ?? null;
+  deps.streamReporter =
+    reportStream === null || reportEvidence === null
+      ? null
+      : new StreamReporter({
+          evidence: reportEvidence,
+          // Phase 1's evidenceSource peeks without marking the session used.
+          isLive: (id) => reportStream.evidenceSource(id) !== null,
+          reportsDir: reportEvidence.reportsDir,
+          cwd: REPO_ROOT,
+          window: () => defaultClaudeWindowDeps({ claudeBin: config.chat.claudeBin }),
+        });
   let agent: AgentChatBackend | null = null;
   let chat: ChatBackend;
   if (options.chat !== undefined) {
@@ -279,6 +322,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       await moviesHealth?.close();
       await stopBackground();
       await closeServer(server);
+      await streamEvidence?.flushed();
       await closeDb(db);
     })();
     return stopping;

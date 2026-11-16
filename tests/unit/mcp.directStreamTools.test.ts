@@ -121,6 +121,19 @@ describe('direct-stream MCP tools', () => {
     await c.close();
   });
 
+  it("direct_stream_play says when the play came from this machine's cache", async () => {
+    const f = fakeDeps({
+      play: vi.fn(async () => ({ page_url: 'http://localhost:7317/stream/s1', session: { session_id: 's1', provider: 'HyperLink', cached: { id: 'c1', state: 'ready', height: 720 } }, attempts: [] })),
+    });
+    const c = await connect(f.deps);
+    const out = json(await c.call('direct_stream_play', { title: 'saltburn' }));
+    expect(out.play.session.cached).toEqual({ id: 'c1', state: 'ready', height: 720 });
+    expect(out.next).toContain("from this machine's cache (no provider was asked)");
+    await c.close();
+    const plain = await connect(fakeDeps().deps);
+    expect(json(await plain.call('direct_stream_play', { title: 'saltburn' })).next).not.toContain('cache');
+    await plain.close();
+  });
   it('direct_stream_play starts a named episode, by season and episode or by its movie id', async () => {
     const f = fakeDeps();
     const c = await connect(f.deps);

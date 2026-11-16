@@ -24,11 +24,23 @@ export interface StreamSession {
   /** A series: the episodes before and after this one; null where there is none (always null for a film). */
   prevEpisode: EpisodeNumber | null;
   nextEpisode: EpisodeNumber | null;
+  /** Played from this machine's stream cache; null: through the pass-through. */
+  cached: CachedInfo | null;
 }
 
 export interface EpisodeNumber {
   season: number;
   episode: number;
+}
+
+/** A cache's state as a session names it (phase 6): the page plays this machine's local copy. */
+export type CachedState = 'downloading' | 'ready';
+
+/** SessionInfo.cached: the stream cache on this machine the session plays from. */
+export interface CachedInfo {
+  id: string;
+  state: CachedState;
+  height: number | null;
 }
 
 /** An audio track as the manifest writes it. */
@@ -66,6 +78,13 @@ const KINDS: readonly string[] = ['hls', 'dash', 'mp4'];
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function cachedInfo(value: unknown): CachedInfo | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { id, state, height } = value as Record<string, unknown>;
+  if (typeof id !== 'string' || id === '' || (state !== 'downloading' && state !== 'ready')) return null;
+  return { id, state, height: typeof height === 'number' && Number.isInteger(height) && height > 0 ? height : null };
 }
 
 function episodeNumber(value: unknown): EpisodeNumber | null {
@@ -110,6 +129,7 @@ export function parseSession(json: unknown): StreamSession {
     audioTrack: track === null || (text(track.lang) === null && text(track.label) === null) ? null : { lang: text(track.lang), label: text(track.label) },
     prevEpisode: episodeNumber(o.prev_episode),
     nextEpisode: episodeNumber(o.next_episode),
+    cached: cachedInfo(o.cached),
   };
 }
 
@@ -133,6 +153,8 @@ export const sessionUrl = (id: string): string => `/api/stream/sessions/${encode
 export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
+export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
+export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -198,8 +220,78 @@ export async function postPosition(id: string, report: PositionReport, fetchImpl
   }
 }
 
+/** One line of the page's log as it goes to the daemon's stream evidence log (POST /api/stream/sessions/:id/events). */
+export interface PlayerLogLine {
+  text: string;
+  /** When the page wrote it (ISO 8601). */
+  at: string;
+  stage: string;
+  /** The film's position then, in seconds; null when unknown. */
+  position_s: number | null;
+  /** Seconds buffered ahead of the position then; null when the browser cannot say. */
+  buffer_s: number | null;
+}
+
+/**
+ * Fire and forget, like postPosition: the daemon appends the lines to this machine's stream evidence
+ * log. Every failure is ignored; the play never waits on it. Sent `keepalive`, so the lines of a page
+ * that is closing still arrive.
+ */
+export async function postEvents(id: string, lines: readonly PlayerLogLine[], fetchImpl: typeof fetch): Promise<void> {
+  if (lines.length === 0) return;
+  try {
+    await fetchImpl(eventsUrl(id), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lines }),
+      keepalive: true,
+    });
+  } catch {
+    // ignored: evidence must never disturb the play
+  }
+}
+
 export async function fetchText(url: string, fetchImpl: typeof fetch): Promise<string> {
   const res = await fetchImpl(url);
   if (!res.ok) throw new Error(`http_${res.status}`);
   return res.text();
+}
+
+/** What the page sends with a report: its own view of the failure (the daemon may no longer know the session). */
+export interface PageReport {
+  stage: string;
+  error: string | null;
+  errors: string[];
+  log: string[];
+  title: string;
+  position_s: number | null;
+}
+
+/** The daemon's answer to a report, as the page shows it. */
+export type ReportAnswer =
+  | { status: 'opened'; dir: string; window: string }
+  | { status: 'already'; dir: string }
+  | { status: 'saved'; dir: string; reason: 'no_tmux' | 'spawn_failed' }
+  | { status: 'failed'; code: string };
+
+/**
+ * The report button: POST /api/stream/sessions/:id/report with the page's log. Never throws: a
+ * window opened, a report made before, a snapshot saved but not opened (`no_tmux`,
+ * `spawn_failed`), or a failure with the daemon's code.
+ */
+export async function reportStreamBug(id: string, page: PageReport, fetchImpl: typeof fetch): Promise<ReportAnswer> {
+  let res: Response;
+  try {
+    res = await fetchImpl(reportUrl(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page }) });
+  } catch {
+    return { status: 'failed', code: 'network' };
+  }
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const dir = body !== null && typeof body.dir === 'string' && body.dir !== '' ? body.dir : null;
+  const error = body !== null && typeof body.error === 'string' ? body.error : null;
+  const window = body !== null && typeof body.window === 'string' ? body.window : '';
+  if (res.ok && dir !== null) return { status: 'opened', dir, window };
+  if (dir !== null && error === 'already_reported') return { status: 'already', dir };
+  if (dir !== null && (error === 'no_tmux' || error === 'spawn_failed')) return { status: 'saved', dir, reason: error };
+  return { status: 'failed', code: error ?? `http_${res.status}` };
 }

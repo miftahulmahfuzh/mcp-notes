@@ -1,0 +1,36 @@
+CREATE TABLE "stream_caches" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"host" text NOT NULL,
+	"kind" text NOT NULL,
+	"tmdb_id" integer NOT NULL,
+	"season" integer DEFAULT 0 NOT NULL,
+	"episode" integer DEFAULT 0 NOT NULL,
+	"max_height" integer,
+	"provider" text,
+	"manifest_kind" text,
+	"height" integer,
+	"audio_lang" text,
+	"subtitle" boolean DEFAULT false NOT NULL,
+	"state" text DEFAULT 'downloading' NOT NULL,
+	"segments_total" integer DEFAULT 0 NOT NULL,
+	"segments_done" integer DEFAULT 0 NOT NULL,
+	"bytes" bigint DEFAULT 0 NOT NULL,
+	"duration_s" real,
+	"resolves" integer DEFAULT 0 NOT NULL,
+	"error" text,
+	"error_detail" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"completed_at" timestamp with time zone,
+	CONSTRAINT "stream_caches_kind_check" CHECK ("stream_caches"."kind" in ('movie', 'tv')),
+	CONSTRAINT "stream_caches_slot_check" CHECK ("stream_caches"."tmdb_id" > 0 and (("stream_caches"."kind" = 'movie' and "stream_caches"."season" = 0 and "stream_caches"."episode" = 0) or ("stream_caches"."kind" = 'tv' and "stream_caches"."season" >= 0 and "stream_caches"."episode" > 0))),
+	CONSTRAINT "stream_caches_state_check" CHECK ("stream_caches"."state" in ('downloading', 'ready', 'failed')),
+	CONSTRAINT "stream_caches_manifest_kind_check" CHECK ("stream_caches"."manifest_kind" is null or "stream_caches"."manifest_kind" in ('hls', 'mp4')),
+	CONSTRAINT "stream_caches_counts_check" CHECK ("stream_caches"."segments_done" >= 0 and "stream_caches"."segments_done" <= "stream_caches"."segments_total" and "stream_caches"."bytes" >= 0 and "stream_caches"."resolves" >= 0),
+	CONSTRAINT "stream_caches_max_height_check" CHECK ("stream_caches"."max_height" is null or "stream_caches"."max_height" > 0),
+	CONSTRAINT "stream_caches_failed_check" CHECK (("stream_caches"."state" = 'failed') = ("stream_caches"."error" is not null)),
+	CONSTRAINT "stream_caches_ready_check" CHECK (("stream_caches"."state" = 'ready') = ("stream_caches"."completed_at" is not null) and ("stream_caches"."state" <> 'ready' or ("stream_caches"."provider" is not null and "stream_caches"."manifest_kind" is not null and "stream_caches"."segments_done" = "stream_caches"."segments_total")))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "stream_caches_slot_host_idx" ON "stream_caches" USING btree ("kind","tmdb_id","season","episode","host");--> statement-breakpoint
+CREATE INDEX "stream_caches_host_state_idx" ON "stream_caches" USING btree ("host","state");

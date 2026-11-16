@@ -14,13 +14,27 @@
   playlists, manifests and redirects named. Proven by `journey.sh RUN hls dash refuse` and
   `npm run test:int -- tests/integration/directStream.api.int.test.ts`.
 - Refresh: `POST /api/stream/sessions/:id/refresh` resolves again under the same id.
+- Stream evidence (stream-cache-and-bug-report phase 1): every pass-through answer is one line in
+  `<data dir>/movies/stream-evidence-<host>.jsonl` (host and path, never the query; upstream status,
+  `ttfb_ms`, `bytes`, `duration_ms`, `kbps`, `outcome`), the page's log lines arrive through
+  `POST /api/stream/sessions/:id/events` (same-origin), and `POST /api/stream/evidence/snapshot`
+  writes `stream-reports/<stamp>-<id start>/` with `session.json`, `evidence.jsonl`, `player.json`.
+  Rotated at 5 MB into `.1.jsonl`; a failed write never fails an answer. Proven by
+  `npx vitest run tests/unit/directStream/evidence.test.ts web/src/stream/controller.test.tsx`,
+  `npm run test:int -- tests/integration/directStream.evidence.int.test.ts`,
+  `journey.sh RUN evidence playerlog snapshot unwritable`, and `DASH EVIDENCE PASS` in
+  `dash-expiry.steps.mjs`.
 - Off: `NOTESD_DIRECT_STREAM=off` or `NOTESD_MOVIES=off` answers 503 `direct_stream_off` on every
   `/api/stream/*` route, and nothing is built that could start Chrome
   (`npx vitest run tests/unit/directStream/build.test.ts`).
 - The player page `/stream/<session id>`: plays HLS (hls.js), DASH (dash.js) or a plain file, the
   English subtitle shown by default (inside the manifest first, then a separate `.vtt`/`.srt`), a
   quality menu, start at `resume_s`, positions every 5 s and on pause/end, refresh-and-continue on
-  401/403/410. Logic proven by `npx vitest run web/src/stream tests/unit/static.test.ts`.
+  401/403/410. After a fatal network error the page stays on the film (`stage: "recovering"`, a
+  spinner, positions still reported) and loads again from where it is after 2, 4, 8, 16 and 16 s;
+  the error shows only when the fifth restart fails too. HLS keeps 120 s loaded ahead, 30 s under
+  `?muted=1`. Logic proven by `npx vitest run web/src/stream tests/unit/static.test.ts`; in a real
+  browser by `player.steps.mjs` (BUFFER) and `recovery.steps.mjs` (below).
 - Stream plays and verified sources (phase 5). The player page's position reports
   (`POST /api/stream/sessions/:id/position`, same-origin) land on one `movie_plays` row per player
   session (source `stream`, provider, no file); the title's and episode's state, history and the
@@ -64,9 +78,10 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   host listens on two ports of 127.0.0.1 and answers 403 without `Referer: https://embed.fixture/`; the
   fake resolver returns addresses on the first port, the second is named only inside the playlists.
   `echo dash > $DIRECT/mode` (or `dash_film`, `no_source`, `no_chrome`) picks the next resolve's answer.
-- `.claude/skills/verify-notesd/scripts/direct-stream/journey.sh RUN [seed|hls|dash|refuse]`: every check,
+- `.claude/skills/verify-notesd/scripts/direct-stream/journey.sh RUN [seed|hls|dash|refuse|evidence|playerlog|snapshot|unwritable]`: every check,
   saved as evidence; ends with `journey: PASS (...)`. Run `seed` first on a fresh run (it counts health
-  after exactly one play).
+  after exactly one play). `evidence`, `playerlog`, `snapshot` and `unwritable` read
+  `<run>/data/movies/stream-evidence-<hostname>.jsonl` and `<run>/data/movies/stream-reports/`.
 - Every run without `--direct-stream` pins `NOTESD_DIRECT_STREAM=off`, so `$V up --movies` alone shows the
   off answer: `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":550}'` answers 503.
 - `down` copies `upstream.jsonl` and `calls.jsonl` into the evidence folder.
@@ -80,8 +95,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-hls-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture")`,
   `$V up --web`, `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/player.steps.mjs`.
   The transcript has `J1 PASS` (English over a French default, quality menu, resume), `API PASS`
-  (`window.notesdStream` and the title), `J3 PASS` (403 with `X-Notesd-Upstream` mid-film, one
-  refresh, continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
+  (`window.notesdStream` and the title), `BUFFER PASS` (60 s or more loaded ahead, 40 s or less
+  under `?muted=1`), `J3 PASS` (on `?muted=1`: 403 with `X-Notesd-Upstream` mid-film, one refresh,
+  continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
+- Network recovery, same fixture and `up --web`:
+  `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/recovery.steps.mjs`
+  (about two minutes). The transcript has `RECOVER PASS` (segment loads aborted at 80 s: stage
+  `recovering` with the spinner, positions still posted, plays on from 80 s once they answer) and
+  `SPENT PASS` (every load aborted: five restarts over 40 s or more, then
+  `Playback stopped (networkError manifestLoadError).`), with a screenshot of each.
 - A DASH token that expires, end to end (the real page and dash.js, the daemon's pass-through and
   DASH rewriting, the fake resolver, the fixture stream host; Chromium, nothing of the owner's):
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-dash-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-dash")`,
@@ -89,7 +111,9 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/dash-expiry.steps.mjs`.
   The transcript has `DASH PLAY PASS`, `DASH EXPIRY PASS` (the host refuses the old token with 403,
   one refresh, playback continues at 100 s under the new token, two resolves) and `DASH OVER PASS`
-  (a 403 without `X-Notesd-Upstream` ends the session, no refresh). The steps set
+  (a 403 without `X-Notesd-Upstream` ends the session, no refresh) and `DASH EVIDENCE PASS` (the
+  daemon's evidence log holds the 403s under the old token, the manifest under the new one, and the
+  page's `refresh after 403` and `error: session_over` lines). The steps set
   `<run>/direct/mode` to `dash_film` and raise `<run>/direct/token`; the host serves
   `<run>/direct/film` only under the current token. Engine logic:
   `npx vitest run web/src/stream/dashEngine.test.tsx`; the live gate's DASH path:
@@ -215,6 +239,70 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
 - Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
 
+## /report-stream-bug (a stream's evidence, the cause, a note)
+- `claude/skills/report-stream-bug/collect.sh [SNAPSHOT_DIR]` gathers the snapshot (the folder it
+  is handed, else a new one from `POST /api/stream/evidence/snapshot`), the session's records
+  (`GET /api/stream/evidence`, and the on-disk log's tail), the daemon's direct-stream lines with
+  every query cut off, and `network.json` (a reference download, the stream through the session,
+  the stream host's first answer) into one folder, and prints a summary with the cause. With the
+  daemon down or the session ended it still writes the log tail and the measurement, and `missing:`
+  says what is not there. No file in the folder holds a pass-through address or a token.
+- `diagnose.mjs classify|summary|note DIR` names the cause (`connection_slow`, `host_slow`,
+  `token_expired`, `provider_broken`, `session_ended`, `new`); the skill saves the note it writes
+  (`#stream-bug`). Proven by `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (fake daemon
+  and stream host, the fixture folders `tests/fixtures/stream-report/<cause>/`).
+- Throwaway daemon (free, nothing of the owner's): `$V up --direct-stream` (note `URL=`, `DIRECT=`),
+  a local reference file (`python3 -m http.server 47391 --bind 127.0.0.1 --directory <dir with ref.bin>`),
+  a play (`echo hls > $DIRECT/mode`, `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":550}'`,
+  one GET of its `manifest_url`), then
+  `bash claude/skills/report-stream-bug/collect.sh --wall $URL --data-dir <run>/data --log <run>/daemon.log --reference http://127.0.0.1:47391/ref.bin --host-scheme http`.
+  The folder lands under `<run>/data/movies/stream-reports/`; `network.json` has `stream.ok: true`
+  from the fixture host's 1080 rendition; `grep -rl 'p?u=' <folder>` prints nothing. A note:
+  `$V mcp RUN create` with `diagnose.mjs note <folder>`'s body, then `$V mcp RUN list '{"tags_any":["stream-bug"]}'`.
+- Live: `/report-stream-bug` in Claude Code after a broken play (the reference download reaches
+  Cloudflare; nothing is played or refreshed).
+## Stream cache
+- `POST /api/stream/cache` (same-origin) and `direct_stream_cache` (Claude Code only; not in the chat
+  bar) download one film or episode to this machine: one HLS rendition (the tallest, or the tallest
+  not above `max_height`), the original-language audio rendition, segments, init sections, AES-128
+  keys and the English subtitle as WebVTT, or a plain file by ranges; DASH, DRM and live answer
+  `cache_unsupported`. Retries with backoff, a fresh resolve on a refused token that keeps the
+  files by index, resume after a restart. `GET /api/stream/cache[/:id]` lists both machines'
+  caches (`available: false` for the other's); `DELETE /api/stream/cache/:id` stops, deletes the
+  folder and the row; `GET /api/stream/cache/:id/f/:name` serves files with Range and fetches a
+  missing one at once. Files: `<NOTES_DATA_DIR>/movies/stream-cache/<id>/`.
+- Proven by `npx vitest run tests/unit/directStream/cache tests/unit/mcp.streamCacheTools.test.ts tests/unit/config.streamCache.test.ts tests/unit/chat-status.test.ts`
+  (parsers, the downloader against an in-memory stream host, the tool) and
+  `npm run test:int -- tests/integration/directStream.cache.int.test.ts` (table, routes, both
+  machines, delete during a download, restart).
+- Throwaway daemon: `$V up --direct-stream`, then
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache.sh RUN` (stages `start tool refused other clear`;
+  `clear` needs `start`; each stage once per fresh run, since a title has one cache per machine and
+  `fail_once` fails a file once per host process). It ends with `cache: PASS (...)`. The `refused` stage sets `<run>/direct/mode`
+  to `hls_token`, `token_uses` to 10 and `fail_once` to `seg3.ts`: the fixture host's tokened film
+  (`/tok/t<N>/`) refuses a token after ten media answers and fails `seg3.ts` once.
+- Playing from a cache is phase 6's entry.
+
+## Playing from the cache
+- A play (`POST /api/stream/play`, `direct_stream_play`, the player's previous/next buttons) uses
+  this host's stream cache of the title first: a `ready` cache plays its local playlist with no
+  resolve (`attempts: []`, `session.cached.state: "ready"`, `manifest_url` under
+  `/api/stream/cache/<id>/f/`); a `downloading` one plays the same playlist and the file route
+  fetches missing segments on demand; a failed cache, a cache on the other machine, a cache made
+  for another language or none resolves as before. `POST /api/stream/cache/:id/play` plays one
+  cache by id; another machine's answers 404 `not_on_this_machine` with `host`. The page shows a
+  drive icon beside the title (`.st-cached`, aria-label "Playing from this machine's cache ...")
+  and `window.notesdStream.cached`. A refresh keeps a cache that can still play, else resolves.
+- Logic: `npx vitest run tests/unit/directStream/cachePlay.test.ts web/src/stream tests/unit/mcp.directStreamTools.test.ts`.
+- Throwaway daemon (`$V up --web --direct-stream`, note RUN and `DIRECT=`), in this order on one run:
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache-play.sh RUN ready`, then
+  `DIRECT=<run>/direct $V ui RUN .claude/skills/verify-notesd/scripts/stream/cache-play.steps.mjs`
+  (`CACHE PAGE PASS`, screenshot `cache-play-page`), then
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache-play.sh RUN downloading other-host`.
+  The script makes a cache of TMDB movie 550 through `POST /api/stream/cache` (fake resolver,
+  fixture host), sets the fake resolver to `no_source` to prove nothing resolves, and edits the
+  run's `stream_caches` row with `verify.sh exec` for the downloading and other-host cases.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is
@@ -224,3 +312,23 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   without it is notesd's refusal (`unknown_session`, `forbidden_host`).
 - `up --web` is required: the player is a separate bundle (`web/dist/stream.html`); without a fresh
   build `/stream/<id>` serves the wall's `index.html`.
+
+## Reporting a stream bug from the player
+- The player's error stage shows an icon-only bug button (`Report this stream bug`). A click posts
+  the page's own log to `POST /api/stream/sessions/:id/report` (same-origin): the daemon writes
+  phase 1's evidence snapshot at once, adds `report.json` (the page's view, the outcome) to the
+  folder, and opens one tmux window `stream-bug-<id6>` running claude `--permission-mode auto` on
+  `/report-stream-bug <folder>` in the mcp-notes checkout. One report per session, also after a
+  restart (`409 already_reported {dir}`); no tmux or no runnable claude keeps the snapshot
+  (`409 no_tmux` / `500 spawn_failed`, both with `dir`) and the page says "Report saved but not
+  opened". An ended session is still reported from the page's log (`complete: false`).
+- Proven by `npx vitest run tests/unit/directStream/report.test.ts tests/unit/directStream/reportRoute.test.ts web/src/stream`
+  (fake tmux and snapshot; restart; concurrent clicks; address queries dropped).
+- Throwaway daemon (every run's tmux is the fake `scripts/stream/fake-tmux.sh`; nothing opens on
+  the owner's screen): `$V up --web --direct-stream` (note `TMUX_FAKE=`), then
+  `TMUX_FAKE=<that path> $V ui RUN .claude/skills/verify-notesd/scripts/stream/report-button.steps.mjs`.
+  The transcript has `BUTTON PASS`, `REPORT PASS` (one `new-window` carrying the prompt),
+  `ALREADY PASS`, `NO_TMUX PASS` and `SPAWN_FAILED PASS`. Needs `claude` on PATH (the daemon checks
+  the binary can run before asking tmux); elsewhere start `up` with `NOTESD_CLAUDE_BIN=$(command -v true)`.
+- Live: a click on the owner's daemon opens a real Claude Code window that runs the skill and
+  writes a `#stream-bug` note; it is the owner's to click.

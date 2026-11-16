@@ -25,6 +25,32 @@ export interface ForwardRequest {
   signal: AbortSignal;
 }
 
+/** What the answer carries: a rewritten playlist or manifest, a subtitle, or media streamed through. */
+export type ForwardKind = 'hls' | 'dash' | 'vtt' | 'media';
+
+/**
+ * What forward() saw, for the stream evidence log (evidence.ts). forward() only writes it, as it
+ * goes; it never reads it back, so an answer is the same with or without one.
+ */
+export interface ForwardTrace {
+  /** The clock `headersAt` is read from (milliseconds, monotonic). */
+  readonly clock: () => number;
+  /** The address last asked for (after redirects); null when nothing was fetched. */
+  target: string | null;
+  redirects: number;
+  /** The stream host's status; null when it never answered. */
+  upstreamStatus: number | null;
+  /** clock() when the stream host's headers arrived; null when they never did. */
+  headersAt: number | null;
+  kind: ForwardKind | null;
+  /** `<code>: <message>` when notesd answered with its own error (forbidden_host, upstream_error); else null. */
+  error: string | null;
+}
+
+export function newForwardTrace(clock: () => number = () => performance.now()): ForwardTrace {
+  return { clock, target: null, redirects: 0, upstreamStatus: null, headersAt: null, kind: null, error: null };
+}
+
 export function jsonError(status: number, error: string, message: string): Response {
   return new Response(JSON.stringify({ error, message }), {
     status,
@@ -79,12 +105,17 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
  * before any request, an address that is not http(s) or not on a host the session may reach. Follows
  * redirects itself (a redirect answered by the session's host vouches for its target, like a playlist
  * entry). Playlists and manifests are read whole and rewritten, and the hosts they name join the
- * session; everything else streams through as it arrives, with the stream host's status.
+ * session; everything else streams through as it arrives, with the stream host's status. `trace`,
+ * when given, is filled in for the evidence log; the answer does not depend on it.
  */
-export async function forward(session: StreamSession, req: ForwardRequest, fetchImpl: FetchLike): Promise<Response> {
+export async function forward(session: StreamSession, req: ForwardRequest, fetchImpl: FetchLike, trace: ForwardTrace | null = null): Promise<Response> {
+  const refuse = (status: number, error: string, message: string): Response => {
+    if (trace !== null) trace.error = `${error}: ${message}`;
+    return jsonError(status, error, message);
+  };
   const first = absoluteHttp(req.target);
   if (first === null || !allows(session, first)) {
-    return jsonError(403, 'forbidden_host', 'That address is not on a host this stream session may reach.');
+    return refuse(403, 'forbidden_host', 'That address is not on a host this stream session may reach.');
   }
   const controller = new AbortController();
   const abort = (): void => controller.abort();
@@ -97,6 +128,7 @@ export async function forward(session: StreamSession, req: ForwardRequest, fetch
   try {
     let hops = 0;
     for (;;) {
+      if (trace !== null) trace.target = target;
       const res = await fetchImpl(target, { headers, redirect: 'manual', signal: controller.signal });
       const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (location === null) {
@@ -106,9 +138,10 @@ export async function forward(session: StreamSession, req: ForwardRequest, fetch
       await res.body?.cancel().catch(() => undefined);
       const next = absoluteHttp(location, target);
       hops += 1;
+      if (trace !== null) trace.redirects = hops;
       if (next === null || hops > MAX_REDIRECTS) {
         req.signal.removeEventListener('abort', abort);
-        return jsonError(
+        return refuse(
           502,
           'upstream_error',
           next === null ? 'The stream host redirected to an address that is not http(s).' : `The stream host redirected more than ${MAX_REDIRECTS} times.`,
@@ -119,25 +152,30 @@ export async function forward(session: StreamSession, req: ForwardRequest, fetch
     }
   } catch (err) {
     req.signal.removeEventListener('abort', abort);
-    return jsonError(502, 'upstream_error', `The stream host did not answer: ${messageOf(err)}`);
+    return refuse(502, 'upstream_error', `The stream host did not answer: ${messageOf(err)}`);
   } finally {
     clearTimeout(timer);
+  }
+  if (trace !== null) {
+    trace.upstreamStatus = upstream.status;
+    trace.headersAt = trace.clock();
   }
 
   const out = new Headers({ 'cache-control': 'no-store', [UPSTREAM_STATUS_HEADER]: String(upstream.status) });
   const contentType = upstream.headers.get('content-type') ?? '';
   const nullBody = NULL_BODY_STATUSES.has(upstream.status);
   const kind = textKind(target, contentType, req.vtt);
+  if (trace !== null) trace.kind = kind ?? 'media';
   if (kind !== null && !nullBody) {
     let text: string | null;
     try {
       text = await readCapped(upstream, PLAYLIST_MAX_BYTES);
     } catch (err) {
-      return jsonError(502, 'upstream_error', `The stream host broke off: ${messageOf(err)}`);
+      return refuse(502, 'upstream_error', `The stream host broke off: ${messageOf(err)}`);
     } finally {
       req.signal.removeEventListener('abort', abort);
     }
-    if (text === null) return jsonError(502, 'upstream_error', `The playlist is larger than ${PLAYLIST_MAX_BYTES} bytes.`);
+    if (text === null) return refuse(502, 'upstream_error', `The playlist is larger than ${PLAYLIST_MAX_BYTES} bytes.`);
     let body = text;
     let type = contentType === '' ? 'text/plain; charset=utf-8' : contentType;
     if (kind === 'hls' && text.replace(/^﻿/, '').trimStart().startsWith('#EXTM3U')) {

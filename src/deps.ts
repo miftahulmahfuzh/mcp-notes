@@ -10,8 +10,11 @@ import type { MoviesService } from './movies/service.js';
 import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
+import type { StreamCache } from './directStream/cache/service.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
+import type { StreamEvidence } from './directStream/evidence.js';
+import type { StreamReporter } from './directStream/report.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -58,6 +61,12 @@ export interface AppDeps {
    */
   directStream?: DirectStreamService | null;
   /**
+   * The stream cache (stream-cache phase 5): films and episodes downloaded to this host's disk. Built
+   * next to `directStream`; null or absent with direct streaming off. startBackground carries its
+   * unfinished downloads on and closes it.
+   */
+  streamCache?: StreamCache | null;
+  /**
    * The stories of films and episodes (src/movies/story.ts): read from the store, written by
    * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story
    * routes answer 503.
@@ -71,6 +80,18 @@ export interface AppDeps {
    * reports it off. Started and closed by startBackground.
    */
   streamProber?: StreamProberHandle | null;
+  /**
+   * This host's stream evidence log (src/directStream/evidence.ts): every pass-through answer, the
+   * player page's log lines, and snapshots under <dataDir>/movies/stream-reports/. The daemon builds
+   * it with direct streaming; null or absent, the evidence routes answer 503 direct_stream_off.
+   */
+  streamEvidence?: StreamEvidence | null;
+  /**
+   * The player's report button (stream-cache-and-bug-report phase 4): one evidence snapshot and one
+   * tmux Claude Code window per stream session. The daemon sets it while direct streaming and the
+   * evidence log are on; null or absent, POST /api/stream/sessions/:id/report answers 503 report_off.
+   */
+  streamReporter?: StreamReporter | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

@@ -142,6 +142,7 @@ Films played straight from a provider's stream host through the daemon, describe
 | `NOTESD_STREAM_PROBE_BUDGET` | 14 | Resolves per prober pass, re-checks and new candidates together. The default is the titles that fit in a pass's seconds (half of `NOTESD_STREAM_PROBE_MS`) at 41.5 s a title, from the resolve campaign's timings; it follows `NOTESD_STREAM_PROBE_MS` when that is set. |
 | `NOTESD_STREAM_IDLE_SECONDS` | 600 | How long Windows must have had no keyboard or mouse input before the prober starts a resolve. It is read again before every resolve, and the pass stops as soon as it is shorter. |
 | `NOTESD_STREAM_PROBE_MS` | 1200000 | Pause between prober passes. A pass spends at most half of it. |
+| `NOTESD_STREAM_CACHE_DIR` | `<NOTES_DATA_DIR>/movies/stream-cache` | Absolute path of the folder where this machine keeps its stream caches, one folder per cache id. The other machine keeps its own; a relative path is rejected. See [streaming.md](../streaming.md#caching-a-film-or-an-episode). |
 
 ## Install script and hooks
 

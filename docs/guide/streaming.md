@@ -10,6 +10,7 @@ fourth skill adds a site:
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
 | A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
 | An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
+| A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
@@ -21,6 +22,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
 [Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
 [What a title says](#what-a-title-says-its-dialogue) ·
+[Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -409,6 +411,50 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 - When a token expires mid-film, `POST /api/stream/sessions/<id>/refresh` resolves again and keeps
   the same session and page.
 
+### Stream evidence
+
+Every answer the pass-through gives goes to this machine's evidence log,
+`<data dir>/movies/stream-evidence-<host>.jsonl`, as one JSON line. The line is written once the
+body has ended, broken off, or been dropped by the player. It holds:
+
+- the session id and the provider
+- the stream host and the path, never the query, which is where the signed tokens are
+- the stream host's status and what the player got
+- the time until the stream host answered, the bytes sent, the duration and the throughput in kbit/s
+- how it ended (`end`, `aborted`, `error`, `refused`), with the error
+
+A request notesd turns away (an unknown or ended session, a host the session may not reach) is
+logged too. Each session created and each refresh is a `session` line.
+
+The player page posts every line it adds to its own log to
+`POST /api/stream/sessions/<id>/events`: refreshes, recoveries, errors and subtitle failures. Each
+line goes with the position and the seconds buffered ahead, and lands in the same log as a `player`
+line. `GET /api/stream/evidence?session=<id>` reads the log back.
+
+The log is written in batches in the background. A write that fails is counted, logged at most
+once a minute (`[notesd] stream evidence: could not write ...`), and never fails or delays an
+answer. Like the VLC health log it is capped at 5 MB. When it is full it becomes
+`stream-evidence-<host>.1.jsonl` and a new file starts.
+
+`POST /api/stream/evidence/snapshot` copies one session's evidence into a new folder,
+`<data dir>/movies/stream-reports/<stamp>-<first 6 characters of the id>/`, with three files:
+
+- `session.json`: the source, meaning the provider, the attempts, the hosts and the refreshes
+- `evidence.jsonl`: the session's records
+- `player.json`: the page's lines
+
+Take a snapshot while the session lives. Sessions are kept only in memory, and once a session
+ends only its log lines are left (`complete: false`). No header value captured by the resolve is
+written anywhere in the evidence, only the header names.
+
+The two POSTs are same-origin only. A script with no browser sends the origin of the address it
+calls:
+
+```sh
+curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application/json' \
+  -d '{}' http://127.0.0.1:7317/api/stream/evidence/snapshot
+```
+
 ### Direct streaming answers
 
 | Answer | Meaning |
@@ -420,6 +466,12 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
 | `forbidden_host` | The address is not on a host the session may reach |
 | `upstream_error` | The stream host did not answer, or redirected too often |
+| `invalid_session` | An evidence route was given something that is not a stream session id |
+| `snapshot_failed` | The snapshot folder could not be written; the evidence log is untouched. For the report button nothing is remembered, so a later click tries again |
+| `already_reported` | The report button: this stream session was reported before; `dir` is the first report's folder and no window opens |
+| `no_tmux` | The report button: the snapshot was written to `dir`, but no tmux server is running to open Claude Code in |
+| `spawn_failed` | The report button: the snapshot was written to `dir`, but the claude binary could not be run or tmux refused the window (`message`) |
+| `report_off` | The report button: this daemon has no evidence log to snapshot |
 
 ### The player
 
@@ -445,6 +497,8 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Audio.** When the manifest names several audio tracks, the page selects the one in the
   title's original language (the session's `audio.track`), never the manifest's default.
+- **From the cache.** A session on this machine's stream cache plays its local files, with a drive
+  icon beside the title (see "Playing from the cache").
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
@@ -464,6 +518,19 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   the session has ended and does not refresh. HLS and DASH behave the same: hls.js reports the
   refused load through its error event, dash.js through a response interceptor, and a refusal
   that arrives from the replaced player after the refresh began is dropped.
+- **A network error.** When a load fails for another reason than a refused token (hls.js's
+  `fragLoadError`, `fragLoadTimeOut`, `levelLoadError`, `manifestLoadError` and the rest of its
+  network errors, a dash.js download error, a plain file's network error), the page stays on the
+  film, which plays on from what it has loaded, and shows a spinner (`stage: "recovering"`). After
+  2, 4, 8, 16 and 16 seconds it loads again from where the film is; the first piece that loads ends
+  the recovery and the count starts over. Only when the fifth restart fails too does the page stop
+  with the message, such as `Playback stopped (networkError fragLoadError).` Positions are still
+  reported meanwhile, and each try is a line in the page's log
+  (`recovering 2/5 after networkError fragLoadError at 1312.4 s`, then `recovered at 1320 s`), which
+  the page sends to the daemon with its other log lines.
+- **Buffer.** An HLS play keeps up to 120 seconds loaded ahead of the picture, so a slow stretch of
+  the stream host is ridden out. A `?muted=1` check keeps 30 seconds, so the expiry check still finds
+  pieces that are not loaded when the token runs out. A DASH play keeps dash.js's own amount.
 - **Sound.** A play from `/direct-stream` or the movies page opens the page full screen and then
   calls its `start()` the way a click would, so the film starts with sound. If the browser still
   will not start it with sound, the page starts it muted and the speaker icon shows it.
@@ -480,8 +547,22 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   found the page plays the new session from where that episode was left, without leaving full
   screen, and its address changes to the new session; the play of the episode it left is closed.
   When none is found nothing changes, and a line beside the title says why.
+- **Report.** When the page stops with an error, a bug icon sits under the message. A click asks
+  the daemon (`POST /api/stream/sessions/<id>/report`) to write the session's evidence snapshot at
+  once (sessions live in memory and tokens expire), then to open a new window in the most recently
+  used tmux session, named `stream-bug-<first 6 characters of the session id>`, running Claude Code
+  in the mcp-notes checkout on `/report-stream-bug <snapshot folder>`. It runs in `auto` permission
+  mode, so it collects, diagnoses and saves its note without waiting for you, while the permission
+  classifier still checks what it runs (the evidence holds text from the stream hosts). The page
+  sends its own error and log lines with the click, kept in the folder as `report.json`, so a
+  session the daemon has lost (a restart) is still reported, marked incomplete. One report per
+  session: `report.json` remembers it across restarts, and a second click opens nothing (`Already
+  reported`). With no tmux running, or a claude binary that cannot be run, the snapshot is kept and
+  the page says the report was saved but not opened, with the folder; a later click opens it on the
+  same folder.
 
-The page keeps its state on `window.notesdStream` (stage, `kind`, `levels`, `level`, subtitle
+The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
+`recovering` or `error`; `kind`, `levels`, `level`, subtitle
 choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
 play, and its `start()`.
 
@@ -726,6 +807,101 @@ seed, copy its entry into `providers.seed.json` by hand.
 | `src/mcp/directStreamTools.ts` | `direct_stream_sources`, `direct_stream_update_source` |
 | `claude/skills/update-cloud-source/` | The skill |
 
+### Caching a film or an episode
+
+A stream that stutters on a slow connection or a far stream host can be downloaded to this laptop
+first. `direct_stream_cache` with `action: "start"` in Claude Code, or `POST /api/stream/cache`,
+answers at once; the download runs in the daemon, one at a time (the rest wait, `queued`).
+
+1. The title is resolved like a play, out of sight: the same resolver and provider order, the
+   title's original language.
+2. HLS: one rendition, the tallest, or the tallest not above `max_height` (none at or under it: the
+   shortest). Its audio is the rendition the player would pick, in the title's original language.
+   Every segment, the fMP4 init sections and the AES-128 keys are downloaded, and the English
+   subtitle is saved as WebVTT. A plain-file source is downloaded in 4 MB byte ranges and joined.
+3. Four files at a time, each tried up to six times with backoff (1, 2, 4, 8, 16 s). When the host
+   refuses a token (401, 403, 410: a signed address that expired), the title is resolved again and
+   the download carries on by segment index, keeping what is on disk. Three fresh resolves without
+   a file in between stop it (`token_refused`). A fresh source of another shape (another provider,
+   other segments) empties the folder and starts over.
+4. Every file is written to a temporary name and renamed. A daemon restart carries unfinished
+   downloads on from what is on disk.
+
+| Source | Cached |
+| --- | --- |
+| HLS master or media playlist, VidNest's `master.txt`, relative addresses | yes |
+| Separate audio renditions | the original-language one only |
+| `EXT-X-BYTERANGE` segments, `EXT-X-MAP` init sections, `EXT-X-KEY` AES-128 (with or without IV), discontinuities, gaps | yes; each range becomes its own file, IV and media sequence are kept |
+| `SAMPLE-AES`, a `KEYFORMAT` other than `identity` (DRM) | no: `cache_unsupported` |
+| A playlist without `EXT-X-ENDLIST` (live) | no: `cache_unsupported` |
+| DASH | no: `cache_unsupported` |
+| A plain file whose host ignores byte ranges | no: `cache_unsupported` |
+
+The files are in `<NOTES_DATA_DIR>/movies/stream-cache/<cache id>/` (`NOTESD_STREAM_CACHE_DIR`):
+`master.m3u8` (the one rendition, and `audio.m3u8` when the audio is separate), `video.m3u8`,
+`v-init-1.mp4`, `v-key-1.key`, `v-00001.ts` and on, `subtitle.vtt`, or `video.mp4`, plus
+`cache.json` (the shape of the source; no address, since addresses carry tokens). The local
+playlists list every segment by index, with `EXT-X-ENDLIST`, from the start, so a player can seek
+anywhere while the cache downloads: `GET /api/stream/cache/<id>/f/<file>` serves a file from disk
+with `Range`, and fetches one that is not on disk yet from the stream host at once, ahead of the
+queue.
+
+A cache belongs to the machine that made it (`stream_caches`, one per title and machine). The
+other machine lists it with `available: false`, and its files and its delete answer 404
+`not_on_this_machine`. `DELETE /api/stream/cache/<id>` (or `action: "clear"`) stops the download,
+deletes the folder and the row. The chat bar does not cache: it is a Claude Code request, and the
+Movies page's cache and clear buttons come later on the same routes.
+
+| Answer | Meaning |
+| --- | --- |
+| `cache_unsupported` | The source cannot be cached (see the table) |
+| `no_source`, `resolve_failed` | The resolve found no provider, or could not run |
+| `download_failed` | A file kept failing after six tries, or the host answered something else than a file |
+| `token_refused` | The host kept refusing fresh tokens |
+| `source_changed` | The source changed shape under the download more than twice |
+| `disk_error` | A file could not be written |
+| `cache_exists` | This machine holds the title at another `max_height`: clear it first |
+| `not_on_this_machine` | The cache is on the other laptop |
+| `unknown_cache` | No cache has that id (or it was cleared) |
+| `cache_failed` | A file of a failed cache was asked for, or it was asked to play: ask for the cache again |
+| `cache_language` | `POST /api/stream/cache/<id>/play`: the cache was made for another language than the title's original |
+
+### Playing from the cache
+
+A play looks at this machine's stream cache first (`/direct-stream`, the Movies page's Play on the
+Stream side and the player's previous and next buttons alike). When the film or episode has a
+cache here that is `ready` or `downloading`, and it was made for the title's original language,
+the session plays the local copy:
+
+- **Ready.** No provider is asked and the resolver does not run, so the play starts at once and
+  works with the internet down. `attempts` is empty, `session.cached` is
+  `{id, state: "ready", height}`, and `manifest_url` and the subtitle addresses are the cache's
+  file route (`/api/stream/cache/<id>/f/...`), not the pass-through. The player buffers as far as
+  hls.js goes by itself (600 s, inside its 60 MB), where a stream through the pass-through stops at
+  120 s; a `?muted=1` check keeps 30 s either way.
+- **Downloading.** The same local playlist. A segment not on disk yet is fetched by the file route
+  when the player reaches it, so a seek past the downloaded part still plays. The buffer stays at
+  120 s.
+- **Failed, or none.** The play resolves as it always did. A cache made on the other machine is
+  never used here; `POST /api/stream/cache/<id>/play`, which plays one cache by its id, answers it
+  with 404 `not_on_this_machine` and the `host` that holds it.
+- **Original language only.** A cache keeps the audio track of the stream it was made from, and it
+  plays only while the title's original language is the one its resolve was told. A cache made
+  before the language was known, or for another one, is passed over and the title resolves.
+- **The rest is as for any stream.** The resume position, the position reports, the stream on
+  screen and the history are the same; the provider recorded is the one the cache was downloaded
+  from. A refresh of a cached session reads the cache again and keeps playing it; once the cache
+  is cleared or failed, the refresh resolves the title and the page goes on through the
+  pass-through.
+- **On the page.** A drive icon beside the title says the film plays from this machine's cache (a
+  cloud with an arrow while it still downloads); its tooltip names the quality.
+  `window.notesdStream.cached` holds the same.
+- **In a stream bug report.** A ready cache makes no pass-through request, so the evidence log has
+  no records of its segments (the cache's own downloads are not recorded there either). A snapshot's
+  `session.json` names the cache in `source.cache` (`{id, state}`), with the cache's provider and no
+  attempts or hosts; the page's log says `from cache <id> (<state>)`, and `/report-stream-bug`'s
+  summary says the play came from the cache.
+
 ### The prober
 
 The Stream side of `/movies` shows only titles verified on this machine within the freshness
@@ -780,6 +956,53 @@ its backoff. Each pass logs one line (`[notesd] stream prober: pass ...`); a pas
 logs only when its reason changed. `GET /api/stream/prober` shows the settings, the catalog count
 and the last pass.
 
+### Reporting a stream bug: `/report-stream-bug`
+
+When a direct-stream play lags, stops with `Playback stopped (...)`, or says its session ended, type
+`/report-stream-bug` (with what you saw after it, if you like) in any Claude Code session. It is a
+Claude Code skill (`claude/skills/report-stream-bug`); the chat bar has no way to run it.
+
+```text
+/report-stream-bug
+/report-stream-bug the episode lagged and then stopped
+/report-stream-bug /home/me/mcp-notes-data/movies/stream-reports/20261116-111500-a1b2c3
+is it my internet or the stream host?
+```
+
+**What it collects.** `collect.sh` adds to the snapshot folder it is handed, or asks the daemon for
+a new one (the stream on screen, else the last session); with neither it makes
+`<NOTES_DATA_DIR>/movies/stream-reports/<stamp>-collect/`:
+
+| File | What it holds |
+| --- | --- |
+| `session.json`, `evidence.jsonl`, `player.json` | The daemon's snapshot: the session's source, its pass-through records, the page's posted log |
+| `report.json` | The page's own view, when the player's report button made the folder |
+| `snapshot-answer.json` | The snapshot's answer, when the skill asked for it |
+| `evidence-latest.json` | The daemon's records for the session, newer than the snapshot |
+| `evidence-tail.jsonl` | The session's lines from this host's evidence log on disk, read without the daemon |
+| `notesd.log` | The daemon's direct-stream lines of the last 6 hours, every query string cut off |
+| `network.json` | The reference download, the stream through the session, and the stream host's first answer |
+| `missing.txt`, `summary.txt` | What could not be collected; the summary it printed, with the cause |
+
+**My internet or the stream host?** `netcheck.mjs` downloads up to 25 MB for at most 10 seconds
+from a reference host (Cloudflare's speed test), then, while the session lives, the segments of its
+highest rendition through the pass-through, and times the stream host's answer at its root. It
+reads the session's addresses in memory only: no signed address or token is written or printed,
+and `network.json` holds hosts, statuses, sizes and times. The reference is measured when the skill
+runs, not when the play broke, so the pass-through's own rates from the play weigh more when time
+has passed.
+
+**The cause.** `diagnose.mjs` tries the known causes in order and takes the first that matches:
+the session ended, the token expired, the provider's stream is broken, this connection is slow
+(the reference failed or gave under 5 Mbps), the stream host is slow or far (the reference is fine
+and the host gave under 3 Mbps, or under a quarter of the reference, or its first byte took over
+1.5 s); else the cause is new. Claude reads the evidence as well, tells you what happened, and saves
+the finding as a note tagged `#stream-bug`, linked to the session it ran in.
+
+**Without the daemon.** When the daemon does not answer, or the session has ended, the skill still
+writes the evidence log's tail, the daemon's lines and the reference measurement, and the summary's
+`missing:` list names what is not there.
+
 ## Where the code is
 
 | Path | What |
@@ -795,11 +1018,18 @@ and the last pass.
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
+| `src/directStream/cachePlay.ts`, `src/http/streamCachePlayApi.ts` | Playing from the stream cache: which cache may play, the session made from it, `POST /api/stream/cache/:id/play` |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
+| `src/directStream/report.ts`, `src/http/streamReportApi.ts` | The player's report button: the snapshot, `report.json`, one tmux window per stream session (the opener is `openClaudeWindow` in `src/sessions/resume.ts`) |
+| `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
+| `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
+| `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
+| `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
 | `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
+| `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |
 
@@ -818,6 +1048,12 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - Direct streaming: the feature map entry is `.claude/skills/verify-notesd/features/direct-streaming.md`.
   `verify.sh up --direct-stream` drives it against a fake resolver and a fixture stream host, never
   a provider or Chrome; every other throwaway run has it off.
+- `/report-stream-bug`: `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (a fake daemon
+  and stream host; the known causes over `tests/fixtures/stream-report/`). On a throwaway daemon, the
+  "/report-stream-bug" section of the feature map entry.
+- The stream cache: `cache.sh RUN` on `verify.sh up --direct-stream` drives it against the fixture
+  stream host's tokened HLS film (`mode` `hls_token`, `token_uses`, `fail_once`, `delay_ms`); the
+  downloader's cases are `npx vitest run tests/unit/directStream/cache`.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real

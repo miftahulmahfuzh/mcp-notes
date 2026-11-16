@@ -163,6 +163,7 @@ const PLAY_DESCRIPTION =
   'The error no_source means no provider could stream it: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, skipped_browser_only, skipped_no_template), and nothing started; offer /idlix or /lk21. ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
+  'When this machine holds a cache of the film or episode (made with direct_stream_cache), the play comes from it: play.session.cached is { id, state, height }. state ready plays from disk with no provider asked (attempts is empty, and it works with the internet down); state downloading plays what is on disk and fetches each part not there yet as the film reaches it. A failed cache, or one made on the other machine, is not used: the play resolves as usual. ' +
   'Tell the owner it plays in the streaming Chrome window and that a double click, F, Esc or F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
 const SOURCES_DESCRIPTION =
@@ -290,11 +291,11 @@ async function respond(fn: () => Promise<CallToolResult>): Promise<CallToolResul
   }
 }
 
-function label(c: TitleCandidate): string {
+export function label(c: TitleCandidate): string {
   return c.year === null ? c.title : `${c.title} (${c.year})`;
 }
 
-function candidateView(c: TitleCandidate, wall: string) {
+export function candidateView(c: TitleCandidate, wall: string) {
   return {
     title: c.title,
     ...(c.originalTitle !== c.title ? { original_title: c.originalTitle } : {}),
@@ -309,7 +310,7 @@ function candidateView(c: TitleCandidate, wall: string) {
 }
 
 /** The film, the episode a movie id named, or the season and episode passed; null for a series with no episode. */
-function targetFor(c: TitleCandidate, named: EpisodePick | null, season: number | undefined, episode: number | undefined): StreamTarget | null {
+export function targetFor(c: TitleCandidate, named: EpisodePick | null, season: number | undefined, episode: number | undefined): StreamTarget | null {
   if (c.kind === 'movie') {
     if (season !== undefined || episode !== undefined) {
       throw new LookupError('invalid_input', `${label(c)} is a film: it takes no season or episode.`);
@@ -352,7 +353,7 @@ async function listedEpisodes(c: TitleCandidate, d: DirectStreamToolDeps): Promi
  * TMDB's list is read when the series is not stored, or when the stored list has no episode left
  * (a series still airing has newer ones).
  */
-async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promise<EpisodeChoice> {
+export async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promise<EpisodeChoice> {
   const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
   const stored = await d.progress(c.tmdbId);
   const choice = pickEpisode(stored, today);
@@ -371,7 +372,7 @@ function airDateOf(list: readonly { season: number; episode: number; airDate: st
  * read from. The stored episodes decide; TMDB's list is read when the series is not stored, or
  * when the stored list is too short for the number (a series still airing).
  */
-async function chooseAbsolute(
+export async function chooseAbsolute(
   c: TitleCandidate,
   n: number,
   d: DirectStreamToolDeps,
@@ -405,6 +406,15 @@ async function streamView(d: DirectStreamToolDeps, target: StreamTarget | null) 
 function playFailure(err: unknown): { error: string; reason: string | null; attempts: unknown[]; message: string } | null {
   if (!(err instanceof DirectStreamError)) return null;
   return { error: err.code, reason: err.code === 'no_source' ? null : err.reason, attempts: err.attempts, message: err.message };
+}
+
+/** What a started play's `next` adds when it plays from this machine's cache (play.session.cached); '' otherwise. */
+function cacheNext(play: unknown): string {
+  const cached = (play as { session?: { cached?: { state?: unknown } | null } } | null)?.session?.cached;
+  if (cached === null || cached === undefined || typeof cached !== 'object') return '';
+  return cached.state === 'ready'
+    ? " Say it plays from this machine's cache (no provider was asked)."
+    : " Say it plays from this machine's cache while the cache is still downloading, so a part not downloaded yet is fetched as it is reached.";
 }
 
 /**
@@ -604,11 +614,12 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             ...picked,
             play,
             next:
-              absolute_episode !== undefined
+              (absolute_episode !== undefined
                 ? `Say which season and episode is playing and that it is episode ${absolute_episode} counted from the first, that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.`
                 : choice === null
                   ? 'Say it is playing full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.'
-                  : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.',
+                  : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.') +
+              cacheNext(play),
           });
         } catch (err) {
           const failure = playFailure(err);

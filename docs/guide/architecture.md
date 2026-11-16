@@ -67,7 +67,7 @@ The other stores follow the same pattern, one writer each:
 | `chat_*` | `ChatService` (`src/chat/service.ts`) |
 | `cc_*` session tables | `SessionsRepo` (`src/sessions/repo.ts`) |
 | `movie_*` | `MoviesRepo` (`src/movies/repo.ts`); a review is a normal note written through `NotesService` |
-| `stream_providers`, `stream_provider_health` | `DirectStreamRepo` (`src/directStream/repo.ts`) |
+| `stream_providers`, `stream_provider_health`, `stream_caches` | `DirectStreamRepo` (`src/directStream/repo.ts`) |
 | `stream_probe_titles` | `ProbeRepo` (`src/directStream/repo.ts`) |
 | `adversary_reviews` | `src/adversary/reviewsRepo.ts` |
 | Seer's own database | `src/adversary/seerWriter.ts`, behind a table allow-list. The connector guard stays read-only |
@@ -91,7 +91,7 @@ After editing the schema run `npm run db:generate`, then `npm run db:migrate`.
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
 | Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. |
-| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. |
+| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. |
 | Settings | `app_settings` | Key and JSON value shared by both machines: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
@@ -116,6 +116,7 @@ Only text and metadata are in Postgres. Bytes live under `NOTES_DATA_DIR` (defau
   session-summaries/, adversary/     working directories of the summary and reviewer runs
   handoffs/                          "Spawn fresh" handoff files, deleted after 14 days
   movies/vlc-health-<host>.jsonl     the VLC health log, fsync'd, 5 MB plus one previous file
+  movies/stream-cache/<id>/          a stream cache: local playlists, segments, keys, subtitle (NOTESD_STREAM_CACHE_DIR)
 ```
 
 `cache/` can be deleted at any time; everything in it is rebuilt on request
@@ -215,6 +216,7 @@ it is on.
 | Movies sync | `NOTESD_MOVIES` on | Polls the roots, probes, matches against TMDB, reads VLC's recent list. | `src/movies/service.ts` |
 | VLC play tracking and health log | Movies on | Follows the VLC notesd started; samples every `vlc.exe` into the health log. | `src/movies/player.ts`, `src/movies/vlc/` |
 | Stream prober | `NOTESD_STREAM_PROBER` on, with direct streaming, movies, a TMDB credential and WSL `powershell.exe` | Rebuilds the TMDB candidate list once a day; while Windows is idle and nothing plays, re-checks verified sources nearing the end of their window, then resolves new candidates up to the catalog size, within a budget of probes and seconds. Its tabs are out of sight and silent. | `src/directStream/prober.ts` |
+| Stream cache | Direct streaming on | Downloads the films and episodes asked for, one at a time; carries unfinished ones on after a restart. | `src/directStream/cache/` |
 | Egress summary | Meter on | One log line an hour. | `src/db/meter.ts` |
 
 A job never blocks a save or a request: it works from rows already committed.
@@ -262,7 +264,7 @@ src/
   cli/          embed:backfill and embed:images:backfill
 web/            the Vite + React app (web/src) and the full-screen page
 drizzle/        SQL migrations
-claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, create-streaming-skill), streaming/ (the streaming sites), hooks/, mods/note-links
+claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, create-streaming-skill, direct-stream, update-cloud-source, report-stream-bug), streaming/ (the streaming sites), hooks/, mods/note-links
 deploy/         the systemd user unit template
 scripts/        install, uninstall, hook settings merge, test-int, windows/ keepalive, docs/ tooling
 tests/          unit/, integration/, live/, fixtures/, helpers/

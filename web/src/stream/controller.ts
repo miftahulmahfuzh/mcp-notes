@@ -1,22 +1,43 @@
-import type { CreateEngine, EngineReady, PlayerEngine, Quality } from './engine';
+import {
+  BUFFER_AHEAD_S,
+  CACHED_BUFFER_AHEAD_S,
+  MUTED_BUFFER_AHEAD_S,
+  NETWORK_RETRY_LIMIT,
+  type CreateEngine,
+  type EngineReady,
+  type PlayerEngine,
+  type Quality,
+} from './engine';
 import {
   fetchSession,
   fetchText,
+  postEvents,
   postPosition,
   refreshSession,
+  reportStreamBug,
   SessionError,
   switchEpisode,
   type EpisodeNumber,
   type ManifestKind,
+  type PlayerLogLine,
+  type ReportAnswer,
   type StreamSession,
+  type CachedInfo,
 } from './session';
 import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
 
 export const POSITION_INTERVAL_MS = 5_000;
 export const MAX_REFRESHES = 3;
 const LOG_MAX = 20;
+  /** The daemon refuses a longer line or a bigger batch (src/http/streamEvidenceApi.ts). */
+  const EVENT_TEXT_MAX = 2_000;
+  const EVENTS_PER_POST = 50;
 
-export type Stage = 'loading' | 'ready' | 'refreshing' | 'error';
+/** `recovering`: a network error; the engine loads again after a wait while the film stays on the page. */
+export type Stage = 'loading' | 'ready' | 'refreshing' | 'recovering' | 'error';
+
+/** The report button (only shown in the error stage): nothing sent, being sent, or the daemon's answer. */
+export type BugReportState = { status: 'idle' } | { status: 'sending' } | ReportAnswer;
 
 export interface StreamState {
   stage: Stage;
@@ -42,10 +63,14 @@ export interface StreamState {
   switching: 'prev' | 'next' | null;
   /** Why the last press of a previous / next button started nothing (which side, and the daemon's code); null once another press begins. */
   switchError: { to: 'prev' | 'next'; code: string } | null;
+  /** Played from this machine's stream cache (phase 6): the page marks it beside the title. Null: through the pass-through. */
+  cached: CachedInfo | null;
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
   log: string[];
+  /** The report button's state for this session; back to idle when the page plays another session. */
+  bugReport: BugReportState;
 }
 
 export const INITIAL_STATE: StreamState = {
@@ -64,8 +89,10 @@ export const INITIAL_STATE: StreamState = {
   nextEpisode: null,
   switching: null,
   switchError: null,
+  cached: null,
   errors: [],
   log: [],
+  bugReport: { status: 'idle' },
 };
 
 export interface ControllerDeps {
@@ -105,6 +132,8 @@ export class StreamController {
   private fileTracks: FileTrack[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
+  private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
   /** Resolved the first time the stream is ready or the play has failed (playWithSound waits on it). */
   private settle: () => void = () => {};
@@ -133,7 +162,7 @@ export class StreamController {
   async playWithSound(): Promise<boolean> {
     if (this.mutedMode || this.disposed) return false;
     await this.settled;
-    if (this.disposed || this.state.stage !== 'ready') return false;
+    if (this.disposed || !this.onFilm()) return false;
     this.video.muted = false;
     try {
       await this.video.play();
@@ -172,10 +201,11 @@ export class StreamController {
     await this.open(session);
   }
 
-  /** Plays a session read from the daemon: its name and neighbours, its subtitle files, then the engine at its resume position. */
+  /** Plays a session read from the daemon: its name, neighbours and cache, its subtitle files, then the engine at its resume position. */
   private async open(session: StreamSession): Promise<void> {
     this.session = session;
-    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode });
+    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode, cached: session.cached });
+    if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
     await this.loadFileSubtitles(session);
     if (this.disposed || this.session !== session) return;
     await this.attach(session, session.resumeS);
@@ -202,7 +232,7 @@ export class StreamController {
       return;
     }
     if (this.disposed) return;
-    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+    if (this.onFilm() && !this.video.ended) this.report({ closed: true });
     this.generation += 1;
     this.engine?.destroy();
     this.engine = null;
@@ -214,7 +244,7 @@ export class StreamController {
     this.fileTracks = [];
     this.sessionId = nextId;
     this.lastPositionS = 0;
-    this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null });
+    this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
     try {
@@ -224,6 +254,36 @@ export class StreamController {
     } catch (err) {
       if (!this.disposed) this.fail(err);
     }
+  }
+
+  /**
+   * The report button: asks the daemon to snapshot this session's evidence and open a Claude Code
+   * window on it, sending the page's own log (the daemon may have lost the session). One report per
+   * session: a click while one is being sent, after a window opened, or after the daemon said it
+   * was reported before does nothing. A report saved but not opened may be sent again; the daemon
+   * reuses its folder.
+   */
+  async reportBug(): Promise<void> {
+    if (this.disposed) return;
+    const now = this.state.bugReport.status;
+    if (now === 'sending' || now === 'opened' || now === 'already') return;
+    const sessionId = this.sessionId;
+    this.set({ bugReport: { status: 'sending' } });
+    const answer = await reportStreamBug(
+      sessionId,
+      {
+        stage: this.state.stage,
+        error: this.state.error,
+        errors: this.state.errors,
+        log: this.state.log,
+        title: this.state.title,
+        position_s: this.lastPositionS > 0 ? round1(this.lastPositionS) : null,
+      },
+      this.deps.fetch,
+    );
+    if (this.disposed || sessionId !== this.sessionId) return;
+    this.set({ bugReport: answer });
+    this.note(answer.status === 'failed' ? `report: failed ${answer.code}` : `report: ${answer.status} ${answer.dir}`);
   }
 
   selectSubtitle(id: string | null): void {
@@ -266,6 +326,7 @@ export class StreamController {
 
   private note(line: string): void {
     this.set({ log: [...this.state.log, line].slice(-LOG_MAX) });
+    this.send(line);
   }
 
   private fail(err: unknown): void {
@@ -276,7 +337,60 @@ export class StreamController {
       errors: [...this.state.errors, code].slice(-LOG_MAX),
       log: [...this.state.log, `error: ${code}`].slice(-LOG_MAX),
     });
+    this.send(`error: ${code}`);
     this.settle();
+  }
+
+  /**
+   * Every log line also goes to the daemon's stream evidence log (R2.2): errors, refreshes, subtitle
+   * failures, and whatever else note() is given. Lines are batched per tick, so an error travels with
+   * the line before it. Fire and forget: nothing here waits or throws.
+   */
+  private send(text: string): void {
+    this.unsent.push({
+      sessionId: this.sessionId,
+      line: {
+        text: text.slice(0, EVENT_TEXT_MAX),
+        at: new Date().toISOString(),
+        stage: this.state.stage,
+        position_s: this.positionNow(),
+        buffer_s: this.bufferAhead(),
+      },
+    });
+    if (this.unsent.length === 1) queueMicrotask(this.flushUnsent);
+  }
+
+  private readonly flushUnsent = (): void => {
+    const batch = this.unsent.splice(0);
+    const bySession = new Map<string, PlayerLogLine[]>();
+    for (const { sessionId, line } of batch) {
+      const lines = bySession.get(sessionId) ?? [];
+      lines.push(line);
+      bySession.set(sessionId, lines);
+    }
+    for (const [sessionId, lines] of bySession) {
+      for (let i = 0; i < lines.length; i += EVENTS_PER_POST) void postEvents(sessionId, lines.slice(i, i + EVENTS_PER_POST), this.deps.fetch);
+    }
+  };
+
+  private positionNow(): number | null {
+    const t = this.video.currentTime;
+    return Number.isFinite(t) && t >= 0 ? round1(t) : null;
+  }
+
+  /** Seconds buffered ahead of the position: the end of the range holding it, else 0; null when the browser cannot say. */
+  private bufferAhead(): number | null {
+    try {
+      const ranges = this.video.buffered;
+      const t = this.video.currentTime;
+      if (ranges === undefined || ranges === null || !Number.isFinite(t)) return null;
+      for (let i = 0; i < ranges.length; i += 1) {
+        if (ranges.start(i) <= t + 0.5 && t <= ranges.end(i)) return round1(Math.max(0, ranges.end(i) - t));
+      }
+      return 0;
+    } catch {
+      return null;
+    }
   }
 
   private async loadFileSubtitles(session: StreamSession): Promise<void> {
@@ -316,6 +430,9 @@ export class StreamController {
         src: session.manifestUrl,
         startAt,
         audioTrack: session.audioTrack,
+        // R1.8: 120 s ahead; ?muted=1 keeps 30 s for the expiry checks; a complete cache (phase 6)
+        // is on disk, so it buffers as far as hls.js goes by itself.
+        bufferAheadS: this.mutedMode ? MUTED_BUFFER_AHEAD_S : session.cached?.state === 'ready' ? CACHED_BUFFER_AHEAD_S : BUFFER_AHEAD_S,
         handlers: {
           onReady: (ready) => {
             if (current()) this.onReady(ready);
@@ -326,6 +443,12 @@ export class StreamController {
           onSessionOver: (status) => {
             // notesd's own refusal (no X-Notesd-Upstream): the session is gone; a refresh cannot help.
             if (current() && this.state.stage !== 'error') this.fail(new SessionError('session_over', status));
+          },
+          onRecovering: (attempt, message) => {
+            if (current()) this.onRecovering(attempt, message);
+          },
+          onRecovered: () => {
+            if (current()) this.onRecovered();
           },
           onFatal: (message) => {
             if (current()) this.fail(new SessionError(message, 0));
@@ -348,6 +471,29 @@ export class StreamController {
     this.ready = ready;
     this.readySinceAttach = true;
     if (this.engine !== null) this.applyChoices();
+  }
+
+  /**
+   * R1.7: the engine lost the network and loads again after a wait. The film stays on the page
+   * (it plays on from its buffer meanwhile); the error is shown only when the engine gives up.
+   */
+  private onRecovering(attempt: number, message: string): void {
+    if (this.state.stage === 'error') return;
+    const at = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
+    this.set({ stage: 'recovering' });
+    this.note(`recovering ${attempt}/${NETWORK_RETRY_LIMIT} after ${message} at ${round1(at)} s`);
+  }
+
+  /** A load succeeded after a restart: back to the film (or to loading, when it never played since attach). */
+  private onRecovered(): void {
+    if (this.state.stage === 'error') return;
+    if (this.state.stage === 'recovering') this.set({ stage: this.readySinceAttach ? 'ready' : 'loading' });
+    this.note(`recovered at ${round1(this.video.currentTime)} s`);
+  }
+
+  /** The film is on the page: playing, paused, or riding out a network error on its buffer. */
+  private onFilm(): boolean {
+    return this.state.stage === 'ready' || this.state.stage === 'recovering';
   }
 
   private applyChoices(): void {
@@ -410,32 +556,33 @@ export class StreamController {
   }
 
   private readonly onTime = (): void => {
-    if (this.state.stage === 'ready' && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
+    if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 
   // Every 5 s while the page is open: the position while it plays, and a beat while it is paused, so
-  // the Movies page knows the film is still on screen (src/movies/streamLive.ts).
+  // the Movies page knows the film is still on screen (src/movies/streamLive.ts). A recovery is still
+  // the film on screen: it plays on from its buffer.
   private readonly onTick = (): void => {
-    if (this.state.stage !== 'ready' || this.video.ended) return;
+    if (!this.onFilm() || this.video.ended) return;
     this.report(this.video.paused ? { beat: true } : {});
   };
 
   private readonly onPause = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report();
+    if (this.onFilm() && !this.video.ended) this.report();
   };
 
   // Play after a pause: say so at once, not at the next tick.
   private readonly onPlay = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report();
+    if (this.onFilm() && !this.video.ended) this.report();
   };
 
   private readonly onEnded = (): void => {
-    if (this.state.stage === 'ready') this.report({ ended: true });
+    if (this.onFilm()) this.report({ ended: true });
   };
 
   // The tab or the window closes: the last position, and the film is no longer on screen.
   private readonly onClose = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+    if (this.onFilm() && !this.video.ended) this.report({ closed: true });
   };
 
   private report(extra: { ended?: boolean; beat?: boolean; closed?: boolean } = {}): void {
@@ -480,6 +627,8 @@ export class StreamController {
       const session = await fetchSession(this.sessionId, this.deps.fetch);
       if (this.disposed) return;
       this.session = session;
+      // A refresh of a cached session either keeps the cache or moves to the pass-through (the cache was cleared).
+      this.set({ cached: session.cached });
       await this.attach(session, continueAt);
     } catch (err) {
       if (!this.disposed) this.fail(err);

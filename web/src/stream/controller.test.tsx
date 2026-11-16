@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_REFRESHES, POSITION_INTERVAL_MS, StreamController } from './controller';
-import { audioTrackIndex, classifyRefusal } from './engine';
+import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 
@@ -55,6 +55,7 @@ describe('parseSession', () => {
       audioTrack: null,
       prevEpisode: null,
       nextEpisode: null,
+      cached: null,
     });
     // A series' session names its neighbours; anything else there is no neighbour.
     expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
@@ -101,11 +102,63 @@ describe('parseSession', () => {
     expect(() => parseSession(streamSessionJson({ manifest_kind: 'smooth' }))).toThrow('bad_session');
   });
 
+  it('reads the cache a session plays from, and nothing it cannot use', () => {
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'ready', height: 720 } })).cached).toEqual({ id: 'c1', state: 'ready', height: 720 });
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'downloading', height: 'x' } })).cached).toEqual({ id: 'c1', state: 'downloading', height: null });
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'failed', height: 720 } })).cached).toBeNull();
+    expect(parseSession(streamSessionJson({ cached: null })).cached).toBeNull();
+    expect(parseSession(streamSessionJson()).cached).toBeNull();
+  });
+
   it('reads the id from /stream/<id>', () => {
     expect(sessionIdFromLocation({ pathname: '/stream/k3R9xQ2m' })).toBe('k3R9xQ2m');
     expect(sessionIdFromLocation({ pathname: '/stream/k3R9xQ2m/' })).toBe('k3R9xQ2m');
     expect(sessionIdFromLocation({ pathname: '/stream/' })).toBeNull();
     expect(sessionIdFromLocation({ pathname: '/stream/a/b' })).toBeNull();
+  });
+});
+
+const CACHED = { id: 'c1d2e3f4-0000-4000-8000-000000000001', state: 'ready', height: 720 };
+const LOCAL = '/api/stream/cache/c1d2e3f4-0000-4000-8000-000000000001/f/master.m3u8';
+
+describe('playing from the cache', () => {
+  it("hands a cached session's state to the engine, keeps it in the state and notes it in the log", async () => {
+    const { controller, made } = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ manifest_url: LOCAL, cached: CACHED })) });
+    await controller.start();
+    expect(made[0]?.req.src).toBe(LOCAL);
+    expect(made[0]?.req.bufferAheadS).toBe(CACHED_BUFFER_AHEAD_S);
+    expect(controller.getState().cached).toEqual(CACHED);
+    expect(controller.getState().log).toContain('from cache c1d2e3f4 (ready)');
+  });
+
+  it('keeps 120 s ahead for a stream through the pass-through and for a cache still downloading', async () => {
+    const plain = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });
+    await plain.controller.start();
+    expect(plain.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    expect(plain.controller.getState().cached).toBeNull();
+    const downloading = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ manifest_url: LOCAL, cached: { ...CACHED, state: 'downloading' } })) });
+    await downloading.controller.start();
+    expect(downloading.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+  });
+
+  it('drops the mark when a refresh moves the session onto the pass-through (the cache was cleared)', async () => {
+    let reads = 0;
+    const { controller, made } = setup({
+      'GET /api/stream/sessions/S1': () => jsonResponse(reads++ === 0 ? streamSessionJson({ manifest_url: LOCAL, cached: CACHED }) : streamSessionJson()),
+      'POST /api/stream/sessions/S1/refresh': () => jsonResponse({ session_id: 'S1' }),
+    });
+    await controller.start();
+    made[0]!.req.handlers.onReady({ qualities: [], subtitles: [] });
+    made[0]!.req.handlers.onAuthError(403);
+    await vi.waitFor(() => expect(made).toHaveLength(2));
+    expect(made[1]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    expect(controller.getState().cached).toBeNull();
+  });
+});
+
+describe('the buffer of a cached play', () => {
+  it('keeps 30 s under ?muted=1 even for a complete cache, and the numbers are 30 / 120 / 600', () => {
+    expect([MUTED_BUFFER_AHEAD_S, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S]).toEqual([30, 120, 600]);
   });
 });
 
@@ -508,5 +561,174 @@ describe('StreamController: the previous and next episode', () => {
     await controller.goToEpisode('next');
     expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
     expect(controller.getState().switching).toBeNull();
+  });
+});
+
+describe('the page log reaches the daemon (R2.2)', () => {
+  const lines = (t: ReturnType<typeof setup>) => t.posts(`${S1}/events`).flatMap((b) => (b as { lines: Record<string, unknown>[] }).lines);
+
+  it('posts a refresh line and the error that followed, with the stage and the position', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/refresh`]: () => jsonResponse({ error: 'no_source' }, 502),
+      [`POST ${S1}/events`]: () => jsonResponse({ ok: true, recorded: 1 }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    t.media.currentTime = 42;
+    t.fire('timeupdate');
+    t.made[0].req.handlers.onAuthError(403);
+    await vi.waitFor(() => expect(t.controller.getState().stage).toBe('error'));
+    await vi.waitFor(() => expect(lines(t)).toHaveLength(2));
+    expect(lines(t)).toEqual([
+      expect.objectContaining({ text: 'refresh after 403 at 42 s', stage: 'refreshing', position_s: 42 }),
+      expect.objectContaining({ text: 'error: no_source', stage: 'error', position_s: 42 }),
+    ]);
+    expect(typeof lines(t)[0].at).toBe('string');
+  });
+
+  it('posts a fatal engine error as the page shows it', async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    await vi.waitFor(() => expect(lines(t)).toHaveLength(1));
+    expect(lines(t)[0]).toMatchObject({ text: 'error: networkError fragLoadError', stage: 'error' });
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError' });
+  });
+
+  it('a daemon that refuses the lines changes nothing on the page', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/events`]: () => {
+        throw new Error('daemon gone');
+      },
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    await vi.waitFor(() => expect(t.posts(`${S1}/events`)).toHaveLength(1));
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', errors: ['networkError fragLoadError'] });
+  });
+});
+
+describe('StreamController: a network error (R1.7) and the buffer (R1.8)', () => {
+  it('asks the engine for 120 s ahead, and 30 s under ?muted=1', async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    await t.controller.start();
+    expect(t.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    const m = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) }, { muted: true });
+    await m.controller.start();
+    expect(m.made[0]?.req.bufferAheadS).toBe(MUTED_BUFFER_AHEAD_S);
+  });
+
+  it('stays on the film while the engine retries, reports positions meanwhile, and plays on when it recovers', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    const engine = t.made[0];
+    engine.req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+
+    engine.req.handlers.onRecovering(1, 'networkError fragLoadError');
+    expect(t.controller.getState()).toMatchObject({ stage: 'recovering', error: null, errors: [] });
+    expect(t.controller.getState().log.at(-1)).toBe(`recovering 1/${NETWORK_RETRY_LIMIT} after networkError fragLoadError at 300 s`);
+    expect(engine.destroy).not.toHaveBeenCalled();
+    expect(t.made).toHaveLength(1);
+
+    // The film plays on from its buffer: its position still reaches the daemon.
+    t.media.currentTime = 305;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.posts().at(-1)).toEqual({ position_s: 305, duration_s: 1440, ended: false, paused: false });
+
+    engine.req.handlers.onRecovering(2, 'networkError fragLoadError');
+    engine.req.handlers.onRecovered();
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null, errors: [] });
+    expect(t.controller.getState().log.at(-1)).toBe('recovered at 305 s');
+  });
+
+  it("stops with the engine's message once the retries are spent, and a late word changes nothing", async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    const { handlers } = t.made[0].req;
+    handlers.onReady({ qualities: [], subtitles: [] });
+    for (let attempt = 1; attempt <= NETWORK_RETRY_LIMIT; attempt++) handlers.onRecovering(attempt, 'networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('recovering');
+    handlers.onFatal('networkError fragLoadError');
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'] });
+    handlers.onRecovering(1, 'networkError fragLoadError');
+    handlers.onRecovered();
+    expect(t.controller.getState().stage).toBe('error');
+  });
+
+  it('a refused token while it recovers still refreshes, and the replaced engine is not heard', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/refresh`]: () => jsonResponse(streamSessionJson()),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    t.media.currentTime = 200;
+    t.fire('timeupdate');
+    t.made[0].req.handlers.onRecovering(1, 'networkError fragLoadError');
+    t.made[0].req.handlers.onAuthError(403);
+    expect(t.controller.getState().stage).toBe('refreshing');
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.made[1].req.startAt).toBe(200);
+    t.made[0].req.handlers.onRecovering(2, 'networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('refreshing');
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', refreshes: 1 });
+  });
+});
+
+describe('StreamController: the report button (R4)', () => {
+  const failed = async (report: () => Response) => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()), [`POST ${S1}/report`]: report });
+    await t.controller.start();
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('error');
+    const reports = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/report`);
+    return { ...t, reports };
+  };
+
+  it("sends the page's own log once; after the window opened a second click sends nothing", async () => {
+    const { controller, reports } = await failed(() => jsonResponse({ ok: true, dir: '/d/r1', window: 'note:3', complete: true }));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'opened', dir: '/d/r1', window: 'note:3' });
+    await controller.reportBug();
+    expect(reports()).toHaveLength(1);
+    expect(reports()[0].body).toMatchObject({
+      page: { stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'], title: 'Fight Club (1999)' },
+    });
+  });
+
+  it('a report saved but not opened says so and may be sent again', async () => {
+    let n = 0;
+    const { controller, reports } = await failed(() =>
+      ++n === 1 ? jsonResponse({ error: 'no_tmux', dir: '/d/r1', complete: true }, 409) : jsonResponse({ ok: true, dir: '/d/r1', window: 'note:4', complete: true }),
+    );
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'saved', dir: '/d/r1', reason: 'no_tmux' });
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'opened', dir: '/d/r1', window: 'note:4' });
+    expect(reports()).toHaveLength(2);
+  });
+
+  it('keeps the first folder when the daemon says the session was reported before', async () => {
+    const { controller } = await failed(() => jsonResponse({ error: 'already_reported', dir: '/d/r0' }, 409));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'already', dir: '/d/r0' });
+  });
+
+  it("an answer without a folder is a failure with the daemon's code", async () => {
+    const { controller } = await failed(() => jsonResponse({ error: 'unknown_session' }, 403));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'failed', code: 'unknown_session' });
   });
 });

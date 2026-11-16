@@ -4,9 +4,13 @@ import {
   ArrowArcRight,
   ArrowsIn,
   ArrowsOut,
+  Bug,
+  CheckCircle,
   CircleNotch,
   ClosedCaptioning,
+  CloudArrowDown,
   GearSix,
+  HardDrive,
   IconContext,
   Pause,
   Play,
@@ -16,10 +20,10 @@ import {
   SpeakerSlash,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { INITIAL_STATE, StreamController, type ControllerDeps, type StreamState } from './controller';
+import { INITIAL_STATE, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
-import type { EpisodeNumber } from './session';
+import type { CachedInfo, EpisodeNumber } from './session';
 import { pickDefaultSubtitle } from './subtitles';
 
 /**
@@ -85,6 +89,22 @@ export function switchErrorText(to: 'previous' | 'next', code: string): string {
   if (code === 'no_episode') return `There is no ${to} episode.`;
   if (code === 'unknown_session') return 'This stream session has ended; start the episode again from Claude Code or the movies page.';
   return `The ${to} episode could not be started (${code}).`;
+}
+
+/** The cache mark's tooltip and accessible name. */
+export function cachedLabel(cached: CachedInfo): string {
+  const quality = cached.height === null ? '' : ` (${cached.height}p)`;
+  return cached.state === 'ready' ? `Playing from this machine's cache${quality}` : `Playing from this machine's cache while it downloads${quality}`;
+}
+
+/** Icon only: a drive when the whole film is on disk, a cloud with an arrow while it still downloads. */
+function CachedMark({ cached }: { cached: CachedInfo }) {
+  const label = cachedLabel(cached);
+  return (
+    <span className="st-cached" role="img" aria-label={label} title={label} data-state={cached.state}>
+      {cached.state === 'ready' ? <HardDrive /> : <CloudArrowDown />}
+    </span>
+  );
 }
 
 export function qualityLabel(q: Quality): string {
@@ -219,10 +239,64 @@ function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   );
 }
 
-function StageOverlay({ state }: { state: StreamState }) {
-  if (state.stage === 'loading' || state.stage === 'refreshing') {
+const BUSY_LABELS = { loading: 'Loading', refreshing: 'Reconnecting', recovering: 'Reconnecting after a network error' } as const;
+
+/** The report button's name (its aria-label and title): it has no visible text. */
+export function reportLabel(report: BugReportState): string {
+  switch (report.status) {
+    case 'sending':
+      return 'Sending the report';
+    case 'opened':
+      return 'Report opened in tmux';
+    case 'already':
+      return 'Already reported';
+    case 'saved':
+      return 'Open the report again';
+    default:
+      return 'Report this stream bug';
+  }
+}
+
+/** The line under the report button once the daemon answered; null before. */
+export function reportText(report: BugReportState): string | null {
+  switch (report.status) {
+    case 'opened':
+      return report.window !== '' ? `Report opened in tmux window ${report.window}: ${report.dir}` : `Report opened in tmux: ${report.dir}`;
+    case 'already':
+      return `Already reported: ${report.dir}`;
+    case 'saved':
+      return report.reason === 'no_tmux'
+        ? `Report saved but not opened, no tmux is running: ${report.dir}`
+        : `Report saved but not opened, Claude Code could not be started: ${report.dir}`;
+    case 'failed':
+      return `The report could not be made (${report.code}).`;
+    default:
+      return null;
+  }
+}
+
+function ReportButton({ report, onReport }: { report: BugReportState; onReport: () => void }) {
+  const label = reportLabel(report);
+  const text = reportText(report);
+  const spent = report.status === 'sending' || report.status === 'opened' || report.status === 'already';
+  return (
+    <div className="st-report">
+      <button type="button" className="st-btn" aria-label={label} title={label} disabled={spent} onClick={onReport}>
+        {report.status === 'sending' ? <CircleNotch className="st-spin" /> : report.status === 'opened' || report.status === 'already' ? <CheckCircle /> : <Bug />}
+      </button>
+      {text !== null && (
+        <span className="st-report-text" role="status">
+          {text}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StageOverlay({ state, onReport }: { state: StreamState; onReport?: () => void }) {
+  if (state.stage === 'loading' || state.stage === 'refreshing' || state.stage === 'recovering') {
     return (
-      <div className="st-center" role="status" aria-label={state.stage === 'refreshing' ? 'Reconnecting' : 'Loading'}>
+      <div className="st-center" role="status" aria-label={BUSY_LABELS[state.stage]}>
         <CircleNotch className="st-spin" />
       </div>
     );
@@ -233,6 +307,7 @@ function StageOverlay({ state }: { state: StreamState }) {
       <div className="st-center st-error" role="alert">
         <WarningCircle />
         <span>{ERRORS[code] ?? `Playback stopped (${code}).`}</span>
+        {onReport !== undefined && <ReportButton report={state.bugReport} onReport={onReport} />}
       </div>
     );
   }
@@ -305,6 +380,9 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     },
     [controller],
   );
+  const reportBug = useCallback(() => {
+    void controller?.reportBug();
+  }, [controller]);
   const toggleSubtitles = useCallback(() => {
     if (controller === null) return;
     const s = controller.getState();
@@ -336,7 +414,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     action();
     setMenu(null);
   };
-  const hidden = idle && !view.paused && menu === null && state.stage === 'ready' && state.switching === null;
+  const hidden = idle && !view.paused && menu === null && (state.stage === 'ready' || state.stage === 'recovering') && state.switching === null;
   // A series' session names a neighbour on at least one side; a film's never does.
   const series = state.prevEpisode !== null || state.nextEpisode !== null;
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;
@@ -347,13 +425,14 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <video ref={setVideo} className="st-video" playsInline muted={muted} onClick={togglePlay} onDoubleClick={fullscreenToggle} />
         <div className="st-top">
           <span className="st-title">{state.title}</span>
+          {state.cached !== null && <CachedMark cached={state.cached} />}
           {state.switchError !== null && (
             <span className="st-notice" role="status">
               {switchErrorText(state.switchError.to === 'prev' ? 'previous' : 'next', state.switchError.code)}
             </span>
           )}
         </div>
-        <StageOverlay state={state} />
+        <StageOverlay state={state} onReport={controller !== null && sessionId !== null ? reportBug : undefined} />
         <div className="st-bar">
           <IconButton label={view.paused ? 'Play' : 'Pause'} onClick={togglePlay}>
             {view.paused ? <Play /> : <Pause />}

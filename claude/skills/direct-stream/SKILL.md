@@ -1,6 +1,6 @@
 ---
 name: direct-stream
-description: Stream a film or one episode of a series straight from a cloud source into mcp-notes' own player page, full screen in the streaming Chrome on Windows, with an English subtitle when a source has one and no site adverts. Use whenever the user types "/direct-stream <title>" or "/direct-stream <title> <year>" in any Claude Code session — e.g. "/direct-stream saltburn", "/direct-stream dune 2021", "/direct-stream the bear season 2 episode 3", "this is a LOTR night. let's /direct-stream the first one" — and for a plain-English request to the same effect, such as "stream Saltburn directly", "direct-stream that one" — and for a request to stream something the user describes instead of naming: "stream a Johnny Depp movie, the more recent the better", "pick a Spanish series from this year and play it", "let's stream the most recent Shudder movie", "play one of Nolan's movies", "resume One Piece from episode 730", "I watched House of the Dragon season 1 last year, start season 2". A question such as "can I stream Saltburn directly?" is a lookup that starts nothing.
+description: Stream a film or one episode of a series straight from a cloud source into mcp-notes' own player page, full screen in the streaming Chrome on Windows, with an English subtitle when a source has one and no site adverts. Use whenever the user types "/direct-stream <title>" or "/direct-stream <title> <year>" in any Claude Code session — e.g. "/direct-stream saltburn", "/direct-stream dune 2021", "/direct-stream the bear season 2 episode 3", "this is a LOTR night. let's /direct-stream the first one" — and for a plain-English request to the same effect, such as "stream Saltburn directly", "direct-stream that one" — and for a request to stream something the user describes instead of naming: "stream a Johnny Depp movie, the more recent the better", "pick a Spanish series from this year and play it", "let's stream the most recent Shudder movie", "play one of Nolan's movies", "resume One Piece from episode 730", "I watched House of the Dragon season 1 last year, start season 2". Also use it to cache one on this laptop before watching it — "cache One Piece episode 790 first", "download the next episode so it doesn't lag", "is it cached?", "clear the cache of that one." A question such as "can I stream Saltburn directly?" is a lookup that starts nothing.
 argument-hint: <title> [year] [season N episode M] | <a description: a person, studio, service, language, year>
 ---
 
@@ -93,6 +93,24 @@ Worked examples (the year is this year's):
 a series the library does not hold yet when `title` is its `title_key` (`tv-94997`).
 `movies_mark {title, not_interested: true}` is for "I am not interested in that one".
 
+## Caching first
+
+A slow connection or a far stream host makes a stream stutter or stop. The daemon can download one
+film or episode to this laptop first, with `mcp__notes__direct_stream_cache` (its description names
+the arguments). Work out the title as in step 1 first.
+
+- **"cache X first", "download the next episode so it doesn't lag":** start a cache with the same
+  title fields `direct_stream_play` takes, and a maximum height when the user named a quality ("in
+  720p"). Say it is downloading, and that a play started now already plays from it.
+- **"cache it and play it":** start the cache, then call `direct_stream_play`: the play uses the
+  cache while it downloads.
+- **"is it cached?", "how far is the download?":** ask for its status and say the state
+  (`downloading` with its progress, `ready`, `failed` with why) and the quality. A cache made on the
+  other laptop answers `available: false` here: say it is on the other laptop and cannot play here.
+- **"clear the cache of X":** clear it. Nothing else removes a cache.
+
+A play needs nothing extra: `direct_stream_play` uses this laptop's cache of the title by itself.
+
 ## Step 2: play, or look
 
 `/direct-stream <title>` and "stream it" mean start it: call `direct_stream_play` once with
@@ -119,6 +137,7 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   series also the season and
   episode, and with `picked` why that one: carried on from where it stopped (`resume`), the next
   episode (`next`), or the first (`first`).
+  When `play.session.cached` is set, say it plays from this laptop's cache: `ready` (no provider was asked; it plays even offline) or `downloading` (a part not downloaded yet is fetched as it is reached). Name the provider from `play.session.provider`; `attempts` is empty.
 - **`skipped_play: "several_matches"`:** one line per candidate with its year and kind; ask which
   one. When the user picks, call `direct_stream_play` again with that candidate's `movie_id`
   (or its exact title and year when it has none).

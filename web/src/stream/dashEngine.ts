@@ -1,5 +1,11 @@
 import { MediaPlayer, type MediaInfo } from 'dashjs';
-import { audioTrackIndex, reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
+import { audioTrackIndex, networkRecovery, reportRefusal, UPSTREAM_HEADER, type EngineRequest, type PlayerEngine } from './engine';
+
+/**
+ * dash.js's codes for a load that failed after its own retries (MediaPlayerErrors): the manifest
+ * loader (11) and the manifest, sidx, segment, init segment and xlink downloads (25-29).
+ */
+const NETWORK_ERROR_CODES: ReadonlySet<number> = new Set([11, 25, 26, 27, 28, 29]);
 
 /** X-Notesd-Upstream of a response the interceptor saw (dash.js 5 lower-cases header names in `headers`). */
 function upstreamOf(response: unknown): string | null {
@@ -16,14 +22,24 @@ function describe(event: unknown): string {
   }
 }
 
+function errorCode(event: unknown): number | null {
+  const code = (event as { error?: { code?: unknown } } | null)?.error?.code;
+  return typeof code === 'number' ? code : null;
+}
+
 export function createDashEngine({ video, src, startAt, handlers, audioTrack }: EngineRequest): PlayerEngine {
   const player = MediaPlayer().create();
   let textTracks: MediaInfo[] = [];
   let live = true;
+  // R1.7: dash.js has retried the download already; open the stream again where the film is.
+  const network = networkRecovery(handlers, () => {
+    if (live) player.attachSource(src, video.currentTime > 0 ? video.currentTime : startAt > 0 ? startAt : undefined);
+  });
 
   player.updateSettings({ streaming: { text: { defaultEnabled: false } } });
   player.addResponseInterceptor(async (response) => {
-    if (live) reportRefusal(handlers, response.status, upstreamOf(response));
+    // A refresh replaces this engine, or the session is over: no restart either way.
+    if (live && reportRefusal(handlers, response.status, upstreamOf(response))) network.stop();
     return response;
   });
   player.on(MediaPlayer.events.STREAM_INITIALIZED, () => {
@@ -46,8 +62,16 @@ export function createDashEngine({ video, src, startAt, handlers, audioTrack }: 
       })),
     });
   });
+  player.on(MediaPlayer.events.FRAGMENT_LOADING_COMPLETED, (event: unknown) => {
+    // dash.js says "completed" for a failed load too, with its error in the event.
+    if (live && (event as { error?: unknown } | null)?.error == null) network.loaded();
+  });
   player.on(MediaPlayer.events.ERROR, (event: unknown) => {
-    if (live) handlers.onFatal(`dash ${describe(event)}`);
+    if (!live) return;
+    const message = `dash ${describe(event)}`;
+    const code = errorCode(event);
+    if (code !== null && NETWORK_ERROR_CODES.has(code)) network.fail(message);
+    else handlers.onFatal(message);
   });
   player.initialize(video, src, false, startAt > 0 ? startAt : undefined);
 
@@ -71,6 +95,7 @@ export function createDashEngine({ video, src, startAt, handlers, audioTrack }: 
     },
     destroy() {
       live = false;
+      network.stop();
       player.reset();
     },
   };

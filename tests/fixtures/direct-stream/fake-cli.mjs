@@ -2,14 +2,16 @@
 // Stands in for claude/streaming/direct/cli.mjs in tests and in `verify.sh up --direct-stream`: it opens
 // no Chrome and reaches no provider. Its state is the folder named by DIRECT_STREAM_FAKE_DIR:
 //   upstream.json  {"origin": ...} of the fixture stream host (upstream.mjs) its answers point at
-//   mode           hls (default) | dash | dash_film | no_source | no_chrome: the next resolve's answer
+//   mode           hls (default) | dash | dash_film | hls_token | no_source | no_chrome: the next resolve's answer
 //                  (dash_film: the playable film under <dir>/film, at the address that carries the
-//                  token in <dir>/token; upstream.mjs refuses every older token)
+//                  token in <dir>/token; upstream.mjs refuses every older token. hls_token: raises
+//                  <dir>/token by one and answers upstream.mjs's tokened HLS film under that token,
+//                  with a Korean original-language audio track)
 //   calls.jsonl    one line per call, appended: {"at", "args"}
 // `resolve` answers like the real CLI, reading --providers and skipping browser-only rows: with two or
 // more usable providers the first is a bot_check and the second resolves; with one, it resolves; with
 // none, no_source. `open` answers {"ok": true}.
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { currentFilmToken, FIXTURE_ORIGIN, FIXTURE_REFERER, FIXTURE_USER_AGENT } from './upstream.mjs';
 
@@ -71,20 +73,26 @@ function main() {
   const chosen = providers.length > 1 ? providers[1] : providers[0];
   const attempts = providers.length > 1 ? [{ provider: providers[0], outcome: 'bot_check', took_s: 1.2, detail: 'fake: Just a moment...' }] : [];
   attempts.push({ provider: chosen, outcome: 'resolved', took_s: 2.5, detail: '' });
+  let manifestUrl = mode === 'dash_film' ? `${origin}/film/t${currentFilmToken(dir)}/manifest.mpd` : mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`;
+  if (mode === 'hls_token') {
+    const next = currentFilmToken(dir) + 1;
+    writeFileSync(path.join(dir, 'token'), `${next}\n`);
+    manifestUrl = `${origin}/tok/t${next}/master.m3u8`;
+  }
   return print({
     ok: true,
     ...ref,
     source: {
       provider: chosen,
       embed_url: `https://embed.fixture/${kind}/${id}`,
-      manifest_url:
-        mode === 'dash_film' ? `${origin}/film/t${currentFilmToken(dir)}/manifest.mpd` : mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`,
+      manifest_url: manifestUrl,
       manifest_kind: mode === 'dash' || mode === 'dash_film' ? 'dash' : 'hls',
       headers: { referer: FIXTURE_REFERER, origin: FIXTURE_ORIGIN, user_agent: FIXTURE_USER_AGENT },
       subtitles: [{ url: `${origin}/subs/en.srt`, lang: 'en', label: 'English', format: 'srt', source: 'request' }],
       best_height: 1080,
       en_subtitle: true,
       took_s: 2.5,
+      ...(mode === 'hls_token' ? { audio: { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'ko', label: 'Korean' } } } : {}),
     },
     attempts,
   });

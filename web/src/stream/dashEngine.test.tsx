@@ -7,6 +7,8 @@ interface FakePlayer {
   src: string;
   startAt: number | undefined;
   reset: ReturnType<typeof vi.fn>;
+  /** Every attachSource(src, startTime) the engine made: a reopened stream. */
+  attached: [string, number | undefined][];
   /** A response dash.js finished loading: runs the engine's response interceptor. */
   respond(status: number, headers?: Record<string, string>): Promise<void>;
   emit(event: string, payload?: unknown): void;
@@ -15,7 +17,7 @@ interface FakePlayer {
 const players = vi.hoisted(() => [] as FakePlayer[]);
 
 vi.mock('dashjs', () => {
-  const events = { STREAM_INITIALIZED: 'streamInitialized', ERROR: 'error' };
+  const events = { STREAM_INITIALIZED: 'streamInitialized', ERROR: 'error', FRAGMENT_LOADING_COMPLETED: 'fragmentLoadingCompleted' };
   const MediaPlayer = () => ({
     create() {
       const listeners = new Map<string, ((payload: unknown) => void)[]>();
@@ -24,6 +26,7 @@ vi.mock('dashjs', () => {
         src: '',
         startAt: undefined,
         reset: vi.fn(),
+        attached: [],
         async respond(status, headers = {}) {
           for (const interceptor of interceptors) await interceptor({ status, headers });
         },
@@ -44,6 +47,9 @@ vi.mock('dashjs', () => {
           player.src = src;
           player.startAt = startAt;
         },
+        attachSource(src: string, startAt?: number) {
+          player.attached.push([src, startAt]);
+        },
         getTracksFor: () => [],
         getRepresentationsByType: () => [{ height: 360, bandwidth: 700_000 }],
         setCurrentTrack() {},
@@ -60,13 +66,14 @@ vi.mock('dashjs', () => {
 import { StreamController } from './controller';
 import { createEngine } from './createEngine';
 import { createDashEngine } from './dashEngine';
-import type { EngineHandlers } from './engine';
+import { NETWORK_RETRY_LIMIT, networkRetryDelayMs, type EngineHandlers } from './engine';
 
 const S1 = '/api/stream/sessions/S1';
 const UPSTREAM = { 'x-notesd-upstream': '403' };
 
 afterEach(() => {
   players.length = 0;
+  vi.useRealTimers();
 });
 
 function handlers(): EngineHandlers & { calls: string[] } {
@@ -76,6 +83,8 @@ function handlers(): EngineHandlers & { calls: string[] } {
     onReady: () => calls.push('ready'),
     onAuthError: (status) => calls.push(`auth ${status}`),
     onSessionOver: (status) => calls.push(`over ${status}`),
+    onRecovering: (attempt, message) => calls.push(`recovering ${attempt} ${message}`),
+    onRecovered: () => calls.push('recovered'),
     onFatal: (message) => calls.push(`fatal ${message}`),
   };
 }
@@ -115,7 +124,7 @@ describe('createDashEngine: what a refused answer means', () => {
 describe('a DASH stream whose token expires (R2.5 through dashEngine)', () => {
   it('refreshes once and continues from the last position in a new dash.js player', async () => {
     const { fetchImpl, calls } = routeFetch({
-      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash', manifest_url: `${S1}/p?u=t${calls.filter((c) => c.method === 'POST').length + 1}.mpd` })),
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash', manifest_url: `${S1}/p?u=t${calls.filter((c) => c.method === 'POST' && c.url === `${S1}/refresh`).length + 1}.mpd` })),
       [`POST ${S1}/refresh`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash' })),
     });
     const { video, media, fire } = fakeVideo();
@@ -166,5 +175,53 @@ describe('a DASH stream whose token expires (R2.5 through dashEngine)', () => {
     } finally {
       controller.dispose();
     }
+  });
+});
+
+describe('createDashEngine: a failed download (R1.7)', () => {
+  it('opens the stream again where the film is after a wait, and goes on once a segment loads', () => {
+    vi.useFakeTimers();
+    const h = handlers();
+    const { video, media } = fakeVideo();
+    createDashEngine({ kind: 'dash', video, src: `${S1}/p?u=m1`, startAt: 0, handlers: h });
+    media.currentTime = 100;
+    players[0]!.emit('error', { error: { code: 27, message: 'segment not available' } });
+    expect(h.calls).toEqual(['recovering 1 dash {"code":27,"message":"segment not available"}']);
+    vi.advanceTimersByTime(networkRetryDelayMs(1));
+    expect(players[0]!.attached).toEqual([[`${S1}/p?u=m1`, 100]]);
+    // dash.js reports a failed load as "completed" too, with its error: not a recovery.
+    players[0]!.emit('fragmentLoadingCompleted', { error: { code: 27 } });
+    expect(h.calls.at(-1)).toMatch(/^recovering 1/);
+    players[0]!.emit('fragmentLoadingCompleted', {});
+    expect(h.calls.at(-1)).toBe('recovered');
+  });
+
+  it('stops after the restarts are spent, and at once on an error that is not a download', () => {
+    vi.useFakeTimers();
+    const h = handlers();
+    createDashEngine({ kind: 'dash', video: fakeVideo().video, src: `${S1}/p?u=m1`, startAt: 30, handlers: h });
+    for (let attempt = 1; attempt <= NETWORK_RETRY_LIMIT; attempt++) {
+      players[0]!.emit('error', { error: { code: 25 } });
+      vi.advanceTimersByTime(networkRetryDelayMs(attempt));
+    }
+    expect(players[0]!.attached).toEqual(Array.from({ length: NETWORK_RETRY_LIMIT }, () => [`${S1}/p?u=m1`, 30]));
+    players[0]!.emit('error', { error: { code: 25 } });
+    expect(h.calls.at(-1)).toBe('fatal dash {"code":25}');
+
+    const other = handlers();
+    createDashEngine({ kind: 'dash', video: fakeVideo().video, src: `${S1}/p?u=m1`, startAt: 0, handlers: other });
+    players[1]!.emit('error', { error: { code: 23, message: 'source buffer' } });
+    expect(other.calls).toEqual(['fatal dash {"code":23,"message":"source buffer"}']);
+  });
+
+  it('a refused token stops any restart', async () => {
+    vi.useFakeTimers();
+    const h = handlers();
+    createDashEngine({ kind: 'dash', video: fakeVideo().video, src: `${S1}/p?u=m1`, startAt: 0, handlers: h });
+    players[0]!.emit('error', { error: { code: 27 } });
+    await players[0]!.respond(403, UPSTREAM);
+    vi.advanceTimersByTime(60_000);
+    expect(players[0]!.attached).toEqual([]);
+    expect(h.calls).toEqual(['recovering 1 dash {"code":27}', 'auth 403']);
   });
 });
