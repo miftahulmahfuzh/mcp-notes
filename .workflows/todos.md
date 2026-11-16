@@ -3,11 +3,11 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 8
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
@@ -21,6 +21,27 @@
 ### [P0] Critical
 
 ### [P1] High
+
+- [x] **P1-NOTES-TS02** Phase 2: Finding and ranking torrents
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/find/` only: the four JSON indexes (Torrentio, apibay, EZTV, YTS), `parseRelease`, `candidateFrom`, the filter and ranking (the title check included), `pickFile`, `findCandidates` with its `fallback` option (a fallback index keeps its own longer limit); fixtures in `tests/fixtures/torrent/`. Exit criteria: `npm run typecheck` and `npm test` pass; J1-J5 pass over the fixtures; J6 answers a ranked Sintel list from the live indexes with each index's outcome; nothing outside the three folders changed.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 2 of 9)
+  - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · criteria: R1.1, R1.2, R1.3, R1.4, R1.5
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-TS02.md`
+  - **Completed**: 2026-11-16 22:32
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/find/types.ts, src/directStream/torrent/find/release.ts, src/directStream/torrent/find/candidate.ts, src/directStream/torrent/find/http.ts, src/directStream/torrent/find/torrentio.ts, src/directStream/torrent/find/apibay.ts, src/directStream/torrent/find/eztv.ts, src/directStream/torrent/find/yts.ts, src/directStream/torrent/find/rank.ts, src/directStream/torrent/find/pickFile.ts, src/directStream/torrent/find/find.ts, src/directStream/torrent/find/index.ts, tests/unit/directStream/torrent/find/release.test.ts, tests/unit/directStream/torrent/find/rank.test.ts, tests/unit/directStream/torrent/find/pickFile.test.ts, tests/unit/directStream/torrent/find/indexes.test.ts, tests/unit/directStream/torrent/find/findCandidates.test.ts, tests/fixtures/torrent/torrentio-movie-sintel.json, tests/fixtures/torrent/torrentio-series-bb-s01e01.json, tests/fixtures/torrent/apibay-sintel.json, tests/fixtures/torrent/apibay-empty.json, tests/fixtures/torrent/eztv-page.json, tests/fixtures/torrent/yts-sintel.json, tests/fixtures/torrent/cloudflare-challenge.html, .workflows/todos.md, .workflows/plan/P1-NOTES-TS02.md
+  - **Proof**: verified-first-pass — 6 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p2/53b6a767-f7ee-4d6c-a12d-761c53c5eab6/scratchpad/p2-evidence
+  - **Drift**:
+    - Every code block applied byte for byte (extracted from the plan by script); no drift.
+    - The plan's commands name the set worktree; run in the per-phase worktree torrent-stream-source-p2 instead.
+    - The worktree had no node_modules; npm ci was run (nothing committed from it).
+  - **Decided**:
+    - Step 3 in a per-phase-worktree swarm (phase 1 booting concurrently, same todos counter) → created only phase 2's task, with the non-counter id P1-NOTES-TS02 (tie-break: narrower blast radius)
+    - Bookkeeping: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent (P1-NOTES-A123), to avoid conflicts with peer phases; the coordinator's integrator reconciles them.
 
 - [x] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
   - **Difficulty**: NORMAL
