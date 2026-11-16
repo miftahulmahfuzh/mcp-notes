@@ -264,6 +264,25 @@ export const HTTP_GROUPS: HttpGroup[] = [
     },
   },
   {
+    title: 'Torrents',
+    intro:
+      'Torrent downloads of this machine: a film\'s video and subtitle files from a swarm, served from this daemon. Every route answers 503 `direct_stream_off` without direct streaming and 503 `torrent_off` with `NOTESD_TORRENT=off`. A download belongs to the machine that made it: the other machine sees it with `available: false`, and its file routes answer 404 `not_on_this_machine` with `host`. Speeds are in kilobits per second. Guide: [streaming.md](../streaming.md#torrents).',
+    routes: {
+      'GET /api/stream/torrent':
+        'This machine\'s torrent engine and every download of both machines: `{host, port, upload_cap_bytes_per_s, keep_days, discovery, swarm, downloads}`. `port` is the engine\'s listening port, null while no torrent is in the swarm (the engine starts with the first torrent and stops after the last). `swarm` is the torrents in the swarm now, `{info_hash, name, users, peers, down_kbps, up_kbps}`; `downloads` are in the shape of `GET /api/stream/torrent/:hash`, newest first. Starts nothing.',
+      'POST /api/stream/torrent':
+        '`{info_hash, kind, tmdb_id, season?, episode?, name?, trackers?, files?}` (`name`: the release name as an index lists it): open a torrent for a title and answer its file list once a peer sends it (60 s at most): `{ok: true, from_disk, files: [{index, path, length, media}], torrent}`, `media` `video`, `subtitle` or null. Nothing is downloaded until `files` names the indexes to use, which must be video or subtitle files; those are downloaded in order under `<NOTESD_TORRENT_DIR>/<info hash>/`, and this route holds the torrent in the swarm until `POST .../release`. A download finished on this machine for the same title opens from disk (`from_disk: true`, its chosen files only) and joins no swarm. 400 `invalid_json` / `invalid_body` / `not_media`; 504 `no_metadata` (no peer sent the file list); 422 `unsafe_path` (a file would land outside the torrent\'s folder); 502 `engine_error`. Same-origin only.',
+      'POST /api/stream/torrent/:hash/release':
+        'Let go of the torrent `POST /api/stream/torrent` holds: `{ok: true, released, torrent}` (`released: false` when it held nothing). A finished download leaves the swarm at once, an unfinished one three minutes after its last file request. 404 `unknown_torrent`. Same-origin only.',
+      'GET /api/stream/torrent/:hash':
+        'One download: `{info_hash, host, available, kind, tmdb_id, season, episode, name, release, state (downloading, ready, failed), error, file_index, file_length, files, bytes_done, progress, duration_s, in_swarm, users, peers, down_kbps, up_kbps, file_url, created_at, updated_at, completed_at, played_at}`. `files` are the chosen files and `file_index` the video; `peers` and the speeds are live while it is in the swarm, else 0. `file_url` is null on the other machine. `error` on a failed one: `no_metadata`, `unsafe_path`, `engine_error`. 404 `unknown_torrent`.',
+      'GET /api/stream/torrent/:hash/map':
+        'What of the video is on this machine\'s disk: `{duration_s, ranges, length, byte_ranges}`. `byte_ranges` are `[from, to)` byte stretches in order; `ranges` the same in seconds by proportion once a duration is known, empty before. 404 `unknown_torrent` (also for the other machine\'s download).',
+      'GET /api/stream/torrent/:hash/f/:index':
+        'A chosen file of a download, with `Range` (206, 416): from disk once it is whole, else from the swarm, which fetches the pieces of the asked range before the rest of the file. Only the video and subtitle files chosen for it are served, as video or text, never run. 404 `unknown_torrent`, 404 `not_selected`, 404 `not_on_this_machine` with `host`, 409 `not_in_swarm` (unfinished and not open: play it again), 503 `closing`.',
+    },
+  },
+  {
     title: 'Debug',
     routes: {
       'GET /api/debug/egress': 'Rows and approximate bytes returned per query shape since the daemon started, largest first, plus the Neon quota breaker (`quota.tripped`, `quota.resumes_at`). `{enabled: false}` with `NOTESD_EGRESS_METER=off`. Loopback only. See [architecture.md](../architecture.md#neon).',

@@ -144,6 +144,20 @@ Films played straight from a provider's stream host through the daemon, describe
 | `NOTESD_STREAM_PROBE_MS` | 1200000 | Pause between prober passes. A pass spends at most half of it. |
 | `NOTESD_STREAM_CACHE_DIR` | `<NOTES_DATA_DIR>/movies/stream-cache` | Absolute path of the folder where this machine keeps its stream caches, one folder per cache id. The other machine keeps its own; a relative path is rejected. See [streaming.md](../streaming.md#caching-a-film-or-an-episode). |
 
+## Torrents
+
+A torrent is a source direct streaming downloads from a swarm, described in
+[streaming.md](../streaming.md#torrents). It needs direct streaming on.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTESD_TORRENT` | on | `off` turns torrents off on this machine: nothing is built, no swarm is joined, and every `/api/stream/torrent` route answers 503 `torrent_off`. |
+| `NOTESD_TORRENT_DIR` | `<NOTES_DATA_DIR>/movies/torrents` | Absolute path of the folder where this machine keeps its torrent downloads, one folder per info hash. The other machine keeps its own; a relative path is rejected. |
+| `NOTESD_TORRENT_UPLOAD_KBPS` | 100 | The upload cap in kB/s (1 kB = 1000 bytes), all torrents together. A torrent client uploads to its peers while it downloads; this keeps that small. |
+| `NOTESD_TORRENT_KEEP_DAYS` | 7 | A download not played for this many days is deleted with its files. |
+| `NOTESD_TORRENT_DISCOVERY` | on | `off`: no DHT and no trackers, so peers come only from `NOTESD_TORRENT_PEERS`. `verify.sh up --torrent` sets it with a loopback seeder. |
+| `NOTESD_TORRENT_PEERS` | unset | `host:port` addresses, separated by `,`, added as a peer to every torrent. For the verify harness's loopback seeder; empty in normal use. |
+
 ## Install script and hooks
 
 Read by `scripts/install.sh`, `scripts/uninstall.sh` and the Claude Code hooks, not by the daemon.

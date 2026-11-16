@@ -3,15 +3,15 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 8
+**Total Active Tasks**: 17
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 17
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 0
+- Blocked: 7
 - Completed: 120
 
 ---
@@ -22,6 +22,97 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-A127** Phase 1: The torrent engine and its file route
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: the `webtorrent` dependency and `allowScripts`; `src/directStream/torrent/{types,webtorrent.d,store,engine,repo,serve,service}.ts`; `TorrentConfig` in `src/config.ts`; the `stream_torrents` table, its migration and `TorrentsRepo`; `src/http/streamTorrentApi.ts` and its mount; `AppDeps.torrents`, building it in `src/daemon.ts`, starting and closing it in `src/background.ts`; leaving the swarm when nothing uses a torrent (and the 409 `not_in_swarm` afterwards); clearing downloads not played for `keepDays`; a real-engine test over loopback; `verify.sh up --torrent` with `scripts/torrent/{make-fixture.sh,seed.mjs,torrent.sh}`, the seeder's `seed/<name>/` → `seeded/<name>.json` folder for later phases' fixtures. Exit criteria: on `verify.sh up --torrent`, `torrent.sh RUN` ends `torrent: PASS (idle files refuse range cap leave only disk)`; on `verify.sh up --direct-stream`, `torrent.sh RUN off` prints `OFF PASS`; `npm run typecheck`, `npm test` and the new integration test pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 1 of 9)
+  - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.1, R2.2, R2.3, R2.6, R2.9
+  - **Plan**: `.workflows/plan/P1-NOTES-A127.md`
+  - **Completed**: 2026-11-16 22:45
+  - **Method**: /implement
+  - **Files**: package.json, package-lock.json, src/directStream/torrent/{webtorrent.d,types,store,engine,repo,serve,service}.ts, src/db/schema.ts, drizzle/0031_stream_torrents.sql, drizzle/meta/0031_snapshot.json, drizzle/meta/_journal.json, src/config.ts, src/deps.ts, src/daemon.ts, src/background.ts, src/http/streamTorrentApi.ts, src/http/app.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, docs/guide/architecture.md, CLAUDE.md, tests/unit/config.test.ts, tests/unit/config.torrent.test.ts, tests/helpers/fakeTorrentEngine.ts, tests/helpers/memoryTorrentRecords.ts, tests/unit/directStream/torrent/{store,service,routes,engine}.test.ts, tests/integration/setup.ts, tests/integration/directStream.torrents.int.test.ts, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/torrent/{make-fixture.sh,seed.mjs,torrent.sh}, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/{direct-streaming,README}.md
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-223319-1845706/evidence (p1-torrent.txt, J1-J4) and /home/miftah/.local/state/notesd-verify/1116-223513-1851320/evidence (p1-torrent-off.txt J5, p1-neighbor-cache.txt); J6-J7 vitest and test:int
+  - **Drift**:
+    - Code blocks applied verbatim from the plan. Anchors in docs/guide/streaming.md sat two lines lower than the plan quoted (1106 vs 1104); inserted at the named headings and rows.
+    - The package.json allowScripts block npm wrote lists the same five entries as the plan in a different key order; kept as npm wrote it.
+    - origin/feature/torrent-stream-source gained fdd3055 (a plan-only commit touching one line of TORRENT_STREAM_SOURCE_PLAN.md) after this worktree was cut; this branch also edits that file's Phases table (TaskID column), so the integrator may meet both edits in one file.
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p1 / phase-1-torrent-stream-source → proceeded here (rung 6: the swarm cut one worktree per phase)
+    - Where the nine phase tasks live → the root .workflows/todos.md with NOTES ids A127 to A135 in phase order, not one todos.md per Package cell (rung 6: every earlier plan set in this repo is tracked there). The parallel phase 2 session may have minted the same block in its own worktree: at integration keep one nine-entry block, each phase's status taken from its own phase
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats / plan index status left untouched, to avoid conflicts with the parallel phase 2 (A128), which mints the same block; phase 3 (A129) stays blocked until A128 lands too. The coordinator's integrator reconciles them.
+- [ ] **P1-NOTES-A128** Phase 2: Finding and ranking torrents
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/find/` only: the four JSON indexes (Torrentio, apibay, EZTV, YTS), `parseRelease`, `candidateFrom`, the filter and ranking (the title check included), `pickFile`, `findCandidates` with its `fallback` option (a fallback index keeps its own longer limit); fixtures in `tests/fixtures/torrent/`. Exit criteria: `npm run typecheck` and `npm test` pass; J1-J5 pass over the fixtures; J6 answers a ranked Sintel list from the live indexes with each index's outcome; nothing outside the three folders changed.
+  - **Status**: in_progress
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 2 of 9)
+  - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · criteria: R1.1, R1.2, R1.3, R1.4, R1.5
+  - **Plan**: `.workflows/plan/P1-NOTES-A128.md`
+- [ ] **P1-NOTES-A129** Phase 3: A torrent session in direct streaming
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/source.ts`, `probe.ts`, `subtitles/chain.ts` (the context, the runner with its non-empty stop rule and 40 s budget, `buildSubtitleTiers` with no tier); `StreamSession.torrent` and `SessionInfo.torrent`; the torrent branches of `play`, `refresh`, `switchSource`, `cacheSession`, `switchEpisode`, `info` and `sessionInfo`; the outcomes `unplayable` and `skipped`; the `imdbId` and `titleNames` hooks and TMDB `external_ids`; the finder's settings and `NOTESD_FFMPEG_BIN`; wiring in `src/daemon.ts`; `direct_stream_play`'s `provider: "torrent"`, the MCP instructions, the chat prompt and the `/direct-stream` skill; replay from disk (R2.9); the evidence snapshot's view; the guide's "Playing from a torrent" with "Finding a torrent"; the fake index (with `index-mode` and `candidates.json`) and the fake TMDB's `external_ids`. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; J1-J6 pass on the throwaway daemons (the torrent fall-through after `no_source`, a named torrent play in the real page, replay from disk with no index or torrent attempt, a dub skipped, a pack's episode, `torrent_off`) and the neighbor check passes.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 3 of 9)
+  - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R1.4, R1.6, R2.4, R2.5, R2.6, R2.9
+  - **Depends on**: P1-NOTES-A127, P1-NOTES-A128
+  - **Plan**: `.workflows/plan/P1-NOTES-A129.md`
+- [ ] **P1-NOTES-A130** Phase 4: The player page on a torrent
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/stream/session.ts` (parsing `torrent`), `StreamApp.tsx`, `controller.ts`, `stream.css`: the torrent mark and status line (peers, speed), the loaded bar fed by `/map`, the wait for a part not on disk, the automatic stall move off for a torrent session, the shuffle button's messages, `window.notesdStream.torrent`; `scripts/stream/torrent-player.steps.mjs` and `torrent-live.steps.mjs`. Exit criteria: `npm run typecheck` and `npm test` pass; J2's transcript holds all six PASS lines; J1's holds `TORRENT LIVE PASS` and `TORRENT DISK PASS` on a `--torrent` run; the neighbor journeys still pass.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 4 of 9)
+  - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.7
+  - **Depends on**: P1-NOTES-A129
+  - **Plan**: `.workflows/plan/P1-NOTES-A130.md`
+- [ ] **P1-NOTES-A131** Phase 5: The remux for files Chrome cannot play
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/remux.ts` (ffmpeg reading the file route or the whole file, video copied, the original-language audio to AAC, a growing HLS EVENT playlist under `<dir>/<hash>/notesd-remux/`), `src/http/streamTorrentRemuxApi.ts`, `NOTESD_TORRENT_REMUX`, replacing phase 3's `unplayable` branch, the map answering the remux's stretch, `web/src/stream/hlsEngine.ts` for a growing playlist, stopping ffmpeg with the session; `scripts/stream/make-mkv-fixture.sh`, `scripts/torrent/offer-remux.sh`, `scripts/stream/torrent-remux.steps.mjs`. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; J1-J7 and the neighbor check pass (the MKV plays through the remux, seeks, replays from disk, holds a seek past a growing edge; with the remux off it is `unplayable`).
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 5 of 9)
+  - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.8
+  - **Depends on**: P1-NOTES-A129, P1-NOTES-A133
+  - **Plan**: `.workflows/plan/P1-NOTES-A131.md`
+- [ ] **P1-NOTES-A132** Phase 6: Subtitle files: in the torrent, from a subtitle service, from a cloud provider
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/subtitles/{disk,files,service,borrow}.ts` and the `kept`, `files`, `service`, `borrow` tiers in phase 3's chain (all blocking, the borrow within the shared budget and skipped when Whisper covers an English original); R3.2's reordering at phase 3's marked line; the `/api/stream/torrent/:hash/sub/:name` route; the OpenSubtitles hash; `NOTESD_TORRENT_SUBTITLE_URL`; `parseUrlOrOff` (replacing `parseAnimeMapUrl`); `subtitleText`'s `deadlineS`; the fake subtitle service and its fixtures. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; `subtitles.sh RUN` ends `subtitles: PASS (files replay lone ass service byid borrow quiet prefer)`.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 6 of 9)
+  - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.1, R3.2, R3.3
+  - **Depends on**: P1-NOTES-A129
+  - **Plan**: `.workflows/plan/P1-NOTES-A132.md`
+- [ ] **P1-NOTES-A133** Phase 7: The embedded subtitle track and the growing cue feed
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/subtitles/feed.ts` (the growing cue feed, any append order) and `embedded.ts` (the growing `embedded` tier, ffmpeg extracting an English text track to WebVTT as the file downloads), `src/http/streamTorrentCuesApi.ts`, `AppDeps.torrentCues`, `CacheSubtitleView.growing`, `SessionSubtitle.growing` and `localSubtitle`, and `web/src/stream/subtitles.ts` plus its edits to phase 4's `session.ts` and `controller.ts` reading a growing track until it is complete. Exit criteria: on a throwaway daemon, a torrent whose file carries an English text track and no subtitle file plays with that track's cues on screen, read from a feed that grows and ends complete; a file with picture tracks only gets no feed and the chain asks the next tier; `npm run typecheck` and `npm test` pass.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 7 of 9)
+  - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.4, R3.5
+  - **Depends on**: P1-NOTES-A130, P1-NOTES-A132
+  - **Plan**: `.workflows/plan/P1-NOTES-A133.md`
+- [ ] **P1-NOTES-A134** Phase 8: Whisper, the last resort
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/torrent/subtitles/whisper.ts` (the growing `whisper` tier, last; audio cut with ffmpeg, a CPU Whisper per stretch, cues appended to phase 7's `whisper-<file index>` feed, progress under `<dir>/<hash>/notesd-whisper/`), `whisperCovers` on phase 6's borrow line, `claude/streaming/torrent/whisper.py`, the Whisper install in `scripts/install.sh`, its settings (`NOTESD_TORRENT_WHISPER*`), `AppDeps.torrentWhisper`. Exit criteria: `npm run typecheck` and `npm test` pass; J1 shows a growing `English (Whisper)` track filled stretch by stretch and completed (the borrow `skipped`), J2 shows its cue drawn in the player, J3 shows the real model's timed English cues for Sintel; with `NOTESD_TORRENT_WHISPER=off` no tier is built.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 8 of 9)
+  - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.6
+  - **Depends on**: P1-NOTES-A133
+  - **Plan**: `.workflows/plan/P1-NOTES-A134.md`
+- [ ] **P1-NOTES-A135** Phase 9: 1337x and ext.to through the streaming Chrome
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `claude/streaming/torrent/` (`cli.mjs`, `match.mjs`, `page.mjs`, `browser.mjs`, `tab.ps1`, one module per site), `src/directStream/torrent/find-sites.ts` (a `TorrentIndex` per site with a 40 s limit, candidates through phase 2's `candidateFrom`), the settings `NOTESD_TORRENT_1337X_ORIGIN`, `NOTESD_TORRENT_EXT_ORIGIN`, `NOTESD_TORRENT_SITES_CLI`, the `fallback` line in phase 3's wiring, the fake sites script for throwaway daemons. Exit criteria: with every JSON index empty, a torrent play takes its candidate from the fake 1337x row through the same filter and ranking (J1); a bot check from either site is `bot_check` and stops that site (J2); the sites are not asked when an index answered (J3); live, `cli.mjs 1337x sintel 2010` lists releases with seeds and magnets (J4); `npm run typecheck` and `npm test` pass.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 9 of 9)
+  - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · criteria: R1.7
+  - **Depends on**: P1-NOTES-A129
+  - **Plan**: `.workflows/plan/P1-NOTES-A135.md`
 - [x] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
   - **Difficulty**: NORMAL
   - **Type**: Feature

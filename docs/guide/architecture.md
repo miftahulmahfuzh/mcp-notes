@@ -68,6 +68,7 @@ The other stores follow the same pattern, one writer each:
 | `cc_*` session tables | `SessionsRepo` (`src/sessions/repo.ts`) |
 | `movie_*` | `MoviesRepo` (`src/movies/repo.ts`); a review is a normal note written through `NotesService` |
 | `stream_providers`, `stream_provider_health`, `stream_caches` | `DirectStreamRepo` (`src/directStream/repo.ts`) |
+| `stream_torrents` | `TorrentsRepo` (`src/directStream/torrent/repo.ts`) |
 | `stream_probe_titles` | `ProbeRepo` (`src/directStream/repo.ts`) |
 | `adversary_reviews` | `src/adversary/reviewsRepo.ts` |
 | Seer's own database | `src/adversary/seerWriter.ts`, behind a table allow-list. The connector guard stays read-only |
@@ -91,7 +92,7 @@ After editing the schema run `npm run db:generate`, then `npm run db:migrate`.
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
 | Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. |
-| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. |
+| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches`, `stream_torrents` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. |
 | Settings | `app_settings` | Key and JSON value shared by both machines: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
@@ -117,6 +118,7 @@ Only text and metadata are in Postgres. Bytes live under `NOTES_DATA_DIR` (defau
   handoffs/                          "Spawn fresh" handoff files, deleted after 14 days
   movies/vlc-health-<host>.jsonl     the VLC health log, fsync'd, 5 MB plus one previous file
   movies/stream-cache/<id>/          a stream cache: local playlists, segments, keys, subtitle (NOTESD_STREAM_CACHE_DIR)
+  movies/torrents/<info hash>/       a torrent download: the chosen video and subtitle files (NOTESD_TORRENT_DIR)
 ```
 
 `cache/` can be deleted at any time; everything in it is rebuilt on request

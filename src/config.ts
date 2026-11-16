@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseDotenv } from 'dotenv'
@@ -228,6 +228,42 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
   prober: DEFAULT_STREAM_PROBER_CONFIG,
 }
 
+export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
+export const DEFAULT_TORRENT_KEEP_DAYS = 7
+
+/** Torrents as a direct-streaming source (src/directStream/torrent/*). They also need direct streaming on. */
+export interface TorrentConfig {
+  /**
+   * `NOTESD_TORRENT`, default on. `off`: AppDeps.torrents is null, no swarm is joined, and every
+   * /api/stream/torrent route answers torrent_off.
+   */
+  enabled: boolean
+  /** `NOTESD_TORRENT_DIR`, absolute, default `<dataDir>/movies/torrents`: one folder per info hash. Always resolved. */
+  dir: string
+  /** `NOTESD_TORRENT_UPLOAD_KBPS`, default 100: the upload cap in kB/s (1 kB = 1000 bytes), all torrents together. */
+  uploadKbps: number
+  /** `NOTESD_TORRENT_KEEP_DAYS`, default 7: a download not played for this many days is deleted with its files. */
+  keepDays: number
+  /** `NOTESD_TORRENT_DISCOVERY`, default on. `off`: no DHT and no trackers; peers come only from `peers`. */
+  discovery: boolean
+  /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
+  peers: string[]
+}
+
+/**
+ * Torrents off. Tests build `Config` literals with it (or leave `torrent` out, which is the same). Its
+ * folder is under the OS temp folder, so a test that turns torrents on without a folder never writes into
+ * the owner's data directory.
+ */
+export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
+  enabled: false,
+  dir: path.join(tmpdir(), 'notesd-torrents'),
+  uploadKbps: DEFAULT_TORRENT_UPLOAD_KBPS,
+  keepDays: DEFAULT_TORRENT_KEEP_DAYS,
+  discovery: true,
+  peers: [],
+}
+
 /** Seer Adversarial reviewer (src/adversary/*). */
 export interface AdversaryConfig {
   /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
@@ -390,6 +426,8 @@ export interface Config {
   streaming?: StreamingConfig
   /** Direct streaming. Absent (a config built by a test) is the same as `enabled: false`. */
   directStream?: DirectStreamConfig
+  /** Torrents (direct streaming's torrent source). Absent (a config built by a test) is the same as `enabled: false`. */
+  torrent?: TorrentConfig
 }
 
 export interface LoadConfigOptions {
@@ -724,6 +762,33 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
   }
 }
 
+const PEER_ADDRESS = /^(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+):(\d{1,5})$/
+
+function parsePeers(raw: string | undefined): string[] {
+  const out: string[] = []
+  for (const part of (raw ?? '').split(',')) {
+    const value = part.trim()
+    if (value === '') continue
+    const m = PEER_ADDRESS.exec(value)
+    const port = m === null ? 0 : Number(m[1])
+    if (port < 1 || port > 65535) throw new ConfigError(`NOTESD_TORRENT_PEERS takes host:port addresses separated by ",", got "${value}"`)
+    if (!out.includes(value)) out.push(value)
+  }
+  return out
+}
+
+/** `dataDir` is the resolved NOTES_DATA_DIR: the default folder is under it. */
+export function parseTorrent(env: Record<string, string | undefined>, dataDir: string): TorrentConfig {
+  return {
+    enabled: parseSwitch('NOTESD_TORRENT', env.NOTESD_TORRENT),
+    dir: parseOptionalAbsolutePath('NOTESD_TORRENT_DIR', env.NOTESD_TORRENT_DIR) ?? path.join(dataDir, 'movies', 'torrents'),
+    uploadKbps: parsePositiveInt('NOTESD_TORRENT_UPLOAD_KBPS', env.NOTESD_TORRENT_UPLOAD_KBPS, DEFAULT_TORRENT_UPLOAD_KBPS),
+    keepDays: parsePositiveInt('NOTESD_TORRENT_KEEP_DAYS', env.NOTESD_TORRENT_KEEP_DAYS, DEFAULT_TORRENT_KEEP_DAYS),
+    discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
+    peers: parsePeers(env.NOTESD_TORRENT_PEERS),
+  }
+}
+
 /**
  * Builds the daemon config from `.env.local` plus the process environment.
  * Chat keys: CHAT_BRAIN, CHAT_MAX_TURNS, CHAT_TIMEOUT_MS, NOTESD_CLAUDE_BIN, LLM_BASE_URL,
@@ -746,6 +811,8 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
  * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
+ * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS,
+ * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
@@ -764,12 +831,13 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   }
 
   const dataDirRaw = env.NOTES_DATA_DIR?.trim() || DEFAULT_DATA_DIR
+  const dataDir = path.resolve(expandHome(dataDirRaw))
 
   return {
     databaseUrl,
     port: parsePort(env.NOTESD_PORT),
     host: parseHost(env.NOTESD_HOST),
-    dataDir: path.resolve(expandHome(dataDirRaw)),
+    dataDir,
     chat: parseChat(env),
     embeddings: parseEmbeddings(env),
     sessions: parseSessions(env),
@@ -778,5 +846,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     movies: parseMovies(env),
     streaming: { enabled: parseSwitch('NOTESD_STREAMING', env.NOTESD_STREAMING) },
     directStream: parseDirectStream(env),
+    torrent: parseTorrent(env, dataDir),
   }
 }
