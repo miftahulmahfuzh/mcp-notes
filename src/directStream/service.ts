@@ -23,6 +23,8 @@ import {
   type ResolvedOutput,
   type SourceAudio,
   type StreamRef,
+  type EpisodeNeighbors,
+  type EpisodeNumber,
   type StreamRefInput,
 } from './types.js';
 
@@ -61,6 +63,8 @@ export interface DirectStreamHooks {
    * providers keyed by AniList id first. Null: not an anime, or not mapped.
    */
   anime?: (ref: StreamRef) => Promise<AnimeRef | null>;
+  /** The episodes before and after an episode, for the player's previous and next buttons. */
+  neighbors?: (ref: StreamRef) => Promise<EpisodeNeighbors | null>;
 }
 
 export interface SessionSubtitle {
@@ -93,6 +97,10 @@ export interface SessionInfo {
   /** What the resolver heard in the stream; null when it was not asked. */
   audio: SourceAudio | null;
   resume_s: number | null;
+  /** A series only: the episode before this one, or null (the first episode, a film, or not known). */
+  prev_episode: EpisodeNumber | null;
+  /** A series only: the episode after this one, or null (the last one aired, a film, or not known). */
+  next_episode: EpisodeNumber | null;
   created_at: string;
   refreshed_at: string;
   expires_at: string;
@@ -229,6 +237,23 @@ export class DirectStreamService {
     return this.sessionInfo(session);
   }
 
+  /**
+   * The player's previous / next button: resolves the neighbouring episode of the session's and
+   * makes a new session for it (the old one is left to expire; the page reports it closed). Throws
+   * `unknown_session`, `no_episode` (a film, or no episode on that side), or what `resolve` throws.
+   */
+  async switchEpisode(id: string, to: 'prev' | 'next'): Promise<SessionInfo> {
+    const session = this.sessions.get(id);
+    if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    const target = (await this.neighborsOf(session.ref))[to];
+    if (target === null || session.ref.kind !== 'tv') {
+      throw new DirectStreamError('no_episode', to === 'next' ? 'There is no next episode to stream.' : 'There is no previous episode.');
+    }
+    const next = await this.resolve({ kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode });
+    this.log(`[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) from ${next.source.provider}`);
+    return this.sessionInfo(next);
+  }
+
   /** GET /api/stream/sessions/:id/p: 403 `unknown_session` before anything else, then forward(). */
   async passThrough(id: string, req: ForwardRequest): Promise<Response> {
     const session = this.sessions.get(id);
@@ -359,6 +384,12 @@ export class DirectStreamService {
     return language !== null && /^[A-Za-z]{2,3}$/.test(language) ? language.toLowerCase() : null;
   }
 
+  private async neighborsOf(ref: StreamRef): Promise<EpisodeNeighbors> {
+    const hook = this.opts.hooks?.neighbors;
+    if (ref.kind !== 'tv' || hook === undefined) return { prev: null, next: null };
+    return (await this.hookValue('neighbors', () => hook(ref))) ?? { prev: null, next: null };
+  }
+
   private async animeRef(ref: StreamRef): Promise<AnimeRef | null> {
     const hook = this.opts.hooks?.anime;
     if (hook === undefined) return null;
@@ -384,6 +415,7 @@ export class DirectStreamService {
     const { ref, source } = session;
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
+    const neighbors = await this.neighborsOf(ref);
     return {
       session_id: session.id,
       kind: ref.kind,
@@ -409,6 +441,8 @@ export class DirectStreamService {
       audio_lang: session.audioLang,
       audio: source.audio ?? null,
       resume_s: session.resumeS,
+      prev_episode: neighbors.prev,
+      next_episode: neighbors.next,
       created_at: session.createdAt.toISOString(),
       refreshed_at: session.refreshedAt.toISOString(),
       expires_at: this.sessions.expiresAt(session).toISOString(),

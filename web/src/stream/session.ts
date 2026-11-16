@@ -21,6 +21,14 @@ export interface StreamSession {
   resumeS: number;
   /** The manifest's audio track in the title's original language (`audio.track`): the engine selects it. Null: none named. */
   audioTrack: AudioTrackRef | null;
+  /** A series: the episodes before and after this one; null where there is none (always null for a film). */
+  prevEpisode: EpisodeNumber | null;
+  nextEpisode: EpisodeNumber | null;
+}
+
+export interface EpisodeNumber {
+  season: number;
+  episode: number;
 }
 
 /** An audio track as the manifest writes it. */
@@ -60,6 +68,12 @@ function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
+function episodeNumber(value: unknown): EpisodeNumber | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { season, episode } = value as Record<string, unknown>;
+  return typeof season === 'number' && Number.isInteger(season) && typeof episode === 'number' && Number.isInteger(episode) ? { season, episode } : null;
+}
+
 /** Phase 3's SessionInfo, checked once. A `source: "manifest"` track is inside the manifest (the engine shows it), so it is not a file. */
 export function parseSession(json: unknown): StreamSession {
   if (typeof json !== 'object' || json === null) throw new SessionError('bad_session', 0);
@@ -94,6 +108,8 @@ export function parseSession(json: unknown): StreamSession {
     subtitles,
     resumeS: typeof resume === 'number' && Number.isFinite(resume) && resume > 0 ? resume : 0,
     audioTrack: track === null || (text(track.lang) === null && text(track.label) === null) ? null : { lang: text(track.lang), label: text(track.label) },
+    prevEpisode: episodeNumber(o.prev_episode),
+    nextEpisode: episodeNumber(o.next_episode),
   };
 }
 
@@ -116,6 +132,7 @@ export function sessionIdFromLocation(loc: Pick<Location, 'pathname'>): string |
 export const sessionUrl = (id: string): string => `/api/stream/sessions/${encodeURIComponent(id)}`;
 export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
+export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -144,6 +161,24 @@ export async function refreshSession(id: string, fetchImpl: typeof fetch): Promi
   if (!res.ok) throw new SessionError(await errorCode(res), res.status);
   const body = (await res.json().catch(() => null)) as { session_id?: unknown } | null;
   return body !== null && typeof body.session_id === 'string' && body.session_id !== '' ? body.session_id : id;
+}
+
+/**
+ * Asks the daemon for the episode before or after the session's. It resolves that episode (seconds,
+ * like a play) and answers a new session; returns its id. Throws SessionError with the daemon's
+ * code (`no_episode`, `no_source`, `resolve_failed`, `unknown_session`).
+ */
+export async function switchEpisode(id: string, to: 'prev' | 'next', fetchImpl: typeof fetch): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetchImpl(episodeUrl(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to }) });
+  } catch {
+    throw new SessionError('network', 0);
+  }
+  if (!res.ok) throw new SessionError(await errorCode(res), res.status);
+  const body = (await res.json().catch(() => null)) as { session_id?: unknown } | null;
+  if (body === null || typeof body.session_id !== 'string' || body.session_id === '') throw new SessionError('bad_session', 0);
+  return body.session_id;
 }
 
 /**

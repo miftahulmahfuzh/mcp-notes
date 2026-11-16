@@ -227,6 +227,44 @@ describe('POST /api/stream/play', () => {
   });
 });
 
+describe('the previous and next episode', () => {
+  const EPISODE = { kind: 'tv', tmdb_id: 1396, season: 2, episode: 3 };
+  const neighbors = async () => ({ prev: { season: 2, episode: 2 }, next: { season: 2, episode: 4 } });
+  const go = (app: Awaited<ReturnType<typeof ready>>['app'], id: string, body: unknown, headers: Record<string, string> = SAME_ORIGIN) =>
+    app.request(`/api/stream/sessions/${id}/episode`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('a session names its neighbours, and the episode route resolves the one asked for into a new session', async () => {
+    const { app } = await ready('host-a', { neighbors });
+    const first = (await played(app, EPISODE)).session as { session_id: string; prev_episode: unknown; next_episode: unknown };
+    expect(first).toMatchObject({ prev_episode: { season: 2, episode: 2 }, next_episode: { season: 2, episode: 4 } });
+    const res = await go(app, first.session_id, { to: 'next' });
+    expect(res.status).toBe(200);
+    const next = (await res.json()) as { session_id: string; season: number; episode: number };
+    expect(next).toMatchObject({ kind: 'tv', tmdb_id: 1396, season: 2, episode: 4 });
+    expect(next.session_id).not.toBe(first.session_id);
+    // The resolver was asked for S02E04, and the player page was not opened again.
+    const all = await calls();
+    expect(all.filter((c) => c[0] === 'resolve').map((c) => c.slice(1, 5))).toEqual([['tv', '1396', '2', '3'], ['tv', '1396', '2', '4']]);
+    expect(all.filter((c) => c[0] === 'open')).toHaveLength(1);
+    // Both sessions answer: the old one is left to expire.
+    expect((await app.request(`/api/stream/sessions/${first.session_id}`)).status).toBe(200);
+    expect((await app.request(`/api/stream/sessions/${next.session_id}`)).status).toBe(200);
+  });
+
+  it('answers no_episode for a film or a side without an episode, and refuses a bad body, another origin and an unknown session', async () => {
+    const { app } = await ready('host-a', { neighbors: async () => ({ prev: null, next: { season: 2, episode: 4 } }) });
+    const film = (await played(app)).session as { session_id: string; prev_episode: unknown; next_episode: unknown };
+    expect(film).toMatchObject({ prev_episode: null, next_episode: null });
+    expect((await go(app, film.session_id, { to: 'next' })).status).toBe(404);
+    const episode = (await played(app, EPISODE)).session as { session_id: string };
+    const none = await go(app, episode.session_id, { to: 'prev' });
+    expect([none.status, ((await none.json()) as { error: string }).error]).toEqual([404, 'no_episode']);
+    expect((await go(app, episode.session_id, { to: 'sideways' })).status).toBe(400);
+    expect((await go(app, episode.session_id, { to: 'next' }, {})).status).toBe(403);
+    expect((await go(app, 'nope', { to: 'next' })).status).toBe(403);
+  });
+});
+
 describe('the original language', () => {
   it("passes the title's original language to the resolver and to the player's session", async () => {
     const { app } = await ready('host-a', { originalLanguage: async () => 'KO' });

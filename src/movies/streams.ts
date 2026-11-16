@@ -1,4 +1,5 @@
 import type { AnimeMapper, AnimeRef } from '../directStream/anime.js';
+import type { EpisodeNeighbors } from '../directStream/types.js';
 import type { MoviesService } from './service.js';
 import { TmdbError, type TmdbClient, type TmdbTitleNames } from './tmdb.js';
 import { streamResumePosition } from './state.js';
@@ -155,6 +156,29 @@ export class MovieStreams {
       return language;
     } catch (err) {
       if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the original language of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * The episodes before and after one, in the series' order (specials left out), for the player's
+   * previous and next buttons. The next one is null when it airs after today. Null when the series
+   * is not stored or the episode is not in its list.
+   */
+  async neighbors(target: StreamTarget): Promise<EpisodeNeighbors | null> {
+    try {
+      if (target.kind !== 'tv') return null;
+      const meta = await this.movies.repo.loadTitleMetadata(titleId(target.kind, target.tmdbId));
+      if (meta === null) return null;
+      const list = meta.episodes.filter((e) => e.season >= 1).sort((a, b) => a.season - b.season || a.episode - b.episode);
+      const at = list.findIndex((e) => e.season === target.season && e.episode === target.episode);
+      if (at === -1) return null;
+      const number = (e: { season: number; episode: number } | undefined) => (e === undefined ? null : { season: e.season, episode: e.episode });
+      const after = list[at + 1];
+      const today = this.now().toISOString().slice(0, 10);
+      return { prev: number(list[at - 1]), next: after !== undefined && after.airDate !== null && after.airDate > today ? null : number(after) };
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the neighbours of ${describeTarget(target)}: ${messageOf(err)}`);
       return null;
     }
   }

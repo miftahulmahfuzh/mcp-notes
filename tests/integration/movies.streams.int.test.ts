@@ -356,6 +356,23 @@ describe('direct streaming in the movies store', () => {
       expect(await streams().originalLanguage(FIGHT_CLUB)).toBeNull()
     })
 
+    it('names the episodes before and after one, without specials, and no next episode that has not aired', async () => {
+      await streams().ensureTitle(MOBLAND_S1E2)
+      const list = ((await repo.loadTitleMetadata('tv-247718'))?.episodes ?? []).filter((e) => e.season >= 1).sort((a, b) => a.season - b.season || a.episode - b.episode)
+      const [first, second, third] = list
+      expect(await streams().neighbors(MOBLAND_S1E2)).toEqual({ prev: { season: first!.season, episode: first!.episode }, next: third === undefined ? null : { season: third.season, episode: third.episode } })
+      expect((await streams().neighbors({ kind: 'tv', tmdbId: 247718, season: first!.season, episode: first!.episode }))?.prev).toBeNull()
+      expect(second).toBeDefined()
+      // The episode after this one airs tomorrow: there is no next yet.
+      if (third !== undefined) {
+        await db.execute(sql`update movie_episodes set air_date = '2999-01-01' where title_id = 'tv-247718' and season = ${third.season} and episode = ${third.episode}`)
+        expect((await streams().neighbors(MOBLAND_S1E2))?.next).toBeNull()
+      }
+      expect(await streams().neighbors(FIGHT_CLUB)).toBeNull()
+      expect(await streams().neighbors({ kind: 'tv', tmdbId: 247718, season: 9, episode: 9 })).toBeNull()
+      expect(await streams().neighbors({ kind: 'tv', tmdbId: 999999, season: 1, episode: 1 })).toBeNull()
+    })
+
     it('looks only a Japanese title up as an anime, by the air date of the episode, and stores the title to read it', async () => {
       const asked: unknown[] = []
       const mapper = { lookup: async (q: unknown) => { asked.push(q); return { id: 21, episode: 730 } } }

@@ -159,6 +159,18 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   resolves out of sight through "VidNest Anime" in about 6 s (hls 1080p, one English subtitle).
   `resume one piece from episode 730` in Claude Code plays it: the owner's to run.
 
+## Previous and next episode in the player
+- A series' session carries `prev_episode` and `next_episode`; the player shows a button for each
+  (Shift+P, Shift+N), and `POST /api/stream/sessions/:id/episode` resolves the neighbour into a new
+  session that the page plays without leaving full screen. A failed resolve leaves the episode on
+  screen playing. Proven by `npx vitest run web/src/stream` and
+  `npm run test:int -- tests/integration/directStream.api.int.test.ts tests/integration/movies.streams.int.test.ts`.
+- Real browser, throwaway daemon: `$V up --web --discovery` (note `DIRECT=`), then
+  `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/episode-buttons.steps.mjs`
+  (`FIX` from `make-dash-fixture.sh`, as for the DASH expiry). The transcript has `BUTTONS PASS`,
+  `NEXT PASS` (a click resolves S16E731, a new session plays, the play of S16E730 is closed),
+  `PREV PASS` (Shift+P) and `FILM PASS` (no buttons on a film), with a screenshot of the buttons.
+
 ## Original audio, and the stream on screen
 - A dub is never a source: the resolver reads what each stream speaks (manifest audio tracks, else
   the first segment's MPEG-TS programme table or MP4 track header), skips a stream in another

@@ -5,6 +5,8 @@ import {
   postPosition,
   refreshSession,
   SessionError,
+  switchEpisode,
+  type EpisodeNumber,
   type ManifestKind,
   type StreamSession,
 } from './session';
@@ -33,6 +35,13 @@ export interface StreamState {
   reportedS: number | null;
   /** `?muted=1`: muted from the start, never unmuted, never full screen (phase 6's checks). */
   muted: boolean;
+  /** A series: the episodes the previous and next buttons go to; null where there is none. */
+  prevEpisode: EpisodeNumber | null;
+  nextEpisode: EpisodeNumber | null;
+  /** The side being resolved after its button was pressed; the episode on screen keeps playing meanwhile. */
+  switching: 'prev' | 'next' | null;
+  /** Why the last press of a previous / next button started nothing (which side, and the daemon's code); null once another press begins. */
+  switchError: { to: 'prev' | 'next'; code: string } | null;
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
@@ -51,6 +60,10 @@ export const INITIAL_STATE: StreamState = {
   refreshes: 0,
   reportedS: null,
   muted: false,
+  prevEpisode: null,
+  nextEpisode: null,
+  switching: null,
+  switchError: null,
   errors: [],
   log: [],
 };
@@ -63,6 +76,8 @@ export interface ControllerDeps {
   revokeTextUrl: (url: string) => void;
   /** `?muted=1` (mutedFromLocation). Default false. */
   muted?: boolean;
+  /** The page now plays another session (the next or previous episode): the address bar follows. */
+  onSession?: (sessionId: string) => void;
 }
 
 interface FileTrack {
@@ -154,11 +169,61 @@ export class StreamController {
       return;
     }
     if (this.disposed) return;
+    await this.open(session);
+  }
+
+  /** Plays a session read from the daemon: its name and neighbours, its subtitle files, then the engine at its resume position. */
+  private async open(session: StreamSession): Promise<void> {
     this.session = session;
-    this.set({ title: session.title, kind: session.manifestKind });
+    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode });
     await this.loadFileSubtitles(session);
-    if (this.disposed) return;
+    if (this.disposed || this.session !== session) return;
     await this.attach(session, session.resumeS);
+  }
+
+  /**
+   * The previous / next episode button. The daemon resolves that episode first, while the one on
+   * screen keeps playing; only when it has a stream does the page let go of this one (a last
+   * `closed` report) and play the new session, without leaving full screen. When the episode
+   * cannot be streamed, nothing changes and `switchError` says why.
+   */
+  async goToEpisode(to: 'prev' | 'next'): Promise<void> {
+    if (this.disposed || this.session === null || this.state.switching !== null) return;
+    if ((to === 'next' ? this.state.nextEpisode : this.state.prevEpisode) === null) return;
+    this.set({ switching: to, switchError: null });
+    let nextId: string;
+    try {
+      nextId = await switchEpisode(this.sessionId, to, this.deps.fetch);
+    } catch (err) {
+      if (this.disposed) return;
+      const code = err instanceof SessionError ? err.code : messageOf(err);
+      this.set({ switching: null, switchError: { to, code } });
+      this.note(`${to} episode: ${code}`);
+      return;
+    }
+    if (this.disposed) return;
+    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+    this.generation += 1;
+    this.engine?.destroy();
+    this.engine = null;
+    this.ready = null;
+    for (const track of this.fileTracks) {
+      track.element.remove();
+      this.deps.revokeTextUrl(track.url);
+    }
+    this.fileTracks = [];
+    this.sessionId = nextId;
+    this.lastPositionS = 0;
+    this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null });
+    this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
+    this.deps.onSession?.(nextId);
+    try {
+      const session = await fetchSession(nextId, this.deps.fetch);
+      if (this.disposed) return;
+      await this.open(session);
+    } catch (err) {
+      if (!this.disposed) this.fail(err);
+    }
   }
 
   selectSubtitle(id: string | null): void {

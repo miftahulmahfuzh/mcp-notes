@@ -10,6 +10,8 @@ import {
   IconContext,
   Pause,
   Play,
+  SkipBack,
+  SkipForward,
   SpeakerHigh,
   SpeakerSlash,
   WarningCircle,
@@ -17,6 +19,7 @@ import {
 import { INITIAL_STATE, StreamController, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
+import type { EpisodeNumber } from './session';
 import { pickDefaultSubtitle } from './subtitles';
 
 /**
@@ -70,6 +73,20 @@ export function formatClock(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
+/** `S17E731`, as the page's title writes an episode. */
+export function episodeLabel(e: EpisodeNumber): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `S${pad(e.season)}E${pad(e.episode)}`;
+}
+
+/** What the previous or next button could not do, in words. */
+export function switchErrorText(to: 'previous' | 'next', code: string): string {
+  if (code === 'no_source') return `No provider could stream the ${to} episode.`;
+  if (code === 'no_episode') return `There is no ${to} episode.`;
+  if (code === 'unknown_session') return 'This stream session has ended; start the episode again from Claude Code or the movies page.';
+  return `The ${to} episode could not be started (${code}).`;
+}
+
 export function qualityLabel(q: Quality): string {
   if (q.height !== null) return `${q.height}p`;
   if (q.bitrate !== null) return `${Math.round(q.bitrate / 1000)} kbps`;
@@ -80,6 +97,8 @@ function browserDeps(): ControllerDeps {
   return {
     fetch: (input, init) => fetch(input, init),
     createEngine,
+    // The address names the session on screen, so a reload plays the episode switched to.
+    onSession: (id) => window.history.replaceState(null, '', `/stream/${encodeURIComponent(id)}`),
     textUrl: (vtt) => URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' })),
     revokeTextUrl: (url) => URL.revokeObjectURL(url),
   };
@@ -156,11 +175,13 @@ function IconButton({
   label,
   onClick,
   expanded,
+  disabled,
   children,
 }: {
   label: string;
   onClick: () => void;
   expanded?: boolean;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -171,6 +192,7 @@ function IconButton({
       title={label}
       aria-haspopup={expanded === undefined ? undefined : 'menu'}
       aria-expanded={expanded}
+      disabled={disabled}
       onClick={onClick}
     >
       {children}
@@ -277,6 +299,12 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     // ?muted=1 never asks for full screen.
     if (!muted) toggleFullscreen();
   }, [muted]);
+  const goToEpisode = useCallback(
+    (to: 'prev' | 'next') => {
+      void controller?.goToEpisode(to);
+    },
+    [controller],
+  );
   const toggleSubtitles = useCallback(() => {
     if (controller === null) return;
     const s = controller.getState();
@@ -292,6 +320,9 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
       else if (key === 'm') toggleMute();
       else if (key === 'c') toggleSubtitles();
       else if (key === 'f') fullscreenToggle();
+      // Shift+N and Shift+P, as other players have them: the next and the previous episode.
+      else if (key === 'n' && e.shiftKey) goToEpisode('next');
+      else if (key === 'p' && e.shiftKey) goToEpisode('prev');
       else if (key === 'escape') setMenu(null);
       else return;
       e.preventDefault();
@@ -299,13 +330,15 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, fullscreenToggle, wake]);
+  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, fullscreenToggle, goToEpisode, wake]);
 
   const choose = (action: () => void) => {
     action();
     setMenu(null);
   };
-  const hidden = idle && !view.paused && menu === null && state.stage === 'ready';
+  const hidden = idle && !view.paused && menu === null && state.stage === 'ready' && state.switching === null;
+  // A series' session names a neighbour on at least one side; a film's never does.
+  const series = state.prevEpisode !== null || state.nextEpisode !== null;
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;
 
   return (
@@ -314,12 +347,35 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <video ref={setVideo} className="st-video" playsInline muted={muted} onClick={togglePlay} onDoubleClick={fullscreenToggle} />
         <div className="st-top">
           <span className="st-title">{state.title}</span>
+          {state.switchError !== null && (
+            <span className="st-notice" role="status">
+              {switchErrorText(state.switchError.to === 'prev' ? 'previous' : 'next', state.switchError.code)}
+            </span>
+          )}
         </div>
         <StageOverlay state={state} />
         <div className="st-bar">
           <IconButton label={view.paused ? 'Play' : 'Pause'} onClick={togglePlay}>
             {view.paused ? <Play /> : <Pause />}
           </IconButton>
+          {series && (
+            <IconButton
+              label={state.prevEpisode === null ? 'No previous episode' : `Previous episode (${episodeLabel(state.prevEpisode)})`}
+              disabled={state.prevEpisode === null || state.switching !== null}
+              onClick={() => goToEpisode('prev')}
+            >
+              {state.switching === 'prev' ? <CircleNotch className="st-spin" /> : <SkipBack />}
+            </IconButton>
+          )}
+          {series && (
+            <IconButton
+              label={state.nextEpisode === null ? 'No next episode' : `Next episode (${episodeLabel(state.nextEpisode)})`}
+              disabled={state.nextEpisode === null || state.switching !== null}
+              onClick={() => goToEpisode('next')}
+            >
+              {state.switching === 'next' ? <CircleNotch className="st-spin" /> : <SkipForward />}
+            </IconButton>
+          )}
           <IconButton label="Back 10 seconds" onClick={() => seekBy(-SEEK_STEP_S)}>
             <ArrowArcLeft />
           </IconButton>

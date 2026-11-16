@@ -65,7 +65,15 @@
   font-size: 22px;
   cursor: pointer;
 }
-.st-btn:hover,
+.st-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.st-notice {
+  margin-left: 16px;
+  color: #e9c46a;
+}
+.st-btn:hover:not(:disabled),
 .st-btn[aria-expanded='true'] {
   background: rgba(236, 235, 228, 0.12);
 }

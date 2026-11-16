@@ -467,9 +467,18 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   calls its `start()` the way a click would, so the film starts with sound. If the browser still
   will not start it with sound, the page starts it muted and the speaker icon shows it.
 - **`?muted=1`** (the playback checks): muted from the start, never unmuted, never full screen.
-- **Controls** are icons only and hide after 2.5 seconds without the mouse: play, back and forward
-  10 seconds, position, mute, subtitles, quality, full screen. Keys: Space or K, the left and right
-  arrows, M, C (subtitles on or off), F.
+- **Controls** are icons only and hide after 2.5 seconds without the mouse: play, for a series the
+  previous and the next episode, back and forward 10 seconds, position, mute, subtitles, quality,
+  full screen. Keys: Space or K, the left and right arrows, M, C (subtitles on or off), F, and
+  Shift+P and Shift+N for the previous and the next episode.
+- **Previous and next episode.** A series' session names the episodes before and after its own
+  (TMDB's order, specials left out, never an episode that has not aired), and the two buttons show
+  which (`Next episode (S17E731)`); a side with no episode is greyed out, and a film has neither
+  button. A press asks the daemon (`POST /api/stream/sessions/<id>/episode`) to resolve that
+  episode while the one on screen keeps playing, with a spinner in the button. When a stream is
+  found the page plays the new session from where that episode was left, without leaving full
+  screen, and its address changes to the new session; the play of the episode it left is closed.
+  When none is found nothing changes, and a line beside the title says why.
 
 The page keeps its state on `window.notesdStream` (stage, `kind`, `levels`, `level`, subtitle
 choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a

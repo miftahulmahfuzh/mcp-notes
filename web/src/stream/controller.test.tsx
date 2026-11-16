@@ -53,6 +53,13 @@ describe('parseSession', () => {
       ],
       resumeS: 42.5,
       audioTrack: null,
+      prevEpisode: null,
+      nextEpisode: null,
+    });
+    // A series' session names its neighbours; anything else there is no neighbour.
+    expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
+      prevEpisode: { season: 17, episode: 729 },
+      nextEpisode: null,
     });
     expect(parseSession({ session_id: 'S1', manifest_url: '/m', manifest_kind: 'mp4' })).toMatchObject({ title: 'Stream', subtitles: [], resumeS: 0, audioTrack: null });
     // The manifest's original-language audio track, as the resolve named it.
@@ -416,5 +423,90 @@ describe('StreamController: sound (D2) and the muted check', () => {
     expect(await t.controller.playWithSound()).toBe(false);
     expect(t.media.muted).toBe(true);
     expect(t.controller.getState().muted).toBe(true);
+  });
+});
+
+describe('StreamController: the previous and next episode', () => {
+  const S2 = '/api/stream/sessions/S2';
+  const EP730 = { kind: 'tv', season: 17, episode: 730, title: 'One Piece S17E730', prev_episode: { season: 17, episode: 729 }, next_episode: { season: 17, episode: 731 } };
+  const EP731 = { session_id: 'S2', kind: 'tv', season: 17, episode: 731, title: 'One Piece S17E731', manifest_url: `${S2}/p?u=m731`, prev_episode: { season: 17, episode: 730 }, next_episode: null, resume_s: 0 };
+
+  function playing(routes: Record<string, (call: FetchCall) => Response>) {
+    const onSession = vi.fn();
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson(EP730)), ...routes });
+    const { video, media, fire } = fakeVideo();
+    const controller = new StreamController('S1', video, { fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {}, onSession });
+    controllers.push(controller);
+    return { controller, made, calls, media, fire, onSession };
+  }
+
+  it('keeps playing while the daemon resolves the next episode, then plays its session from the start and says so to the old one', async () => {
+    let answer: (r: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const t = playing({ [`GET ${S2}`]: () => jsonResponse(streamSessionJson(EP731)) });
+    // The episode route answers only when the test lets it: the resolve takes seconds.
+    const fetchWas = (t.controller as unknown as { deps: { fetch: typeof fetch } }).deps.fetch;
+    (t.controller as unknown as { deps: { fetch: typeof fetch } }).deps.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === `${S1}/episode` ? (await fetchWas(input, init), pending) : fetchWas(input, init)) as typeof fetch;
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', prevEpisode: { season: 17, episode: 729 }, nextEpisode: { season: 17, episode: 731 }, switching: null });
+    t.media.currentTime = 600;
+    t.media.paused = false;
+    t.fire('timeupdate');
+
+    const going = t.controller.goToEpisode('next');
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', switching: 'next' });
+    expect(t.made[0].destroy).not.toHaveBeenCalled();
+    // A second press while it resolves does nothing.
+    void t.controller.goToEpisode('next');
+    void t.controller.goToEpisode('prev');
+    await vi.waitFor(() => expect(t.calls.filter((c) => c.url === `${S1}/episode`)).toHaveLength(1));
+    expect(t.calls.find((c) => c.url === `${S1}/episode`)).toMatchObject({ method: 'POST', body: { to: 'next' } });
+
+    answer(jsonResponse(streamSessionJson(EP731)));
+    await going;
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.onSession).toHaveBeenCalledWith('S2');
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.made[1].req).toMatchObject({ src: `${S2}/p?u=m731`, startAt: 0 });
+    // The last word about episode 730 went to its own session, as a closing report.
+    expect(t.calls.filter((c) => c.url === `${S1}/position`).at(-1)?.body).toMatchObject({ position_s: 600, closed: true });
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', title: 'One Piece S17E731', switching: null, switchError: null, prevEpisode: { season: 17, episode: 730 }, nextEpisode: null });
+    // Positions now go to the new session; there is no further episode to go to.
+    t.media.currentTime = 12;
+    t.fire('pause');
+    expect(t.calls.filter((c) => c.url === `${S2}/position`).at(-1)?.body).toMatchObject({ position_s: 12 });
+    await t.controller.goToEpisode('next');
+    expect(t.calls.filter((c) => c.url === `${S2}/episode`)).toHaveLength(0);
+  });
+
+  it('changes nothing when the other episode cannot be streamed, and says why', async () => {
+    const t = playing({ [`POST ${S1}/episode`]: () => jsonResponse({ error: 'no_source', attempts: [] }, 502) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    await t.controller.goToEpisode('prev');
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', title: 'One Piece S17E730', switching: null, switchError: { to: 'prev', code: 'no_source' } });
+    expect(t.made).toHaveLength(1);
+    expect(t.made[0].destroy).not.toHaveBeenCalled();
+    expect(t.onSession).not.toHaveBeenCalled();
+  });
+
+  it('a film has no episode to go to', async () => {
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    const controller = new StreamController('S1', fakeVideo().video, { fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} });
+    controllers.push(controller);
+    void controller.start();
+    await vi.waitFor(() => expect(made).toHaveLength(1));
+    await controller.goToEpisode('next');
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
+    expect(controller.getState().switching).toBeNull();
   });
 });

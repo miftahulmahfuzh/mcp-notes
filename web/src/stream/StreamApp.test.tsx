@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, formatClock } from './StreamApp';
+import { StreamApp, episodeLabel, formatClock, switchErrorText } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -179,5 +179,59 @@ describe('formatClock', () => {
     [Number.NaN, '0:00'],
   ])('%s -> %s', (s, text) => {
     expect(formatClock(s)).toBe(text);
+  });
+
+  describe('the previous and next episode buttons', () => {
+    const EPISODE = { kind: 'tv', season: 17, episode: 730, title: 'One Piece S17E730', prev_episode: { season: 17, episode: 729 }, next_episode: { season: 17, episode: 731 } };
+    const button = (el: HTMLElement, label: RegExp) => [...el.querySelectorAll('button')].find((b) => label.test(b.getAttribute('aria-label') ?? ''));
+
+    it('a film has neither; a series has both, named by the episode they go to, and one without a neighbour is disabled', async () => {
+      const film = fakeEngines();
+      const filmEl = render(<StreamApp sessionId="S1" deps={{ fetch: routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) }).fetchImpl, createEngine: film.createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+      await settle();
+      expect(button(filmEl, /episode/i)).toBeUndefined();
+
+      const first = fakeEngines();
+      const el = render(<StreamApp sessionId="S1" deps={{ fetch: routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ ...EPISODE, prev_episode: null })) }).fetchImpl, createEngine: first.createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+      await settle();
+      expect(button(el, /^No previous episode$/)?.disabled).toBe(true);
+      expect(button(el, /^Next episode \(S17E731\)$/)?.disabled).toBe(false);
+    });
+
+    it('a click, or Shift+N, asks the daemon for the next episode and says why when it cannot be streamed', async () => {
+      const { made, createEngine } = fakeEngines();
+      const { fetchImpl, calls } = routeFetch({
+        'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson(EPISODE)),
+        'POST /api/stream/sessions/S1/episode': () => jsonResponse({ error: 'no_source', attempts: [] }, 502),
+      });
+      const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+      await settle();
+      act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+      await settle();
+      await act(async () => {
+        button(el, /^Next episode/)?.click();
+      });
+      await settle();
+      expect(calls.filter((c) => c.url.endsWith('/episode')).map((c) => c.body)).toEqual([{ to: 'next' }]);
+      expect(el.querySelector('.st-notice')?.textContent).toBe('No provider could stream the next episode.');
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', shiftKey: true }));
+      });
+      await settle();
+      expect(calls.filter((c) => c.url.endsWith('/episode')).map((c) => c.body)).toEqual([{ to: 'next' }, { to: 'prev' }]);
+      expect(el.querySelector('.st-notice')?.textContent).toBe('No provider could stream the previous episode.');
+      // A plain n or p is not the shortcut.
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n' }));
+      });
+      expect(calls.filter((c) => c.url.endsWith('/episode'))).toHaveLength(2);
+    });
+
+    it('names an episode and a failure in words', () => {
+      expect(episodeLabel({ season: 1, episode: 2 })).toBe('S01E02');
+      expect(episodeLabel({ season: 17, episode: 731 })).toBe('S17E731');
+      expect(switchErrorText('next', 'no_episode')).toBe('There is no next episode.');
+      expect(switchErrorText('previous', 'resolve_failed')).toBe('The previous episode could not be started (resolve_failed).');
+    });
   });
 });

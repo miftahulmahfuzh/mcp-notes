@@ -57,6 +57,8 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
       );
     case 'unknown_session':
       return c.json(UNKNOWN_SESSION, 403);
+    case 'no_episode':
+      return c.json({ error: 'no_episode', message: err.message }, 404);
   }
 }
 
@@ -118,11 +120,24 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
   });
 
+  // The player's previous / next episode buttons: a new session for the neighbouring episode.
+  r.post('/api/stream/sessions/:id/episode', sameOriginOnly, async (c) => {
+    const body = episodeBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'to must be "prev" or "next".' }, 400);
+    try {
+      return c.json(await service().switchEpisode(c.req.param('id'), body.data.to));
+    } catch (err) {
+      return directStreamErrorResponse(c, err);
+    }
+  });
+
   // Phase 5: the player page's position reports (src/movies/streams.ts).
   r.route('/', streamPositionRoutes({ movies: deps.movies ?? null, directStream: deps.directStream, live: deps.streamLive ?? null }));
 
   return r;
 }
+
+const episodeBody = z.object({ to: z.enum(['prev', 'next']) });
 
 /** Longest position or duration a report may carry, in seconds (11.5 days: a sanity bound, not a film's length). */
 const MAX_STREAM_SECONDS = 1_000_000;

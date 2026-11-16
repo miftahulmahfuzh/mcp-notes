@@ -177,6 +177,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             originalLanguage: (ref) => movieStreams.originalLanguage(ref),
             titleLabel: (ref) => movieStreams.titleLabel(ref),
             anime: (ref) => movieStreams.animeRef(ref, animeMapper),
+            neighbors: (ref) => movieStreams.neighbors(ref),
           },
   });
   if (directStream !== null) {
