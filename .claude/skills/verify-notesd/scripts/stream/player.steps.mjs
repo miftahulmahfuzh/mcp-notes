@@ -3,7 +3,7 @@
 // fixture from make-hls-fixture.sh, in the shape phase 3 gives the page; /position answers 404 on
 // purpose. Nothing leaves this machine and no Chrome on Windows is touched.
 //   STREAM_FIXTURE=<folder make-hls-fixture.sh printed> verify.sh ui RUN <this file>
-// Logs "J1 PASS", "API PASS", "J3 PASS", "J2 PASS", "MUTED PASS", "CDN PASS"; the first failed check throws and fails the run.
+// Logs "J1 PASS", "API PASS", "BUFFER PASS", "J3 PASS", "J2 PASS", "MUTED PASS", "CDN PASS"; the first failed check throws and fails the run.
 // J3 is the expired token for HLS. The same for DASH is dash-expiry.steps.mjs beside this file: it
 // needs the daemon's own DASH rewriting, so it runs on `up --web --direct-stream` with nothing faked here.
 import { readFileSync } from 'node:fs'
@@ -57,6 +57,13 @@ async function wakeControls(page) {
 const englishCueShowing = (needle) => {
   const v = document.querySelector('video')
   return !!v && [...v.textTracks].some((t) => t.mode === 'showing' && [...(t.activeCues ?? [])].some((c) => c.text.includes(needle)))
+}
+
+// Seconds loaded ahead of the picture (the last buffered range).
+const aheadS = () => {
+  const v = document.querySelector('video')
+  const b = v.buffered
+  return b.length ? Math.round((b.end(b.length - 1) - v.currentTime) * 10) / 10 : 0
 }
 
 export default async ({ page, base, shot, log }) => {
@@ -136,6 +143,28 @@ export default async ({ page, base, shot, log }) => {
   check(JSON.stringify(exposed.levels) === '[720,360]' && exposed.kind === 'hls' && exposed.start === 'function', `window.notesdStream has kind, levels and start() (got ${JSON.stringify(exposed)})`)
   check(exposed.title !== '' && exposed.title !== page.url() && exposed.title !== new URL(base).host, 'the page title is neither empty nor the address (phase 1 open needs it)')
   log('API PASS window.notesdStream exposes kind, levels, level, errors, refreshes and start(); the title is a real title')
+
+  // BUFFER (R1.8): the page keeps up to 120 s loaded ahead; hls.js held 30 s before, so 60 s ahead
+  // is reachable only under the new limit. ?muted=1 keeps 30 s for the expiry checks.
+  await page.waitForFunction((min) => {
+    const v = document.querySelector('video')
+    const b = v.buffered
+    return b.length > 0 && b.end(b.length - 1) - v.currentTime >= min
+  }, 60, { timeout: 30_000 })
+  const ahead = await page.evaluate(aheadS)
+
+  // J3 (R2.5) runs on ?muted=1, as playcheck's expiry check does: there the page keeps 30 s ahead,
+  // so the segments past the seek are not loaded yet when the token expires.
+  await page.goto(`${base}/stream/S1?muted=1`)
+  await page.waitForFunction(() => window.notesdStream?.stage === 'ready', null, { timeout: 30_000 })
+  await page.waitForFunction(() => {
+    const v = document.querySelector('video')
+    return !!v && !v.paused && v.currentTime > 21
+  }, null, { timeout: 30_000 })
+  await page.waitForTimeout(3_000)
+  const mutedAhead = await page.evaluate(aheadS)
+  check(mutedAhead <= 40, `BUFFER: ?muted=1 keeps about 30 s ahead (got ${mutedAhead} s)`)
+  log(`BUFFER PASS ${ahead} s loaded ahead without ?muted=1 (60 s or more), ${mutedAhead} s under ?muted=1`)
 
   // J3 (R2.5): the stream host refuses the token mid-film; one refresh, playback continues there.
   fake.expired = true

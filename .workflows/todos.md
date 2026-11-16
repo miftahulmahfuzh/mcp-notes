@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 13
+**Total Active Tasks**: 12
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 13
+- P1 High: 12
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 2
-- Completed: 115
+- Completed: 116
 
 ---
 
@@ -22,15 +22,6 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A122** Phase 2: Player recovers from network errors and buffers further
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `web/src/stream/hlsEngine.ts` (a fatal network error retries with backoff: `startLoad` at the stopped position, a bounded number of attempts reset once it plays again; `maxMaxBufferLength` 120 except under `?muted=1`, which keeps 30 for the expiry check), the same recovery for dash.js and the native engine where they have one, `EngineHandlers.onRecovering` and `onRecovered`, `EngineRequest.bufferAheadS` with `BUFFER_AHEAD_S` / `MUTED_BUFFER_AHEAD_S` (the one buffer setting; dash.js keeps its own buffer), `player.steps.mjs` J3 moved to `?muted=1`, the controller's `recovering` stage and its log lines (which phase 1's posting carries to the daemon), the overlay's "reconnecting" state, tests, guide text. Exit criteria: a fake engine failing segment loads recovers and plays on; after the retries are spent the page shows the error as today; the buffer setting is asserted; `playcheck` journeys still pass.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 2 of 6)
-  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. Includes the small player fix: recover from a fatal network error (retry) instead of stopping, and let the buffer grow more than 30 s where safe. · criteria: R1.7, R1.8
-  - **Depends on**: P1-NOTES-A121
-  - **Plan**: `.workflows/plan/P1-NOTES-A122.md`
 - [ ] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
@@ -131,6 +122,22 @@
 ---
 
 ## Completed Tasks
+
+- [x] **P1-NOTES-A122** Phase 2: Player recovers from network errors and buffers further
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/stream/hlsEngine.ts` (a fatal network error retries with backoff: `startLoad` at the stopped position, a bounded number of attempts reset once it plays again; `maxMaxBufferLength` 120 except under `?muted=1`, which keeps 30 for the expiry check), the same recovery for dash.js and the native engine where they have one, `EngineHandlers.onRecovering` and `onRecovered`, `EngineRequest.bufferAheadS` with `BUFFER_AHEAD_S` / `MUTED_BUFFER_AHEAD_S` (the one buffer setting; dash.js keeps its own buffer), `player.steps.mjs` J3 moved to `?muted=1`, the controller's `recovering` stage and its log lines (which phase 1's posting carries to the daemon), the overlay's "reconnecting" state, tests, guide text. Exit criteria: a fake engine failing segment loads recovers and plays on; after the retries are spent the page shows the error as today; the buffer setting is asserted; `playcheck` journeys still pass.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. Includes the small player fix: recover from a fatal network error (retry) instead of stopping, and let the buffer grow more than 30 s where safe. · criteria: R1.7, R1.8
+  - **Depends on**: P1-NOTES-A121
+  - **Plan**: `.workflows/plan/P1-NOTES-A122.md`
+  - **Completed**: 2026-11-16 14:30
+  - **Method**: /implement
+  - **Files**: web/src/stream/engine.ts, web/src/stream/hlsEngine.ts, web/src/stream/dashEngine.ts, web/src/stream/nativeEngine.ts, web/src/stream/controller.ts, web/src/stream/StreamApp.tsx, web/src/stream/hlsEngine.test.tsx, web/src/stream/nativeEngine.test.tsx, web/src/stream/dashEngine.test.tsx, web/src/stream/controller.test.tsx, web/src/stream/StreamApp.test.tsx, .claude/skills/verify-notesd/scripts/stream/player.steps.mjs, .claude/skills/verify-notesd/scripts/stream/recovery.steps.mjs, .claude/skills/verify-notesd/features/direct-streaming.md, docs/guide/streaming.md, .workflows/todos.md
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-142156-881790/evidence (J2-J4), /home/miftah/.local/state/notesd-verify/1116-142412-892557/evidence (DASH neighbor)
+  - **Drift**: hlsEngine.test.tsx: the plan typed the fake's mocks as ReturnType<typeof vi.fn>, which vitest 4 does not let tsc call; typed as Mock<(arg) => void> instead. Behaviour identical.
+  - **Drift**: Line numbers in StreamApp.test.tsx / streaming.md / direct-streaming.md differed from the plan; every edit was anchored by the quoted text.
 
 - [x] **P1-NOTES-A121** Phase 1: Stream evidence log and snapshot
   - **Difficulty**: NORMAL

@@ -510,6 +510,19 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   the session has ended and does not refresh. HLS and DASH behave the same: hls.js reports the
   refused load through its error event, dash.js through a response interceptor, and a refusal
   that arrives from the replaced player after the refresh began is dropped.
+- **A network error.** When a load fails for another reason than a refused token (hls.js's
+  `fragLoadError`, `fragLoadTimeOut`, `levelLoadError`, `manifestLoadError` and the rest of its
+  network errors, a dash.js download error, a plain file's network error), the page stays on the
+  film, which plays on from what it has loaded, and shows a spinner (`stage: "recovering"`). After
+  2, 4, 8, 16 and 16 seconds it loads again from where the film is; the first piece that loads ends
+  the recovery and the count starts over. Only when the fifth restart fails too does the page stop
+  with the message, such as `Playback stopped (networkError fragLoadError).` Positions are still
+  reported meanwhile, and each try is a line in the page's log
+  (`recovering 2/5 after networkError fragLoadError at 1312.4 s`, then `recovered at 1320 s`), which
+  the page sends to the daemon with its other log lines.
+- **Buffer.** An HLS play keeps up to 120 seconds loaded ahead of the picture, so a slow stretch of
+  the stream host is ridden out. A `?muted=1` check keeps 30 seconds, so the expiry check still finds
+  pieces that are not loaded when the token runs out. A DASH play keeps dash.js's own amount.
 - **Sound.** A play from `/direct-stream` or the movies page opens the page full screen and then
   calls its `start()` the way a click would, so the film starts with sound. If the browser still
   will not start it with sound, the page starts it muted and the speaker icon shows it.
@@ -527,7 +540,8 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   screen, and its address changes to the new session; the play of the episode it left is closed.
   When none is found nothing changes, and a line beside the title says why.
 
-The page keeps its state on `window.notesdStream` (stage, `kind`, `levels`, `level`, subtitle
+The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
+`recovering` or `error`; `kind`, `levels`, `level`, subtitle
 choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
 play, and its `start()`.
 
