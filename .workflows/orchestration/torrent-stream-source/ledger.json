@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "40a7d036aacbf46af028f0985b5ba0e02f587865",
       "depends_on": [],
       "difficulty": "HARD",
       "n": 1,
-      "note": null,
+      "note": "self-verified (owner's verifier-cost feedback; proof verified-first-pass, 7 journeys, evidence ~/.local/state/notesd-verify/1116-223319-1845706 + 1116-223513-1851320); file list = write set + bookkeeping; migration 0031_stream_torrents NOT yet applied to Neon; integrated at 62c5013 (wave 0: typecheck, npm test 3502, docs:check, test:int 972 green). Coordinator decisions: edge 7->5 (generated http-api.md, rung 6); ISOLATE one worktree per phase; task ids A127-A135 kept, TS02 folded into A128.",
       "package": "src/directStream/torrent",
       "plan": ".workflows/plan/torrent-stream-source/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T22:45:50+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A127",
       "title": "The torrent engine and its file route"
     },
     {
@@ -27,10 +27,10 @@
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": "finder in src/directStream/torrent/find (4 JSON indexes, parseRelease, rank, pickFile, findCandidates), code blocks verbatim, no drift; decided: only phase 2's task created, non-counter id P1-NOTES-TS02 (peer phase minting concurrently, narrower blast radius); live J6: yts timed out after 6 s, recorded as error; proof: verified-first-pass /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p2/53b6a767-f7ee-4d6c-a12d-761c53c5eab6/scratchpad/p2-evidence",
+      "note": "self-verified (owner's verifier-cost feedback; proof verified-first-pass J1-J6, live: torrentio 32, apibay 19, yts timed out = error); file list = write set + bookkeeping; integrated at 62c5013.",
       "package": "src/directStream/torrent/find",
       "plan": ".workflows/plan/torrent-stream-source/phase-2.md",
-      "reported_at": "2026-11-16T22:34:51+07:00",
+      "reported_at": "2026-11-16T22:45:50+07:00",
       "satisfies": [
         "R1"
       ],
@@ -55,7 +55,7 @@
         "R1",
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "A torrent session in direct streaming"
     },
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T22:34:51+07:00",
+  "updated": "2026-11-16T22:45:50+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
