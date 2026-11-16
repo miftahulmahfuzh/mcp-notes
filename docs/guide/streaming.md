@@ -1103,6 +1103,53 @@ the finding as a note tagged `#stream-bug`, linked to the session it ran in.
 writes the evidence log's tail, the daemon's lines and the reference measurement, and the summary's
 `missing:` list names what is not there.
 
+## Torrents
+
+A torrent is the third way direct streaming gets a film, beside a cloud provider and the stream cache: the
+daemon joins the torrent's swarm, downloads the one video file (and its subtitle files) in playing order,
+and serves it from its own disk to the player page. Each torrent phase adds its subsection here.
+
+### The torrent engine and its file route
+
+The engine is WebTorrent 3, inside the daemon (`src/directStream/torrent/`). It starts with the first
+torrent opened and stops after the last one leaves: while nothing is open the daemon has no torrent port, no
+DHT node and no peer.
+
+1. A torrent is opened by its info hash; its file list comes from the peers, no `.torrent` file is needed.
+   Nothing is downloaded until files are chosen, and only video files (`.mp4`, `.m4v`, `.mkv`, `.webm`,
+   `.mov`, `.avi`, `.ts`, `.m2ts`, `.wmv`) and subtitle files (`.srt`, `.vtt`, `.ass`, `.ssa`) can be.
+   Nothing from a torrent is ever run.
+2. The chosen files are written under `<NOTESD_TORRENT_DIR>/<info hash>/` (default
+   `<NOTES_DATA_DIR>/movies/torrents/`), at the paths the torrent names. A torrent that names a path outside
+   that folder is refused before anything is written (`unsafe_path`).
+3. They download in order. `GET /api/stream/torrent/<hash>/f/<index>` answers a byte range with exactly
+   those bytes: from disk once the file is whole, else through the engine, which fetches the range's pieces
+   before the rest, so a seek plays as soon as its stretch arrives.
+4. Pieces at a file's edge are shared with the next file, so a few edge bytes of a file that was not chosen
+   are fetched too. They are deleted when the torrent leaves the swarm; the folder then holds only the
+   chosen files.
+5. Upload is capped at `NOTESD_TORRENT_UPLOAD_KBPS` (100 kB/s) for all torrents together. UPnP and NAT-PMP
+   are off; under WSL 2 no peer can connect in, so the daemon only connects out.
+6. A torrent is in the swarm only while something uses it (a stream session; for now
+   `POST /api/stream/torrent` with `files`, until its release). Once nothing does, a finished download
+   leaves at once and an unfinished one three minutes after its last file request.
+7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
+   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
+
+A download belongs to the machine that made it: the other machine lists it with `available: false`, and
+its file routes answer 404 `not_on_this_machine`. `NOTESD_TORRENT=off` builds nothing and every route
+answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#torrents).
+
+| Answer | Meaning |
+| --- | --- |
+| `no_metadata` | No peer sent the file list within 60 s |
+| `unsafe_path` | The torrent names a file outside its folder; nothing of it was downloaded |
+| `not_media` | A chosen file is neither a video nor a subtitle file |
+| `not_selected` | That file of the torrent was not chosen, so it is not served |
+| `not_in_swarm` | The download is unfinished and nothing holds it now: play it again to carry on |
+| `not_on_this_machine` | The download is on the other laptop |
+| `torrent_off` | `NOTESD_TORRENT=off` on this machine |
+
 ## Where the code is
 
 | Path | What |
@@ -1123,6 +1170,8 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/report.ts`, `src/http/streamReportApi.ts` | The player's report button: the snapshot, `report.json`, one tmux window per stream session (the opener is `openClaudeWindow` in `src/sessions/resume.ts`) |
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
+| `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
+| `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
@@ -1155,6 +1204,10 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - The stream cache: `cache.sh RUN` on `verify.sh up --direct-stream` drives it against the fixture
   stream host's tokened HLS film (`mode` `hls_token`, `token_uses`, `fail_once`, `delay_ms`); the
   downloader's cases are `npx vitest run tests/unit/directStream/cache`.
+- Torrents: `npx vitest run tests/unit/directStream/torrent` (the engine test seeds a generated torrent over
+  loopback, DHT and trackers off) and `npm run test:int -- tests/integration/directStream.torrents.int.test.ts`;
+  on a throwaway daemon `verify.sh up --torrent`, then `scripts/torrent/torrent.sh RUN` (the feature map's
+  "Torrents" section). No throwaway daemon ever joins a real swarm.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real

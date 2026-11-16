@@ -1,0 +1,32 @@
+CREATE TABLE "stream_torrents" (
+	"host" text NOT NULL,
+	"info_hash" text NOT NULL,
+	"kind" text NOT NULL,
+	"tmdb_id" integer NOT NULL,
+	"season" integer DEFAULT 0 NOT NULL,
+	"episode" integer DEFAULT 0 NOT NULL,
+	"name" text NOT NULL,
+	"release" text,
+	"trackers" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"file_index" integer,
+	"files" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"file_length" bigint,
+	"bytes_done" bigint DEFAULT 0 NOT NULL,
+	"duration_s" real,
+	"state" text DEFAULT 'downloading' NOT NULL,
+	"error" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"completed_at" timestamp with time zone,
+	"played_at" timestamp with time zone,
+	CONSTRAINT "stream_torrents_host_info_hash_pk" PRIMARY KEY("host","info_hash"),
+	CONSTRAINT "stream_torrents_info_hash_check" CHECK ("stream_torrents"."info_hash" ~ '^[0-9a-f]{40}$'),
+	CONSTRAINT "stream_torrents_kind_check" CHECK ("stream_torrents"."kind" in ('movie', 'tv')),
+	CONSTRAINT "stream_torrents_slot_check" CHECK ("stream_torrents"."tmdb_id" > 0 and (("stream_torrents"."kind" = 'movie' and "stream_torrents"."season" = 0 and "stream_torrents"."episode" = 0) or ("stream_torrents"."kind" = 'tv' and "stream_torrents"."season" >= 0 and "stream_torrents"."episode" > 0))),
+	CONSTRAINT "stream_torrents_state_check" CHECK ("stream_torrents"."state" in ('downloading', 'ready', 'failed')),
+	CONSTRAINT "stream_torrents_failed_check" CHECK (("stream_torrents"."state" = 'failed') = ("stream_torrents"."error" is not null)),
+	CONSTRAINT "stream_torrents_ready_check" CHECK (("stream_torrents"."state" = 'ready') = ("stream_torrents"."completed_at" is not null) and ("stream_torrents"."state" <> 'ready' or "stream_torrents"."file_index" is not null)),
+	CONSTRAINT "stream_torrents_counts_check" CHECK ("stream_torrents"."bytes_done" >= 0 and ("stream_torrents"."file_length" is null or "stream_torrents"."file_length" >= 0) and ("stream_torrents"."file_index" is null or "stream_torrents"."file_index" >= 0) and ("stream_torrents"."duration_s" is null or "stream_torrents"."duration_s" > 0))
+);
+--> statement-breakpoint
+CREATE INDEX "stream_torrents_slot_idx" ON "stream_torrents" USING btree ("kind","tmdb_id","season","episode","host");

@@ -11,6 +11,7 @@ import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
+import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -66,6 +67,12 @@ export interface AppDeps {
    * unfinished downloads on and closes it.
    */
   streamCache?: StreamCache | null;
+  /**
+   * Torrents (torrent-stream-source phase 1): this host's torrent downloads, the engine and the
+   * /api/stream/torrent routes. Built next to `directStream`; null or absent with direct streaming off or
+   * NOTESD_TORRENT=off. startBackground starts its tick and closes it.
+   */
+  torrents?: TorrentStreams | null;
   /**
    * The stories of films and episodes (src/movies/story.ts): read from the store, written by
    * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story

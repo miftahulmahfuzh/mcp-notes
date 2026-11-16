@@ -31,6 +31,7 @@ import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
+import { buildTorrentStreams } from './directStream/torrent/service.js';
 import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { StreamReporter } from './directStream/report.js';
@@ -216,6 +217,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
   // asked; startBackground carries unfinished ones on.
   const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
+  // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
+  // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
+  const torrents = buildTorrentStreams(config, directStream, db);
   // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
   const movieStories =
     movies === null
@@ -244,6 +248,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streaming,
     directStream,
     streamCache,
+    torrents,
     movieStories,
     streamLive,
     streamEvidence,

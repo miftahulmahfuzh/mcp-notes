@@ -322,6 +322,35 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   fixture host), sets the fake resolver to `no_source` to prove nothing resolves, and edits the
   run's `stream_caches` row with `verify.sh exec` for the downloading and other-host cases.
 
+## Torrents: the engine and its file route (torrent phase 1)
+- `POST /api/stream/torrent` (same-origin) opens a torrent by info hash for a title and answers its file list
+  from the swarm; with `files` (video and subtitle indexes only; anything else is 400 `not_media`) it
+  downloads them in order under `<NOTES_DATA_DIR>/movies/torrents/<hash>/` and holds the torrent until
+  `POST /api/stream/torrent/:hash/release`. `GET /api/stream/torrent/:hash/f/:index` answers a byte range with
+  exactly those bytes, fetching that range first; `.../map` the stretches on disk; `GET /api/stream/torrent`
+  the engine (`port`, `swarm`, `upload_cap_bytes_per_s`) and every download. Upload is capped at
+  `NOTESD_TORRENT_UPLOAD_KBPS`; a torrent leaves the swarm once nothing holds it (at once when finished, three
+  minutes after the last request otherwise) and only its chosen files stay; a finished download opens and plays
+  from disk with no swarm; downloads are cleared after `NOTESD_TORRENT_KEEP_DAYS` without a play.
+  `NOTESD_TORRENT=off`: 503 `torrent_off`, nothing is built, no socket is opened.
+- Logic: `npx vitest run tests/unit/directStream/torrent tests/unit/config.torrent.test.ts` (`engine.test.ts`
+  seeds a generated torrent over loopback with DHT and trackers off); the table, both machines and replay from
+  disk: `npm run test:int -- tests/integration/directStream.torrents.int.test.ts`.
+- Throwaway daemon: `$V up --torrent` (implies `--direct-stream`; prints `TORRENT=<run>/torrent`). It starts a
+  loopback seeder (`scripts/torrent/seed.mjs`, 200 kB/s) of the generated film and season pack
+  (`scripts/torrent/make-fixture.sh`: a 120 s H.264/AAC MP4 with English audio, its `.en.srt`, a README, a
+  sample and an inert `setup.exe`; two 20 s episodes), writes `fixture.json` and `pack.json`
+  (`{info_hash, name, trackers: [], port, piece_length, files}`) and `seeder.jsonl` there, and gives the daemon
+  `NOTESD_TORRENT_DISCOVERY=off`, `NOTESD_TORRENT_PEERS=127.0.0.1:<seeder>` and a 64 kB/s cap.
+  `TORRENT_FIXTURE_FILE=<path>` seeds that one file as the film instead; a folder moved into
+  `<run>/torrent/seed/<name>/` is seeded too and described in `<run>/torrent/seeded/<name>.json`. Then
+  `.claude/skills/verify-notesd/scripts/torrent/torrent.sh RUN` (stages `idle files refuse range cap leave only
+  disk`, in order, once per run, on the generated film) prints `REFUSE PASS`, `RANGE PASS`, `CAP PASS`,
+  `LEAVE PASS`, `ONLY PASS`, `DISK PASS` and `torrent: PASS (...)`. On a run without `--torrent`,
+  `torrent.sh RUN off` prints `OFF PASS`.
+- Every other run pins `NOTESD_TORRENT=off` and `NOTESD_TORRENT_DIR` under the run: no throwaway daemon joins a
+  real swarm or writes into the owner's torrent folder.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

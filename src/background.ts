@@ -196,6 +196,19 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     );
   }
 
+  // Torrents (torrent-stream-source phase 1): old downloads are cleared and the tick starts; nothing joins a swarm here.
+  const torrents = deps.torrents ?? null;
+  if (torrents !== null) {
+    void torrents.start().then(
+      (cleared) =>
+        console.log(
+          `[notesd] torrents on as ${torrents.host}: downloads in ${torrents.root}, upload capped at ${torrents.uploadKbps} kB/s` +
+            (cleared > 0 ? `, ${cleared} download(s) not played for ${torrents.keepDays} days cleared` : ''),
+        ),
+      (err: unknown) => console.error(`[notesd] torrents: could not start: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
+
   // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
   const meter = dbInstruments(deps.db)?.meter;
   const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
@@ -219,6 +232,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.movies?.close(),
       prober?.close(),
       streamCache?.close(),
+      torrents?.close(),
     ]);
   };
 }
