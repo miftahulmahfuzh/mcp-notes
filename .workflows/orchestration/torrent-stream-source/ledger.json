@@ -40,23 +40,23 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "8b53235b187c0bca2a478d8c7a383f75e5a55b71",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "HARD",
       "n": 3,
-      "note": null,
+      "note": "torrent sessions in direct streaming (provider torrent, fall-through after no_source, replay from disk, dubbed/unplayable, torrent_off); decisions: harness seeder seed.mjs now speaks uTP (engine tries uTP first, TCP fallback ~44 s > the 20 s open timeout; phase 1 torrent.sh re-run PASS); index URL env keys spelled out in TORRENT_INDEX_URL_KEYS for docs:check; DEFAULT_FFMPEG_BIN declared above the torrent block; whole-object torrent config expectations are in config.torrent.test.ts; torrent.sh off must run after journey.sh seed; proof: verified-after-fix /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p3/9f9d0bbd-9e8c-4eb4-8cc3-704e83073db4/scratchpad/p3-evidence | self-verified (owner's verifier-cost feedback; proof verified-after-fix, evidence copied to logs/p3-evidence); edited phase 1's seed.mjs (utp: true, recorded decision); integrated at 860a525 (wave 1: typecheck, npm test 3538, docs:check, test:int 972 green)",
       "package": "src/directStream",
       "plan": ".workflows/plan/torrent-stream-source/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T23:05:05+07:00",
       "satisfies": [
         "R1",
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A129",
       "title": "A torrent session in direct streaming"
     },
     {
@@ -74,7 +74,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The player page on a torrent"
     },
@@ -113,7 +113,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Subtitle files: in the torrent, from a subtitle service, from a cloud provider"
     },
@@ -171,7 +171,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "1337x and ext.to through the streaming Chrome"
     }
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T22:45:50+07:00",
+  "updated": "2026-11-16T23:05:05+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
