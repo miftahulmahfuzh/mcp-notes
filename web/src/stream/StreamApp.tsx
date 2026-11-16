@@ -14,6 +14,7 @@ import {
   IconContext,
   Pause,
   Play,
+  Shuffle,
   SkipBack,
   SkipForward,
   SpeakerHigh,
@@ -464,6 +465,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
       else if (key === 'arrowright') seekBy(SEEK_STEP_S);
       else if (key === 'm') toggleMute();
       else if (key === 'c') toggleSubtitles();
+      else if (key === 's' && !e.shiftKey && !e.ctrlKey && !e.metaKey) controller?.anotherSource();
       // G and H, as VLC has them: the subtitles 50 ms earlier, 50 ms later.
       else if (key === 'g' || key === 'h') shiftSubtitles(key === 'h' ? SUBTITLE_DELAY_STEP_MS : -SUBTITLE_DELAY_STEP_MS);
       else if (key === 'f') fullscreenToggle();
@@ -477,7 +479,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, shiftSubtitles, fullscreenToggle, goToEpisode, wake]);
+  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, shiftSubtitles, fullscreenToggle, goToEpisode, wake, controller]);
 
   const choose = (action: () => void) => {
     action();
@@ -495,6 +497,11 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <div className="st-top">
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
+          {(state.changingSource || state.sourceNotice !== null) && (
+            <span className="st-notice" role="status">
+              {state.changingSource ? 'Looking for another source…' : state.sourceNotice === 'No other source' ? state.sourceNotice : `Source: ${state.sourceNotice}`}
+            </span>
+          )}
           {delayShown && (
             <span className="st-notice" role="status">
               {delayText(state.subtitleDelayMs)}
@@ -554,6 +561,11 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
           <IconButton label={view.muted ? 'Unmute' : 'Mute'} onClick={toggleMute}>
             {view.muted ? <SpeakerSlash /> : <SpeakerHigh />}
           </IconButton>
+          {state.cached === null && !muted && (
+            <IconButton label="Another source (S)" disabled={state.changingSource} onClick={() => controller?.anotherSource()}>
+              {state.changingSource ? <CircleNotch className="st-spin" /> : <Shuffle />}
+            </IconButton>
+          )}
           <div className="st-pop">
             <IconButton label="Subtitles" expanded={menu === 'subtitles'} onClick={() => setMenu(menu === 'subtitles' ? null : 'subtitles')}>
               <ClosedCaptioning weight={state.subtitle !== null ? 'fill' : 'duotone'} />

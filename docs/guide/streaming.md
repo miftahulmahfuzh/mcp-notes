@@ -443,6 +443,9 @@ and never stored (`src/directStream/delivery.ts`).
   provider it left, a token refresh included. With no other source the film stays as it is
   (`source kept: no_other_source`). At most two moves per session, one ask per two minutes;
   a play from the cache and a `?muted=1` check never move.
+- **By hand.** The shuffle button, or S, asks for another source at once and as often as wanted
+  (a poor picture, a cinema recording): the same route, without the page's own limits. The line
+  over the picture says `Looking for another source…`, then the new provider or `No other source`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
   `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
 

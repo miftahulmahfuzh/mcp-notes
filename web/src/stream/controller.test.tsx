@@ -872,6 +872,24 @@ describe('a film that keeps stalling', () => {
     expect(muted.asks()).toHaveLength(0);
   });
 
+  it('the owner asks for another source as often as they like, and is told what came of it', async () => {
+    let left = 3;
+    const t = await playing({ [SOURCE]: () => (left-- > 0 ? moved({ provider: `P${left}` }) : moved({ switched: false, reason: 'no_other_source' })) });
+    for (let n = 1; n <= 3; n++) {
+      t.controller.anotherSource();
+      expect(t.controller.getState().changingSource).toBe(true);
+      await vi.waitFor(() => expect(t.made).toHaveLength(n + 1));
+      t.made[n].req.handlers.onReady({ qualities: [], subtitles: [] });
+      await vi.waitFor(() => expect(t.controller.getState().changingSource).toBe(false));
+    }
+    expect(t.controller.getState().sourceNotice).toBe('P0');
+    expect(t.controller.getState().log).toContain('asked for another source');
+    t.controller.anotherSource();
+    await vi.waitFor(() => expect(t.controller.getState().sourceNotice).toBe('No other source'));
+    expect(t.asks()).toHaveLength(4);
+    expect(t.made).toHaveLength(4);
+  });
+
   it('counts a network recovery as a stall', async () => {
     const t = await playing({ [SOURCE]: () => moved() });
     for (let i = 1; i <= STALLS_TO_SWITCH; i++) {

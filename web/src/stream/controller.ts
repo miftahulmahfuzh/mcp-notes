@@ -88,6 +88,10 @@ export interface StreamState {
   switchError: { to: 'prev' | 'next'; code: string } | null;
   /** Played from this machine's stream cache (phase 6): the page marks it beside the title. Null: through the pass-through. */
   cached: CachedInfo | null;
+  /** Another source is being resolved (the film plays on meanwhile). */
+  changingSource: boolean;
+  /** What the last ask for another source came to, for the line over the picture: the new provider's name, or "No other source". */
+  sourceNotice: string | null;
   /** How much later (positive) or earlier (negative) the subtitles show than their file says, in ms (G and H). */
   subtitleDelayMs: number;
   /** The stretches of the title on this machine's disk (a cached play), in seconds: the timeline's thick grey bar. */
@@ -117,6 +121,8 @@ export const INITIAL_STATE: StreamState = {
   switching: null,
   switchError: null,
   cached: null,
+  changingSource: false,
+  sourceNotice: null,
   subtitleDelayMs: 0,
   cachedRanges: [],
   errors: [],
@@ -649,30 +655,23 @@ export class StreamController {
    * load its stream, at the position it had reached. A cached play has no provider to leave, and a
    * muted check never moves (it measures the provider it was given).
    */
-  private async changeSource(): Promise<void> {
+  private async changeSource(byOwner = false): Promise<void> {
     const now = Date.now();
-    if (
-      this.disposed ||
-      this.askingSource ||
-      this.mutedMode ||
-      this.session === null ||
-      this.session.cached !== null ||
-      !this.onFilm() ||
-      this.sourceSwitches >= MAX_SOURCE_SWITCHES ||
-      (this.lastSourceAskAt > 0 && now - this.lastSourceAskAt < SOURCE_SWITCH_COOLDOWN_MS)
-    ) {
-      return;
-    }
+    if (this.disposed || this.askingSource || this.mutedMode || this.session === null || this.session.cached !== null || !this.onFilm()) return;
+    // The page's own asks are limited; the owner's (the button, S) are not.
+    if (!byOwner && (this.sourceSwitches >= MAX_SOURCE_SWITCHES || (this.lastSourceAskAt > 0 && now - this.lastSourceAskAt < SOURCE_SWITCH_COOLDOWN_MS))) return;
     this.askingSource = true;
     this.lastSourceAskAt = now;
     const asked = this.sessionId;
-    this.note(`${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: asking for another source`);
+    this.note(byOwner ? 'asked for another source' : `${this.stalls.length} stalls in ${Math.round(STALL_WINDOW_MS / 1000)} s: asking for another source`);
     this.stalls = [];
+    this.set({ changingSource: true, sourceNotice: null });
     try {
       const answer = await switchSource(asked, this.deps.fetch);
       if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
+        if (byOwner) this.set({ sourceNotice: 'No other source' });
         return;
       }
       this.sourceSwitches += 1;
@@ -686,6 +685,7 @@ export class StreamController {
       this.subtitleChosen = false;
       this.set({ stage: 'refreshing', kind: answer.session.manifestKind, qualities: [], quality: -1, subtitles: [], cached: answer.session.cached });
       this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
+      this.set({ sourceNotice: answer.provider });
       await this.loadFileSubtitles(answer.session);
       if (this.disposed || this.session !== answer.session) return;
       await this.attach(answer.session, continueAt);
@@ -693,7 +693,17 @@ export class StreamController {
       if (!this.disposed && this.sessionId === asked) this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
     } finally {
       this.askingSource = false;
+      if (!this.disposed) this.set({ changingSource: false });
     }
+  }
+
+  /**
+   * The owner wants another source (the button, S): the picture is poor, a cinema recording, the
+   * wrong cut. The daemon resolves the title without the provider on screen while the film plays
+   * on; the session never goes back to a provider it left.
+   */
+  anotherSource(): void {
+    void this.changeSource(true);
   }
 
   private clearCacheTimers(): void {
