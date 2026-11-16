@@ -191,6 +191,8 @@ EOF
   # provider and never the streaming Chrome: the real resolver opens the owner's Chrome on Windows.
   if [ "$direct" = 1 ]; then
     mkdir -p "$dir/direct"
+    # The torrent sites script's stand-in keeps its mode and calls here (tests/fixtures/direct-stream/fake-torrent-sites.mjs).
+    mkdir -p "$dir/torrent-sites"
     setsid node "$root/tests/fixtures/direct-stream/upstream.mjs" --info "$dir/direct/upstream.json" \
       --log "$dir/direct/upstream.jsonl" --state "$dir/direct" </dev/null >"$dir/direct/upstream.out" 2>&1 &
     echo $! >"$dir/upstream.pid"
@@ -305,6 +307,10 @@ EOF
       NOTESD_ANIME_MAP_URL=off
       "NOTESD_DIRECT_STREAM_CLI=${NOTESD_DIRECT_STREAM_CLI:-$root/tests/fixtures/direct-stream/fake-cli.mjs}"
       "DIRECT_STREAM_FAKE_DIR=$dir/direct"
+      # Never the real torrent sites script: it drives the owner's streaming Chrome on Windows.
+      "NOTESD_TORRENT_SITES_CLI=$root/tests/fixtures/direct-stream/fake-torrent-sites.mjs"
+      "TORRENT_SITES_FAKE_DIR=$dir/torrent-sites"
+      "TORRENT_SITES_FIXTURE=$dir/torrent/fixture.json"
     )
   else
     env+=(NOTESD_DIRECT_STREAM=off)
@@ -541,6 +547,7 @@ stop_run() {
   fi
   if [ -f "$dir/direct/upstream.jsonl" ]; then cp "$dir/direct/upstream.jsonl" "$dir/evidence/direct-upstream-requests.jsonl"; fi
   if [ -f "$dir/direct/calls.jsonl" ]; then cp "$dir/direct/calls.jsonl" "$dir/evidence/direct-resolver-calls.jsonl"; fi
+  if [ -f "$dir/torrent-sites/calls.jsonl" ]; then cp "$dir/torrent-sites/calls.jsonl" "$dir/evidence/torrent-sites-calls.jsonl"; fi
   # --torrent: the loopback seeder was started by `up`; keep its log.
   if [ -f "$dir/seeder.pid" ]; then
     kill -TERM -- "-$(cat "$dir/seeder.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/seeder.pid")" 2>/dev/null || true

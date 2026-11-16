@@ -9,7 +9,7 @@ import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
-import { REPO_ROOT, type Config } from './config.js';
+import { DEFAULT_TORRENT_SITES_CONFIG, REPO_ROOT, type Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -29,6 +29,7 @@ import { createAnimeMapper } from './directStream/anime.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
@@ -192,6 +193,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         });
   // Torrent phase 3: the torrent source, built on first use from phase 1's TorrentStreams (deps.torrents, null
   // with NOTESD_TORRENT=off). ffprobe reads a torrent's file through this daemon's own route on loopback.
+  // 1337x and ext.to through the streaming Chrome (torrent phase 9): asked only when the JSON indexes
+  // give nothing usable; NOTESD_TORRENT_<SITE>_ORIGIN=off leaves a site out.
+  const torrentSites = config.torrent?.sites ?? DEFAULT_TORRENT_SITES_CONFIG;
+  const torrentSiteFallback = torrentSiteIndexes(torrentSites, torrentSitesScriptRunner({ cliPath: torrentSites.cli }));
   let torrentSource: TorrentSource | null = null;
   const torrentSourceOf = (): TorrentSource | null => {
     const torrents = deps.torrents ?? null;
@@ -211,6 +216,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           // Phase 7 adds embedded here; phase 8 whisper (one line each).
         }),
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
+        fallback: torrentSiteFallback,
       });
     }
     return torrentSource;

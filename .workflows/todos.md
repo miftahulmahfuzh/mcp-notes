@@ -166,15 +166,27 @@
   - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.6
   - **Depends on**: P1-NOTES-A133
   - **Plan**: `.workflows/plan/P1-NOTES-A134.md`
-- [ ] **P1-NOTES-A135** Phase 9: 1337x and ext.to through the streaming Chrome
+- [x] **P1-NOTES-A135** Phase 9: 1337x and ext.to through the streaming Chrome
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `claude/streaming/torrent/` (`cli.mjs`, `match.mjs`, `page.mjs`, `browser.mjs`, `tab.ps1`, one module per site), `src/directStream/torrent/find-sites.ts` (a `TorrentIndex` per site with a 40 s limit, candidates through phase 2's `candidateFrom`), the settings `NOTESD_TORRENT_1337X_ORIGIN`, `NOTESD_TORRENT_EXT_ORIGIN`, `NOTESD_TORRENT_SITES_CLI`, the `fallback` line in phase 3's wiring, the fake sites script for throwaway daemons. Exit criteria: with every JSON index empty, a torrent play takes its candidate from the fake 1337x row through the same filter and ranking (J1); a bot check from either site is `bot_check` and stops that site (J2); the sites are not asked when an index answered (J3); live, `cli.mjs 1337x sintel 2010` lists releases with seeds and magnets (J4); `npm run typecheck` and `npm test` pass.
-  - **Status**: blocked
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 9 of 9)
   - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · criteria: R1.7
   - **Depends on**: P1-NOTES-A129
   - **Plan**: `.workflows/plan/P1-NOTES-A135.md`
+  - **Completed**: 2026-11-16 23:13
+  - **Method**: /implement
+  - **Files**: claude/streaming/torrent/cli.mjs, claude/streaming/torrent/match.mjs, claude/streaming/torrent/page.mjs, claude/streaming/torrent/browser.mjs, claude/streaming/torrent/tab.ps1, claude/streaming/torrent/sites/1337x.mjs, claude/streaming/torrent/sites/ext.mjs, claude/streaming/torrent/sites/index.mjs, src/directStream/torrent/find-sites.ts, src/config.ts, src/daemon.ts, tests/fixtures/direct-stream/fake-torrent-sites.mjs, tests/fixtures/torrent-sites/ (8 files), tests/unit/scripts/torrentSites.test.ts, tests/unit/directStream/torrent/findSites.test.ts, tests/unit/config.torrentSites.test.ts, tests/unit/config.torrent.test.ts, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/direct-streaming.md, docs/guide/reference/configuration.md, docs/guide/streaming.md
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence (p9-j1-*, p9-j2-*, p9-j3-*, p9-j4-*, p9-j5-vitest.txt, torrent-sites-calls.jsonl)
+  - **Drift**:
+    - tests/unit/scripts/torrentSites.test.ts: the plan's fixture path (new URL(..., import.meta.url)) does not resolve under jsdom and the server tsconfig has no DOM lib; the file reads the saved pages from the repo root (path.resolve) and types the parsed page as any. Assertions unchanged.
+    - tests/unit/config.torrent.test.ts (phase 1's, not in this phase's Files table): its two exact toEqual expectations of parseTorrent gained `sites: DEFAULT_TORRENT_SITES_CONFIG`. Phase 6 (subtitleUrl) will meet the same two lines at the merge.
+    - This worktree had no node_modules; ran `npm ci` (nothing tracked changed).
+  - **Decided**:
+    - Feature-map bullet 'at the end of ## Sub-features' vs phases 1 and 3 having their own sections → own section '## Torrent fallback sites: 1337x and ext.to (torrent phase 9)' before ## Gotchas (rung 1: invariant 10, each phase adds its own section)
+    - Phase 1's exact-equality parseTorrent test reddened on the new `sites` field → added the field to its expectations, stricter not relaxed (rung 1: invariant 1, npm test passes at the end of every phase)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-3 in this set; the coordinator's integrator reconciles them.
 - [x] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
