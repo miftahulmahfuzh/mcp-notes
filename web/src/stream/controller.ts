@@ -48,6 +48,11 @@ export const SOURCE_SWITCH_COOLDOWN_MS = 120_000;
 /** One press of G or H moves the subtitles this far, as in VLC. */
 export const SUBTITLE_DELAY_STEP_MS = 50;
 export const SUBTITLE_DELAY_MAX_MS = 60_000;
+/**
+ * Where a subtitle's bottom edge sits, in percent of the picture's height from the top. A cue left
+ * where the browser puts it lies on the very last line: under the control bar, and cut off in full screen.
+ */
+export const SUBTITLE_LINE_PERCENT = 88;
 export const PAUSE_CACHE_DELAY_MS = 2_000;
 /** How often the page asks where the download stands, and what is on disk. */
 export const CACHE_POLL_MS = 4_000;
@@ -184,6 +189,8 @@ export class StreamController {
   private holdPaused = false;
   /** Each cue's times as its file gave them, so a delay is always counted from there. */
   private readonly cueTimes = new WeakMap<object, { start: number; end: number; applied: number }>();
+  /** How many cues the text tracks held when they were last gone through, and under which delay: nothing new, nothing to do. */
+  private cuesTended = { count: -1, delay: 0 };
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
@@ -386,18 +393,32 @@ export class StreamController {
     this.set({ subtitleDelayMs: Number.isFinite(kept) && Math.abs(kept) <= SUBTITLE_DELAY_MAX_MS ? Math.round(kept) : 0 });
   }
 
-  /** Moves every cue of every text track to its own time plus the delay. Cues arrive late (a file loads, hls.js adds a part), so this runs again as the film plays. */
+  /**
+   * Goes through every cue of every text track: lifts it off the bottom line (a cue the file placed
+   * itself, a sign at the top, is left where it is) and moves it to its own time plus the delay.
+   * Cues arrive late (a file loads, hls.js adds a part), so this runs again as the film plays.
+   */
   private applySubtitleDelay(): void {
     const delay = this.state.subtitleDelayMs;
     // jsdom has no text tracks; a browser always does.
     const tracks = this.video.textTracks as TextTrackList | undefined;
     if (tracks === undefined) return;
+    let count = 0;
+    for (let i = 0; i < tracks.length; i++) count += tracks[i]?.cues?.length ?? 0;
+    if (count === this.cuesTended.count && delay === this.cuesTended.delay) return;
+    this.cuesTended = { count, delay };
     for (let i = 0; i < tracks.length; i++) {
       const cues = tracks[i]?.cues;
       if (!cues) continue;
       for (let j = 0; j < cues.length; j++) {
         const cue = cues[j];
         if (cue === undefined) continue;
+        const placed = cue as Partial<VTTCue>;
+        if (placed.line === 'auto') {
+          placed.snapToLines = false;
+          placed.line = SUBTITLE_LINE_PERCENT;
+          placed.lineAlign = 'end';
+        }
         let times = this.cueTimes.get(cue);
         if (times === undefined) {
           if (delay === 0) continue;
@@ -877,7 +898,7 @@ export class StreamController {
   }
 
   private readonly onTime = (): void => {
-    if (this.state.subtitleDelayMs !== 0) this.applySubtitleDelay();
+    this.applySubtitleDelay();
     if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 

@@ -560,6 +560,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   out. With no English track, a source's only subtitle is shown when it names no language (no
   tag, and a label that is empty or just "Subtitle"); otherwise subtitles start off and the
   others can still be picked.
+- **Where subtitles sit.** A cue's bottom edge is put at 88% of the picture's height, clear of the
+  control bar and inside the screen in full screen; left to the browser it lies on the last line.
+  A cue its file placed itself (a sign at the top) stays where the file put it.
 - **Subtitle delay.** G shows the subtitles 50 ms earlier and H 50 ms later, as in VLC (hold the
   key to go on); the line over the picture reads `Subtitle delay +250 ms`. It is for a subtitle
   that came from another provider than the picture. The delay is kept per title in the page's

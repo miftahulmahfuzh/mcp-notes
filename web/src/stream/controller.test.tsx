@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
+import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, SUBTITLE_LINE_PERCENT, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -1045,6 +1045,20 @@ describe('the subtitle delay (G and H)', () => {
     t.cues.push({ startTime: 20, endTime: 21 });
     t.fire('timeupdate');
     expect(t.cues).toEqual([{ startTime: 10.5, endTime: 11.5 }, { startTime: 20.5, endTime: 21.5 }]);
+  });
+
+  it('lifts a cue off the bottom line as the film plays, and leaves one the file placed itself', async () => {
+    const t = withCues([]);
+    const cues = t.cues as unknown as Record<string, unknown>[];
+    cues.push({ startTime: 1, endTime: 2, line: 'auto', snapToLines: true, lineAlign: 'start' }, { startTime: 3, endTime: 4, line: 1, snapToLines: true, lineAlign: 'start' });
+    await t.controller.start();
+    t.fire('timeupdate');
+    expect(cues[0]).toMatchObject({ line: SUBTITLE_LINE_PERCENT, snapToLines: false, lineAlign: 'end', startTime: 1 });
+    expect(cues[1]).toMatchObject({ line: 1, snapToLines: true });
+    // A cue that arrives later is lifted too.
+    cues.push({ startTime: 5, endTime: 6, line: 'auto', snapToLines: true, lineAlign: 'start' });
+    t.fire('timeupdate');
+    expect(cues[2]).toMatchObject({ line: SUBTITLE_LINE_PERCENT, snapToLines: false });
   });
 
   it('keeps the delay per title and starts the next play of it with it', async () => {
