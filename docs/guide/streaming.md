@@ -1300,6 +1300,37 @@ subtitle service, is asked.
   still move them for the viewer.
 - Whisper (the last tier) appends its cues to a feed of the same kind, `whisper-<file index>`.
 
+### Whisper: the last resort
+
+When no subtitle file in the torrent, no subtitle service, no cloud provider and no embedded text
+track gives an English subtitle, the session still starts at once, with a subtitle named
+**English (Whisper)** that grows while the film plays. A transcript is not a subtitle, and the name
+says so.
+
+The daemon cuts the chosen file's audio into stretches of five minutes
+(`NOTESD_TORRENT_WHISPER_STRETCH_S`) with ffmpeg, reading the torrent's own file route, so a stretch
+whose bytes are not downloaded yet waits for them. A CPU Whisper (faster-whisper, int8, the `small`
+model, `claude/streaming/torrent/whisper.py`, one worker that loads the model once) transcribes each
+stretch. A title whose original language is English is transcribed; any other is translated into
+English. The cues go into the same growing cue feed as an embedded track's, and the player picks them
+up as it reads the track again.
+
+The stretch the play starts in comes first, then each one after it, then those before it, so cues
+are ahead of the picture soon after the start. On the owner's laptop (22 cores, 8 threads) five
+minutes of Sintel took 2.5 s and a minute of steady dialogue 2.2 s: the voice filter skips music and
+silence. The worker holds about 850 MB while it runs and exits when no torrent needs it.
+
+When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
+the worker too. Cues already made stay in the feed, and
+`<torrent folder>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
+carries on from there, and a file transcribed to the end plays with its finished track and runs
+nothing.
+
+Limits: a line right after a long stretch of music can be missed, a cue stays on screen at most 7 s,
+names come out as heard, and the first audio stream is the one transcribed (the finder leaves
+dual-audio releases out). `scripts/install.sh` installs Whisper ([install.md](install.md));
+`NOTESD_TORRENT_WHISPER=off` turns it off.
+
 ### When the indexes have nothing: 1337x and ext.to
 
 When every JSON index answers nothing usable for a title, the finder asks two torrent sites, 1337x
@@ -1355,6 +1386,7 @@ To see what a site lists, by hand:
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |
+| `src/directStream/torrent/subtitles/whisper.ts`, `claude/streaming/torrent/whisper.py` | Whisper, the last subtitle tier of a torrent session: the tier, the ffmpeg audio cutter, the worker client and the faster-whisper worker |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |

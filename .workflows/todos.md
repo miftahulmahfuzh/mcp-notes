@@ -169,15 +169,30 @@
     - The guide's Whisper feed name: plan text said `whisper` → wrote `whisper-<file index>` (rung 1: the index's shared contract for track ids)
     - The 'Phase 7 adds embedded here; phase 8 whisper' comments in chain.ts and daemon.ts → kept as phase-8-only markers after inserting the phase 7 lines (rung 6: the set's marker convention)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-6 in this set; the coordinator's integrator reconciles them. P1-NOTES-A134 unblocked (its only dependency is this phase).
-- [ ] **P1-NOTES-A134** Phase 8: Whisper, the last resort
+- [x] **P1-NOTES-A134** Phase 8: Whisper, the last resort
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/subtitles/whisper.ts` (the growing `whisper` tier, last; audio cut with ffmpeg, a CPU Whisper per stretch, cues appended to phase 7's `whisper-<file index>` feed, progress under `<dir>/<hash>/notesd-whisper/`), `whisperCovers` on phase 6's borrow line, `claude/streaming/torrent/whisper.py`, the Whisper install in `scripts/install.sh`, its settings (`NOTESD_TORRENT_WHISPER*`), `AppDeps.torrentWhisper`. Exit criteria: `npm run typecheck` and `npm test` pass; J1 shows a growing `English (Whisper)` track filled stretch by stretch and completed (the borrow `skipped`), J2 shows its cue drawn in the player, J3 shows the real model's timed English cues for Sintel; with `NOTESD_TORRENT_WHISPER=off` no tier is built.
-  - **Status**: open
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 8 of 9)
   - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.6
   - **Depends on**: P1-NOTES-A133
   - **Plan**: `.workflows/plan/P1-NOTES-A134.md`
+  - **Completed**: 2026-11-17 00:04
+  - **Method**: /implement
+  - **Files**: src/config.ts, src/daemon.ts, src/deps.ts, src/background.ts, src/directStream/torrent/subtitles/{chain,whisper}.ts, claude/streaming/torrent/whisper.py, scripts/install.sh, scripts/whisper-sample.ts, tests/fixtures/torrent/fake-whisper.mjs, tests/unit/directStream/torrent/{whisper,whisperConfig}.test.ts, tests/unit/scripts/installWhisper.test.ts, tests/unit/config.test.ts, tests/unit/config.torrent.test.ts, docs/guide/reference/configuration.md, docs/guide/streaming.md, docs/guide/install.md, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p8/a72d3d30-317e-4a67-abcf-6d494b631b39/scratchpad/p8-evidence (J1: growing English (Whisper) track 6 -> 8 -> 24 cues, complete, borrow skipped; J2: Whisper cue drawn on the player page while the feed grew; J3: real `small` model, 11 timed English cues for Sintel 100-160 s); neighbor direct-stream/journey.sh hls PASS
+  - **Drift**:
+    - The plan's line numbers predate phases 1-7 and 9; every anchor was found by its marker (the '// Phase 8' comments in chain.ts and daemon.ts, parseTorrent, DEFAULT_TORRENT_CONFIG). TorrentConfig.whisper is the last field, after sites.
+    - docs/guide/streaming.md 'Where the code is' is a table, not a list: the plan's list line became a table row.
+    - tests/unit/config.torrent.test.ts and tests/unit/config.test.ts hold exact toEqual expectations of parseTorrent / loadConfig; the whisper field was added to them (not in the plan's file table).
+    - J2 ran on a second throwaway run (the plan's allowed variant) because J1's feed completed in 48 s.
+    - J3's source was a local copy of the first 280 MB of the same Sintel mkv (curl --max-time 120) instead of the https address, after the direct read stalled.
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p8 / phase-8-torrent-stream-source → proceeded here (rung 6: the swarm cuts one worktree per phase)
+    - Exit criteria name a buildWhisperTier unit check but the plan's test file has none → added two buildWhisperTier tests (off / no Python → null with its log line; Python present → tier, no worker) to whisper.test.ts (rung 2: the exit criteria)
+    - Evidence and J3's scratch install went under the session scratchpad instead of /tmp/claude-1000/ top level (rung 6: the session's scratchpad rule)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-7 in this set; the coordinator's integrator reconciles them. No successor to unblock: phase 5 (P1-NOTES-A131) runs beside this one in its own worktree.
 - [x] **P1-NOTES-A135** Phase 9: 1337x and ext.to through the streaming Chrome
   - **Difficulty**: HARD
   - **Type**: Feature

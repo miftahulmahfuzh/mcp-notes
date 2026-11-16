@@ -23,6 +23,9 @@ machine, running by hand, the test suites and the docs tooling. Settings are in
   fallback, `TMDB_*` and `NOTESD_MOVIES_ROOTS` for Movies.
 - `curl`. Docker only for the integration tests. `tmux` for resume from the wall, `ffprobe`
   and Windows VLC for Movies, `gh` for the Seer nightly dispatch.
+- A Python 3.9 or later that can make a virtual environment, for the torrent source's Whisper
+  subtitles. The installer finds one (miniconda's works; Ubuntu's own needs `python3-venv`, which it
+  installs with `sudo -n` when it may) and warns, without stopping, when there is none.
 
 ## Install on WSL
 
@@ -46,6 +49,7 @@ and restarted. Each run:
 | Checks | Finds node (22 or later) and `claude`, checks `curl`, the systemd user manager, the unit template, the skills and the hook scripts. Stops before changing anything when a skill path in `~/.claude/skills` is a real directory. Warns, without stopping, when the Claude login, `.env.local` or a complete `LLM_*` set is missing. |
 | Build | `npm ci` when `node_modules` is missing or older than `package-lock.json`, then `npm run build` (the server with `tsc`, the web app with Vite). |
 | Data dir | Creates `~/mcp-notes-data`, or `NOTES_DATA_DIR`. |
+| Whisper | Unless `.env.local` turns torrents or Whisper off: a virtual environment in `~/mcp-notes-data/whisper/venv` (`NOTESD_TORRENT_WHISPER_DIR`), `pip install faster-whisper==1.2.1`, and the model (`NOTESD_TORRENT_WHISPER_MODEL`, `small`: about 460 MB) loaded once so it is on disk before the first play. The first run takes about a minute; later runs only check. A failure warns and the install goes on; torrent sessions then have no Whisper subtitles. |
 | systemd user unit | Renders `deploy/notesd.service` with absolute paths (node, this checkout, the data dir, `HOME`, and the real path of `claude` as `NOTESD_CLAUDE_BIN`) into `~/.config/systemd/user/notesd.service`, then `daemon-reload`, `enable` and `restart`. The absolute paths matter: the user manager's `PATH` has no `~/tools/...`. |
 | Linger | `loginctl enable-linger $USER`, so the unit starts when the distro boots, not when you first open a shell. When that needs a password the script says so: run `sudo loginctl enable-linger $USER` once. |
 | Health | Waits up to 30 s for `GET http://127.0.0.1:7317/health`, and prints the journal when it does not answer. |

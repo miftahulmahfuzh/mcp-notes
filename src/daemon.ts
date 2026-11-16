@@ -33,8 +33,9 @@ import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/tor
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
-import { CueFeeds } from './directStream/torrent/subtitles/feed.js';
+import { CueFeeds, cueFeedUrl, whisperTrackId } from './directStream/torrent/subtitles/feed.js';
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
+import { buildWhisperTier } from './directStream/torrent/subtitles/whisper.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
@@ -216,7 +217,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           lend: () => (directStream === null ? null : (ref, options) => directStream.subtitleText(ref, options)),
           convertAss: ffmpegAssConverter(config.torrent.ffmpegBin),
           embedded: embeddedSubtitles,
-          // Phase 8 adds whisper here (one line).
+          whisper: whisperTier,
         }),
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
         fallback: torrentSiteFallback,
@@ -274,6 +275,24 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           input: async (infoHash, fileIndex) =>
             (await torrents.filePath(infoHash, fileIndex)) ?? `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
         });
+  // Torrent phase 8: Whisper, the last subtitle tier. Null with NOTESD_TORRENT_WHISPER=off or before
+  // install.sh has made its Python; the chain then ends at phase 6's borrow. The worker starts on the
+  // first stretch, never at boot. Its cues go into phase 7's feed `whisper-<file index>` of the torrent.
+  const whisperTier =
+    torrents === null || torrentCues === null || config.torrent === undefined
+      ? null
+      : await buildWhisperTier({
+          whisper: config.torrent.whisper,
+          torrentDir: config.torrent.dir,
+          ffmpegBin: config.torrent.ffmpegBin,
+          fileUrl: (infoHash, fileIndex) => `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+          openFeed: async (infoHash, fileIndex) => {
+            const track = whisperTrackId(fileIndex);
+            // A feed a stopped run left carries on (the progress file says which stretches are in it); else a new one.
+            const feed = (await torrentCues.get(infoHash, track)) ?? (await torrentCues.start(infoHash, track));
+            return { url: cueFeedUrl(infoHash, track), append: (cues) => feed.append(cues), complete: () => feed.complete() };
+          },
+        });
   // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
   const movieStories =
     movies === null
@@ -311,6 +330,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
+  // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
+  deps.torrentWhisper = whisperTier;
   // The player's report button (stream-cache-and-bug-report phase 4): phase 1's snapshot, then a
   // tmux window running claude on /report-stream-bug in this checkout. Nothing runs until a click.
   const reportStream = deps.directStream ?? null;

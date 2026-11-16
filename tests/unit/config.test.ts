@@ -55,7 +55,7 @@ describe('loadConfig', () => {
       movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
       streaming: { enabled: true },
       directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true, animeMapUrl: 'https://api.ani.zip' },
-      torrent: { ...DEFAULT_TORRENT_CONFIG, enabled: true, dir: path.join(homedir(), 'mcp-notes-data', 'movies', 'torrents'), subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieUrl: 'https://sub.wyzie.io' },
+      torrent: { ...DEFAULT_TORRENT_CONFIG, enabled: true, dir: path.join(homedir(), 'mcp-notes-data', 'movies', 'torrents'), subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieUrl: 'https://sub.wyzie.io', whisper: { enabled: true, dir: path.join(homedir(), 'mcp-notes-data', 'whisper'), python: path.join(homedir(), 'mcp-notes-data', 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
