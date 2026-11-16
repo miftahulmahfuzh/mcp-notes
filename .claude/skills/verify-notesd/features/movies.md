@@ -18,7 +18,9 @@
   a title page's "not interested" icon takes a title off the grid (it shows only under that
   filter, and the prober's catalog stops counting and re-checking it); each season has one button
   that marks all its episodes finished (`POST /api/movies/:id/episodes/watched`), an episode
-  without a file has its own, and the notice offers an undo of exactly what changed. Proof:
+  without a file has its own, and the notice offers an undo of exactly what changed. The caret
+  before a season's name folds its episodes into a count, kept per title in the browser
+  (`npx vitest run web/src/components/movies/EpisodeList.test.tsx`). Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`,
   `tests/unit/directStream/prober.test.ts` ("an asked pass").
 - VLC health (phase 9). Every `NOTESD_VLC_HEALTH_MS` (default 30 s; off at 0 or with no roots) each

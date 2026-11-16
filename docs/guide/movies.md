@@ -346,6 +346,10 @@ characters (the first 18, with an icon for the rest).
   machine, one row per episode with its code, name, movie id, a progress meter, a watched icon and a
   play icon. A deleted file is flagged "deleted" with its date in the tooltip; a file on the other
   machine is flagged "on <host>". Seasons with no file anywhere are counted, not listed.
+- **Folding a season.** The caret before a season's name hides its episodes and shows a count in
+  their place ("56 episodes, 12 finished"); another press shows them again. The season's trailer
+  and "finished" buttons stay. The fold is kept per title in this browser, so a long series opens
+  the way you left it; the season of an episode opened by its movie id is always shown.
 
 ![A series' episodes: the season's trailer icon, the first episode in progress at 5 %, the rest unwatched](img/movies/episodes.png)
 
