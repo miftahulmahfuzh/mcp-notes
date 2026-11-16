@@ -1,6 +1,6 @@
 import { answerOf, candidateFrom } from './candidate.js';
 import { asCount, asList, asRecord, asText, failedAnswer, getIndexJson, trackersFromMagnet } from './http.js';
-import { episodeFit, stripExtension } from './release.js';
+import { episodeFitOf, stripExtension } from './release.js';
 import type { IndexRow, TorrentIndex } from './types.js';
 
 export const EZTV_PAGE_LIMIT = 100;
@@ -51,7 +51,7 @@ export function eztvIndex(base: string): TorrentIndex {
         const total = asCount(answer?.torrents_count) ?? 0;
         if (list.length < EZTV_PAGE_LIMIT || page * EZTV_PAGE_LIMIT >= total) break;
       }
-      const fitting = rows.filter((row) => episodeFit(row.name, row.fileName ?? null, query.season, query.episode) !== 'other');
+      const fitting = rows.filter((row) => episodeFitOf(row.name, row.fileName ?? null, query) !== 'other');
       return answerOf(fitting.map((row) => candidateFrom(row, 'eztv', query)));
     },
   };

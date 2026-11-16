@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type EpisodeProgress } from '../../../src/directStream/episodePick.js';
+import { pickAbsoluteEpisode, pickEpisode, pickEpisodeInSeason, withListedEpisodes, type EpisodeProgress } from '../../../src/directStream/episodePick.js';
 
 const TODAY = '2026-11-16';
 const ep = (season: number, episode: number, state: EpisodeProgress['state'] = 'unwatched', lastPlayedAt: string | null = null, airDate: string | null = null): EpisodeProgress => ({
@@ -95,5 +95,27 @@ describe('pickAbsoluteEpisode', () => {
 
   it('takes the one episode with that number when the list is shorter than the number', () => {
     expect(pickAbsoluteEpisode([...range(1, 1, 5), ...range(2, 700, 730)], 730)).toEqual({ pick: 'absolute', season: 2, episode: 730 });
+  });
+});
+
+describe('pickEpisodeInSeason', () => {
+  it('starts the season at its first unfinished episode, whatever was played in other seasons', () => {
+    const list = [ep(1, 1, 'finished', '2026-11-10T10:00:00Z'), ep(1, 2, 'in_progress', '2026-11-11T10:00:00Z'), ep(2, 1), ep(2, 2)];
+    expect(pickEpisodeInSeason(list, 2, TODAY)).toEqual({ pick: 'first', season: 2, episode: 1 });
+    expect(pickEpisodeInSeason([...list.slice(0, 2), ep(2, 1, 'finished'), ep(2, 2)], 2, TODAY)).toEqual({ pick: 'next', season: 2, episode: 2 });
+  });
+
+  it('resumes the episode of the season played last, else goes on after it', () => {
+    expect(pickEpisodeInSeason([ep(2, 1, 'finished', '2026-11-10T10:00:00Z'), ep(2, 2, 'in_progress', '2026-11-11T10:00:00Z'), ep(2, 3)], 2, TODAY)).toEqual({ pick: 'resume', season: 2, episode: 2 });
+    expect(pickEpisodeInSeason([ep(2, 1), ep(2, 2, 'finished', '2026-11-11T10:00:00Z'), ep(2, 3)], 2, TODAY)).toEqual({ pick: 'next', season: 2, episode: 3 });
+  });
+
+  it('starts a season finished to its end again at its first episode', () => {
+    expect(pickEpisodeInSeason([ep(2, 1, 'finished', '2026-11-10T10:00:00Z'), ep(2, 2, 'finished', '2026-11-11T10:00:00Z')], 2, TODAY)).toEqual({ pick: 'first', season: 2, episode: 1 });
+  });
+
+  it('does not start an episode that airs after today, and answers null for a season the list does not hold', () => {
+    expect(pickEpisodeInSeason([ep(3, 1, 'unwatched', null, '2027-01-01')], 3, TODAY)).toEqual({ pick: 'not_aired', season: 3, episode: 1, airDate: '2027-01-01' });
+    expect(pickEpisodeInSeason([ep(1, 1)], 2, TODAY)).toBeNull();
   });
 });

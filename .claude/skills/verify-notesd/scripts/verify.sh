@@ -18,6 +18,7 @@
 #                                       --discovery (implies --direct-stream) adds scripts/movies/tmdb-discovery.json
 #                                       to the fake TMDB: people, studios, streaming services and the titles
 #                                       direct_stream_discover and absolute episode numbers are proven on
+#                                       (with --torrent: direct-stream/codenames.sh, the watch codenames)
 #                                       --prober (needs --direct-stream) turns the stream prober on, a pass every
 #                                       5 s; the fake powershell.exe reports $MOVIES/idle_ms (0: someone is
 #                                       typing). --prober=off: the prober setting unset. Without either the prober
@@ -224,7 +225,9 @@ EOF
   fi
   # --torrent (torrent phase 3): a fake Torrentio that lists the seeded fixture(s). Never a real index.
   if [ "$torrent" = 1 ]; then
-    setsid node "$HERE/torrent/fake-index.mjs" --fixtures "$dir/torrent" --titles "$HERE/movies/tmdb.json" \
+    local index_extra=()
+    if [ "$discovery" = 1 ]; then index_extra=(--extra "$HERE/movies/tmdb-discovery.json"); fi
+    setsid node "$HERE/torrent/fake-index.mjs" --fixtures "$dir/torrent" --titles "$HERE/movies/tmdb.json" "${index_extra[@]}" \
       --port-file "$dir/torrent/index.port" --log "$dir/torrent/index.jsonl" </dev/null >"$dir/torrent/index.out" 2>&1 &
     echo $! >"$dir/torrent-index.pid"
     for _ in $(seq 1 40); do [ -s "$dir/torrent/index.port" ] && break; sleep 0.25; done

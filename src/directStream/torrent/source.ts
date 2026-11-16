@@ -34,6 +34,9 @@ const PROBE_MIN_MS = 5_000;
 /** True for the provider name that asks the torrent source ("torrent", any case). */
 export const namesTorrent = (provider: string | null | undefined): boolean => (provider ?? '').trim().toLowerCase() === 'torrent';
 
+/** True for the provider name that asks the cloud providers and never a torrent ("cloud", any case). */
+export const namesCloud = (provider: string | null | undefined): boolean => (provider ?? '').trim().toLowerCase() === 'cloud';
+
 /** An attempt's provider for one torrent: `Torrent: <release name>`. */
 export const torrentLabel = (name: string): string => `${TORRENT_PROVIDER}: ${name}`;
 
@@ -88,6 +91,11 @@ export interface TitleNames {
   title: string;
   originalTitle: string | null;
   year: number | null;
+  /**
+   * An episode's place in its season's list, from 1 (TMDB's season 21, episode 1000 of One Piece is the 109th);
+   * null or absent: a film, or the list does not hold the episode.
+   */
+  episodeInSeason?: number | null;
 }
 
 export interface TorrentResolveOptions {
@@ -134,7 +142,11 @@ function indexAttempt(a: IndexAttempt): ResolveAttempt {
 /** The finder's query: the IMDb id, the title's names and year, its original language, and the episode for a series. */
 function queryOf(ref: StreamRef, imdbId: string, names: TitleNames | null, audioLang: string | null): FindQuery {
   const common = { imdbId, title: names?.title ?? null, originalTitle: names?.originalTitle ?? null, year: names?.year ?? null, originalLanguage: audioLang };
-  return ref.kind === 'movie' ? { ...common, kind: 'movie' } : { ...common, kind: 'tv', season: ref.season, episode: ref.episode };
+  if (ref.kind === 'movie') return { ...common, kind: 'movie' };
+  // TMDB's number runs on across seasons (a long anime): the indexes and many releases count within the season.
+  const place = names?.episodeInSeason ?? null;
+  const runsOn = place !== null && place >= 1 && place < ref.episode;
+  return { ...common, kind: 'tv', season: ref.season, episode: ref.episode, ...(runsOn ? { absoluteEpisode: ref.episode, alt: { season: ref.season, episode: place } } : {}) };
 }
 
 /**

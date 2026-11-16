@@ -1,6 +1,8 @@
 // fake-index.mjs: a Torrentio stand-in for `verify.sh up --torrent` (torrent phase 3). It lists the loopback fixture
 // torrents phase 1's --torrent mode seeds, so a throwaway daemon never asks a real index.
-//   node fake-index.mjs --fixtures DIR --titles TMDB_JSON --port-file FILE --log FILE
+//   node fake-index.mjs --fixtures DIR --titles TMDB_JSON [--extra TMDB_DISCOVERY_JSON] --port-file FILE --log FILE
+// --extra adds the titles of `verify.sh up --discovery` (scripts/movies/tmdb-discovery.json), so a release is named
+// after them too.
 // Every release it answers is named `<Title>.<Year>.<tail>` after the asked title (TMDB_JSON is the fake TMDB's
 // tmdb.json; the fake TMDB answers an IMDb id `tt` + the TMDB id padded to 7 digits, or a title's own `imdb_id`), so
 // the finder's title check keeps it.
@@ -36,6 +38,11 @@ const size = (bytes) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)}
 
 // The fake TMDB's titles by the IMDb id it hands out for them.
 const tmdb = JSON.parse(readFileSync(opts.titles, 'utf8'))
+if (opts.extra) {
+  const extra = JSON.parse(readFileSync(opts.extra, 'utf8'))
+  tmdb.movies = [...(tmdb.movies ?? []), ...(extra.movies ?? [])]
+  tmdb.tv = [...(tmdb.tv ?? []), ...(extra.tv ?? [])]
+}
 const imdbOf = (x) => x.imdb_id ?? `tt${String(x.id).padStart(7, '0')}`
 const titleOf = (imdb) => {
   for (const m of tmdb.movies ?? []) if (imdbOf(m) === imdb) return { name: m.title, year: (m.release_date ?? '').slice(0, 4) }

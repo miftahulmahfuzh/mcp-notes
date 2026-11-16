@@ -546,6 +546,10 @@ here.
 | `ambiguous` | The words fit several titles; `candidates` lists them. |
 | `no_match` | No title fits, or (without a title) nothing was ever played here. |
 
+In a request, the codenames **DM** (a film) and **DS** (a series) mean the library: "play
+interstellar DM" is `movies_continue`, never a stream. The four stream codenames are in
+[streaming.md](streaming.md#codenames).
+
 "Play something" is `movies_continue` with `random: true` (`playSomething`): the server picks one
 title at random among those continue would play on this machine (a file here that is not deleted,
 a film not finished or a series with a next episode here) and plays it. A half-watched title is as

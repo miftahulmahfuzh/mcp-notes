@@ -65,3 +65,16 @@ A codename is one whole upper-case word, usually the last of a request, sometime
 ## Landing
 
 When it is proven: commit on `feature/watch-codenames`, rebase onto the current `origin/main`, merge to `main`, push, remove the worktree and branch. Then run `scripts/install.sh` (idempotent: it relinks the skills and rebuilds) and restart the daemon **only if nothing is streaming** (`GET http://127.0.0.1:7317/api/movies/player` shows no `stream` and no VLC play): a restart ends every stream session. If something is playing, land the code, skip the restart, and say so in the last message.
+
+## Decided while doing it (2026-11-17)
+
+- **Cloud only is `provider: "cloud"`**, beside `provider: "torrent"`. It plays this machine's stream cache first (a cache is made from a cloud provider), then every cloud provider with the picture check; it passes over a finished torrent download and never asks an index.
+- **"Chinese" is `zh` and `cn` together** (TMDB's Mandarin and Cantonese); "Mandarin" and "Cantonese" ask for one.
+- **A genre is read per kind.** A genre a kind lacks (Horror for a series) is refused with that kind's list when it was asked for alone, and goes in `keyword`; no silent rewrite.
+- **Several genres must all fit; several keywords, any one.** A keyword stands for TMDB's keyword of that name and those that hold it as a whole word (8 at most). When no title carries one, the list comes back without the keyword and `filters.keywords_dropped` is true: on the day of writing TMDB tagged no Korean film of 2026 with mafia, gangster or organized crime, so request 9 leans on this and on `genre: "crime"`.
+- **TMDB's person search finds nothing for "park bo yeung".** The tool searches again with the last word cut short ("park bo y", "park bo") and takes a name within one letter per five; `filters.person.asked_as` keeps the words asked.
+- **A season without an episode** starts its first unfinished episode; a finished season starts again at its first (naming a season already seen asks to see it again); `no_such_season` otherwise.
+- **A codename at the start of a remark carries to a request in the same message** (request 2).
+- **Request 3 had a real gap in the torrent path.** Torrentio counts an episode within its season; TMDB numbers One Piece on across seasons, so the index listed nothing. The finder's query now carries the episode's place in its season (from the stored episode list). Against the real indexes, One Piece S23E1180: 0 candidates before, 20 after.
+- **Request 4 needs no tool change**: TMDB's search finds nothing for the half-remembered name, so the skill and the chat prompt tell Claude to work the title out first.
+- **Proof**: `direct-stream/codenames.sh` on `verify.sh up --discovery --torrent`. One request plays for real from the loopback torrent (the fixture's audio is English, so only an English film can); the others check `no_source` from the torrent source alone, the index address, and that no cloud resolve ran.

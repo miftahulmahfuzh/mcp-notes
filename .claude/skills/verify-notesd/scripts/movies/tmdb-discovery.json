@@ -69,6 +69,24 @@
    "name": "Colin Farrell",
    "known_for_department": "Acting",
    "popularity": 25.0
+  },
+  {
+   "id": 18897,
+   "name": "Jackie Chan",
+   "known_for_department": "Acting",
+   "popularity": 45.0
+  },
+  {
+   "id": 990220,
+   "name": "Park Bo-yeon",
+   "known_for_department": "Acting",
+   "popularity": 25.0
+  },
+  {
+   "id": 83036,
+   "name": "Park Bo-young",
+   "known_for_department": "Acting",
+   "popularity": 20.0
   }
  ],
  "movies": [
@@ -261,6 +279,312 @@
    "original_language": "en",
    "release_date": "2025-03-01",
    "popularity": 2.0
+  },
+  {
+   "id": 990801,
+   "title": "Iron Lantern",
+   "original_title": "铁灯笼",
+   "original_language": "zh",
+   "release_date": "2025-11-21",
+   "popularity": 36.0,
+   "genre_ids": [
+    28,
+    53
+   ]
+  },
+  {
+   "id": 990802,
+   "title": "Harbour Fists",
+   "original_title": "港拳",
+   "original_language": "cn",
+   "release_date": "2024-02-09",
+   "popularity": 27.0,
+   "genre_ids": [
+    28,
+    80
+   ]
+  },
+  {
+   "id": 990803,
+   "title": "Quiet River",
+   "original_title": "静河",
+   "original_language": "zh",
+   "release_date": "2025-04-04",
+   "popularity": 48.0,
+   "genre_ids": [
+    18
+   ]
+  },
+  {
+   "id": 990804,
+   "title": "Overdrive Squad",
+   "original_language": "en",
+   "release_date": "2025-09-12",
+   "popularity": 58.0,
+   "genre_ids": [
+    28
+   ]
+  },
+  {
+   "id": 1419406,
+   "title": "The Shadow's Edge",
+   "original_title": "捕风追影",
+   "original_language": "zh",
+   "release_date": "2025-08-16",
+   "popularity": 64.0,
+   "genre_ids": [
+    28,
+    80
+   ],
+   "cast": [
+    [
+     18897,
+     "Wong Tak Chung"
+    ]
+   ]
+  },
+  {
+   "id": 1011477,
+   "title": "Karate Kid: Legends",
+   "original_language": "en",
+   "release_date": "2025-05-08",
+   "popularity": 52.0,
+   "genre_ids": [
+    28,
+    18
+   ],
+   "cast": [
+    [
+     18897,
+     "Mr. Han"
+    ]
+   ]
+  },
+  {
+   "id": 990811,
+   "title": "A Legend",
+   "original_title": "传说",
+   "original_language": "zh",
+   "release_date": "2024-07-05",
+   "popularity": 21.0,
+   "genre_ids": [
+    28,
+    14
+   ],
+   "cast": [
+    [
+     18897,
+     "Professor Fang"
+    ]
+   ]
+  },
+  {
+   "id": 990812,
+   "title": "Panda Plan: The Magical Tribe",
+   "original_title": "熊猫计划之部落奇遇记",
+   "original_language": "zh",
+   "release_date": "2026-02-17",
+   "popularity": 19.0,
+   "genre_ids": [
+    28,
+    35
+   ],
+   "cast": [
+    [
+     18897,
+     "Jackie"
+    ]
+   ]
+  },
+  {
+   "id": 990813,
+   "title": "Bay Area Film Concert 2025",
+   "original_language": "zh",
+   "release_date": "2025-09-28",
+   "popularity": 1.0,
+   "genre_ids": [
+    10402
+   ],
+   "cast": [
+    [
+     18897,
+     "Self"
+    ]
+   ]
+  },
+  {
+   "id": 818647,
+   "title": "Through My Window",
+   "original_title": "A través de mi ventana",
+   "original_language": "es",
+   "release_date": "2022-02-04",
+   "popularity": 41.0,
+   "genre_ids": [
+    10749,
+    18
+   ]
+  },
+  {
+   "id": 990821,
+   "title": "The House at the End of the Road",
+   "original_title": "Rumah di Ujung Jalan",
+   "original_language": "id",
+   "release_date": "2026-03-12",
+   "popularity": 17.0,
+   "genre_ids": [
+    27
+   ]
+  },
+  {
+   "id": 990822,
+   "title": "Night Offering",
+   "original_title": "Tumbal Malam",
+   "original_language": "id",
+   "release_date": "2026-07-23",
+   "popularity": 24.0,
+   "genre_ids": [
+    27,
+    53
+   ]
+  },
+  {
+   "id": 990823,
+   "title": "The Well",
+   "original_title": "Sumur",
+   "original_language": "id",
+   "release_date": "2025-10-30",
+   "popularity": 35.0,
+   "genre_ids": [
+    27
+   ]
+  },
+  {
+   "id": 990824,
+   "title": "Neighbourhood Watch",
+   "original_title": "Ronda Malam",
+   "original_language": "id",
+   "release_date": "2026-05-07",
+   "popularity": 29.0,
+   "genre_ids": [
+    35
+   ]
+  },
+  {
+   "id": 990831,
+   "title": "The Red Envelope",
+   "original_title": "ซองแดงแต่งผี",
+   "original_language": "th",
+   "release_date": "2025-03-20",
+   "popularity": 26.0,
+   "genre_ids": [
+    35,
+    10749
+   ]
+  },
+  {
+   "id": 990832,
+   "title": "Gold Rush Gang",
+   "original_title": "ปล้นทองแก๊ง",
+   "original_language": "th",
+   "release_date": "2025-08-19",
+   "popularity": 18.0,
+   "genre_ids": [
+    35,
+    28
+   ]
+  },
+  {
+   "id": 990833,
+   "title": "Uncle Goes Home",
+   "original_title": "ลุงกลับบ้าน",
+   "original_language": "th",
+   "release_date": "2024-06-13",
+   "popularity": 33.0,
+   "genre_ids": [
+    35
+   ]
+  },
+  {
+   "id": 990834,
+   "title": "Death Whisperer 3",
+   "original_title": "ธี่หยด 3",
+   "original_language": "th",
+   "release_date": "2025-10-01",
+   "popularity": 39.0,
+   "genre_ids": [
+    27
+   ]
+  },
+  {
+   "id": 990841,
+   "title": "Harbor Kings",
+   "original_title": "항구의 왕들",
+   "original_language": "ko",
+   "release_date": "2026-06-18",
+   "popularity": 34.0,
+   "genre_ids": [
+    80,
+    28
+   ],
+   "overview": "Verify fixture. Two brothers fight for control of a Busan crime syndicate after their boss is killed."
+  },
+  {
+   "id": 990842,
+   "title": "The Ledger",
+   "original_title": "장부",
+   "original_language": "ko",
+   "release_date": "2026-09-02",
+   "popularity": 20.0,
+   "genre_ids": [
+    80,
+    18
+   ],
+   "overview": "Verify fixture. An accountant finds a fraud inside a small-town credit union."
+  },
+  {
+   "id": 990843,
+   "title": "Spring Picnic",
+   "original_title": "봄 소풍",
+   "original_language": "ko",
+   "release_date": "2026-04-09",
+   "popularity": 45.0,
+   "genre_ids": [
+    35
+   ]
+  },
+  {
+   "id": 990844,
+   "title": "For the Emperor",
+   "original_title": "황제를 위하여",
+   "original_language": "ko",
+   "release_date": "2014-06-11",
+   "popularity": 9.0,
+   "genre_ids": [
+    80,
+    28
+   ],
+   "keywords": [
+    10391,
+    3149
+   ]
+  },
+  {
+   "id": 990851,
+   "title": "Concrete Utopia",
+   "original_title": "콘크리트 유토피아",
+   "original_language": "ko",
+   "release_date": "2023-08-09",
+   "popularity": 23.0,
+   "genre_ids": [
+    18,
+    53
+   ],
+   "cast": [
+    [
+     83036,
+     "Myung-hwa"
+    ]
+   ]
   }
  ],
  "tv": [
@@ -474,6 +798,353 @@
      "air_date": "2024-06-16"
     }
    ]
+  },
+  {
+   "id": 990861,
+   "name": "Red Alley",
+   "original_name": "붉은 골목",
+   "original_language": "ko",
+   "first_air_date": "2025-10-17",
+   "popularity": 38.0,
+   "genre_ids": [
+    10759,
+    80
+   ],
+   "keywords": [
+    10292,
+    9748
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 8,
+     "air_date": "2025-10-17"
+    }
+   ]
+  },
+  {
+   "id": 990862,
+   "name": "Seoul Runners",
+   "original_name": "서울 러너스",
+   "original_language": "ko",
+   "first_air_date": "2026-01-09",
+   "popularity": 57.0,
+   "genre_ids": [
+    10759
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 10,
+     "air_date": "2026-01-09"
+    }
+   ]
+  },
+  {
+   "id": 990863,
+   "name": "The Surgeon's Winter",
+   "original_name": "외과의의 겨울",
+   "original_language": "ko",
+   "first_air_date": "2025-12-05",
+   "popularity": 49.0,
+   "genre_ids": [
+    18
+   ],
+   "keywords": [
+    10292
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 12,
+     "air_date": "2025-12-05"
+    }
+   ]
+  },
+  {
+   "id": 990864,
+   "name": "Knife Country",
+   "original_language": "en",
+   "first_air_date": "2026-03-06",
+   "popularity": 62.0,
+   "genre_ids": [
+    10759
+   ],
+   "keywords": [
+    10292,
+    280075
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 6,
+     "air_date": "2026-03-06"
+    }
+   ]
+  },
+  {
+   "id": 990871,
+   "name": "Gold Land",
+   "original_name": "골드랜드",
+   "original_language": "ko",
+   "first_air_date": "2026-04-29",
+   "popularity": 32.0,
+   "genre_ids": [
+    18,
+    9648
+   ],
+   "cast": [
+    [
+     83036,
+     "Kim Hee-ju"
+    ]
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 10,
+     "air_date": "2026-04-29"
+    }
+   ]
+  },
+  {
+   "id": 990872,
+   "name": "The Secret Friends Club",
+   "original_name": "비밀 친구 클럽",
+   "original_language": "ko",
+   "first_air_date": "2026-06-01",
+   "popularity": 4.0,
+   "genre_ids": [
+    10767
+   ],
+   "cast": [
+    [
+     83036,
+     "Self"
+    ]
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 4,
+     "air_date": "2026-06-01"
+    }
+   ]
+  },
+  {
+   "id": 990873,
+   "name": "Our Unwritten Seoul",
+   "original_name": "미지의 서울",
+   "original_language": "ko",
+   "first_air_date": "2025-05-24",
+   "popularity": 30.0,
+   "genre_ids": [
+    18
+   ],
+   "cast": [
+    [
+     83036,
+     "Yoo Mi-ji"
+    ]
+   ],
+   "seasons": [
+    {
+     "season": 1,
+     "from": 1,
+     "to": 12,
+     "air_date": "2025-05-24"
+    }
+   ]
+  }
+ ],
+ "genres": {
+  "movie": [
+   {
+    "id": 28,
+    "name": "Action"
+   },
+   {
+    "id": 12,
+    "name": "Adventure"
+   },
+   {
+    "id": 16,
+    "name": "Animation"
+   },
+   {
+    "id": 35,
+    "name": "Comedy"
+   },
+   {
+    "id": 80,
+    "name": "Crime"
+   },
+   {
+    "id": 99,
+    "name": "Documentary"
+   },
+   {
+    "id": 18,
+    "name": "Drama"
+   },
+   {
+    "id": 10751,
+    "name": "Family"
+   },
+   {
+    "id": 14,
+    "name": "Fantasy"
+   },
+   {
+    "id": 36,
+    "name": "History"
+   },
+   {
+    "id": 27,
+    "name": "Horror"
+   },
+   {
+    "id": 10402,
+    "name": "Music"
+   },
+   {
+    "id": 9648,
+    "name": "Mystery"
+   },
+   {
+    "id": 10749,
+    "name": "Romance"
+   },
+   {
+    "id": 878,
+    "name": "Science Fiction"
+   },
+   {
+    "id": 10770,
+    "name": "TV Movie"
+   },
+   {
+    "id": 53,
+    "name": "Thriller"
+   },
+   {
+    "id": 10752,
+    "name": "War"
+   },
+   {
+    "id": 37,
+    "name": "Western"
+   }
+  ],
+  "tv": [
+   {
+    "id": 10759,
+    "name": "Action & Adventure"
+   },
+   {
+    "id": 16,
+    "name": "Animation"
+   },
+   {
+    "id": 35,
+    "name": "Comedy"
+   },
+   {
+    "id": 80,
+    "name": "Crime"
+   },
+   {
+    "id": 99,
+    "name": "Documentary"
+   },
+   {
+    "id": 18,
+    "name": "Drama"
+   },
+   {
+    "id": 10751,
+    "name": "Family"
+   },
+   {
+    "id": 10762,
+    "name": "Kids"
+   },
+   {
+    "id": 9648,
+    "name": "Mystery"
+   },
+   {
+    "id": 10763,
+    "name": "News"
+   },
+   {
+    "id": 10764,
+    "name": "Reality"
+   },
+   {
+    "id": 10765,
+    "name": "Sci-Fi & Fantasy"
+   },
+   {
+    "id": 10766,
+    "name": "Soap"
+   },
+   {
+    "id": 10767,
+    "name": "Talk"
+   },
+   {
+    "id": 10768,
+    "name": "War & Politics"
+   },
+   {
+    "id": 37,
+    "name": "Western"
+   }
+  ]
+ },
+ "keywords": [
+  {
+   "id": 10391,
+   "name": "mafia"
+  },
+  {
+   "id": 155538,
+   "name": "sicilian mafia"
+  },
+  {
+   "id": 3149,
+   "name": "gangster"
+  },
+  {
+   "id": 10291,
+   "name": "organized crime"
+  },
+  {
+   "id": 10292,
+   "name": "gore"
+  },
+  {
+   "id": 280075,
+   "name": "bloody"
+  },
+  {
+   "id": 318459,
+   "name": "bloody sunday"
+  },
+  {
+   "id": 312898,
+   "name": "violence"
+  },
+  {
+   "id": 9748,
+   "name": "revenge"
   }
  ]
 }

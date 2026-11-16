@@ -63,6 +63,29 @@ export function pickEpisode(episodes: readonly EpisodeProgress[], today: string)
   return next === undefined ? { pick: 'caught_up', last: { season: played.season, episode: played.episode } } : aired(next, 'next');
 }
 
+/**
+ * The episode a season named without one streams ("play House of the Dragon season 2"): the
+ * episode of that season played last when it is unfinished (`resume`), else the first unfinished
+ * one after it, or the season's first unfinished one when none was played (`first` when that is
+ * the season's first episode, `next` otherwise). A season finished to its end starts again at its
+ * first episode (`first`): naming a season already seen asks to see it again. Null when the list
+ * holds no episode of the season.
+ */
+export function pickEpisodeInSeason(episodes: readonly EpisodeProgress[], season: number, today: string): Exclude<EpisodeChoice, { pick: 'caught_up' }> | null {
+  const list = episodes.filter((e) => e.season === season).sort(inOrder);
+  const first = list[0];
+  if (first === undefined) return null;
+  let last: EpisodeProgress | null = null;
+  for (const e of list) {
+    if (e.lastPlayedAt !== null && (last === null || last.lastPlayedAt === null || e.lastPlayedAt >= last.lastPlayedAt)) last = e;
+  }
+  if (last !== null && last.state !== 'finished') return { pick: 'resume', season, episode: last.episode };
+  const played = last;
+  const open = list.find((e) => e.state !== 'finished' && (played === null || e.episode > played.episode)) ?? list.find((e) => e.state !== 'finished') ?? first;
+  if (open.airDate !== null && open.airDate > today) return { pick: 'not_aired', season, episode: open.episode, airDate: open.airDate };
+  return { pick: open === first ? 'first' : 'next', season, episode: open.episode };
+}
+
 /** `stored` plus the episodes only `listed` names (unwatched): a series still airing has episodes newer than its stored list. */
 export function withListedEpisodes(stored: readonly EpisodeProgress[], listed: readonly (EpisodeRef & { airDate: string | null })[]): EpisodeProgress[] {
   const known = new Set(stored.map((e) => `${e.season}x${e.episode}`));

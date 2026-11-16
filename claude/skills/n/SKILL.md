@@ -1,6 +1,6 @@
 ---
 name: n
-description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods) — and keeps their movie and TV library (what they watched and when, VLC playback). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them, or link a note to a Claude Code session ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32", "link 5-BW7 into 5U-I7"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard"), or about their movies and series ("which MobLand episode did I watch last", "continue MobLand", "recommend other Margaret Qualley films").
+description: The user's personal notes system, mcp-notes, reached through the `notes` MCP server, which also reads the user's own apps read-only — expense-tracking (spending in rupiah), run-insights (Apple Watch runs, the app's run analyses and weekly/monthly reviews, coach Nina) and Seer (trading lab, leaderboard, positions, Sera methods) — and keeps their movie and TV library (what they watched and when, VLC playback; "play X DM" or "continue X DS" plays the downloaded file). Use whenever the user types "/n <request>" from any repo, and when they ask to save, find, read, edit, tag, delete, restore, compare or summarize their notes or look at, attach or remove pictures in them, or link a note to a Claude Code session ("save this session's insights as a note", "what was my last #v250 note", "check note A-B32", "summarize #seer this week vs last week", "show me the pictures I saved on 30 oct", "show me the pictures in note A-B32", "attach this screenshot to note A-B32", "link 5-BW7 into 5U-I7"), or ask about their spending, expenses, runs or Seer ("how is my spending this week", "how did yesterday's run go", "compare my running this month with last month", "what are the best Sera methods so far", "what's on the Seer leaderboard"), or about their movies and series ("which MobLand episode did I watch last", "continue MobLand", "recommend other Margaret Qualley films").
 argument-hint: <request for mcp-notes>
 ---
 
@@ -315,6 +315,13 @@ so "what did I watch" still answers after the file is gone.
   (season, episode, episode name, `started_at`, `position_s`); `files[].deleted_at` says when a
   file was deleted; `plays` are newest first.
 - "What did I watch last week" → `movies_history` with `from` / `to`.
+- Codenames. The user names where a title is watched from with one upper-case word, usually the
+  last of the request and never part of the title. **DM** is a film and **DS** a series from the
+  library, a file they downloaded: "play interstellar DM", "continue MobLand DS" →
+  `movies_continue`, VLC, never a stream. The other four are streams and belong to the
+  `/direct-stream` skill: NTM and NTS (a cloud provider, never a torrent: `direct_stream_play` with
+  `provider: "cloud"`), TM and TS (a torrent: `provider: "torrent"`). When a DM or DS title has no
+  file on this machine, say so and offer a stream; do not start one unasked.
 - "Play something", "I am eating dinner, play a random movie", "I am eating lunch, play smth",
   "let's watch something" (no title named) → `movies_continue` with `random: true` and nothing
   else, at once: no listing, no questions, no choosing a title yourself. The server picks one film

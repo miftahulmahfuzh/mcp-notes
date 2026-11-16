@@ -65,6 +65,8 @@ export interface TmdbPersonCredit {
   episodeCount: number | null;
   /** TMDB's `original_language` ("id"); absent or null when the credit did not carry it. */
   originalLanguage?: string | null;
+  /** TMDB's `genre_ids` of the title; absent when the credit did not carry them. */
+  genreIds?: readonly number[];
 }
 
 export interface TmdbClient {
@@ -140,8 +142,12 @@ export interface TmdbDiscoverFilter {
   dateFrom?: string | null;
   /** Released or first aired on or before this day, `YYYY-MM-DD`. */
   dateTo?: string | null;
-  /** TMDB's language code of the original language ("es", "ko"). */
+  /** TMDB's language code of the original language ("es", "ko"); several joined by `|` pass a title in any of them ("zh|cn"). */
   originalLanguage?: string | null;
+  /** Genres' TMDB ids (`TmdbCatalog.genres`): a title passes when it has every one. */
+  genreIds?: readonly number[] | null;
+  /** Keywords' TMDB ids (`searchKeyword`): a title that carries any one of them passes. */
+  keywordIds?: readonly number[] | null;
   /** Production companies' TMDB ids: a title made by any one of them passes. */
   companyIds?: readonly number[] | null;
   /** A streaming service's TMDB watch-provider id; needs `watchRegion`. */
@@ -165,6 +171,8 @@ export interface TmdbDiscovery {
   searchCompany(query: string): Promise<TmdbNamedHit[]>;
   /** Every streaming service TMDB lists for `kind` in `region` ("US"), most prominent first. */
   watchProviders(kind: TitleKind, region: string): Promise<TmdbNamedHit[]>;
+  /** Keywords matching `query` ("mafia": mafia, sicilian mafia, ...), in TMDB's order. '' answers [] without a request. */
+  searchKeyword(query: string): Promise<TmdbNamedHit[]>;
 }
 
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
@@ -325,6 +333,10 @@ const CompanySearchSchema = z.object({
   results: z.array(z.object({ id: intId, name: z.string(), origin_country: text })).nullish(),
 });
 
+const KeywordSearchSchema = z.object({
+  results: z.array(z.object({ id: intId, name: z.string() })).nullish(),
+});
+
 const WatchProvidersSchema = z.object({
   results: z.array(z.object({ provider_id: intId, provider_name: z.string(), display_priority: num })).nullish(),
 });
@@ -360,6 +372,7 @@ const PersonCreditSchema = z.object({
   popularity: num,
   episode_count: num,
   original_language: text,
+  genre_ids: z.array(intId).nullish(),
 });
 const CombinedCreditsSchema = z.object({
   cast: z.array(PersonCreditSchema).nullish(),
@@ -631,7 +644,13 @@ function personCredit(c: PersonCreditJson, credit: 'cast' | 'crew'): TmdbPersonC
     department: credit === 'crew' ? orNull(c.department) : null,
     episodeCount: positiveOrNull(c.episode_count),
     originalLanguage: orNull(c.original_language),
+    genreIds: c.genre_ids ?? [],
   };
+}
+
+/** TMDB ids as one query value: `,` for "every one of them", `|` for "any of them". Undefined (no filter) for none. */
+function idList(ids: readonly number[] | null | undefined, separator: ',' | '|'): string | undefined {
+  return ids === null || ids === undefined || ids.length === 0 ? undefined : ids.join(separator);
 }
 
 type QueryParams = Record<string, string | number | boolean | null | undefined>;
@@ -930,7 +949,9 @@ export function createTmdbClient(
         [`${date}.gte`]: filter.dateFrom,
         [`${date}.lte`]: filter.dateTo,
         with_original_language: filter.originalLanguage,
-        with_companies: filter.companyIds === null || filter.companyIds === undefined || filter.companyIds.length === 0 ? undefined : filter.companyIds.join('|'),
+        with_genres: idList(filter.genreIds, ','),
+        with_keywords: idList(filter.keywordIds, '|'),
+        with_companies: idList(filter.companyIds, '|'),
         with_watch_providers: filter.providerId,
         watch_region: filter.providerId === null || filter.providerId === undefined ? undefined : filter.watchRegion,
         sort_by: filter.sort === 'newest' ? `${date}.desc` : 'popularity.desc',
@@ -945,6 +966,13 @@ export function createTmdbClient(
       if (q === '') return [];
       const raw = decode(CompanySearchSchema, await get('/search/company', { query: q }), 'company search');
       return (raw.results ?? []).map((r) => ({ id: r.id, name: r.name, country: orNull(r.origin_country) }));
+    },
+
+    async searchKeyword(query) {
+      const q = query.trim();
+      if (q === '') return [];
+      const raw = decode(KeywordSearchSchema, await get('/search/keyword', { query: q }), 'keyword search');
+      return (raw.results ?? []).map((r) => ({ id: r.id, name: r.name, country: null }));
     },
 
     async watchProviders(kind, region) {

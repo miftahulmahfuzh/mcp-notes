@@ -767,6 +767,18 @@ Specials (season 0) are never picked. When the stored episode list has nothing l
 current list is read first, since a series still airing has newer episodes than the stored ones.
 A named season and episode always wins over the pick.
 
+**A season named without an episode** ("play House of the Dragon season 2") is `season` alone
+(`pickEpisodeInSeason`). The same states decide, inside that season only:
+
+| In that season | What starts | `picked` |
+| --- | --- | --- |
+| Nothing played or marked | Its first episode | `first` |
+| The episode played last is unfinished | That episode, from the position it stopped at | `resume` |
+| Episodes are finished, others are not | The first unfinished one after the last played | `next` |
+| Every episode is finished | Its first episode again: naming a season you have seen asks to see it again | `first` |
+
+A season no list holds answers `no_such_season`, and an episode that airs after today `not_aired`.
+
 **An episode named by one number** ("One Piece episode 730") is passed as `absolute_episode`, and
 the daemon maps it to TMDB's season and episode (`pickAbsoluteEpisode` in `episodePick.ts`) from
 the stored episode list, or TMDB's when the series is not stored or the stored list is shorter.
@@ -804,6 +816,8 @@ by its `title_key`.
 | Blumhouse, A24 | `company`: a production company |
 | Shudder, Netflix | `service`: a streaming service, read from one country's catalogue (`region`, default `US`) |
 | the most recent | `sort: "newest"` (the default is `popular`) |
+| horror, action, comedy | `genre`: one or several English names; a title must have every one |
+| mafia, zombies, bloody | `keyword`: one or several words for what it is about; a title carrying any one passes |
 
 - **Names become TMDB ids inside the tool.** A person is the most popular match of TMDB's person
   search; a studio's name stands for the company called exactly that, else for every company
@@ -812,6 +826,29 @@ by its `title_key`.
   that, else the first that starts with the words, in TMDB's watch-provider list for the region.
   `filters` says what was understood, and `other_people`, `other_companies` and `other_services`
   list what else the name fits; `person_id`, `company_id` or `service_id` picks one of those.
+- **"Chinese" is two of TMDB's languages.** TMDB codes Mandarin `zh` and Cantonese `cn`, so
+  `language: "Chinese"` asks for both (`filters.language` is `["zh", "cn"]`): a Hong Kong film is
+  as Chinese as a mainland one. "Mandarin" and "Cantonese" ask for one. "Kdrama" is `kind: "tv"`
+  with `language: "Korean"`.
+- **A genre is read per kind**, from TMDB's own list for films or for series (`genreNamed` in
+  `src/directStream/discover.ts`), since the two lists differ. For a series "action" and
+  "adventure" are Action & Adventure, "sci-fi" and "fantasy" are Sci-Fi & Fantasy, "war" is War &
+  Politics, and there is no Horror, Thriller or Romance. A kind that lacks an asked genre is left
+  out when the other kind has it; asked for alone, the answer is `invalid_input` with that kind's
+  genres, and the word goes in `keyword` instead. `filters.genres` says what was understood, per
+  kind. A person's titles are filtered by the genre ids their credits carry.
+- **A keyword is a hint.** Each word stands for TMDB's keyword of that name and the ones that hold
+  it as a whole word ("mafia": mafia, sicilian mafia, japanese mafia; 8 at most), listed in
+  `filters.keywords`. TMDB tags few titles, and recent or non-English ones least: on 2026-11-17 no
+  Korean film of the year carried mafia, gangster or organized crime. So when no title carries a
+  keyword, the list comes back with the other filters alone and `filters.keywords_dropped: true`,
+  and Claude chooses by synopsis, by what it knows, or with a web search. Asking a close genre too
+  (`genre: "crime"`) keeps that fallback list near the request. `keyword` cannot be combined with
+  `person`.
+- **A misspelt person is still found** when the name is a letter or two off. TMDB's search answers
+  nothing for "park bo yeung"; the tool then searches "park bo y" and "park bo" and keeps the names
+  within one letter per five of the asked one, closest first: Park Bo-young, with
+  `filters.person.asked_as` holding the words asked.
 - **Every title is marked against the library**, in the shape `movies_person` uses: `in_library`,
   `state`, `seen`, `started`, plus `not_interested` and `stream.verified` (this machine has a
   source verified inside the freshness window; a series counts when any episode has one).
@@ -845,6 +882,65 @@ When the title Claude picked answers `no_source`, it picks another from the list
 more. After a season is marked finished with `movies_mark`, a series named without an episode
 starts at the first episode that is not finished, so "continue House of the Dragon" also starts
 season 2.
+
+### Codenames
+
+Six words name where a title is watched from. Each is one whole upper-case word, usually the last
+of a request, and never part of a title. A request without one behaves exactly as before.
+
+| Codename | Source | Kind | How it plays |
+| --- | --- | --- | --- |
+| DM | the library (a file you downloaded) | film | `movies_continue`, VLC ([movies.md](movies.md#continue-and-play-something)) |
+| DS | the library | series | `movies_continue`, VLC |
+| NTM | a cloud provider, never a torrent | film | `direct_stream_play` with `provider: "cloud"` |
+| NTS | a cloud provider, never a torrent | series | `direct_stream_play` with `provider: "cloud"` |
+| TM | a torrent | film | `direct_stream_play` with `provider: "torrent"` |
+| TS | a torrent | series | `direct_stream_play` with `provider: "torrent"` |
+
+- **`provider: "cloud"` is cloud only.** This machine's stream cache first (it was made from a
+  cloud provider), then every cloud provider, with the picture check. A finished torrent download
+  of the title is passed over, and a cloud `no_source` is the answer: no index is asked and no
+  torrent is tried, where a play with no provider goes on to the torrent source.
+- **`provider: "torrent"` is torrent only**, as before
+  ([Playing from a torrent](#playing-from-a-torrent)).
+- **A codename at the start of a remark** ("TM shadow edge is smooth af") says what was played
+  and how. It asks for nothing, and a request later in the same message keeps it.
+- **Where the words are told to Claude:** the MCP server's instructions (every Claude Code
+  session), the chat bar's prompt, the `/direct-stream` skill, the `/n` skill (DM and DS) and the
+  description of `direct_stream_play`.
+
+The ten requests the codenames were written for, each run against the fake TMDB of
+`verify.sh up --discovery` by `direct-stream/codenames.sh` (the year is this year's):
+
+| You say | Tool calls |
+| --- | --- |
+| play some chinese action movie TM | `direct_stream_discover {kind: "movie", language: "Chinese", genre: "action"}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| TM shadow edge is smooth af. let's play jackie chan's movie before this one now | The first sentence is a remark (The Shadow's Edge, 2025, played from a torrent) and its codename carries to the request. `direct_stream_discover {person: "Jackie Chan", role: "cast", kind: "movie", sort: "newest"}`; take the first film with a `release_date` before The Shadow's Edge's, leaving out galas and voice roles; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| continue OP TS | `direct_stream_play {title: "OP", provider: "torrent"}` (OP is a name the library holds for One Piece; no episode, so it carries on) |
+| there is a spanish movie called smth like looking through your window . TM | Work the title out first (Through My Window, 2022), then `direct_stream_play {title: "Through My Window", year: 2022, provider: "torrent"}` |
+| play one of indonesian horror movie released this year TM | `direct_stream_discover {kind: "movie", language: "Indonesian", genre: "horror", year}`, then play one with `provider: "torrent"` |
+| play one of thai comedy movie released on 2025 TM | `direct_stream_discover {kind: "movie", language: "Thai", genre: "comedy", year: 2025}`, then play one with `provider: "torrent"` |
+| play one of Kdrama with bloody action genre TS | `direct_stream_discover {kind: "tv", language: "Korean", genre: "action", keyword: ["gore", "bloody", "violence", "revenge"]}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| what is the most recent park bo yeung project? let's watch it TS | `direct_stream_discover {person: "Park Bo-young", sort: "newest"}` (no `kind`: films and series together); the first entry where she is not Self; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| i miss korean mafia movies. play one released this year TM | `direct_stream_discover {kind: "movie", language: "Korean", genre: "crime", keyword: ["mafia", "gangster", "organized crime"], year}`, then play one with `provider: "torrent"` |
+| play House of Dragon season 2 TS | `direct_stream_play {title: "House of the Dragon", season: 2, provider: "torrent"}` |
+
+What each one leans on:
+
+- **1, 5, 6, 7, 9** need `genre` and `keyword`. In 7 and 9 TMDB's keywords may match nothing; the
+  list then comes back without them (`keywords_dropped`) and Claude chooses by synopsis.
+- **2** needs dates fine enough to order two films of one year: every listed title carries its
+  full `release_date`, and `sort: "newest"` orders by it.
+- **3** needs the alias (a title's other names, `movie_titles.aliases`), the carry-on pick, and a
+  torrent finder that understands a long anime's numbering
+  ([Playing from a torrent](#playing-from-a-torrent)).
+- **4** needs no tool: Claude works the title out (its own knowledge, then a web search) and plays
+  it by its real name and year. TMDB's search finds nothing for "looking through your window".
+- **8** needs the misspelt person to be found, and no `kind`, so that films and series are listed
+  together, newest first.
+- **10** needs a season without an episode. "House of Dragon" is not the title's exact name, so
+  Claude passes "House of the Dragon"; passed as typed, the answer would be `no_match` with the
+  series in `did_you_mean`.
 
 ### What a title says: its dialogue
 
@@ -1241,6 +1337,13 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   whose audio names only languages other than the title's original is `dubbed` and skipped, as a dubbed cloud stream
   is; a file Chrome cannot play as is (MKV, HEVC, AC3, DTS) is `unplayable` and skipped; a torrent with no file list
   or too little data in time is `no_stream`. The first that passes plays.
+- **An episode TMDB numbers on across seasons.** TMDB files One Piece episode 1000 as season 21, episode 1000;
+  Torrentio, and every release named `S21E109`, count it as the 109th of that season. Asked by TMDB's number,
+  Torrentio lists nothing. So the query also carries the episode's place in its season's stored list (`alt`, from
+  `MovieStreams.titleNames`) whenever that differs from TMDB's number, and the running number
+  (`absoluteEpisode`). Torrentio is asked by the place in the season; a release or file that names its season fits
+  by either number (`episodeFitOf` in `find/release.ts`), and a name with no season fits only by the running
+  number: `One Piece - 1000` is the episode, `One Piece - 109` is not.
 - **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index asked
   (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`), then
   `Torrent: <release>` for each torrent tried. When none plays the answer is `no_source` with all of them; after a

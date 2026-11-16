@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { companiesNamed, DISCOVER_OVERVIEW_CHARS, inWindow, languageCode, rankByName, releaseWindow, shortOverview } from '../../../src/directStream/discover.js';
+import { companiesNamed, DISCOVER_MAX_KEYWORDS, DISCOVER_OVERVIEW_CHARS, editDistance, genreNamed, inWindow, keywordsNamed, languageCode, languageCodes, looserNames, nearlyNamed, rankByName, releaseWindow, shortOverview } from '../../../src/directStream/discover.js';
 
 describe('languageCode', () => {
   it('reads an English name or a two-letter code, in any case', () => {
@@ -73,5 +73,70 @@ describe('shortOverview', () => {
     const long = shortOverview('word '.repeat(100));
     expect(long.length).toBeLessThanOrEqual(DISCOVER_OVERVIEW_CHARS + 3);
     expect(long.endsWith('word...')).toBe(true);
+  });
+});
+
+describe('languageCodes', () => {
+  it('answers one code for a language, and both of TMDB\'s for Chinese', () => {
+    expect(languageCodes('Korean')).toEqual(['ko']);
+    expect(languageCodes(' Chinese ')).toEqual(['zh', 'cn']);
+    expect(languageCodes('zh')).toEqual(['zh']);
+    expect(languageCodes('klingonese')).toBeNull();
+  });
+});
+
+describe('genreNamed', () => {
+  const MOVIE = [{ id: 28, name: 'Action' }, { id: 12, name: 'Adventure' }, { id: 27, name: 'Horror' }, { id: 878, name: 'Science Fiction' }, { id: 10749, name: 'Romance' }];
+  const TV = [{ id: 10759, name: 'Action & Adventure' }, { id: 10765, name: 'Sci-Fi & Fantasy' }, { id: 10768, name: 'War & Politics' }, { id: 16, name: 'Animation' }];
+
+  it('reads a genre by its name or an everyday word for it', () => {
+    expect(genreNamed(MOVIE, ' horror ')?.id).toBe(27);
+    expect(genreNamed(MOVIE, 'sci-fi')?.id).toBe(878);
+    expect(genreNamed(MOVIE, 'romantic')?.id).toBe(10749);
+    expect(genreNamed(TV, 'anime')?.id).toBe(16);
+  });
+
+  it('reads a series genre by one part of its name', () => {
+    expect(genreNamed(TV, 'action')?.id).toBe(10759);
+    expect(genreNamed(TV, 'science fiction')?.id).toBe(10765);
+    expect(genreNamed(TV, 'fantasy')?.id).toBe(10765);
+    expect(genreNamed(TV, 'war')?.id).toBe(10768);
+    expect(genreNamed(TV, 'Action & Adventure')?.id).toBe(10759);
+  });
+
+  it('answers null for a genre the kind does not have', () => {
+    expect(genreNamed(TV, 'horror')).toBeNull();
+    expect(genreNamed(MOVIE, 'bloody')).toBeNull();
+    expect(genreNamed(MOVIE, '')).toBeNull();
+  });
+});
+
+describe('keywordsNamed', () => {
+  const list = [{ name: 'sicilian mafia' }, { name: 'mafia' }, { name: 'mafiaboss' }, { name: 'Japanese  Mafia' }, { name: 'gangster' }];
+
+  it('takes the keyword of that name first, then the ones that hold it as a whole word', () => {
+    expect(keywordsNamed(list, 'Mafia').map((k) => k.name)).toEqual(['mafia', 'sicilian mafia', 'Japanese  Mafia']);
+    expect(keywordsNamed(list, 'yakuza')).toEqual([]);
+    expect(keywordsNamed(list, ' ')).toEqual([]);
+  });
+
+  it('caps what one word stands for', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ name: `mafia ${i}` }));
+    expect(keywordsNamed(many, 'mafia')).toHaveLength(DISCOVER_MAX_KEYWORDS);
+  });
+});
+
+describe('a misspelt person', () => {
+  it('searches again with the last word cut short, then without it', () => {
+    expect(looserNames('park bo yeung')).toEqual(['park bo y', 'park bo']);
+    expect(looserNames('Zendaya')).toEqual([]);
+  });
+
+  it('keeps only names a letter or two away, closest first', () => {
+    const hits = [{ name: 'Park Bo-gum' }, { name: 'Park Bo-yeon' }, { name: 'Park Bo-young' }, { name: 'Park Bo Young' }];
+    expect(nearlyNamed(hits, 'park bo yeung').map((p) => p.name)).toEqual(['Park Bo-young', 'Park Bo Young', 'Park Bo-yeon']);
+    expect(nearlyNamed(hits, 'tom hanks')).toEqual([]);
+    expect(editDistance('parkboyeung', 'parkboyoung')).toBe(1);
+    expect(editDistance('', 'abc')).toBe(3);
   });
 });
