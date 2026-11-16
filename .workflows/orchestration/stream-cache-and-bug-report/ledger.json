@@ -3,6 +3,12 @@
   "coordinator": "orch-stream-cache-and-bug-report",
   "coordinator_session_id": "c7f0485e-703e-49bd-b6b2-2306ff1dd3a0",
   "created": "2026-11-16T14:03:15+07:00",
+  "landed": {
+    "at": "2026-11-16T14:52:21+07:00",
+    "base": "main",
+    "commit": "4a61479e7c3e24f17d044aabc7ed8b113e7f0a87",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -100,7 +106,7 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "f39efb3",
       "depends_on": [
         2,
         3,
@@ -109,21 +115,21 @@
       ],
       "difficulty": "HARD",
       "n": 6,
-      "note": null,
+      "note": "proof: verified-first-pass; self-verified (quota economy, 86%); coordinator re-ran typecheck, npm test 3357/3357, docs:check on f39efb3: green",
       "package": "src/directStream`, `web/src/stream`, `claude/skills",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:51:36+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A126",
       "title": "Play from the cache"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-cache-and-bug-report",
-  "updated": "2026-11-16T14:41:44+07:00",
+  "updated": "2026-11-16T14:52:21+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
 }
