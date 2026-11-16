@@ -23,21 +23,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6b0ec85",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "player recovers from fatal network errors (5 restarts, 2/4/8/16/16 s, stage recovering) and HLS buffers 120 s (30 s under ?muted=1); pushed to phase-2-stream-cache-and-bug-report only; plan index row and phase 4 unblock left to the coordinator; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-142156-881790/evidence + 1116-142412-892557/evidence",
       "package": "web/src/stream",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:28:32+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A122",
       "title": "Player recovers from network errors and buffers further"
     },
     {
@@ -75,27 +75,27 @@
       "satisfies": [
         "R4"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Report button and its tmux session"
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "096dae067a4f12e2078340b4af8df7dbc47416e1",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "stream_caches table + migration 0029 (NOT applied to Neon), cache downloader, /api/stream/cache routes, direct_stream_cache tool; pushed to phase-5-stream-cache-and-bug-report only; decision: tests/unit/config.test.ts expected object gained cacheDir: null (rung 3, plan code block); drift: hls.ts offset annotated for TS7022; canonical PLAN.md index not ticked (worktree copy only); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-142304-885294/evidence",
       "package": "src/directStream/cache`, `src/db",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:26:09+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A125",
       "title": "Stream cache: table, downloader, routes, tool"
     },
     {
@@ -124,6 +124,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-cache-and-bug-report",
-  "updated": "2026-11-16T14:23:56+07:00",
+  "updated": "2026-11-16T14:33:40+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
 }
