@@ -158,27 +158,27 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "9557203e830104fb492baa995236acabced9a56f",
       "depends_on": [
         3
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": null,
+      "note": "1337x and ext.to as the finder's fallback through the streaming Chrome (background tab), fake sites script for verify.sh; phase 1's config.torrent.test.ts expectations gained sites per invariant 1 (phase 6 meets the same two lines at merge); feature-map entry is its own section per invariant 10; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence",
       "package": "claude/streaming/torrent",
       "plan": ".workflows/plan/torrent-stream-source/phase-9.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T23:16:21+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A135",
       "title": "1337x and ext.to through the streaming Chrome"
     }
   ],
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T23:05:05+07:00",
+  "updated": "2026-11-16T23:16:21+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
