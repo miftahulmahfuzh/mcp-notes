@@ -157,6 +157,14 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_KEEP_DAYS` | 7 | A download not played for this many days is deleted with its files. |
 | `NOTESD_TORRENT_DISCOVERY` | on | `off`: no DHT and no trackers, so peers come only from `NOTESD_TORRENT_PEERS`. `verify.sh up --torrent` sets it with a loopback seeder. |
 | `NOTESD_TORRENT_PEERS` | unset | `host:port` addresses, separated by `,`, added as a peer to every torrent. For the verify harness's loopback seeder; empty in normal use. |
+| `NOTESD_TORRENT_MIN_SEEDS` | the finder's own | A torrent with fewer seeds than this is never picked. See [streaming.md](../streaming.md#playing-from-a-torrent). |
+| `NOTESD_TORRENT_MAX_GB` | the finder's own | A release bigger than this many GiB is left out. |
+| `NOTESD_TORRENT_INDEX_TIMEOUT_MS` | the finder's own | How long one torrent index may take to answer before it counts as `error` and the others go on. |
+| `NOTESD_TORRENT_TORRENTIO_URL` | the finder's own (Torrentio) | Address of the Torrentio index; `off` never asks it. `verify.sh up --torrent` points it at a fake. |
+| `NOTESD_TORRENT_APIBAY_URL` | the finder's own (apibay) | Address of the apibay index; `off` never asks it. |
+| `NOTESD_TORRENT_EZTV_URL` | the finder's own (EZTV) | Address of the EZTV index (series only); `off` never asks it. |
+| `NOTESD_TORRENT_YTS_URL` | the finder's own (YTS) | Address of the YTS index (films only); `off` never asks it. |
+| `NOTESD_FFMPEG_BIN` | `ffmpeg` | The `ffmpeg` the torrent source runs: phase 5's remux, phase 7's subtitle extraction and phase 8's audio cuts. A bare name is looked up on `PATH`. (`ffprobe` is the existing `NOTESD_FFPROBE_BIN`.) |
 
 ## Install script and hooks
 

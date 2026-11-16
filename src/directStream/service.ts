@@ -13,7 +13,8 @@ import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
-import { SESSION_ID_PATTERN, SessionStore, type StreamSession } from './sessions.js';
+import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
+import { namesTorrent, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
   DirectStreamError,
@@ -75,6 +76,16 @@ export interface DirectStreamHooks {
   anime?: (ref: StreamRef) => Promise<AnimeRef | null>;
   /** The episodes before and after an episode, for the player's previous and next buttons. */
   neighbors?: (ref: StreamRef) => Promise<EpisodeNeighbors | null>;
+  /**
+   * The title's IMDb id (`tt0137523`; a series' own id for an episode), which the torrent indexes are asked by
+   * (torrent phase 3). Null: none is known; the torrent source then asks no index.
+   */
+  imdbId?: (ref: StreamRef) => Promise<string | null>;
+  /**
+   * The title's names and year (the stored title), for the torrent finder's title check and phase 9's 1337x search
+   * (torrent phase 3). Null: unknown; the finder then checks no title.
+   */
+  titleNames?: (ref: StreamRef) => Promise<{ title: string; originalTitle: string | null; year: number | null } | null>;
 }
 
 export interface SessionSubtitle {
@@ -120,6 +131,13 @@ export interface SessionInfo {
    * `manifest_url` and each subtitle `url` are that file route's addresses. Null: through the pass-through.
    */
   cached: { id: string; state: SessionCache['state']; height: number | null } | null;
+  /**
+   * The torrent the session plays from (torrent phase 3): its info hash, the chosen file's index, the release
+   * name, the index that listed it (null for a replay from disk), `ready` (the file is whole on disk) or
+   * `downloading`, and the seed count listed (null for a replay). Then `provider` is `Torrent` and
+   * `manifest_url` is the torrent's file route (`/api/stream/torrent/<hash>/f/<index>`). Null: not a torrent.
+   */
+  torrent: { info_hash: string; file_index: number; name: string; index: string | null; state: SessionTorrent['state']; seeds: number | null } | null;
 }
 
 /** What `play` answers (JSON-ready; the route adds `ok: true`). */
@@ -157,6 +175,11 @@ export interface DirectStreamServiceOptions {
    * because it is built after this service. Unset or null: no cache, every play resolves.
    */
   caches?: () => PlayableCaches | null;
+  /**
+   * The torrent source (torrent phase 3), read at play time because it is built from phase 1's TorrentStreams
+   * after this service. Unset or null: torrents are off, and every play is exactly as without them.
+   */
+  torrent?: () => TorrentSource | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -167,6 +190,10 @@ function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcom
 
 /** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
 const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 } as const;
+
+/** A torrent session no page asked about for this long lets go of its torrent (the page reports every 5 s, paused or not). */
+export const TORRENT_IDLE_MS = 2 * 60_000;
+const TORRENT_SWEEP_MS = 60_000;
 
 /** cacheSession's answer: the session as it is now, whether this call moved it onto the cache, and where the download stands. */
 export interface CacheSessionAnswer {
@@ -201,6 +228,8 @@ export class DirectStreamService {
   private chain: Promise<void> = Promise.resolve();
   /** The running /update-cloud-source, if any: one at a time through the one streaming Chrome. */
   private updatingSource: Promise<UpdateSourceAnswer> | null = null;
+  /** Runs sweepTorrents every minute while a torrent session holds its torrent. */
+  private torrentTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly opts: DirectStreamServiceOptions) {
     this.repo = opts.repo;
@@ -210,6 +239,8 @@ export class DirectStreamService {
     this.log = opts.log ?? ((line: string) => console.log(line));
     this.fetchImpl = opts.fetch ?? ((url, init) => fetch(url, init));
     this.evidence = opts.evidence ?? null;
+    // A session the store drops (expired, or past MAX_SESSIONS) lets go of its torrent.
+    this.sessions.onEnd((session) => this.letGoTorrent(session));
   }
 
   get host(): string {
@@ -246,13 +277,138 @@ export class DirectStreamService {
    */
   async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null } = {}): Promise<PlayResult> {
     const ref = toStreamRef(input);
+    const resumeS = options.resumeS ?? null;
     // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
+    // "torrent" asks the torrent source alone: a finished download on this machine first, else the swarm.
     const only = options.provider ?? null;
     const session =
-      only !== null
-        ? await this.resolve(ref, { resumeS: options.resumeS ?? null, only })
-        : ((await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, { resumeS: options.resumeS ?? null })));
+      only === null
+        ? await this.sessionFor(ref, resumeS)
+        : namesTorrent(only)
+          ? ((await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null)))
+          : await this.resolve(ref, { resumeS, only });
     return this.openPage(session);
+  }
+
+  /**
+   * A play with no provider named: this host's stream cache, then this host's finished torrent download of the
+   * title (R2.9: no index, no swarm), then the cloud providers, and after them the torrent source.
+   */
+  private async sessionFor(ref: StreamRef, resumeS: number | null): Promise<StreamSession> {
+    return (await this.cachedSession(ref, resumeS)) ?? (await this.diskSession(ref, resumeS)) ?? (await this.resolveOrTorrent(ref, resumeS));
+  }
+
+  /**
+   * The cloud resolve, and when no provider resolves the title (`no_source`) or the resolve could not run
+   * (`resolve_failed`: a torrent needs no Chrome), the torrent source. Torrents off: exactly `resolve`.
+   */
+  private async resolveOrTorrent(ref: StreamRef, resumeS: number | null): Promise<StreamSession> {
+    try {
+      return await this.resolve(ref, { resumeS });
+    } catch (err) {
+      if (!(err instanceof DirectStreamError) || (err.code !== 'no_source' && err.code !== 'resolve_failed') || this.torrentSource() === null) throw err;
+      return this.torrentSession(ref, resumeS, err);
+    }
+  }
+
+  /**
+   * A session on a torrent found and opened now. `cloud` is the cloud resolve's failure it follows, if any: its
+   * attempts come first in the answer's. Throws `torrent_off`; `no_source` with every attempt (cloud, index,
+   * torrent); or, after a cloud `resolve_failed`, that error again with the torrent attempts added. The
+   * recordResolve hook is not called: a torrent says nothing of the title's cloud sources.
+   */
+  private async torrentSession(ref: StreamRef, resumeS: number | null, cloud: DirectStreamError | null): Promise<StreamSession> {
+    const source = this.torrentSource();
+    if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
+    const audioLang = await this.audioLang(ref);
+    const imdbId = await this.imdbIdOf(ref);
+    const namesHook = this.opts.hooks?.titleNames;
+    const names = namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref));
+    const startS = await this.startAt(ref, resumeS);
+    // Never inside serial(): the cloud resolve above has returned, and phase 6's borrow tier queues on serial().
+    const out = await source.resolve(ref, { audioLang, imdbId, names, resumeS: startS, cloudTried: cloud !== null && cloud.code === 'no_source' });
+    const attempts = [...(cloud?.attempts ?? []), ...out.attempts];
+    if (!out.ok) {
+      if (cloud !== null && cloud.code === 'resolve_failed') {
+        throw new DirectStreamError('resolve_failed', cloud.message, { ...(cloud.reason === null ? {} : { reason: cloud.reason }), attempts });
+      }
+      throw new DirectStreamError('no_source', `No provider or torrent could stream ${refLabel(ref)}.`, { attempts });
+    }
+    const session = this.sessions.createTorrent(ref, out.source, attempts, startS, audioLang, out.torrent);
+    this.watchTorrents();
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
+  }
+
+  /** A session on this host's finished torrent download of `ref` (R2.9), or null (torrents off, none, not whole, or its file does not play). */
+  private async diskSession(ref: StreamRef, resumeS: number | null): Promise<StreamSession | null> {
+    const source = this.torrentSource();
+    if (source === null) return null;
+    const audioLang = await this.audioLang(ref);
+    const startS = await this.startAt(ref, resumeS);
+    const disk = await source.fromDisk(ref, { audioLang, resumeS: startS });
+    if (disk === null) return null;
+    // A replay's attempts are only its subtitle tiers' (`Subtitles: <tier>`): no index, no torrent was tried.
+    const session = this.sessions.createTorrent(ref, disk.source, disk.attempts, startS, audioLang, disk.torrent);
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
+  }
+
+  private torrentSource(): TorrentSource | null {
+    return this.opts.torrent?.() ?? null;
+  }
+
+  private async imdbIdOf(ref: StreamRef): Promise<string | null> {
+    const hook = this.opts.hooks?.imdbId;
+    return hook === undefined ? null : this.hookValue('imdbId', () => hook(ref));
+  }
+
+  /** Lets go of the session's torrent, if it holds one: with no other user the daemon leaves the swarm. */
+  private letGoTorrent(session: StreamSession): void {
+    if (session.torrent !== null) this.torrentSource()?.release(session.torrent);
+  }
+
+  /** Takes a released torrent again (a reload of the page). A failure is logged: the page's refresh says it. */
+  private async holdTorrent(session: StreamSession, torrent: SessionTorrent): Promise<void> {
+    const source = this.torrentSource();
+    if (source === null || torrent.held || torrent.candidate === null) return;
+    await source.hold(session.ref, torrent);
+    this.watchTorrents();
+  }
+
+  /**
+   * The player page closed or the film ended (a `closed` / `ended` position report): the session lets go of its
+   * torrent. A reload of the page takes it again (info, refresh). Unknown ids are ignored.
+   */
+  letGo(id: string): void {
+    const session = this.sessions.peek(id);
+    if (session !== null) this.letGoTorrent(session);
+  }
+
+  /**
+   * What a timer runs every minute while a torrent session holds its torrent: ended sessions are dropped (their
+   * torrents released by the store's end listener), and a torrent no page asked about for TORRENT_IDLE_MS is
+   * released. The timer stops once no session holds a torrent.
+   */
+  sweepTorrents(): void {
+    const now = this.now().getTime();
+    let holding = false;
+    for (const session of this.sessions.live()) {
+      const torrent = session.torrent;
+      if (torrent === null || !torrent.held) continue;
+      if (now - session.lastUsedAt.getTime() >= TORRENT_IDLE_MS) this.letGoTorrent(session);
+      else holding = true;
+    }
+    if (!holding && this.torrentTimer !== null) {
+      clearInterval(this.torrentTimer);
+      this.torrentTimer = null;
+    }
+  }
+
+  private watchTorrents(): void {
+    if (this.torrentTimer !== null) return;
+    this.torrentTimer = setInterval(() => this.sweepTorrents(), TORRENT_SWEEP_MS);
+    this.torrentTimer.unref();
   }
 
   /**
@@ -289,9 +445,11 @@ export class DirectStreamService {
       });
     }
     this.log(
-      session.cache === null
-        ? `[notesd] direct stream: playing ${refLabel(session.ref)} from ${session.source.provider}`
-        : `[notesd] direct stream: playing ${refLabel(session.ref)} from the cache ${session.cache.id} (${session.cache.state}, ${session.source.provider})`,
+      session.torrent !== null
+        ? `[notesd] direct stream: playing ${refLabel(session.ref)} from the torrent ${session.torrent.name} (${session.torrent.state}${session.torrent.candidate === null ? ', from disk' : ''})`
+        : session.cache === null
+          ? `[notesd] direct stream: playing ${refLabel(session.ref)} from ${session.source.provider}`
+          : `[notesd] direct stream: playing ${refLabel(session.ref)} from the cache ${session.cache.id} (${session.cache.state}, ${session.source.provider})`,
     );
     return { page_url: pageUrl, session: await this.sessionInfo(session), attempts: session.attempts };
   }
@@ -352,10 +510,14 @@ export class DirectStreamService {
     return this.sessions.get(id);
   }
 
-  /** What the player page reads, or null for an unknown or ended id. */
+  /** What the player page reads, or null for an unknown or ended id. A torrent session that let go of its torrent (the page closed and is back) takes it again. */
   async info(id: string): Promise<SessionInfo | null> {
     const session = this.sessions.get(id);
-    return session === null ? null : this.sessionInfo(session);
+    if (session === null) return null;
+    if (session.torrent !== null) {
+      await this.holdTorrent(session, session.torrent).catch((err: unknown) => this.log(`[notesd] direct stream: could not open the torrent ${session.torrent?.name ?? ''} again: ${messageOf(err)}`));
+    }
+    return this.sessionInfo(session);
   }
 
   /**
@@ -367,6 +529,18 @@ export class DirectStreamService {
   async refresh(id: string): Promise<SessionInfo> {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    if (session.torrent !== null) {
+      // A torrent has no token to renew: the session keeps it, taking it again when it was let go.
+      try {
+        await this.holdTorrent(session, session.torrent);
+      } catch (err) {
+        safeRecord(this.evidence, sessionRecord(session, 'refresh_failed', messageOf(err)));
+        throw new DirectStreamError('resolve_failed', `The torrent ${session.torrent.name} could not be opened again: ${messageOf(err)}`, { reason: 'torrent_gone' });
+      }
+      session.refreshedAt = this.now();
+      safeRecord(this.evidence, sessionRecord(session, 'refreshed', null));
+      return this.sessionInfo(session);
+    }
     if (session.cache !== null) {
       const view = await this.cacheById(session.cache.id);
       const check = view === null ? null : playable(view, this.host, session.audioLang);
@@ -402,7 +576,8 @@ export class DirectStreamService {
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
     const caches = this.opts.caches?.() ?? null;
     const answer = async (moved: boolean, cache: CacheStanding | null): Promise<CacheSessionAnswer> => ({ moved, cache, session: await this.sessionInfo(session) });
-    if (caches === null || caches.start === undefined || caches.standing === undefined) return answer(false, null);
+    // A torrent session is never cached: its download is its own copy on this machine.
+    if (session.torrent !== null || caches === null || caches.start === undefined || caches.standing === undefined) return answer(false, null);
     let standing: CacheStanding | null;
     try {
       standing = session.cache === null && options.start ? await caches.start(session.ref) : await caches.standing(session.ref);
@@ -440,6 +615,7 @@ export class DirectStreamService {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
     if (session.cache !== null) return { switched: false, reason: 'cached', from: session.source.provider, session: await this.sessionInfo(session) };
+    if (session.torrent !== null) return this.nextTorrent(session, session.torrent);
     const from = session.source.provider;
     const out = await this.runResolve(session.ref, { skip: [...session.avoid, from] });
     if (!out.ok) {
@@ -462,6 +638,27 @@ export class DirectStreamService {
   }
 
   /**
+   * The shuffle button on a torrent session: the next of the session's remaining candidates, without asking the
+   * indexes again. The old torrent is released once the new one plays; `no_other_source` leaves the session as
+   * it was. `from` is `Torrent: <release>`.
+   */
+  private async nextTorrent(session: StreamSession, torrent: SessionTorrent): Promise<SwitchSourceAnswer> {
+    const from = `${TORRENT_PROVIDER}: ${torrent.name}`;
+    const source = this.torrentSource();
+    const out = source === null ? null : await source.next(session.ref, torrent, session.audioLang);
+    if (out === null || !out.ok) {
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} stalls on the torrent ${torrent.name} and no other torrent could be played`);
+      return { switched: false, reason: 'no_other_source', from, session: await this.sessionInfo(session) };
+    }
+    this.letGoTorrent(session);
+    this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
+    this.watchTorrents();
+    safeRecord(this.evidence, sessionRecord(session, 'switched', null));
+    this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from the torrent ${torrent.name} to ${out.torrent.name}`);
+    return { switched: true, reason: null, from, session: await this.sessionInfo(session) };
+  }
+
+  /**
    * The player's previous / next button: a new session for the neighbouring episode of the session's
    * (the old one is left to expire; the page reports it closed), from that episode's cache on this
    * host when it can be played, else resolved. Throws `unknown_session`, `no_episode` (a film, or no
@@ -475,9 +672,11 @@ export class DirectStreamService {
       throw new DirectStreamError('no_episode', to === 'next' ? 'There is no next episode to stream.' : 'There is no previous episode.');
     }
     const ref: StreamRef = { kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode };
-    const next = (await this.cachedSession(ref, null)) ?? (await this.resolve(ref));
+    const next = await this.sessionFor(ref, null);
     this.log(
-      `[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) ${next.cache === null ? `from ${next.source.provider}` : `from the cache ${next.cache.id}`}`,
+      `[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) ${
+        next.torrent !== null ? `from the torrent ${next.torrent.name}` : next.cache === null ? `from ${next.source.provider}` : `from the cache ${next.cache.id}`
+      }`,
     );
     return this.sessionInfo(next);
   }
@@ -721,10 +920,13 @@ export class DirectStreamService {
   }
 
   private async sessionInfo(session: StreamSession): Promise<SessionInfo> {
-    const { ref, source, cache } = session;
+    const { ref, source, cache, torrent } = session;
+    // A cache's or a torrent's files come from their own routes on this daemon, never through the pass-through.
+    const local = torrent ?? cache;
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
     const neighbors = await this.neighborsOf(ref);
+    if (torrent !== null) torrent.state = (await this.torrentSource()?.state(torrent)) ?? torrent.state;
     return {
       session_id: session.id,
       kind: ref.kind,
@@ -734,10 +936,9 @@ export class DirectStreamService {
       title,
       provider: source.provider,
       manifest_kind: source.manifest_kind,
-      // A cache's files come from its own route on this daemon, never through the pass-through.
-      manifest_url: cache === null ? proxiedUrl(session.id, source.manifest_url) : cache.manifestUrl,
+      manifest_url: local === null ? proxiedUrl(session.id, source.manifest_url) : local.manifestUrl,
       subtitles:
-        cache === null
+        local === null
           ? source.subtitles.map((t) => {
               const srt = t.format === 'srt' || /\.srt$/i.test(new URL(t.url).pathname);
               return {
@@ -749,7 +950,7 @@ export class DirectStreamService {
                 english: isEnglish(t),
               };
             })
-          : cache.subtitles.map((t) => ({ url: t.url, lang: t.lang, label: t.label, format: 'vtt', source: 'request' as const, english: isEnglish(t) })),
+          : local.subtitles.map((t) => ({ url: t.url, lang: t.lang, label: t.label, format: 'vtt', source: 'request' as const, english: isEnglish(t) })),
       best_height: source.best_height,
       audio_lang: session.audioLang,
       audio: source.audio ?? null,
@@ -760,6 +961,10 @@ export class DirectStreamService {
       refreshed_at: session.refreshedAt.toISOString(),
       expires_at: this.sessions.expiresAt(session).toISOString(),
       cached: cache === null ? null : { id: cache.id, state: cache.state, height: cache.height },
+      torrent:
+        torrent === null
+          ? null
+          : { info_hash: torrent.infoHash, file_index: torrent.fileIndex, name: torrent.name, index: torrent.index, state: torrent.state, seeds: torrent.seeds },
     };
   }
 
@@ -793,6 +998,8 @@ export interface DirectStreamWiring {
   evidence?: EvidenceSink | null;
   /** Phase 6: this host's stream cache, read at play time (phase 5 builds it after this service). */
   caches?: () => PlayableCaches | null;
+  /** Torrent phase 3: the torrent source, read at play time (built from phase 1's TorrentStreams after this service). */
+  torrent?: () => TorrentSource | null;
 }
 
 /** Test seams. */
@@ -827,6 +1034,7 @@ export function buildDirectStreamService(
     hooks: wiring.hooks,
     evidence: wiring.evidence ?? null,
     caches: wiring.caches,
+    torrent: wiring.torrent,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

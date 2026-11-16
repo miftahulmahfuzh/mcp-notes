@@ -60,6 +60,8 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
       );
     case 'unknown_session':
       return c.json(UNKNOWN_SESSION, 403);
+    case 'torrent_off':
+      return c.json({ error: 'torrent_off', message: err.message }, 503);
     case 'no_episode':
     case 'no_subtitle':
       return c.json({ error: err.code, message: err.message }, 404);
@@ -186,7 +188,8 @@ const positionBody = z.object({
 /** What the position route reads (AppDeps fits: DirectStreamService.session returns a superset of StreamSessionRef). */
 export interface StreamPositionDeps {
   movies: MovieStreamsSource | null;
-  directStream?: { session(id: string): StreamSessionRef | null | Promise<StreamSessionRef | null> } | null;
+  /** `letGo`: the page closed or the film ended, so the session lets go of its torrent (torrent phase 3). */
+  directStream?: { session(id: string): StreamSessionRef | null | Promise<StreamSessionRef | null>; letGo?(id: string): void } | null;
   /** The stream on screen (`GET /api/movies/player`); without it the reports are only stored. */
   live?: StreamLive | null;
 }
@@ -223,6 +226,8 @@ export function streamPositionRoutes(deps: StreamPositionDeps, options: { now?: 
     const live = deps.live ?? null;
     const report = body.data;
     const over = report.ended === true || report.closed === true;
+    // Torrent phase 3: the page is gone or the film is over, so the session lets go of its torrent (a reload takes it again).
+    if (over) service.letGo?.(session.id);
     if (live !== null && report.beat === true && report.paused === true && !over && live.has(session.id)) {
       const on = live.current();
       if (on !== null) {

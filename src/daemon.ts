@@ -29,6 +29,8 @@ import { createAnimeMapper } from './directStream/anime.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
+import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
@@ -187,6 +189,25 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           source: (id) => directStream?.evidenceSource(id) ?? null,
           onScreen: () => streamLive?.current()?.session_id ?? null,
         });
+  // Torrent phase 3: the torrent source, built on first use from phase 1's TorrentStreams (deps.torrents, null
+  // with NOTESD_TORRENT=off). ffprobe reads a torrent's file through this daemon's own route on loopback.
+  let torrentSource: TorrentSource | null = null;
+  const torrentSourceOf = (): TorrentSource | null => {
+    const torrents = deps.torrents ?? null;
+    if (torrentSource === null && torrents !== null && config.torrent?.enabled === true) {
+      torrentSource = buildTorrentSource(config, torrents, {
+        localBase: () => `http://127.0.0.1:${boundPort ?? config.port}`,
+        tiers: buildSubtitleTiers({
+          torrentDir: config.torrent.dir,
+          torrents,
+          log: (line) => console.log(line),
+          // Phase 6 adds subtitleUrl, fetch, lend, convertAss here; phase 7 embedded; phase 8 whisper (one line each).
+        }),
+        // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
+      });
+    }
+    return torrentSource;
+  };
   const directStream = buildDirectStreamService(config, db, {
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
@@ -194,6 +215,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     // Phase 6: a play reads this host's stream cache first. Phase 5 builds it after this service, so
     // it is read at play time (deps exists by then).
     caches: () => deps.streamCache?.player() ?? null,
+    torrent: torrentSourceOf,
     hooks:
       movieStreams === null
         ? undefined
@@ -204,6 +226,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             titleLabel: (ref) => movieStreams.titleLabel(ref),
             anime: (ref) => movieStreams.animeRef(ref, animeMapper),
             neighbors: (ref) => movieStreams.neighbors(ref),
+            imdbId: (ref) => movieStreams.imdbId(ref),
+            titleNames: (ref) => movieStreams.titleNames(ref),
           },
   });
   if (directStream !== null) {

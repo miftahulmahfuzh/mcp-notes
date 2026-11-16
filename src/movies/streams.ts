@@ -161,6 +161,39 @@ export class MovieStreams {
   }
 
   /**
+   * The title's IMDb id for the torrent indexes (torrent phase 3): TMDB's external ids of the film or of the
+   * series (an episode is found by the series' id with its season and episode). Not stored. Null when TMDB has
+   * none, is not configured or cannot be reached.
+   */
+  async imdbId(target: StreamTarget): Promise<string | null> {
+    try {
+      const tmdb: (TmdbClient & Partial<TmdbTitleNames>) | null = this.movies.tmdb;
+      if (tmdb === null || tmdb.imdbId === undefined) return null;
+      return await tmdb.imdbId(target.kind, target.tmdbId);
+    } catch (err) {
+      if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the IMDb id of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * The title's names and year for the torrent finder (torrent phase 3): its title check leaves out a release that
+   * names neither, and phase 9's 1337x search has nothing else to go by. The stored title row (ensured first, as
+   * `animeRef` does); null when it is not stored and cannot be.
+   */
+  async titleNames(target: StreamTarget): Promise<{ title: string; originalTitle: string | null; year: number | null } | null> {
+    try {
+      const id = await this.ensureTitle(target);
+      const row = id === null ? null : await this.movies.repo.titleById(id);
+      if (row === null) return null;
+      return { title: row.title, originalTitle: row.originalTitle === row.title ? null : row.originalTitle, year: row.year };
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the names of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
    * The episodes before and after one, in the series' order (specials left out), for the player's
    * previous and next buttons. The next one is null when it airs after today. Null when the series
    * is not stored or the episode is not in its list.
