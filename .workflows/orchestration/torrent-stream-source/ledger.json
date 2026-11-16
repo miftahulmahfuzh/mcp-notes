@@ -3,6 +3,12 @@
   "coordinator": "orch-torrent-stream-source",
   "coordinator_session_id": "d7a484e1-411b-4654-b5e2-3aef759bcc42",
   "created": "2026-11-16T20:41:04+07:00",
+  "landed": {
+    "at": "2026-11-17T00:19:53+07:00",
+    "base": "main",
+    "commit": "8bcda8c6012508a9da7d358dc1f232a4951b24a3",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -139,21 +145,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "540c242f86cb192eb9a6fe88ea363a1ca57f6428",
       "depends_on": [
         7
       ],
       "difficulty": "HARD",
       "n": 8,
-      "note": null,
+      "note": "Whisper tier last in the chain (TorrentConfig.whisper after sites, deps.torrentWhisper, whisperCovers on the borrow line), whisper.py worker, install_whisper in install.sh; decided: buildWhisperTier tests added per exit criteria (rung 2), config.test.ts and config.torrent.test.ts expectations gained the whisper field; J3 passed on a bounded local copy of Sintel after the direct https read stalled, no code changed; proof: verified-first-pass /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p8/a72d3d30-317e-4a67-abcf-6d494b631b39/scratchpad/p8-evidence | self-verified (owner's verifier-cost feedback); evidence copied to logs/p8-evidence; coordinator killed the hung ffmpeg (pid 2138553, 0 bytes read for 5+ min from download.blender.org) and told the phase to retry J3 once from a bounded local copy (rung 2: J1, J2 are the exit criteria's throwaway journeys)",
       "package": "src/directStream/torrent/subtitles",
       "plan": ".workflows/plan/torrent-stream-source/phase-8.md",
-      "reported_at": null,
+      "reported_at": "2026-11-17T00:07:11+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A134",
       "title": "Whisper, the last resort"
     },
     {
@@ -164,10 +170,10 @@
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": "1337x and ext.to as the finder's fallback through the streaming Chrome (background tab), fake sites script for verify.sh; phase 1's config.torrent.test.ts expectations gained sites per invariant 1 (phase 6 meets the same two lines at merge); feature-map entry is its own section per invariant 10; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence | self-verified (owner's verifier-cost feedback; phase's own proof verified-first-pass); coordinator checked commit file list = write set + bookkeeping",
+      "note": "1337x and ext.to as the finder's fallback through the streaming Chrome (background tab), fake sites script for verify.sh; phase 1's config.torrent.test.ts expectations gained sites per invariant 1 (phase 6 meets the same two lines at merge); feature-map entry is its own section per invariant 10; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence | self-verified (owner's verifier-cost feedback; phase's own proof verified-first-pass); coordinator checked commit file list = write set + bookkeeping | SET LANDED: main @ 8bcda8c. Wave 4 integrated at 7912c60 (coordinator accepted App.movies.test.tsx trailer flake: fails 1 in 6 alone on main too; logs/wave4-npm-test-run{1,2}.log). Landing merge conflicts with main's 53806be (picture check) resolved keep-both: service.ts play/switchEpisode go through sessionFor and the cloud resolve inside resolveOrTorrent keeps vet: true; one DEFAULT_FFMPEG_BIN and one NOTESD_FFMPEG_BIN row (index, phase 3 contract); mcp-tools.md regenerated. Merged tree: typecheck, npm test 3744/3744, docs:check, build, test:int 976/976. Migration 0031_stream_torrents applied to Neon and verified (table, 20 columns, 7 checks, stream_torrents_slot_idx). Worktrees and branches removed local + origin.",
       "package": "claude/streaming/torrent",
       "plan": ".workflows/plan/torrent-stream-source/phase-9.md",
-      "reported_at": "2026-11-16T23:24:14+07:00",
+      "reported_at": "2026-11-17T00:21:38+07:00",
       "satisfies": [
         "R1"
       ],
@@ -179,6 +185,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-17T00:02:07+07:00",
+  "updated": "2026-11-17T00:21:38+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
