@@ -8,7 +8,9 @@ import {
   CheckCircle,
   CircleNotch,
   ClosedCaptioning,
+  CloudArrowDown,
   GearSix,
+  HardDrive,
   IconContext,
   Pause,
   Play,
@@ -21,7 +23,7 @@ import {
 import { INITIAL_STATE, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
-import type { EpisodeNumber } from './session';
+import type { CachedInfo, EpisodeNumber } from './session';
 import { pickDefaultSubtitle } from './subtitles';
 
 /**
@@ -87,6 +89,22 @@ export function switchErrorText(to: 'previous' | 'next', code: string): string {
   if (code === 'no_episode') return `There is no ${to} episode.`;
   if (code === 'unknown_session') return 'This stream session has ended; start the episode again from Claude Code or the movies page.';
   return `The ${to} episode could not be started (${code}).`;
+}
+
+/** The cache mark's tooltip and accessible name. */
+export function cachedLabel(cached: CachedInfo): string {
+  const quality = cached.height === null ? '' : ` (${cached.height}p)`;
+  return cached.state === 'ready' ? `Playing from this machine's cache${quality}` : `Playing from this machine's cache while it downloads${quality}`;
+}
+
+/** Icon only: a drive when the whole film is on disk, a cloud with an arrow while it still downloads. */
+function CachedMark({ cached }: { cached: CachedInfo }) {
+  const label = cachedLabel(cached);
+  return (
+    <span className="st-cached" role="img" aria-label={label} title={label} data-state={cached.state}>
+      {cached.state === 'ready' ? <HardDrive /> : <CloudArrowDown />}
+    </span>
+  );
 }
 
 export function qualityLabel(q: Quality): string {
@@ -407,6 +425,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <video ref={setVideo} className="st-video" playsInline muted={muted} onClick={togglePlay} onDoubleClick={fullscreenToggle} />
         <div className="st-top">
           <span className="st-title">{state.title}</span>
+          {state.cached !== null && <CachedMark cached={state.cached} />}
           {state.switchError !== null && (
             <span className="st-notice" role="status">
               {switchErrorText(state.switchError.to === 'prev' ? 'previous' : 'next', state.switchError.code)}

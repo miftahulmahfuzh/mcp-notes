@@ -190,6 +190,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
     evidence: streamEvidence,
+    // Phase 6: a play reads this host's stream cache first. Phase 5 builds it after this service, so
+    // it is read at play time (deps exists by then).
+    caches: () => deps.streamCache?.player() ?? null,
     hooks:
       movieStreams === null
         ? undefined

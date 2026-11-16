@@ -497,6 +497,8 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Audio.** When the manifest names several audio tracks, the page selects the one in the
   title's original language (the session's `audio.track`), never the manifest's default.
+- **From the cache.** A session on this machine's stream cache plays its local files, with a drive
+  icon beside the title (see "Playing from the cache").
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
@@ -861,7 +863,44 @@ Movies page's cache and clear buttons come later on the same routes.
 | `cache_exists` | This machine holds the title at another `max_height`: clear it first |
 | `not_on_this_machine` | The cache is on the other laptop |
 | `unknown_cache` | No cache has that id (or it was cleared) |
-| `cache_failed` | A file of a failed cache was asked for: ask for the cache again |
+| `cache_failed` | A file of a failed cache was asked for, or it was asked to play: ask for the cache again |
+| `cache_language` | `POST /api/stream/cache/<id>/play`: the cache was made for another language than the title's original |
+
+### Playing from the cache
+
+A play looks at this machine's stream cache first (`/direct-stream`, the Movies page's Play on the
+Stream side and the player's previous and next buttons alike). When the film or episode has a
+cache here that is `ready` or `downloading`, and it was made for the title's original language,
+the session plays the local copy:
+
+- **Ready.** No provider is asked and the resolver does not run, so the play starts at once and
+  works with the internet down. `attempts` is empty, `session.cached` is
+  `{id, state: "ready", height}`, and `manifest_url` and the subtitle addresses are the cache's
+  file route (`/api/stream/cache/<id>/f/...`), not the pass-through. The player buffers as far as
+  hls.js goes by itself (600 s, inside its 60 MB), where a stream through the pass-through stops at
+  120 s; a `?muted=1` check keeps 30 s either way.
+- **Downloading.** The same local playlist. A segment not on disk yet is fetched by the file route
+  when the player reaches it, so a seek past the downloaded part still plays. The buffer stays at
+  120 s.
+- **Failed, or none.** The play resolves as it always did. A cache made on the other machine is
+  never used here; `POST /api/stream/cache/<id>/play`, which plays one cache by its id, answers it
+  with 404 `not_on_this_machine` and the `host` that holds it.
+- **Original language only.** A cache keeps the audio track of the stream it was made from, and it
+  plays only while the title's original language is the one its resolve was told. A cache made
+  before the language was known, or for another one, is passed over and the title resolves.
+- **The rest is as for any stream.** The resume position, the position reports, the stream on
+  screen and the history are the same; the provider recorded is the one the cache was downloaded
+  from. A refresh of a cached session reads the cache again and keeps playing it; once the cache
+  is cleared or failed, the refresh resolves the title and the page goes on through the
+  pass-through.
+- **On the page.** A drive icon beside the title says the film plays from this machine's cache (a
+  cloud with an arrow while it still downloads); its tooltip names the quality.
+  `window.notesdStream.cached` holds the same.
+- **In a stream bug report.** A ready cache makes no pass-through request, so the evidence log has
+  no records of its segments (the cache's own downloads are not recorded there either). A snapshot's
+  `session.json` names the cache in `source.cache` (`{id, state}`), with the cache's provider and no
+  attempts or hosts; the page's log says `from cache <id> (<state>)`, and `/report-stream-bug`'s
+  summary says the play came from the cache.
 
 ### The prober
 
@@ -979,6 +1018,7 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
+| `src/directStream/cachePlay.ts`, `src/http/streamCachePlayApi.ts` | Playing from the stream cache: which cache may play, the session made from it, `POST /api/stream/cache/:id/play` |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
 | `src/directStream/report.ts`, `src/http/streamReportApi.ts` | The player's report button: the snapshot, `report.json`, one tmux window per stream session (the opener is `openClaudeWindow` in `src/sessions/resume.ts`) |
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |

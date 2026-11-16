@@ -1,5 +1,6 @@
 import {
   BUFFER_AHEAD_S,
+  CACHED_BUFFER_AHEAD_S,
   MUTED_BUFFER_AHEAD_S,
   NETWORK_RETRY_LIMIT,
   type CreateEngine,
@@ -21,6 +22,7 @@ import {
   type PlayerLogLine,
   type ReportAnswer,
   type StreamSession,
+  type CachedInfo,
 } from './session';
 import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
 
@@ -61,6 +63,8 @@ export interface StreamState {
   switching: 'prev' | 'next' | null;
   /** Why the last press of a previous / next button started nothing (which side, and the daemon's code); null once another press begins. */
   switchError: { to: 'prev' | 'next'; code: string } | null;
+  /** Played from this machine's stream cache (phase 6): the page marks it beside the title. Null: through the pass-through. */
+  cached: CachedInfo | null;
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
@@ -85,6 +89,7 @@ export const INITIAL_STATE: StreamState = {
   nextEpisode: null,
   switching: null,
   switchError: null,
+  cached: null,
   errors: [],
   log: [],
   bugReport: { status: 'idle' },
@@ -196,10 +201,11 @@ export class StreamController {
     await this.open(session);
   }
 
-  /** Plays a session read from the daemon: its name and neighbours, its subtitle files, then the engine at its resume position. */
+  /** Plays a session read from the daemon: its name, neighbours and cache, its subtitle files, then the engine at its resume position. */
   private async open(session: StreamSession): Promise<void> {
     this.session = session;
-    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode });
+    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode, cached: session.cached });
+    if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
     await this.loadFileSubtitles(session);
     if (this.disposed || this.session !== session) return;
     await this.attach(session, session.resumeS);
@@ -424,8 +430,9 @@ export class StreamController {
         src: session.manifestUrl,
         startAt,
         audioTrack: session.audioTrack,
-        // R1.8: 120 s ahead; ?muted=1 keeps 30 s for the expiry checks.
-        bufferAheadS: this.mutedMode ? MUTED_BUFFER_AHEAD_S : BUFFER_AHEAD_S,
+        // R1.8: 120 s ahead; ?muted=1 keeps 30 s for the expiry checks; a complete cache (phase 6)
+        // is on disk, so it buffers as far as hls.js goes by itself.
+        bufferAheadS: this.mutedMode ? MUTED_BUFFER_AHEAD_S : session.cached?.state === 'ready' ? CACHED_BUFFER_AHEAD_S : BUFFER_AHEAD_S,
         handlers: {
           onReady: (ready) => {
             if (current()) this.onReady(ready);
@@ -620,6 +627,8 @@ export class StreamController {
       const session = await fetchSession(this.sessionId, this.deps.fetch);
       if (this.disposed) return;
       this.session = session;
+      // A refresh of a cached session either keeps the cache or moves to the pass-through (the cache was cleared).
+      this.set({ cached: session.cached });
       await this.attach(session, continueAt);
     } catch (err) {
       if (!this.disposed) this.fail(err);

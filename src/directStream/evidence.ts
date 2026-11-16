@@ -186,6 +186,8 @@ export interface SessionSource {
   attempts: ResolveAttempt[];
   hosts: string[];
   refreshes: number;
+  /** The stream cache on this host the session plays from (phase 6); null: through the pass-through. */
+  cache: { id: string; state: 'downloading' | 'ready' } | null;
   created_at: string;
   refreshed_at: string;
   last_used_at: string;
@@ -222,6 +224,7 @@ export function sessionSource(session: StreamSession, expiresAt: Date): SessionS
     attempts: session.attempts.map((a) => ({ ...a, detail: redactQueries(a.detail) })),
     hosts: [...session.allowedHosts].sort(),
     refreshes: session.refreshes,
+    cache: session.cache === null ? null : { id: session.cache.id, state: session.cache.state },
     created_at: session.createdAt.toISOString(),
     refreshed_at: session.refreshedAt.toISOString(),
     last_used_at: session.lastUsedAt.toISOString(),

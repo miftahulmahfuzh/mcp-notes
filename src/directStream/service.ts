@@ -5,6 +5,7 @@ import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
+import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
@@ -112,6 +113,12 @@ export interface SessionInfo {
   created_at: string;
   refreshed_at: string;
   expires_at: string;
+  /**
+   * The stream cache on this host the session plays from (phase 6): `ready` (all on disk; nothing
+   * was resolved) or `downloading` (missing segments are fetched by the cache's file route). Then
+   * `manifest_url` and each subtitle `url` are that file route's addresses. Null: through the pass-through.
+   */
+  cached: { id: string; state: SessionCache['state']; height: number | null } | null;
 }
 
 /** What `play` answers (JSON-ready; the route adds `ok: true`). */
@@ -144,6 +151,11 @@ export interface DirectStreamServiceOptions {
   log?: (line: string) => void;
   /** This host's stream evidence log (evidence.ts): every pass-through answer and session change is recorded into it. Null or unset: nothing is recorded. */
   evidence?: EvidenceSink | null;
+  /**
+   * This host's stream cache (phase 5's StreamCache, AppDeps.streamCache), read at play time
+   * because it is built after this service. Unset or null: no cache, every play resolves.
+   */
+  caches?: () => PlayableCaches | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -195,22 +207,46 @@ export class DirectStreamService {
   /**
    * Resolves the title and makes a session for it. Throws `no_source` (every attempt in `attempts`) or
    * `resolve_failed` (with `reason`; `deadline` when `deadlineS` cut it short). The recordResolve hook
-   * has run before this returns or throws.
+   * has run before this returns or throws. Always resolves: a cache is `play`'s business, and
+   * `subtitleText` needs a resolved source.
    */
   async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
     const out = await this.resolveSource(ref, options.deadlineS);
-    let resumeS = options.resumeS ?? null;
-    const hook = this.opts.hooks?.resumeS;
-    if (resumeS === null && hook !== undefined) resumeS = await this.hookValue('resumeS', () => hook(ref));
+    const resumeS = await this.startAt(ref, options.resumeS ?? null);
     const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
   }
 
-  /** Resolves, then opens this daemon's player page for the session full screen in the streaming Chrome. */
+  /**
+   * Opens this daemon's player page for the title full screen in the streaming Chrome. This host's
+   * cache of the title (phase 5), when it can be played (`playable`), makes the session with no
+   * resolve; otherwise the title is resolved first, as before.
+   */
   async play(input: StreamRefInput, options: { resumeS?: number | null } = {}): Promise<PlayResult> {
-    const session = await this.resolve(input, options);
+    const ref = toStreamRef(input);
+    const session = (await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, options));
+    return this.openPage(session);
+  }
+
+  /**
+   * POST /api/stream/cache/:id/play: plays one cache by its id, with no resolve. Throws
+   * CachePlayError `unknown_cache`, `not_on_this_machine` (with the host that holds it),
+   * `cache_failed` or `cache_language`; then `open_failed` as `play` does.
+   */
+  async playCache(cacheId: string, options: { resumeS?: number | null } = {}): Promise<PlayResult> {
+    const caches = this.opts.caches?.() ?? null;
+    const view = caches === null || !CACHE_ID_PATTERN.test(cacheId) ? null : await caches.get(cacheId);
+    if (view === null) throw new CachePlayError('unknown_cache', 'There is no stream cache with that id.');
+    const audioLang = await this.audioLang(view.ref);
+    const check = playable(view, this.host, audioLang);
+    if (!check.ok) throw cacheRefusalError(view, check.refusal, audioLang);
+    return this.openPage(await this.sessionFromCache(view, check.cache, options.resumeS ?? null, audioLang));
+  }
+
+  /** Opens the session's player page full screen in the streaming Chrome (one at a time, like every resolve). */
+  private async openPage(session: StreamSession): Promise<PlayResult> {
     const pageUrl = `${this.opts.pageBase()}/stream/${session.id}`;
     const opened = await this.serial(async (): Promise<OpenOutput> => {
       try {
@@ -227,8 +263,63 @@ export class DirectStreamService {
         attempts: session.attempts,
       });
     }
-    this.log(`[notesd] direct stream: playing ${refLabel(session.ref)} from ${session.source.provider}`);
+    this.log(
+      session.cache === null
+        ? `[notesd] direct stream: playing ${refLabel(session.ref)} from ${session.source.provider}`
+        : `[notesd] direct stream: playing ${refLabel(session.ref)} from the cache ${session.cache.id} (${session.cache.state}, ${session.source.provider})`,
+    );
     return { page_url: pageUrl, session: await this.sessionInfo(session), attempts: session.attempts };
+  }
+
+  /**
+   * A session on this host's cache of `ref`, or null: no cache wiring, no cache, one that cannot be
+   * played (another host's, failed, another language), or the lookup failed. A null makes the play
+   * resolve; the cache never fails a play.
+   */
+  private async cachedSession(ref: StreamRef, resumeS: number | null): Promise<StreamSession | null> {
+    const caches = this.opts.caches?.() ?? null;
+    if (caches === null) return null;
+    let view: CachePlayView | null;
+    try {
+      view = await caches.find(ref);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the stream cache of ${refLabel(ref)}: ${messageOf(err)}`);
+      return null;
+    }
+    if (view === null) return null;
+    const audioLang = await this.audioLang(ref);
+    const check = playable(view, this.host, audioLang);
+    if (!check.ok) {
+      if (check.refusal !== 'other_host') this.log(`[notesd] direct stream: the cache ${view.id} of ${refLabel(ref)} is not played (${check.refusal})`);
+      return null;
+    }
+    return this.sessionFromCache(view, check.cache, resumeS, audioLang);
+  }
+
+  private async sessionFromCache(view: CachePlayView, cache: SessionCache, resumeS: number | null, audioLang: string | null): Promise<StreamSession> {
+    const session = this.sessions.create(view.ref, cacheSource(view), [], await this.startAt(view.ref, resumeS), audioLang ?? view.audioLang, cache);
+    // Made without resolve(): phase 1's `created` record is written here, so a snapshot of a cached play has a source line.
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
+  }
+
+  /** One cache by id, or null (none, no cache wiring, or the lookup failed). */
+  private async cacheById(id: string): Promise<CachePlayView | null> {
+    const caches = this.opts.caches?.() ?? null;
+    if (caches === null) return null;
+    try {
+      return await caches.get(id);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the stream cache ${id}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /** Where a new session starts: the asked position, else the resumeS hook's, else null. */
+  private async startAt(ref: StreamRef, resumeS: number | null): Promise<number | null> {
+    const hook = this.opts.hooks?.resumeS;
+    if (resumeS !== null || hook === undefined) return resumeS;
+    return this.hookValue('resumeS', () => hook(ref));
   }
 
   /** The live session, or null for an unknown or ended id. Marks it used. */
@@ -242,10 +333,24 @@ export class DirectStreamService {
     return session === null ? null : this.sessionInfo(session);
   }
 
-  /** Resolves the session's title again (a token expired) and keeps the same id. A failure leaves the session as it was. */
+  /**
+   * The player's refresh (a token expired) under the same id. A session on a cache that can still be
+   * played keeps it and resolves nothing (its state is read again: a download may have finished);
+   * once the cache is gone, failed or unreadable, the title is resolved and the session goes on
+   * through the pass-through. A failed resolve leaves the session as it was.
+   */
   async refresh(id: string): Promise<SessionInfo> {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    if (session.cache !== null) {
+      const view = await this.cacheById(session.cache.id);
+      const check = view === null ? null : playable(view, this.host, session.audioLang);
+      if (check !== null && check.ok) {
+        this.sessions.useCache(session, check.cache);
+        return this.sessionInfo(session);
+      }
+      this.log(`[notesd] direct stream: the cache ${session.cache.id} of ${refLabel(session.ref)} can no longer be played (${check === null ? 'gone' : check.refusal}); resolving`);
+    }
     let out: ResolvedOutput;
     try {
       out = await this.resolveSource(session.ref);
@@ -259,9 +364,10 @@ export class DirectStreamService {
   }
 
   /**
-   * The player's previous / next button: resolves the neighbouring episode of the session's and
-   * makes a new session for it (the old one is left to expire; the page reports it closed). Throws
-   * `unknown_session`, `no_episode` (a film, or no episode on that side), or what `resolve` throws.
+   * The player's previous / next button: a new session for the neighbouring episode of the session's
+   * (the old one is left to expire; the page reports it closed), from that episode's cache on this
+   * host when it can be played, else resolved. Throws `unknown_session`, `no_episode` (a film, or no
+   * episode on that side), or what `resolve` throws.
    */
   async switchEpisode(id: string, to: 'prev' | 'next'): Promise<SessionInfo> {
     const session = this.sessions.get(id);
@@ -270,8 +376,11 @@ export class DirectStreamService {
     if (target === null || session.ref.kind !== 'tv') {
       throw new DirectStreamError('no_episode', to === 'next' ? 'There is no next episode to stream.' : 'There is no previous episode.');
     }
-    const next = await this.resolve({ kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode });
-    this.log(`[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) from ${next.source.provider}`);
+    const ref: StreamRef = { kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode };
+    const next = (await this.cachedSession(ref, null)) ?? (await this.resolve(ref));
+    this.log(
+      `[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) ${next.cache === null ? `from ${next.source.provider}` : `from the cache ${next.cache.id}`}`,
+    );
     return this.sessionInfo(next);
   }
 
@@ -491,7 +600,7 @@ export class DirectStreamService {
   }
 
   private async sessionInfo(session: StreamSession): Promise<SessionInfo> {
-    const { ref, source } = session;
+    const { ref, source, cache } = session;
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
     const neighbors = await this.neighborsOf(ref);
@@ -504,18 +613,22 @@ export class DirectStreamService {
       title,
       provider: source.provider,
       manifest_kind: source.manifest_kind,
-      manifest_url: proxiedUrl(session.id, source.manifest_url),
-      subtitles: source.subtitles.map((t) => {
-        const srt = t.format === 'srt' || /\.srt$/i.test(new URL(t.url).pathname);
-        return {
-          url: proxiedUrl(session.id, t.url, { vtt: srt }),
-          lang: t.lang,
-          label: t.label,
-          format: srt ? 'vtt' : t.format,
-          source: t.source,
-          english: isEnglish(t),
-        };
-      }),
+      // A cache's files come from its own route on this daemon, never through the pass-through.
+      manifest_url: cache === null ? proxiedUrl(session.id, source.manifest_url) : cache.manifestUrl,
+      subtitles:
+        cache === null
+          ? source.subtitles.map((t) => {
+              const srt = t.format === 'srt' || /\.srt$/i.test(new URL(t.url).pathname);
+              return {
+                url: proxiedUrl(session.id, t.url, { vtt: srt }),
+                lang: t.lang,
+                label: t.label,
+                format: srt ? 'vtt' : t.format,
+                source: t.source,
+                english: isEnglish(t),
+              };
+            })
+          : cache.subtitles.map((t) => ({ url: t.url, lang: t.lang, label: t.label, format: 'vtt', source: 'request' as const, english: isEnglish(t) })),
       best_height: source.best_height,
       audio_lang: session.audioLang,
       audio: source.audio ?? null,
@@ -525,6 +638,7 @@ export class DirectStreamService {
       created_at: session.createdAt.toISOString(),
       refreshed_at: session.refreshedAt.toISOString(),
       expires_at: this.sessions.expiresAt(session).toISOString(),
+      cached: cache === null ? null : { id: cache.id, state: cache.state, height: cache.height },
     };
   }
 
@@ -556,6 +670,8 @@ export interface DirectStreamWiring {
   hooks?: DirectStreamHooks;
   /** This host's stream evidence log; null or unset records nothing. */
   evidence?: EvidenceSink | null;
+  /** Phase 6: this host's stream cache, read at play time (phase 5 builds it after this service). */
+  caches?: () => PlayableCaches | null;
 }
 
 /** Test seams. */
@@ -589,6 +705,7 @@ export function buildDirectStreamService(
     pageBase: wiring.pageBase,
     hooks: wiring.hooks,
     evidence: wiring.evidence ?? null,
+    caches: wiring.caches,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

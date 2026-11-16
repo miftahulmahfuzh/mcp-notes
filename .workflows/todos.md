@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 9
+**Total Active Tasks**: 8
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 9
+- P1 High: 8
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 0
-- Completed: 119
+- Completed: 120
 
 ---
 
@@ -39,15 +39,6 @@
     - Code blocks applied verbatim from the plan. The four skill-list doc lines lacked direct-stream and update-cloud-source, as the plan said; rewritten to match SKILL_NAMES.
     - Observation, not changed: against the tiny local fixture segments the summary prints 'the stream now, through the session: null Mbps' (download time rounds to 0 s, so mbps is null while ok is true). Rules are unaffected (null is ignored); a real host's segments take measurable time.
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats / plan index status left untouched, to avoid conflicts with peer phases 2 and 5; the coordinator's integrator reconciles them.
-- [ ] **P1-NOTES-A126** Phase 6: Play from the cache
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: `DirectStreamService.play` / `resolve` using a cache on this host (a complete cache makes a session with no resolver run; a downloading one plays the local playlist while the file route fetches missing segments); `POST /api/stream/cache/:id/play` (404 `not_on_this_machine` for the other machine's cache); `SessionInfo.cached` and the page's reading of it; `CACHED_BUFFER_AHEAD_S` (600) through phase 2's `bufferAheadS` for a complete cache; the "from cache" mark beside the title on the player page; position reports and resume unchanged; `SessionSource.cache` in phase 1's snapshot and the `created` record of a session made from a cache; the `direct_stream_play` tool text, `src/mcp/instructions.ts`, `claude/skills/direct-stream/SKILL.md` ("cache it first", "play from the cache", what the answer says) and the "cache it first" advice in `claude/skills/report-stream-bug/SKILL.md`; docs, feature map. Exit criteria: with a `ready` cache and a resolver that would fail, a play starts and the page plays local files; with a half-downloaded cache a segment not on disk is fetched on demand and plays; the other machine's cache is refused by id (404 `not_on_this_machine`) and ignored by title; without a cache nothing changes.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 6 of 6)
-  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy (R1.4 and R1.5's play-by-id part). · criteria: R1.4, R1.5
-  - **Depends on**: P1-NOTES-A122, P1-NOTES-A123, P1-NOTES-A124, P1-NOTES-A125
-  - **Plan**: `.workflows/plan/P1-NOTES-A126.md`
 - [x] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
   - **Difficulty**: EASY
   - **Type**: Feature
@@ -112,6 +103,23 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-A126** Phase 6: Play from the cache
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `DirectStreamService.play` / `resolve` using a cache on this host (a complete cache makes a session with no resolver run; a downloading one plays the local playlist while the file route fetches missing segments); `POST /api/stream/cache/:id/play` (404 `not_on_this_machine` for the other machine's cache); `SessionInfo.cached` and the page's reading of it; `CACHED_BUFFER_AHEAD_S` (600) through phase 2's `bufferAheadS` for a complete cache; the "from cache" mark beside the title on the player page; position reports and resume unchanged; `SessionSource.cache` in phase 1's snapshot and the `created` record of a session made from a cache; the `direct_stream_play` tool text, `src/mcp/instructions.ts`, `claude/skills/direct-stream/SKILL.md` ("cache it first", "play from the cache", what the answer says) and the "cache it first" advice in `claude/skills/report-stream-bug/SKILL.md`; docs, feature map. Exit criteria: with a `ready` cache and a resolver that would fail, a play starts and the page plays local files; with a half-downloaded cache a segment not on disk is fetched on demand and plays; the other machine's cache is refused by id (404 `not_on_this_machine`) and ignored by title; without a cache nothing changes.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy (R1.4 and R1.5's play-by-id part). · criteria: R1.4, R1.5
+  - **Depends on**: P1-NOTES-A122, P1-NOTES-A123, P1-NOTES-A124, P1-NOTES-A125
+  - **Plan**: `.workflows/plan/P1-NOTES-A126.md`
+  - **Completed**: 2026-11-16 15:00
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/direct-stream/cache-play.sh, .claude/skills/verify-notesd/scripts/stream/cache-play.steps.mjs, claude/skills/direct-stream/SKILL.md, claude/skills/report-stream-bug/SKILL.md, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, docs/guide/streaming.md, scripts/docs/httpRoutes.ts, src/daemon.ts, src/directStream/cachePlay.ts, src/directStream/evidence.ts, src/directStream/service.ts, src/directStream/sessions.ts, src/http/app.ts, src/http/streamCachePlayApi.ts, src/mcp/directStreamTools.ts, src/mcp/instructions.ts, tests/unit/directStream/cachePlay.test.ts, tests/unit/mcp.directStreamTools.test.ts, web/src/stream/StreamApp.test.tsx, web/src/stream/StreamApp.tsx, web/src/stream/controller.test.tsx, web/src/stream/controller.ts, web/src/stream/engine.ts, web/src/stream/session.ts, web/src/stream/stream.css, .workflows/todos.md, .workflows/plan/STREAM_CACHE_AND_BUG_REPORT_PLAN.md
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-144544-966490/evidence
+  - **Drift**:
+    - guide: phase 5 already had a cache_failed answers row; extended it instead of adding a duplicate, added cache_language only
+  - **Decided**:
+    - duplicate cache_failed row in guide -> extended phase 5's row (rung 6, convention)
 - [x] **P1-NOTES-A124** Phase 4: Report button and its tmux session
   - **Difficulty**: NORMAL
   - **Type**: Feature

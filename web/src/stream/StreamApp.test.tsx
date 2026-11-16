@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, episodeLabel, formatClock, reportLabel, reportText, switchErrorText } from './StreamApp';
+import { StreamApp, cachedLabel, episodeLabel, formatClock, reportLabel, reportText, switchErrorText } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -238,6 +238,26 @@ describe('StreamApp', () => {
     host?.remove();
     const none = render(<StreamApp sessionId={null} />);
     expect(button(none, 'Report this stream bug')).toBeNull();
+  });
+
+  it('marks a play from the cache beside the title, and nothing for a stream through the pass-through', async () => {
+    const cached = { id: 'c1', state: 'ready', height: 720 };
+    const ready = render(<StreamApp sessionId="S1" deps={{ fetch: routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ cached })) }).fetchImpl, createEngine: fakeEngines().createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    const mark = ready.querySelector('.st-top .st-cached');
+    expect(mark?.getAttribute('aria-label')).toBe("Playing from this machine's cache (720p)");
+    expect(mark?.getAttribute('title')).toBe("Playing from this machine's cache (720p)");
+    expect(window.notesdStream?.cached).toEqual(cached);
+    act(() => root?.unmount());
+    host?.remove();
+    const plain = render(<StreamApp sessionId="S1" deps={{ fetch: routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) }).fetchImpl, createEngine: fakeEngines().createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    expect(plain.querySelector('.st-cached')).toBeNull();
+  });
+
+  it('names a downloading cache in words', () => {
+    expect(cachedLabel({ id: 'c1', state: 'downloading', height: 1080 })).toBe("Playing from this machine's cache while it downloads (1080p)");
+    expect(cachedLabel({ id: 'c1', state: 'ready', height: null })).toBe("Playing from this machine's cache");
   });
 });
 

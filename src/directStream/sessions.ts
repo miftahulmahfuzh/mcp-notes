@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { SessionCache } from './cachePlay.js';
 import { absoluteHttp } from './rewrite.js';
 import type { ResolveAttempt, ResolvedSource, StreamRef } from './types.js';
 
@@ -24,6 +25,12 @@ export interface StreamSession {
   resumeS: number | null;
   /** The title's original language (TMDB's code): the player picks that audio track; null: unknown. */
   audioLang: string | null;
+  /**
+   * The stream cache on this host the session plays from (phase 6); null: through the pass-through.
+   * While set, `source` is cacheSource()'s stand-in (the cache's provider, its local manifest), and
+   * `attempts` and `allowedHosts` are empty.
+   */
+  cache: SessionCache | null;
   readonly createdAt: Date;
   refreshedAt: Date;
   /** Times a refresh replaced the source (a token expired); 0 for a fresh session. */
@@ -63,7 +70,14 @@ export class SessionStore {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
-  create(ref: StreamRef, source: ResolvedSource, attempts: ResolveAttempt[], resumeS: number | null = null, audioLang: string | null = null): StreamSession {
+  create(
+    ref: StreamRef,
+    source: ResolvedSource,
+    attempts: ResolveAttempt[],
+    resumeS: number | null = null,
+    audioLang: string | null = null,
+    cache: SessionCache | null = null,
+  ): StreamSession {
     this.sweep();
     const at = this.now();
     const session: StreamSession = {
@@ -74,6 +88,7 @@ export class SessionStore {
       allowedHosts: sourceHosts(source),
       resumeS,
       audioLang,
+      cache,
       createdAt: at,
       refreshedAt: at,
       refreshes: 0,
@@ -111,13 +126,20 @@ export class SessionStore {
     return this.now().getTime() >= this.expiresAt(session).getTime() ? null : session;
   }
 
-  /** A refresh: the new source, its hosts added to the ones the session already had. */
+  /** A refresh: the new source, its hosts added to the ones the session already had. A resolved source is never a cache's. */
   replaceSource(session: StreamSession, source: ResolvedSource, attempts: ResolveAttempt[]): void {
     session.source = source;
     session.attempts = attempts;
+    session.cache = null;
     for (const host of sourceHosts(source)) session.allowedHosts.add(host);
     session.refreshedAt = this.now();
     session.refreshes += 1;
+  }
+
+  /** A refresh of a session whose cache can still be played: the cache as it is now (a download may have finished). Not counted in `refreshes` (no token was replaced). */
+  useCache(session: StreamSession, cache: SessionCache): void {
+    session.cache = cache;
+    session.refreshedAt = this.now();
   }
 
   expiresAt(session: StreamSession): Date {

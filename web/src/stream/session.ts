@@ -24,11 +24,23 @@ export interface StreamSession {
   /** A series: the episodes before and after this one; null where there is none (always null for a film). */
   prevEpisode: EpisodeNumber | null;
   nextEpisode: EpisodeNumber | null;
+  /** Played from this machine's stream cache; null: through the pass-through. */
+  cached: CachedInfo | null;
 }
 
 export interface EpisodeNumber {
   season: number;
   episode: number;
+}
+
+/** A cache's state as a session names it (phase 6): the page plays this machine's local copy. */
+export type CachedState = 'downloading' | 'ready';
+
+/** SessionInfo.cached: the stream cache on this machine the session plays from. */
+export interface CachedInfo {
+  id: string;
+  state: CachedState;
+  height: number | null;
 }
 
 /** An audio track as the manifest writes it. */
@@ -66,6 +78,13 @@ const KINDS: readonly string[] = ['hls', 'dash', 'mp4'];
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function cachedInfo(value: unknown): CachedInfo | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { id, state, height } = value as Record<string, unknown>;
+  if (typeof id !== 'string' || id === '' || (state !== 'downloading' && state !== 'ready')) return null;
+  return { id, state, height: typeof height === 'number' && Number.isInteger(height) && height > 0 ? height : null };
 }
 
 function episodeNumber(value: unknown): EpisodeNumber | null {
@@ -110,6 +129,7 @@ export function parseSession(json: unknown): StreamSession {
     audioTrack: track === null || (text(track.lang) === null && text(track.label) === null) ? null : { lang: text(track.lang), label: text(track.label) },
     prevEpisode: episodeNumber(o.prev_episode),
     nextEpisode: episodeNumber(o.next_episode),
+    cached: cachedInfo(o.cached),
   };
 }
 

@@ -283,6 +283,26 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   (`/tok/t<N>/`) refuses a token after ten media answers and fails `seg3.ts` once.
 - Playing from a cache is phase 6's entry.
 
+## Playing from the cache
+- A play (`POST /api/stream/play`, `direct_stream_play`, the player's previous/next buttons) uses
+  this host's stream cache of the title first: a `ready` cache plays its local playlist with no
+  resolve (`attempts: []`, `session.cached.state: "ready"`, `manifest_url` under
+  `/api/stream/cache/<id>/f/`); a `downloading` one plays the same playlist and the file route
+  fetches missing segments on demand; a failed cache, a cache on the other machine, a cache made
+  for another language or none resolves as before. `POST /api/stream/cache/:id/play` plays one
+  cache by id; another machine's answers 404 `not_on_this_machine` with `host`. The page shows a
+  drive icon beside the title (`.st-cached`, aria-label "Playing from this machine's cache ...")
+  and `window.notesdStream.cached`. A refresh keeps a cache that can still play, else resolves.
+- Logic: `npx vitest run tests/unit/directStream/cachePlay.test.ts web/src/stream tests/unit/mcp.directStreamTools.test.ts`.
+- Throwaway daemon (`$V up --web --direct-stream`, note RUN and `DIRECT=`), in this order on one run:
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache-play.sh RUN ready`, then
+  `DIRECT=<run>/direct $V ui RUN .claude/skills/verify-notesd/scripts/stream/cache-play.steps.mjs`
+  (`CACHE PAGE PASS`, screenshot `cache-play-page`), then
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache-play.sh RUN downloading other-host`.
+  The script makes a cache of TMDB movie 550 through `POST /api/stream/cache` (fake resolver,
+  fixture host), sets the fake resolver to `no_source` to prove nothing resolves, and edits the
+  run's `stream_caches` row with `verify.sh exec` for the downloading and other-host cases.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

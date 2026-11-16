@@ -115,6 +115,14 @@ export const BUFFER_AHEAD_S = 120;
  */
 export const MUTED_BUFFER_AHEAD_S = 30;
 
+/**
+ * A complete cache (phase 6): all of it is on this machine's disk, so no cap of ours beyond hls.js's
+ * own default ceiling (600 s); its byte cap (maxBufferSize, 60 MB) still holds, so the page's memory
+ * stays bounded. A cache still downloading keeps BUFFER_AHEAD_S, and `?muted=1` keeps
+ * MUTED_BUFFER_AHEAD_S either way.
+ */
+export const CACHED_BUFFER_AHEAD_S = 600;
+
 /** Restarts after a fatal network error before the play stops with the error (R1.7). */
 export const NETWORK_RETRY_LIMIT = 5;
 

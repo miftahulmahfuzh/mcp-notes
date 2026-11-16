@@ -73,6 +73,17 @@
   margin-left: 16px;
   color: #e9c46a;
 }
+.st-cached {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 10px;
+  vertical-align: -3px;
+  font-size: 16px;
+  color: #9cc5a1;
+}
+.st-cached[data-state='downloading'] {
+  color: #e9c46a;
+}
 .st-btn:hover:not(:disabled),
 .st-btn[aria-expanded='true'] {
   background: rgba(236, 235, 228, 0.12);

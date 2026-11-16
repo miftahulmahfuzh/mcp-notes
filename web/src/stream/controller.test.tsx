@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_REFRESHES, POSITION_INTERVAL_MS, StreamController } from './controller';
-import { audioTrackIndex, BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
+import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 
@@ -55,6 +55,7 @@ describe('parseSession', () => {
       audioTrack: null,
       prevEpisode: null,
       nextEpisode: null,
+      cached: null,
     });
     // A series' session names its neighbours; anything else there is no neighbour.
     expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
@@ -101,11 +102,63 @@ describe('parseSession', () => {
     expect(() => parseSession(streamSessionJson({ manifest_kind: 'smooth' }))).toThrow('bad_session');
   });
 
+  it('reads the cache a session plays from, and nothing it cannot use', () => {
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'ready', height: 720 } })).cached).toEqual({ id: 'c1', state: 'ready', height: 720 });
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'downloading', height: 'x' } })).cached).toEqual({ id: 'c1', state: 'downloading', height: null });
+    expect(parseSession(streamSessionJson({ cached: { id: 'c1', state: 'failed', height: 720 } })).cached).toBeNull();
+    expect(parseSession(streamSessionJson({ cached: null })).cached).toBeNull();
+    expect(parseSession(streamSessionJson()).cached).toBeNull();
+  });
+
   it('reads the id from /stream/<id>', () => {
     expect(sessionIdFromLocation({ pathname: '/stream/k3R9xQ2m' })).toBe('k3R9xQ2m');
     expect(sessionIdFromLocation({ pathname: '/stream/k3R9xQ2m/' })).toBe('k3R9xQ2m');
     expect(sessionIdFromLocation({ pathname: '/stream/' })).toBeNull();
     expect(sessionIdFromLocation({ pathname: '/stream/a/b' })).toBeNull();
+  });
+});
+
+const CACHED = { id: 'c1d2e3f4-0000-4000-8000-000000000001', state: 'ready', height: 720 };
+const LOCAL = '/api/stream/cache/c1d2e3f4-0000-4000-8000-000000000001/f/master.m3u8';
+
+describe('playing from the cache', () => {
+  it("hands a cached session's state to the engine, keeps it in the state and notes it in the log", async () => {
+    const { controller, made } = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ manifest_url: LOCAL, cached: CACHED })) });
+    await controller.start();
+    expect(made[0]?.req.src).toBe(LOCAL);
+    expect(made[0]?.req.bufferAheadS).toBe(CACHED_BUFFER_AHEAD_S);
+    expect(controller.getState().cached).toEqual(CACHED);
+    expect(controller.getState().log).toContain('from cache c1d2e3f4 (ready)');
+  });
+
+  it('keeps 120 s ahead for a stream through the pass-through and for a cache still downloading', async () => {
+    const plain = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });
+    await plain.controller.start();
+    expect(plain.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    expect(plain.controller.getState().cached).toBeNull();
+    const downloading = setup({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson({ manifest_url: LOCAL, cached: { ...CACHED, state: 'downloading' } })) });
+    await downloading.controller.start();
+    expect(downloading.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+  });
+
+  it('drops the mark when a refresh moves the session onto the pass-through (the cache was cleared)', async () => {
+    let reads = 0;
+    const { controller, made } = setup({
+      'GET /api/stream/sessions/S1': () => jsonResponse(reads++ === 0 ? streamSessionJson({ manifest_url: LOCAL, cached: CACHED }) : streamSessionJson()),
+      'POST /api/stream/sessions/S1/refresh': () => jsonResponse({ session_id: 'S1' }),
+    });
+    await controller.start();
+    made[0]!.req.handlers.onReady({ qualities: [], subtitles: [] });
+    made[0]!.req.handlers.onAuthError(403);
+    await vi.waitFor(() => expect(made).toHaveLength(2));
+    expect(made[1]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    expect(controller.getState().cached).toBeNull();
+  });
+});
+
+describe('the buffer of a cached play', () => {
+  it('keeps 30 s under ?muted=1 even for a complete cache, and the numbers are 30 / 120 / 600', () => {
+    expect([MUTED_BUFFER_AHEAD_S, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S]).toEqual([30, 120, 600]);
   });
 });
 
