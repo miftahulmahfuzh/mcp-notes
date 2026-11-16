@@ -260,11 +260,7 @@ export class StreamController {
     this.engine?.destroy();
     this.engine = null;
     this.ready = null;
-    for (const track of this.fileTracks) {
-      track.element.remove();
-      this.deps.revokeTextUrl(track.url);
-    }
-    this.fileTracks = [];
+    this.clearFileTracks();
     this.sessionId = nextId;
     this.lastPositionS = 0;
     this.stalls = [];
@@ -342,11 +338,7 @@ export class StreamController {
     this.video.ownerDocument.defaultView?.removeEventListener('pagehide', this.onClose);
     this.engine?.destroy();
     this.engine = null;
-    for (const track of this.fileTracks) {
-      track.element.remove();
-      this.deps.revokeTextUrl(track.url);
-    }
-    this.fileTracks = [];
+    this.clearFileTracks();
   }
 
   private set(patch: Partial<StreamState>): void {
@@ -609,8 +601,11 @@ export class StreamController {
     }
   }
 
+  // Chrome keeps a cue on the picture when its track is taken away while the film is detached (the
+  // last line of episode 787 stayed over the whole of 788), so a track is switched off before it goes.
   private clearFileTracks(): void {
     for (const track of this.fileTracks) {
+      if (track.element.track) track.element.track.mode = 'disabled';
       track.element.remove();
       this.deps.revokeTextUrl(track.url);
     }

@@ -562,6 +562,45 @@ describe('StreamController: the previous and next episode', () => {
     expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
     expect(controller.getState().switching).toBeNull();
   });
+  it("switches the episode's subtitle track off before it is taken away, so its last line does not stay on the picture", async () => {
+    // jsdom has no TextTrack: give each <track> one, as a browser does.
+    const modes = new Map<HTMLTrackElement, { mode: string }>();
+    const had = Object.getOwnPropertyDescriptor(HTMLTrackElement.prototype, 'track');
+    Object.defineProperty(HTMLTrackElement.prototype, 'track', {
+      configurable: true,
+      get(this: HTMLTrackElement) {
+        if (!modes.has(this)) modes.set(this, { mode: 'disabled' });
+        return modes.get(this);
+      },
+    });
+    try {
+      const vtt = () => new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHowever, on that island...\n', { status: 200 });
+      const t = playing({
+        [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ ...EP730, subtitles: [sessionTrack('/sub730', 'en', 'English')] })),
+        'GET /sub730': vtt,
+        [`POST ${S1}/episode`]: () => jsonResponse(EP731),
+        [`GET ${S2}`]: () => jsonResponse(streamSessionJson({ ...EP731, subtitles: [sessionTrack('/sub731', 'en', 'English')] })),
+        'GET /sub731': vtt,
+      });
+      void t.controller.start();
+      await vi.waitFor(() => expect(t.made).toHaveLength(1));
+      t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+      await vi.waitFor(() => expect([...modes.values()].map((m) => m.mode)).toEqual(['showing']));
+      const [old] = [...modes.keys()];
+      let modeWhenRemoved: string | undefined;
+      const remove = old.remove.bind(old);
+      old.remove = () => {
+        modeWhenRemoved = modes.get(old)?.mode;
+        remove();
+      };
+      await t.controller.goToEpisode('next');
+      expect(modeWhenRemoved).toBe('disabled');
+      expect(old.isConnected).toBe(false);
+    } finally {
+      if (had) Object.defineProperty(HTMLTrackElement.prototype, 'track', had);
+      else delete (HTMLTrackElement.prototype as { track?: unknown }).track;
+    }
+  });
 });
 
 describe('the page log reaches the daemon (R2.2)', () => {
