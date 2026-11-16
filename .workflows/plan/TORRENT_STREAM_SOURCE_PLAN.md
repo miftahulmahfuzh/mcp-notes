@@ -133,13 +133,13 @@ the later phases were bent to them.
 | 2 | Finding and ranking torrents | R1 | `src/directStream/torrent/find` | 24 | — | NORMAL | `.workflows/plan/torrent-stream-source/phase-2.md` | — | — |
 | 3 | A torrent session in direct streaming | R1, R2 | `src/directStream` | 33 | 1, 2 | HARD | `.workflows/plan/torrent-stream-source/phase-3.md` | — | — |
 | 4 | The player page on a torrent | R2 | `web/src/stream` | 11 | 3 | NORMAL | `.workflows/plan/torrent-stream-source/phase-4.md` | — | — |
-| 5 | The remux for files Chrome cannot play | R2 | `src/directStream/torrent` | 25 | 3 | HARD | `.workflows/plan/torrent-stream-source/phase-5.md` | — | — |
+| 5 | The remux for files Chrome cannot play | R2 | `src/directStream/torrent` | 25 | 3, 7 | HARD | `.workflows/plan/torrent-stream-source/phase-5.md` | — | — |
 | 6 | Subtitle files: in the torrent, from a subtitle service, from a cloud provider | R3 | `src/directStream/torrent/subtitles` | 30 | 3 | NORMAL | `.workflows/plan/torrent-stream-source/phase-6.md` | — | — |
 | 7 | The embedded subtitle track and the growing cue feed | R3 | `src/directStream/torrent/subtitles` | 24 | 4, 6 | HARD | `.workflows/plan/torrent-stream-source/phase-7.md` | — | — |
 | 8 | Whisper, the last resort | R3 | `src/directStream/torrent/subtitles` | 17 | 7 | HARD | `.workflows/plan/torrent-stream-source/phase-8.md` | — | — |
 | 9 | 1337x and ext.to through the streaming Chrome | R1 | `claude/streaming/torrent` | 21 | 3 | HARD | `.workflows/plan/torrent-stream-source/phase-9.md` | — | — |
 
-Waves: phases 1 and 2 together; then 3; then 4, 5, 6 and 9 together; then 7; then 8.
+Waves: phases 1 and 2 together; then 3; then 4, 6 and 9 together; then 7; then 5 and 8 together. (Coordinator, write-set gate: phase 5 waits for 7 because 5, 6 and 7 each regenerate `docs/guide/reference/http-api.md`; a generated file is regenerated, not merged, so no two of them may share a wave. Phase 5 quotes phase 3's code; phases 6 and 7 edit other places of the shared files, as listed below.)
 
 **Files several phases touch, and how they meet** (each later phase quotes the file as the earlier one leaves it; the
 edits below are additions at separate, marked places, so a merge is a union of lines):
@@ -259,6 +259,7 @@ edits below are additions at separate, marked places, so a merge is a union of l
 | The fake index's release names (the title check would drop `Verify.Fixture...`) | `<Title>.<Year>.<tail>` from the fake TMDB, and the fake 1337x row from `--title`/`--year` | 3: phase 2's `exclusionOf` code (`other_title`) |
 | A fallback index's time limit (phase 2's `min` cut phase 9's 40 s to 10 s) | a fallback index keeps its own `timeoutMs` in the fallback round; the JSON indexes keep the shorter limit | 2: R1.7's exit criterion (the sites must be able to answer) over phase 2's comment |
 | Phase 7 against phase 4 (same web files) | phase 7 depends on phase 4 | 1: invariant 1 (build green, no blind merge of the same functions) |
+| Write-set gate: `http-api.md` (generated) written by phases 5 and 6 in one wave, and by 7 in the next | phase 5 depends on phase 7 (waves `[1,2] → [3] → [4,6,9] → [7] → [5,8]`), not 6 on 5: the subtitle chain 6 → 7 → 8 is the longest path and must not wait for the remux; the other concurrent writes are ordinary files, one worktree per phase | 6: the swarm's ORDER remedy (a generated file has one writer per wave); decided by the coordinator |
 
 ## Open Questions
 
