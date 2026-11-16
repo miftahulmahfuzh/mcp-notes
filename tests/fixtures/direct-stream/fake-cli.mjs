@@ -57,12 +57,15 @@ function main() {
   const mode = (existsSync(modeFile) ? readFileSync(modeFile, 'utf8').trim() : '') || 'hls';
   // --skip <name,name>: providers a session left (the real resolver drops them the same way).
   const skipped = (flag('--skip') ?? '').split(',').filter(Boolean);
+  // --only <name>: that provider alone (a probe, or a play the owner asked from one provider).
+  const only = flag('--only');
   const providersFile = flag('--providers');
   const providers = providersFile
     ? JSON.parse(readFileSync(providersFile, 'utf8'))
         .filter((p) => !p.browser_only)
         .map((p) => p.name)
         .filter((name) => !skipped.includes(name))
+        .filter((name) => only === null || name.toLowerCase() === only.toLowerCase())
     : [];
   if (mode === 'no_chrome') return print({ ok: false, ...ref, source: null, error: 'no_chrome', detail: 'fake: Chrome is not installed', attempts: [] }, 1);
   if (mode === 'no_source' || providers.length === 0) {

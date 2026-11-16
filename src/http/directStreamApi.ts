@@ -22,15 +22,18 @@ export const UNKNOWN_SESSION = { error: 'unknown_session', message: 'That stream
 
 const tmdbId = z.number().int().min(1).max(2_147_483_647);
 const resumeS = z.number().min(0).max(172_800);
+/** A provider's name from the registry (`direct_stream_sources`): only that one is asked. */
+const providerName = z.string().trim().min(1).max(60);
 
 export const playBody = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('movie'), tmdb_id: tmdbId, season: z.null().optional(), episode: z.null().optional(), resume_s: resumeS.nullish() }),
+  z.strictObject({ kind: z.literal('movie'), tmdb_id: tmdbId, season: z.null().optional(), episode: z.null().optional(), resume_s: resumeS.nullish(), provider: providerName.nullish() }),
   z.strictObject({
     kind: z.literal('tv'),
     tmdb_id: tmdbId,
     season: z.number().int().min(0).max(1000),
     episode: z.number().int().min(1).max(10_000),
     resume_s: resumeS.nullish(),
+    provider: providerName.nullish(),
   }),
 ]);
 
@@ -91,7 +94,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
       return c.json({ error: 'invalid_body', message: body.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') }, 400);
     }
     try {
-      const played = await service().play(refFromBody(body.data), { resumeS: body.data.resume_s ?? null });
+      const played = await service().play(refFromBody(body.data), { resumeS: body.data.resume_s ?? null, provider: body.data.provider ?? null });
       return c.json({ ok: true, ...played });
     } catch (err) {
       return directStreamErrorResponse(c, err);

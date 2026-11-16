@@ -463,6 +463,16 @@ describe('POST /api/stream/sessions/:id/refresh', () => {
   });
 });
 
+describe('POST /api/stream/play with a provider', () => {
+  it('asks only the named provider, and says so when there is none of that name', async () => {
+    const { app } = await ready();
+    const { session } = await played(app, { kind: 'movie', tmdb_id: 550, provider: 'Alpha' });
+    expect(session.provider).toBe('Alpha');
+    expect((await calls())[0]).toEqual(expect.arrayContaining(['resolve', '--only', 'Alpha']));
+    expect((await play(app, { kind: 'movie', tmdb_id: 550, provider: '' })).status).toBe(400);
+  });
+});
+
 describe('POST /api/stream/sessions/:id/source', () => {
   const source = (app: Hono, sid: string) => app.request(`/api/stream/sessions/${sid}/source`, { method: 'POST', headers: SAME_ORIGIN });
   type SourceJson = SessionInfo & { switched: boolean; reason: string | null; from: string };

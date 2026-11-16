@@ -74,7 +74,7 @@ export interface DirectStreamToolDeps {
   /** Default: the clock. */
   now?: () => Date;
   /** DirectStreamService.play: resolve, then open the player page full screen in the streaming Chrome, resuming where the last stream stopped. */
-  play(target: StreamTarget): Promise<unknown>;
+  play(target: StreamTarget, provider?: string): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
   /** What the library knows of each of these title keys (movieTools.ts libraryMarks); a key it does not hold is absent. */
@@ -112,7 +112,7 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
       const id = await new MovieStreams(movies).ensureTitle({ kind: candidate.kind, tmdbId: candidate.tmdbId });
       return id === null ? false : movies.repo.addTitleAlias(id, normalizeName(name));
     },
-    play: (target) => service.play(target),
+    play: (target, provider) => service.play(target, provider === undefined ? {} : { provider }),
     freshSource: async (target) => {
       // Phase 5's one freshness rule: this host's row of the film (0, 0) or the episode, fresh as of now.
       const season = target.kind === 'tv' ? target.season : 0;
@@ -150,6 +150,7 @@ const FIND_DESCRIPTION =
 const PLAY_DESCRIPTION =
   'Stream one film, or one episode of a series, directly: the daemon finds a cloud source (providers with an English subtitle first), then opens its own player page full screen in the streaming Chrome window on the Windows side, ' +
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
+  'provider asks one named provider only (a name from direct_stream_sources) and passes over a cache: for "stream it from VidLink", or when the stream that started is a cinema recording or a dub and another provider is known to be clean. ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
   'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both); ' +
   'when the owner named an episode by one number without a season ("One Piece episode 730", "resume one piece from episode 730"), pass absolute_episode alone: the daemon maps it to the season and episode TMDB lists (the 730th episode in order; a long anime\'s own numbers run on across seasons) and answers picked absolute with the season and episode it chose, ' +
@@ -485,6 +486,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
         season: seasonField.optional().describe('A series only: the season to stream from.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
+        provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink"), or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked.'),
         absolute_episode: z
           .number()
           .int()
@@ -498,7 +500,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode, absolute_episode, asked_as }) => {
+    async ({ title, year, kind, season, episode, absolute_episode, asked_as, provider }) => {
       const d = deps.directStream;
       if (!d) return off();
       return respond(async () => {
@@ -610,7 +612,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         // name until the resolve stores it: read it again, so the answer names what plays.
         const stored = async (): Promise<TitleCandidate> => (c.movieId === null ? ((await d.library.byKey(c.kind, c.tmdbId)) ?? c) : c);
         try {
-          const play = await d.play(target);
+          const play = provider === undefined ? await d.play(target) : await d.play(target, provider);
           return ok({
             started: true,
             title: candidateView(await stored(), wall),

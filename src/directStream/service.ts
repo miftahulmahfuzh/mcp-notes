@@ -230,9 +230,9 @@ export class DirectStreamService {
    * has run before this returns or throws. Always resolves: a cache is `play`'s business, and
    * `subtitleText` needs a resolved source.
    */
-  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number } = {}): Promise<StreamSession> {
+  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
-    const out = await this.resolveSource(ref, options.deadlineS);
+    const out = await this.resolveSource(ref, options.deadlineS, [], options.only);
     const resumeS = await this.startAt(ref, options.resumeS ?? null);
     const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
@@ -244,9 +244,14 @@ export class DirectStreamService {
    * cache of the title (phase 5), when it can be played (`playable`), makes the session with no
    * resolve; otherwise the title is resolved first, as before.
    */
-  async play(input: StreamRefInput, options: { resumeS?: number | null } = {}): Promise<PlayResult> {
+  async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null } = {}): Promise<PlayResult> {
     const ref = toStreamRef(input);
-    const session = (await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, options));
+    // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
+    const only = options.provider ?? null;
+    const session =
+      only !== null
+        ? await this.resolve(ref, { resumeS: options.resumeS ?? null, only })
+        : ((await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, { resumeS: options.resumeS ?? null })));
     return this.openPage(session);
   }
 
@@ -660,8 +665,8 @@ export class DirectStreamService {
   }
 
   /** runResolve, then the recordResolve hook, then a typed failure. */
-  private async resolveSource(ref: StreamRef, deadlineS?: number, skip: readonly string[] = []): Promise<ResolvedOutput> {
-    const out = await this.runResolve(ref, { ...(deadlineS === undefined ? {} : { deadlineS }), skip });
+  private async resolveSource(ref: StreamRef, deadlineS?: number, skip: readonly string[] = [], only?: string): Promise<ResolvedOutput> {
+    const out = await this.runResolve(ref, { ...(deadlineS === undefined ? {} : { deadlineS }), skip, ...(only === undefined ? {} : { only }) });
     const hook = this.opts.hooks?.recordResolve;
     if (hook !== undefined) {
       try {
