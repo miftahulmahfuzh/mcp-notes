@@ -236,6 +236,18 @@ describe('the original language', () => {
     expect(resolve?.slice(resolve.indexOf('--audio-lang'), resolve.indexOf('--audio-lang') + 2)).toEqual(['--audio-lang', 'ko']);
   });
 
+  it("passes an anime's AniList id and episode to the resolver, and nothing for a title that has none or when the hook fails", async () => {
+    const { app } = await ready('host-a', { anime: async () => ({ id: 21, episode: 730 }) });
+    await played(app);
+    const [resolve] = await calls();
+    expect(resolve?.slice(resolve.indexOf('--anime'), resolve.indexOf('--anime') + 2)).toEqual(['--anime', '21:730']);
+    for (const anime of [async () => null, async () => ({ id: 0, episode: 1 }), async () => Promise.reject(new Error('index down'))]) {
+      const again = await ready('host-a', { anime });
+      await played(again.app);
+    }
+    expect((await calls()).filter((c) => c.includes('--anime'))).toHaveLength(1);
+  });
+
   it('asks for no audio check when the language is unknown, is not a code, or its hook fails', async () => {
     for (const originalLanguage of [async () => null, async () => 'korean (south)', async () => Promise.reject(new Error('tmdb down'))]) {
       const { app } = await ready('host-a', { originalLanguage });

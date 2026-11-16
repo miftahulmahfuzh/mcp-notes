@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { ChromeError } from '../../../claude/streaming/chrome.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { main, openInChrome, parseArgs, readHealth, readProviders, SEED_PATH, START_EXPRESSION, wantsStart } from '../../../claude/streaming/direct/cli.mjs';
+import { ANIME_SEED_PATH, main, openInChrome, parseArgs, readHealth, readProviders, SEED_PATH, START_EXPRESSION, wantsStart } from '../../../claude/streaming/direct/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { orderProviders } from '../../../claude/streaming/direct/order.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { embedUrl, pickSource, resolveTitle } from '../../../claude/streaming/direct/resolve.mjs';
+import { embedUrl, indexSubtitles, pickSource, resolveTitle } from '../../../claude/streaming/direct/resolve.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { MEDIA_EXPRESSION, MUTE_SCRIPT, parseSniffReply } from '../../../claude/streaming/direct/sniff.mjs';
 
@@ -505,5 +505,103 @@ describe('the sniffer', () => {
     }
     expect(script).toContain('background = $true');
     expect(script).toContain('Page.addScriptToEvaluateOnNewDocument');
+  });
+});
+
+describe('anime embeds', () => {
+  const ANIME = { kind: 'tv', tmdbId: 37854, season: 17, episode: 730, anime: { id: 21, episode: 730 } };
+  const animeProvider = (name: string, over: Json = {}): Json =>
+    provider(name, { id_kind: 'anilist', movie: `https://${name.toLowerCase()}.example/anime/{id}/1/sub`, tv: `https://${name.toLowerCase()}.example/anime/{id}/{episode}/sub`, en_subtitle: true, ...over });
+  /** What vidnest.fun's anime embed loads: a relayed playlist, and the subtitle file behind a relay that names it as a parameter. */
+  const animeCapture = (): Json =>
+    capture({
+      hits: [
+        hit({ type: 'XHR', url: 'https://relay.example/proxy?url=https%3A%2F%2Fcdn.example%2Fa%2Fmaster.m3u8&headers=%7B%7D', mime: 'application/vnd.apple.mpegurl', body: MASTER }),
+        hit({ type: 'TextTrack', url: 'https://relay.example/fetch?url=https%3A%2F%2Fsubs.example%2Fanime%2Fsubtitles%2F147c.vtt&ref=https%3A%2F%2Fplay.example%2F', mime: 'application/octet-stream' }),
+        hit({ type: 'TextTrack', url: 'blob:https://vidnest.fun/894a5a94', mime: 'text/vtt' }),
+      ],
+    });
+
+  it('the anime seed holds embeds keyed by AniList id, with an episode and no season', () => {
+    const seed: Json[] = readProviders(readFileSync(ANIME_SEED_PATH, 'utf8'));
+    expect(seed.length).toBeGreaterThan(0);
+    for (const p of seed) {
+      expect(p.id_kind).toBe('anilist');
+      expect(p.tv).toContain('{episode}');
+      expect(p.tv).not.toContain('{season}');
+      expect(p.en_subtitle).toBe(true);
+    }
+    expect(() => readProviders(JSON.stringify([animeProvider('A', { tv: 'https://a.example/anime/{id}/sub' })]))).toThrow(/\{id\}, \{episode\}/);
+    expect(() => readProviders(JSON.stringify([provider('A', { id_kind: 'imdb' })]))).toThrow(/id_kind/);
+  });
+
+  it('addresses an anime embed by the AniList id and the episode counted through the series, and has no address without them', () => {
+    expect(embedUrl(animeProvider('Ani'), ANIME)).toBe('https://ani.example/anime/21/730/sub');
+    expect(embedUrl(animeProvider('Ani'), { kind: 'movie', tmdbId: 129, season: null, episode: null, anime: { id: 199, episode: 1 } })).toBe('https://ani.example/anime/199/1/sub');
+    expect(embedUrl(animeProvider('Ani'), { kind: 'tv', tmdbId: 1396, season: 2, episode: 3 })).toBeNull();
+    expect(embedUrl(provider('Plain', { tv: 'https://plain.example/tv/{id}/{season}/{episode}' }), ANIME)).toBe('https://plain.example/tv/37854/17/730');
+  });
+
+  it('tries the anime embeds first for an anime, whatever the health order says, and reads the relayed subtitle as English', async () => {
+    const { sniff, calls } = fakeSniffer({ 'ani.example': animeCapture(), 'healthy.example': streamCapture() });
+    const providers = [provider('Healthy', { tv: 'https://healthy.example/tv/{id}/{season}/{episode}', en_subtitle: true }), animeProvider('Ani')];
+    const health = { Healthy: { last_outcome: 'resolved', last_success_at: '2026-11-16T00:00:00Z', consecutive_failures: 0 } };
+    const out = await resolveTitle(ANIME, { providers, health, sniff });
+    expect(calls.map((c) => c.url)).toEqual(['https://ani.example/anime/21/730/sub']);
+    expect(out).toMatchObject({ ok: true, source: { provider: 'Ani', embed_url: 'https://ani.example/anime/21/730/sub', manifest_kind: 'hls', en_subtitle: true } });
+    expect(out.source.subtitles).toContainEqual(
+      { url: 'https://relay.example/fetch?url=https%3A%2F%2Fsubs.example%2Fanime%2Fsubtitles%2F147c.vtt&ref=https%3A%2F%2Fplay.example%2F', lang: 'en', label: 'English', format: 'vtt', source: 'request' },
+    );
+    // The page's own blob copy of the file is not an address the player can ask for.
+    expect(out.source.subtitles.some((t: Json) => String(t.url).startsWith('blob:'))).toBe(false);
+  });
+
+  it('skips the anime embeds for a title that is no anime, and falls back to the others when they load nothing', async () => {
+    const plain = fakeSniffer({ 'healthy.example': streamCapture() });
+    const providers = [animeProvider('Ani'), provider('Healthy', { tv: 'https://healthy.example/tv/{id}/{season}/{episode}' })];
+    const notAnime = await resolveTitle({ kind: 'tv', tmdbId: 1396, season: 2, episode: 3 }, { providers, sniff: plain.sniff });
+    expect(notAnime.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([['Ani', 'skipped_no_template'], ['Healthy', 'resolved']]);
+    expect(notAnime.attempts[0].detail).toContain('AniList');
+    const empty = fakeSniffer({ 'healthy.example': streamCapture() });
+    const fallback = await resolveTitle(ANIME, { providers, sniff: empty.sniff });
+    expect(fallback.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([['Ani', 'no_stream'], ['Healthy', 'resolved']]);
+  });
+
+  it('parses --anime, and refuses one that is not <AniList id>:<episode>', () => {
+    expect(parseArgs(['resolve', 'tv', '37854', '17', '730', '--anime', '21:730']).ref).toEqual({ kind: 'tv', tmdbId: 37854, season: 17, episode: 730, anime: { id: 21, episode: 730 } });
+    expect(parseArgs(['resolve', 'movie', '550']).ref.anime).toBeNull();
+    for (const bad of ['21', '21:0', 'a:1', '21:730:1']) expect(() => parseArgs(['resolve', 'tv', '37854', '17', '730', '--anime', bad])).toThrow(/--anime/);
+  });
+});
+
+describe('what counts as a stream, and where subtitles show', () => {
+  it('does not take an answer that is no playlist for a stream', async () => {
+    // What a relay under a rate limit answered for One Piece: a bare list of addresses, no #EXTM3U.
+    const garbage = capture({ hits: [hit({ url: 'https://cdn.example/m3u8-proxy.m3u8?p=abc', mime: 'application/vnd.apple.mpegurl', body: 'https://cdn.example/m3u8-proxy.m3u8?p=1\nhttps://cdn.example/m3u8-proxy.m3u8?p=2\n' })] });
+    expect(pickSource(garbage)).toBeNull();
+    const { sniff } = fakeSniffer({ 'bad.example': garbage, 'good.example': streamCapture() });
+    const out = await resolveTitle(MOVIE, { providers: [provider('Bad'), provider('Good')], sniff });
+    expect(out.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([['Bad', 'no_stream'], ['Good', 'resolved']]);
+    // A playlist whose text Chrome did not keep cannot be checked, and is kept.
+    expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/a.m3u8', mime: 'application/vnd.apple.mpegurl', body: null })] }))).not.toBeNull();
+  });
+
+  it('reads the subtitle files a page\'s subtitle service listed, English named as such', () => {
+    const vdrk = hit({ type: 'SubtitleIndex', url: 'https://sub.vdrk.site/v2/tv/1396/2/3', mime: 'application/json', body: JSON.stringify([{ label: 'Arabic', file: 'https://cache.vdrk.site/v3/tv/1396/2/3/Arabic.vtt' }, { label: 'English', file: 'https://cache.vdrk.site/v3/tv/1396/2/3/English.vtt' }]) });
+    const wyzie = hit({ type: 'SubtitleIndex', url: 'https://sub.wyzie.io/search?id=550', mime: 'application/json', body: JSON.stringify([{ url: 'https://sub.wyzie.io/c/1/id/9?format=srt', display: 'English', language: 'en', format: 'srt' }, { url: 'ftp://x/y.srt', language: 'en' }]) });
+    expect(indexSubtitles([vdrk, wyzie, hit({ type: 'SubtitleIndex', body: '{"error":"No subtitles found"}' }), hit({ type: 'SubtitleIndex', body: 'not json' })])).toEqual([
+      { url: 'https://cache.vdrk.site/v3/tv/1396/2/3/Arabic.vtt', lang: null, label: 'Arabic', format: 'vtt', source: 'request' },
+      { url: 'https://cache.vdrk.site/v3/tv/1396/2/3/English.vtt', lang: 'en', label: 'English', format: 'vtt', source: 'request' },
+      { url: 'https://sub.wyzie.io/c/1/id/9?format=srt', lang: 'en', label: 'English', format: 'srt', source: 'request' },
+    ]);
+    const found = pickSource(capture({ hits: [hit({ url: 'https://cdn.example/hls/2160/index.m3u8', mime: 'application/vnd.apple.mpegurl', body: '#EXTM3U\n#EXTINF:6,\nseg0.ts' }), vdrk] }));
+    expect(found.en_subtitle).toBe(true);
+  });
+
+  it('the sniffer keeps a subtitle file behind a relay, a text track, and a subtitle service\'s list', () => {
+    const script = readFileSync(new URL('../../../claude/streaming/direct/sniff.ps1', import.meta.url), 'utf8');
+    expect(script).toContain("\\.vtt([?&%]|$)");
+    expect(script).toContain("$m.params.type -eq 'TextTrack'");
+    expect(script).toContain("'SubtitleIndex'");
   });
 });

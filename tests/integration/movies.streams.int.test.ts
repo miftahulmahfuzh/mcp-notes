@@ -356,6 +356,23 @@ describe('direct streaming in the movies store', () => {
       expect(await streams().originalLanguage(FIGHT_CLUB)).toBeNull()
     })
 
+    it('looks only a Japanese title up as an anime, by the air date of the episode, and stores the title to read it', async () => {
+      const asked: unknown[] = []
+      const mapper = { lookup: async (q: unknown) => { asked.push(q); return { id: 21, episode: 730 } } }
+      // MobLand is stored as English: not asked about at all.
+      await streams().ensureTitle(MOBLAND_S1E2)
+      expect(await streams().animeRef(MOBLAND_S1E2, mapper)).toBeNull()
+      expect(asked).toEqual([])
+      await db.execute(sql`update movie_titles set original_language = 'ja' where id = 'tv-247718'`)
+      const episode = (await repo.loadTitleMetadata('tv-247718'))?.episodes.find((e) => e.season === 1 && e.episode === 2)
+      expect(await streams().animeRef(MOBLAND_S1E2, mapper)).toEqual({ id: 21, episode: 730 })
+      expect(asked).toEqual([{ kind: 'tv', tmdbId: 247718, airDate: episode?.airDate }])
+      // An episode the list does not hold has no air date to go by.
+      expect(await streams().animeRef({ kind: 'tv', tmdbId: 247718, season: 9, episode: 9 }, mapper)).toBeNull()
+      // A mapper that throws is "not an anime", never a failed resolve.
+      expect(await streams().animeRef(MOBLAND_S1E2, { lookup: async () => Promise.reject(new Error('index down')) })).toBeNull()
+    })
+
     it('keeps the stored language when new TMDB metadata does not carry one', async () => {
       await repo.upsertTitle({ ...movieMeta(550), originalLanguage: 'en' }, T0)
       await repo.upsertTitle(movieMeta(550), at(1))

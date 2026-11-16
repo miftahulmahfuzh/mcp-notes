@@ -1,0 +1,2 @@
+ALTER TABLE "stream_providers" DROP CONSTRAINT "stream_providers_id_kind_check";--> statement-breakpoint
+ALTER TABLE "stream_providers" ADD CONSTRAINT "stream_providers_id_kind_check" CHECK ("stream_providers"."id_kind" in ('tmdb', 'imdb', 'anilist'));

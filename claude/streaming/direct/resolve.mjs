@@ -13,10 +13,19 @@ const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
 const NO_OPTIONS = Object.freeze({});
 const SUBTITLE_EXT = /\.(vtt|srt)$/i;
 
-/** The embed address for a title, or null when the provider has no template for its kind. */
+/**
+ * The embed address for a title, or null when the provider has no template for its kind. A
+ * provider keyed by AniList id (`id_kind: "anilist"`, an anime embed) takes `ref.anime`
+ * ({ id, episode }: the AniList id and the episode as AniList counts it) and has no address for a
+ * title without one.
+ */
 export function embedUrl(provider, ref) {
   const template = ref.kind === 'movie' ? provider.movie : provider.tv;
   if (!template) return null;
+  if (provider.id_kind === 'anilist') {
+    if (!ref.anime) return null;
+    return template.replaceAll('{id}', String(ref.anime.id)).replaceAll('{episode}', String(ref.anime.episode));
+  }
   return template
     .replaceAll('{id}', String(ref.tmdbId))
     .replaceAll('{season}', String(ref.season ?? ''))
@@ -122,11 +131,54 @@ function guessLang(url) {
   return /(?:^|[^a-z])(en|eng|english)(?:[^a-z]|$)/.test(text) ? 'en' : null;
 }
 
+/** `vtt` or `srt` when the address names such a file anywhere, also as a relay's parameter (fetch?url=...%2Fx.vtt&ref=...). */
+function subtitleExtIn(url) {
+  let text = url;
+  try {
+    text = decodeURIComponent(url);
+  } catch {
+    // keep the address as written
+  }
+  return /\.(vtt|srt)(?:[?&#]|$)/i.exec(text)?.[1]?.toLowerCase() ?? null;
+}
+
+/**
+ * The subtitle files a page's subtitle service listed (the sniffer's SubtitleIndex hits: a JSON
+ * array such as sub.vdrk.site's [{ label, file }] or sub.wyzie.io's [{ url, display, language }]).
+ * A page loads a file only once the viewer picks its language, so the list is where they show.
+ */
+export function indexSubtitles(hits) {
+  const tracks = [];
+  for (const hit of hits) {
+    if (hit.type !== 'SubtitleIndex' || typeof hit.body !== 'string') continue;
+    let list;
+    try {
+      list = JSON.parse(hit.body);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(list)) continue;
+    for (const entry of list.slice(0, 80)) {
+      const url = entry?.url ?? entry?.file;
+      if (typeof url !== 'string' || !/^https?:\/\//.test(url)) continue;
+      const label = [entry.label, entry.display, entry.lang, entry.language].find((v) => typeof v === 'string' && v.trim() !== '') ?? null;
+      const lang = typeof entry.language === 'string' && /^[a-z]{2,3}$/i.test(entry.language) ? entry.language.toLowerCase() : label !== null && /english/i.test(label) ? 'en' : null;
+      tracks.push({ url, lang, label, format: subtitleExtIn(url) ?? (typeof entry.format === 'string' ? entry.format.toLowerCase() : 'vtt'), source: 'request' });
+    }
+  }
+  return tracks;
+}
+
 function requestSubtitles(hits, skipDirs) {
   const tracks = [];
   for (const hit of hits) {
     if (typeof hit.status === 'number' && !okStatus(hit)) continue;
-    const ext = SUBTITLE_EXT.exec(pathOf(hit.url))?.[1]?.toLowerCase() ?? (/^text\/vtt/i.test(String(hit.mime ?? '')) ? 'vtt' : null);
+    if (!/^https?:\/\//.test(String(hit.url ?? ''))) continue;
+    const ext =
+      SUBTITLE_EXT.exec(pathOf(hit.url))?.[1]?.toLowerCase() ??
+      (/^text\/vtt/i.test(String(hit.mime ?? '')) ? 'vtt' : null) ??
+      subtitleExtIn(hit.url) ??
+      (hit.type === 'TextTrack' ? 'vtt' : null);
     if (!ext) continue;
     if (ext === 'vtt' && skipDirs.has(dirOf(hit.url))) continue;
     tracks.push({ url: hit.url, lang: guessLang(hit.url), label: null, format: ext, source: 'request' });
@@ -160,6 +212,8 @@ function bestHit(sniff) {
     if (!okStatus(hit)) continue;
     const kind = manifestKind(hit);
     if (kind === null) continue;
+    // An answer Chrome kept that is no playlist (a relay's error page, a bare list of addresses) cannot be played.
+    if (kind === 'hls' && typeof hit.body === 'string' && hit.body.trim() !== '' && !hit.body.trimStart().startsWith('#EXTM3U')) continue;
     const r = rank(hit, kind);
     if (best === null || r < best.rank) best = { hit, kind, rank: r };
   }
@@ -185,7 +239,7 @@ export function pickSource(sniff) {
   const inManifest = kind === 'hls' ? hlsSubtitles(body, hit.url) : kind === 'dash' ? dashSubtitles(body, hit.url) : [];
   const skipDirs = new Set(inManifest.filter((t) => t.format === 'hls').map((t) => dirOf(t.url)));
   const seen = new Set();
-  const subtitles = [...inManifest, ...requestSubtitles(hits, skipDirs)].filter((t) => (seen.has(t.url) ? false : (seen.add(t.url), true)));
+  const subtitles = [...inManifest, ...requestSubtitles(hits, skipDirs), ...indexSubtitles(hits)].filter((t) => (seen.has(t.url) ? false : (seen.add(t.url), true)));
   return {
     manifest_url: hit.url,
     manifest_kind: kind,
@@ -227,6 +281,8 @@ export async function resolveTitle(
 ) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
   let candidates = orderProviders(providers, health);
+  // An anime goes to the anime embeds first: they are asked for the original audio with English subtitles.
+  if (ref.anime) candidates = [...candidates.filter((p) => p.id_kind === 'anilist'), ...candidates.filter((p) => p.id_kind !== 'anilist')];
   if (only !== null) {
     candidates = candidates.filter((p) => p.name.toLowerCase() === only.toLowerCase());
     if (candidates.length === 0) return { ok: false, ...base, source: null, error: 'unknown_provider', detail: `no provider named ${only}`, attempts: [] };
@@ -242,7 +298,7 @@ export async function resolveTitle(
     }
     const url = embedUrl(provider, ref);
     if (url === null) {
-      attempts.push(attempt(provider, 'skipped_no_template', 0, `no ${ref.kind} template`));
+      attempts.push(attempt(provider, 'skipped_no_template', 0, provider.id_kind === 'anilist' ? 'an anime embed, and this title has no AniList id' : `no ${ref.kind} template`));
       continue;
     }
     if (deadlineS !== null && clock() - begun >= deadlineS * 1000) {
@@ -260,6 +316,11 @@ export async function resolveTitle(
     }
     const tookS = seconds(clock() - started);
     const found = pickSource(sniffed);
+    if (found && provider.id_kind === 'anilist') {
+      // The template asks the embed for its subtitled version (/sub): a track it names no language for is the English one.
+      found.subtitles = found.subtitles.map((t) => (t.lang === null && t.label === null ? { ...t, lang: 'en', label: 'English' } : t));
+      found.en_subtitle = found.subtitles.some(isEnglish);
+    }
     if (found) {
       let audio = null;
       if (audioLang !== null && probeAudio !== null) {

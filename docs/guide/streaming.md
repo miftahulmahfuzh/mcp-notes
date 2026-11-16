@@ -19,7 +19,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [What you can ask](#what-you-can-ask) · [How a film is started](#how-a-film-is-started) ·
 [The streaming Chrome](#the-streaming-chrome) · [In the chat bar](#in-the-chat-bar) ·
 [Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
-[Finding something to stream](#finding-something-to-stream) ·
+[Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -335,6 +335,38 @@ provider it came from). Providers are data, `providers.seed.json`, 24 templates 
 from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have passed (the answer is
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.
+
+**What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
+error page, a bare list of addresses) is not a stream, and the next provider is tried.
+
+**Where subtitles are found.** Tracks inside the manifest; `.vtt` and `.srt` requests the page
+made, also when the file's address is a relay's parameter (`fetch?url=...%2Fx.vtt&ref=...`) or the
+request is a text track; and the list a page's subtitle service answered with (`sub.vdrk.site`,
+`sub.wyzie.io`: a JSON list of files per language), since a page loads a file only when the viewer
+picks its language.
+
+### Anime
+
+A long anime does not fit the ordinary providers. TMDB files One Piece in seasons with episode
+numbers that run on (episode 730 is season 17, episode 730), and each provider reads those two
+numbers its own way: on VidFast season 17, episode 38 is episode 666, because its seasons are
+another catalogue's. So an anime goes to **anime embeds** first: providers keyed by the AniList
+id and the episode counted through the whole series, asked for the subtitled version (Japanese
+audio, an English subtitle file).
+
+- **The embeds** are `claude/streaming/direct/anime.seed.json` (`id_kind: "anilist"`; the episode
+  template has `{id}` and `{episode}`, no season), loaded into the registry beside the provider
+  seed. Today: vidnest.fun's `/anime/{id}/{episode}/sub` and `/animepahe/{id}/{episode}/sub`.
+- **The mapping** (`src/directStream/anime.ts`): for a title whose original language is Japanese,
+  the daemon asks `api.ani.zip` (`NOTESD_ANIME_MAP_URL`) once per title for the AniList entry of
+  the TMDB id, and takes the entry's episode that aired on the day TMDB gives for the episode
+  asked. Exactly one episode must have aired that day; otherwise the title has no anime key. The
+  resolver gets it as `--anime <AniList id>:<episode>`.
+- **The order.** With an anime key the anime embeds are tried first, then the ordinary providers
+  with TMDB's season and episode. Without one (not Japanese, the index does not know the title,
+  a later season that AniList keeps as its own entry) only the ordinary providers are tried.
+- **The subtitle.** The embed's subtitle file names no language; the template asked for the
+  subtitled version, so it is taken as English and shown by default.
 
 ### Providers and their health
 
@@ -714,7 +746,8 @@ and the last pass.
 | `claude/skills/pahe/`, `idlix/`, `lk21/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
-| `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json` |
+| `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
+| `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |

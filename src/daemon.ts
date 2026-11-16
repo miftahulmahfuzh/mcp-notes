@@ -25,6 +25,7 @@ import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc
 import { buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
+import { createAnimeMapper } from './directStream/anime.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
@@ -162,6 +163,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   let boundPort: number | null = null;
   // Direct streaming: null with NOTESD_DIRECT_STREAM=off or NOTESD_MOVIES=off. The provider seed is
   // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
+  // null with NOTESD_ANIME_MAP_URL=off: no lookup is made and an anime resolves like any series.
+  const animeMapper = createAnimeMapper({ baseUrl: config.directStream?.animeMapUrl ?? null });
   const directStream = buildDirectStreamService(config, db, {
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
@@ -173,6 +176,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             resumeS: (ref) => movieStreams.resumeS(ref),
             originalLanguage: (ref) => movieStreams.originalLanguage(ref),
             titleLabel: (ref) => movieStreams.titleLabel(ref),
+            anime: (ref) => movieStreams.animeRef(ref, animeMapper),
           },
   });
   if (directStream !== null) {

@@ -247,6 +247,8 @@ EOF
   if [ "$direct" = 1 ]; then
     env+=(
       NOTESD_DIRECT_STREAM=on
+      # Never the real anime index (api.ani.zip): a Japanese fixture title would ask it.
+      NOTESD_ANIME_MAP_URL=off
       "NOTESD_DIRECT_STREAM_CLI=${NOTESD_DIRECT_STREAM_CLI:-$root/tests/fixtures/direct-stream/fake-cli.mjs}"
       "DIRECT_STREAM_FAKE_DIR=$dir/direct"
     )

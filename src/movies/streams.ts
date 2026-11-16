@@ -1,3 +1,4 @@
+import type { AnimeMapper, AnimeRef } from '../directStream/anime.js';
 import type { MoviesService } from './service.js';
 import { TmdbError, type TmdbClient, type TmdbTitleNames } from './tmdb.js';
 import { streamResumePosition } from './state.js';
@@ -154,6 +155,26 @@ export class MovieStreams {
       return language;
     } catch (err) {
       if (!(err instanceof TmdbError)) this.log(`[notesd] direct stream: could not read the original language of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * An anime's key for the anime embeds (src/directStream/anime.ts), or null. Only a title whose
+   * original language is Japanese is looked up. The episode is found by its TMDB air date, so the
+   * title is stored first (its episode list holds the dates).
+   */
+  async animeRef(target: StreamTarget, mapper: AnimeMapper): Promise<AnimeRef | null> {
+    try {
+      if ((await this.originalLanguage(target)) !== 'ja') return null;
+      if (target.kind === 'movie') return await mapper.lookup({ kind: 'movie', tmdbId: target.tmdbId, airDate: null });
+      const id = await this.ensureTitle(target);
+      if (id === null) return null;
+      const meta = await this.movies.repo.loadTitleMetadata(id);
+      const airDate = meta?.episodes.find((e) => e.season === target.season && e.episode === target.episode)?.airDate ?? null;
+      return airDate === null ? null : await mapper.lookup({ kind: 'tv', tmdbId: target.tmdbId, airDate });
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not look ${describeTarget(target)} up as an anime: ${messageOf(err)}`);
       return null;
     }
   }

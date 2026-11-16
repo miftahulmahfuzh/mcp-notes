@@ -1,0 +1,20 @@
+[
+  {
+    "name": "VidNest Anime",
+    "id_kind": "anilist",
+    "movie": "https://vidnest.fun/anime/{id}/1/sub",
+    "tv": "https://vidnest.fun/anime/{id}/{episode}/sub",
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "2026-11-16: One Piece (AniList 21) episode 730 resolved hls 1080p, Japanese audio, an English subtitle file; keyed by AniList id and the episode counted through the whole series"
+  },
+  {
+    "name": "VidNest AnimePahe",
+    "id_kind": "anilist",
+    "movie": "https://vidnest.fun/animepahe/{id}/1/sub",
+    "tv": "https://vidnest.fun/animepahe/{id}/{episode}/sub",
+    "browser_only": false,
+    "en_subtitle": true,
+    "notes": "2026-11-16: One Piece (AniList 21) episode 730 resolved hls 1080p with an English subtitle file; the second anime embed of vidnest.fun"
+  }
+]

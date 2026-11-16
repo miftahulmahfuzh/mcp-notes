@@ -4,6 +4,7 @@ import path from 'node:path';
 import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
+import type { AnimeRef } from './anime.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
@@ -27,6 +28,11 @@ import {
 
 /** The checked-in provider seed (direct streaming phase 1), loaded into stream_providers at every start. */
 export const DEFAULT_SEED_FILE = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'providers.seed.json');
+/**
+ * The anime embeds (`id_kind: "anilist"`), loaded into the same table. They are kept apart from the
+ * provider seed because the probe campaign and its findings are about that file's 24 TMDB templates.
+ */
+export const DEFAULT_ANIME_SEED_FILE = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'anime.seed.json');
 
 /**
  * What the movies store hangs on direct streaming (phase 5 implements them; this module never imports
@@ -49,6 +55,12 @@ export interface DirectStreamHooks {
   originalLanguage?: (ref: StreamRef) => Promise<string | null>;
   /** The title the player shows; default `refLabel(ref)`. */
   titleLabel?: (ref: StreamRef) => Promise<string | null>;
+  /**
+   * An anime's key for the anime embeds (anime.ts): its AniList id and the episode counted through
+   * the whole series. Every resolve passes it to the resolver as `--anime`, which then tries the
+   * providers keyed by AniList id first. Null: not an anime, or not mapped.
+   */
+  anime?: (ref: StreamRef) => Promise<AnimeRef | null>;
 }
 
 export interface SessionSubtitle {
@@ -105,6 +117,8 @@ export interface DirectStreamServiceOptions {
   /** os.hostname() (the movies service's host): health rows are written under it. */
   host: string;
   seedFile: string;
+  /** The anime embeds' seed; null or unset loads none (tests that count the provider seed's rows). */
+  animeSeedFile?: string | null;
   /** The daemon's origin as the streaming Chrome reaches it, e.g. `http://localhost:7317`. Read at play time. */
   pageBase: () => string;
   hooks?: DirectStreamHooks;
@@ -152,7 +166,8 @@ export class DirectStreamService {
 
   /** Loads the seed file into the shared registry (insert missing, update changed seed rows). */
   async syncSeed(): Promise<SyncSeedResult> {
-    const entries = await readSeedFile(this.opts.seedFile);
+    const animeFile = this.opts.animeSeedFile ?? null;
+    const entries = [...(await readSeedFile(this.opts.seedFile)), ...(animeFile === null ? [] : await readSeedFile(animeFile))];
     const { inserted, updated } = await this.repo.syncSeed(entries, this.now());
     return { total: entries.length, inserted, updated };
   }
@@ -237,6 +252,7 @@ export class DirectStreamService {
    */
   async runResolve(ref: StreamRef, options: { only?: string; deadlineS?: number } = {}): Promise<ResolveOutput> {
     const audioLang = await this.audioLang(ref);
+    const anime = await this.animeRef(ref);
     return this.serial(async () => {
       const providers = await this.repo.providers();
       const health = await this.repo.healthFor(this.host);
@@ -255,6 +271,7 @@ export class DirectStreamService {
           ...(options.only !== undefined ? ['--only', options.only] : []),
           ...(options.deadlineS !== undefined ? ['--deadline-s', String(Math.max(1, Math.floor(options.deadlineS)))] : []),
           ...(audioLang !== null ? ['--audio-lang', audioLang] : []),
+          ...(anime !== null ? ['--anime', `${anime.id}:${anime.episode}`] : []),
           '--providers',
           providersFile,
           '--health',
@@ -340,6 +357,13 @@ export class DirectStreamService {
     if (hook === undefined) return null;
     const language = await this.hookValue('originalLanguage', () => hook(ref));
     return language !== null && /^[A-Za-z]{2,3}$/.test(language) ? language.toLowerCase() : null;
+  }
+
+  private async animeRef(ref: StreamRef): Promise<AnimeRef | null> {
+    const hook = this.opts.hooks?.anime;
+    if (hook === undefined) return null;
+    const anime = await this.hookValue('anime', () => hook(ref));
+    return anime !== null && Number.isSafeInteger(anime.id) && anime.id > 0 && Number.isSafeInteger(anime.episode) && anime.episode > 0 ? anime : null;
   }
 
   private async recordHealth(out: ResolveOutput, known: ReadonlySet<string>): Promise<void> {
@@ -445,6 +469,8 @@ export function buildDirectStreamService(
     runner: overrides.runner ?? directStreamScriptRunner({ cliPath: ds.cli }),
     host: wiring.movies.host,
     seedFile: overrides.seedFile ?? DEFAULT_SEED_FILE,
+    // A caller that names its own seed (a test) gets exactly that file's providers.
+    animeSeedFile: overrides.seedFile === undefined ? DEFAULT_ANIME_SEED_FILE : null,
     pageBase: wiring.pageBase,
     hooks: wiring.hooks,
     fetch: overrides.fetch,

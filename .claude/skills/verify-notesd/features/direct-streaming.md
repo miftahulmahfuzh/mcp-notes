@@ -145,6 +145,20 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Live, read-only (plays nothing): `direct_stream_discover` against the installed daemon reads the
   real TMDB. A real play is the owner's to run.
 
+## Anime, subtitles behind a relay, and answers that are no playlist
+- An anime (original language Japanese, known to `api.ani.zip`) is resolved through the anime
+  embeds first (`anime.seed.json`, keyed by AniList id and the episode counted through the series):
+  Japanese audio with an English subtitle file. The mapping is by the episode's air date. A
+  subtitle file behind a relay, a text-track request and a subtitle service's list all become
+  tracks; an HLS answer without `#EXTM3U` is not a stream. Proven by
+  `npx vitest run tests/unit/directStream/anime.test.ts tests/unit/scripts/directResolve.test.ts`
+  and `npm run test:int -- tests/integration/directStream.api.int.test.ts tests/integration/movies.streams.int.test.ts`
+  (`--anime` reaches the resolver; only a Japanese title is looked up).
+- Every throwaway run pins `NOTESD_ANIME_MAP_URL=off`: the real index is never asked.
+- Live (owner's machine): `node claude/streaming/direct/cli.mjs resolve tv 37854 17 730 --audio-lang ja --anime 21:730`
+  resolves out of sight through "VidNest Anime" in about 6 s (hls 1080p, one English subtitle).
+  `resume one piece from episode 730` in Claude Code plays it: the owner's to run.
+
 ## Original audio, and the stream on screen
 - A dub is never a source: the resolver reads what each stream speaks (manifest audio tracks, else
   the first segment's MPEG-TS programme table or MP4 track header), skips a stream in another

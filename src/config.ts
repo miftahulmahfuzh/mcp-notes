@@ -190,6 +190,9 @@ export const DEFAULT_STREAM_FRESH_DAYS = 7
 /** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
 export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'cli.mjs')
 
+/** The public index that maps a TMDB id to an anime's AniList id and episodes (src/directStream/anime.ts). */
+export const DEFAULT_ANIME_MAP_URL = 'https://api.ani.zip'
+
 /** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
 export interface DirectStreamConfig {
   /**
@@ -201,6 +204,12 @@ export interface DirectStreamConfig {
   freshDays: number
   /** `NOTESD_DIRECT_STREAM_CLI`, absolute, default DEFAULT_DIRECT_STREAM_CLI: the resolver script run as `node <cli>`. */
   cli: string
+  /**
+   * `NOTESD_ANIME_MAP_URL`, default https://api.ani.zip: the index that maps a Japanese title's
+   * TMDB id to the AniList id and episode the anime embeds are keyed by (src/directStream/anime.ts).
+   * `off`: null, no lookup, and an anime is resolved like any other series.
+   */
+  animeMapUrl?: string | null
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
 }
@@ -665,8 +674,18 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
     freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
     cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
+    animeMapUrl: parseAnimeMapUrl(env.NOTESD_ANIME_MAP_URL),
     prober: parseStreamProber(env),
   }
+}
+
+/** `NOTESD_ANIME_MAP_URL`: unset or blank is the default index, `off` is null, anything else must be an http(s) address. */
+function parseAnimeMapUrl(raw: string | undefined): string | null {
+  const value = (raw ?? '').trim()
+  if (value === '') return DEFAULT_ANIME_MAP_URL
+  if (value.toLowerCase() === 'off') return null
+  if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`NOTESD_ANIME_MAP_URL must be an http(s) address or off (got ${value})`)
+  return value.replace(/\/+$/, '')
 }
 
 /** A switch that is off when unset or blank; otherwise the same words as parseSwitch. */
@@ -703,7 +722,7 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
  * NOTESD_CURL_EXE, NOTESD_VLC_HEALTH_MS, NOTESD_VLC_EXTRA_ARGS, NOTESD_MOVIES_FALLBACK_MODEL
  * (relative roots or ini, a path as a Done folder name, a non-http TMDB base, a port above 65535,
  * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
- * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI
+ * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI, NOTESD_ANIME_MAP_URL
  * (a freshness window below 1 or a relative resolver path throw ConfigError).
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.

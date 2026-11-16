@@ -183,6 +183,13 @@
       "when": 1794796315021,
       "tag": "0025_episode_marks",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794803064124,
+      "tag": "0026_anime_provider_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -69,7 +69,7 @@ play() {
 stage_seed() {
   stage seed
   local want got host
-  want="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).length)' "$ROOT/claude/streaming/direct/providers.seed.json")"
+  want="$(node -e 'const n = (f) => JSON.parse(require("fs").readFileSync(f, "utf8")).length; console.log(n(process.argv[1]) + n(process.argv[2]))' "$ROOT/claude/streaming/direct/providers.seed.json" "$ROOT/claude/streaming/direct/anime.seed.json")"
   got="$(q "select count(*) || ' ' || count(*) filter (where origin_site is null) from stream_providers")"
   [ "$got" = "$want $want" ] || fail "stream_providers holds [$got] (all, from the seed), wanted [$want $want]"
   ok "the seed's $want providers are in stream_providers, all marked as from the seed"

@@ -21,8 +21,10 @@ import { sniffEmbed } from './sniff.mjs';
 import { templatesCommand } from './templates.mjs';
 
 export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'providers.seed.json');
+/** The anime embeds (keyed by AniList id), tried for a resolve that carries --anime. The daemon loads both files into its registry. */
+export const ANIME_SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'anime.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] [--anime <AniList id>:<episode>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -45,7 +47,7 @@ export class InputError extends Error {
   }
 }
 
-const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang', '--watch', '--episode']);
+const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang', '--anime', '--watch', '--episode']);
 const SWITCH_FLAGS = new Set(['--fullscreen', '--no-chrome']);
 const WHOLE = /^\d+$/;
 const DAEMON_HOSTS = new Set(['localhost', '127.0.0.1']);
@@ -110,13 +112,19 @@ export function parseArgs(argv) {
   };
   switch (command) {
     case 'resolve': {
-      allow(['only', 'providers', 'health', 'deadline-s', 'audio-lang']);
+      allow(['only', 'providers', 'health', 'deadline-s', 'audio-lang', 'anime']);
+      // An anime's AniList id and the episode as AniList counts it ("21:730"): the anime embeds are keyed by them.
+      const animeParts = flags.anime === undefined ? null : /^(\d+):(\d+)$/.exec(flags.anime);
+      if (flags.anime !== undefined && (animeParts === null || Number(animeParts[1]) < 1 || Number(animeParts[2]) < 1)) {
+        throw new InputError('usage', '--anime is <AniList id>:<episode>, such as 21:730');
+      }
+      const anime = animeParts === null ? null : { id: Number(animeParts[1]), episode: Number(animeParts[2]) };
       // The title's original language (TMDB's code): a stream that speaks only other languages is skipped as a dub.
       const audioLang = flags['audio-lang'] === undefined ? null : normalizeLang(flags['audio-lang']);
       if (flags['audio-lang'] !== undefined && audioLang === null) throw new InputError('usage', '--audio-lang is a language code such as ko, en or jpn');
       const deadlineS = flags['deadline-s'] === undefined ? null : wholeNumber(flags['deadline-s'], 1);
       if (flags['deadline-s'] !== undefined && deadlineS === null) throw new InputError('usage', '--deadline-s is a whole number of seconds, 1 or more');
-      return { command, ref: parseRef(rest), only: flags.only ?? null, providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS, audioLang };
+      return { command, ref: { ...parseRef(rest), anime }, only: flags.only ?? null, providersFile: flags.providers ?? null, healthFile: flags.health ?? null, deadlineS, audioLang };
     }
     case 'providers':
       allow(['providers', 'health']);
@@ -175,9 +183,11 @@ export function readProviders(text) {
     if (typeof name !== 'string' || name.trim() === '') throw bad('name is empty');
     if (seen.has(name.toLowerCase())) throw bad('name is used twice');
     seen.add(name.toLowerCase());
-    if (id_kind !== 'tmdb') throw bad('id_kind must be "tmdb"');
+    if (id_kind !== 'tmdb' && id_kind !== 'anilist') throw bad('id_kind must be "tmdb" or "anilist"');
     if (!isTemplate(movie, ['{id}'])) throw bad('movie must be an http(s) address with {id}');
-    if (tv !== null && !isTemplate(tv, ['{id}', '{season}', '{episode}'])) throw bad('tv must be null or an http(s) address with {id}, {season} and {episode}');
+    // An anime embed counts episodes through the whole series: it has no season.
+    const episodeParts = id_kind === 'anilist' ? ['{id}', '{episode}'] : ['{id}', '{season}', '{episode}'];
+    if (tv !== null && !isTemplate(tv, episodeParts)) throw bad(`tv must be null or an http(s) address with ${episodeParts.join(', ')}`);
     if (typeof browser_only !== 'boolean') throw bad('browser_only must be true or false');
     if (en_subtitle !== true && en_subtitle !== false && en_subtitle !== null) throw bad('en_subtitle must be true, false or null');
     if (typeof notes !== 'string') throw bad('notes must be a string');
@@ -295,6 +305,10 @@ export async function main(argv, io = {}) {
     args = parseArgs(argv);
     if (args.command !== 'open' && args.command !== 'templates') {
       providers = readProviders(readInput(readText, args.providersFile ?? SEED_PATH, 'bad_providers'));
+      // Run by hand without --providers: the anime embeds come from their own seed.
+      if (args.providersFile === null && args.command === 'resolve' && args.ref.anime !== null) {
+        providers = [...providers, ...readProviders(readInput(readText, ANIME_SEED_PATH, 'bad_providers'))];
+      }
       health = args.healthFile === null ? {} : readHealth(readInput(readText, args.healthFile, 'bad_health'));
     }
   } catch (err) {

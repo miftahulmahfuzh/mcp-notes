@@ -1315,7 +1315,7 @@ export const movieStreamSources = pgTable(
 )
 
 /** The closed sets of the stream tables (migration 0020). The CHECK constraints enforce the same lists. */
-export const STREAM_ID_KINDS = ['tmdb', 'imdb'] as const
+export const STREAM_ID_KINDS = ['tmdb', 'imdb', 'anilist'] as const
 export type StreamIdKind = (typeof STREAM_ID_KINDS)[number]
 /** A provider's last outcome on a host. A skipped provider (browser-only, no template) is not one: a skip leaves health alone. */
 export const STREAM_HEALTH_OUTCOMES = ['resolved', 'no_stream', 'bot_check', 'error'] as const
@@ -1345,7 +1345,7 @@ export const streamProviders = pgTable(
     addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [check('stream_providers_id_kind_check', sql`${t.idKind} in ('tmdb', 'imdb')`)],
+  (t) => [check('stream_providers_id_kind_check', sql`${t.idKind} in ('tmdb', 'imdb', 'anilist')`)],
 )
 
 /**

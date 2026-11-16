@@ -181,11 +181,17 @@ if ($existing) { foreach ($t in @($existing.result.targetInfos)) { $known[$t.tar
 Send-Cdp 'Target.setDiscoverTargets' @{ discover = $true } | Out-Null
 Send-Cdp 'Page.navigate' @{ url = $Url } $root | Out-Null
 
-$interesting = '\.m3u8|\.mpd(\?|$)|\.mp4(\?|$)|\.vtt(\?|$)|\.srt(\?|$)|/playlist|/manifest|master\.'
+# A subtitle file may sit behind a relay that carries its address as a parameter
+# (fetch?url=https%3A%2F%2F...%2Fsubtitles%2Fx.vtt&ref=...), so .vtt and .srt count wherever they stand.
+$interesting = '\.m3u8|\.mpd(\?|$)|\.mp4(\?|$)|\.vtt([?&%]|$)|\.srt([?&%]|$)|/playlist|/manifest|master\.'
 $manifestUrl = '\.m3u8|\.mpd(\?|$)'
 $manifestLike = '\.m3u8|\.mpd(\?|$)|master\.|/playlist|/manifest'
 $mediaMime = 'mpegurl|dash\+xml|video/|text/vtt'
 $segmentMime = 'video/mp2t|video/iso\.segment'
+# A subtitle index: the JSON list of subtitle files a player page asks a subtitle service for
+# (sub.wyzie.io/search, sub.vdrk.site/v2/...). The page loads a file only when the viewer picks
+# its language, so the list is the only place the English track shows.
+$subtitleIndex = '^https?://(sub|subs|subtitles?)[.-][^/]+/|[/.](subtitles?|captions?)[/?.]'
 $botTitle = '^(Just a moment|Attention Required|Checking your browser|One more step|DDoS-Guard)'
 $botUrl = 'challenges\.cloudflare\.com|/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)'
 $events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
@@ -335,7 +341,7 @@ while ((Get-Date) -lt $deadline) {
       try { $h = ([Uri]$req.url).Host } catch { $h = '' }
       if ($h) { $hosts[$h] = 1 + [int]$hosts[$h] }
       if ($req.url -match $botUrl) { Set-BotCheck "request $h" }
-      if ($req.url -match $interesting -or $m.params.type -eq 'Media') {
+      if ($req.url -match $interesting -or $m.params.type -eq 'Media' -or ($m.params.type -eq 'TextTrack' -and $req.url -match '^https?:')) {
         $hit = New-Hit $m $req.url $req.headers $m.params.type $m.params.documentURL $null $null
         $byRequest[$hit._key] = $hit
         [void]$hits.Add($hit)
@@ -359,6 +365,10 @@ while ((Get-Date) -lt $deadline) {
       if ($byRequest.ContainsKey($key)) {
         $byRequest[$key].status = $res.status
         $byRequest[$key].mime = $res.mimeType
+      } elseif ($res.mimeType -match 'json' -and $res.url -match $subtitleIndex -and $res.status -ge 200 -and $res.status -lt 300) {
+        $hit = New-Hit $m $res.url $res.requestHeaders 'SubtitleIndex' $null $res.status $res.mimeType
+        $byRequest[$key] = $hit
+        [void]$hits.Add($hit)
       } elseif ($res.mimeType -match $mediaMime -and $res.mimeType -notmatch $segmentMime) {
         # A stream behind an address that does not look like one (VidNest's master.txt).
         $hit = New-Hit $m $res.url $res.requestHeaders $m.params.type $null $res.status $res.mimeType
@@ -376,7 +386,7 @@ $bodies = 0
 foreach ($hit in $hits) {
   if ($bodies -ge 8) { break }
   if (-not ($hit.status -ge 200 -and $hit.status -lt 300)) { continue }
-  if (-not ($hit.url -match $manifestLike -or "$($hit.mime)" -match 'mpegurl|dash\+xml')) { continue }
+  if (-not ($hit.url -match $manifestLike -or "$($hit.mime)" -match 'mpegurl|dash\+xml' -or $hit.type -eq 'SubtitleIndex')) { continue }
   $bodies++
   $reply = Wait-Reply (Send-Cdp 'Network.getResponseBody' @{ requestId = $hit._rid } $hit._sid) 3000
   if ($reply -and $reply.result) {
