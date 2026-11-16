@@ -17,7 +17,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The torrent engine and its file route"
     },
@@ -34,7 +34,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Finding and ranking torrents"
     },
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T20:41:52+07:00",
+  "updated": "2026-11-16T20:45:53+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }

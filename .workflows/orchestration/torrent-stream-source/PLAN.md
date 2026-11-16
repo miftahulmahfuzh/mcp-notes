@@ -130,7 +130,7 @@ the later phases were bent to them.
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
 | 1 | The torrent engine and its file route | R2 | `src/directStream/torrent` | 39 | — | HARD | `.workflows/plan/torrent-stream-source/phase-1.md` | — | — |
-| 2 | Finding and ranking torrents | R1 | `src/directStream/torrent/find` | 24 | — | NORMAL | `.workflows/plan/torrent-stream-source/phase-2.md` | — | — |
+| 2 | Finding and ranking torrents | R1 | `src/directStream/torrent/find` | 24 | — | NORMAL | `.workflows/plan/torrent-stream-source/phase-2.md` | P1-NOTES-TS02 | — |
 | 3 | A torrent session in direct streaming | R1, R2 | `src/directStream` | 33 | 1, 2 | HARD | `.workflows/plan/torrent-stream-source/phase-3.md` | — | — |
 | 4 | The player page on a torrent | R2 | `web/src/stream` | 11 | 3 | NORMAL | `.workflows/plan/torrent-stream-source/phase-4.md` | — | — |
 | 5 | The remux for files Chrome cannot play | R2 | `src/directStream/torrent` | 25 | 3, 7 | HARD | `.workflows/plan/torrent-stream-source/phase-5.md` | — | — |
@@ -247,7 +247,7 @@ edits below are additions at separate, marked places, so a merge is a union of l
 | VPN or accept the exposure | cap upload (100 kB/s), leave the swarm when nothing plays, no VPN | 5: the owner's answer |
 | Scrape 1337x / ext.to first, or JSON indexes first | JSON indexes first; the two sites only as a fallback through the streaming Chrome | 1: invariant 6 (CLAUDE.md: never a disguised client past a bot check) |
 | Torrent downloads in `stream_caches`, or their own record | their own table `stream_torrents`; replay from disk without the stream cache | 6: the stream cache is built around a resolved HLS source |
-| Subtitle service | Stremio's OpenSubtitles add-on (no key); Wyzie needs a key claimed by hand and is left out | 6: zero manual steps for the owner |
+| Subtitle service | Wyzie Subs first when `WYZIE_API_KEY` is set (the owner bought a key on 2026-11-16, after the plan was written), then Stremio's OpenSubtitles add-on (no key); with no key the tier is the add-on alone. Phase 6 builds it from `.workflows/orchestration/torrent-stream-source/phase-6-addendum.md` | 5: the owner's update, handed over by the planning session |
 | Torrents on or off by default | on when direct streaming is on; `NOTESD_TORRENT=off` turns them off; tests default to off | 5: the owner asked for it and accepted the catch |
 | The subtitle chain stops at the first English answer (phase 3) or the first non-empty one (phase 6) | the first **non-empty** answer: every tier answers only English tracks or the torrent's one unnamed subtitle file, which R3.1 counts | 2: R3.1's criterion (the lone unnamed file is shown by default and ends the chain); decided by the analyst |
 | How long subtitles may hold up a play (worst case 15 + 15 + 45 + 85 s) | the tiers that block a play (kept, files, service, borrow) share one 40 s budget from the chain's start; a tier that would start after it is `skipped`, one still running when it ends is `error`; the growing tiers (embedded, whisper) never block and are not counted; the borrow is skipped when Whisper is on and the original language is English | 4: the Why ("our main objective tonight is to see a streaming movie") over completeness; decided by the analyst |
