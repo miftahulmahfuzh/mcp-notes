@@ -12,6 +12,13 @@
 // DIR/token (1 when the file is missing). Any other N answers 403 "token expired", as a stream
 // host does once its signed address is too old. Raising DIR/token expires every address handed
 // out before; the fake resolver (fake-cli.mjs, mode dash_film) hands out the current one.
+//
+// A tokened HLS film for the stream cache (state DIR): /tok/t<N>/master.m3u8 names 480 and 720
+// renditions and two audio renditions (en, ko), each 12 segments of 4 s; 720 and 480 carry an
+// AES-128 key. It answers only while N is the current token (DIR/token, as for the DASH film).
+// DIR/token_uses holding K: each token answers K media requests (keys and segments) and refuses the
+// rest with 403, a signed address that expired mid-download. DIR/fail_once lists file names
+// (seg3.ts) answered 503 once each. DIR/delay_ms delays every media answer of the tokened film.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -56,6 +63,69 @@ function hlsMedia(quality) {
 }
 
 const SUB_PLAYLIST = ['#EXTM3U', '#EXT-X-TARGETDURATION:60', '#EXT-X-MEDIA-SEQUENCE:0', '#EXTINF:60.0,', 'en.vtt', '#EXT-X-ENDLIST', ''].join('\n');
+
+export const TOKEN_SEGMENTS = 12;
+const MPEGURL = 'application/vnd.apple.mpegurl';
+const TOKEN_KEY = Buffer.alloc(16, 7);
+
+function tokMaster() {
+  return [
+    '#EXTM3U',
+    '#EXT-X-VERSION:4',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="audio/en/index.m3u8"',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Korean",LANGUAGE="ko",DEFAULT=NO,AUTOSELECT=YES,URI="audio/ko/index.m3u8"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=854x480,AUDIO="aud"',
+    '480/index.m3u8',
+    '#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1280x720,AUDIO="aud"',
+    '720/index.m3u8',
+    '',
+  ].join('\n');
+}
+
+function tokMedia(prefix, keyed) {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:4', '#EXT-X-TARGETDURATION:4', '#EXT-X-MEDIA-SEQUENCE:0'];
+  if (keyed) lines.push('#EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x00000000000000000000000000000001');
+  for (let i = 1; i <= TOKEN_SEGMENTS; i++) lines.push('#EXTINF:4.0,', `${prefix}${i}.ts`);
+  lines.push('#EXT-X-ENDLIST', '');
+  return lines.join('\n');
+}
+
+function stateNumber(state, name) {
+  const file = path.join(state, name);
+  if (!existsSync(file)) return 0;
+  const n = Number(readFileSync(file, 'utf8').trim());
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** True for a media file (key or segment) of the tokened film. */
+function tokMediaPath(pathname) {
+  return /^\/tok\/t\d+\/(?:(?:480|720)\/(?:seg\d+\.ts|key\.bin)|audio\/(?:en|ko)\/aseg\d+\.ts)$/.test(pathname);
+}
+
+/** /tok/t<N>/...: [status, type, body], or null when the path is not the tokened film's. `memo` counts per token. */
+function tokenAnswer(pathname, state, memo) {
+  const m = /^\/tok\/t(\d+)\/(.+)$/.exec(pathname);
+  if (m === null || state === null) return null;
+  const token = Number(m[1]);
+  const rest = m[2];
+  if (token !== currentFilmToken(state)) return [403, 'text/plain', 'token expired'];
+  if (rest === 'master.m3u8') return [200, MPEGURL, tokMaster()];
+  if (/^(480|720)\/index\.m3u8$/.test(rest)) return [200, MPEGURL, tokMedia('seg', true)];
+  if (/^audio\/(en|ko)\/index\.m3u8$/.test(rest)) return [200, MPEGURL, tokMedia('aseg', false)];
+  if (!tokMediaPath(pathname)) return [404, 'text/plain', 'not found'];
+  const used = (memo.uses.get(token) ?? 0) + 1;
+  memo.uses.set(token, used);
+  const limit = stateNumber(state, 'token_uses');
+  if (limit > 0 && used > limit) return [403, 'text/plain', 'token expired'];
+  const failFile = path.join(state, 'fail_once');
+  const failOnce = existsSync(failFile) ? readFileSync(failFile, 'utf8').split(/\s+/).filter(Boolean) : [];
+  const name = rest.slice(rest.lastIndexOf('/') + 1);
+  if (failOnce.includes(name) && !memo.failed.has(rest)) {
+    memo.failed.add(rest);
+    return [503, 'text/plain', 'busy'];
+  }
+  return rest.endsWith('key.bin') ? [200, 'application/octet-stream', TOKEN_KEY] : [200, 'video/mp2t', SEGMENT];
+}
 
 function dashManifest(alt) {
   return [
@@ -116,6 +186,7 @@ function answer(pathname, alt) {
 export async function startUpstream({ log = null, state = null } = {}) {
   const requests = [];
   let alt = '';
+  const memo = { uses: new Map(), failed: new Set() };
   const handler = (req, res) => {
     const url = new URL(req.url ?? '/', 'http://fixture');
     const entry = {
@@ -137,21 +208,26 @@ export async function startUpstream({ log = null, state = null } = {}) {
       res.end(body);
     };
     if (entry.referer !== FIXTURE_REFERER) return reply(403, 'text/plain', 'referer required');
-    const found = filmAnswer(url.pathname, state) ?? answer(url.pathname, alt);
+    const found = filmAnswer(url.pathname, state) ?? tokenAnswer(url.pathname, state, memo) ?? answer(url.pathname, alt);
     if (found === null) return reply(404, 'text/plain', 'not found');
     const [status, type, body] = found;
     const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
-    const range = /^bytes=(\d+)-(\d*)$/.exec(entry.range ?? '');
-    if (status === 200 && range) {
-      const start = Number(range[1]);
-      const end = Math.min(range[2] === '' ? buf.length - 1 : Number(range[2]), buf.length - 1);
-      return reply(206, type, buf.subarray(start, end + 1), {
-        'content-range': `bytes ${start}-${end}/${buf.length}`,
-        'accept-ranges': 'bytes',
-        'content-length': String(end - start + 1),
-      });
-    }
-    return reply(status, type, buf, { 'accept-ranges': 'bytes', 'content-length': String(buf.length) });
+    const send = () => {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(entry.range ?? '');
+      if (status === 200 && range) {
+        const start = Number(range[1]);
+        const end = Math.min(range[2] === '' ? buf.length - 1 : Number(range[2]), buf.length - 1);
+        return reply(206, type, buf.subarray(start, end + 1), {
+          'content-range': `bytes ${start}-${end}/${buf.length}`,
+          'accept-ranges': 'bytes',
+          'content-length': String(end - start + 1),
+        });
+      }
+      return reply(status, type, buf, { 'accept-ranges': 'bytes', 'content-length': String(buf.length) });
+    };
+    const delay = state !== null && tokMediaPath(url.pathname) ? stateNumber(state, 'delay_ms') : 0;
+    if (delay > 0) setTimeout(send, delay);
+    else send();
   };
   const listen = () =>
     new Promise((resolve) => {

@@ -788,6 +788,64 @@ seed, copy its entry into `providers.seed.json` by hand.
 | `src/mcp/directStreamTools.ts` | `direct_stream_sources`, `direct_stream_update_source` |
 | `claude/skills/update-cloud-source/` | The skill |
 
+### Caching a film or an episode
+
+A stream that stutters on a slow connection or a far stream host can be downloaded to this laptop
+first. `direct_stream_cache` with `action: "start"` in Claude Code, or `POST /api/stream/cache`,
+answers at once; the download runs in the daemon, one at a time (the rest wait, `queued`).
+
+1. The title is resolved like a play, out of sight: the same resolver and provider order, the
+   title's original language.
+2. HLS: one rendition, the tallest, or the tallest not above `max_height` (none at or under it: the
+   shortest). Its audio is the rendition the player would pick, in the title's original language.
+   Every segment, the fMP4 init sections and the AES-128 keys are downloaded, and the English
+   subtitle is saved as WebVTT. A plain-file source is downloaded in 4 MB byte ranges and joined.
+3. Four files at a time, each tried up to six times with backoff (1, 2, 4, 8, 16 s). When the host
+   refuses a token (401, 403, 410: a signed address that expired), the title is resolved again and
+   the download carries on by segment index, keeping what is on disk. Three fresh resolves without
+   a file in between stop it (`token_refused`). A fresh source of another shape (another provider,
+   other segments) empties the folder and starts over.
+4. Every file is written to a temporary name and renamed. A daemon restart carries unfinished
+   downloads on from what is on disk.
+
+| Source | Cached |
+| --- | --- |
+| HLS master or media playlist, VidNest's `master.txt`, relative addresses | yes |
+| Separate audio renditions | the original-language one only |
+| `EXT-X-BYTERANGE` segments, `EXT-X-MAP` init sections, `EXT-X-KEY` AES-128 (with or without IV), discontinuities, gaps | yes; each range becomes its own file, IV and media sequence are kept |
+| `SAMPLE-AES`, a `KEYFORMAT` other than `identity` (DRM) | no: `cache_unsupported` |
+| A playlist without `EXT-X-ENDLIST` (live) | no: `cache_unsupported` |
+| DASH | no: `cache_unsupported` |
+| A plain file whose host ignores byte ranges | no: `cache_unsupported` |
+
+The files are in `<NOTES_DATA_DIR>/movies/stream-cache/<cache id>/` (`NOTESD_STREAM_CACHE_DIR`):
+`master.m3u8` (the one rendition, and `audio.m3u8` when the audio is separate), `video.m3u8`,
+`v-init-1.mp4`, `v-key-1.key`, `v-00001.ts` and on, `subtitle.vtt`, or `video.mp4`, plus
+`cache.json` (the shape of the source; no address, since addresses carry tokens). The local
+playlists list every segment by index, with `EXT-X-ENDLIST`, from the start, so a player can seek
+anywhere while the cache downloads: `GET /api/stream/cache/<id>/f/<file>` serves a file from disk
+with `Range`, and fetches one that is not on disk yet from the stream host at once, ahead of the
+queue.
+
+A cache belongs to the machine that made it (`stream_caches`, one per title and machine). The
+other machine lists it with `available: false`, and its files and its delete answer 404
+`not_on_this_machine`. `DELETE /api/stream/cache/<id>` (or `action: "clear"`) stops the download,
+deletes the folder and the row. The chat bar does not cache: it is a Claude Code request, and the
+Movies page's cache and clear buttons come later on the same routes.
+
+| Answer | Meaning |
+| --- | --- |
+| `cache_unsupported` | The source cannot be cached (see the table) |
+| `no_source`, `resolve_failed` | The resolve found no provider, or could not run |
+| `download_failed` | A file kept failing after six tries, or the host answered something else than a file |
+| `token_refused` | The host kept refusing fresh tokens |
+| `source_changed` | The source changed shape under the download more than twice |
+| `disk_error` | A file could not be written |
+| `cache_exists` | This machine holds the title at another `max_height`: clear it first |
+| `not_on_this_machine` | The cache is on the other laptop |
+| `unknown_cache` | No cache has that id (or it was cleared) |
+| `cache_failed` | A file of a failed cache was asked for: ask for the cache again |
+
 ### The prober
 
 The Stream side of `/movies` shows only titles verified on this machine within the freshness
@@ -905,6 +963,8 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
+| `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
+| `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
@@ -933,6 +993,9 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - `/report-stream-bug`: `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (a fake daemon
   and stream host; the known causes over `tests/fixtures/stream-report/`). On a throwaway daemon, the
   "/report-stream-bug" section of the feature map entry.
+- The stream cache: `cache.sh RUN` on `verify.sh up --direct-stream` drives it against the fixture
+  stream host's tokened HLS film (`mode` `hls_token`, `token_uses`, `fail_once`, `delay_ms`); the
+  downloader's cases are `npx vitest run tests/unit/directStream/cache`.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real

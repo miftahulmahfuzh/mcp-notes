@@ -29,6 +29,8 @@ import { createAnimeMapper } from './directStream/anime.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { buildStreamCache } from './directStream/cache/service.js';
+import { DirectStreamRepo } from './directStream/repo.js';
 import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
@@ -206,6 +208,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
+  // asked; startBackground carries unfinished ones on.
+  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
   // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
   const movieStories =
     movies === null
@@ -233,6 +238,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     sessionEvents,
     streaming,
     directStream,
+    streamCache,
     movieStories,
     streamLive,
     streamEvidence,

@@ -204,6 +204,8 @@ EOF
     CLAUDE_HOME="$dir/claude"
     NOTES_WORKTREES_DIR="$dir/worktrees"
     NOTESD_SWARM_SCRIPT="$dir/no-swarm.py"
+    # A throwaway daemon never writes into the owner's stream cache folder (.env.local may name one).
+    NOTESD_STREAM_CACHE_DIR="$dir/data/movies/stream-cache"
   )
   [ "$embed" = 1 ] || env+=(OPENROUTER_API_KEY=)
   if [ "$adversary" = 1 ]; then

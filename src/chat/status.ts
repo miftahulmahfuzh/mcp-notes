@@ -110,6 +110,15 @@ export type DirectStreamToolName = (typeof DIRECT_STREAM_TOOL_NAMES)[number];
 export const CLAUDE_CODE_ONLY_TOOL_NAMES: readonly DirectStreamToolName[] = ['direct_stream_update_source'];
 
 /**
+ * direct_stream_cache (src/mcp/streamCacheTools.ts): download a film or an episode to this machine's
+ * disk, show a cache's progress, list every cache, clear one. Deliberately NOT in allowedChatTools():
+ * a cache writes gigabytes to this laptop's disk and runs for minutes in the background, the chat
+ * bar's prompt does not describe it, and the wall gets its own cache and clear buttons (POST and
+ * DELETE /api/stream/cache). Claude Code's /direct-stream asks for it.
+ */
+export const STREAM_CACHE_TOOL_NAMES = ['direct_stream_cache'] as const;
+
+/**
  * The four curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
  * src/mcp/dwordJournalTools.ts). Named here only so `captionForToolUse` can give each one its own caption
  * and so this file's tests can assert on them by name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES,

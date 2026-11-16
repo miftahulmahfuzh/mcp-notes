@@ -14,6 +14,7 @@ import type { AdversaryService } from '../adversary/service.js';
 import type { MovieToolDeps } from './movieTools.js';
 import type { StreamingRunner } from '../streaming/service.js';
 import type { DirectStreamToolDeps } from './directStreamTools.js';
+import type { StreamCacheToolDeps } from './streamCacheTools.js';
 
 export interface ToolDeps {
   service: NotesService;
@@ -43,6 +44,8 @@ export interface ToolDeps {
   streaming?: StreamingRunner | null;
   /** Direct streaming behind direct_stream_find / direct_stream_play (DIRECT_STREAMING_PLAN phase 7). Omitted or null: both answer direct_stream_off. */
   directStream?: DirectStreamToolDeps | null;
+  /** The stream cache behind direct_stream_cache (stream-cache phase 5). Omitted or null: it answers direct_stream_off. */
+  streamCache?: StreamCacheToolDeps | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */

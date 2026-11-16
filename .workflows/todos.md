@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 11
+**Total Active Tasks**: 10
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 11
+- P1 High: 10
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 2
-- Completed: 117
+- Completed: 118
 
 ---
 
@@ -48,15 +48,6 @@
   - **Satisfies**: R4 — A "report" button in the playback UI (icon only, Phosphor), shown in the error state: a click snapshots the evidence immediately, then spawns a new tmux Claude Code session that runs /report-stream-bug and documents the bug in a note. · criteria: R4.1, R4.2, R4.3, R4.4
   - **Depends on**: P1-NOTES-A121, P1-NOTES-A122
   - **Plan**: `.workflows/plan/P1-NOTES-A124.md`
-- [ ] **P1-NOTES-A125** Phase 5: Stream cache: table, downloader, routes, tool
-  - **Difficulty**: HARD
-  - **Type**: Feature
-  - **Context**: Owns: table `stream_caches` (id, kind, tmdb id, season, episode, host, provider, height, state `downloading | ready | failed`, segment counts, bytes, error, timestamps) with migration `0029`, written only by `DirectStreamRepo`; `src/directStream/cache/` (store on disk under `<dataDir>/movies/stream-cache/<id>/`, HLS rendition and audio choice with an optional maximum height, the downloader with bounded parallel segment fetches, retries with backoff, a fresh resolve on a refused token, resume from disk after a restart, plain-file download by ranges, DASH answered `cache_unsupported`, a local playlist that lists every segment by index, the English subtitle saved as WebVTT); routes `POST /api/stream/cache`, `GET /api/stream/cache`, `GET /api/stream/cache/:id`, `DELETE /api/stream/cache/:id`, and the file route that serves a segment from disk or fetches it on demand; `available: false` / `not_on_this_machine` for the other host; the `direct_stream_cache` MCP tool (start, status, list, clear), kept out of the chat allow list; `StreamCache.player()` for phase 6; config (`NOTESD_STREAM_CACHE_DIR`), wiring, background resume of unfinished downloads; docs, feature map. The file route starts a `downloading` cache's download in this process when none runs, and answers 502 `upstream_error` (never a forwarded 401/403/410) for a refused on-demand fetch. Exit criteria: against a fake stream host, a cache request ends `ready` with every segment on disk; failures and a refused token are retried; a maximum height picks the right rendition; the other host's cache is listed unavailable and its files and delete answer `not_on_this_machine`; delete removes files and row.
-  - **Status**: open
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 5 of 6)
-  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. The daemon downloads one rendition with retries and token refresh; the cache is per machine; a "clear cache" route per episode item. · criteria: R1.1, R1.2, R1.3, R1.5, R1.6
-  - **Depends on**: P1-NOTES-A121
-  - **Plan**: `.workflows/plan/P1-NOTES-A125.md`
 - [ ] **P1-NOTES-A126** Phase 6: Play from the cache
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -146,6 +137,24 @@
   - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-142156-881790/evidence (J2-J4), /home/miftah/.local/state/notesd-verify/1116-142412-892557/evidence (DASH neighbor)
   - **Drift**: hlsEngine.test.tsx: the plan typed the fake's mocks as ReturnType<typeof vi.fn>, which vitest 4 does not let tsc call; typed as Mock<(arg) => void> instead. Behaviour identical.
   - **Drift**: Line numbers in StreamApp.test.tsx / streaming.md / direct-streaming.md differed from the plan; every edit was anchored by the quoted text.
+
+- [x] **P1-NOTES-A125** Phase 5: Stream cache: table, downloader, routes, tool
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: table `stream_caches` (id, kind, tmdb id, season, episode, host, provider, height, state `downloading | ready | failed`, segment counts, bytes, error, timestamps) with migration `0029`, written only by `DirectStreamRepo`; `src/directStream/cache/` (store on disk under `<dataDir>/movies/stream-cache/<id>/`, HLS rendition and audio choice with an optional maximum height, the downloader with bounded parallel segment fetches, retries with backoff, a fresh resolve on a refused token, resume from disk after a restart, plain-file download by ranges, DASH answered `cache_unsupported`, a local playlist that lists every segment by index, the English subtitle saved as WebVTT); routes `POST /api/stream/cache`, `GET /api/stream/cache`, `GET /api/stream/cache/:id`, `DELETE /api/stream/cache/:id`, and the file route that serves a segment from disk or fetches it on demand; `available: false` / `not_on_this_machine` for the other host; the `direct_stream_cache` MCP tool (start, status, list, clear), kept out of the chat allow list; `StreamCache.player()` for phase 6; config (`NOTESD_STREAM_CACHE_DIR`), wiring, background resume of unfinished downloads; docs, feature map. The file route starts a `downloading` cache's download in this process when none runs, and answers 502 `upstream_error` (never a forwarded 401/403/410) for a refused on-demand fetch. Exit criteria: against a fake stream host, a cache request ends `ready` with every segment on disk; failures and a refused token are retried; a maximum height picks the right rendition; the other host's cache is listed unavailable and its files and delete answer `not_on_this_machine`; delete removes files and row.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. The daemon downloads one rendition with retries and token refresh; the cache is per machine; a "clear cache" route per episode item. · criteria: R1.1, R1.2, R1.3, R1.5, R1.6
+  - **Depends on**: P1-NOTES-A121
+  - **Plan**: `.workflows/plan/P1-NOTES-A125.md`
+  - **Completed**: 2026-11-16 14:40
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, docs/guide/architecture.md, docs/guide/reference/configuration.md, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, docs/guide/streaming.md, drizzle/meta/_journal.json, scripts/docs/httpRoutes.ts, src/background.ts, src/chat/status.ts, src/config.ts, src/daemon.ts, src/db/schema.ts, src/deps.ts, src/directStream/repo.ts, src/http/app.ts, src/mcp/directStreamTools.ts, src/mcp/server.ts, src/mcp/tools.ts, tests/fixtures/direct-stream/fake-cli.mjs, tests/fixtures/direct-stream/upstream.mjs, tests/integration/setup.ts, tests/unit/chat-status.test.ts, tests/unit/config.test.ts, .claude/skills/verify-notesd/scripts/direct-stream/cache.sh, drizzle/0029_stream_caches.sql, drizzle/meta/0029_snapshot.json, src/directStream/cache/hls.ts, src/directStream/cache/job.ts, src/directStream/cache/plan.ts, src/directStream/cache/serve.ts, src/directStream/cache/service.ts, src/directStream/cache/store.ts, src/directStream/cache/subtitle.ts, src/directStream/cache/types.ts, src/directStream/cache/upstream.ts, src/http/streamCacheApi.ts, src/mcp/streamCacheTools.ts, tests/integration/directStream.cache.int.test.ts, tests/unit/config.streamCache.test.ts, tests/unit/directStream/cache/hls.test.ts, tests/unit/directStream/cache/job.test.ts, tests/unit/directStream/cache/serve.test.ts, tests/unit/mcp.streamCacheTools.test.ts
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-142304-885294/evidence
+  - **Drift**: src/directStream/cache/hls.ts:311: plan `const offset = range.offset ?? ...` fails TS7022 (circular inference); annotated `const offset: number | null`, behaviour unchanged
+  - **Drift**: drizzle-kit generate was run with a dummy DATABASE_URL_UNPOOLED (worktree has no .env.local; generate does not connect)
+  - **Drift**: line numbers in the plan were shifted by phase 1; every edit was anchored by text
+  - **Decided**: tests/unit/config.test.ts exact-equality assertion did not know the new field; added `cacheDir: null` to its expected object, assertion stays exact (rung 3: plan code block adds cacheDir to DirectStreamConfig)
 
 - [x] **P1-NOTES-A121** Phase 1: Stream evidence log and snapshot
   - **Difficulty**: NORMAL
