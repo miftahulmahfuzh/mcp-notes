@@ -48,11 +48,18 @@
 .mv-tile:hover { color: inherit; }
 .mv-tile:focus-visible { outline: 1px solid var(--ring); outline-offset: 3px; }
 .mv-tile.gone { opacity: .32; }
-.mv-tile.gone:hover { opacity: .7; }
+.mv-cell:hover .mv-tile.gone { opacity: .7; }
+/* The poster's buttons (watched, not interested): hidden until the pointer or the keyboard is on the poster. */
+.mv-cell { position: relative; }
+.mv-tile-acts { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 4px; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.mv-cell:hover .mv-tile-acts, .mv-cell:focus-within .mv-tile-acts { opacity: 1; pointer-events: auto; }
+.mv-tile-acts .ibtn { width: 30px; height: 30px; font-size: 17px; }
+.mv-tile-acts .ibtn:not(.on) { background: var(--bg); }
+.mv-tile-acts .ibtn:not(.on):hover { background: var(--fg); color: var(--bg); }
 .mv-art { position: relative; }
 .mv-poster { aspect-ratio: 2 / 3; background: var(--img-bg); overflow: hidden; }
 .mv-poster img { display: block; width: 100%; height: 100%; object-fit: cover; filter: var(--film); transition: filter .3s, transform .4s; }
-.mv-tile:hover .mv-poster img { filter: none; transform: scale(1.03); }
+.mv-cell:hover .mv-poster img { filter: none; transform: scale(1.03); }
 .mv-fallback { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; padding: 14px; box-sizing: border-box; background: var(--card); border: 1px solid var(--line); }
 .mv-fallback-t { font-size: 22px; line-height: 1; letter-spacing: -.03em; color: var(--text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .mv-fallback-y { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }

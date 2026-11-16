@@ -1,7 +1,7 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import type { PlayerState, TitleListItem } from '../../moviesApi';
+import type { PlayerState, TitleListItem, TitleUserPatch } from '../../moviesApi';
 import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, tileLivePlace, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
 
@@ -14,6 +14,8 @@ export interface MoviesGridProps {
   filter: MoviesFilter;
   onFilter: (f: MoviesFilter) => void;
   onOpen: (titleId: string) => void;
+  /** The poster's hover buttons: the watched flag and, on the Stream side, "not interested". */
+  onMark?: (title: TitleListItem, patch: TitleUserPatch) => void;
   /** `stream`: the Stream side's grid. A title there has no file by design, so nothing is "gone" and there is no gone pill. */
   side?: MoviesSide;
   /** Shown first in the filter row, before a separator: the page's Library / Stream switch. */
@@ -23,7 +25,7 @@ export interface MoviesGridProps {
 }
 
 /** The library or the Stream side: one row of controls (the page's switch, state pills with counts, kind icons, a text filter, the page's tools), then one poster per title. */
-export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, side = 'library', lead = null, tail = null }: MoviesGridProps) {
+export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, onMark, side = 'library', lead = null, tail = null }: MoviesGridProps) {
   const counts = stateCounts(titles, filter, side);
   const shown = sortTitles(
     titles.filter((t) => matchesFilter(t, filter, side)),
@@ -84,7 +86,7 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, si
         <div className="mv-grid" role="list" aria-label="Posters">
           {shown.map((t) => (
             <div key={t.id} role="listitem">
-              <PosterTile title={t} side={side} live={tileLive(t.id, player)} livePlace={tileLivePlace(t.id, player)} onOpen={onOpen} />
+              <PosterTile title={t} side={side} live={tileLive(t.id, player)} livePlace={tileLivePlace(t.id, player)} onOpen={onOpen} onMark={onMark} />
             </div>
           ))}
         </div>

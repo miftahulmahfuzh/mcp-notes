@@ -306,6 +306,13 @@ state (an unwatched poster has none), a bar under the poster shows how far into 
 the share of episodes finished, and a title with no file left on any machine is dimmed and says
 "no file left". It is never hidden.
 
+**Marking from the grid.** With the pointer on a poster (or the keyboard inside it), a check icon
+appears at its top right: one click sets or clears the title's watched flag, without opening the
+title and without a confirmation. On a series that is the whole series, every season. On the Stream
+side a crossed-eye icon beside it marks the title "not interested" (see
+[The Stream side](#the-stream-side)). The notice offers an undo, and a title marked watched by
+mistake is still there under `finished`.
+
 **Filters.** The state pills (`all`, `unwatched`, `in progress`, `finished`, `gone`) carry counts.
 `finished` includes `seen`; `gone` is about files, not state, so it overlaps the others. Three icons
 choose all kinds, films or series, and the text box filters on title and year. The filter survives
@@ -432,7 +439,8 @@ rebuilds its candidates and tries them out of sight, without waiting for the lap
 (see [streaming.md](streaming.md)). The icon turns while the pass runs, and a notice says how many
 titles it found.
 
-**Not interested.** On a title opened from Stream, the crossed-eye icon marks it "not interested".
+**Not interested.** On a Stream poster under the pointer, or on a title opened from Stream, the
+crossed-eye icon marks it "not interested".
 The title leaves the grid and shows only under the `not interested` filter, where the same icon
 puts it back; the notice offers an undo. Its place in the prober's catalog goes to another title.
 A title you finish by hand (the check icon) stays on the grid under `finished` and frees its place

@@ -16,7 +16,11 @@
 - Stream grid upkeep: the refresh icon asks the prober for one pass now (`POST
   /api/stream/prober/pass`: the listing is rebuilt, idle is not waited for, a play still stops it);
   a title page's "not interested" icon takes a title off the grid (it shows only under that
-  filter, and the prober's catalog stops counting and re-checking it); each season has one button
+  filter, and the prober's catalog stops counting and re-checking it); a poster under the
+  pointer shows the watched flag (a series: every season) and, on the Stream side, "not
+  interested", one click each with an undo and no confirmation (`.mv-tile-acts` is at opacity 0
+  until `.mv-cell` is hovered; hover a poster with Playwright on an `up --web --movies` run, click
+  `Mark <title> as watched`, read the title back as `finished`); each season has one button
   that marks all its episodes finished (`POST /api/movies/:id/episodes/watched`), an episode
   without a file has its own, and the notice offers an undo of exactly what changed. The caret
   before a season's name folds its episodes into a count, kept per title in the browser

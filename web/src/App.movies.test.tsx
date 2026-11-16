@@ -231,6 +231,18 @@ describe('App: Movies', () => {
     expect(await screen.findByText('already open in VLC: brought to the front')).toBeTruthy();
   });
 
+  it('a library poster carries the watched flag only; on a series it says every season', async () => {
+    window.history.replaceState(null, '', '/movies');
+    render(<App />);
+    const btn = await screen.findByRole('button', { name: 'Mark MobLand as watched' });
+    expect(within(btn.closest('.mv-cell') as HTMLElement).queryByRole('button', { name: /^Not interested/ })).toBeNull();
+    fireEvent.click(btn);
+    await waitFor(() => expect(postsTo('/api/movies/tv-247718/user')).toEqual([{ watched: true }]));
+    expect(await screen.findByText('MobLand: watched, every season')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+    await waitFor(() => expect(postsTo('/api/movies/tv-247718/user')).toEqual([{ watched: true }, { watched: false }]));
+  });
+
   it('play, watched, stars and review write through the API', async () => {
     at('/movies/movie-467905');
     render(<App />);

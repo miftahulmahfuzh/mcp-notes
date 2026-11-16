@@ -6,7 +6,7 @@ import { MoviesPill } from '../components/movies/MoviesPill';
 import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
-import { askProberPass, errorCode, fetchProber, startSync, type ProberState } from '../moviesApi';
+import { askProberPass, errorCode, fetchProber, saveTitleUser, startSync, type ProberState, type TitleListItem, type TitleUserPatch } from '../moviesApi';
 import {
   detailIsFor,
   emptyLibraryText,
@@ -138,6 +138,34 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
     }
   };
 
+  /** A poster's hover buttons: saved at once, no confirmation; the notice offers an undo. */
+  const mark = async (t: TitleListItem, patch: TitleUserPatch) => {
+    let back: TitleUserPatch;
+    let text: string;
+    if ('watched' in patch) {
+      back = { watched: !patch.watched };
+      text = patch.watched ? `${t.title}: watched${t.kind === 'tv' ? ', every season' : ''}` : `${t.title}: not watched`;
+    } else if ('not_interested' in patch) {
+      back = { not_interested: !patch.not_interested };
+      text = patch.not_interested ? `${t.title}: not interested, off the Stream grid` : `${t.title}: back on the Stream grid`;
+    } else return;
+    try {
+      await saveTitleUser(t.id, patch);
+      show(text, {
+        label: 'undo',
+        run: () => {
+          void saveTitleUser(t.id, back)
+            .catch((e: unknown) => show(`could not undo (${errorCode(e)})`))
+            .finally(store.refresh);
+        },
+      });
+    } catch (e) {
+      show(`could not save (${errorCode(e)})`);
+    } finally {
+      store.refresh();
+    }
+  };
+
   // The switch and the tool buttons are built once: a grid takes them into its filter row, so the
   // page has one row of controls; without a grid (a title, the unmatched list, an empty state)
   // they are the toolbar.
@@ -263,12 +291,12 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
     else if (list.titles.length === 0) content = <MoviesEmpty text={streamEmptyText(list.fresh_days)} />;
     else
       content = (
-        <MoviesGrid side="stream" lead={sideSwitch} tail={tools} titles={list.titles} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} />
+        <MoviesGrid side="stream" lead={sideSwitch} tail={tools} titles={list.titles} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} onMark={(t, p) => void mark(t, p)} />
       );
   } else if (store.listError !== null) content = <MoviesEmpty text={moviesErrorText(store.listError)} />;
   else if (store.titles === null) content = <p className="mv-empty mv-content">loading the library</p>;
   else if (store.titles.length === 0) content = <MoviesEmpty text={emptyLibraryText(store.status)} />;
-  else content = <MoviesGrid lead={sideSwitch} tail={tools} titles={store.titles} player={store.player} filter={filter} onFilter={setFilter} onOpen={(id) => onRoute({ title: id, unmatched: false })} />;
+  else content = <MoviesGrid lead={sideSwitch} tail={tools} titles={store.titles} player={store.player} filter={filter} onFilter={setFilter} onOpen={(id) => onRoute({ title: id, unmatched: false })} onMark={(t, p) => void mark(t, p)} />;
 
   const inGrid = isValidElement(content) && content.type === MoviesGrid;
 

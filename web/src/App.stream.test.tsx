@@ -260,6 +260,23 @@ describe('App: the Stream side of /movies', () => {
     await waitFor(() => expect(tileIds()).toEqual(['M-FC55']));
   });
 
+  it('a poster carries watched and not interested: one click each, no confirmation, with an undo', async () => {
+    at('/movies?side=stream');
+    render(<App />);
+    await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
+    const user = () => posts.filter((p) => p.url === '/api/movies/movie-550/user').map((p) => p.body);
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Fight Club as watched' }));
+    await waitFor(() => expect(user()).toEqual([{ watched: true }]));
+    expect(await screen.findByText('Fight Club: watched')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Not interested in Fight Club: take it off the Stream grid' }));
+    await waitFor(() => expect(user()).toEqual([{ watched: true }, { not_interested: true }]));
+    fireEvent.click(await screen.findByRole('button', { name: 'undo' }));
+    await waitFor(() => expect(user()).toEqual([{ watched: true }, { not_interested: true }, { not_interested: false }]));
+    // The buttons are beside the poster's link, not inside it: a click never opens the title.
+    expect(window.location.pathname).toBe('/movies');
+  });
+
   it('a season is marked finished with one button, and the notice offers an undo of exactly what it changed', async () => {
     at('/movies/M-8TR4?side=stream');
     render(<App />);
