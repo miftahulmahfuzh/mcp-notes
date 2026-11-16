@@ -48,11 +48,22 @@ export const SOURCE_SWITCH_COOLDOWN_MS = 120_000;
 /** One press of G or H moves the subtitles this far, as in VLC. */
 export const SUBTITLE_DELAY_STEP_MS = 50;
 export const SUBTITLE_DELAY_MAX_MS = 60_000;
-/**
- * Where a subtitle's bottom edge sits, in percent of the picture's height from the top. A cue left
- * where the browser puts it lies on the very last line: under the control bar, and cut off in full screen.
- */
-export const SUBTITLE_LINE_PERCENT = 88;
+
+/** A cue's text as the page shows it: WebVTT's tags (<i>, <c.yellow>, <v Name>, timestamps) taken out, its entities read. */
+export function cueText(raw: string): string {
+  return raw
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#(\d+);/g, (_all: string, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join('\n');
+}
 export const PAUSE_CACHE_DELAY_MS = 2_000;
 /** How often the page asks where the download stands, and what is on disk. */
 export const CACHE_POLL_MS = 4_000;
@@ -97,6 +108,12 @@ export interface StreamState {
   changingSource: boolean;
   /** What the last ask for another source came to, for the line over the picture: the new provider's name, or "No other source". */
   sourceNotice: string | null;
+  /**
+   * The subtitle lines to show now, one per line; '' for none. The page draws them itself: Chrome's
+   * own drawing of a text track vanished in full screen on the owner's laptop and sat under the
+   * control bar, so every track is kept `hidden` (its cues still run) and read from here.
+   */
+  caption: string;
   /** How much later (positive) or earlier (negative) the subtitles show than their file says, in ms (G and H). */
   subtitleDelayMs: number;
   /** The stretches of the title on this machine's disk (a cached play), in seconds: the timeline's thick grey bar. */
@@ -128,6 +145,7 @@ export const INITIAL_STATE: StreamState = {
   cached: null,
   changingSource: false,
   sourceNotice: null,
+  caption: '',
   subtitleDelayMs: 0,
   cachedRanges: [],
   errors: [],
@@ -191,6 +209,8 @@ export class StreamController {
   private readonly cueTimes = new WeakMap<object, { start: number; end: number; applied: number }>();
   /** How many cues the text tracks held when they were last gone through, and under which delay: nothing new, nothing to do. */
   private cuesTended = { count: -1, delay: 0 };
+  /** The text tracks already listened to for `cuechange`. */
+  private readonly heardTracks = new WeakSet<object>();
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
@@ -245,6 +265,8 @@ export class StreamController {
     this.video.addEventListener('timeupdate', this.onTime);
     this.video.addEventListener('seeking', this.onTime);
     this.video.addEventListener('seeking', this.onSeek);
+    this.video.addEventListener('seeked', this.readCaption);
+    (this.video.textTracks as TextTrackList | undefined)?.addEventListener?.('change', this.readCaption);
     this.video.addEventListener('waiting', this.onWaiting);
     this.video.addEventListener('playing', this.onMoving);
     this.video.addEventListener('pause', this.onPause);
@@ -394,8 +416,35 @@ export class StreamController {
   }
 
   /**
-   * Goes through every cue of every text track: lifts it off the bottom line (a cue the file placed
-   * itself, a sign at the top, is left where it is) and moves it to its own time plus the delay.
+   * Reads what the subtitles say now into `caption`. A track an engine or the page turned on
+   * (`showing`) is set to `hidden`: its cues keep running and Chrome draws nothing. Runs when a
+   * track's cues change, when a track is turned on or off, and as the film plays.
+   */
+  private readonly readCaption = (): void => {
+    // jsdom has no text tracks; a browser always does.
+    const tracks = this.video.textTracks as TextTrackList | undefined;
+    if (tracks === undefined) return;
+    const lines: string[] = [];
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
+      if (track === undefined || (track.kind !== 'subtitles' && track.kind !== 'captions')) continue;
+      if (!this.heardTracks.has(track)) {
+        this.heardTracks.add(track);
+        track.addEventListener?.('cuechange', this.readCaption);
+      }
+      if (track.mode === 'showing') track.mode = 'hidden';
+      if (track.mode !== 'hidden' || !track.activeCues) continue;
+      for (let j = 0; j < track.activeCues.length; j++) {
+        const text = cueText((track.activeCues[j] as Partial<VTTCue> | undefined)?.text ?? '');
+        if (text !== '' && !lines.includes(text)) lines.push(text);
+      }
+    }
+    const caption = lines.join('\n');
+    if (caption !== this.state.caption) this.set({ caption });
+  };
+
+  /**
+   * Moves every cue of every text track to its own time plus the delay.
    * Cues arrive late (a file loads, hls.js adds a part), so this runs again as the film plays.
    */
   private applySubtitleDelay(): void {
@@ -413,12 +462,6 @@ export class StreamController {
       for (let j = 0; j < cues.length; j++) {
         const cue = cues[j];
         if (cue === undefined) continue;
-        const placed = cue as Partial<VTTCue>;
-        if (placed.line === 'auto') {
-          placed.snapToLines = false;
-          placed.line = SUBTITLE_LINE_PERCENT;
-          placed.lineAlign = 'end';
-        }
         let times = this.cueTimes.get(cue);
         if (times === undefined) {
           if (delay === 0) continue;
@@ -450,6 +493,8 @@ export class StreamController {
     this.video.removeEventListener('timeupdate', this.onTime);
     this.video.removeEventListener('seeking', this.onTime);
     this.video.removeEventListener('seeking', this.onSeek);
+    this.video.removeEventListener('seeked', this.readCaption);
+    (this.video.textTracks as TextTrackList | undefined)?.removeEventListener?.('change', this.readCaption);
     this.video.removeEventListener('waiting', this.onWaiting);
     this.video.removeEventListener('playing', this.onMoving);
     this.clearStallTimer();
@@ -823,6 +868,7 @@ export class StreamController {
       this.deps.revokeTextUrl(track.url);
     }
     this.fileTracks = [];
+    if (this.state.caption !== '') this.set({ caption: '' });
   }
 
   /** A load succeeded after a restart: back to the film (or to loading, when it never played since attach). */
@@ -870,8 +916,10 @@ export class StreamController {
       const on = chosen !== null && chosen.source === 'file' && chosen.index === track.option.index;
       track.element.default = on;
       // jsdom has no TextTrack; a browser always does.
-      if (track.element.track) track.element.track.mode = on ? 'showing' : 'disabled';
+      // `hidden`: the cues run and readCaption shows them; Chrome draws nothing.
+      if (track.element.track) track.element.track.mode = on ? 'hidden' : 'disabled';
     }
+    this.readCaption();
   }
 
   /**
@@ -899,6 +947,7 @@ export class StreamController {
 
   private readonly onTime = (): void => {
     this.applySubtitleDelay();
+    this.readCaption();
     if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 

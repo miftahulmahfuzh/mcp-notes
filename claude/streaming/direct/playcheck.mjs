@@ -22,6 +22,9 @@ import { NEXT_FILE, OPENED_FILE, startGate } from './playgate.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+/** A text track that is on. The player page keeps its tracks `hidden` and draws the lines itself; `showing` is a browser drawing them. */
+const isOn = (mode) => mode === 'showing' || mode === 'hidden';
+
 export const CHECKS = ['play', 'dash', 'vidnest', 'subtitle', 'expiry'];
 /** A run counts as played when the video advanced this many seconds at a real resolution. */
 export const MIN_ADVANCE_S = 10;
@@ -188,7 +191,7 @@ export function summarize(samples, t0) {
     ...new Set(video.flatMap((s) => [...(s.state?.errors ?? []), ...(s.error ? [`video error ${s.error.code}: ${s.error.message}`] : [])])),
   ];
   const tracks = last?.tracks ?? [];
-  const english = tracks.filter(isEnglish).sort((a, b) => Number(b.mode === 'showing') - Number(a.mode === 'showing'))[0] ?? null;
+  const english = tracks.filter(isEnglish).sort((a, b) => Number(isOn(b.mode)) - Number(isOn(a.mode)))[0] ?? null;
   return {
     seconds_to_first_frame: first ? round1((first.at - t0) / 1000) : null,
     advanced_s: first ? round1(Math.max(...playing.map((s) => s.t)) - first.t) : 0,
@@ -248,7 +251,7 @@ export function decide(check, r) {
   if (check === 'subtitle') {
     if (!englishOffered(r)) return { verdict: 'inconclusive', cause: 'no_english_offered' };
     const t = s.english_track;
-    if (t && t.mode === 'showing' && (t.cues ?? 0) > 0) return { verdict: 'plays', cause: null };
+    if (t && isOn(t.mode) && (t.cues ?? 0) > 0) return { verdict: 'plays', cause: null };
     return { verdict: 'needs_fix', cause: t ? `english_track_${t.mode}_${t.cues ?? 0}_cues` : 'english_track_missing' };
   }
   return { verdict: 'plays', cause: null };

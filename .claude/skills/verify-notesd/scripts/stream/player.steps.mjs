@@ -56,7 +56,9 @@ async function wakeControls(page) {
 
 const englishCueShowing = (needle) => {
   const v = document.querySelector('video')
-  return !!v && [...v.textTracks].some((t) => t.mode === 'showing' && [...(t.activeCues ?? [])].some((c) => c.text.includes(needle)))
+  // The page draws the lines itself (.st-caption) from tracks it keeps hidden; a track the browser draws (showing) would be a second copy.
+  const drawn = document.querySelector('.st-caption')?.textContent ?? ''
+  return !!v && drawn.includes(needle) && [...v.textTracks].every((t) => t.mode !== 'showing') && [...v.textTracks].some((t) => t.mode === 'hidden' && [...(t.activeCues ?? [])].some((c) => c.text.includes(needle)))
 }
 
 // Seconds loaded ahead of the picture (the last buffered range).
@@ -117,7 +119,7 @@ export default async ({ page, base, shot, log }) => {
     const v = document.querySelector('video')
     return {
       title: document.title,
-      showing: [...v.textTracks].filter((t) => t.mode === 'showing').map((t) => t.language),
+      showing: [...v.textTracks].filter((t) => t.mode === 'hidden').map((t) => t.language),
       qualities: window.notesdStream.qualities.map((q) => q.height),
       subtitle: window.notesdStream.subtitle,
     }
@@ -189,7 +191,7 @@ export default async ({ page, base, shot, log }) => {
   await page.waitForFunction(() => window.notesdStream?.stage === 'ready', null, { timeout: 30_000 })
   await page.waitForFunction(() => {
     const t = document.querySelector('video track')
-    return !!t && t.track.mode === 'showing' && [...(t.track.activeCues ?? [])].some((c) => c.text.includes('SRT file'))
+    return !!t && t.track.mode === 'hidden' && [...(t.track.activeCues ?? [])].some((c) => c.text.includes('SRT file')) && (document.querySelector('.st-caption')?.textContent ?? '').includes('SRT file')
   }, null, { timeout: 20_000 })
   const j2 = await page.evaluate(() => {
     const t = document.querySelector('video track')

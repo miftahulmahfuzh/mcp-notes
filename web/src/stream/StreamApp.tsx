@@ -513,6 +513,13 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             </span>
           )}
         </div>
+        {state.caption !== '' && (
+          <div className="st-caption" aria-live="off" data-testid="caption">
+            {state.caption.split('\n').map((line, i) => (
+              <span key={i}>{line}</span>
+            ))}
+          </div>
+        )}
         <StageOverlay state={state} onReport={controller !== null && sessionId !== null ? reportBug : undefined} />
         <div className="st-bar">
           <IconButton label={view.paused ? 'Play' : 'Pause'} onClick={togglePlay}>

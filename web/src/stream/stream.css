@@ -18,11 +18,30 @@
   object-fit: contain;
   background: #000;
 }
-.st-video::cue {
+/*
+ * Subtitles are drawn by the page (StreamState.caption), not by the browser: over the picture in
+ * every mode, clear of the control bar. Every text track stays hidden, so ::cue has nothing to style.
+ */
+.st-caption {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 11vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3vh;
+  pointer-events: none;
   font-family: 'Host Grotesk Variable', 'Host Grotesk', sans-serif;
-  font-size: 2.6vh;
+  font-size: 3.4vh;
+  line-height: 1.25;
   color: #f4f3ec;
-  background: rgba(0, 0, 0, 0.55);
+  text-align: center;
+  text-shadow: 0 0 4px #000, 0 1px 2px #000;
+}
+.st-caption span {
+  padding: 0 0.5em;
+  background: rgba(0, 0, 0, 0.5);
 }
 .st-top,
 .st-bar {
