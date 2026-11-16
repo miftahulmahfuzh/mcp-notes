@@ -1,17 +1,21 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Config } from '../../config.js';
 import type { StreamCacheRow } from '../../db/schema.js';
 import { jsonError, type FetchLike } from '../passThrough.js';
+import type { CacheStanding } from '../cachePlay.js';
 import { cacheRef, type DirectStreamRepo } from '../repo.js';
 import type { StreamSession } from '../sessions.js';
 import { refLabel, type SourceAudio, type StreamRef } from '../types.js';
 import { CacheJob, type CacheJobDeps, type CacheRecorder, type JobOutcome } from './job.js';
 import { fileResponse } from './serve.js';
 import { CacheStore, SERVED_NAME } from './store.js';
-import { CACHE_ID_PATTERN, CacheError, CacheFailure, STREAM_CACHE_SUBDIR, type StreamCacheView } from './types.js';
+import { CACHE_ID_PATTERN, CacheError, CacheFailure, STREAM_CACHE_SUBDIR, type CacheMap, type StreamCacheView } from './types.js';
 
 /** Downloads that run at once on this host; the rest wait their turn (`queued`). */
 export const CACHE_JOBS = 1;
+/** A cache the player started on a pause is cleared this long after it was last written. */
+export const AUTO_CACHE_KEEP_MS = 3 * 24 * 3_600_000;
 
 export interface StreamCacheOptions {
   repo: DirectStreamRepo;
@@ -132,6 +136,7 @@ export class StreamCache {
 
   /** Queues this host's unfinished downloads (a daemon start). Returns how many. */
   async start(): Promise<number> {
+    await this.prune();
     const rows = await this.repo.unfinishedCaches(this.host);
     for (const row of rows) this.enqueue({ id: row.id, ref: cacheRef(row), maxHeight: row.maxHeight });
     return rows.length;
@@ -150,9 +155,17 @@ export class StreamCache {
    * is on disk; a ready or running one is answered as it is (`started: false`). A different
    * `maxHeight` than the existing cache's throws `cache_exists` (clear it first).
    */
-  async request(ref: StreamRef, options: { maxHeight: number | null }): Promise<{ cache: StreamCacheView; started: boolean }> {
+  async request(ref: StreamRef, options: { maxHeight: number | null; auto?: boolean }): Promise<{ cache: StreamCacheView; started: boolean }> {
     if (this.closed) throw new Error('the stream cache is closing');
-    const { row, created } = await this.repo.createCache(this.host, ref, options.maxHeight, this.now());
+    const auto = options.auto === true;
+    const { row, created } = await this.repo.createCache(this.host, ref, options.maxHeight, this.now(), auto);
+    // The owner asks for a cache the player started: from now on it is theirs to clear.
+    if (!created && !auto && row.auto) {
+      await this.repo.cacheKept(row.id);
+      row.auto = false;
+    }
+    if (!created && auto && row.auto) await this.repo.cacheTouched(row.id, this.now());
+    await this.prune(row.id);
     if (!created && options.maxHeight !== null && row.maxHeight !== options.maxHeight) {
       throw new CacheError(
         'cache_exists',
@@ -164,6 +177,69 @@ export class StreamCache {
     if (row.state === 'failed') await this.repo.cacheRestarted(row.id, this.now());
     const started = this.enqueue({ id: row.id, ref, maxHeight: row.maxHeight });
     return { cache: this.view((await this.repo.cacheById(row.id)) ?? row), started };
+  }
+
+  /**
+   * Clears this host's caches the player started (`auto`) that nothing has written for
+   * AUTO_CACHE_KEEP_MS, so a pause never fills the disk for good. A running download is left, and
+   * so is `except` (the cache a request is about: a pause on an old one carries it on).
+   * Never throws: a cache that cannot be cleared now is tried at the next request.
+   */
+  async prune(except: string | null = null): Promise<number> {
+    let cleared = 0;
+    try {
+      const stale = await this.repo.staleAutoCaches(this.host, new Date(this.now().getTime() - AUTO_CACHE_KEEP_MS));
+      for (const row of stale) {
+        if (row.id === except || this.running.has(row.id) || this.waiting.some((w) => w.id === row.id)) continue;
+        await this.store.remove(row.id);
+        await this.repo.deleteCache(row.id);
+        cleared += 1;
+        this.log(`[notesd] stream cache: cleared ${refLabel(cacheRef(row))}, started by a pause and not touched for three days`);
+      }
+    } catch (err) {
+      this.log(`[notesd] stream cache: could not clear old paused-play caches: ${messageOf(err)}`);
+    }
+    return cleared;
+  }
+
+  /**
+   * The stretches of a cache that are on this host's disk, for the player's timeline. HLS: the video
+   * playlist's segments whose files exist, by their EXTINF times. A plain file: the whole title once
+   * it is ready (its chunks are not times). Null for an unknown cache or the other host's.
+   */
+  async map(id: string): Promise<CacheMap | null> {
+    const row = await this.rowOf(id);
+    if (row === null || row.host !== this.host) return null;
+    if (row.manifestKind !== 'hls') {
+      return { duration_s: row.durationS, ranges: row.state === 'ready' && row.durationS !== null ? [[0, row.durationS]] : [] };
+    }
+    let playlist: string;
+    try {
+      playlist = await readFile(this.store.file(row.id, 'video.m3u8'), 'utf8');
+    } catch {
+      return { duration_s: row.durationS, ranges: [] };
+    }
+    const names = await this.store.names(row.id);
+    const ranges: [number, number][] = [];
+    let at = 0;
+    let length: number | null = null;
+    for (const raw of playlist.split('\n')) {
+      const line = raw.trim();
+      const inf = /^#EXTINF:([\d.]+)/.exec(line);
+      if (inf !== null) length = Number(inf[1]);
+      else if (line !== '' && !line.startsWith('#') && length !== null) {
+        const end = at + length;
+        if (names.has(line)) {
+          const last = ranges.at(-1);
+          if (last !== undefined && Math.abs(last[1] - at) < 0.01) last[1] = end;
+          else ranges.push([at, end]);
+        }
+        at = end;
+        length = null;
+      }
+    }
+    const round = (n: number): number => Math.round(n * 10) / 10;
+    return { duration_s: row.durationS ?? round(at), ranges: ranges.map(([a, b]) => [round(a), round(b)]) };
   }
 
   /** Every cache of both hosts, newest first. */
@@ -195,8 +271,19 @@ export class StreamCache {
   }
 
   /** Phase 6's reads (cachePlay.ts PlayableCaches): `find` on this host, `get` on any host, as CachePlayData. */
-  player(): { find(ref: StreamRef): Promise<CachePlayData | null>; get(id: string): Promise<CachePlayData | null> } {
+  player(): {
+    find(ref: StreamRef): Promise<CachePlayData | null>;
+    get(id: string): Promise<CachePlayData | null>;
+    start(ref: StreamRef): Promise<CacheStanding>;
+    standing(ref: StreamRef): Promise<CacheStanding | null>;
+  } {
+    const standing = (view: StreamCacheView): CacheStanding => ({ id: view.id, state: view.state, error: view.error, progress: view.progress });
     return {
+      start: async (ref) => standing((await this.request(ref, { maxHeight: null, auto: true })).cache),
+      standing: async (ref) => {
+        const view = await this.find(ref);
+        return view === null ? null : standing(view);
+      },
       find: async (ref) => {
         const row = await this.repo.cacheFor(this.host, ref);
         return row === null ? null : this.playData(row);
@@ -339,6 +426,7 @@ export class StreamCache {
       resolves: row.resolves,
       error: row.error,
       error_detail: row.errorDetail,
+      auto: row.auto,
       playlist_url: available && row.manifestKind !== null ? `${base}${row.manifestKind === 'hls' ? 'master.m3u8' : 'video.mp4'}` : null,
       subtitle_url: available && row.subtitle ? `${base}subtitle.vtt` : null,
       created_at: row.createdAt.toISOString(),

@@ -131,6 +131,18 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     }
   });
 
+  // The player page, paused: cache the title here and, once the cache has a source, play from it.
+  r.post('/api/stream/sessions/:id/cache', sameOriginOnly, async (c) => {
+    const body = cacheSessionBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'start must be true or false.' }, 400);
+    try {
+      const answer = await service().cacheSession(c.req.param('id'), { start: body.data.start === true });
+      return c.json({ ...answer.session, moved: answer.moved, cache: answer.cache });
+    } catch (err) {
+      return directStreamErrorResponse(c, err);
+    }
+  });
+
   // The player's previous / next episode buttons: a new session for the neighbouring episode.
   r.post('/api/stream/sessions/:id/episode', sameOriginOnly, async (c) => {
     const body = episodeBody.safeParse(await c.req.json().catch(() => null));
@@ -149,6 +161,7 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
 }
 
 const episodeBody = z.object({ to: z.enum(['prev', 'next']) });
+const cacheSessionBody = z.object({ start: z.boolean().optional() });
 
 /** Longest position or duration a report may carry, in seconds (11.5 days: a sanity bound, not a film's length). */
 const MAX_STREAM_SECONDS = 1_000_000;

@@ -41,7 +41,7 @@ const DESCRIPTION =
   'Pass title (words without the year, a movie id, or a title key) with year and kind when known; for a series season and episode, or absolute_episode, or neither to take the episode direct_stream_play would (picked). max_height caches the tallest rendition not above it (720 for a smaller copy); without it the tallest. ' +
   'action status shows that title\'s caches (or the one of id) on both machines; list shows every cache; clear stops this machine\'s download of it and deletes its files. ' +
   'A cache belongs to the machine that made it: one made on the other laptop has available false and cannot be played or cleared here (not_on_this_machine). ' +
-  'Answers carry cache { id, state downloading | ready | failed, progress, segments_done, segments_total, bytes, height, provider, subtitle, error }. error cache_unsupported means the source cannot be cached (DASH, DRM, a live stream); token_refused that the host kept refusing fresh tokens; cache_exists that this machine holds the title at another max_height: clear it first. ' +
+  'Answers carry cache { id, state downloading | ready | failed, progress, segments_done, segments_total, bytes, height, provider, subtitle, error, auto }. auto true is a cache a pause in the player started by itself: it clears itself three days after it was last written, and start on it makes it the owner\'s to keep. error cache_unsupported means the source cannot be cached (DASH, DRM, a live stream); token_refused that the host kept refusing fresh tokens; cache_exists that this machine holds the title at another max_height: clear it first. ' +
   'Off on this server: direct_stream_off.';
 
 interface CacheArgs {

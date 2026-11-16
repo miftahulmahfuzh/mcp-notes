@@ -131,6 +131,8 @@ export class CacheJob {
   private counted = 0;
   private bytes = 0;
   private lastFlush = 0;
+  /** Where in the plan's order the download goes on from: the file the player asked for last (fetchNow). */
+  private cursor = 0;
 
   constructor(
     readonly id: string,
@@ -196,6 +198,9 @@ export class CacheJob {
       const src = this.source;
       if (src === null) continue;
       if (!src.plan.files.has(name)) return;
+      // The film is here now: the queue carries on from this file, not from where it was.
+      const at = src.plan.order.indexOf(name);
+      if (at >= 0) this.cursor = at;
       await this.ensure(name);
       return;
     }
@@ -385,13 +390,25 @@ export class CacheJob {
 
   private async downloadAll(): Promise<void> {
     const src = this.current();
-    const queue = src.plan.order.filter((name) => !this.present.has(name));
-    let next = 0;
+    const order = src.plan.order;
+    const taken = new Set<string>();
+    // The next file not on disk, from the cursor on and around: a player that moved (fetchNow) is
+    // followed, and what lies before it is fetched once the rest is in.
+    const take = (): string | undefined => {
+      for (let step = 0; step < order.length; step++) {
+        const at = (this.cursor + step) % order.length;
+        const name = order[at];
+        if (name === undefined || taken.has(name) || this.present.has(name)) continue;
+        taken.add(name);
+        this.cursor = at;
+        return name;
+      }
+      return undefined;
+    };
     let failure: unknown = null;
     const worker = async (): Promise<void> => {
       while (failure === null && !this.abort.signal.aborted) {
-        const name = queue[next];
-        next += 1;
+        const name = take();
         if (name === undefined) return;
         try {
           await this.ensure(name);

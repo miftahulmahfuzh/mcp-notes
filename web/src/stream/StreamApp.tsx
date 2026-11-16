@@ -23,7 +23,7 @@ import {
 import { INITIAL_STATE, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
-import type { CachedInfo, EpisodeNumber } from './session';
+import type { CachedInfo, EpisodeNumber, TimeRange } from './session';
 import { pickDefaultSubtitle } from './subtitles';
 
 /**
@@ -152,12 +152,43 @@ interface MediaView {
   time: number;
   duration: number;
   muted: boolean;
+  /** What the browser holds in memory, in seconds. */
+  buffered: TimeRange[];
 }
 
-const MEDIA_EVENTS = ['play', 'pause', 'timeupdate', 'seeking', 'durationchange', 'loadedmetadata', 'volumechange'] as const;
+const MEDIA_EVENTS = ['play', 'pause', 'timeupdate', 'seeking', 'durationchange', 'loadedmetadata', 'volumechange', 'progress'] as const;
+
+function bufferedOf(video: HTMLVideoElement): TimeRange[] {
+  const out: TimeRange[] = [];
+  // jsdom's <video> has no ranges.
+  const ranges = video.buffered as TimeRanges | undefined;
+  if (ranges === undefined) return out;
+  for (let i = 0; i < ranges.length; i++) out.push([ranges.start(i), ranges.end(i)]);
+  return out;
+}
+
+/**
+ * The timeline's thick grey bar as a CSS gradient: every stretch that is loaded (in the browser's
+ * memory, or on this machine's disk for a cached play), merged, as percentages of the duration.
+ * 'none' when nothing is.
+ */
+export function loadedGradient(ranges: readonly TimeRange[], duration: number): string {
+  if (!(duration > 0)) return 'none';
+  const merged: TimeRange[] = [];
+  for (const [from, to] of [...ranges].filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0])) {
+    const last = merged.at(-1);
+    // Half a second apart is one stretch: segments rarely meet to the millisecond.
+    if (last !== undefined && from <= last[1] + 0.5) last[1] = Math.max(last[1], to);
+    else merged.push([from, to]);
+  }
+  if (merged.length === 0) return 'none';
+  const pct = (s: number): string => `${Math.round((Math.min(Math.max(s, 0), duration) / duration) * 10000) / 100}%`;
+  const stops = merged.flatMap(([a, b]) => [`transparent ${pct(a)}`, `var(--st-loaded) ${pct(a)}`, `var(--st-loaded) ${pct(b)}`, `transparent ${pct(b)}`]);
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
 
 function useMediaView(video: HTMLVideoElement | null): MediaView {
-  const [view, setView] = useState<MediaView>({ paused: true, time: 0, duration: 0, muted: false });
+  const [view, setView] = useState<MediaView>({ paused: true, time: 0, duration: 0, muted: false, buffered: [] });
   useEffect(() => {
     if (video === null) return;
     const read = () =>
@@ -166,6 +197,7 @@ function useMediaView(video: HTMLVideoElement | null): MediaView {
         time: video.currentTime,
         duration: Number.isFinite(video.duration) ? video.duration : 0,
         muted: video.muted,
+        buffered: bufferedOf(video),
       });
     for (const type of MEDIA_EVENTS) video.addEventListener(type, read);
     read();
@@ -472,7 +504,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             onChange={(e) => {
               if (video !== null) video.currentTime = Number(e.currentTarget.value);
             }}
-            style={{ ['--st-fill' as string]: `${fill}%` } as CSSProperties}
+            style={{ ['--st-fill' as string]: `${fill}%`, ['--st-loaded-bar' as string]: loadedGradient([...view.buffered, ...state.cachedRanges], view.duration) } as CSSProperties}
           />
           <span className="st-clock">
             {formatClock(view.time)} / {formatClock(view.duration)}

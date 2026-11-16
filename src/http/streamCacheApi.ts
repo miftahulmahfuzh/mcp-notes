@@ -86,6 +86,15 @@ export function streamCacheRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<
     return c.json(view);
   });
 
+  // What of a cache is on disk, in seconds: the player's timeline draws it.
+  r.get('/api/stream/cache/:id/map', async (c) => {
+    const cache = cacheOf();
+    if (cache === null) return c.json(DIRECT_STREAM_OFF, 503);
+    const map = await cache.map(c.req.param('id'));
+    if (map === null) return c.json({ error: 'unknown_cache', message: 'This machine has no stream cache with this id.' }, 404);
+    return c.json(map);
+  });
+
   r.delete('/api/stream/cache/:id', sameOriginOnly, async (c) => {
     const cache = cacheOf();
     if (cache === null) return c.json(DIRECT_STREAM_OFF, 503);

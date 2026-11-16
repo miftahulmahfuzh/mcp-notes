@@ -46,6 +46,24 @@ export interface PlayableCaches {
   find(ref: StreamRef): Promise<CachePlayView | null>;
   /** The cache with this id on any host, or null when there is none or it was deleted. */
   get(id: string): Promise<CachePlayView | null>;
+  /**
+   * Starts this host's cache of `ref` for the player page (a paused play; `auto`), or carries a
+   * failed one on; a ready or running one is left as it is. Answers where it stands. Without it
+   * a paused play caches nothing.
+   */
+  start?(ref: StreamRef): Promise<CacheStanding>;
+  /** Where this host's cache of `ref` stands, without starting anything; null: there is none. */
+  standing?(ref: StreamRef): Promise<CacheStanding | null>;
+}
+
+/** A cache as a paused play follows it, before it can be played too (its source is not known yet). */
+export interface CacheStanding {
+  id: string;
+  state: CacheState;
+  /** `stream_caches.error` of a failed one (`cache_unsupported`, `download_failed`, ...). */
+  error: string | null;
+  /** segments_done / segments_total, 0 to 1. */
+  progress: number;
 }
 
 /** The cache a stream session plays from. A failed cache cannot be one: a session never holds it. */

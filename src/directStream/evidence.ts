@@ -36,7 +36,7 @@ const TEXT_MAX_CHARS = 2000;
 const WARN_EVERY_MS = 60_000;
 
 export const REQUEST_OUTCOMES = ['end', 'aborted', 'error', 'refused'] as const;
-export const SESSION_EVENTS = ['created', 'refreshed', 'refresh_failed', 'switched'] as const;
+export const SESSION_EVENTS = ['created', 'refreshed', 'refresh_failed', 'switched', 'cached'] as const;
 
 const requestSchema = z.object({
   type: z.literal('request'),

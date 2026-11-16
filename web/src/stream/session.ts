@@ -153,6 +153,8 @@ export const sessionUrl = (id: string): string => `/api/stream/sessions/${encode
 export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
 export const sourceUrl = (id: string): string => `${sessionUrl(id)}/source`;
+export const sessionCacheUrl = (id: string): string => `${sessionUrl(id)}/cache`;
+export const cacheMapUrl = (cacheId: string): string => `/api/stream/cache/${encodeURIComponent(cacheId)}/map`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
@@ -184,6 +186,64 @@ export async function refreshSession(id: string, fetchImpl: typeof fetch): Promi
   if (!res.ok) throw new SessionError(await errorCode(res), res.status);
   const body = (await res.json().catch(() => null)) as { session_id?: unknown } | null;
   return body !== null && typeof body.session_id === 'string' && body.session_id !== '' ? body.session_id : id;
+}
+
+/** Where the download of a paused play's cache stands (POST /api/stream/sessions/:id/cache). */
+export interface CacheStanding {
+  id: string;
+  state: 'downloading' | 'ready' | 'failed';
+  error: string | null;
+  /** 0 to 1. */
+  progress: number;
+}
+
+export interface CacheSessionAnswer {
+  /** This call moved the session onto the cache: the page loads `session` again. */
+  moved: boolean;
+  /** Null: this daemon caches nothing. */
+  cache: CacheStanding | null;
+  session: StreamSession;
+}
+
+/**
+ * Asks the daemon to cache the session's title on this machine (`start`), or only where that
+ * stands, and to move the session onto the cache once it can be played. Throws SessionError.
+ */
+export async function cacheSession(id: string, start: boolean, fetchImpl: typeof fetch): Promise<CacheSessionAnswer> {
+  let res: Response;
+  try {
+    res = await fetchImpl(sessionCacheUrl(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ start }) });
+  } catch {
+    throw new SessionError('network', 0);
+  }
+  if (!res.ok) throw new SessionError(await errorCode(res), res.status);
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const session = parseSession(body);
+  const c = typeof body?.cache === 'object' && body.cache !== null ? (body.cache as Record<string, unknown>) : null;
+  const state = c?.state;
+  const cache: CacheStanding | null =
+    c !== null && typeof c.id === 'string' && (state === 'downloading' || state === 'ready' || state === 'failed')
+      ? { id: c.id, state, error: typeof c.error === 'string' ? c.error : null, progress: typeof c.progress === 'number' ? c.progress : 0 }
+      : null;
+  return { moved: body?.moved === true, cache, session };
+}
+
+/** A stretch of the title, in seconds: [from, to]. */
+export type TimeRange = [number, number];
+
+/** The stretches of a cache that are on this machine's disk; [] when the daemon cannot say. Never throws. */
+export async function fetchCacheMap(cacheId: string, fetchImpl: typeof fetch): Promise<TimeRange[]> {
+  try {
+    const res = await fetchImpl(cacheMapUrl(cacheId), { headers: { accept: 'application/json' } });
+    if (!res.ok) return [];
+    const body = (await res.json().catch(() => null)) as { ranges?: unknown } | null;
+    if (!Array.isArray(body?.ranges)) return [];
+    return body.ranges.flatMap((r): TimeRange[] =>
+      Array.isArray(r) && typeof r[0] === 'number' && typeof r[1] === 'number' && r[1] > r[0] && r[0] >= 0 ? [[r[0], r[1]]] : [],
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** POST /api/stream/sessions/:id/source: the session as it is now, and whether it moved to another provider. */

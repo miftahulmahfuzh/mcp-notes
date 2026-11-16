@@ -18,6 +18,9 @@ import {
   SessionError,
   switchEpisode,
   switchSource,
+  cacheSession,
+  fetchCacheMap,
+  type TimeRange,
   type EpisodeNumber,
   type ManifestKind,
   type PlayerLogLine,
@@ -41,6 +44,10 @@ export const SEEK_GRACE_MS = 5_000;
 /** At most this many moves to another provider per session, and one ask per cooldown. */
 export const MAX_SOURCE_SWITCHES = 2;
 export const SOURCE_SWITCH_COOLDOWN_MS = 120_000;
+/** A pause this long starts the download of the title to this machine; a quick pause and play does not. */
+export const PAUSE_CACHE_DELAY_MS = 2_000;
+/** How often the page asks where the download stands, and what is on disk. */
+export const CACHE_POLL_MS = 4_000;
 const LOG_MAX = 20;
   /** The daemon refuses a longer line or a bigger batch (src/http/streamEvidenceApi.ts). */
   const EVENT_TEXT_MAX = 2_000;
@@ -78,6 +85,8 @@ export interface StreamState {
   switchError: { to: 'prev' | 'next'; code: string } | null;
   /** Played from this machine's stream cache (phase 6): the page marks it beside the title. Null: through the pass-through. */
   cached: CachedInfo | null;
+  /** The stretches of the title on this machine's disk (a cached play), in seconds: the timeline's thick grey bar. */
+  cachedRanges: TimeRange[];
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
@@ -103,6 +112,7 @@ export const INITIAL_STATE: StreamState = {
   switching: null,
   switchError: null,
   cached: null,
+  cachedRanges: [],
   errors: [],
   log: [],
   bugReport: { status: 'idle' },
@@ -152,6 +162,12 @@ export class StreamController {
   private sourceSwitches = 0;
   private lastSourceAskAt = 0;
   private askingSource = false;
+  private pauseTimer: ReturnType<typeof setTimeout> | null = null;
+  private cacheTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The session a pause already asked a cache for: once per session. */
+  private cacheAskedFor: string | null = null;
+  /** The move onto the cache loads the film again: it stays paused when it was. */
+  private holdPaused = false;
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
@@ -231,6 +247,7 @@ export class StreamController {
     if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
     await this.loadFileSubtitles(session);
     if (this.disposed || this.session !== session) return;
+    if (session.cached !== null) this.followCache(session.cached.id);
     await this.attach(session, session.resumeS);
   }
 
@@ -266,6 +283,8 @@ export class StreamController {
     this.stalls = [];
     this.sourceSwitches = 0;
     this.lastSourceAskAt = 0;
+    this.clearCacheTimers();
+    this.set({ cachedRanges: [] });
     this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
@@ -332,6 +351,7 @@ export class StreamController {
     this.video.removeEventListener('waiting', this.onWaiting);
     this.video.removeEventListener('playing', this.onMoving);
     this.clearStallTimer();
+    this.clearCacheTimers();
     this.video.removeEventListener('pause', this.onPause);
     this.video.removeEventListener('play', this.onPlay);
     this.video.removeEventListener('ended', this.onEnded);
@@ -601,6 +621,93 @@ export class StreamController {
     }
   }
 
+  private clearCacheTimers(): void {
+    if (this.pauseTimer !== null) clearTimeout(this.pauseTimer);
+    if (this.cacheTimer !== null) clearTimeout(this.cacheTimer);
+    this.pauseTimer = null;
+    this.cacheTimer = null;
+  }
+
+  // A pause that lasts: the owner waits for the film to load, so the daemon downloads it to this
+  // machine meanwhile. Once per session; not for a play that is already a cache, a muted check,
+  // or DASH (which is never cached).
+  private armPauseCache(): void {
+    if (this.pauseTimer !== null) clearTimeout(this.pauseTimer);
+    this.pauseTimer = null;
+    const session = this.session;
+    if (this.mutedMode || session === null || session.cached !== null || session.manifestKind === 'dash' || this.cacheAskedFor === this.sessionId || !this.onFilm() || this.video.ended) return;
+    this.pauseTimer = setTimeout(() => {
+      this.pauseTimer = null;
+      if (this.disposed || !this.video.paused || this.video.ended || !this.onFilm() || this.session !== session) return;
+      this.cacheAskedFor = this.sessionId;
+      void this.askCache(this.sessionId, true);
+    }, PAUSE_CACHE_DELAY_MS);
+  }
+
+  /** One ask of the daemon about the paused play's cache; asks again until the session moved onto it or it failed. */
+  private async askCache(asked: string, start: boolean): Promise<void> {
+    let answer;
+    try {
+      answer = await cacheSession(asked, start, this.deps.fetch);
+    } catch (err) {
+      if (!this.disposed && this.sessionId === asked) this.note(`cache: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+      return;
+    }
+    if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
+    if (start && answer.cache !== null) this.note(`paused: caching on this machine (${answer.cache.id.slice(0, 8)})`);
+    if (answer.cache === null || answer.cache.state === 'failed') {
+      this.note(`cache: ${answer.cache === null ? 'not available' : (answer.cache.error ?? 'failed')}`);
+      return;
+    }
+    if (!answer.moved || answer.session.cached === null) {
+      this.cacheTimer = setTimeout(() => {
+        this.cacheTimer = null;
+        void this.askCache(asked, false);
+      }, CACHE_POLL_MS);
+      return;
+    }
+    // The film loads again from the local files, at the same place, paused if it was.
+    const continueAt = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
+    this.holdPaused = this.video.paused;
+    this.generation += 1;
+    this.engine?.destroy();
+    this.engine = null;
+    this.ready = null;
+    this.clearFileTracks();
+    this.session = answer.session;
+    this.stalls = [];
+    this.set({ stage: 'refreshing', kind: answer.session.manifestKind, qualities: [], quality: -1, subtitles: [], cached: answer.session.cached });
+    this.note(`from cache ${answer.session.cached.id.slice(0, 8)} (${answer.session.cached.state}) at ${round1(continueAt)} s`);
+    this.followCache(answer.session.cached.id);
+    await this.loadFileSubtitles(answer.session);
+    if (this.disposed || this.session !== answer.session) return;
+    await this.attach(answer.session, continueAt);
+  }
+
+  /** Keeps `cachedRanges` current while the session plays from a cache: now, then every poll until the download is complete. */
+  private followCache(cacheId: string): void {
+    if (this.cacheTimer !== null) clearTimeout(this.cacheTimer);
+    this.cacheTimer = null;
+    const asked = this.sessionId;
+    const tick = async (): Promise<void> => {
+      const ranges = await fetchCacheMap(cacheId, this.deps.fetch);
+      if (this.disposed || this.sessionId !== asked || this.session?.cached?.id !== cacheId) return;
+      this.set({ cachedRanges: ranges });
+      if (this.session.cached.state === 'ready') return;
+      // The download may have finished: the daemon says so, and the mark beside the title follows.
+      const now = await cacheSession(asked, false, this.deps.fetch).catch(() => null);
+      if (this.disposed || this.sessionId !== asked || this.session?.cached?.id !== cacheId) return;
+      if (now?.cache?.state === 'ready' && now.session.cached !== null) {
+        this.session = { ...this.session, cached: now.session.cached };
+        this.set({ cached: now.session.cached, cachedRanges: await fetchCacheMap(cacheId, this.deps.fetch) });
+        return;
+      }
+      if (now?.cache?.state === 'failed') return;
+      this.cacheTimer = setTimeout(() => void tick(), CACHE_POLL_MS);
+    };
+    void tick();
+  }
+
   // Chrome keeps a cue on the picture when its track is taken away while the film is detached (the
   // last line of episode 787 stayed over the whole of 788), so a track is switched off before it goes.
   private clearFileTracks(): void {
@@ -646,7 +753,8 @@ export class StreamController {
     if (quality !== -1) engine.setQuality(quality);
     this.set({ stage: 'ready', qualities, quality, subtitles, subtitle, error: null });
     this.settle();
-    void this.playOrMute();
+    if (this.holdPaused) this.holdPaused = false;
+    else void this.playOrMute();
   }
 
   private showSubtitle(options: readonly SubtitleOption[], id: string | null): void {
@@ -697,6 +805,7 @@ export class StreamController {
 
   private readonly onPause = (): void => {
     this.clearStallTimer();
+    this.armPauseCache();
     if (this.onFilm() && !this.video.ended) this.report();
   };
 

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, asc, desc, eq, gte, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
@@ -378,11 +378,11 @@ export class DirectStreamRepo {
    * This host's cache of a title slot, made now (state downloading) when there is none.
    * `created` is false when the row was already there; its `max_height` is then left as it was.
    */
-  async createCache(host: string, ref: StreamRef, maxHeight: number | null, now: Date = new Date()): Promise<{ row: StreamCacheRow; created: boolean }> {
+  async createCache(host: string, ref: StreamRef, maxHeight: number | null, now: Date = new Date(), auto = false): Promise<{ row: StreamCacheRow; created: boolean }> {
     const slot = cacheSlot(ref);
     const [inserted] = await this.db
       .insert(streamCaches)
-      .values({ host, ...slot, maxHeight, state: 'downloading', createdAt: now, updatedAt: now })
+      .values({ host, ...slot, maxHeight, auto, state: 'downloading', createdAt: now, updatedAt: now })
       .onConflictDoNothing({ target: [streamCaches.kind, streamCaches.tmdbId, streamCaches.season, streamCaches.episode, streamCaches.host] })
       .returning();
     if (inserted !== undefined) return { row: inserted, created: true };
@@ -483,6 +483,24 @@ export class DirectStreamRepo {
       .update(streamCaches)
       .set({ state: 'downloading', error: null, errorDetail: null, completedAt: null, updatedAt: now })
       .where(eq(streamCaches.id, id));
+  }
+
+  /** The owner asked for a cache the player had started: it is kept like any other. */
+  async cacheKept(id: string): Promise<void> {
+    await this.db.update(streamCaches).set({ auto: false }).where(eq(streamCaches.id, id));
+  }
+
+  /** A paused play asked for a cache it had started before: its three days begin again. */
+  async cacheTouched(id: string, now: Date = new Date()): Promise<void> {
+    await this.db.update(streamCaches).set({ updatedAt: now }).where(eq(streamCaches.id, id));
+  }
+
+  /** This host's caches the player started that nothing has touched since `before`. */
+  async staleAutoCaches(host: string, before: Date): Promise<StreamCacheRow[]> {
+    return this.db
+      .select()
+      .from(streamCaches)
+      .where(and(eq(streamCaches.host, host), eq(streamCaches.auto, true), lt(streamCaches.updatedAt, before)));
   }
 
   async deleteCache(id: string): Promise<boolean> {

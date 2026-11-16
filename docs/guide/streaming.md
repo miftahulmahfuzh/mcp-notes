@@ -901,6 +901,29 @@ Movies page's cache and clear buttons come later on the same routes.
 | `cache_failed` | A file of a failed cache was asked for, or it was asked to play: ask for the cache again |
 | `cache_language` | `POST /api/stream/cache/<id>/play`: the cache was made for another language than the title's original |
 
+### A pause caches the film
+
+Pausing the player for 2 s or more starts the download of the film or episode on screen to this
+machine, the way `direct_stream_cache` does, so a stream that stutters can be left to load.
+
+- The page asks `POST /api/stream/sessions/<id>/cache` once per session. The cache resolves its
+  own source (the usual order, the title's original language) and is marked `auto`.
+- As soon as the cache knows its source, the session moves onto it under the same id and the page
+  loads the local playlist at the position it had, still paused. From then on the film plays from
+  the files on disk; a part not there yet is fetched from the stream host as the film reaches it.
+- **The download follows the film.** It carries on from the segment the player asked for last and
+  comes back for what lies before it at the end, so the stretch ahead of the pause fills first.
+- **The timeline has three bars:** thin for what is not loaded, thick grey for what is loaded and
+  not watched, thick white for what was watched. Loaded is what the browser holds in memory and,
+  for a cached play, what is on disk (`GET /api/stream/cache/<id>/map`, asked every 4 s while it
+  downloads), so the grey bar grows while the film is paused.
+- A DASH stream is never cached, so its pause asks nothing; a cache that fails says so in the
+  page's log (`cache: download_failed`) and the film stays on the stream. A `?muted=1` check
+  never asks.
+- **An `auto` cache clears itself** three days after it was last written or asked for by a pause,
+  so pauses do not fill the disk. Asking for the same title with `direct_stream_cache` or
+  `POST /api/stream/cache` makes it the owner's: it then stays until it is cleared.
+
 ### Playing from the cache
 
 A play looks at this machine's stream cache first (`/direct-stream`, the Movies page's Play on the

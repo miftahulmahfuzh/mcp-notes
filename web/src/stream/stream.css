@@ -100,15 +100,25 @@
   background: transparent;
   cursor: pointer;
 }
+/*
+ * Three bars on one track: thin for what is not loaded, thick grey for what is loaded and not
+ * watched (in memory, or on this machine's disk for a cached play), thick white for what was watched.
+ */
+.st-seek {
+  --st-loaded: rgba(236, 235, 228, 0.5);
+}
 .st-seek::-webkit-slider-runnable-track {
-  height: 3px;
-  background: linear-gradient(to right, #ecebe4 var(--st-fill, 0%), rgba(236, 235, 228, 0.25) var(--st-fill, 0%));
+  height: 7px;
+  background:
+    linear-gradient(to right, #ecebe4 var(--st-fill, 0%), transparent var(--st-fill, 0%)),
+    var(--st-loaded-bar, none),
+    linear-gradient(rgba(236, 235, 228, 0.25), rgba(236, 235, 228, 0.25)) center / 100% 3px no-repeat;
 }
 .st-seek::-webkit-slider-thumb {
   appearance: none;
   width: 11px;
   height: 11px;
-  margin-top: -4px;
+  margin-top: -2px;
   border-radius: 0;
   background: #ecebe4;
 }

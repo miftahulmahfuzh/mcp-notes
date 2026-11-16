@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_REFRESHES, MAX_SOURCE_SWITCHES, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
+import { CACHE_POLL_MS, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -880,5 +880,113 @@ describe('a film that keeps stalling', () => {
     }
     await vi.waitFor(() => expect(t.made).toHaveLength(2));
     expect(t.asks()).toHaveLength(1);
+  });
+});
+
+describe('a pause caches the film on this machine', () => {
+  const CACHE = `POST ${S1}/cache`;
+  const CID = 'cb36a1ba-2c30-458e-8a8a-12475511d510';
+  const standing = (over: Record<string, unknown> = {}) => ({ id: CID, state: 'downloading', error: null, progress: 0.1, ...over });
+  const onCache = (state: 'downloading' | 'ready') =>
+    streamSessionJson({ manifest_url: `/api/stream/cache/${CID}/f/master.m3u8`, cached: { id: CID, state, height: 1080 } });
+
+  const FAKED = { toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] as const };
+
+  async function paused(routes: Record<string, (call: FetchCall) => Response>, session: Record<string, unknown> = {}, opts: { muted?: boolean } = {}) {
+    // Before the page starts: a play that opens on a cache sets its first poll timer at once.
+    vi.useFakeTimers({ toFake: [...FAKED.toFake] });
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson(session)), ...routes }, opts);
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+    const pause = () => {
+      t.media.paused = true;
+      t.fire('pause');
+    };
+    const asks = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/cache`).map((c) => c.body);
+    return { ...t, pause, asks };
+  }
+
+  it('asks once the pause has lasted, follows the download, then loads the film from the cache where it was, still paused', async () => {
+    let n = 0;
+    const t = await paused({
+      // The first asks find the cache still resolving; the third moves the session onto it.
+      [CACHE]: () => (++n < 3 ? jsonResponse({ ...streamSessionJson(), moved: false, cache: standing() }) : jsonResponse({ ...onCache('downloading'), moved: n === 3, cache: standing({ progress: 0.4 }) })),
+      [`GET /api/stream/cache/${CID}/map`]: () => jsonResponse({ duration_s: 1440, ranges: [[0, 12], [296, 420.5], ['x', 3], [9, 2]] }),
+    });
+    t.play.mockClear();
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS - 100);
+    expect(t.asks()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(t.asks()).toEqual([{ start: true }]);
+    await vi.advanceTimersByTimeAsync(CACHE_POLL_MS * 2);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.asks().slice(0, 3)).toEqual([{ start: true }, { start: false }, { start: false }]);
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.made[1].req).toMatchObject({ src: `/api/stream/cache/${CID}/f/master.m3u8`, startAt: 300 });
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    // The owner paused: loading the local copy must not start the film.
+    expect(t.play).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 12], [296, 420.5]]));
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', cached: { id: CID, state: 'downloading' } });
+    expect(t.controller.getState().log).toEqual(expect.arrayContaining(['paused: caching on this machine (cb36a1ba)', 'from cache cb36a1ba (downloading) at 300 s']));
+  });
+
+  it('marks the cache complete when the download ends, and then stops asking', async () => {
+    let ready = false;
+    const t = await paused(
+      {
+        [CACHE]: () => jsonResponse({ ...onCache(ready ? 'ready' : 'downloading'), moved: false, cache: standing(ready ? { state: 'ready', progress: 1 } : {}) }),
+        [`GET /api/stream/cache/${CID}/map`]: () => jsonResponse({ duration_s: 1440, ranges: ready ? [[0, 1440]] : [[0, 100]] }),
+      },
+      { manifest_url: `/api/stream/cache/${CID}/f/master.m3u8`, cached: { id: CID, state: 'downloading', height: 1080 } },
+    );
+    await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 100]]));
+    ready = true;
+    await vi.advanceTimersByTimeAsync(CACHE_POLL_MS);
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ cached: { state: 'ready' }, cachedRanges: [[0, 1440]] }));
+    const asked = t.calls.length;
+    await vi.advanceTimersByTimeAsync(CACHE_POLL_MS * 5);
+    expect(t.calls.filter((c) => c.url.includes('/cache')).length).toBe(t.calls.slice(0, asked).filter((c) => c.url.includes('/cache')).length);
+    // A cached play is never asked to cache again on a pause.
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS);
+    expect(t.asks().every((b) => (b as { start: boolean }).start === false)).toBe(true);
+  });
+
+  it('a quick pause asks nothing; a failed cache is said once and the film stays; one ask per session', async () => {
+    const t = await paused({ [CACHE]: () => jsonResponse({ ...streamSessionJson(), moved: false, cache: standing({ state: 'failed', error: 'download_failed' }) }) });
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS / 2);
+    t.media.paused = false;
+    t.fire('play');
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS);
+    expect(t.asks()).toEqual([]);
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS);
+    await vi.waitFor(() => expect(t.controller.getState().log).toContain('cache: download_failed'));
+    await vi.advanceTimersByTimeAsync(CACHE_POLL_MS * 3);
+    t.media.paused = false;
+    t.fire('play');
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS + CACHE_POLL_MS);
+    expect(t.asks()).toEqual([{ start: true }]);
+    expect(t.made).toHaveLength(1);
+    expect(t.controller.getState().stage).toBe('ready');
+  });
+
+  it('never asks for a DASH stream or under ?muted=1', async () => {
+    const dash = await paused({ [CACHE]: () => jsonResponse({}) }, { manifest_kind: 'dash' });
+    dash.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS * 2);
+    expect(dash.asks()).toEqual([]);
+    vi.useRealTimers();
+    const muted = await paused({ [CACHE]: () => jsonResponse({}) }, {}, { muted: true });
+    muted.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS * 2);
+    expect(muted.asks()).toEqual([]);
   });
 });

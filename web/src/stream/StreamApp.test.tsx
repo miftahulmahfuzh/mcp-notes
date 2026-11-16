@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, cachedLabel, episodeLabel, formatClock, reportLabel, reportText, switchErrorText } from './StreamApp';
+import { StreamApp, cachedLabel, episodeLabel, formatClock, loadedGradient, reportLabel, reportText, switchErrorText } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -334,5 +334,20 @@ describe('reportLabel and reportText', () => {
     expect(reportText({ status: 'already', dir: '/d/r0' })).toBe('Already reported: /d/r0');
     expect(reportText({ status: 'saved', dir: '/d/r1', reason: 'spawn_failed' })).toBe('Report saved but not opened, Claude Code could not be started: /d/r1');
     expect(reportText({ status: 'failed', code: 'snapshot_failed' })).toBe('The report could not be made (snapshot_failed).');
+  });
+});
+
+describe("the timeline's loaded bar", () => {
+  it('draws every loaded stretch as a share of the film, joining the ones that meet or overlap', () => {
+    expect(loadedGradient([[100, 200], [0, 50], [199.8, 400], [800, 800]], 1000)).toBe(
+      'linear-gradient(to right, transparent 0%, var(--st-loaded) 0%, var(--st-loaded) 5%, transparent 5%, transparent 10%, var(--st-loaded) 10%, var(--st-loaded) 40%, transparent 40%)',
+    );
+    // What runs past the end is cut there.
+    expect(loadedGradient([[900, 1200]], 1000)).toContain('var(--st-loaded) 100%, transparent 100%');
+  });
+
+  it('draws nothing without a duration or a stretch', () => {
+    expect(loadedGradient([[0, 10]], 0)).toBe('none');
+    expect(loadedGradient([], 1000)).toBe('none');
   });
 });

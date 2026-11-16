@@ -1,0 +1,1 @@
+ALTER TABLE "stream_caches" ADD COLUMN "auto" boolean DEFAULT false NOT NULL;

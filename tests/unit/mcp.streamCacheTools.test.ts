@@ -41,6 +41,7 @@ function view(over: Partial<StreamCacheView> = {}): StreamCacheView {
     resolves: 0,
     error: null,
     error_detail: null,
+    auto: false,
     playlist_url: null,
     subtitle_url: null,
     created_at: '2026-11-16T00:00:00.000Z',

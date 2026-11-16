@@ -45,6 +45,8 @@ export interface StreamCacheView {
   resolves: number;
   error: string | null;
   error_detail: string | null;
+  /** Started by the player page on a pause; cleared by itself three days after it was last written or played. */
+  auto: boolean;
   /** `/api/stream/cache/<id>/f/master.m3u8` or `.../video.mp4`; null on the other machine or before the source is known. */
   playlist_url: string | null;
   /** `/api/stream/cache/<id>/f/subtitle.vtt`; null without an English subtitle or on the other machine. */
@@ -66,6 +68,12 @@ export class CacheError extends Error {
   ) {
     super(message);
   }
+}
+
+/** `GET /api/stream/cache/:id/map`: the stretches of the title that are on disk, in seconds, in order and never touching. */
+export interface CacheMap {
+  duration_s: number | null;
+  ranges: [number, number][];
 }
 
 /** Why a download stopped for good: written to stream_caches.error. */

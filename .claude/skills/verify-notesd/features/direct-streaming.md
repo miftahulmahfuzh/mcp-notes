@@ -104,6 +104,16 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `recovering` with the spinner, positions still posted, plays on from 80 s once they answer) and
   `SPENT PASS` (every load aborted: five restarts over 40 s or more, then
   `Playback stopped (networkError manifestLoadError).`), with a screenshot of each.
+- A pause caches the film and the timeline shows it (the real page and hls.js, the daemon's cache and
+  file route, the fake resolver in mode `hls_film`; on its own `up --web --direct-stream` run):
+  `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-hls-film.sh "$HOME/.local/state/notesd-verify/.stream-fixture-hls-film")`,
+  `DIRECT=<that path> HLS_FILM="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/pause-cache.steps.mjs`.
+  The transcript has `BAR PASS` (while it streams the thick grey bar covers what the browser holds, not the
+  film), `PAUSE CACHE PASS` (2 s into a pause the page asks, the session moves onto an `auto` cache under
+  the same id, still paused at the same second), `CACHE BAR PASS` (the bar reaches 100%, 150 segments on
+  disk, the cache mark shows) and `CACHE PLAY PASS` (play goes on from disk, no pass-through request),
+  with screenshots `streaming-bar` and `cached-bar`. The queue order, the map and the three-day clearing
+  are in `tests/integration/directStream.cache.int.test.ts`.
 - A film that keeps stalling moves to another provider (same fixture and `up --web --direct-stream` as the
   DASH expiry below, on its own run: it counts the resolves in `calls.jsonl`):
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/source-switch.steps.mjs`

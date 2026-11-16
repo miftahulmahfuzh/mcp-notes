@@ -2,9 +2,10 @@
 // Stands in for claude/streaming/direct/cli.mjs in tests and in `verify.sh up --direct-stream`: it opens
 // no Chrome and reaches no provider. Its state is the folder named by DIRECT_STREAM_FAKE_DIR:
 //   upstream.json  {"origin": ...} of the fixture stream host (upstream.mjs) its answers point at
-//   mode           hls (default) | dash | dash_film | hls_token | no_source | no_chrome: the next resolve's answer
+//   mode           hls (default) | dash | dash_film | hls_film | hls_token | no_source | no_chrome: the next resolve's answer
 //                  (dash_film: the playable film under <dir>/film, at the address that carries the
-//                  token in <dir>/token; upstream.mjs refuses every older token. hls_token: raises
+//                  token in <dir>/token; upstream.mjs refuses every older token. hls_film: the same
+//                  folder holding an HLS film, master.m3u8. hls_token: raises
 //                  <dir>/token by one and answers upstream.mjs's tokened HLS film under that token,
 //                  with a Korean original-language audio track)
 //   calls.jsonl    one line per call, appended: {"at", "args"}; a resolve given --health adds "bad_delivery",
@@ -80,7 +81,7 @@ function main() {
   const chosen = providers.length > 1 ? providers[1] : providers[0];
   const attempts = providers.length > 1 ? [{ provider: providers[0], outcome: 'bot_check', took_s: 1.2, detail: 'fake: Just a moment...' }] : [];
   attempts.push({ provider: chosen, outcome: 'resolved', took_s: 2.5, detail: '' });
-  let manifestUrl = mode === 'dash_film' ? `${origin}/film/t${currentFilmToken(dir)}/manifest.mpd` : mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`;
+  let manifestUrl = mode === 'dash_film' ? `${origin}/film/t${currentFilmToken(dir)}/manifest.mpd` : mode === 'hls_film' ? `${origin}/film/t${currentFilmToken(dir)}/master.m3u8` : mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`;
   if (mode === 'hls_token') {
     const next = currentFilmToken(dir) + 1;
     writeFileSync(path.join(dir, 'token'), `${next}\n`);

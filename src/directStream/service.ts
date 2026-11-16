@@ -5,7 +5,7 @@ import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
-import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type PlayableCaches, type SessionCache } from './cachePlay.js';
+import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { deliveryByProvider, type Delivery } from './delivery.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
@@ -167,6 +167,13 @@ function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcom
 
 /** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
 const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 } as const;
+
+/** cacheSession's answer: the session as it is now, whether this call moved it onto the cache, and where the download stands. */
+export interface CacheSessionAnswer {
+  moved: boolean;
+  cache: CacheStanding | null;
+  session: SessionInfo;
+}
 
 /** switchSource's answer: the session as it is now, and whether it moved to another provider. */
 export interface SwitchSourceAnswer {
@@ -374,6 +381,46 @@ export class DirectStreamService {
     this.sessions.replaceSource(session, out.source, out.attempts);
     safeRecord(this.evidence, sessionRecord(session, 'refreshed', null));
     return this.sessionInfo(session);
+  }
+
+  /**
+   * The player page was paused: download the session's title to this host's cache, and once the
+   * cache knows its source, move the session onto it under the same id, so the film plays from the
+   * local files (those on disk at once, the rest fetched as it reaches them) and the page can show
+   * what is on disk. `start` begins the download (or carries a failed one on); without it the call
+   * only looks, which is what the page's polls do. `moved` says the session plays from the cache
+   * now; `cache` is where the download stands (null: this daemon caches nothing). A cache made for
+   * another language, or one that failed, is never played. Throws `unknown_session`.
+   */
+  async cacheSession(id: string, options: { start: boolean }): Promise<CacheSessionAnswer> {
+    const session = this.sessions.get(id);
+    if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    const caches = this.opts.caches?.() ?? null;
+    const answer = async (moved: boolean, cache: CacheStanding | null): Promise<CacheSessionAnswer> => ({ moved, cache, session: await this.sessionInfo(session) });
+    if (caches === null || caches.start === undefined || caches.standing === undefined) return answer(false, null);
+    let standing: CacheStanding | null;
+    try {
+      standing = session.cache === null && options.start ? await caches.start(session.ref) : await caches.standing(session.ref);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not cache ${refLabel(session.ref)} for its paused play: ${messageOf(err)}`);
+      return answer(false, null);
+    }
+    if (standing === null || standing.state === 'failed') return answer(false, standing);
+    const view = await this.cacheById(standing.id);
+    const check = view === null ? null : playable(view, this.host, session.audioLang);
+    if (view === null || check === null || !check.ok) return answer(false, standing);
+    if (session.cache !== null) {
+      // Already on it: only its state is read again (the download may have finished).
+      if (session.cache.id === view.id) this.sessions.useCache(session, check.cache);
+      return answer(false, standing);
+    }
+    session.source = cacheSource(view);
+    session.attempts = [];
+    session.allowedHosts = new Set();
+    this.sessions.useCache(session, check.cache);
+    safeRecord(this.evidence, sessionRecord(session, 'cached', null));
+    this.log(`[notesd] direct stream: ${refLabel(session.ref)} now plays from the cache ${view.id} (${check.cache.state})`);
+    return answer(true, standing);
   }
 
   /**

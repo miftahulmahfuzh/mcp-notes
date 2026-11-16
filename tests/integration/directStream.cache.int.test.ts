@@ -75,7 +75,9 @@ function build(options: { parallel?: number } = {}) {
     seedFile: path.join(fakeDir, 'seed.json'),
     pageBase: () => 'http://localhost:4321',
     log: () => undefined,
+    caches: () => wired?.player() ?? null,
   });
+  let wired: StreamCache | null = null;
   const cache = new StreamCache({
     repo,
     host: 'host-a',
@@ -85,6 +87,7 @@ function build(options: { parallel?: number } = {}) {
     log: () => undefined,
     ...(options.parallel === undefined ? {} : { parallel: options.parallel }),
   });
+  wired = cache;
   open.push(cache);
   const app = new Hono();
   app.route('/', directStreamRoutes({ directStream: svc }));
@@ -341,6 +344,88 @@ describe('/api/stream/cache', () => {
     expect(order).not.toContain('720/seg11.ts');
     await waitFor(app, id, 'ready');
     expect(up.requests.filter((r) => r.status === 200 && tokPath(r.path) === '720/seg12.ts')).toHaveLength(1);
+  });
+
+  it('carries the queue on from the segment the player asked for, and comes back for what lies before it', async () => {
+    await fake('mode', 'hls_token');
+    await fake('delay_ms', 30);
+    const { app, cache } = await ready({ parallel: 1 });
+    const id = (await posted(app, { kind: 'movie', tmdb_id: 990004 })).cache.id;
+    await until(async () => ((await cache.get(id))?.segments_done ?? 0) >= 1);
+    expect((await app.request(`/api/stream/cache/${id}/f/v-00006.ts`)).status).toBe(200);
+    const done = await waitFor(app, id, 'ready');
+    expect(done.segments_done).toBe(24);
+    const order = up.requests.filter((r) => r.status === 200).map((r) => tokPath(r.path));
+    // 7 follows 6 at once; 3 waits until the end of the film is in.
+    expect(order.indexOf('720/seg6.ts')).toBeLessThan(order.indexOf('720/seg7.ts'));
+    expect(order.indexOf('720/seg12.ts')).toBeLessThan(order.indexOf('720/seg3.ts'));
+  });
+
+  it('GET /map names the stretches on disk while it downloads, and the whole title once it is ready', async () => {
+    await fake('mode', 'hls_token');
+    await fake('delay_ms', 60);
+    const { app, cache } = await ready({ parallel: 1 });
+    const id = (await posted(app, { kind: 'movie', tmdb_id: 990004 })).cache.id;
+    await until(async () => ((await cache.get(id))?.segments_done ?? 0) >= 2);
+    expect((await app.request(`/api/stream/cache/${id}/f/v-00010.ts`)).status).toBe(200);
+    const mid = (await (await app.request(`/api/stream/cache/${id}/map`)).json()) as { duration_s: number; ranges: [number, number][] };
+    expect(mid.duration_s).toBeGreaterThan(0);
+    // The start, and apart from it the stretch the player asked for.
+    expect(mid.ranges.length).toBeGreaterThanOrEqual(2);
+    expect(mid.ranges[0]?.[0]).toBe(0);
+    expect(mid.ranges.every(([a, b], i) => b > a && (i === 0 || a > (mid.ranges[i - 1]?.[1] ?? 0)))).toBe(true);
+    await waitFor(app, id, 'ready');
+    const whole = (await (await app.request(`/api/stream/cache/${id}/map`)).json()) as { duration_s: number; ranges: [number, number][] };
+    expect(whole.ranges).toEqual([[0, whole.duration_s]]);
+    const unknown = await app.request('/api/stream/cache/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/map');
+    expect(unknown.status).toBe(404);
+  });
+
+  it('a paused play caches its title, moves onto the cache under the same session, and the cache is the player\'s until the owner asks for it', async () => {
+    await fake('mode', 'hls_token');
+    await fake('delay_ms', 20);
+    const { app, cache } = await ready();
+    const playRes = await app.request('/api/stream/play', { method: 'POST', headers: { 'content-type': 'application/json', ...SAME_ORIGIN }, body: JSON.stringify({ kind: 'movie', tmdb_id: 990004 }) });
+    const sid = ((await playRes.json()) as { session: { session_id: string } }).session.session_id;
+    type Answer = { session_id: string; moved: boolean; manifest_url: string; cached: { id: string; state: string } | null; cache: { id: string; state: string; progress: number } | null };
+    const ask = async (start: boolean): Promise<Answer> =>
+      (await (await app.request(`/api/stream/sessions/${sid}/cache`, { method: 'POST', headers: { 'content-type': 'application/json', ...SAME_ORIGIN }, body: JSON.stringify({ start }) })).json()) as Answer;
+
+    // A poll before any pause starts nothing.
+    expect(await ask(false)).toMatchObject({ moved: false, cache: null, cached: null });
+    expect(await cache.list()).toEqual([]);
+
+    const first = await ask(true);
+    expect(first.cache).toMatchObject({ state: 'downloading' });
+    const id = first.cache?.id ?? '';
+    expect((await cache.get(id))?.auto).toBe(true);
+    let moved = first;
+    await until(async () => (moved = moved.moved ? moved : await ask(false)).moved);
+    expect(moved).toMatchObject({ session_id: sid, moved: true, cached: { id }, manifest_url: `/api/stream/cache/${id}/f/master.m3u8` });
+    expect((await app.request(moved.manifest_url)).status).toBe(200);
+    // Once on it, another ask moves nothing and reads the cache's state again.
+    await waitFor(app, id, 'ready');
+    expect(await ask(true)).toMatchObject({ moved: false, cached: { id, state: 'ready' }, cache: { state: 'ready', progress: 1 } });
+
+    // Not touched for four days: it would be cleared. The owner asks for the cache: it stays.
+    await db.update(streamCaches).set({ updatedAt: new Date(Date.now() - 4 * 24 * 3_600_000) });
+    const asked = await post(app, { kind: 'movie', tmdb_id: 990004 });
+    expect(((await asked.json()) as Posted).cache).toMatchObject({ id, auto: false, state: 'ready' });
+    expect(await cache.prune()).toBe(0);
+    expect(await cache.get(id)).not.toBeNull();
+  });
+
+  it('clears a cache a pause started once nothing has written it for three days, and no other', async () => {
+    const { app, cache } = await ready();
+    const kept = (await posted(app, { kind: 'movie', tmdb_id: 990001 })).cache.id;
+    await waitFor(app, kept, 'ready');
+    const auto = (await cache.request({ kind: 'movie', tmdbId: 990002 }, { maxHeight: null, auto: true })).cache.id;
+    await waitFor(app, auto, 'ready');
+    expect(await cache.prune()).toBe(0);
+    await db.update(streamCaches).set({ updatedAt: new Date(Date.now() - 4 * 24 * 3_600_000) });
+    expect(await cache.prune()).toBe(1);
+    expect((await cache.list()).map((c) => c.id)).toEqual([kept]);
+    expect((await readdir(root)).sort()).toEqual([kept]);
   });
 
   it('fails a DASH source as cache_unsupported without fetching it, and a new request starts it again', async () => {

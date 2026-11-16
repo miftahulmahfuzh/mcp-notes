@@ -64,7 +64,7 @@ import {
  * machines, loaded from claude/streaming/direct/providers.seed.json at every start) and
  * `stream_provider_health` (one row per provider and host). src/directStream/repo.ts
  * (`DirectStreamRepo`) is their only writer.
- * Migration 0029 (stream cache) adds `stream_caches`: one film or episode downloaded to one host's
+ * Migration 0029 (stream cache) adds `stream_caches` (0030 its `auto` mark): one film or episode downloaded to one host's
  * disk (src/directStream/cache/). `DirectStreamRepo` is its only writer too; its files live only on
  * the host the row names.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
@@ -1512,6 +1512,8 @@ export const streamCaches = pgTable(
     resolves: integer('resolves').notNull().default(0),
     error: text('error'),
     errorDetail: text('error_detail'),
+    /** Started by the player page on a pause, not asked for by the owner: cleared by itself once it is old (cache/service.ts). */
+    auto: boolean('auto').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
