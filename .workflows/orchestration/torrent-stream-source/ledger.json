@@ -1,0 +1,184 @@
+{
+  "branch": "feature/torrent-stream-source",
+  "coordinator": "orch-torrent-stream-source",
+  "coordinator_session_id": "d7a484e1-411b-4654-b5e2-3aef759bcc42",
+  "created": "2026-11-16T20:41:04+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "HARD",
+      "n": 1,
+      "note": null,
+      "package": "src/directStream/torrent",
+      "plan": ".workflows/plan/torrent-stream-source/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The torrent engine and its file route"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "src/directStream/torrent/find",
+      "plan": ".workflows/plan/torrent-stream-source/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Finding and ranking torrents"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "HARD",
+      "n": 3,
+      "note": null,
+      "package": "src/directStream",
+      "plan": ".workflows/plan/torrent-stream-source/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1",
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "A torrent session in direct streaming"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "web/src/stream",
+      "plan": ".workflows/plan/torrent-stream-source/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The player page on a torrent"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3,
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "src/directStream/torrent",
+      "plan": ".workflows/plan/torrent-stream-source/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The remux for files Chrome cannot play"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "NORMAL",
+      "n": 6,
+      "note": null,
+      "package": "src/directStream/torrent/subtitles",
+      "plan": ".workflows/plan/torrent-stream-source/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Subtitle files: in the torrent, from a subtitle service, from a cloud provider"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        4,
+        6
+      ],
+      "difficulty": "HARD",
+      "n": 7,
+      "note": null,
+      "package": "src/directStream/torrent/subtitles",
+      "plan": ".workflows/plan/torrent-stream-source/phase-7.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The embedded subtitle track and the growing cue feed"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        7
+      ],
+      "difficulty": "HARD",
+      "n": 8,
+      "note": null,
+      "package": "src/directStream/torrent/subtitles",
+      "plan": ".workflows/plan/torrent-stream-source/phase-8.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Whisper, the last resort"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        3
+      ],
+      "difficulty": "HARD",
+      "n": 9,
+      "note": null,
+      "package": "claude/streaming/torrent",
+      "plan": ".workflows/plan/torrent-stream-source/phase-9.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "1337x and ext.to through the streaming Chrome"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "torrent-stream-source",
+  "updated": "2026-11-16T20:41:52+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
+}
