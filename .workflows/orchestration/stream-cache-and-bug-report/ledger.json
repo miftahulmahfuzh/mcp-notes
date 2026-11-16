@@ -42,21 +42,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "d4454b2",
       "depends_on": [
         1
       ],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "/report-stream-bug skill (collect.sh, netcheck.mjs, diagnose.mjs, 24 fixtures, docs) pushed to phase-3-stream-cache-and-bug-report, plan applied verbatim, no ladder decisions; todos Quick Stats and plan index status left for the integrator; scripts/install.sh must run after landing to link the skill; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-141808-861704/evidence",
       "package": "claude/skills/report-stream-bug",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:23:56+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A123",
       "title": "The `/report-stream-bug` skill"
     },
     {
@@ -124,6 +124,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-cache-and-bug-report",
-  "updated": "2026-11-16T14:15:39+07:00",
+  "updated": "2026-11-16T14:23:56+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
 }
