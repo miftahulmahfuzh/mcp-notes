@@ -23,19 +23,19 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "86908d59d4f1da3fc5308260a77d52adb3d1f4da",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 2,
-      "note": null,
+      "note": "finder in src/directStream/torrent/find (4 JSON indexes, parseRelease, rank, pickFile, findCandidates), code blocks verbatim, no drift; decided: only phase 2's task created, non-counter id P1-NOTES-TS02 (peer phase minting concurrently, narrower blast radius); live J6: yts timed out after 6 s, recorded as error; proof: verified-first-pass /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p2/53b6a767-f7ee-4d6c-a12d-761c53c5eab6/scratchpad/p2-evidence",
       "package": "src/directStream/torrent/find",
       "plan": ".workflows/plan/torrent-stream-source/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T22:34:51+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-TS02",
       "title": "Finding and ranking torrents"
     },
     {
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T20:45:53+07:00",
+  "updated": "2026-11-16T22:34:51+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
