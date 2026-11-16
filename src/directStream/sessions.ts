@@ -44,6 +44,11 @@ export interface SessionTorrent {
    * first. The player page reads it in the answer to its position reports and loads the subtitle again when it changes.
    */
   subtitleRev: number;
+  /**
+   * The subtitle chain still running behind the play (the play was answered with `Subtitles: pending`); it answers
+   * the chain's attempts, never rejects, and is null again once it has ended. Unset or null: nothing is pending.
+   */
+  subtitlesPending?: Promise<ResolveAttempt[]> | null;
   /** The candidates after this one, in the finder's order, for the shuffle button (switchSource). */
   candidates: TorrentCandidate[];
   durationS: number | null;

@@ -34,6 +34,12 @@ describe('torrent settings', () => {
     expect(() => parseTorrent({ NOTESD_TORRENT: 'maybe' }, DATA)).toThrow(/NOTESD_TORRENT must be "on" or "off"/);
   });
 
+  it('read how long a play may wait for its subtitle, and leave it unset by default', () => {
+    expect(parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: '40000' }, DATA).subtitleWaitMs).toBe(40000);
+    expect(parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: ' ' }, DATA)).not.toHaveProperty('subtitleWaitMs');
+    expect(() => parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: '0' }, DATA)).toThrow(/NOTESD_TORRENT_SUBTITLE_WAIT_MS must be a positive integer/);
+  });
+
   it('follow NOTES_DATA_DIR in loadConfig', () => {
     const cfg = loadConfig({ env: { DATABASE_URL: 'postgres://u@127.0.0.1:1/db', NOTES_DATA_DIR: '/srv/notes-b' }, envFile: false });
     expect(cfg.torrent?.dir).toBe('/srv/notes-b/movies/torrents');

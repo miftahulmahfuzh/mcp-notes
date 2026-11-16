@@ -378,6 +378,11 @@ export interface TorrentConfig {
   uploadKbps: number
   /** `NOTESD_TORRENT_KEEP_DAYS`, default 7: a download not played for this many days is deleted with its files. */
   keepDays: number
+  /**
+   * `NOTESD_TORRENT_SUBTITLE_WAIT_MS`, default 1500 (source.ts SUBTITLE_HEAD_MS): how long a torrent play may wait
+   * for its subtitle before it starts without one; the search then goes on behind the play. Unset: the default.
+   */
+  subtitleWaitMs?: number
   /** `NOTESD_TORRENT_DISCOVERY`, default on. `off`: no DHT and no trackers; peers come only from `peers`. */
   discovery: boolean
   /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
@@ -970,6 +975,9 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     dir: parseOptionalAbsolutePath('NOTESD_TORRENT_DIR', env.NOTESD_TORRENT_DIR) ?? path.join(dataDir, 'movies', 'torrents'),
     uploadKbps: parsePositiveInt('NOTESD_TORRENT_UPLOAD_KBPS', env.NOTESD_TORRENT_UPLOAD_KBPS, DEFAULT_TORRENT_UPLOAD_KBPS),
     keepDays: parsePositiveInt('NOTESD_TORRENT_KEEP_DAYS', env.NOTESD_TORRENT_KEEP_DAYS, DEFAULT_TORRENT_KEEP_DAYS),
+    ...(env.NOTESD_TORRENT_SUBTITLE_WAIT_MS === undefined || env.NOTESD_TORRENT_SUBTITLE_WAIT_MS.trim() === ''
+      ? {}
+      : { subtitleWaitMs: parsePositiveInt('NOTESD_TORRENT_SUBTITLE_WAIT_MS', env.NOTESD_TORRENT_SUBTITLE_WAIT_MS, 1500) }),
     discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     finder: parseTorrentFinder(env),
@@ -1064,7 +1072,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
- * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS,
+ * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
  * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL (a number below 1 or a non-http address throw ConfigError),

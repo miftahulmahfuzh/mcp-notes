@@ -1,27 +1,38 @@
 import { DEFAULT_TORRENT_FINDER_CONFIG, TORRENT_INDEX_NAMES, type Config, type TorrentIndexName } from '../../config.js';
 import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
-import { defaultIndexes, findCandidates, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { defaultIndexes, findCandidates, IndexHealth, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { canRemux, type TorrentRemux } from './remux.js';
-import { runSubtitleChain, type SubtitleTier } from './subtitles/chain.js';
-import { FILE_LIST_TIMEOUT_MS, orderByFileLists } from './subtitles/files.js';
+import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
+import { hasEnglishSubtitleFile } from './subtitles/files.js';
 import type { TorrentSyncRequest } from './subtitles/synced.js';
-import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick } from './types.js';
+import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, TorrentStats } from './types.js';
 
 /**
  * The torrent source of direct streaming (torrent phase 3). DirectStreamService calls only this: it finds the
- * title's torrents by IMDb id (phase 2's findCandidates), opens each in turn in the swarm (phase 1's
+ * title's torrents by IMDb id (phase 2's findCandidates), opens the best of them side by side in the swarm (phase 1's
  * TorrentStreams) until one holds a file that plays in the title's original language, and answers the session's
- * SessionTorrent and the ResolvedSource stand-in a session carries. Nothing here decides the order of the
- * candidates (phase 2 does) or how bytes are fetched (phase 1 does). It never runs inside
- * DirectStreamService.serial(): phase 6's borrow tier calls subtitleText, which queues there.
+ * SessionTorrent and the ResolvedSource stand-in a session carries. The finder ranks the candidates (phase 2);
+ * which of the ones whose header arrived plays is decided here, by what their swarms deliver (chooseOrder). How
+ * bytes are fetched is phase 1's. It never runs inside DirectStreamService.serial(): phase 6's borrow tier calls
+ * subtitleText, which queues there.
  */
 
 /** The provider every torrent session carries (movie_plays, the stream on screen, the player). */
 export const TORRENT_PROVIDER = 'Torrent';
-/** Torrents opened per play (and per shuffle) before the answer is no_source. */
-export const MAX_TORRENT_TRIES = 5;
+/** Torrents opened per play (and per shuffle) before the answer is no_source: two rounds of TORRENT_RACE_WIDTH. */
+export const MAX_TORRENT_TRIES = 6;
+/** Torrents opened side by side: the index's seed count is not the swarm, so the swarms themselves are asked. */
+export const TORRENT_RACE_WIDTH = 3;
+/** Once one torrent's header has arrived, the others still opening get this long to arrive too before one is chosen. */
+export const TORRENT_SETTLE_MS = 2_000;
+/** A swarm with at least this many peers connected is not thin (/report-stream-bug calls 5 or fewer thin). */
+export const HEALTHY_PEERS = 6;
+/** The subtitle chain may hold the play's answer this long (a kept file answers at once); after it the chain goes on behind the play. */
+export const SUBTITLE_HEAD_MS = 1_500;
+/** The attempt a play answers while its subtitle chain is still running. */
+export const SUBTITLES_PENDING = 'Subtitles: pending';
 /** A torrent play's whole budget: finding, opening and probing (the subtitle chain has its own, SUBTITLE_BUDGET_MS). */
 export const TORRENT_DEADLINE_MS = 90_000;
 /** One torrent's file list must arrive within this. */
@@ -69,6 +80,10 @@ export interface TorrentSwarm {
   localUrl(infoHash: string, index: number): string;
   /** The video's length once the probe knows it: `/map` then answers seconds (phase 4's grey bar). */
   setDuration(infoHash: string, seconds: number): unknown;
+  /** One user fewer, and with none left the swarm is left at once (a torrent that lost the race, or did not play). Absent: `release`. */
+  drop?(infoHash: string): unknown;
+  /** The peers connected and the download rate of an open torrent, now; null when it is not in the swarm. Absent in tests' fakes. */
+  stats?(infoHash: string): Pick<TorrentStats, 'peers' | 'down_kbps'> | null;
 }
 
 export interface TorrentSourceOptions {
@@ -82,8 +97,18 @@ export interface TorrentSourceOptions {
   sync?: { start(request: TorrentSyncRequest): unknown } | null;
   /** This daemon's origin as ffprobe reaches it (`http://127.0.0.1:<port>`); read at play time. */
   localBase: () => string;
+  /** Default TORRENT_SETTLE_MS. */
+  settleMs?: number;
+  /** Default SUBTITLE_HEAD_MS. */
+  subtitleHeadMs?: number;
   now?: () => number;
   log?: (line: string) => void;
+}
+
+/** Where a torrent play stands while it is being started: what is being done now, and every attempt finished so far. */
+export interface TorrentProgress {
+  stage: string;
+  attempts: ResolveAttempt[];
 }
 
 /** The title's names and year, for the finder's title check and phase 9's 1337x search. */
@@ -110,6 +135,8 @@ export interface TorrentResolveOptions {
   cloudTried?: boolean;
   /** Info hashes not to try. */
   skip?: readonly string[];
+  /** Told each time the play moves on (the indexes answered, a torrent was tried), for a caller that answers before the play does. */
+  progress?: (progress: TorrentProgress) => void;
 }
 
 export type TorrentResolve =
@@ -128,12 +155,71 @@ type Tried =
   | { ok: true; torrent: SessionTorrent; source: ResolvedSource; attempt: ResolveAttempt; subtitleAttempts: ResolveAttempt[] }
   | { ok: false; attempt: ResolveAttempt };
 
+/** A torrent whose header arrived and whose file may be played: it is selected and downloading, and may still lose to another. */
+interface Passed {
+  /** Its place in the finder's order. */
+  position: number;
+  c: TorrentCandidate;
+  opened: OpenedTorrent;
+  video: number;
+  subtitles: readonly number[];
+  probe: MediaProbe;
+  /** Its files hold an English subtitle file (R3.2). */
+  english: boolean;
+  /** Seconds from its open to its header. */
+  tookS: number;
+  /** Lets go of it (once): it lost, or its remux did not start. */
+  drop(): void;
+}
+
+type Raced = { ok: true; passed: Passed } | { ok: false; attempt: ResolveAttempt };
+
+interface Racer {
+  /** Stops caring for the result and lets go of the torrent, now or as soon as it is open. */
+  cancel(): void;
+  readonly result: Promise<Raced>;
+}
+
+/** What a swarm delivers for a file, as far as it is known: the peers connected, the rate, and the film's own bitrate. */
+interface Delivery {
+  peers: number;
+  downKbps: number;
+  /** The file's bytes over its length; null when the probe gave no length. */
+  filmKbps: number | null;
+}
+
+const mbps = (kbps: number): string => (kbps / 1000).toFixed(1);
+
+/** True when the swarm looks able to keep ahead of the picture: enough peers, or a rate at or above the film's bitrate. */
+export function delivers(d: Delivery | null): boolean {
+  return d !== null && (d.peers >= HEALTHY_PEERS || (d.filmKbps !== null && d.downKbps >= d.filmKbps));
+}
+
+/**
+ * The torrents whose headers arrived, best first: one whose swarm delivers before one that does not, then one whose
+ * files hold an English subtitle file (R3.2), then the one with more peers connected, then the finder's order.
+ */
+export function chooseOrder<T extends { position: number; english: boolean }>(passed: readonly T[], deliveryOf: (p: T) => Delivery | null): T[] {
+  const scored = passed.map((p) => ({ p, d: deliveryOf(p) }));
+  return scored
+    .sort((a, b) => Number(delivers(b.d)) - Number(delivers(a.d)) || Number(b.p.english) - Number(a.p.english) || (b.d?.peers ?? 0) - (a.d?.peers ?? 0) || a.p.position - b.p.position)
+    .map((x) => x.p);
+}
+
+function sleep(ms: number): { done: Promise<void>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const done = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, Math.max(0, ms));
+  });
+  return { done, clear: () => clearTimeout(timer) };
+}
+
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const seconds = (from: number, to: number): number => Math.round((to - from) / 100) / 10;
 const pad = (n: number): string => String(n).padStart(2, '0');
 
 /** An index's outcome as an attempt's: an index that listed torrents `resolved`, an empty one `no_stream`. */
-const INDEX_OUTCOMES: Record<IndexAttempt['outcome'], ResolveOutcome> = { ok: 'resolved', empty: 'no_stream', error: 'error', bot_check: 'bot_check' };
+const INDEX_OUTCOMES: Record<IndexAttempt['outcome'], ResolveOutcome> = { ok: 'resolved', empty: 'no_stream', error: 'error', bot_check: 'bot_check', skipped: 'skipped' };
 
 function indexAttempt(a: IndexAttempt): ResolveAttempt {
   return { provider: `Index: ${a.index}`, outcome: INDEX_OUTCOMES[a.outcome], took_s: a.took_s, detail: a.detail };
@@ -218,6 +304,7 @@ export class TorrentSource {
       };
     }
     const query = queryOf(ref, options.imdbId, options.names ?? null, options.audioLang);
+    options.progress?.({ stage: 'asking the torrent indexes', attempts: [] });
     let found: FindAnswer;
     try {
       found = await this.opts.find(query, AbortSignal.timeout(TORRENT_DEADLINE_MS));
@@ -225,25 +312,11 @@ export class TorrentSource {
       return { ok: false, error: 'no_source', attempts: [{ provider: 'Index: all', outcome: 'error', took_s: seconds(started, this.now()), detail: messageOf(err) }] };
     }
     const skip = new Set((options.skip ?? []).map((h) => h.toLowerCase()));
-    let candidates = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
-    // R3.2: of the best three, the one whose files hold an English subtitle file is tried first.
-    candidates = await orderByFileLists(candidates, {
-      listFiles: async (candidate) => {
-        const handle = await this.opts.swarm.open(
-          { infoHash: candidate.infoHash, trackers: candidate.trackers, name: candidate.name, ref, release: candidate.release },
-          { timeoutMs: FILE_LIST_TIMEOUT_MS },
-        );
-        const picked = pickFile(handle.files, query);
-        return picked === null ? null : { files: handle.files, video: picked.video, subtitles: picked.subtitles };
-      },
-      release: async (infoHash) => {
-        await this.opts.swarm.release(infoHash);
-      },
-      log: this.log,
-    });
+    const candidates = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
     const indexes = found.indexes.map(indexAttempt);
     const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: options.resumeS ?? null, cloudTried: options.cloudTried === true };
-    const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS);
+    const progress = options.progress;
+    const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }));
     this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), ${out.ok ? `playing ${out.torrent.name}` : 'none played'}`);
     return out.ok ? { ...out, attempts: [...indexes, ...out.attempts] } : { ok: false, error: 'no_source', attempts: [...indexes, ...out.attempts] };
   }
@@ -292,8 +365,29 @@ export class TorrentSource {
     }
     this.noteDuration(download.infoHash, probe);
     const stop = new AbortController();
-    const chain = await runSubtitleChain(
-      this.opts.tiers,
+    const torrent: SessionTorrent = {
+      infoHash: download.infoHash,
+      fileIndex: download.fileIndex,
+      selected: [download.fileIndex],
+      name: download.name,
+      index: null,
+      seeds: null,
+      state: 'ready',
+      height: probe.video?.height ?? null,
+      manifestUrl: page.manifestUrl,
+      manifestKind: page.manifestKind,
+      subtitles: [],
+      subtitleRev: 0,
+      candidates: [],
+      durationS: probe.durationS,
+      candidate: null,
+      held: false,
+      imdbId: null,
+      query: null,
+      stop,
+    };
+    const attempts = await this.startSubtitles(
+      torrent,
       {
         ref,
         imdbId: null,
@@ -310,31 +404,9 @@ export class TorrentSource {
         localBase: this.opts.localBase(),
         signal: stop.signal,
       },
-      { log: this.log },
+      { ref, imdbId: null, infoHash: download.infoHash, fileIndex: download.fileIndex, durationS: probe.durationS },
     );
-    const torrent: SessionTorrent = {
-      infoHash: download.infoHash,
-      fileIndex: download.fileIndex,
-      selected: [download.fileIndex],
-      name: download.name,
-      index: null,
-      seeds: null,
-      state: 'ready',
-      height: probe.video?.height ?? null,
-      manifestUrl: page.manifestUrl,
-      manifestKind: page.manifestKind,
-      subtitles: chain.subtitles,
-      subtitleRev: 0,
-      candidates: [],
-      durationS: probe.durationS,
-      candidate: null,
-      held: false,
-      imdbId: null,
-      query: null,
-      stop,
-    };
-    this.startSync(torrent, { ref, imdbId: null, infoHash: download.infoHash, fileIndex: download.fileIndex, durationS: probe.durationS });
-    return { torrent, source: standIn(torrent, probe, options.audioLang, null), attempts: chain.attempts };
+    return { torrent, source: standIn(torrent, probe, options.audioLang, null), attempts };
   }
 
   /** Takes the session's torrent again after a release (a reload of the page, a refresh). Throws when the swarm cannot open it. */
@@ -412,88 +484,235 @@ export class TorrentSource {
       .catch((err: unknown) => this.log(`[notesd] torrent: could not record the length of ${infoHash}: ${messageOf(err)}`));
   }
 
-  private async tryCandidates(ref: StreamRef, query: FindQuery, candidates: readonly TorrentCandidate[], play: PlayFacts, deadline: number): Promise<TorrentResolve> {
-    const attempts: ResolveAttempt[] = [];
-    for (const [i, c] of candidates.entries()) {
-      const left = deadline - this.now();
-      if (i >= MAX_TORRENT_TRIES || left <= 0) break;
-      const tried = await this.tryOne(ref, query, c, play, left);
-      attempts.push(tried.attempt);
-      if (tried.ok) {
-        attempts.push(...tried.subtitleAttempts);
-        // The same object, not a copy: the sync tryOne started writes its subtitle into it.
-        tried.torrent.candidates = candidates.slice(i + 1);
-        return { ok: true, torrent: tried.torrent, source: tried.source, attempts };
+/**
+   * The subtitle chain for a session's torrent. It may hold the answer for `subtitleHeadMs` (a kept file, a replay);
+   * after that the play is answered with `Subtitles: pending` and the chain goes on behind it: when it ends the
+   * track is put on the session, `subtitleRev` goes up (the open page loads it on its next position report) and
+   * `subtitlesPending` answers the chain's attempts. Wyzie Synced starts once the chain has ended, either way.
+   */
+  private async startSubtitles(torrent: SessionTorrent, ctx: Omit<SubtitleContext, 'deadline'>, sync: Omit<TorrentSyncRequest, 'signal' | 'target'>): Promise<ResolveAttempt[]> {
+    const started = this.now();
+    let late = false;
+    const chain = runSubtitleChain(this.opts.tiers, ctx, { log: this.log }).then((out) => {
+      torrent.subtitles = out.subtitles;
+      if (late) {
+        if (out.subtitles.length > 0) torrent.subtitleRev += 1;
+        torrent.subtitlesPending = null;
+        const said = out.attempts.map((a) => `${a.provider.replace(/^Subtitles: /, '')} ${a.outcome} ${a.took_s ?? 0} s`).join(', ');
+        this.log(`[notesd] torrent: subtitles of ${ctx.infoHash.slice(0, 8)} ${out.subtitles.length > 0 ? 'arrived' : 'not found'} behind the play, ${seconds(started, this.now())} s after the search began (${said})`);
       }
-    }
-    return { ok: false, error: 'no_source', attempts };
+      this.startSync(torrent, sync);
+      return out.attempts;
+    });
+    const headMs = this.opts.subtitleHeadMs ?? SUBTITLE_HEAD_MS;
+    const timer = sleep(headMs);
+    const head = await Promise.race([chain, timer.done.then(() => null)]);
+    timer.clear();
+    if (head !== null) return head;
+    late = true;
+    torrent.subtitlesPending = chain;
+    return [{ provider: SUBTITLES_PENDING, outcome: 'skipped', took_s: seconds(started, this.now()), detail: 'the subtitle search goes on behind the play; the player loads the track when it arrives' }];
   }
 
-  private async tryOne(ref: StreamRef, query: FindQuery, c: TorrentCandidate, play: PlayFacts, budgetMs: number): Promise<Tried> {
+  /** One user fewer for a torrent that will not play, leaving its swarm at once where the swarm can (`drop`). */
+  private dropNow(infoHash: string): void {
+    const swarm = this.opts.swarm;
+    void Promise.resolve()
+      .then(() => (swarm.drop === undefined ? swarm.release(infoHash) : swarm.drop(infoHash)))
+      .catch((err: unknown) => this.log(`[notesd] torrent: could not release ${infoHash}: ${messageOf(err)}`));
+  }
+
+  private deliveryOf(p: Pick<Passed, 'c' | 'opened' | 'video' | 'probe'>): Delivery | null {
+    let stats: Pick<TorrentStats, 'peers' | 'down_kbps'> | null = null;
+    try {
+      stats = this.opts.swarm.stats?.(p.c.infoHash) ?? null;
+    } catch {
+      stats = null;
+    }
+    if (stats === null) return null;
+    const length = p.opened.files.find((f) => f.index === p.video)?.length ?? null;
+    const filmKbps = length !== null && p.probe.durationS !== null && p.probe.durationS > 0 ? Math.round((length * 8) / 1000 / p.probe.durationS) : null;
+    return { peers: stats.peers, downKbps: stats.down_kbps, filmKbps };
+  }
+
+  private deliveryText(d: Delivery | null): string {
+    if (d === null) return '';
+    return ` listed; ${d.peers} peer${d.peers === 1 ? '' : 's'} connected, ${mbps(d.downKbps)} Mbps${d.filmKbps === null ? '' : ` for a ${mbps(d.filmKbps)} Mbps film`}`;
+  }
+
+  /**
+   * Opens up to TORRENT_RACE_WIDTH candidates side by side, in the finder's order, and plays the best of those whose
+   * header arrives (chooseOrder), giving the others TORRENT_SETTLE_MS to arrive too. A torrent that fails makes room
+   * for the next candidate, up to MAX_TORRENT_TRIES in all and until `deadline`. The ones not chosen leave their
+   * swarms at once and stay first in line for the shuffle button. `attempts` are in the finder's order.
+   */
+  private async tryCandidates(
+    ref: StreamRef,
+    query: FindQuery,
+    candidates: readonly TorrentCandidate[],
+    play: PlayFacts,
+    deadline: number,
+    progress?: (progress: TorrentProgress) => void,
+  ): Promise<TorrentResolve> {
+    const pool = candidates.slice(0, MAX_TORRENT_TRIES);
+    const results = new Map<number, ResolveAttempt>();
+    const passed: Passed[] = [];
+    const running = new Map<number, { racer: Racer; done: Promise<void>; c: TorrentCandidate }>();
+    let next = 0;
+    const attemptsNow = (): ResolveAttempt[] => [...results.entries()].sort((a, b) => a[0] - b[0]).map(([, a]) => a);
+    const report = (): void => {
+      if (progress === undefined) return;
+      const names = [...running.values()].map((r) => r.c.name);
+      progress({ stage: names.length === 0 ? 'choosing a torrent' : `opening ${names.length} torrent${names.length === 1 ? '' : 's'}: ${names.join('; ')}`, attempts: attemptsNow() });
+    };
+    const launch = (): void => {
+      while (running.size < TORRENT_RACE_WIDTH && next < pool.length && deadline - this.now() > 0) {
+        const position = next++;
+        const c = pool[position]!;
+        const racer = this.race(ref, query, c, position, play, deadline - this.now());
+        const done = racer.result.then((raced) => {
+          if (!running.delete(position)) return;
+          if (raced.ok) passed.push(raced.passed);
+          else results.set(position, raced.attempt);
+          report();
+        });
+        running.set(position, { racer, done, c });
+      }
+      report();
+    };
+    for (;;) {
+      if (passed.length === 0) launch();
+      if (running.size === 0 && passed.length === 0) break;
+      if (passed.length === 0) {
+        await Promise.race([...running.values()].map((r) => r.done));
+        if (passed.length === 0) continue;
+        // One header is here: the others still opening get a moment to arrive too, then the swarms are compared.
+        const settleMs = Math.min(this.opts.settleMs ?? TORRENT_SETTLE_MS, deadline - this.now());
+        if (running.size > 0 && settleMs > 0) {
+          const timer = sleep(settleMs);
+          await Promise.race([Promise.all([...running.values()].map((r) => r.done)), timer.done]);
+          timer.clear();
+        }
+      }
+      const best = chooseOrder(passed, (p) => this.deliveryOf(p))[0]!;
+      passed.splice(passed.indexOf(best), 1);
+      const delivery = this.deliveryOf(best);
+      const won = await this.finish(ref, query, best, play, delivery, Math.max(PROBE_MIN_MS, deadline - this.now()));
+      results.set(best.position, won.attempt);
+      if (!won.ok) {
+        best.drop();
+        continue;
+      }
+      const later: TorrentCandidate[] = [];
+      for (const p of chooseOrder(passed, (x) => this.deliveryOf(x))) {
+        results.set(p.position, {
+          provider: torrentLabel(p.c.name),
+          outcome: 'skipped',
+          took_s: p.tookS,
+          detail: `its header arrived too (${p.c.seeds} seeds${this.deliveryText(this.deliveryOf(p))}); ${best.c.name} was chosen`,
+        });
+        p.drop();
+        later.push(p.c);
+      }
+      for (const [position, r] of [...running.entries()].sort((a, b) => a[0] - b[0])) {
+        running.delete(position);
+        r.racer.cancel();
+        results.set(position, { provider: torrentLabel(r.c.name), outcome: 'skipped', took_s: null, detail: `still opening when ${best.c.name} was chosen` });
+        later.push(r.c);
+      }
+      // The same object, not a copy: the sync and a late subtitle chain write into it.
+      won.torrent.candidates = [...later, ...candidates.slice(next)];
+      return { ok: true, torrent: won.torrent, source: won.source, attempts: [...attemptsNow(), ...won.subtitleAttempts] };
+    }
+    return { ok: false, error: 'no_source', attempts: attemptsNow() };
+  }
+
+  /**
+   * One candidate up to its header: the file list from the swarm, the film's file, its selection, and ffprobe reading
+   * the header through the file route. A torrent that fails lets go of itself; one that passes stays selected (it
+   * keeps downloading) until it is chosen or dropped.
+   */
+  private race(ref: StreamRef, query: FindQuery, c: TorrentCandidate, position: number, play: PlayFacts, budgetMs: number): Racer {
     const started = this.now();
-    const audioLang = play.audioLang;
+    const state = { cancelled: false, opened: false, gone: false };
+    const drop = (): void => {
+      if (!state.opened || state.gone) return;
+      state.gone = true;
+      this.dropNow(c.infoHash);
+    };
     const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, this.now()), detail });
-    const fail = (outcome: ResolveOutcome, detail: string): Tried => {
-      this.letGo(c.infoHash);
+    const fail = (outcome: ResolveOutcome, detail: string): Raced => {
+      drop();
       return { ok: false, attempt: attempt(outcome, detail) };
     };
-    let opened: OpenedTorrent;
-    try {
-      opened = await this.opts.swarm.open({ infoHash: c.infoHash, trackers: c.trackers, name: c.name, ref, release: c.release }, { timeoutMs: Math.min(TORRENT_OPEN_TIMEOUT_MS, budgetMs) });
-    } catch (err) {
-      return fail('no_stream', `no file list from the swarm in time (${messageOf(err)})`);
-    }
-    try {
-      const picked = pickFile(opened.files, query);
-      if (picked === null) {
-        return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file');
-      }
-      const selected = [picked.video, ...picked.subtitles];
-      await this.opts.swarm.use(c.infoHash, selected);
-      const manifestUrl = this.opts.swarm.localUrl(c.infoHash, picked.video);
-      const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs - (this.now() - started)));
-      let probe: MediaProbe;
+    const left = (): Raced => fail('skipped', 'another torrent was chosen');
+    const run = async (): Promise<Raced> => {
+      let opened: OpenedTorrent;
       try {
-        probe = await this.opts.probe(`${this.opts.localBase()}${manifestUrl}`, probeMs);
+        opened = await this.opts.swarm.open({ infoHash: c.infoHash, trackers: c.trackers, name: c.name, ref, release: c.release }, { timeoutMs: Math.min(TORRENT_OPEN_TIMEOUT_MS, budgetMs) });
       } catch (err) {
-        return err instanceof ProbeError && err.code === 'timeout'
-          ? fail('no_stream', `the swarm sent too little of the file to read it within ${Math.round(probeMs / 1000)} s`)
-          : fail('error', `ffprobe could not read the file: ${messageOf(err)}`);
+        // Released too: an open that gave up may still have left the torrent in the swarm.
+        state.opened = true;
+        return fail('no_stream', `no file list from the swarm in time (${messageOf(err)})`);
       }
-      const refusal = refusalOf(probe, audioLang, this.opts.remux ?? null);
-      if (refusal !== null) return fail(refusal.outcome, refusal.detail);
+      state.opened = true;
+      if (state.cancelled) return left();
+      try {
+        const picked = pickFile(opened.files, query);
+        if (picked === null) {
+          return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file');
+        }
+        await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
+        if (state.cancelled) return left();
+        const manifestUrl = this.opts.swarm.localUrl(c.infoHash, picked.video);
+        const probeMs = Math.max(PROBE_MIN_MS, Math.min(TORRENT_PROBE_TIMEOUT_MS, budgetMs - (this.now() - started)));
+        let probe: MediaProbe;
+        try {
+          probe = await this.opts.probe(`${this.opts.localBase()}${manifestUrl}`, probeMs);
+        } catch (err) {
+          if (state.cancelled) return left();
+          return err instanceof ProbeError && err.code === 'timeout'
+            ? fail('no_stream', `the swarm sent too little of the file to read it within ${Math.round(probeMs / 1000)} s`)
+            : fail('error', `ffprobe could not read the file: ${messageOf(err)}`);
+        }
+        if (state.cancelled) return left();
+        const refusal = refusalOf(probe, play.audioLang, this.opts.remux ?? null);
+        if (refusal !== null) return fail(refusal.outcome, refusal.detail);
+        const videoName = opened.files.find((f) => f.index === picked.video)?.name ?? '';
+        return {
+          ok: true,
+          passed: { position, c, opened, video: picked.video, subtitles: picked.subtitles, probe, english: hasEnglishSubtitleFile(opened.files, picked.subtitles, videoName), tookS: seconds(started, this.now()), drop },
+        };
+      } catch (err) {
+        return fail('error', messageOf(err));
+      }
+    };
+    return {
+      cancel: () => {
+        state.cancelled = true;
+        drop();
+      },
+      result: run(),
+    };
+  }
+
+  /** The chosen torrent becomes the session's: the address the page plays (a remux starts here), then its subtitles. */
+  private async finish(ref: StreamRef, query: FindQuery, p: Passed, play: PlayFacts, delivery: Delivery | null, budgetMs: number): Promise<Tried> {
+    const { c, probe } = p;
+    const audioLang = play.audioLang;
+    try {
       let page: { manifestUrl: string; manifestKind: 'mp4' | 'hls' };
       try {
-        page = await this.fileForPage(c.infoHash, picked.video, probe, audioLang, Math.max(PROBE_MIN_MS, budgetMs - (this.now() - started)));
+        page = await this.fileForPage(c.infoHash, p.video, probe, audioLang, budgetMs);
       } catch (err) {
-        return fail('unplayable', `${describeProbe(probe)}: the remux did not start (${messageOf(err)})`);
+        return { ok: false, attempt: { provider: torrentLabel(c.name), outcome: 'unplayable', took_s: p.tookS, detail: `${describeProbe(probe)}: the remux did not start (${messageOf(err)})` } };
       }
       this.noteDuration(c.infoHash, probe);
       const stop = new AbortController();
-      const chain = await runSubtitleChain(
-        this.opts.tiers,
-        {
-          ref,
-          imdbId: play.imdbId,
-          infoHash: c.infoHash,
-          release: c.name,
-          files: opened.files,
-          fileIndex: picked.video,
-          subtitleIndexes: picked.subtitles,
-          handle: opened.read === undefined ? null : (opened as Pick<TorrentHandle, 'read'>),
-          probe,
-          audioLang,
-          resumeS: play.resumeS,
-          cloudTried: play.cloudTried,
-          localBase: this.opts.localBase(),
-          signal: stop.signal,
-        },
-        { log: this.log },
-      );
       const torrent: SessionTorrent = {
         infoHash: c.infoHash,
-        fileIndex: picked.video,
-        selected,
+        fileIndex: p.video,
+        selected: [p.video, ...p.subtitles],
         name: c.name,
         index: c.index,
         seeds: c.seeds,
@@ -501,7 +720,7 @@ export class TorrentSource {
         height: probe.video?.height ?? c.release.height ?? null,
         manifestUrl: page.manifestUrl,
         manifestKind: page.manifestKind,
-        subtitles: chain.subtitles,
+        subtitles: [],
         subtitleRev: 0,
         candidates: [],
         durationS: probe.durationS,
@@ -511,12 +730,31 @@ export class TorrentSource {
         query,
         stop,
       };
+      const subtitleAttempts = await this.startSubtitles(
+        torrent,
+        {
+          ref,
+          imdbId: play.imdbId,
+          infoHash: c.infoHash,
+          release: c.name,
+          files: p.opened.files,
+          fileIndex: p.video,
+          subtitleIndexes: p.subtitles,
+          handle: p.opened.read === undefined ? null : (p.opened as Pick<TorrentHandle, 'read'>),
+          probe,
+          audioLang,
+          resumeS: play.resumeS,
+          cloudTried: play.cloudTried,
+          localBase: this.opts.localBase(),
+          signal: stop.signal,
+        },
+        { ref, imdbId: play.imdbId, infoHash: c.infoHash, fileIndex: p.video, durationS: probe.durationS },
+      );
       torrent.state = await this.state(torrent);
-      this.startSync(torrent, { ref, imdbId: play.imdbId, infoHash: c.infoHash, fileIndex: picked.video, durationS: probe.durationS });
-      const tookS = seconds(started, this.now());
-      return { ok: true, torrent, source: standIn(torrent, probe, audioLang, tookS), attempt: attempt('resolved', `${describeProbe(probe)}${page.manifestKind === 'hls' ? ', remuxed' : ''}, ${c.seeds} seeds`), subtitleAttempts: chain.attempts };
+      const detail = `${describeProbe(probe)}${page.manifestKind === 'hls' ? ', remuxed' : ''}, ${c.seeds} seeds${this.deliveryText(delivery)}`;
+      return { ok: true, torrent, source: standIn(torrent, probe, audioLang, p.tookS), attempt: { provider: torrentLabel(c.name), outcome: 'resolved', took_s: p.tookS, detail }, subtitleAttempts };
     } catch (err) {
-      return fail('error', messageOf(err));
+      return { ok: false, attempt: { provider: torrentLabel(c.name), outcome: 'error', took_s: p.tookS, detail: messageOf(err) } };
     }
   }
 }
@@ -549,12 +787,15 @@ export function buildTorrentSource(
   if (config.torrent?.enabled !== true || torrents === null) return null;
   const finder = config.torrent.finder ?? DEFAULT_TORRENT_FINDER_CONFIG;
   const indexes = indexesOf(finder);
+  // Per daemon run: an index that keeps timing out is left out of the next plays for a while.
+  const health = new IndexHealth();
   return new TorrentSource({
     swarm: torrents,
     find: (query, signal) =>
       findCandidates(query, {
         signal,
         indexes,
+        health,
         ...(finder.minSeeds === undefined ? {} : { minSeeds: finder.minSeeds }),
         ...(finder.maxSizeBytes === undefined ? {} : { maxSizeBytes: finder.maxSizeBytes }),
         ...(finder.indexTimeoutMs === undefined ? {} : { timeoutMs: finder.indexTimeoutMs }),
@@ -565,6 +806,7 @@ export function buildTorrentSource(
     remux: wiring.remux ?? null,
     sync: wiring.sync ?? null,
     localBase: wiring.localBase,
+    ...(config.torrent.subtitleWaitMs === undefined ? {} : { subtitleHeadMs: config.torrent.subtitleWaitMs }),
     ...(wiring.log === undefined ? {} : { log: wiring.log }),
   });
 }

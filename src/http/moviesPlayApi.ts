@@ -43,16 +43,20 @@ export function playErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'> & Partial<Pick<AppDeps, 'streamLive'>>): Hono {
+export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'> & Partial<Pick<AppDeps, 'streamLive' | 'directStream'>>): Hono {
   const r = new Hono();
 
   r.get('/api/movies/player', async (c) => {
     const player = deps.moviesPlayer ?? null;
     // The stream on screen in the player page, if any (direct streaming): the twin of `current`.
     const stream = deps.streamLive?.current() ?? null;
-    if (player === null) return c.json({ available: false, reason: 'movies_off', current: null, stream });
+    // The stream plays being started (resolving, or opened and not reporting yet): with one of them the daemon is
+    // busy although `stream` and `current` are still null. `busy` is the one thing a restart looks at.
+    const starting = deps.directStream?.starting(stream?.session_id ?? null) ?? [];
+    if (player === null) return c.json({ available: false, reason: 'movies_off', current: null, stream, starting, busy: stream !== null || starting.length > 0 });
     const a = await player.availability();
-    return c.json({ available: a.available, reason: a.reason, current: player.current(), stream });
+    const current = player.current();
+    return c.json({ available: a.available, reason: a.reason, current, stream, starting, busy: current !== null || stream !== null || starting.length > 0 });
   });
 
   r.post('/api/movies/files/:fileId/play', sameOriginOnly, async (c) => {

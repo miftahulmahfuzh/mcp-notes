@@ -4,7 +4,7 @@ import type { StreamRef } from '../../../src/directStream/types.js';
 import { parseRelease, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import { ProbeError, type MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { runSubtitleChain, SUBTITLE_BUDGET_MS, type SubtitleTier } from '../../../src/directStream/torrent/subtitles/chain.js';
-import { MAX_TORRENT_TRIES, TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
+import { chooseOrder, delivers, HEALTHY_PEERS, MAX_TORRENT_TRIES, SUBTITLES_PENDING, TORRENT_RACE_WIDTH, TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
 import type { TorrentSyncRequest as SyncRequest } from '../../../src/directStream/torrent/subtitles/synced.js';
 import type { TorrentFileInfo } from '../../../src/directStream/torrent/types.js';
 
@@ -47,15 +47,26 @@ interface Fakes {
   onFind?: (query: unknown) => void;
   /** Wyzie Synced as a recorder of what it was started with. */
   sync?: SyncRequest[];
+  /** What each swarm delivers; with it the swarm also has `drop` (recorded as `drop <hash>`). */
+  stats?: Record<string, { peers: number; down_kbps: number }>;
+  /** Milliseconds before a torrent's file list arrives, and before its header is read. */
+  openDelay?: Record<string, number>;
+  probeDelay?: Record<string, number>;
+  settleMs?: number;
+  subtitleHeadMs?: number;
 }
+
+const wait = (ms: number | undefined): Promise<void> => (ms === undefined ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
 
 function setup(o: Fakes = {}) {
   const calls: string[] = [];
   const probed: string[] = [];
   const durations: string[] = [];
+  const logged: string[] = [];
   const swarm: TorrentSwarm = {
     open: async (pick) => {
       calls.push(`open ${pick.infoHash}`);
+      await wait(o.openDelay?.[pick.infoHash]);
       if ((o.failOpen ?? []).includes(pick.infoHash)) throw new Error('no metadata within 20 s');
       return { infoHash: pick.infoHash, files: o.files?.[pick.infoHash] ?? [file(0, 'Film.2026.720p.mp4')] };
     },
@@ -71,6 +82,14 @@ function setup(o: Fakes = {}) {
     setDuration: (infoHash, s) => {
       durations.push(`${infoHash} ${s}`);
     },
+    ...(o.stats === undefined
+      ? {}
+      : {
+          stats: (infoHash: string) => o.stats?.[infoHash] ?? null,
+          drop: (infoHash: string) => {
+            calls.push(`drop ${infoHash}`);
+          },
+        }),
   };
   let finds = 0;
   const answer: FindAnswer = { candidates: o.candidates ?? [], indexes: [{ index: 'torrentio', outcome: 'ok', detail: `${(o.candidates ?? []).length} candidates`, took_s: 0.3, listed: (o.candidates ?? []).length }], excluded: [] };
@@ -84,6 +103,7 @@ function setup(o: Fakes = {}) {
     probe: async (url) => {
       probed.push(url);
       const hash = /\/torrent\/([0-9a-f]+)\//.exec(url)?.[1] ?? '';
+      await wait(o.probeDelay?.[hash]);
       const p = o.probes?.[hash] ?? MP4_EN;
       if (p === 'timeout') throw new ProbeError('timeout', 'ffprobe gave up after 30 s');
       return p;
@@ -91,14 +111,16 @@ function setup(o: Fakes = {}) {
     tiers: o.tiers ?? [],
     ...(o.sync === undefined ? {} : { sync: { start: (request) => (o.sync?.push(request), null) } }),
     localBase: () => BASE,
-    log: () => undefined,
+    ...(o.settleMs === undefined ? {} : { settleMs: o.settleMs }),
+    ...(o.subtitleHeadMs === undefined ? {} : { subtitleHeadMs: o.subtitleHeadMs }),
+    log: (line) => void logged.push(line),
   });
   // Releases are handed to the swarm on the next tick.
   const settled = async (): Promise<string[]> => {
     await new Promise((r) => setTimeout(r, 0));
     return calls;
   };
-  return { source, calls, settled, probed, durations, finds: () => finds };
+  return { source, calls, settled, probed, durations, logged, finds: () => finds };
 }
 
 describe('TorrentSource.resolve', () => {
@@ -210,6 +232,163 @@ describe('TorrentSource.resolve', () => {
     expect(out.attempts).toEqual([expect.objectContaining({ provider: 'Index: all', outcome: 'error' })]);
     expect(t.finds()).toBe(0);
     expect(await t.settled()).toEqual([]);
+  });
+});
+
+describe('TorrentSource: the torrent is chosen by what its swarm delivers', () => {
+  const A = candidate(h(1), 'Film.2026.1080p.WEB-DL.x264.AAC-A', 16);
+  const B = candidate(h(2), 'Film.2026.1080p.WEB-DL.x264.AAC-B', 9);
+  const C = candidate(h(3), 'Film.2026.720p.WEB-DL.x264.AAC-C', 7);
+  const D = candidate(h(4), 'Film.2026.720p.WEB-DL.x264.AAC-D', 5);
+  // 500 MB over 62 s: a 64.5 Mbps "film", so only peers make a swarm healthy here.
+  const THIN = { peers: 3, down_kbps: 1740 };
+  const WIDE = { peers: 14, down_kbps: 900 };
+
+  it(`opens the best ${TORRENT_RACE_WIDTH} side by side, not one after the other`, async () => {
+    const t = setup({ candidates: [A, B, C, D], openDelay: { [h(1)]: 30, [h(2)]: 30, [h(3)]: 30 }, settleMs: 0 });
+    const asked = t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    await wait(5);
+    expect(t.calls).toEqual([`open ${h(1)}`, `open ${h(2)}`, `open ${h(3)}`]);
+    await asked;
+    expect(t.calls).not.toContain(`open ${h(4)}`);
+  });
+
+  it('plays the torrent with the connected peers, not the one the index listed with more seeds (16 listed, 3 connected)', async () => {
+    const t = setup({ candidates: [A, B, C], stats: { [h(1)]: THIN, [h(2)]: WIDE, [h(3)]: THIN } });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    expect(out.attempts.slice(1).map((a) => [a.outcome, a.detail])).toEqual([
+      ['skipped', `its header arrived too (16 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen`],
+      ['resolved', 'mov h264 720p / aac, 9 seeds listed; 14 peers connected, 0.9 Mbps for a 64.5 Mbps film'],
+      ['skipped', `its header arrived too (7 seeds listed; 3 peers connected, 1.7 Mbps for a 64.5 Mbps film); ${B.name} was chosen`],
+    ]);
+    // The ones not chosen leave their swarms at once, and stay first in line for the shuffle button.
+    const calls = await t.settled();
+    expect(calls.filter((c) => c.startsWith('drop ')).sort()).toEqual([`drop ${h(1)}`, `drop ${h(3)}`]);
+    expect(calls).not.toContain(`drop ${h(2)}`);
+    expect(out.ok && out.torrent.candidates.map((c) => c.infoHash)).toEqual([h(1), h(3)]);
+  });
+
+  it('takes the first whose header arrives when the others are still opening after the settle time, and lets go of them', async () => {
+    const t = setup({ candidates: [A, B, C], openDelay: { [h(1)]: 400, [h(3)]: 400 }, stats: { [h(2)]: THIN }, settleMs: 20 });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    expect(out.attempts.slice(1).map((a) => [a.outcome, a.detail])).toEqual([
+      ['skipped', `still opening when ${B.name} was chosen`],
+      ['resolved', expect.stringContaining('3 peers connected')],
+      ['skipped', `still opening when ${B.name} was chosen`],
+    ]);
+    expect(out.ok && out.torrent.candidates.map((c) => c.infoHash)).toEqual([h(1), h(3)]);
+    // A torrent cancelled while its file list was on its way is let go of as soon as it is open, and never used.
+    await wait(450);
+    expect(t.calls.filter((c) => c.startsWith('drop ')).sort()).toEqual([`drop ${h(1)}`, `drop ${h(3)}`]);
+    expect(t.calls).not.toContain(`use ${h(1)} 0`);
+    expect(t.calls).not.toContain(`use ${h(3)} 0`);
+  });
+
+  it('waits the settle time for a healthier swarm that is a moment behind', async () => {
+    const t = setup({ candidates: [A, B], probeDelay: { [h(2)]: 40 }, stats: { [h(1)]: THIN, [h(2)]: WIDE }, settleMs: 500 });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+  });
+
+  it('a torrent that fails makes room for the next candidate', async () => {
+    const t = setup({ candidates: [A, B, C, D], failOpen: [h(1), h(2), h(3)] });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(4));
+    expect(out.attempts.slice(1).map((a) => a.outcome)).toEqual(['no_stream', 'no_stream', 'no_stream', 'resolved']);
+  });
+
+  it('among swarms alike, the one whose files hold an English subtitle file is chosen (R3.2)', async () => {
+    const t = setup({
+      candidates: [A, B],
+      files: { [h(2)]: [file(0, 'Film/Film.2026.mp4'), file(1, 'Film/Film.2026.en.srt', 40_000)] },
+      stats: { [h(1)]: WIDE, [h(2)]: WIDE },
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok && out.torrent.infoHash).toBe(h(2));
+    expect(out.ok && out.torrent.selected).toEqual([0, 1]);
+  });
+
+  it('chooseOrder: a swarm that delivers, then an English subtitle file, then more peers, then the finder\'s order', () => {
+    const d = (peers: number, downKbps: number) => ({ peers, downKbps, filmKbps: 2640 });
+    expect(delivers(d(3, 1740))).toBe(false);
+    expect(delivers(d(3, 2640))).toBe(true);
+    expect(delivers(d(HEALTHY_PEERS, 0))).toBe(true);
+    expect(delivers(null)).toBe(false);
+    const passed = [
+      { position: 0, english: false, d: d(3, 1740) },
+      { position: 1, english: true, d: d(2, 500) },
+      { position: 2, english: false, d: d(9, 4000) },
+      { position: 3, english: true, d: d(7, 100) },
+      { position: 4, english: false, d: null },
+    ];
+    expect(chooseOrder(passed, (p) => p.d).map((p) => p.position)).toEqual([3, 2, 1, 0, 4]);
+  });
+
+  it('tells the caller where the play stands: the stage and the attempts so far', async () => {
+    const seen: Array<{ stage: string; attempts: number }> = [];
+    const t = setup({ candidates: [A, B], failOpen: [h(1)] });
+    await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905', progress: (p) => seen.push({ stage: p.stage, attempts: p.attempts.length }) });
+    expect(seen[0]).toEqual({ stage: 'asking the torrent indexes', attempts: 0 });
+    expect(seen.some((p) => p.stage === `opening 2 torrents: ${A.name}; ${B.name}` && p.attempts === 1)).toBe(true);
+    // The index, then the torrent that failed.
+    expect(seen[seen.length - 1]!.attempts).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('TorrentSource: the film starts before the subtitle search ends', () => {
+  const view: CacheSubtitleView = { url: `/api/stream/torrent/${h(1)}/sub/service-wyzie-1.vtt`, lang: 'en', label: 'English (Wyzie)' };
+  const slow = (ms: number, found: CacheSubtitleView[]): SubtitleTier => ({ name: 'service', blocks: true, find: async () => (await wait(ms), found) });
+
+  it('answers the play with Subtitles: pending, then puts the track on the session and bumps subtitleRev', async () => {
+    const sync: SyncRequest[] = [];
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [slow(80, [view])], subtitleHeadMs: 10, sync });
+    const started = Date.now();
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    expect(Date.now() - started).toBeLessThan(70);
+    expect(out.attempts.map((a) => [a.provider, a.outcome])).toEqual([['Index: torrentio', 'resolved'], [`Torrent: ${out.torrent.name}`, 'resolved'], [SUBTITLES_PENDING, 'skipped']]);
+    expect(out.torrent.subtitles).toEqual([]);
+    expect(out.torrent.subtitleRev).toBe(0);
+    // Wyzie Synced waits for the chain: there is nothing to re-time yet.
+    expect(sync).toHaveLength(0);
+    const late = await out.torrent.subtitlesPending;
+    expect(late?.map((a) => [a.provider, a.outcome])).toEqual([['Subtitles: service', 'resolved']]);
+    expect(out.torrent.subtitles).toEqual([view]);
+    expect(out.torrent.subtitleRev).toBe(1);
+    expect(out.torrent.subtitlesPending).toBeNull();
+    expect(sync).toHaveLength(1);
+    expect(sync[0]!.target).toBe(out.torrent);
+    expect(t.logged.some((l) => /subtitles of 00000000 arrived .* \(service resolved/.test(l))).toBe(true);
+  });
+
+  it('a chain that ends with nothing leaves subtitleRev alone', async () => {
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [slow(40, [])], subtitleHeadMs: 5 });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    expect((await out.torrent.subtitlesPending)?.map((a) => a.outcome)).toEqual(['no_stream']);
+    expect(out.torrent.subtitleRev).toBe(0);
+  });
+
+  it('a tier that answers at once (a kept file) is in the answer, with nothing pending', async () => {
+    const kept: SubtitleTier = { name: 'kept', blocks: true, find: async () => [view] };
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], tiers: [kept, slow(5_000, [])] });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    expect(out.attempts.slice(2).map((a) => [a.provider, a.outcome])).toEqual([['Subtitles: kept', 'resolved']]);
+    expect(out.torrent.subtitles).toEqual([view]);
+    expect(out.torrent.subtitlesPending ?? null).toBeNull();
+    expect(out.torrent.subtitleRev).toBe(0);
+  });
+
+  it('a replay from disk does not wait for a slow chain either', async () => {
+    const t = setup({ disk: { infoHash: h(5), name: 'Film.2026.720p', fileIndex: 0, state: 'ready' }, ready: [h(5)], tiers: [slow(60, [view])], subtitleHeadMs: 5 });
+    const out = await t.source.fromDisk(FILM, { audioLang: 'en' });
+    expect(out?.attempts.map((a) => a.provider)).toEqual([SUBTITLES_PENDING]);
+    await out?.torrent.subtitlesPending;
+    expect(out?.torrent.subtitles).toEqual([view]);
+    expect(out?.torrent.subtitleRev).toBe(1);
   });
 });
 

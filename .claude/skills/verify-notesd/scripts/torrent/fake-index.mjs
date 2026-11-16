@@ -12,7 +12,9 @@
 // `S01.720p.WEB-DL.x264.AAC-NOTESD`) with no fileIdx, so the daemon picks the episode's file itself.
 // DIR/candidates.json, when present, replaces both answers for every query: [{info_hash, name, seeds?, size_bytes?}],
 // each `name` a release tail (phases 5, 6 and 8 hand out the torrents they seed under DIR/seed/ this way).
-// DIR/index-mode picks the answer: ok (default) | empty ({"streams": []}) | error (HTTP 500).
+// DIR/index-mode picks the answer: ok (default) | empty ({"streams": []}) | error (HTTP 500) | hang (never answers:
+// the finder's timeout) | slow:<ms> (the ok answer, that many milliseconds late).
+// A candidates.json entry whose info_hash nobody seeds is a dead swarm: its file list never comes.
 // Every request is one JSON line in the log: {at, path, mode}.
 import http from 'node:http'
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -102,9 +104,15 @@ const server = http.createServer((req, res) => {
     res.end('fake index: mode error')
     return
   }
-  const [status, body] = answer(url.pathname)
-  res.writeHead(status, { 'content-type': 'application/json;charset=utf-8' })
-  res.end(JSON.stringify(body))
+  if (now === 'hang') return
+  const late = /^slow:(\d+)$/.exec(now)
+  const send = () => {
+    const [status, body] = answer(url.pathname)
+    res.writeHead(status, { 'content-type': 'application/json;charset=utf-8' })
+    res.end(JSON.stringify(body))
+  }
+  if (late) setTimeout(send, Number(late[1]))
+  else send()
 })
 server.listen(0, '127.0.0.1', () => {
   const { port } = server.address()

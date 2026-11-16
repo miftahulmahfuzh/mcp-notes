@@ -63,6 +63,26 @@ and restarted. Each run:
 retention change. `SKIP_CHAT_CHECK=1` skips the chat message (offline runs). The chat check prints
 which brain answered; `brain=glm` is a warning that Claude failed and the fallback answered.
 
+### It never restarts under a film
+
+A restart ends every stream session and every play that is being started. So before it builds, and
+again right before the restart, the installer asks the running daemon (`GET /api/movies/player`)
+and reads `busy`: true while notesd follows a VLC play, while a stream is on screen, or while a
+stream play is still being started (`starting`: a cloud resolve, a torrent's indexes and swarms, or
+a page opened less than 30 s ago). A play in that last state shows no `stream` yet; reading
+`stream` alone restarted the daemon under one on 2026-11-17.
+
+| Run | When the daemon is busy |
+| --- | --- |
+| `scripts/install.sh` | Changes nothing, says what is playing or starting, and exits 75. |
+| `scripts/install.sh --wait` | Asks again every 20 s and installs once the daemon is idle; exit 75 after `NOTES_INSTALL_WAIT_SECONDS` (6 hours). |
+| `scripts/install.sh --force` | Installs and restarts anyway, and says what it interrupts. Same as `NOTES_INSTALL_FORCE=1`. |
+| `scripts/install.sh --check-idle` | Only asks: exit 0 when idle, 75 when busy. Nothing is built or restarted. |
+
+A daemon that does not answer, or an older one whose answer has no `busy`, counts as idle. Anything
+that restarts notesd on its own (a session landing a change, a deferred install) uses one of these
+and never its own reading of the route.
+
 The unit, the skills and the hooks all point at the checkout that ran the script, so run it from
 `~/mcp-notes`. After work done in a worktree lands on `main`, run it again from the main checkout
 (`cd ~/mcp-notes && git pull && scripts/install.sh`); the worktree is deleted when its branch

@@ -66,6 +66,9 @@ tracker) against a loopback seeder (`scripts/torrent/seed.mjs`) of a film and a 
 ffmpeg (`scripts/torrent/make-fixture.sh`, cached in `$VERIFY_HOME/.torrent-fixture`); `up` prints
 `TORRENT=<run>/torrent`, where `fixture.json`, `pack.json` and `seeder.jsonl` are. `TORRENT_FIXTURE_FILE=<path>`
 seeds that file as the film. `scripts/torrent/torrent.sh RUN` drives it; see `features/direct-streaming.md`.
+A `--torrent` run lets a play wait 40 s for its subtitle (`NOTESD_TORRENT_SUBTITLE_WAIT_MS`), so the subtitle
+journeys read it in the play's answer; `scripts/torrent/speed.sh` needs the daemon's own 1.5 s:
+`NOTESD_TORRENT_SUBTITLE_WAIT_MS=1500 $V up --torrent`.
 
 ## Doctor
 

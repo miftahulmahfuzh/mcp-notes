@@ -16,7 +16,7 @@ import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
-import { namesCloud, namesTorrent, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
+import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -158,6 +158,61 @@ export interface PlayResult {
   attempts: ResolveAttempt[];
 }
 
+/**
+ * A play that was asked for and whose player page does not report yet, as `GET /api/movies/player` lists it
+ * (`starting`): being resolved (a cloud resolve, a torrent's indexes and swarms), or opened a moment ago. While
+ * there is one the daemon is busy, whatever `stream` and `current` say.
+ */
+export interface StartingPlay {
+  kind: 'movie' | 'tv';
+  tmdb_id: number;
+  season: number | null;
+  episode: number | null;
+  /** The title the player will show; `TMDB movie 550` until the name is read. */
+  title: string;
+  /** The provider the play named (`torrent`, `cloud`, a provider's name), or null. */
+  provider: string | null;
+  since: string;
+  /** What is being done now, in words. */
+  stage: string;
+}
+
+/** playWithin's answer when the play outlasted the wait: it goes on in the daemon, and the same call again joins it. */
+export interface PendingPlay {
+  pending: true;
+  since: string;
+  waited_s: number;
+  stage: string;
+  /** Every attempt finished so far. */
+  attempts: ResolveAttempt[];
+}
+
+/** What a play in flight tells of itself (the `starting` entry, a pending answer). */
+interface PlayTrack {
+  stage: string;
+  attempts: ResolveAttempt[];
+}
+
+interface PlayInFlight extends PlayTrack {
+  ref: StreamRef;
+  provider: string | null;
+  title: string;
+  since: Date;
+  promise: Promise<PlayResult>;
+  /** A caller was answered `pending`: the outcome is kept for the next ask. */
+  waited: boolean;
+  /** Set once the page was opened: the session, and when. */
+  opened: { sessionId: string; at: number } | null;
+  failed: boolean;
+  /** The title's name is being read. */
+  naming: boolean;
+}
+
+/** A play whose page was opened still counts as starting this long, unless its page reports first. */
+export const PLAY_PAGE_GRACE_MS = 30_000;
+/** The outcome of a play answered `pending` is kept this long for the caller to ask again. */
+export const PLAY_OUTCOME_KEEP_MS = 10 * 60_000;
+
 export interface SyncSeedResult {
   total: number;
   inserted: number;
@@ -201,6 +256,11 @@ export interface DirectStreamServiceOptions {
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** One play in flight per title (a film, an episode) and named provider. */
+function playKey(ref: StreamRef, provider: string | null): string {
+  return `${ref.kind}-${ref.tmdbId}${ref.kind === 'tv' ? `-${ref.season}-${ref.episode}` : ''}|${(provider ?? '').trim().toLowerCase()}`;
+}
 
 function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcome {
   return (STREAM_HEALTH_OUTCOMES as readonly string[]).includes(outcome);
@@ -264,6 +324,10 @@ export class DirectStreamService {
   private updatingSource: Promise<UpdateSourceAnswer> | null = null;
   /** Runs sweepTorrents every minute while a torrent session holds its torrent. */
   private torrentTimer: ReturnType<typeof setInterval> | null = null;
+  /** The plays being started, by title and named provider: a second ask of the same play joins the first. */
+  private readonly inFlight = new Map<string, PlayInFlight>();
+  /** The outcomes of plays that were answered `pending`, for the next ask of the same play. */
+  private readonly outcomes = new Map<string, { at: number; result: PlayResult | null; error: unknown }>();
 
   constructor(private readonly opts: DirectStreamServiceOptions) {
     this.repo = opts.repo;
@@ -315,42 +379,184 @@ export class DirectStreamService {
    * resolve; otherwise the title is resolved first, as before.
    */
   async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null } = {}): Promise<PlayResult> {
+    return this.begin(toStreamRef(input), options).promise;
+  }
+
+  /**
+   * `play`, answered within `waitMs`: a caller with a time limit of its own (an MCP client gives a tool call about
+   * 60 s) gets `pending` with the stage and the attempts so far instead of nothing. The play goes on in the daemon
+   * and opens the player by itself; the same call again joins it, or reads its outcome once it has one.
+   */
+  async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
     const ref = toStreamRef(input);
+    const key = playKey(ref, options.provider ?? null);
+    const kept = this.outcomes.get(key);
+    if (kept !== undefined && !this.inFlightNow(key)) {
+      this.outcomes.delete(key);
+      if (this.now().getTime() - kept.at < PLAY_OUTCOME_KEEP_MS) {
+        if (kept.result === null) throw kept.error;
+        return { pending: false, result: kept.result };
+      }
+    }
+    const entry = this.begin(ref, options);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), Math.max(0, waitMs));
+    });
+    const result = await Promise.race([entry.promise, late]).finally(() => clearTimeout(timer));
+    if (result !== null) return { pending: false, result };
+    entry.waited = true;
+    return {
+      pending: true,
+      since: entry.since.toISOString(),
+      waited_s: Math.round((this.now().getTime() - entry.since.getTime()) / 100) / 10,
+      stage: entry.stage,
+      attempts: [...entry.attempts],
+    };
+  }
+
+  /**
+   * The plays being started now: asked for and not answered yet, or opened within PLAY_PAGE_GRACE_MS with a page
+   * that does not report yet (`onScreen` is the session the stream on screen belongs to).
+   */
+  starting(onScreen: string | null = null): StartingPlay[] {
+    const now = this.now().getTime();
+    const out: StartingPlay[] = [];
+    for (const [key, e] of this.inFlight) {
+      if (e.failed || (e.opened !== null && (e.opened.sessionId === onScreen || now - e.opened.at >= PLAY_PAGE_GRACE_MS))) {
+        this.inFlight.delete(key);
+        continue;
+      }
+      this.nameIt(e);
+      out.push({
+        kind: e.ref.kind,
+        tmdb_id: e.ref.tmdbId,
+        season: e.ref.kind === 'tv' ? e.ref.season : null,
+        episode: e.ref.kind === 'tv' ? e.ref.episode : null,
+        title: e.title,
+        provider: e.provider,
+        since: e.since.toISOString(),
+        stage: e.stage,
+      });
+    }
+    return out;
+  }
+
+  /** Reads the title's name for a play in flight that still shows its TMDB reference (a title not stored when the play began). */
+  private nameIt(entry: PlayInFlight): void {
+    const hook = this.opts.hooks?.titleLabel;
+    if (hook === undefined || entry.naming || entry.title !== refLabel(entry.ref)) return;
+    entry.naming = true;
+    void this.hookValue('titleLabel', () => hook(entry.ref)).then((title) => {
+      entry.naming = false;
+      if (title !== null) entry.title = title;
+    });
+  }
+
+  private inFlightNow(key: string): boolean {
+    const e = this.inFlight.get(key);
+    return e !== undefined && !e.failed && e.opened === null;
+  }
+
+  /** The play of `ref` in flight, or a new one. Its promise is the play's answer; a rejection nobody waits for is logged, not thrown away. */
+  private begin(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null }): PlayInFlight {
+    const provider = options.provider ?? null;
+    const key = playKey(ref, provider);
+    const running = this.inFlight.get(key);
+    if (running !== undefined && this.inFlightNow(key)) return running;
+    const entry: PlayInFlight = {
+      ref,
+      provider,
+      title: refLabel(ref),
+      since: this.now(),
+      stage: 'starting',
+      attempts: [],
+      promise: Promise.resolve(null as unknown as PlayResult),
+      waited: false,
+      opened: null,
+      failed: false,
+      naming: false,
+    };
+    this.nameIt(entry);
+    entry.promise = this.playNow(ref, options, entry).then(
+      (result) => {
+        entry.opened = { sessionId: result.session.session_id, at: this.now().getTime() };
+        entry.stage = 'opened: waiting for the player page';
+        if (entry.waited) this.outcomes.set(key, { at: this.now().getTime(), result, error: null });
+        return result;
+      },
+      (err: unknown) => {
+        entry.failed = true;
+        if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
+        this.logFailedPlay(entry, err);
+        if (entry.waited) this.outcomes.set(key, { at: this.now().getTime(), result: null, error: err });
+        throw err;
+      },
+    );
+    // A caller answered `pending` no longer waits: the failure was logged above.
+    entry.promise.catch(() => undefined);
+    this.inFlight.set(key, entry);
+    return entry;
+  }
+
+  /**
+   * A play that started nothing, with every attempt, in the daemon's log: the caller may have stopped waiting, and
+   * /report-stream-bug reads a play that never made a session from these lines.
+   */
+  private logFailedPlay(entry: PlayInFlight, err: unknown): void {
+    const tookS = Math.round((this.now().getTime() - entry.since.getTime()) / 100) / 10;
+    const code = err instanceof DirectStreamError ? err.code : err instanceof CachePlayError ? err.code : 'error';
+    const attempts = err instanceof DirectStreamError && err.attempts.length > 0 ? err.attempts : entry.attempts;
+    this.log(
+      `[notesd] direct stream: play of ${refLabel(entry.ref)}${entry.provider === null ? '' : ` (${entry.provider})`} started nothing after ${tookS} s: ${code}${code === 'error' ? ` (${messageOf(err)})` : ''}, ${attempts.length} attempt(s)`,
+    );
+    for (const a of attempts) {
+      this.log(`[notesd] direct stream:   attempt ${a.provider}: ${a.outcome}${a.took_s === null ? '' : ` after ${a.took_s} s`}${a.detail === '' ? '' : ` (${a.detail})`}`);
+    }
+  }
+
+  private async playNow(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null }, track: PlayTrack): Promise<PlayResult> {
     const resumeS = options.resumeS ?? null;
     // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
     // "torrent" asks the torrent source alone: a finished download on this machine first, else the swarm.
     // "cloud" asks the cloud providers alone: this host's stream cache first, and never a torrent, on disk or in the swarm.
     const only = options.provider ?? null;
-    const session =
-      only === null
-        ? await this.sessionFor(ref, resumeS)
-        : namesTorrent(only)
-          ? ((await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null)))
-          : namesCloud(only)
-            ? ((await this.cachedSession(ref, resumeS)) ?? (await this.resolve(ref, { resumeS, vet: true })))
-            : await this.resolve(ref, { resumeS, only });
+    track.stage = "looking at this machine's cache and downloads";
+    let session: StreamSession;
+    if (only === null) session = await this.sessionFor(ref, resumeS, track);
+    else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null, track));
+    else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudSession(ref, { resumeS, vet: true }, track));
+    else session = await this.cloudSession(ref, { resumeS, only }, track);
+    track.stage = 'opening the player page';
+    track.attempts = session.attempts;
     return this.openPage(session);
+  }
+
+  /** `resolve`, with the play's stage said first: the cloud resolver answers its attempts only at its end. */
+  private cloudSession(ref: StreamRef, options: { resumeS?: number | null; only?: string; vet?: boolean }, track: PlayTrack | null): Promise<StreamSession> {
+    if (track !== null) track.stage = options.only === undefined ? 'asking the cloud providers' : `asking ${options.only}`;
+    return this.resolve(ref, options);
   }
 
   /**
    * A play with no provider named: this host's stream cache, then this host's finished torrent download of the
    * title (R2.9: no index, no swarm), then the cloud providers, and after them the torrent source.
    */
-  private async sessionFor(ref: StreamRef, resumeS: number | null): Promise<StreamSession> {
-    return (await this.cachedSession(ref, resumeS)) ?? (await this.diskSession(ref, resumeS)) ?? (await this.resolveOrTorrent(ref, resumeS));
+  private async sessionFor(ref: StreamRef, resumeS: number | null, track: PlayTrack | null = null): Promise<StreamSession> {
+    return (await this.cachedSession(ref, resumeS)) ?? (await this.diskSession(ref, resumeS)) ?? (await this.resolveOrTorrent(ref, resumeS, track));
   }
 
   /**
    * The cloud resolve, and when no provider resolves the title (`no_source`) or the resolve could not run
    * (`resolve_failed`: a torrent needs no Chrome), the torrent source. Torrents off: exactly `resolve`.
    */
-  private async resolveOrTorrent(ref: StreamRef, resumeS: number | null): Promise<StreamSession> {
+  private async resolveOrTorrent(ref: StreamRef, resumeS: number | null, track: PlayTrack | null): Promise<StreamSession> {
     try {
       // `vet`: a play looks at the picture of what the cloud providers answer (picture.ts).
-      return await this.resolve(ref, { resumeS, vet: true });
+      return await this.cloudSession(ref, { resumeS, vet: true }, track);
     } catch (err) {
       if (!(err instanceof DirectStreamError) || (err.code !== 'no_source' && err.code !== 'resolve_failed') || this.torrentSource() === null) throw err;
-      return this.torrentSession(ref, resumeS, err);
+      return this.torrentSession(ref, resumeS, err, track);
     }
   }
 
@@ -360,7 +566,7 @@ export class DirectStreamService {
    * torrent); or, after a cloud `resolve_failed`, that error again with the torrent attempts added. The
    * recordResolve hook is not called: a torrent says nothing of the title's cloud sources.
    */
-  private async torrentSession(ref: StreamRef, resumeS: number | null, cloud: DirectStreamError | null): Promise<StreamSession> {
+  private async torrentSession(ref: StreamRef, resumeS: number | null, cloud: DirectStreamError | null, track: PlayTrack | null = null): Promise<StreamSession> {
     const source = this.torrentSource();
     if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
     const audioLang = await this.audioLang(ref);
@@ -369,8 +575,24 @@ export class DirectStreamService {
     const names = namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref));
     const startS = await this.startAt(ref, resumeS);
     // Never inside serial(): the cloud resolve above has returned, and phase 6's borrow tier queues on serial().
-    const out = await source.resolve(ref, { audioLang, imdbId, names, resumeS: startS, cloudTried: cloud !== null && cloud.code === 'no_source' });
-    const attempts = [...(cloud?.attempts ?? []), ...out.attempts];
+    const before = cloud?.attempts ?? [];
+    if (track !== null) track.attempts = [...before];
+    const out = await source.resolve(ref, {
+      audioLang,
+      imdbId,
+      names,
+      resumeS: startS,
+      cloudTried: cloud !== null && cloud.code === 'no_source',
+      ...(track === null
+        ? {}
+        : {
+            progress: (p) => {
+              track.stage = p.stage;
+              track.attempts = [...before, ...p.attempts];
+            },
+          }),
+    });
+    const attempts = [...before, ...out.attempts];
     if (!out.ok) {
       if (cloud !== null && cloud.code === 'resolve_failed') {
         throw new DirectStreamError('resolve_failed', cloud.message, { ...(cloud.reason === null ? {} : { reason: cloud.reason }), attempts });
@@ -378,6 +600,7 @@ export class DirectStreamService {
       throw new DirectStreamError('no_source', `No provider or torrent could stream ${refLabel(ref)}.`, { attempts });
     }
     const session = this.sessions.createTorrent(ref, out.source, attempts, startS, audioLang, out.torrent);
+    this.followSubtitles(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
@@ -393,8 +616,23 @@ export class DirectStreamService {
     if (disk === null) return null;
     // A replay's attempts are only its subtitle tiers' (`Subtitles: <tier>`): no index, no torrent was tried.
     const session = this.sessions.createTorrent(ref, disk.source, disk.attempts, startS, audioLang, disk.torrent);
+    this.followSubtitles(session);
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
     return session;
+  }
+
+  /**
+   * A torrent session answered while its subtitle chain still runs (`Subtitles: pending`): once the chain ends its
+   * attempts take that one's place in the session's, so a snapshot of the session says what the subtitles cost.
+   */
+  private followSubtitles(session: StreamSession): void {
+    const torrent = session.torrent;
+    const pending = torrent?.subtitlesPending ?? null;
+    if (torrent === null || pending === null) return;
+    void pending.then((late) => {
+      if (session.torrent !== torrent) return;
+      session.attempts = [...session.attempts.filter((a) => a.provider !== SUBTITLES_PENDING), ...late];
+    });
   }
 
   private torrentSource(): TorrentSource | null {
@@ -424,6 +662,8 @@ export class DirectStreamService {
    * torrent. A reload of the page takes it again (info, refresh). Unknown ids are ignored.
    */
   letGo(id: string): void {
+    // A page that says it closed has reported: its play is not being started any more.
+    for (const [key, e] of this.inFlight) if (e.opened?.sessionId === id) this.inFlight.delete(key);
     const session = this.sessions.peek(id);
     if (session !== null) this.letGoTorrent(session);
   }
@@ -691,6 +931,7 @@ export class DirectStreamService {
     }
     this.letGoTorrent(session);
     this.sessions.replaceTorrent(session, out.source, out.torrent, out.attempts);
+    this.followSubtitles(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'switched', null));
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} moved from the torrent ${torrent.name} to ${out.torrent.name}`);

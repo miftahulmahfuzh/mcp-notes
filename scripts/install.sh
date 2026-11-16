@@ -16,8 +16,17 @@
 # Idempotent: run it again after every pull. The unit runs code from the checkout this script
 # lives in, so run it from the checkout you want the daemon to use (normally ~/mcp-notes).
 #
+# It never restarts the daemon under a film: when the running daemon says it is busy
+# (GET /api/movies/player `busy`: a VLC play it follows, a stream on screen, or a stream play
+# still being started), nothing is built or restarted and the script exits 75.
+#
 # Flags:
 #   --skip-hooks    do not touch ~/.claude/settings.json (same as NOTES_SKIP_HOOKS=1)
+#   --check-idle    only ask the daemon: exit 0 when nothing is playing or starting (or no
+#                   daemon answers), 75 when it is busy, with what is; nothing is changed
+#   --wait          when busy, wait until the daemon is idle (asked every 20 s, at most
+#                   NOTES_INSTALL_WAIT_SECONDS, default 6 hours), then install
+#   --force         install and restart even when busy (same as NOTES_INSTALL_FORCE=1)
 #
 # Env overrides:
 #   NODE_BIN        absolute path to a Node >= 22 binary (default: `node` on PATH, then
@@ -29,6 +38,8 @@
 #   NOTES_SKIP_HOOKS set to 1 to leave ~/.claude/settings.json alone
 #   NOTES_PASTE_STRATEGY  `deny` registers the paste hook in its fallback mode (see
 #                   claude/hooks/notes-paste.mjs); default `updatedInput`
+#   NOTES_INSTALL_FORCE  set to 1 to restart even while something plays or starts (--force)
+#   NOTES_INSTALL_WAIT_SECONDS  how long --wait waits for the daemon to be idle (default 21600)
 #   NOTES_CLAUDE_RETENTION_DAYS  minimum cleanupPeriodDays (default 3650, ten years); a higher
 #                   value already in settings.json is kept
 set -euo pipefail
@@ -43,6 +54,14 @@ SKILL_NAMES=(n migrate check-seer-adversarial-nightly redo v j trace-vlc-bug pah
 DATA_DIR="${NOTES_DATA_DIR:-$HOME/mcp-notes-data}"
 PORT=7317
 HEALTH_URL="http://127.0.0.1:$PORT/health"
+PLAYER_URL="http://127.0.0.1:$PORT/api/movies/player"
+# EX_TEMPFAIL: the daemon is busy (something plays or is being started); try again later.
+BUSY_EXIT=75
+FORCE="${NOTES_INSTALL_FORCE:-0}"
+WAIT_IDLE=0
+CHECK_IDLE_ONLY=0
+WAIT_IDLE_SECONDS="${NOTES_INSTALL_WAIT_SECONDS:-21600}"
+WAIT_IDLE_EVERY=20
 CHAT_URL="http://127.0.0.1:$PORT/api/chat"
 MCP_URL="http://localhost:$PORT/mcp"
 DEFAULT_NODE="$HOME/tools/node-v22.23.1-linux-x64/bin/node"
@@ -71,8 +90,11 @@ parse_args() {
   for arg in "$@"; do
     case "$arg" in
       --skip-hooks) SKIP_HOOKS=1 ;;
+      --force) FORCE=1 ;;
+      --wait) WAIT_IDLE=1 ;;
+      --check-idle) CHECK_IDLE_ONLY=1 ;;
       -h|--help)
-        sed -n '2,32p' "${BASH_SOURCE[0]}"
+        sed -n '2,45p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
       *) die "unknown argument: $arg (try --help)" ;;
@@ -258,6 +280,69 @@ install_whisper() {
   fi
 }
 
+# What the running daemon is busy with, one line per thing, or nothing when it is idle. No daemon,
+# an older daemon without `busy`, or an answer that is not JSON all count as idle: there is no
+# play to protect that this script could know of.
+busy_reasons() {
+  local body
+  body="$(curl -fsS --max-time 5 "$PLAYER_URL" 2>/dev/null)" || return 0
+  printf '%s' "$body" | "$NODE_BIN" -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+      let p;
+      try { p = JSON.parse(raw); } catch { return; }
+      if (p === null || typeof p !== "object") return;
+      const out = [];
+      if (p.current) out.push(`VLC is open on ${p.current.name ?? "a file"} (${p.current.state ?? "playing"})`);
+      if (p.stream) out.push(`a stream is on screen from ${p.stream.provider ?? "a provider"} (${p.stream.state ?? "playing"}, ${p.stream.title_id ?? ""})`);
+      for (const s of Array.isArray(p.starting) ? p.starting : []) {
+        out.push(`a play of ${s.title ?? "a title"} is being started since ${s.since ?? "?"}: ${s.stage ?? "starting"}`);
+      }
+      if (out.length === 0 && p.busy === true) out.push("the daemon says it is busy");
+      process.stdout.write(out.join("\n"));
+    });' 2>/dev/null || true
+}
+
+# Exits BUSY_EXIT when the daemon is busy, unless --force; with --wait, waits for it to be idle.
+guard_idle() {
+  local reasons waited=0
+  reasons="$(busy_reasons)"
+  if [[ -z "$reasons" ]]; then
+    return 0
+  fi
+  if [[ "$FORCE" == "1" ]]; then
+    warn "restarting although the daemon is busy (--force):"
+    printf '%s\n' "$reasons" | sed 's/^/  /' >&2
+    return 0
+  fi
+  if [[ "$WAIT_IDLE" != "1" ]]; then
+    printf 'BUSY: notesd is not restarted, because:\n' >&2
+    printf '%s\n' "$reasons" | sed 's/^/  /' >&2
+    printf 'Nothing was changed. Run it again when the film is over, with --wait to wait for that, or with --force to restart anyway (exit %s).\n' "$BUSY_EXIT" >&2
+    exit "$BUSY_EXIT"
+  fi
+  log "waiting until notesd is idle (at most ${WAIT_IDLE_SECONDS}s):"
+  printf '%s\n' "$reasons" | sed 's/^/  /'
+  while [[ -n "$reasons" ]]; do
+    if (( waited >= WAIT_IDLE_SECONDS )); then
+      printf 'BUSY: notesd was still busy after %ss; nothing was restarted (exit %s).\n' "$waited" "$BUSY_EXIT" >&2
+      exit "$BUSY_EXIT"
+    fi
+    sleep "$WAIT_IDLE_EVERY"
+    waited=$(( waited + WAIT_IDLE_EVERY ))
+    reasons="$(busy_reasons)"
+  done
+  log "notesd is idle after ${waited}s"
+}
+
+# --check-idle: the one question, and nothing else.
+check_idle() {
+  FORCE=0
+  WAIT_IDLE=0
+  guard_idle
+  log "notesd is idle: nothing is playing or being started"
+}
+
 install_unit() {
   local rendered
   rendered="$(mktemp)"
@@ -282,6 +367,8 @@ install_unit() {
   rm -f "$rendered"
   systemctl --user daemon-reload
   systemctl --user enable "$UNIT_NAME" >/dev/null
+  # Asked again: the build above took minutes, and a play may have been asked for meanwhile.
+  guard_idle
   log "restarting $UNIT_NAME"
   systemctl --user restart "$UNIT_NAME"
 }
@@ -436,6 +523,12 @@ verify() {
 main() {
   parse_args "$@"
   resolve_node
+  if [[ "$CHECK_IDLE_ONLY" == "1" ]]; then
+    check_idle
+    exit 0
+  fi
+  # Before the build: it rewrites dist/ under the running daemon.
+  guard_idle
   resolve_claude
   check_preconditions
   check_claude_login
