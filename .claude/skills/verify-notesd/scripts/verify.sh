@@ -188,7 +188,7 @@ EOF
   if [ "$direct" = 1 ]; then
     mkdir -p "$dir/direct"
     setsid node "$root/tests/fixtures/direct-stream/upstream.mjs" --info "$dir/direct/upstream.json" \
-      --log "$dir/direct/upstream.jsonl" </dev/null >"$dir/direct/upstream.out" 2>&1 &
+      --log "$dir/direct/upstream.jsonl" --state "$dir/direct" </dev/null >"$dir/direct/upstream.out" 2>&1 &
     echo $! >"$dir/upstream.pid"
     for _ in $(seq 1 40); do [ -s "$dir/direct/upstream.json" ] && break; sleep 0.25; done
     [ -s "$dir/direct/upstream.json" ] || die "--direct-stream: the fixture stream host did not start (log: $dir/direct/upstream.out; verify.sh down $run)"

@@ -2,14 +2,16 @@
 // Stands in for claude/streaming/direct/cli.mjs in tests and in `verify.sh up --direct-stream`: it opens
 // no Chrome and reaches no provider. Its state is the folder named by DIRECT_STREAM_FAKE_DIR:
 //   upstream.json  {"origin": ...} of the fixture stream host (upstream.mjs) its answers point at
-//   mode           hls (default) | dash | no_source | no_chrome: the next resolve's answer
+//   mode           hls (default) | dash | dash_film | no_source | no_chrome: the next resolve's answer
+//                  (dash_film: the playable film under <dir>/film, at the address that carries the
+//                  token in <dir>/token; upstream.mjs refuses every older token)
 //   calls.jsonl    one line per call, appended: {"at", "args"}
 // `resolve` answers like the real CLI, reading --providers and skipping browser-only rows: with two or
 // more usable providers the first is a bot_check and the second resolves; with one, it resolves; with
 // none, no_source. `open` answers {"ok": true}.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { FIXTURE_ORIGIN, FIXTURE_REFERER, FIXTURE_USER_AGENT } from './upstream.mjs';
+import { currentFilmToken, FIXTURE_ORIGIN, FIXTURE_REFERER, FIXTURE_USER_AGENT } from './upstream.mjs';
 
 const dir = process.env.DIRECT_STREAM_FAKE_DIR;
 const args = process.argv.slice(2);
@@ -75,8 +77,9 @@ function main() {
     source: {
       provider: chosen,
       embed_url: `https://embed.fixture/${kind}/${id}`,
-      manifest_url: mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`,
-      manifest_kind: mode === 'dash' ? 'dash' : 'hls',
+      manifest_url:
+        mode === 'dash_film' ? `${origin}/film/t${currentFilmToken(dir)}/manifest.mpd` : mode === 'dash' ? `${origin}/dash/manifest.mpd` : `${origin}/hls/master.m3u8`,
+      manifest_kind: mode === 'dash' || mode === 'dash_film' ? 'dash' : 'hls',
       headers: { referer: FIXTURE_REFERER, origin: FIXTURE_ORIGIN, user_agent: FIXTURE_USER_AGENT },
       subtitles: [{ url: `${origin}/subs/en.srt`, lang: 'en', label: 'English', format: 'srt', source: 'request' }],
       best_height: 1080,

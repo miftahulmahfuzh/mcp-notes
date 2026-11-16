@@ -4,10 +4,17 @@
 // first; the second is named only inside the playlists and the manifest, so a test can tell a host
 // the resolve returned from one a playlist named.
 //
-//   node upstream.mjs --info FILE [--log FILE]
+//   node upstream.mjs --info FILE [--log FILE] [--state DIR]
 //     writes {"origin", "alt_origin"} to FILE once listening; one JSON line per request to the log.
-import { appendFileSync, writeFileSync } from 'node:fs';
+//
+// A film whose token expires (--state DIR, or startUpstream({ state })): /film/t<N>/<file> serves
+// DIR/film/<file> (a playable stream, e.g. make-dash-fixture.sh's) while N is the number in
+// DIR/token (1 when the file is missing). Any other N answers 403 "token expired", as a stream
+// host does once its signed address is too old. Raising DIR/token expires every address handed
+// out before; the fake resolver (fake-cli.mjs, mode dash_film) hands out the current one.
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const FIXTURE_REFERER = 'https://embed.fixture/';
@@ -72,6 +79,25 @@ function dashManifest(alt) {
   ].join('\n');
 }
 
+const FILM_TYPES = { '.mpd': 'application/dash+xml', '.m4s': 'video/iso.segment', '.mp4': 'video/mp4', '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t', '.vtt': 'text/vtt' };
+
+/** The token the film's addresses must carry now: the number in <state>/token, 1 without the file. */
+export function currentFilmToken(state) {
+  const file = path.join(state, 'token');
+  const n = existsSync(file) ? Number(readFileSync(file, 'utf8').trim()) : 1;
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+/** /film/t<N>/<file> from <state>/film: 403 for a token that is not the current one; null when the path is not the film's. */
+function filmAnswer(pathname, state) {
+  const m = /^\/film\/t(\d+)\/([A-Za-z0-9_.-]+)$/.exec(pathname);
+  if (m === null || state === null) return null;
+  if (Number(m[1]) !== currentFilmToken(state)) return [403, 'text/plain', 'token expired'];
+  const file = path.join(state, 'film', m[2]);
+  if (!existsSync(file)) return [404, 'text/plain', 'not found'];
+  return [200, FILM_TYPES[path.extname(file)] ?? 'application/octet-stream', readFileSync(file)];
+}
+
 /** [status, content type, body] for a path, or null (404). */
 function answer(pathname, alt) {
   if (pathname === '/hls/master.m3u8') return [200, 'application/vnd.apple.mpegurl', hlsMaster(alt)];
@@ -87,7 +113,7 @@ function answer(pathname, alt) {
 }
 
 /** Starts the fixture host on two free ports of 127.0.0.1. `requests` lists every request it got. */
-export async function startUpstream({ log = null } = {}) {
+export async function startUpstream({ log = null, state = null } = {}) {
   const requests = [];
   let alt = '';
   const handler = (req, res) => {
@@ -111,7 +137,7 @@ export async function startUpstream({ log = null } = {}) {
       res.end(body);
     };
     if (entry.referer !== FIXTURE_REFERER) return reply(403, 'text/plain', 'referer required');
-    const found = answer(url.pathname, alt);
+    const found = filmAnswer(url.pathname, state) ?? answer(url.pathname, alt);
     if (found === null) return reply(404, 'text/plain', 'not found');
     const [status, type, body] = found;
     const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
@@ -156,10 +182,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   };
   const info = arg('--info');
   if (!info) {
-    console.error('usage: upstream.mjs --info FILE [--log FILE]');
+    console.error('usage: upstream.mjs --info FILE [--log FILE] [--state DIR]');
     process.exit(2);
   }
-  const up = await startUpstream({ log: arg('--log') });
+  const up = await startUpstream({ log: arg('--log'), state: arg('--state') });
   writeFileSync(info, JSON.stringify({ origin: up.origin, alt_origin: up.altOrigin }));
   process.on('SIGTERM', () => {
     up.close().then(() => process.exit(0));

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { BLOCK_BEGIN, BLOCK_END, GUARD_EXPRESSION, PAUSE_EXPRESSION, STATE_EXPRESSION, auditFindings, classifyManifest, decide, parseRunArgs, renderBlock, replaceBlock, runCheck, segmentFormat } from '../../../claude/streaming/direct/playcheck.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { gateUrl, startGate, wrapperMain } from '../../../claude/streaming/direct/playgate.mjs';
+import { gatePathUrl, gateUrl, rewriteDashManifest, startGate, wrapperMain } from '../../../claude/streaming/direct/playgate.mjs';
 
 const DAEMON = 'http://127.0.0.1:7400';
 const MASTER = [
@@ -264,6 +264,39 @@ describe('playcheck: the daemon side', () => {
     expect(JSON.parse(out[0]!).source.manifest_url).toBe(gateUrl('http://127.0.0.1:47399', 't1-ab', 'https://cdn.example/m.m3u8'));
   });
 
+  it('sends a DASH source through the gate by path, so its segment templates still resolve', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'playcheck-'));
+    const out: string[] = [];
+    const dashSource = { ...resolved, source: { ...resolved.source, provider: 'VidLink', manifest_url: 'https://cdn.example/film/a/manifest.mpd?token=abc', manifest_kind: 'dash' } };
+    await wrapperMain({ cli: '/x/cli.mjs', dir, gate: 'http://127.0.0.1:47399' }, ['resolve', 'movie', '550'], {
+      spawnCli: async () => ({ code: 0, stdout: JSON.stringify(dashSource) }),
+      fetch: async () => new Response(JSON.stringify({ token: 't1-ab' }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      write: (text: string) => out.push(text),
+    });
+    const origin = Buffer.from('https://cdn.example').toString('base64url');
+    expect(JSON.parse(out[0]!).source.manifest_url).toBe(`http://127.0.0.1:47399/d/t1-ab/${origin}/film/a/manifest.mpd?token=abc`);
+    expect(gatePathUrl('http://g', 't', 'https://cdn.example/x/seg-$Number%05d$.m4s')).toBe(`http://g/d/t/${origin}/x/seg-$Number%05d$.m4s`);
+  });
+
+  it('rewrites only the absolute addresses of a DASH manifest', () => {
+    const mpd = [
+      '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+      '<Location>https://cdn.example/film/manifest.mpd</Location>',
+      '<BaseURL>https://media.example/v/</BaseURL><BaseURL>audio/</BaseURL>',
+      '<SegmentTemplate media="seg-$Number$.m4s" initialization="https://media.example/v/init.mp4"/>',
+      '</MPD>',
+    ].join('\n');
+    expect(rewriteDashManifest(mpd, (u: string) => `GATE(${u})`)).toBe(
+      [
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+        '<Location>GATE(https://cdn.example/film/manifest.mpd)</Location>',
+        '<BaseURL>GATE(https://media.example/v/)</BaseURL><BaseURL>audio/</BaseURL>',
+        '<SegmentTemplate media="seg-$Number$.m4s" initialization="GATE(https://media.example/v/init.mp4)"/>',
+        '</MPD>',
+      ].join('\n'),
+    );
+  });
+
   it('leaves a source alone when no gate answers', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'playcheck-'));
     const out: string[] = [];
@@ -314,6 +347,51 @@ describe('playcheck: the daemon side', () => {
       expect(again.status).toBe(200);
       expect(new Uint8Array(await again.arrayBuffer())[0]).toBe(0x47);
       expect(gate.stats().tokens.map((t: any) => [t.n, t.served, t.refused])).toEqual([[1, 1, 1], [2, 1, 0]]);
+    } finally {
+      await gate.close();
+      upstream.close();
+    }
+  });
+  it('the gate serves a DASH manifest and its template segments by path, and expires the first source', async () => {
+    const seen: any[] = [];
+    const upstream = http.createServer((req, res) => {
+      seen.push({ url: req.url, referer: req.headers.referer, range: req.headers.range });
+      if (req.url?.startsWith('/film/manifest.mpd')) {
+        res.writeHead(200, { 'content-type': 'application/dash+xml' });
+        res.end(`<MPD><BaseURL>http://${req.headers.host}/media/</BaseURL><SegmentTemplate media="seg-$Number$.m4s" initialization="init.mp4"/></MPD>`);
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'video/mp4' });
+      res.end(Buffer.from([1, 2, 3]));
+    });
+    await new Promise<void>((done) => upstream.listen(0, '127.0.0.1', () => done()));
+    const up = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
+    let clock = 0;
+    const gate = await startGate({ port: 0, expireAfterS: 45, now: () => clock });
+    try {
+      const register = async () => {
+        const res = await fetch(`${gate.url}/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ headers: { referer: 'https://vidlink.pro/' } }) });
+        return ((await res.json()) as { token: string }).token;
+      };
+      const t1 = await register();
+      const manifestUrl = gatePathUrl(gate.url, t1, `${up}/film/manifest.mpd?token=abc`);
+      const manifest = await fetch(manifestUrl);
+      expect(manifest.status).toBe(200);
+      const text = await manifest.text();
+      // The absolute BaseURL comes back through the gate; the templates are left for the player.
+      expect(text).toBe(`<MPD><BaseURL>${gatePathUrl(gate.url, t1, `${up}/media/`)}</BaseURL><SegmentTemplate media="seg-$Number$.m4s" initialization="init.mp4"/></MPD>`);
+      expect(seen[0]).toMatchObject({ url: '/film/manifest.mpd?token=abc', referer: 'https://vidlink.pro/' });
+      // As the player resolves them: a template under the BaseURL, with its own query and a Range.
+      const base = /<BaseURL>([^<]+)<\/BaseURL>/.exec(text)![1]!;
+      const segment = await fetch(new URL('seg-7.m4s?sig=1', base), { headers: { range: 'bytes=0-1' } });
+      expect(segment.status).toBe(200);
+      expect(seen[1]).toEqual({ url: '/media/seg-7.m4s?sig=1', referer: 'https://vidlink.pro/', range: 'bytes=0-1' });
+      clock = 45_000;
+      expect((await fetch(new URL('seg-8.m4s', base))).status).toBe(410);
+      expect((await fetch(manifestUrl)).status).toBe(410);
+      const t2 = await register();
+      expect((await fetch(gatePathUrl(gate.url, t2, `${up}/media/seg-8.m4s`))).status).toBe(200);
+      expect(gate.stats().tokens.map((t: any) => [t.n, t.served, t.refused])).toEqual([[1, 2, 2], [2, 1, 0]]);
     } finally {
       await gate.close();
       upstream.close();

@@ -4,6 +4,8 @@
 // purpose. Nothing leaves this machine and no Chrome on Windows is touched.
 //   STREAM_FIXTURE=<folder make-hls-fixture.sh printed> verify.sh ui RUN <this file>
 // Logs "J1 PASS", "API PASS", "J3 PASS", "J2 PASS", "MUTED PASS", "CDN PASS"; the first failed check throws and fails the run.
+// J3 is the expired token for HLS. The same for DASH is dash-expiry.steps.mjs beside this file: it
+// needs the daemon's own DASH rewriting, so it runs on `up --web --direct-stream` with nothing faked here.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 

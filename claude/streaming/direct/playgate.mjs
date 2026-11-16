@@ -2,9 +2,9 @@
 // - wrapperMain: the resolver CLI a playcheck daemon runs in place of direct/cli.mjs (through the
 //   generated <dir>/cli.mjs that NOTESD_DIRECT_STREAM_CLI names). `open` is recorded, never done,
 //   so the daemon's play never takes the screen or starts sound; `resolve` is pinned to the
-//   provider under test; while an expiry gate answers, an HLS source is sent through it.
+//   provider under test; while an expiry gate answers, an HLS or DASH source is sent through it.
 // - startGate: a loopback pass-through that fetches with the headers the resolve captured and
-//   rewrites playlists to come back through itself. It answers 410 for the first source it
+//   rewrites playlists and manifests to come back through itself. It answers 410 for the first source it
 //   registered once that source is older than the expiry it was started with, as a stream host
 //   does when its token runs out. Later sources never expire, so a refresh can continue.
 import { execFile } from 'node:child_process';
@@ -35,6 +35,24 @@ export function rewriteHlsPlaylist(text, base, through) {
     .join('\n');
 }
 
+/**
+ * The gate address of `url` for a DASH source: the stream host's origin is one path part and the
+ * rest of the address follows as it is, so a manifest's relative addresses and its segment
+ * templates ($Number$, $RepresentationID$) resolve against the gate without being rewritten.
+ */
+export function gatePathUrl(gate, token, url) {
+  const u = new URL(url);
+  return `${gate}/d/${token}/${Buffer.from(u.origin).toString('base64url')}${u.pathname}${u.search}`;
+}
+
+/** The absolute addresses of a DASH manifest (BaseURL and Location elements, template and source attributes) passed through `through`. */
+export function rewriteDashManifest(text, through) {
+  const abs = (u) => (/^https?:\/\//i.test(u.trim()) ? through(u.trim()) : u);
+  return text
+    .replace(/(<(?:\w+:)?(BaseURL|Location)\b[^>]*>)([^<]+)(<\/)/g, (_, open, _tag, u, close) => `${open}${abs(u)}${close}`)
+    .replace(/\b(media|initialization|sourceURL|index)="([^"]+)"/g, (_, name, u) => `${name}="${abs(u)}"`);
+}
+
 /** `args` without any `--only <name>`, then `--only <only>` when a provider is pinned. */
 export function withOnly(args, only) {
   const out = [];
@@ -49,9 +67,9 @@ export function withOnly(args, only) {
   return out;
 }
 
-/** The source with its HLS manifest sent through the gate, or unchanged when no gate takes it. */
+/** The source with its HLS or DASH manifest sent through the gate, or unchanged when no gate takes it. */
 export async function gateSource(gate, source, fetchImpl = fetch) {
-  if (!gate || !source || source.manifest_kind !== 'hls') return source;
+  if (!gate || !source || (source.manifest_kind !== 'hls' && source.manifest_kind !== 'dash')) return source;
   try {
     const res = await fetchImpl(`${gate}/register`, {
       method: 'POST',
@@ -61,7 +79,8 @@ export async function gateSource(gate, source, fetchImpl = fetch) {
     });
     if (res.status !== 200) return source;
     const { token } = await res.json();
-    return { ...source, manifest_url: gateUrl(gate, token, source.manifest_url) };
+    const through = source.manifest_kind === 'dash' ? gatePathUrl : gateUrl;
+    return { ...source, manifest_url: through(gate, token, source.manifest_url) };
   } catch {
     return source;
   }
@@ -163,8 +182,10 @@ export function startGate({ port = 0, expireAfterS, now = Date.now, fetchImpl = 
         return send(res, 200, { token });
       }
       if (url.pathname === '/stats') return send(res, 200, stats());
-      const match = /^\/g\/([^/]+)$/.exec(url.pathname);
-      const target = url.searchParams.get('u');
+      // /g/<token>?u=<address> (HLS), or /d/<token>/<origin, base64url>/<the address's own path and query> (DASH).
+      const dash = /^\/d\/([^/]+)\/([A-Za-z0-9_-]+)(\/.*)$/.exec(url.pathname);
+      const match = dash ?? /^\/g\/([^/]+)$/.exec(url.pathname);
+      const target = dash ? `${Buffer.from(dash[2], 'base64url').toString()}${dash[3]}${url.search}` : url.searchParams.get('u');
       const tok = match ? tokens.get(match[1]) : undefined;
       if (!match || !tok || !target) return send(res, 404, { error: 'unknown_token' });
       if (tok.n === 1 && tok.firstAt !== null && now() - tok.firstAt >= expireAfterS * 1000) {
@@ -193,6 +214,11 @@ export function startGate({ port = 0, expireAfterS, now = Date.now, fetchImpl = 
         }
         res.writeHead(upstream.status, out);
         return res.end(text);
+      }
+      if (dash && (/dash\+xml/i.test(type) || /\.mpd(\?|$)/.test(target))) {
+        const text = await upstream.text();
+        res.writeHead(upstream.status, { ...out, 'content-type': 'application/dash+xml' });
+        return res.end(text.includes('<MPD') ? rewriteDashManifest(text, (abs) => gatePathUrl(base, match[1], abs)) : text);
       }
       res.writeHead(upstream.status, out);
       if (!upstream.body) return res.end();
