@@ -110,6 +110,41 @@
 .st-cached[data-state='downloading'] {
   color: #e9c46a;
 }
+/* A torrent session: a magnet with the peers and the speed while it downloads, a drive once on disk. */
+.st-torrent {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 10px;
+  vertical-align: -3px;
+  font-size: 16px;
+  color: #e9c46a;
+}
+.st-torrent[data-state='ready'] {
+  color: #9cc5a1;
+}
+.st-torrent[data-state='failed'] {
+  color: #c0473a;
+}
+.st-torrent-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #c9c8c0;
+}
+.st-torrent-stat svg {
+  font-size: 14px;
+  color: #e9c46a;
+}
+/* A seek past what is on disk: the page waits for those pieces. */
+.st-fetching span {
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: #c9c8c0;
+}
 .st-btn:hover:not(:disabled),
 .st-btn[aria-expanded='true'] {
   background: rgba(236, 235, 228, 0.12);

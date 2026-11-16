@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, loadedGradient, reportLabel, reportText, switchErrorText } from './StreamApp';
+import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, formatSpeed, loadedGradient, reportLabel, reportText, sourceLine, switchErrorText, torrentLabel } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -357,5 +357,83 @@ describe('the subtitle delay line', () => {
     expect(delayText(250)).toBe('Subtitle delay +250 ms');
     expect(delayText(-50)).toBe('Subtitle delay −50 ms');
     expect(delayText(0)).toBe('Subtitle delay 0 ms');
+  });
+});
+
+describe('the player on a torrent (torrent-stream-source phase 4)', () => {
+  const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
+  const torrent = { info_hash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', state: 'downloading', seeds: 52 };
+  const deps = (status: Record<string, unknown>) => {
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl } = routeFetch({
+      'GET /api/stream/sessions/S1': () =>
+        jsonResponse(streamSessionJson({ provider: 'Torrent', manifest_kind: 'mp4', manifest_url: `/api/stream/torrent/${HASH}/f/0`, torrent })),
+      [`GET /api/stream/torrent/${HASH}`]: () => jsonResponse(status),
+      [`GET /api/stream/torrent/${HASH}/map`]: () => jsonResponse({ duration_s: 888, ranges: [[0, 60]] }),
+    });
+    return { made, deps: { fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} } };
+  };
+
+  it('marks a torrent beside the title with its peers and speed, and draws what is on disk on the timeline', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'duration', 'get').mockReturnValue(888);
+    const { made, deps: d } = deps({ state: 'downloading', peers: 12, down_kbps: 27200, progress: 0.37 });
+    const el = render(<StreamApp sessionId="S1" deps={d} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    act(() => {
+      el.querySelector('video')!.dispatchEvent(new Event('durationchange'));
+    });
+    await settle();
+    const mark = el.querySelector('.st-top .st-torrent');
+    expect(mark?.getAttribute('aria-label')).toBe('Playing from a torrent (Sintel.2010.1080p.WEB.x264): 12 peers, 3.4 MB/s, 37% on disk');
+    expect(mark?.getAttribute('title')).toBe(mark?.getAttribute('aria-label'));
+    expect([...el.querySelectorAll('.st-torrent-stat')].map((s) => s.textContent)).toEqual(['12', '3.4 MB/s']);
+    expect(mark?.querySelectorAll('svg')).toHaveLength(3);
+    expect(window.notesdStream?.torrent).toMatchObject({ infoHash: HASH, peers: 12, downKbps: 27200, state: 'downloading' });
+    expect((el.querySelector('.st-seek') as HTMLInputElement).style.getPropertyValue('--st-loaded-bar')).toBe(
+      'linear-gradient(to right, transparent 0%, var(--st-loaded) 0%, var(--st-loaded) 6.76%, transparent 6.76%)',
+    );
+    expect(button(el, 'Another torrent (S)')).not.toBeNull();
+    expect(button(el, 'Another source (S)')).toBeNull();
+    expect(el.querySelector('.st-cached')).toBeNull();
+  });
+
+  it('says it waits for a part a seek reached before it is on disk', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'duration', 'get').mockReturnValue(888);
+    let at = 0;
+    vi.spyOn(HTMLMediaElement.prototype, 'currentTime', 'get').mockImplementation(() => at);
+    const { made, deps: d } = deps({ state: 'downloading', peers: 2, down_kbps: 800, progress: 0.07 });
+    const el = render(<StreamApp sessionId="S1" deps={d} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    await settle();
+    const video = el.querySelector('video')!;
+    at = 400;
+    act(() => {
+      video.dispatchEvent(new Event('seeking'));
+    });
+    expect(el.querySelector('[role="status"][aria-label="Fetching this part from peers"]')?.textContent).toBe('Fetching this part from peers');
+    act(() => {
+      video.dispatchEvent(new Event('seeked'));
+    });
+    expect(el.querySelector('[aria-label="Fetching this part from peers"]')).toBeNull();
+  });
+
+  it('words the speed, the mark and the line about another source', () => {
+    expect(formatSpeed(27200)).toBe('3.4 MB/s');
+    expect(formatSpeed(800)).toBe('100 kB/s');
+    expect(formatSpeed(0)).toBe('0 kB/s');
+    const view = { infoHash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', seeds: 52, state: 'downloading' as const, peers: 1, downKbps: 800, progress: null, fetching: false };
+    expect(torrentLabel(view)).toBe('Playing from a torrent (Sintel.2010.1080p.WEB.x264): 1 peer, 100 kB/s');
+    expect(torrentLabel({ ...view, peers: null, downKbps: null })).toBe('Playing from a torrent (Sintel.2010.1080p.WEB.x264), finding peers');
+    expect(torrentLabel({ ...view, state: 'ready' })).toBe("Playing a torrent download from this machine's disk (Sintel.2010.1080p.WEB.x264)");
+    expect(torrentLabel({ ...view, state: 'failed' })).toBe('The torrent download stopped (Sintel.2010.1080p.WEB.x264)');
+    expect(sourceLine(true, null, true)).toBe('Looking for another torrent…');
+    expect(sourceLine(false, 'No other source', true)).toBe('No other torrent');
+    expect(sourceLine(false, 'Sintel.2010.720p.BluRay.x264', true)).toBe('Torrent: Sintel.2010.720p.BluRay.x264');
+    expect(sourceLine(true, null, false)).toBe('Looking for another source…');
+    expect(sourceLine(false, 'No other source', false)).toBe('No other source');
+    expect(sourceLine(false, 'VidFast', false)).toBe('Source: VidFast');
+    expect(sourceLine(false, null, false)).toBeNull();
   });
 });

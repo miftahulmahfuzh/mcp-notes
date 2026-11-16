@@ -442,10 +442,13 @@ and never stored (`src/directStream/delivery.ts`).
   log says `source: HyperLink -> VidNest Anime at 312 s`. The session never goes back to a
   provider it left, a token refresh included. With no other source the film stays as it is
   (`source kept: no_other_source`). At most two moves per session, one ask per two minutes;
-  a play from the cache and a `?muted=1` check never move.
+  a play from the cache, a torrent (it buffers because it is still filling, not failing; its stalls
+  are only logged) and a `?muted=1` check never move.
 - **By hand.** The shuffle button, or S, asks for another source at once and as often as wanted
   (a poor picture, a cinema recording): the same route, without the page's own limits. The line
   over the picture says `Looking for another source…`, then the new provider or `No other source`.
+  On a torrent session the button is `Another torrent (S)` and moves to the next torrent: the line
+  says `Looking for another torrent…`, then `Torrent: <release name>` or `No other torrent`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
   `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
 
@@ -577,6 +580,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   title's original language (the session's `audio.track`), never the manifest's default.
 - **From the cache.** A session on this machine's stream cache plays its local files, with a drive
   icon beside the title (see "Playing from the cache").
+- **From a torrent.** A torrent session plays the file from this machine's disk as it downloads,
+  with a magnet, the peers and the download speed beside the title (see "The player page on a
+  torrent").
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
@@ -641,8 +647,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 
 The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
 `recovering` or `error`; `kind`, `levels`, `level`, subtitle
-choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
-play, and its `start()`.
+choice, `refreshes`, `errors`, the last position sent and a short log; `cached`, `torrent` and
+`cachedRanges` for a play from this machine's disk), for scripts that check a play, and its
+`start()`.
 
 ### `/direct-stream`
 
@@ -1203,6 +1210,30 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
+### The player page on a torrent
+
+- **Beside the title** a magnet icon, the peers and the download speed (`7 peers`, `2.0 MB/s`), read
+  from `GET /api/stream/torrent/<info hash>` every 2 s while the file downloads. Its tooltip names
+  the release and how much of the file is on disk. Once the whole file is on disk the magnet becomes
+  a drive and the numbers go.
+- **The timeline's thick grey bar** is what the browser holds and what is on disk
+  (`GET /api/stream/torrent/<info hash>/map`, read with the status), put on the film's own clock,
+  so it grows as pieces arrive, paused or not.
+- **The page stops asking** once the download is complete or failed, and asks nothing while its tab
+  is hidden (it asks again as soon as the tab shows). These are reads: the position reports are those
+  of any play, and a paused page's `beat` still writes nothing.
+- **A seek past what is on disk waits.** A spinner and `Fetching this part from peers` show over the
+  picture until the pieces arrive (the file route fetches the pieces of the asked range first) and
+  the film plays on. The page's log says `waiting for the torrent at 200 s`.
+- **No automatic move.** A torrent that buffers is still filling, so the page never asks for another
+  source by itself; its `stalled at` lines still go to the stream evidence log. The shuffle button,
+  `Another torrent (S)`, moves to the next torrent, and the line over the picture names its release.
+- **No pause cache.** A pause asks for no stream cache: the download is already on this machine.
+- `window.notesdStream.torrent` holds `infoHash`, `name`, `index`, `seeds`, `state`, `peers`,
+  `downKbps` (kilobits per second), `progress` (0 to 1) and `fetching`; `cachedRanges` holds the
+  stretches on disk, in seconds. The log says `from torrent <hash start> <release> (<state>)` when
+  the page opens it and `torrent <hash start> on disk` when the download completes.
+
 ## Where the code is
 
 | Path | What |
@@ -1267,3 +1298,6 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
   provider it is `playcheck.mjs run --check expiry --provider <name>`, whose gate takes an HLS or
   a DASH source; that one brings the streaming Chrome to the front, muted, so it is run when you
   expect it.
+- The player page on a torrent: `torrent-player.steps.mjs` on `verify.sh up --web` (the session and
+  the torrent routes faked, a 300 s film made with ffmpeg) and `torrent-live.steps.mjs` on
+  `verify.sh up --web --direct-stream --torrent` (a real torrent session); see the feature map entry.
