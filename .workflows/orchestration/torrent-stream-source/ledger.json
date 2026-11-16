@@ -94,7 +94,7 @@
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The remux for files Chrome cannot play"
     },
@@ -119,22 +119,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "65c3c18",
       "depends_on": [
         4,
         6
       ],
       "difficulty": "HARD",
       "n": 7,
-      "note": null,
+      "note": "embedded English text track extracted by ffmpeg into a growing cue feed (CueFeeds, GET /api/stream/torrent/:hash/cues/:track), page follows it; decided: guide names the Whisper feed whisper-<file index> per the index's shared contract; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-233542-2055487/evidence | self-verified (owner's verifier-cost feedback; proof verified-first-pass); integrated at aac07b0. Coordinator decision: wave 3's first npm test had 1 failure in web/src/App.movies.test.tsx (trailer pop-up dialog not found in time), passed alone 24/24 and on the second full run 3667/3667; counted as the file's known load flake (phase 7 touches nothing outside web/src/stream), rung 6; log kept in logs/wave3-npm-test-run1.log",
       "package": "src/directStream/torrent/subtitles",
       "plan": ".workflows/plan/torrent-stream-source/phase-7.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T23:46:15+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A133",
       "title": "The embedded subtitle track and the growing cue feed"
     },
     {
@@ -152,7 +152,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Whisper, the last resort"
     },
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T23:30:53+07:00",
+  "updated": "2026-11-16T23:46:15+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
