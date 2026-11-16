@@ -1,0 +1,129 @@
+{
+  "branch": "feature/stream-cache-and-bug-report",
+  "coordinator": "orch-stream-cache-and-bug-report",
+  "coordinator_session_id": "c7f0485e-703e-49bd-b6b2-2306ff1dd3a0",
+  "created": "2026-11-16T14:03:15+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/directStream`, `src/http`, `web/src/stream",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Stream evidence log and snapshot"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 2,
+      "note": null,
+      "package": "web/src/stream",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Player recovers from network errors and buffers further"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "claude/skills/report-stream-bug",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "The `/report-stream-bug` skill"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1,
+        2
+      ],
+      "difficulty": "NORMAL",
+      "n": 4,
+      "note": null,
+      "package": "src/directStream`, `src/http`, `web/src/stream",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-4.md",
+      "reported_at": null,
+      "satisfies": [
+        "R4"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Report button and its tmux session"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 5,
+      "note": null,
+      "package": "src/directStream/cache`, `src/db",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-5.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Stream cache: table, downloader, routes, tool"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "difficulty": "HARD",
+      "n": 6,
+      "note": null,
+      "package": "src/directStream`, `web/src/stream`, `claude/skills",
+      "plan": ".workflows/plan/stream-cache-and-bug-report/phase-6.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": null,
+      "title": "Play from the cache"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "stream-cache-and-bug-report",
+  "updated": "2026-11-16T14:03:15+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
+}
