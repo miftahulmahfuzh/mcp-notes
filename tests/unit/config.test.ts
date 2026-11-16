@@ -53,7 +53,7 @@ describe('loadConfig', () => {
       dword: DEFAULT_DWORD_CONFIG,
       movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
       streaming: { enabled: true },
-      directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true, animeMapUrl: 'https://api.ani.zip' },
+      directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true, animeMapUrl: 'https://api.ani.zip', pictureModel: 'haiku', ffmpegBin: 'ffmpeg' },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
     expect(cfg.embeddings).toEqual({ apiKey: null })
@@ -456,7 +456,11 @@ describe('movies config', () => {
     const ds = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).directStream
     expect(DEFAULT_DIRECT_STREAM_CONFIG.enabled).toBe(false)
     expect(DEFAULT_DIRECT_STREAM_CLI.endsWith(path.join('claude', 'streaming', 'direct', 'cli.mjs'))).toBe(true)
-    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, prober: DEFAULT_STREAM_PROBER_CONFIG })
+    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, pictureModel: 'haiku', ffmpegBin: 'ffmpeg', prober: DEFAULT_STREAM_PROBER_CONFIG })
+    // The picture check: its model, or off; a bad name is refused.
+    expect(ds({ NOTESD_STREAM_PICTURE_MODEL: 'off' })?.pictureModel).toBeNull()
+    expect(ds({ NOTESD_STREAM_PICTURE_MODEL: 'sonnet', NOTESD_FFMPEG_BIN: '/opt/ffmpeg/bin/ffmpeg' })).toMatchObject({ pictureModel: 'sonnet', ffmpegBin: '/opt/ffmpeg/bin/ffmpeg' })
+    expect(() => ds({ NOTESD_STREAM_PICTURE_MODEL: 'not a model' })).toThrow(/NOTESD_STREAM_PICTURE_MODEL/)
     expect(ds({ NOTESD_ANIME_MAP_URL: 'off' })?.animeMapUrl).toBeNull()
     expect(ds({ NOTESD_ANIME_MAP_URL: ' http://127.0.0.1:9000/ ' })?.animeMapUrl).toBe('http://127.0.0.1:9000')
     expect(() => ds({ NOTESD_ANIME_MAP_URL: 'ani.zip' })).toThrow(/NOTESD_ANIME_MAP_URL/)

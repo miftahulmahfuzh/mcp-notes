@@ -353,10 +353,10 @@ from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have pa
 full screen in the streaming Chrome and starts the player with sound, as a click would.
 
 **A title that is not in English looks for a subtitle.** When the first stream that resolves has
-no English track, it is held and up to four more providers are asked: the first with an English
-track wins; otherwise the held stream plays, one with a single unnamed subtitle file before one
-with none (the player shows such a file by default). Its attempt reads `held: no English
-subtitle`. An English title, `--only` and a title whose language is not known take the first
+no subtitle to show, it is held and up to four more providers are asked: the first with an
+English track, or with a single unnamed subtitle file (the player shows such a file by default),
+wins; otherwise the held stream plays. Its attempt reads `held: no English subtitle`. Once a
+stream is held, a provider that was tried on this machine and never gave a stream is not asked. An English title, `--only` and a title whose language is not known take the first
 stream. When the provider with the English track has the shorter picture (a 960p cinema
 recording found after a 1080p stream), the taller stream plays and takes that provider's English
 subtitle file (`borrowed_from`); only a separate file can be lent, not a track inside a manifest.
@@ -448,6 +448,41 @@ and never stored (`src/directStream/delivery.ts`).
   over the picture says `Looking for another source…`, then the new provider or `No other source`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
   `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
+
+### The picture check
+
+A resolve knows a stream's size, subtitles and sometimes its language, and nothing of what the
+picture looks like. The Shadow's Edge resolved to a "960p" recording made in a cinema with a
+betting site's logo burned in, and then to a Hindi dub with another. So before a provider's stream
+of a title plays for the first time, the daemon looks at it (`src/directStream/picture.ts`):
+
+1. `ffmpeg` reads two frames, 4 and 15 minutes in, from the manifest with the `Referer`, `Origin`
+   and `User-Agent` the resolve captured (what the pass-through sends), scaled to 960 wide.
+2. One model call (`NOTESD_STREAM_PICTURE_MODEL`, default haiku, the owner's login) answers
+   `clean`, `watermark` (a logo, address or advert burned in by whoever copied it), `recording`
+   (filmed off a cinema screen) or `unsure`. Black bars, subtitles, a studio's logo and anything
+   that belongs to the scene are not faults.
+3. `watermark` and `recording` reject the stream: its provider is skipped and the title is
+   resolved again, up to three rejections in one play. When nothing passes, the first stream found
+   plays: a poor picture is better than none. The provider's attempt reads
+   `picture: watermark (1XBET logo top right)`.
+
+- The verdict is kept per title (per episode) and provider in
+  `<data dir>/movies/stream-pictures.json` on this machine, so a title is paid for once per
+  provider. A rejected one is looked at again after 14 days (a proper copy may have replaced it),
+  a clean one after 60. `unsure` is never kept, and nothing here fails a play: a model that does
+  not answer, or cannot tell, is `unsure`, which plays.
+- **A stream no frame can be read from** is passed over like a rejected one while another
+  provider answers, and is remembered for six hours in memory only: such a stream seldom plays either (HyperLink's segments sat
+  on a host this network could not reach). `ffmpeg` reads the manifest first; for an HLS stream
+  it cannot open, the daemon fetches the segment itself and hands ffmpeg the transport stream
+  inside it (some hosts wrap every segment in a small picture file).
+- It runs for a play, an episode change, a cache and a move to another source (the shuffle
+  button lands on the next proper copy, not the next recording). A token refresh looks at nothing
+  but keeps away from rejected providers. A provider the owner named (`provider`), a probe and a
+  resolve that only reads a subtitle are not looked at.
+- It adds 10 to 40 seconds to a provider's first play of a title, and the same again for each
+  stream it rejects. `NOTESD_STREAM_PICTURE_MODEL=off` turns it off.
 
 ### Sessions and the pass-through
 
@@ -1124,6 +1159,7 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
+| `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |

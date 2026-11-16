@@ -467,7 +467,7 @@ export interface StreamCacheOverrides {
  */
 export function buildStreamCache(
   config: Config,
-  directStream: { readonly host: string; resolve(ref: StreamRef, options: { resumeS?: number | null }): Promise<StreamSession> } | null,
+  directStream: { readonly host: string; resolve(ref: StreamRef, options: { resumeS?: number | null; vet?: boolean }): Promise<StreamSession> } | null,
   repo: DirectStreamRepo,
   overrides: StreamCacheOverrides = {},
 ): StreamCache | null {
@@ -477,7 +477,7 @@ export function buildStreamCache(
     host: directStream.host,
     root: config.directStream?.cacheDir ?? path.join(config.dataDir, STREAM_CACHE_SUBDIR),
     // resumeS 0: a cache's resolve skips the resume hook (it opens no player).
-    resolve: (ref) => directStream.resolve(ref, { resumeS: 0 }),
+    resolve: (ref) => directStream.resolve(ref, { resumeS: 0, vet: true }),
     ...overrides,
   });
 }

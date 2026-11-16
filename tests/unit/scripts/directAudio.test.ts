@@ -237,12 +237,31 @@ describe('resolving with the original language', () => {
       // A subtitle inside the manifest cannot be lent: the stream that has it plays (the first test above).
     });
 
-    it('asks at most four more providers, then plays the best it holds: a single unnamed track before none', async () => {
-      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p3: unnamedFile('c.example'), p4: unnamedFile('d.example'), p6: streamOf('f.example', SUBBED) });
-      expect(calls).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
-      expect(result.ok).toBe(true);
+    it('takes a stream with a single unnamed subtitle file as one with a subtitle', async () => {
+      // Found first: the search ends there. Found after a stream without: it plays (as tall), with its own file.
+      expect((await run({ p1: unnamedFile('a.example'), p2: streamOf('b.example', SUBBED) })).calls).toEqual(['p1']);
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p3: unnamedFile('c.example'), p4: streamOf('d.example', SUBBED) });
+      expect(calls).toEqual(['p1', 'p2', 'p3']);
       expect(result.source.provider).toBe('P3');
       expect(result.source.subtitles).toHaveLength(1);
+    });
+
+    it('asks at most four more providers, then plays the stream it holds', async () => {
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p4: streamOf('d.example', BARE), p7: streamOf('g.example', SUBBED) });
+      expect(calls).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
+      expect(result.source.provider).toBe('P1');
+    });
+
+    it('once it holds a stream, does not wait for a provider that never gave one on this machine', async () => {
+      const health = { P2: { consecutive_failures: 7 }, P3: { consecutive_failures: 2, last_success_at: '2026-11-10T10:00:00Z' }, P4: { consecutive_failures: 1 } };
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p5: streamOf('e.example', SUBBED) }, { health, providers: names(5) });
+      // P2 and P4 only ever failed; P5 was never tried and P3 has worked before, so those two may still be asked.
+      expect(calls).toEqual(['p1', 'p5']);
+      expect(result.source.provider).toBe('P5');
+      const none = await run({ p1: streamOf('a.example', BARE) }, { health, providers: names(5) });
+      expect([...none.calls].sort()).toEqual(['p1', 'p3', 'p5']);
+      // Before a stream is held they are still asked: they may be all there is.
+      expect((await run({ p4: streamOf('d.example', SUBBED) }, { health, providers: names(5) })).result.source.provider).toBe('P4');
     });
 
     it('keeps the only stream there is, with or without a subtitle', async () => {

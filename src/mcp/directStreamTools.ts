@@ -150,6 +150,7 @@ const FIND_DESCRIPTION =
 const PLAY_DESCRIPTION =
   'Stream one film, or one episode of a series, directly: the daemon finds a cloud source (providers with an English subtitle first), then opens its own player page full screen in the streaming Chrome window on the Windows side, ' +
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
+  'Before a provider\'s stream of a title plays for the first time the daemon looks at two frames of it and passes over a cinema recording or a copy with a burned-in advert for the next provider (its attempt says "picture: watermark" or "picture: recording"; "picture: clean" is the one that plays), which adds 10 to 40 seconds to a first play. When no provider had a proper copy, the first one found plays: say so. ' +
   'provider asks one named provider only (a name from direct_stream_sources) and passes over a cache: for "stream it from VidLink", or when the stream that started is a cinema recording or a dub and another provider is known to be clean. ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
   'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both); ' +

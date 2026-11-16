@@ -258,6 +258,8 @@ EOF
       NOTESD_DIRECT_STREAM=on
       # Never the real anime index (api.ani.zip): a Japanese fixture title would ask it.
       NOTESD_ANIME_MAP_URL=off
+      # Never a billed look at a fixture stream's picture (src/directStream/picture.ts).
+      NOTESD_STREAM_PICTURE_MODEL=off
       "NOTESD_DIRECT_STREAM_CLI=${NOTESD_DIRECT_STREAM_CLI:-$root/tests/fixtures/direct-stream/fake-cli.mjs}"
       "DIRECT_STREAM_FAKE_DIR=$dir/direct"
     )

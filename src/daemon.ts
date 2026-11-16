@@ -9,7 +9,7 @@ import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
-import { REPO_ROOT, type Config } from './config.js';
+import { DEFAULT_FFMPEG_BIN, REPO_ROOT, type Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -26,6 +26,7 @@ import { MOVIES_SUBDIR, buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
+import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudge, ffmpegFrameGrabber, firstFrameOf, hlsSegmentFrameGrabber } from './directStream/picture.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
@@ -186,8 +187,26 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           source: (id) => directStream?.evidenceSource(id) ?? null,
           onScreen: () => streamLive?.current()?.session_id ?? null,
         });
+  // Looks at a stream's picture before its first play of a title (a cinema recording, a burned-in
+  // advert): two frames through ffmpeg and one model call, kept per title and provider. Null with
+  // NOTESD_STREAM_PICTURE_MODEL=off, without direct streaming, or without a claude binary.
+  const pictureModel = movies === null || config.directStream?.enabled !== true ? null : (config.directStream.pictureModel ?? null);
+  const pictureJudge = pictureModel === null ? null : createPictureJudge({ claudeBin: config.chat.claudeBin, model: pictureModel, cwd: join(config.dataDir, 'movies-picture') });
+  const picture =
+    pictureJudge === null
+      ? null
+      : new PictureCheck({
+          verdicts: new PictureVerdicts(join(config.dataDir, MOVIES_SUBDIR, PICTURE_VERDICTS_FILE)),
+          // ffmpeg on the manifest; for an HLS stream it cannot open (segments wrapped in a picture file), the segment itself.
+          grab: firstFrameOf(
+            ffmpegFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+            hlsSegmentFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+          ),
+          judge: pictureJudge,
+        });
   const directStream = buildDirectStreamService(config, db, {
     movies,
+    picture,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
     evidence: streamEvidence,
     // Phase 6: a play reads this host's stream cache first. Phase 5 builds it after this service, so

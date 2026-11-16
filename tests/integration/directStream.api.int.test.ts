@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 import type { EvidenceInput, EvidenceRecord, EvidenceSink } from '../../src/directStream/evidence.js';
+import { PictureCheck, PictureVerdicts, type PictureVerdict } from '../../src/directStream/picture.js';
 import { DirectStreamRepo } from '../../src/directStream/repo.js';
 import { directStreamScriptRunner } from '../../src/directStream/runner.js';
 import { DirectStreamService, type DirectStreamHooks, type SessionInfo } from '../../src/directStream/service.js';
@@ -69,7 +70,7 @@ async function calls(): Promise<string[][]> {
   }
 }
 
-function service(host = 'host-a', hooks: DirectStreamHooks = {}, evidence: EvidenceSink | null = null): DirectStreamService {
+function service(host = 'host-a', hooks: DirectStreamHooks = {}, evidence: EvidenceSink | null = null, picture: PictureCheck | null = null): DirectStreamService {
   return new DirectStreamService({
     repo: new DirectStreamRepo(db),
     runner: directStreamScriptRunner({ cliPath: FAKE_CLI }),
@@ -86,6 +87,7 @@ function service(host = 'host-a', hooks: DirectStreamHooks = {}, evidence: Evide
     now: () => clock,
     log: () => undefined,
     evidence,
+    picture,
   });
 }
 
@@ -470,6 +472,90 @@ describe('POST /api/stream/play with a provider', () => {
     expect(session.provider).toBe('Alpha');
     expect((await calls())[0]).toEqual(expect.arrayContaining(['resolve', '--only', 'Alpha']));
     expect((await play(app, { kind: 'movie', tmdb_id: 550, provider: '' })).status).toBe(400);
+  });
+});
+
+describe('the picture check in a play', () => {
+  /** A picture check whose frames name their provider and whose judge answers per provider. */
+  async function looking(by: Record<string, PictureVerdict>) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'picture-int-'));
+    const looked: string[] = [];
+    const picture = new PictureCheck({
+      verdicts: new PictureVerdicts(path.join(dir, 'stream-pictures.json'), () => clock),
+      grab: async (source) => Buffer.from(source.provider),
+      judge: {
+        model: 'fake',
+        judge: async (frames) => {
+          const provider = frames[0]?.toString() ?? '';
+          looked.push(provider);
+          return { verdict: by[provider] ?? 'clean', reason: by[provider] === 'watermark' ? '1XBET logo' : '' };
+        },
+      },
+      log: () => undefined,
+    });
+    const svc = service('host-a', {}, null, picture);
+    await svc.syncSeed();
+    return { app: appFor(svc), looked, dir };
+  }
+  const resolves = async () => (await calls()).filter((a) => a[0] === 'resolve').map((a) => (a.includes('--skip') ? a[a.indexOf('--skip') + 1] : a.includes('--only') ? `only ${a[a.indexOf('--only') + 1]}` : ''));
+  const details = (attempts: ResolveAttempt[]) => attempts.filter((a) => a.outcome === 'resolved').map((a) => `${a.provider}: ${a.detail}`);
+
+  it('passes over a stream with a burned-in advert for the next provider, and pays for a provider once', async () => {
+    const { app, looked, dir } = await looking({ Bravo: 'watermark' });
+    const first = await played(app);
+    expect(first.session.provider).toBe('Alpha');
+    expect(details(first.attempts)).toEqual(['Bravo: picture: watermark (1XBET logo)', 'Alpha: picture: clean']);
+    expect(await resolves()).toEqual(['', 'Bravo']);
+    expect(looked).toEqual(['Bravo', 'Alpha']);
+    // The next play leaves Bravo out from the start and asks no model.
+    const second = await played(app);
+    expect(second.session.provider).toBe('Alpha');
+    expect((await resolves()).slice(2)).toEqual(['Bravo']);
+    expect(looked).toEqual(['Bravo', 'Alpha']);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('plays the first stream found when no provider has a proper copy, then that one again when only rejected ones are left', async () => {
+    const { app, looked, dir } = await looking({ Bravo: 'recording', Alpha: 'watermark' });
+    const first = await played(app);
+    expect(first.session.provider).toBe('Bravo');
+    expect(details(first.attempts)).toEqual(['Bravo: picture: recording', 'Alpha: picture: watermark (1XBET logo)']);
+    expect(looked).toEqual(['Bravo', 'Alpha']);
+    // Both are rejected now: the play still starts, with no model asked.
+    const second = await played(app);
+    expect(second.session.provider).toBe('Bravo');
+    expect(looked).toHaveLength(2);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('passes over a stream no frame can be read from while another provider answers, and never keeps that', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'picture-int-'));
+    const picture = new PictureCheck({
+      verdicts: new PictureVerdicts(path.join(dir, 'stream-pictures.json'), () => clock),
+      grab: async (source) => (source.provider === 'Bravo' ? null : Buffer.from(source.provider)),
+      judge: { model: 'fake', judge: async () => ({ verdict: 'clean', reason: '' }) },
+      log: () => undefined,
+    });
+    const svc = service('host-a', {}, null, picture);
+    await svc.syncSeed();
+    const first = await played(appFor(svc));
+    expect(first.session.provider).toBe('Alpha');
+    expect(details(first.attempts)).toEqual(['Bravo: picture: unsure (no frame could be read from the stream)', 'Alpha: picture: clean']);
+    // Remembered in memory for a while, never written down: the next play leaves Bravo out, a restart forgets it.
+    expect(await picture.badFor({ kind: 'movie', tmdbId: 550 })).toEqual(['Bravo']);
+    await expect(readFile(path.join(dir, 'stream-pictures.json'), 'utf8')).resolves.not.toContain('|bravo');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('does not look at a provider the owner named, and the shuffle button lands on a proper copy', async () => {
+    const { app, looked, dir } = await looking({ Bravo: 'recording' });
+    const named = await played(app, { kind: 'movie', tmdb_id: 550, provider: 'Bravo' });
+    expect(named.session.provider).toBe('Bravo');
+    expect(looked).toEqual([]);
+    const res = await app.request(`/api/stream/sessions/${named.session.session_id}/source`, { method: 'POST', headers: SAME_ORIGIN });
+    expect(await res.json()).toMatchObject({ switched: true, from: 'Bravo', provider: 'Alpha' });
+    expect(looked).toEqual(['Alpha']);
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

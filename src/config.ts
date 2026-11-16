@@ -193,6 +193,10 @@ export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streami
 /** The public index that maps a TMDB id to an anime's AniList id and episodes (src/directStream/anime.ts). */
 export const DEFAULT_ANIME_MAP_URL = 'https://api.ani.zip'
 
+/** The model that looks at a stream's picture before it plays (src/directStream/picture.ts). */
+export const DEFAULT_STREAM_PICTURE_MODEL = 'haiku'
+export const DEFAULT_FFMPEG_BIN = 'ffmpeg'
+
 /** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
 export interface DirectStreamConfig {
   /**
@@ -215,6 +219,15 @@ export interface DirectStreamConfig {
    * cache id (src/directStream/cache/). Null or unset: `<dataDir>/movies/stream-cache`.
    */
   cacheDir?: string | null
+  /**
+   * `NOTESD_STREAM_PICTURE_MODEL`, default haiku: the Agent SDK alias or model id that looks at two
+   * frames of a stream before its first play of a title and says whether it is a proper copy, a
+   * cinema recording or carries a burned-in advert (src/directStream/picture.ts). One call per title
+   * and provider, on the owner's login. `off`, null or unset: no stream is looked at.
+   */
+  pictureModel?: string | null
+  /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH: reads the frames the picture check looks at. */
+  ffmpegBin?: string
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
 }
@@ -695,6 +708,11 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
     animeMapUrl: parseAnimeMapUrl(env.NOTESD_ANIME_MAP_URL),
     cacheDir: parseOptionalAbsolutePath('NOTESD_STREAM_CACHE_DIR', env.NOTESD_STREAM_CACHE_DIR),
+    pictureModel:
+      env.NOTESD_STREAM_PICTURE_MODEL?.trim().toLowerCase() === 'off'
+        ? null
+        : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
+    ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     prober: parseStreamProber(env),
   }
 }

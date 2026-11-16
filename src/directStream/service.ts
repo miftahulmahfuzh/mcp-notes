@@ -8,6 +8,7 @@ import type { AnimeRef } from './anime.js';
 import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { deliveryByProvider, type Delivery } from './delivery.js';
+import { passesOver, type PictureCheck } from './picture.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
@@ -152,6 +153,8 @@ export interface DirectStreamServiceOptions {
   log?: (line: string) => void;
   /** This host's stream evidence log (evidence.ts): every pass-through answer and session change is recorded into it. Null or unset: nothing is recorded. */
   evidence?: EvidenceSink | null;
+  /** Looks at a stream's picture before a play or a cache keeps it (picture.ts). Null or unset: nothing is looked at. */
+  picture?: PictureCheck | null;
   /**
    * This host's stream cache (phase 5's StreamCache, AppDeps.streamCache), read at play time
    * because it is built after this service. Unset or null: no cache, every play resolves.
@@ -164,6 +167,9 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcome {
   return (STREAM_HEALTH_OUTCOMES as readonly string[]).includes(outcome);
 }
+
+/** How many streams of one title may be rejected for their picture in one play before the first one found plays anyway. */
+export const PICTURE_MAX_REJECTIONS = 3;
 
 /** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
 const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 } as const;
@@ -230,9 +236,14 @@ export class DirectStreamService {
    * has run before this returns or throws. Always resolves: a cache is `play`'s business, and
    * `subtitleText` needs a resolved source.
    */
-  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string } = {}): Promise<StreamSession> {
+  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
-    const out = await this.resolveSource(ref, options.deadlineS, [], options.only);
+    // `vet`: something is about to be watched or kept (a play, a cache), so the picture is looked at
+    // (picture.ts). Not for a provider the owner named, and not for a resolve that only reads a subtitle.
+    const out =
+      options.vet === true && options.only === undefined
+        ? await this.vetted(ref, [], (skip, later) => (later ? this.resolveQuietly(ref, skip) : this.resolveSource(ref, options.deadlineS, skip)))
+        : await this.resolveSource(ref, options.deadlineS, [], options.only);
     const resumeS = await this.startAt(ref, options.resumeS ?? null);
     const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
@@ -251,7 +262,7 @@ export class DirectStreamService {
     const session =
       only !== null
         ? await this.resolve(ref, { resumeS: options.resumeS ?? null, only })
-        : ((await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, { resumeS: options.resumeS ?? null })));
+        : ((await this.cachedSession(ref, options.resumeS ?? null)) ?? (await this.resolve(ref, { resumeS: options.resumeS ?? null, vet: true })));
     return this.openPage(session);
   }
 
@@ -378,7 +389,8 @@ export class DirectStreamService {
     }
     let out: ResolvedOutput;
     try {
-      out = await this.resolveSource(session.ref, undefined, session.avoid);
+      // A token refresh looks at nothing new, but keeps away from the providers whose picture was rejected.
+      out = await this.resolveSource(session.ref, undefined, [...session.avoid, ...(await this.rejectedPictures(session.ref, session.avoid))]);
     } catch (err) {
       safeRecord(this.evidence, sessionRecord(session, 'refresh_failed', err instanceof DirectStreamError ? `${err.code}: ${err.message}` : messageOf(err)));
       throw err;
@@ -441,18 +453,13 @@ export class DirectStreamService {
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
     if (session.cache !== null) return { switched: false, reason: 'cached', from: session.source.provider, session: await this.sessionInfo(session) };
     const from = session.source.provider;
-    const out = await this.runResolve(session.ref, { skip: [...session.avoid, from] });
-    if (!out.ok) {
-      this.log(`[notesd] direct stream: ${refLabel(session.ref)} stalls on ${from} and no other provider answered (${out.error})`);
+    let out: ResolvedOutput;
+    try {
+      // The next provider's picture is looked at too: the owner leaves a cinema recording for a proper copy, not for the next recording.
+      out = await this.vetted(session.ref, [...session.avoid, from], (skip) => this.resolveQuietly(session.ref, skip));
+    } catch (err) {
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} leaves ${from} and no other provider answered (${err instanceof DirectStreamError ? (err.reason ?? err.code) : messageOf(err)})`);
       return { switched: false, reason: 'no_other_source', from, session: await this.sessionInfo(session) };
-    }
-    const hook = this.opts.hooks?.recordResolve;
-    if (hook !== undefined) {
-      try {
-        await hook(session.ref, out);
-      } catch (err) {
-        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
-      }
     }
     session.avoid.push(from);
     this.sessions.replaceSource(session, out.source, out.attempts);
@@ -475,7 +482,7 @@ export class DirectStreamService {
       throw new DirectStreamError('no_episode', to === 'next' ? 'There is no next episode to stream.' : 'There is no previous episode.');
     }
     const ref: StreamRef = { kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode };
-    const next = (await this.cachedSession(ref, null)) ?? (await this.resolve(ref));
+    const next = (await this.cachedSession(ref, null)) ?? (await this.resolve(ref, { vet: true }));
     this.log(
       `[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) ${next.cache === null ? `from ${next.source.provider}` : `from the cache ${next.cache.id}`}`,
     );
@@ -664,6 +671,75 @@ export class DirectStreamService {
     }
   }
 
+  /** The providers whose picture of `ref` this machine rejected, without the ones `skip` already names. Empty without a picture check. */
+  private async rejectedPictures(ref: StreamRef, skip: readonly string[]): Promise<string[]> {
+    const picture = this.opts.picture ?? null;
+    if (picture === null) return [];
+    const left = new Set(skip.map((name) => name.toLowerCase()));
+    return (await picture.badFor(ref)).filter((name) => !left.has(name.toLowerCase()));
+  }
+
+  /**
+   * Resolves until a stream's picture passes (picture.ts). `one(skip, later)` runs one resolve
+   * without the providers in `skip` and throws when it finds none; `later` is true from the second
+   * round on. Providers rejected before are left out from the start. A rejected stream's provider
+   * is skipped and the next round asks again, at most PICTURE_MAX_REJECTIONS times. When nothing
+   * passes, the first stream found plays: a poor picture is better than none. Each round's
+   * attempts are kept, and the looked-at provider's says `picture: <verdict>`.
+   */
+  private async vetted(ref: StreamRef, skip: readonly string[], one: (skip: readonly string[], later: boolean) => Promise<ResolvedOutput>): Promise<ResolvedOutput> {
+    const picture = this.opts.picture ?? null;
+    if (picture === null) return one(skip, false);
+    const rejected = await this.rejectedPictures(ref, skip);
+    const titleHook = this.opts.hooks?.titleLabel;
+    const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
+    let first: ResolvedOutput | null = null;
+    let seen: ResolveAttempt[] = [];
+    for (let round = 0; round <= PICTURE_MAX_REJECTIONS; round++) {
+      let out: ResolvedOutput;
+      try {
+        out = await one([...skip, ...rejected], round > 0);
+      } catch (err) {
+        if (first !== null) break;
+        if (rejected.length === 0 || !(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+        // Only providers rejected on an earlier play are left: one of them plays.
+        this.log(`[notesd] direct stream: ${refLabel(ref)} has no provider left but ${rejected.join(', ')}, whose picture was rejected before`);
+        return one(skip, true);
+      }
+      const finding = await picture.check(ref, out.source, title);
+      const said = `picture: ${finding.verdict}${finding.reason === '' ? '' : ` (${finding.reason})`}`;
+      const attempts = out.attempts
+        .filter((a) => round === 0 || !a.outcome.startsWith('skipped_'))
+        .map((a) => (a.provider === out.source.provider && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
+      seen = [...seen, ...attempts];
+      out = { ...out, attempts: seen };
+      if (!passesOver(finding)) return out;
+      first ??= out;
+      rejected.push(out.source.provider);
+    }
+    if (first === null) throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: seen });
+    this.log(`[notesd] direct stream: no provider has a proper picture of ${refLabel(ref)}; playing ${first.source.provider}`);
+    return { ...first, attempts: seen };
+  }
+
+  /** One resolve for a title that is already playing or already has a stream in hand: the recordResolve hook runs only when a source was found, so a round that finds none does not mark the title stale. Throws `no_source` / `resolve_failed`. */
+  private async resolveQuietly(ref: StreamRef, skip: readonly string[]): Promise<ResolvedOutput> {
+    const out = await this.runResolve(ref, { skip });
+    if (!out.ok) {
+      if (out.error === 'no_source') throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: out.attempts });
+      throw new DirectStreamError('resolve_failed', out.detail === '' ? `The resolve could not run: ${out.error}.` : out.detail, { reason: out.error, attempts: out.attempts });
+    }
+    const hook = this.opts.hooks?.recordResolve;
+    if (hook !== undefined) {
+      try {
+        await hook(ref, out);
+      } catch (err) {
+        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
+      }
+    }
+    return out;
+  }
+
   /** runResolve, then the recordResolve hook, then a typed failure. */
   private async resolveSource(ref: StreamRef, deadlineS?: number, skip: readonly string[] = [], only?: string): Promise<ResolvedOutput> {
     const out = await this.runResolve(ref, { ...(deadlineS === undefined ? {} : { deadlineS }), skip, ...(only === undefined ? {} : { only }) });
@@ -793,6 +869,8 @@ export interface DirectStreamWiring {
   evidence?: EvidenceSink | null;
   /** Phase 6: this host's stream cache, read at play time (phase 5 builds it after this service). */
   caches?: () => PlayableCaches | null;
+  /** Looks at a stream's picture before it plays (picture.ts); null or unset: nothing is looked at. */
+  picture?: PictureCheck | null;
 }
 
 /** Test seams. */
@@ -827,6 +905,7 @@ export function buildDirectStreamService(
     hooks: wiring.hooks,
     evidence: wiring.evidence ?? null,
     caches: wiring.caches,
+    picture: wiring.picture ?? null,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,
