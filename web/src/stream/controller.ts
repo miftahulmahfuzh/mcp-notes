@@ -1,4 +1,12 @@
-import type { CreateEngine, EngineReady, PlayerEngine, Quality } from './engine';
+import {
+  BUFFER_AHEAD_S,
+  MUTED_BUFFER_AHEAD_S,
+  NETWORK_RETRY_LIMIT,
+  type CreateEngine,
+  type EngineReady,
+  type PlayerEngine,
+  type Quality,
+} from './engine';
 import {
   fetchSession,
   fetchText,
@@ -21,7 +29,8 @@ const LOG_MAX = 20;
   const EVENT_TEXT_MAX = 2_000;
   const EVENTS_PER_POST = 50;
 
-export type Stage = 'loading' | 'ready' | 'refreshing' | 'error';
+/** `recovering`: a network error; the engine loads again after a wait while the film stays on the page. */
+export type Stage = 'loading' | 'ready' | 'refreshing' | 'recovering' | 'error';
 
 export interface StreamState {
   stage: Stage;
@@ -140,7 +149,7 @@ export class StreamController {
   async playWithSound(): Promise<boolean> {
     if (this.mutedMode || this.disposed) return false;
     await this.settled;
-    if (this.disposed || this.state.stage !== 'ready') return false;
+    if (this.disposed || !this.onFilm()) return false;
     this.video.muted = false;
     try {
       await this.video.play();
@@ -209,7 +218,7 @@ export class StreamController {
       return;
     }
     if (this.disposed) return;
-    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+    if (this.onFilm() && !this.video.ended) this.report({ closed: true });
     this.generation += 1;
     this.engine?.destroy();
     this.engine = null;
@@ -377,6 +386,8 @@ export class StreamController {
         src: session.manifestUrl,
         startAt,
         audioTrack: session.audioTrack,
+        // R1.8: 120 s ahead; ?muted=1 keeps 30 s for the expiry checks.
+        bufferAheadS: this.mutedMode ? MUTED_BUFFER_AHEAD_S : BUFFER_AHEAD_S,
         handlers: {
           onReady: (ready) => {
             if (current()) this.onReady(ready);
@@ -387,6 +398,12 @@ export class StreamController {
           onSessionOver: (status) => {
             // notesd's own refusal (no X-Notesd-Upstream): the session is gone; a refresh cannot help.
             if (current() && this.state.stage !== 'error') this.fail(new SessionError('session_over', status));
+          },
+          onRecovering: (attempt, message) => {
+            if (current()) this.onRecovering(attempt, message);
+          },
+          onRecovered: () => {
+            if (current()) this.onRecovered();
           },
           onFatal: (message) => {
             if (current()) this.fail(new SessionError(message, 0));
@@ -409,6 +426,29 @@ export class StreamController {
     this.ready = ready;
     this.readySinceAttach = true;
     if (this.engine !== null) this.applyChoices();
+  }
+
+  /**
+   * R1.7: the engine lost the network and loads again after a wait. The film stays on the page
+   * (it plays on from its buffer meanwhile); the error is shown only when the engine gives up.
+   */
+  private onRecovering(attempt: number, message: string): void {
+    if (this.state.stage === 'error') return;
+    const at = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
+    this.set({ stage: 'recovering' });
+    this.note(`recovering ${attempt}/${NETWORK_RETRY_LIMIT} after ${message} at ${round1(at)} s`);
+  }
+
+  /** A load succeeded after a restart: back to the film (or to loading, when it never played since attach). */
+  private onRecovered(): void {
+    if (this.state.stage === 'error') return;
+    if (this.state.stage === 'recovering') this.set({ stage: this.readySinceAttach ? 'ready' : 'loading' });
+    this.note(`recovered at ${round1(this.video.currentTime)} s`);
+  }
+
+  /** The film is on the page: playing, paused, or riding out a network error on its buffer. */
+  private onFilm(): boolean {
+    return this.state.stage === 'ready' || this.state.stage === 'recovering';
   }
 
   private applyChoices(): void {
@@ -471,32 +511,33 @@ export class StreamController {
   }
 
   private readonly onTime = (): void => {
-    if (this.state.stage === 'ready' && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
+    if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 
   // Every 5 s while the page is open: the position while it plays, and a beat while it is paused, so
-  // the Movies page knows the film is still on screen (src/movies/streamLive.ts).
+  // the Movies page knows the film is still on screen (src/movies/streamLive.ts). A recovery is still
+  // the film on screen: it plays on from its buffer.
   private readonly onTick = (): void => {
-    if (this.state.stage !== 'ready' || this.video.ended) return;
+    if (!this.onFilm() || this.video.ended) return;
     this.report(this.video.paused ? { beat: true } : {});
   };
 
   private readonly onPause = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report();
+    if (this.onFilm() && !this.video.ended) this.report();
   };
 
   // Play after a pause: say so at once, not at the next tick.
   private readonly onPlay = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report();
+    if (this.onFilm() && !this.video.ended) this.report();
   };
 
   private readonly onEnded = (): void => {
-    if (this.state.stage === 'ready') this.report({ ended: true });
+    if (this.onFilm()) this.report({ ended: true });
   };
 
   // The tab or the window closes: the last position, and the film is no longer on screen.
   private readonly onClose = (): void => {
-    if (this.state.stage === 'ready' && !this.video.ended) this.report({ closed: true });
+    if (this.onFilm() && !this.video.ended) this.report({ closed: true });
   };
 
   private report(extra: { ended?: boolean; beat?: boolean; closed?: boolean } = {}): void {

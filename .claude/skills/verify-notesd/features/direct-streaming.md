@@ -30,7 +30,11 @@
 - The player page `/stream/<session id>`: plays HLS (hls.js), DASH (dash.js) or a plain file, the
   English subtitle shown by default (inside the manifest first, then a separate `.vtt`/`.srt`), a
   quality menu, start at `resume_s`, positions every 5 s and on pause/end, refresh-and-continue on
-  401/403/410. Logic proven by `npx vitest run web/src/stream tests/unit/static.test.ts`.
+  401/403/410. After a fatal network error the page stays on the film (`stage: "recovering"`, a
+  spinner, positions still reported) and loads again from where it is after 2, 4, 8, 16 and 16 s;
+  the error shows only when the fifth restart fails too. HLS keeps 120 s loaded ahead, 30 s under
+  `?muted=1`. Logic proven by `npx vitest run web/src/stream tests/unit/static.test.ts`; in a real
+  browser by `player.steps.mjs` (BUFFER) and `recovery.steps.mjs` (below).
 - Stream plays and verified sources (phase 5). The player page's position reports
   (`POST /api/stream/sessions/:id/position`, same-origin) land on one `movie_plays` row per player
   session (source `stream`, provider, no file); the title's and episode's state, history and the
@@ -91,8 +95,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-hls-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture")`,
   `$V up --web`, `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/player.steps.mjs`.
   The transcript has `J1 PASS` (English over a French default, quality menu, resume), `API PASS`
-  (`window.notesdStream` and the title), `J3 PASS` (403 with `X-Notesd-Upstream` mid-film, one
-  refresh, continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
+  (`window.notesdStream` and the title), `BUFFER PASS` (60 s or more loaded ahead, 40 s or less
+  under `?muted=1`), `J3 PASS` (on `?muted=1`: 403 with `X-Notesd-Upstream` mid-film, one refresh,
+  continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
+- Network recovery, same fixture and `up --web`:
+  `STREAM_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/recovery.steps.mjs`
+  (about two minutes). The transcript has `RECOVER PASS` (segment loads aborted at 80 s: stage
+  `recovering` with the spinner, positions still posted, plays on from 80 s once they answer) and
+  `SPENT PASS` (every load aborted: five restarts over 40 s or more, then
+  `Playback stopped (networkError manifestLoadError).`), with a screenshot of each.
 - A DASH token that expires, end to end (the real page and dash.js, the daemon's pass-through and
   DASH rewriting, the fake resolver, the fixture stream host; Chromium, nothing of the owner's):
   `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-dash-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-dash")`,

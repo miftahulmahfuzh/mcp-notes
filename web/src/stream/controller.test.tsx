@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_REFRESHES, POSITION_INTERVAL_MS, StreamController } from './controller';
-import { audioTrackIndex, classifyRefusal } from './engine';
+import { audioTrackIndex, BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
 
@@ -557,5 +557,79 @@ describe('the page log reaches the daemon (R2.2)', () => {
     t.made[0].req.handlers.onFatal('networkError fragLoadError');
     await vi.waitFor(() => expect(t.posts(`${S1}/events`)).toHaveLength(1));
     expect(t.controller.getState()).toMatchObject({ stage: 'error', errors: ['networkError fragLoadError'] });
+  });
+});
+
+describe('StreamController: a network error (R1.7) and the buffer (R1.8)', () => {
+  it('asks the engine for 120 s ahead, and 30 s under ?muted=1', async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    await t.controller.start();
+    expect(t.made[0]?.req.bufferAheadS).toBe(BUFFER_AHEAD_S);
+    const m = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) }, { muted: true });
+    await m.controller.start();
+    expect(m.made[0]?.req.bufferAheadS).toBe(MUTED_BUFFER_AHEAD_S);
+  });
+
+  it('stays on the film while the engine retries, reports positions meanwhile, and plays on when it recovers', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    const engine = t.made[0];
+    engine.req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 300, duration: 1440, paused: false });
+    t.fire('timeupdate');
+
+    engine.req.handlers.onRecovering(1, 'networkError fragLoadError');
+    expect(t.controller.getState()).toMatchObject({ stage: 'recovering', error: null, errors: [] });
+    expect(t.controller.getState().log.at(-1)).toBe(`recovering 1/${NETWORK_RETRY_LIMIT} after networkError fragLoadError at 300 s`);
+    expect(engine.destroy).not.toHaveBeenCalled();
+    expect(t.made).toHaveLength(1);
+
+    // The film plays on from its buffer: its position still reaches the daemon.
+    t.media.currentTime = 305;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    expect(t.posts().at(-1)).toEqual({ position_s: 305, duration_s: 1440, ended: false, paused: false });
+
+    engine.req.handlers.onRecovering(2, 'networkError fragLoadError');
+    engine.req.handlers.onRecovered();
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null, errors: [] });
+    expect(t.controller.getState().log.at(-1)).toBe('recovered at 305 s');
+  });
+
+  it("stops with the engine's message once the retries are spent, and a late word changes nothing", async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    const { handlers } = t.made[0].req;
+    handlers.onReady({ qualities: [], subtitles: [] });
+    for (let attempt = 1; attempt <= NETWORK_RETRY_LIMIT; attempt++) handlers.onRecovering(attempt, 'networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('recovering');
+    handlers.onFatal('networkError fragLoadError');
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'] });
+    handlers.onRecovering(1, 'networkError fragLoadError');
+    handlers.onRecovered();
+    expect(t.controller.getState().stage).toBe('error');
+  });
+
+  it('a refused token while it recovers still refreshes, and the replaced engine is not heard', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/refresh`]: () => jsonResponse(streamSessionJson()),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    t.media.currentTime = 200;
+    t.fire('timeupdate');
+    t.made[0].req.handlers.onRecovering(1, 'networkError fragLoadError');
+    t.made[0].req.handlers.onAuthError(403);
+    expect(t.controller.getState().stage).toBe('refreshing');
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.made[1].req.startAt).toBe(200);
+    t.made[0].req.handlers.onRecovering(2, 'networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('refreshing');
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', refreshes: 1 });
   });
 });

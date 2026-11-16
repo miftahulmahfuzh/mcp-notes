@@ -219,10 +219,12 @@ function Menu({ label, items }: { label: string; items: MenuItem[] }) {
   );
 }
 
+const BUSY_LABELS = { loading: 'Loading', refreshing: 'Reconnecting', recovering: 'Reconnecting after a network error' } as const;
+
 function StageOverlay({ state }: { state: StreamState }) {
-  if (state.stage === 'loading' || state.stage === 'refreshing') {
+  if (state.stage === 'loading' || state.stage === 'refreshing' || state.stage === 'recovering') {
     return (
-      <div className="st-center" role="status" aria-label={state.stage === 'refreshing' ? 'Reconnecting' : 'Loading'}>
+      <div className="st-center" role="status" aria-label={BUSY_LABELS[state.stage]}>
         <CircleNotch className="st-spin" />
       </div>
     );
@@ -336,7 +338,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     action();
     setMenu(null);
   };
-  const hidden = idle && !view.paused && menu === null && state.stage === 'ready' && state.switching === null;
+  const hidden = idle && !view.paused && menu === null && (state.stage === 'ready' || state.stage === 'recovering') && state.switching === null;
   // A series' session names a neighbour on at least one side; a film's never does.
   const series = state.prevEpisode !== null || state.nextEpisode !== null;
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;

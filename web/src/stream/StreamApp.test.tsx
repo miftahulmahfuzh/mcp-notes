@@ -164,6 +164,23 @@ describe('StreamApp', () => {
     expect(made).toHaveLength(0);
   });
 
+  it('shows a reconnecting spinner on the film while the player retries, and the error once it gives up (R1.7)', async () => {
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl } = routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    await settle();
+    act(() => made[0].req.handlers.onRecovering(1, 'networkError fragLoadError'));
+    expect(el.querySelector('.st-stage')?.getAttribute('data-stage')).toBe('recovering');
+    expect(el.querySelector('[role="status"][aria-label="Reconnecting after a network error"] svg')).not.toBeNull();
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    expect(el.querySelector('video')).not.toBeNull();
+    expect(window.notesdStream?.stage).toBe('recovering');
+    act(() => made[0].req.handlers.onFatal('networkError fragLoadError'));
+    expect(el.querySelector('[role="alert"]')?.textContent).toBe('Playback stopped (networkError fragLoadError).');
+  });
+
   it('says so when the address has no session', () => {
     const el = render(<StreamApp sessionId={null} />);
     expect(el.querySelector('[role="alert"]')?.textContent).toContain('no stream in this address');

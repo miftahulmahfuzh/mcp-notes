@@ -31,6 +31,16 @@ export interface EngineHandlers {
    * `forbidden_host`). The session is over; a refresh cannot help.
    */
   onSessionOver(status: number): void;
+  /**
+   * A fatal network error that is not a refusal (hls.js `fragLoadError`, `fragLoadTimeOut`,
+   * `levelLoadError`, `manifestLoadError` and kin; a dash.js download error; a plain file's
+   * network error). The engine loads again from where the film is after
+   * `networkRetryDelayMs(attempt)`; the film stays on the page. `attempt` runs 1..NETWORK_RETRY_LIMIT,
+   * and when it is spent the next failure comes as onFatal.
+   */
+  onRecovering(attempt: number, message: string): void;
+  /** A load succeeded after a restart: the play goes on and the attempts start again. */
+  onRecovered(): void;
   /** Playback cannot go on for another reason. */
   onFatal(message: string): void;
 }
@@ -51,6 +61,8 @@ export interface EngineRequest {
   startAt: number;
   /** The audio track to play (the title's original language) when the manifest names several; null: the manifest's default. */
   audioTrack?: AudioTrackRef | null;
+  /** Seconds of the film to keep loaded ahead of the picture (HLS); BUFFER_AHEAD_S when left out. */
+  bufferAheadS?: number;
   handlers: EngineHandlers;
 }
 
@@ -92,4 +104,67 @@ export function reportRefusal(handlers: EngineHandlers, status: unknown, upstrea
   if (kind === 'expired') handlers.onAuthError(status as number);
   else if (kind === 'over') handlers.onSessionOver(status as number);
   return kind !== null;
+}
+
+/** How far ahead of the picture a play keeps the film loaded (R1.8); hls.js held 30 s before. */
+export const BUFFER_AHEAD_S = 120;
+
+/**
+ * The same under `?muted=1`: the expiry checks (playcheck.mjs, player.steps.mjs J3) need segments
+ * that are not loaded yet when the token expires.
+ */
+export const MUTED_BUFFER_AHEAD_S = 30;
+
+/** Restarts after a fatal network error before the play stops with the error (R1.7). */
+export const NETWORK_RETRY_LIMIT = 5;
+
+/** The wait before restart `attempt` (1-based): 2, 4, 8, 16, 16 s. The libraries' own per-request retries come first. */
+export function networkRetryDelayMs(attempt: number): number {
+  return Math.min(2_000 * 2 ** (attempt - 1), 16_000);
+}
+
+export interface NetworkRecovery {
+  /** A fatal network error: the next restart after its wait, or `message` to onFatal once the restarts are spent. */
+  fail(message: string): void;
+  /** A load succeeded: after a restart, the recovery is over and the count starts again. */
+  loaded(): void;
+  /** No restart from now on (the engine is destroyed, or its session refused). */
+  stop(): void;
+}
+
+/**
+ * The restart loop all three engines share. `restart` loads again from where the film is; it runs
+ * only after the wait and never after stop(). A failure while a restart is waiting is the same
+ * failure (several loads fail at once) and is not counted twice.
+ */
+export function networkRecovery(handlers: EngineHandlers, restart: () => void): NetworkRecovery {
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+  return {
+    fail(message) {
+      if (stopped || timer !== null) return;
+      if (attempt >= NETWORK_RETRY_LIMIT) {
+        stopped = true;
+        handlers.onFatal(message);
+        return;
+      }
+      attempt += 1;
+      handlers.onRecovering(attempt, message);
+      timer = setTimeout(() => {
+        timer = null;
+        if (!stopped) restart();
+      }, networkRetryDelayMs(attempt));
+    },
+    loaded() {
+      if (stopped || timer !== null || attempt === 0) return;
+      attempt = 0;
+      handlers.onRecovered();
+    },
+    stop() {
+      stopped = true;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    },
+  };
 }
