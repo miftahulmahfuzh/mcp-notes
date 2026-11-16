@@ -379,6 +379,20 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
   after about 40 s, longer than the 20 s a play waits for a torrent's file list.
 
+## Torrent fallback sites: 1337x and ext.to (torrent phase 9)
+- Torrent fallback sites: when the JSON torrent indexes answer nothing usable, 1337x and ext.to are
+  asked through the streaming Chrome (`claude/streaming/torrent/cli.mjs`, a background tab), side by
+  side within about 40 s. Their rows pass the same release filter and ranking, and each site is an
+  `Index: 1337x` / `Index: ext` attempt (`bot_check`, `error` naming `no_chrome`, `empty`, or
+  candidates). Not asked at all when an index had a usable candidate. Under `up --direct-stream` the
+  script is a fake (`<run>/torrent-sites/mode`: `rows`, `empty`, `bot_check`, `no_chrome`; calls in
+  `evidence/torrent-sites-calls.jsonl`). Proven by
+  `npx vitest run tests/unit/scripts/torrentSites.test.ts tests/unit/directStream/torrent/findSites.test.ts tests/unit/config.torrentSites.test.ts`,
+  by a `provider: "torrent"` play with the fake index set to `empty` and the fake sites set to `rows`
+  (the session's torrent comes from `1337x`) and to `bot_check` (both sites `bot_check`, no
+  `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
+  seeds and 40-hex `info_hash`).
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

@@ -164,6 +164,9 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_APIBAY_URL` | the finder's own (apibay) | Address of the apibay index; `off` never asks it. |
 | `NOTESD_TORRENT_EZTV_URL` | the finder's own (EZTV) | Address of the EZTV index (series only); `off` never asks it. |
 | `NOTESD_TORRENT_YTS_URL` | the finder's own (YTS) | Address of the YTS index (films only); `off` never asks it. |
+| `NOTESD_TORRENT_1337X_ORIGIN` | `https://1337x.la` | The address of 1337x, which the torrent finder asks through the streaming Chrome when the JSON indexes have nothing usable. Scheme and host only. `off`: 1337x is never asked. See [streaming.md](../streaming.md). |
+| `NOTESD_TORRENT_EXT_ORIGIN` | `https://ext.to` | The address of ext.to, asked the same way and at the same time. Scheme and host only. `off`: ext.to is never asked. |
+| `NOTESD_TORRENT_SITES_CLI` | `claude/streaming/torrent/cli.mjs` in this checkout | Absolute path of the torrent sites script the daemon runs as `node <path>`. `verify.sh up --direct-stream` points it at a fake; a relative path is rejected. |
 | `NOTESD_FFMPEG_BIN` | `ffmpeg` | The `ffmpeg` the torrent source runs: phase 5's remux, phase 7's subtitle extraction and phase 8's audio cuts. A bare name is looked up on `PATH`. (`ffprobe` is the existing `NOTESD_FFPROBE_BIN`.) |
 
 ## Install script and hooks

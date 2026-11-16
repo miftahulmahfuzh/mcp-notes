@@ -1203,6 +1203,36 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
+### When the indexes have nothing: 1337x and ext.to
+
+When every JSON index answers nothing usable for a title, the finder asks two torrent sites, 1337x
+and ext.to, side by side. Their releases go through the same filter and ranking as the indexes'.
+Each site is one more attempt in the play's answer (`Index: 1337x`, `Index: ext`), and a site that
+fails never fails the play.
+
+- **Only through the streaming Chrome**, in a tab out of sight. `claude/streaming/torrent/tab.ps1`
+  opens the site's tab in the background, or starts that Chrome minimized on the site, so nothing
+  comes to the front and a film on screen stays where it is. No other client talks to these sites.
+- **1337x** is asked with the title's words. Its search lists a row when any one word matches, so
+  small words such as "the" are left out. It searches Movies or TV and reads the first two result
+  pages. A row counts only when its release name is the title, by the same exact-title rule as the
+  streaming sites, and names the asked year if it names a year at all.
+- **ext.to** is asked by the title's IMDb id, most seeds first, with `S02E03` for an episode.
+  Cloudflare answers a script's request with a check, so the tab goes to the search page itself, as
+  a person would.
+- **Magnet links** come from the release pages of the five best-seeded rows that are seeded and
+  are not a dub, a cinema copy or 3D. On 1337x the page carries the link. On ext.to the page
+  gives it through its own "Copy magnet link" request.
+- **About 40 seconds** for both. A bot check is the attempt's outcome `bot_check` and is never
+  clicked through. A machine without the Windows Chrome answers `error` with `no_chrome`.
+- `NOTESD_TORRENT_1337X_ORIGIN` and `NOTESD_TORRENT_EXT_ORIGIN` move a site to another address, or
+  leave it out with `off`.
+
+To see what a site lists, by hand:
+
+    node claude/streaming/torrent/cli.mjs 1337x sintel 2010
+    node claude/streaming/torrent/cli.mjs ext sintel 2010 --imdb tt1727587
+
 ## Where the code is
 
 | Path | What |
@@ -1215,6 +1245,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
+| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs`, one module per site, `tab.ps1` (a tab in the background); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |

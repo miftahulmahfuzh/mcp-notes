@@ -289,6 +289,32 @@ export function parseTorrentFinder(env: Record<string, string | undefined>): Tor
   }
 }
 
+/** `claude/streaming/torrent/cli.mjs` in this checkout: the torrent sites script the daemon runs (torrent phase 9). */
+export const DEFAULT_TORRENT_SITES_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'cli.mjs')
+
+/** Where 1337x and ext.to are by default. claude/streaming/torrent/sites/*.mjs default to the same addresses (a test compares them). */
+export const TORRENT_SITE_ORIGIN_DEFAULTS = { '1337x': 'https://1337x.la', ext: 'https://ext.to' } as const
+
+/**
+ * The torrent sites the finder falls back on when the JSON indexes give nothing usable, asked through
+ * the streaming Chrome (src/directStream/torrent/find-sites.ts).
+ */
+export interface TorrentSitesConfig {
+  /**
+   * Each site's address, scheme and host only: `NOTESD_TORRENT_1337X_ORIGIN` (default
+   * https://1337x.la) and `NOTESD_TORRENT_EXT_ORIGIN` (default https://ext.to). Null: `off`, the
+   * site is never asked.
+   */
+  origins: { '1337x': string | null; ext: string | null }
+  /** `NOTESD_TORRENT_SITES_CLI`, absolute, default DEFAULT_TORRENT_SITES_CLI: the script run as `node <cli>`. */
+  cli: string
+}
+
+export const DEFAULT_TORRENT_SITES_CONFIG: TorrentSitesConfig = {
+  origins: { ...TORRENT_SITE_ORIGIN_DEFAULTS },
+  cli: DEFAULT_TORRENT_SITES_CLI,
+}
+
 /** Torrents as a direct-streaming source (src/directStream/torrent/*). They also need direct streaming on. */
 export interface TorrentConfig {
   /**
@@ -310,6 +336,8 @@ export interface TorrentConfig {
   finder?: TorrentFinderConfig
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
   ffmpegBin: string
+  /** 1337x and ext.to, the finder's fallback (phase 9). Unset: DEFAULT_TORRENT_SITES_CONFIG. */
+  sites?: TorrentSitesConfig
 }
 
 /**
@@ -326,6 +354,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   peers: [],
   finder: DEFAULT_TORRENT_FINDER_CONFIG,
   ffmpegBin: DEFAULT_FFMPEG_BIN,
+  sites: DEFAULT_TORRENT_SITES_CONFIG,
 }
 
 /** Seer Adversarial reviewer (src/adversary/*). */
@@ -852,7 +881,35 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     finder: parseTorrentFinder(env),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
+    sites: parseTorrentSites(env),
   }
+}
+
+export function parseTorrentSites(env: Record<string, string | undefined>): TorrentSitesConfig {
+  return {
+    origins: {
+      '1337x': parseTorrentSiteOrigin('NOTESD_TORRENT_1337X_ORIGIN', env.NOTESD_TORRENT_1337X_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS['1337x']),
+      ext: parseTorrentSiteOrigin('NOTESD_TORRENT_EXT_ORIGIN', env.NOTESD_TORRENT_EXT_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS.ext),
+    },
+    cli: parseOptionalAbsolutePath('NOTESD_TORRENT_SITES_CLI', env.NOTESD_TORRENT_SITES_CLI) ?? DEFAULT_TORRENT_SITES_CLI,
+  }
+}
+
+/** A torrent site's address: unset or blank is the default, `off` is null, anything else must be scheme and host only. */
+function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback: string): string | null {
+  const value = (raw ?? '').trim()
+  if (value === '') return fallback
+  if (value.toLowerCase() === 'off') return null
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ConfigError(`${name} must be a site address such as https://1337x.la, or off (got "${raw}")`)
+  }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== value.replace(/\/+$/, '')) {
+    throw new ConfigError(`${name} must be a site address such as https://1337x.la (scheme and host, no path), or off (got "${raw}")`)
+  }
+  return url.origin
 }
 
 /**

@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TORRENT_CONFIG, loadConfig, parseTorrent } from '../../src/config.js';
+import { DEFAULT_TORRENT_CONFIG, DEFAULT_TORRENT_SITES_CONFIG, loadConfig, parseTorrent } from '../../src/config.js';
 
 const DATA = '/srv/notes';
 
 describe('torrent settings', () => {
   it('are on, under <dataDir>/movies/torrents, capped at 100 kB/s and kept 7 days by default', () => {
-    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], finder: { indexes: {} }, ffmpegBin: 'ffmpeg' });
+    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', sites: DEFAULT_TORRENT_SITES_CONFIG });
   });
 
   it('read every variable', () => {
@@ -22,7 +22,7 @@ describe('torrent settings', () => {
         },
         DATA,
       ),
-    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], finder: { indexes: {} }, ffmpegBin: 'ffmpeg' });
+    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', sites: DEFAULT_TORRENT_SITES_CONFIG });
   });
 
   it('refuse a relative folder, a zero cap or keep, and a peer without a port', () => {

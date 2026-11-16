@@ -175,3 +175,7 @@ not implementation.
   `not_idle` before any resolve. Raising it lets the prober resolve through the run's resolver, which under
   `--direct-stream` is the fake; never combine `--prober` with a real `NOTESD_DIRECT_STREAM_CLI`.
   Probing is proven by `tests/unit/directStream/prober.test.ts`.
+- Never give a throwaway daemon the real `claude/streaming/torrent/cli.mjs` (1337x and ext.to): it opens a
+  tab in the owner's streaming Chrome. `up --direct-stream` points `NOTESD_TORRENT_SITES_CLI` at
+  `tests/fixtures/direct-stream/fake-torrent-sites.mjs`; `<run>/torrent-sites/mode` picks its answer (`rows`,
+  `empty`, `bot_check`, `no_chrome`) and its calls are kept as `evidence/torrent-sites-calls.jsonl`.
