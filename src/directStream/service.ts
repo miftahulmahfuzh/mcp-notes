@@ -682,15 +682,16 @@ export class DirectStreamService {
   }
 
   /**
-   * The text of the title's English subtitle, for its dialogue (dialogue.ts). Resolves the title
-   * like a play does, out of sight, and opens no player: then reads the first English track that
+   * The text of the title's English subtitle, for its dialogue (dialogue.ts) and for a torrent
+   * session that has none (the borrow tier, torrent/subtitles/borrow.ts). Resolves the title like
+   * a play does, out of sight, and opens no player: then reads the first English track that
    * holds cues, through the same pass-through rules as the player (the session's hosts, the
-   * captured headers). A separate file is tried before a track inside the manifest. Throws what
-   * `resolve` throws, or `no_subtitle` when the source that resolved has no English track that
-   * can be read.
+   * captured headers). A separate file is tried before a track inside the manifest. `deadlineS`
+   * becomes the resolver's `--deadline-s`. Throws what `resolve` throws, or `no_subtitle` when the
+   * source that resolved has no English track that can be read.
    */
-  async subtitleText(input: StreamRefInput): Promise<{ provider: string; label: string; vtt: string; attempts: ResolveAttempt[] }> {
-    const session = await this.resolve(input);
+  async subtitleText(input: StreamRefInput, options: { deadlineS?: number } = {}): Promise<{ provider: string; label: string; vtt: string; attempts: ResolveAttempt[] }> {
+    const session = await this.resolve(input, options.deadlineS === undefined ? {} : { deadlineS: options.deadlineS });
     const english = session.source.subtitles.filter((t) => isEnglish(t));
     const tracks = [...english.filter((t) => t.source === 'request'), ...english.filter((t) => t.source !== 'request')];
     for (const track of tracks) {

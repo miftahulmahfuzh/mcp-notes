@@ -4,6 +4,7 @@ import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type Res
 import { defaultIndexes, findCandidates, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { runSubtitleChain, type SubtitleTier } from './subtitles/chain.js';
+import { FILE_LIST_TIMEOUT_MS, orderByFileLists } from './subtitles/files.js';
 import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick } from './types.js';
 
 /**
@@ -200,8 +201,22 @@ export class TorrentSource {
       return { ok: false, error: 'no_source', attempts: [{ provider: 'Index: all', outcome: 'error', took_s: seconds(started, this.now()), detail: messageOf(err) }] };
     }
     const skip = new Set((options.skip ?? []).map((h) => h.toLowerCase()));
-    const candidates = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
-    // Phase 6 (R3.2): `candidates` is reordered here by the best three's file lists (orderByFileLists).
+    let candidates = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
+    // R3.2: of the best three, the one whose files hold an English subtitle file is tried first.
+    candidates = await orderByFileLists(candidates, {
+      listFiles: async (candidate) => {
+        const handle = await this.opts.swarm.open(
+          { infoHash: candidate.infoHash, trackers: candidate.trackers, name: candidate.name, ref, release: candidate.release },
+          { timeoutMs: FILE_LIST_TIMEOUT_MS },
+        );
+        const picked = pickFile(handle.files, query);
+        return picked === null ? null : { files: handle.files, video: picked.video, subtitles: picked.subtitles };
+      },
+      release: async (infoHash) => {
+        await this.opts.swarm.release(infoHash);
+      },
+      log: this.log,
+    });
     const indexes = found.indexes.map(indexAttempt);
     const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: options.resumeS ?? null, cloudTried: options.cloudTried === true };
     const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS);

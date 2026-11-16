@@ -31,6 +31,7 @@ import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
+import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
@@ -201,7 +202,13 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           torrentDir: config.torrent.dir,
           torrents,
           log: (line) => console.log(line),
-          // Phase 6 adds subtitleUrl, fetch, lend, convertAss here; phase 7 embedded; phase 8 whisper (one line each).
+          subtitleUrl: config.torrent.subtitleUrl,
+          wyzie: config.torrent.wyzieKey === null || config.torrent.wyzieUrl === null ? null : { baseUrl: config.torrent.wyzieUrl, key: config.torrent.wyzieKey },
+          fetch: (url, init) => fetch(url, init),
+          // The borrow reads the title's English subtitle from a cloud provider, out of sight.
+          lend: () => (directStream === null ? null : (ref, options) => directStream.subtitleText(ref, options)),
+          convertAss: ffmpegAssConverter(config.torrent.ffmpegBin),
+          // Phase 7 adds embedded here; phase 8 whisper (one line each).
         }),
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
       });

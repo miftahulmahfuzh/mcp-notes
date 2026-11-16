@@ -1,8 +1,13 @@
 import type { CacheSubtitleView } from '../../cachePlay.js';
 import type { ResolveAttempt, StreamRef } from '../../types.js';
+import type { FetchLike } from '../../passThrough.js';
 import type { MediaProbe } from '../probe.js';
 import type { TorrentStreams } from '../service.js';
 import type { TorrentFileInfo, TorrentHandle } from '../types.js';
+import { borrowTier, type SubtitleLender } from './borrow.js';
+import { SubtitleShelf, keptTier } from './disk.js';
+import { ffmpegAssConverter, filesTier, type AssConverter } from './files.js';
+import { serviceTier } from './service.js';
 
 /**
  * Where a torrent session's English subtitle comes from (torrent phase 3 ships the chain; phase 6 adds kept, files,
@@ -72,15 +77,30 @@ export interface SubtitleTierDeps {
   /** Phase 1's TorrentStreams (AppDeps.torrents). */
   torrents: TorrentStreams;
   log: (line: string) => void;
-  // Phase 6: subtitleUrl, fetch, lend, convertAss. Phase 7: embedded. Phase 8: whisper.
+  /** config.torrent.subtitleUrl; null leaves the OpenSubtitles add-on out of the service tier (phase 6). */
+  subtitleUrl: string | null;
+  /** Wyzie Subs' address and key (config.torrent.wyzieUrl, wyzieKey); null or unset: Wyzie is never asked (phase 6 addendum). */
+  wyzie?: { baseUrl: string; key: string } | null;
+  fetch: FetchLike;
+  /** DirectStreamService.subtitleText, read at play time; null without direct streaming (phase 6). */
+  lend: () => SubtitleLender | null;
+  /** ASS/SSA to WebVTT (phase 6); src/daemon.ts passes ffmpegAssConverter(config.torrent.ffmpegBin). */
+  convertAss?: AssConverter;
+  // Phase 7: embedded. Phase 8: whisper.
 }
 
-/** The daemon's subtitle tiers, in order. Phase 3: none. Each later phase inserts its tiers at its comment. */
-export function buildSubtitleTiers(_deps: SubtitleTierDeps): SubtitleTier[] {
+/** The daemon's subtitle tiers, in order. Each later phase inserts its tiers at its comment. */
+export function buildSubtitleTiers(deps: SubtitleTierDeps): SubtitleTier[] {
+  const shelf = new SubtitleShelf(deps.torrentDir);
+  const wyzie = deps.wyzie ?? null;
   return [
     // Phase 6: kept, files.
+    keptTier(shelf),
+    filesTier({ torrents: deps.torrents, shelf, convertAss: deps.convertAss ?? ffmpegAssConverter() }),
     // Phase 7: embedded.
-    // Phase 6: service, borrow.
+    // Phase 6: service, borrow. The service tier is left out when neither service may be asked.
+    ...(deps.subtitleUrl === null && wyzie === null ? [] : [serviceTier({ baseUrl: deps.subtitleUrl, wyzie, fetch: deps.fetch, torrents: deps.torrents, shelf, log: deps.log })]),
+    borrowTier({ lend: deps.lend, shelf }),
     // Phase 8: whisper.
   ];
 }

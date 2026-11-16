@@ -379,6 +379,30 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
   after about 40 s, longer than the 20 s a play waits for a torrent's file list.
 
+## Torrent subtitles
+- A torrent session (`provider: "torrent"`, or the fall-through after a cloud `no_source`) carries an
+  English subtitle from the first tier that has one: `kept` (an earlier play of the same torrent),
+  `files` (an English `.srt`/`.vtt`/`.ass` inside the torrent, or its one subtitle file that names no
+  language), `service` (Wyzie Subs first when `WYZIE_API_KEY` is set, then the OpenSubtitles add-on at
+  `NOTESD_TORRENT_SUBTITLE_URL`, by file hash then by IMDb id), `borrow` (a cloud provider's English
+  subtitle, resolved out of sight; skipped after a cloud `no_source`). The play answer's `attempts`
+  hold one `Subtitles: <tier>` line per tier asked. Files are WebVTT under
+  `<data dir>/movies/torrents/<hash>/.notesd-subs/`, served by
+  `GET /api/stream/torrent/:hash/sub/:name`; the page shows the English one (or the lone unnamed one)
+  by default. Of the best three candidates, one whose files hold an English subtitle is tried first.
+- Logic: `npx vitest run tests/unit/directStream/torrent/subtitles tests/unit/directStream/torrent/subtitleRoute.test.ts`.
+- Throwaway daemon: `$V up --web --direct-stream --torrent` (note RUN, `TORRENT=`, `SUBS=`), then
+  `.claude/skills/verify-notesd/scripts/torrent/subtitles.sh RUN` (all stages, about four minutes;
+  `files` before `replay`, `quiet` before `wyzie`). `up --torrent` starts a fake subtitle service
+  (`scripts/torrent/fake-subs.mjs`; `$SUBS/mode` is `ok`, `id_only`, `empty`, `error` or `wyzie`;
+  `$SUBS/requests.jsonl` records each add-on request's path and user-agent) and points
+  `NOTESD_TORRENT_SUBTITLE_URL` at it; never the real service. The same fake answers as Wyzie Subs
+  (`/search`, a fake `WYZIE_API_KEY`, requests in `$SUBS/wyzie-requests.jsonl` without the key): it
+  lists a file only in mode `wyzie`, and every other `up` turns both services off, so the owner's real
+  key in `.env.local` is never used. Fixture torrents come from
+  `scripts/torrent/make-subtitle-fixtures.sh` (cached in `$VERIFY_HOME/.torrent-subtitle-fixtures`).
+  The transcript ends with `subtitles: PASS (...)`; `down` copies the request logs into the evidence.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

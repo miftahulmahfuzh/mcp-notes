@@ -1,0 +1,112 @@
+[
+  {
+    "id": "1952537611",
+    "url": "https://sub.wyzie.io/c/19b20c51/id/1952537611?format=srt&encoding=UTF-8&id=tt1727587",
+    "format": "srt",
+    "encoding": "UTF-8",
+    "display": "English",
+    "language": "en",
+    "media": "Sintel",
+    "isHearingImpaired": false,
+    "source": "charlie",
+    "release": "sintel_en.srt",
+    "releases": [
+      "sintel_en.srt"
+    ],
+    "origin": null,
+    "fileName": "sintel_en.srt",
+    "downloadCount": 8509,
+    "matchedRelease": null,
+    "matchedFilter": null,
+    "ai": false,
+    "quality": {
+      "score": 100,
+      "flags": []
+    }
+  },
+  {
+    "id": "1955318586",
+    "url": "https://sub.wyzie.io/c/19c50c5c/id/1955318586?format=srt&encoding=UTF-8&id=tt1727587",
+    "format": "srt",
+    "encoding": "UTF-8",
+    "display": "English",
+    "language": "en",
+    "media": "Sintel",
+    "isHearingImpaired": false,
+    "source": "charlie",
+    "release": "Sintel (2010)",
+    "releases": [
+      "Sintel (2010)",
+      "Sintel (2010).eng.srt"
+    ],
+    "origin": null,
+    "fileName": "Sintel (2010).eng.srt",
+    "downloadCount": 1597,
+    "matchedRelease": null,
+    "matchedFilter": null,
+    "ai": false
+  },
+  {
+    "id": "1953329013",
+    "url": "https://sub.wyzie.io/c/19a00c4d/id/1953329013?format=srt&encoding=UTF-8&id=tt1727587",
+    "format": "srt",
+    "encoding": "UTF-8",
+    "display": "English",
+    "language": "en",
+    "media": "Sintel",
+    "isHearingImpaired": false,
+    "source": "charlie",
+    "release": "sintel",
+    "releases": [
+      "sintel",
+      "sintel.he.srt"
+    ],
+    "origin": null,
+    "fileName": "sintel.he.srt",
+    "downloadCount": 1300,
+    "matchedRelease": null,
+    "matchedFilter": null,
+    "ai": false
+  },
+  {
+    "id": "1952529149",
+    "url": "https://sub.wyzie.io/c/19b40c58/id/1952529149?format=srt&encoding=UTF-8&id=tt1727587",
+    "format": "srt",
+    "encoding": "UTF-8",
+    "display": "English",
+    "language": "en",
+    "media": "Sintel",
+    "isHearingImpaired": false,
+    "source": "charlie",
+    "release": "Sintel.2010.Xvid-VODO",
+    "releases": [
+      "Sintel.2010.Xvid-VODO",
+      "sintel_en.srt"
+    ],
+    "origin": null,
+    "fileName": "sintel_en.srt",
+    "downloadCount": 2936,
+    "matchedRelease": null,
+    "matchedFilter": null,
+    "ai": false
+  },
+  {
+    "id": "ai-en",
+    "url": "https://sub.wyzie.io/translate?id=tt1727587&target=English",
+    "format": "srt",
+    "encoding": "UTF-8",
+    "display": "English",
+    "language": "en",
+    "media": "Sintel",
+    "isHearingImpaired": false,
+    "source": "ai",
+    "release": null,
+    "releases": [],
+    "origin": null,
+    "fileName": null,
+    "downloadCount": null,
+    "matchedRelease": null,
+    "matchedFilter": null,
+    "ai": true
+  }
+]
