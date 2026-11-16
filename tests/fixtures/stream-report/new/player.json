@@ -1,0 +1,15 @@
+{
+  "session_id": "fixture0session0id0for0reports01",
+  "lines": [
+    {
+      "type": "player",
+      "at": "2026-11-16T04:10:20.000Z",
+      "session": "fixture0session0id0for0reports01",
+      "text": "error: mediaError bufferStalledError",
+      "page_at": "2026-11-16T04:10:20.000Z",
+      "stage": "error",
+      "position_s": 20,
+      "buffer_s": 0
+    }
+  ]
+}

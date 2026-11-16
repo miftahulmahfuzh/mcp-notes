@@ -1,0 +1,22 @@
+{
+  "session_id": "fixture0session0id0for0reports01",
+  "host": "laptop",
+  "taken_at": "2026-11-16T04:13:00.000Z",
+  "live": false,
+  "source": null,
+  "sessions": [
+    {
+      "type": "session",
+      "at": "2026-11-16T04:09:50.000Z",
+      "session": "fixture0session0id0for0reports01",
+      "ref": "TMDB tv 37854 S18E787",
+      "event": "created",
+      "provider": "HyperLink",
+      "manifest_kind": "hls",
+      "stream_host": "cdn.fixture.example",
+      "attempts": 2,
+      "refreshes": 0,
+      "error": null
+    }
+  ]
+}

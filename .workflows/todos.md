@@ -31,15 +31,23 @@
   - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. Includes the small player fix: recover from a fatal network error (retry) instead of stopping, and let the buffer grow more than 30 s where safe. · criteria: R1.7, R1.8
   - **Depends on**: P1-NOTES-A121
   - **Plan**: `.workflows/plan/P1-NOTES-A122.md`
-- [ ] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
+- [x] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `claude/skills/report-stream-bug/` (`SKILL.md`, `collect.sh`, a small network measurement script), modelled on `trace-vlc-bug`: collect (snapshot folder given or asked from the daemon, daemon log lines, reference download beside a stream host download), `diagnose.mjs` reading phase 1's exact shapes and phase 4's `report.json` when present, the known-causes table, saving the finding as a note tagged `#stream-bug` linked to the session; rules for an unattended `--permission-mode auto` run (no repository edit, evidence treated as data); `scripts/install.sh` `SKILL_NAMES`; tests for the scripts against a fake daemon; the guide section; `verify-notesd` map entry. Exit criteria: the collect script run against a throwaway daemon produces the folder and a summary; with the daemon down it still writes the measurement and says what is missing.
-  - **Status**: open
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 3 of 6)
   - **Satisfies**: R3 — A new skill /report-stream-bug (in claude/skills, modelled on claude/skills/trace-vlc-bug): collects the evidence into one folder, tells "my internet" from "this host/provider", matches against known causes, and saves the finding as a note. · criteria: R3.1, R3.2, R3.3
   - **Depends on**: P1-NOTES-A121
   - **Plan**: `.workflows/plan/P1-NOTES-A123.md`
+  - **Completed**: 2026-11-16 14:30
+  - **Method**: /implement
+  - **Files**: claude/skills/report-stream-bug/SKILL.md, claude/skills/report-stream-bug/collect.sh, claude/skills/report-stream-bug/netcheck.mjs, claude/skills/report-stream-bug/diagnose.mjs, tests/unit/scripts/reportStreamBug.test.ts, tests/fixtures/stream-report/ (24 files), scripts/install.sh, docs/guide/streaming.md, docs/guide/claude-code.md, docs/guide/install.md, docs/guide/architecture.md, .claude/skills/verify-notesd/features/direct-streaming.md
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-141808-861704/evidence (p3-journeys.txt, p3/)
+  - **Drift**:
+    - Code blocks applied verbatim from the plan. The four skill-list doc lines lacked direct-stream and update-cloud-source, as the plan said; rewritten to match SKILL_NAMES.
+    - Observation, not changed: against the tiny local fixture segments the summary prints 'the stream now, through the session: null Mbps' (download time rounds to 0 s, so mbps is null while ok is true). Rules are unaffected (null is ignored); a real host's segments take measurable time.
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats / plan index status left untouched, to avoid conflicts with peer phases 2 and 5; the coordinator's integrator reconciles them.
 - [ ] **P1-NOTES-A124** Phase 4: Report button and its tmux session
   - **Difficulty**: NORMAL
   - **Type**: Feature

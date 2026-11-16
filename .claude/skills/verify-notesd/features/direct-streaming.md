@@ -228,6 +228,29 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
 - Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
 
+## /report-stream-bug (a stream's evidence, the cause, a note)
+- `claude/skills/report-stream-bug/collect.sh [SNAPSHOT_DIR]` gathers the snapshot (the folder it
+  is handed, else a new one from `POST /api/stream/evidence/snapshot`), the session's records
+  (`GET /api/stream/evidence`, and the on-disk log's tail), the daemon's direct-stream lines with
+  every query cut off, and `network.json` (a reference download, the stream through the session,
+  the stream host's first answer) into one folder, and prints a summary with the cause. With the
+  daemon down or the session ended it still writes the log tail and the measurement, and `missing:`
+  says what is not there. No file in the folder holds a pass-through address or a token.
+- `diagnose.mjs classify|summary|note DIR` names the cause (`connection_slow`, `host_slow`,
+  `token_expired`, `provider_broken`, `session_ended`, `new`); the skill saves the note it writes
+  (`#stream-bug`). Proven by `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (fake daemon
+  and stream host, the fixture folders `tests/fixtures/stream-report/<cause>/`).
+- Throwaway daemon (free, nothing of the owner's): `$V up --direct-stream` (note `URL=`, `DIRECT=`),
+  a local reference file (`python3 -m http.server 47391 --bind 127.0.0.1 --directory <dir with ref.bin>`),
+  a play (`echo hls > $DIRECT/mode`, `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":550}'`,
+  one GET of its `manifest_url`), then
+  `bash claude/skills/report-stream-bug/collect.sh --wall $URL --data-dir <run>/data --log <run>/daemon.log --reference http://127.0.0.1:47391/ref.bin --host-scheme http`.
+  The folder lands under `<run>/data/movies/stream-reports/`; `network.json` has `stream.ok: true`
+  from the fixture host's 1080 rendition; `grep -rl 'p?u=' <folder>` prints nothing. A note:
+  `$V mcp RUN create` with `diagnose.mjs note <folder>`'s body, then `$V mcp RUN list '{"tags_any":["stream-bug"]}'`.
+- Live: `/report-stream-bug` in Claude Code after a broken play (the reference download reaches
+  Cloudflare; nothing is played or refreshed).
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

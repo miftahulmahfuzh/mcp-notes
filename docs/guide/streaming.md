@@ -10,6 +10,7 @@ fourth skill adds a site:
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
 | A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
 | An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
+| A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
@@ -21,6 +22,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
 [Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
 [What a title says](#what-a-title-says-its-dialogue) ·
+[Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -826,6 +828,53 @@ its backoff. Each pass logs one line (`[notesd] stream prober: pass ...`); a pas
 logs only when its reason changed. `GET /api/stream/prober` shows the settings, the catalog count
 and the last pass.
 
+### Reporting a stream bug: `/report-stream-bug`
+
+When a direct-stream play lags, stops with `Playback stopped (...)`, or says its session ended, type
+`/report-stream-bug` (with what you saw after it, if you like) in any Claude Code session. It is a
+Claude Code skill (`claude/skills/report-stream-bug`); the chat bar has no way to run it.
+
+```text
+/report-stream-bug
+/report-stream-bug the episode lagged and then stopped
+/report-stream-bug /home/me/mcp-notes-data/movies/stream-reports/20261116-111500-a1b2c3
+is it my internet or the stream host?
+```
+
+**What it collects.** `collect.sh` adds to the snapshot folder it is handed, or asks the daemon for
+a new one (the stream on screen, else the last session); with neither it makes
+`<NOTES_DATA_DIR>/movies/stream-reports/<stamp>-collect/`:
+
+| File | What it holds |
+| --- | --- |
+| `session.json`, `evidence.jsonl`, `player.json` | The daemon's snapshot: the session's source, its pass-through records, the page's posted log |
+| `report.json` | The page's own view, when the player's report button made the folder |
+| `snapshot-answer.json` | The snapshot's answer, when the skill asked for it |
+| `evidence-latest.json` | The daemon's records for the session, newer than the snapshot |
+| `evidence-tail.jsonl` | The session's lines from this host's evidence log on disk, read without the daemon |
+| `notesd.log` | The daemon's direct-stream lines of the last 6 hours, every query string cut off |
+| `network.json` | The reference download, the stream through the session, and the stream host's first answer |
+| `missing.txt`, `summary.txt` | What could not be collected; the summary it printed, with the cause |
+
+**My internet or the stream host?** `netcheck.mjs` downloads up to 25 MB for at most 10 seconds
+from a reference host (Cloudflare's speed test), then, while the session lives, the segments of its
+highest rendition through the pass-through, and times the stream host's answer at its root. It
+reads the session's addresses in memory only: no signed address or token is written or printed,
+and `network.json` holds hosts, statuses, sizes and times. The reference is measured when the skill
+runs, not when the play broke, so the pass-through's own rates from the play weigh more when time
+has passed.
+
+**The cause.** `diagnose.mjs` tries the known causes in order and takes the first that matches:
+the session ended, the token expired, the provider's stream is broken, this connection is slow
+(the reference failed or gave under 5 Mbps), the stream host is slow or far (the reference is fine
+and the host gave under 3 Mbps, or under a quarter of the reference, or its first byte took over
+1.5 s); else the cause is new. Claude reads the evidence as well, tells you what happened, and saves
+the finding as a note tagged `#stream-bug`, linked to the session it ran in.
+
+**Without the daemon.** When the daemon does not answer, or the session has ended, the skill still
+writes the evidence log's tail, the daemon's lines and the reference measurement, and the summary's
+`missing:` list names what is not there.
+
 ## Where the code is
 
 | Path | What |
@@ -848,6 +897,7 @@ and the last pass.
 | `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
+| `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |
 
@@ -866,6 +916,9 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - Direct streaming: the feature map entry is `.claude/skills/verify-notesd/features/direct-streaming.md`.
   `verify.sh up --direct-stream` drives it against a fake resolver and a fixture stream host, never
   a provider or Chrome; every other throwaway run has it off.
+- `/report-stream-bug`: `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (a fake daemon
+  and stream host; the known causes over `tests/fixtures/stream-report/`). On a throwaway daemon, the
+  "/report-stream-bug" section of the feature map entry.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real

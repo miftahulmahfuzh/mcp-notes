@@ -1,0 +1,25 @@
+{
+  "session_id": "fixture0session0id0for0reports01",
+  "lines": [
+    {
+      "type": "player",
+      "at": "2026-11-16T04:40:06.000Z",
+      "session": "fixture0session0id0for0reports01",
+      "text": "refresh after 403 at 1812 s",
+      "page_at": "2026-11-16T04:40:06.000Z",
+      "stage": "refreshing",
+      "position_s": 1812,
+      "buffer_s": 0
+    },
+    {
+      "type": "player",
+      "at": "2026-11-16T04:40:26.000Z",
+      "session": "fixture0session0id0for0reports01",
+      "text": "The refreshed stream was refused before it played.",
+      "page_at": "2026-11-16T04:40:26.000Z",
+      "stage": "error",
+      "position_s": 1812,
+      "buffer_s": 0
+    }
+  ]
+}
