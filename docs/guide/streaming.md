@@ -563,8 +563,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **The page draws the subtitles itself.** Every text track is kept `hidden`, so its cues run and
   Chrome draws nothing; the page reads the active cues (WebVTT tags taken out) into
   `window.notesdStream.caption` and shows them in its own layer over the picture, clear of the
-  control bar. Chrome's own drawing sat on the last line under the bar and vanished in full
-  screen on the owner's laptop.
+  control bar. Chrome's own drawing sat on the last line under the bar. The `<video>` is styled
+  `opacity: 0.999`: in full screen with the controls faded, Chrome on Windows hands an opaque
+  video to a hardware overlay drawn over the rest of the page, which hid every subtitle.
 - **Subtitle delay.** G shows the subtitles 50 ms earlier and H 50 ms later, as in VLC (hold the
   key to go on); the line over the picture reads `Subtitle delay +250 ms`. It is for a subtitle
   that came from another provider than the picture. The delay is kept per title in the page's

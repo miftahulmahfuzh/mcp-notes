@@ -17,6 +17,13 @@
   height: 100%;
   object-fit: contain;
   background: #000;
+  /*
+   * Not quite opaque, on purpose. In full screen, once the controls have faded, Chrome on Windows
+   * hands an opaque <video> to a hardware overlay drawn over everything else on the page, the
+   * subtitles included (seen on the owner's laptop: an active line, nothing on the screen). A
+   * video that is not fully opaque stays in the page's own drawing, under the caption layer.
+   */
+  opacity: 0.999;
 }
 /*
  * Subtitles are drawn by the page (StreamState.caption), not by the browser: over the picture in
