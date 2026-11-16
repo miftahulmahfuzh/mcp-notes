@@ -49,7 +49,7 @@ export async function loadDialogue(
     };
   }
   if (service === null) return null;
-  const read = await service.subtitleText(target);
+  const read = await service.subtitleText(target, { outside: true });
   const cues = parseCues(read.vtt);
   const row = {
     ...slot,

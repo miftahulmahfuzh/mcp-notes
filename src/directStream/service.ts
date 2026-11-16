@@ -15,7 +15,9 @@ import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFi
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
+import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
 import { namesTorrent, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
+import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
   DirectStreamError,
@@ -141,6 +143,12 @@ export interface SessionInfo {
    * `manifest_url` is the torrent's file route (`/api/stream/torrent/<hash>/f/<index>`). Null: not a torrent.
    */
   torrent: { info_hash: string; file_index: number; name: string; index: string | null; state: SessionTorrent['state']; seeds: number | null } | null;
+  /**
+   * Counts the times the session's subtitle changed after the play started (Wyzie Synced re-timed a subtitle from
+   * outside the stream, or a cloud session's outside subtitle arrived late); 0 for a session it never happened to. The answer to a position report carries it too: when it is no
+   * longer this number, the page reads the session again and loads `subtitles` anew.
+   */
+  subtitle_rev: number;
 }
 
 /** What `play` answers (JSON-ready; the route adds `ok: true`). */
@@ -185,6 +193,11 @@ export interface DirectStreamServiceOptions {
    * after this service. Unset or null: torrents are off, and every play is exactly as without them.
    */
   torrent?: () => TorrentSource | null;
+  /**
+   * An English subtitle from outside the stream for a cloud session that has none (outsideSubtitles.ts), read at
+   * play time. Unset or null: such a session plays without one, as before.
+   */
+  outside?: () => OutsideSubtitles | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -713,7 +726,7 @@ export class DirectStreamService {
    * becomes the resolver's `--deadline-s`. Throws what `resolve` throws, or `no_subtitle` when the
    * source that resolved has no English track that can be read.
    */
-  async subtitleText(input: StreamRefInput, options: { deadlineS?: number } = {}): Promise<{ provider: string; label: string; vtt: string; attempts: ResolveAttempt[] }> {
+  async subtitleText(input: StreamRefInput, options: { deadlineS?: number; outside?: boolean } = {}): Promise<{ provider: string; label: string; vtt: string; attempts: ResolveAttempt[] }> {
     const session = await this.resolve(input, options.deadlineS === undefined ? {} : { deadlineS: options.deadlineS });
     const english = session.source.subtitles.filter((t) => isEnglish(t));
     const tracks = [...english.filter((t) => t.source === 'request'), ...english.filter((t) => t.source !== 'request')];
@@ -722,6 +735,11 @@ export class DirectStreamService {
       if (vtt !== null && parseCues(vtt).length >= DIALOGUE_MIN_CUES) {
         return { provider: session.source.provider, label: track.label, vtt, attempts: session.attempts };
       }
+    }
+    // The dialogue reader (`outside`): the title's subtitle from outside the stream stands in (outsideSubtitles.ts).
+    const outside = options.outside === true ? await this.opts.outside?.()?.text(session.ref) : null;
+    if (outside != null && parseCues(outside.vtt).length >= DIALOGUE_MIN_CUES) {
+      return { provider: session.source.provider, label: outside.label, vtt: outside.vtt, attempts: session.attempts };
     }
     throw new DirectStreamError(
       'no_subtitle',
@@ -1012,10 +1030,31 @@ export class DirectStreamService {
     }
   }
 
+  /**
+   * What ffmpeg reads a cloud session's audio from, for Wyzie Synced: this machine's cache of it when the session
+   * plays from one (its local playlist; the cache's route fetches what is missing), else the provider's manifest
+   * with the headers the resolve captured, as picture.ts hands them over.
+   */
+  private audioInput(id: string): SyncInput {
+    const session = this.sessions.peek(id);
+    if (session === null) throw new Error('the stream session ended');
+    if (session.cache !== null) return { url: `${this.opts.pageBase()}${session.cache.manifestUrl}` };
+    const { referer, origin, user_agent: userAgent } = session.source.headers;
+    const headers = [referer === null ? null : `Referer: ${referer}`, origin === null ? null : `Origin: ${origin}`].filter((h): h is string => h !== null);
+    return {
+      url: session.source.manifest_url,
+      inputArgs: [...(userAgent === null ? [] : ['-user_agent', userAgent]), ...(headers.length === 0 ? [] : ['-headers', headers.map((h) => `${h}\r\n`).join('')])],
+    };
+  }
+
   private async sessionInfo(session: StreamSession): Promise<SessionInfo> {
     const { ref, source, cache, torrent } = session;
     // A cache's or a torrent's files come from their own routes on this daemon, never through the pass-through.
     const local = torrent ?? cache;
+    // A cloud session whose source shows no English subtitle gets the title's outside one (outsideSubtitles.ts).
+    const lacksEnglish = torrent === null && !showsEnglish(cache === null ? source.subtitles : cache.subtitles);
+    if (lacksEnglish) await this.opts.outside?.()?.attach(session, () => this.audioInput(session.id));
+    const outside = lacksEnglish ? session.outside.subtitles.map(localSubtitle) : [];
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
     const neighbors = await this.neighborsOf(ref);
@@ -1030,8 +1069,8 @@ export class DirectStreamService {
       provider: source.provider,
       manifest_kind: source.manifest_kind,
       manifest_url: local === null ? proxiedUrl(session.id, source.manifest_url) : local.manifestUrl,
-      subtitles:
-        local === null
+      subtitles: [
+        ...(local === null
           ? source.subtitles.map((t) => {
               const srt = t.format === 'srt' || /\.srt$/i.test(new URL(t.url).pathname);
               return {
@@ -1043,7 +1082,9 @@ export class DirectStreamService {
                 english: isEnglish(t),
               };
             })
-          : local.subtitles.map(localSubtitle),
+          : local.subtitles.map(localSubtitle)),
+        ...outside,
+      ],
       best_height: source.best_height,
       audio_lang: session.audioLang,
       audio: source.audio ?? null,
@@ -1058,6 +1099,7 @@ export class DirectStreamService {
         torrent === null
           ? null
           : { info_hash: torrent.infoHash, file_index: torrent.fileIndex, name: torrent.name, index: torrent.index, state: torrent.state, seeds: torrent.seeds },
+      subtitle_rev: torrent === null ? session.outside.subtitleRev : torrent.subtitleRev,
     };
   }
 
@@ -1095,6 +1137,8 @@ export interface DirectStreamWiring {
   picture?: PictureCheck | null;
   /** Torrent phase 3: the torrent source, read at play time (built from phase 1's TorrentStreams after this service). */
   torrent?: () => TorrentSource | null;
+  /** An English subtitle from outside the stream for a cloud session that has none, read at play time. */
+  outside?: () => OutsideSubtitles | null;
 }
 
 /** Test seams. */
@@ -1131,6 +1175,7 @@ export function buildDirectStreamService(
     caches: wiring.caches,
     picture: wiring.picture ?? null,
     torrent: wiring.torrent,
+    outside: wiring.outside,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

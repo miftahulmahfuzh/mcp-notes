@@ -248,6 +248,8 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
 
 /** `claude/streaming/torrent/whisper.py` in this checkout: the Whisper worker the torrent source runs (torrent phase 8). */
 export const DEFAULT_TORRENT_WHISPER_SCRIPT = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'whisper.py')
+/** `claude/streaming/torrent/vad.py` in this checkout: the speech detector Wyzie Synced runs with Whisper's Python. */
+export const DEFAULT_TORRENT_VAD_SCRIPT = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'vad.py')
 export const DEFAULT_TORRENT_WHISPER_MODEL = 'small'
 export const DEFAULT_TORRENT_WHISPER_THREADS = 8
 /** Five minutes of audio per Whisper run: cues come in steps of this, well ahead of the picture (a 5-minute stretch took 2.5 s on 8 threads). */
@@ -403,6 +405,14 @@ export interface TorrentConfig {
   wyzieKey: string | null
   /** `NOTESD_TORRENT_WYZIE_URL`, default https://sub.wyzie.io: where Wyzie Subs is asked. `off`: null, never asked. */
   wyzieUrl: string | null
+  /**
+   * Wyzie Synced (src/directStream/torrent/subtitles/synced.ts): a subtitle from outside the torrent is re-timed
+   * against the film's audio after the play starts. `NOTESD_TORRENT_WYZIE_SYNC`, default on; null or unset: `off`,
+   * or no key, or Wyzie's address is `off`. `python` is Whisper's (`NOTESD_TORRENT_WHISPER_PYTHON`, default
+   * `<NOTESD_TORRENT_WHISPER_DIR>/venv/bin/python`), read whether or not the Whisper tier is on: its package
+   * carries the speech detector.
+   */
+  wyzieSync?: { python: string } | null
   /** 1337x and ext.to, the finder's fallback (phase 9). Unset: DEFAULT_TORRENT_SITES_CONFIG. */
   sites?: TorrentSitesConfig
   /** Whisper, the last subtitle tier (torrent phase 8). */
@@ -427,6 +437,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   subtitleUrl: null,
   wyzieKey: null,
   wyzieUrl: null,
+  wyzieSync: null,
   sites: DEFAULT_TORRENT_SITES_CONFIG,
   whisper: DEFAULT_TORRENT_WHISPER_CONFIG,
 }
@@ -951,6 +962,9 @@ function parsePeers(raw: string | undefined): string[] {
 
 /** `dataDir` is the resolved NOTES_DATA_DIR: the default folder is under it. */
 export function parseTorrent(env: Record<string, string | undefined>, dataDir: string): TorrentConfig {
+  const wyzieKey = (env.WYZIE_API_KEY ?? '').trim() || null
+  const wyzieUrl = parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL)
+  const sync = parseSwitch('NOTESD_TORRENT_WYZIE_SYNC', env.NOTESD_TORRENT_WYZIE_SYNC)
   return {
     enabled: parseSwitch('NOTESD_TORRENT', env.NOTESD_TORRENT),
     dir: parseOptionalAbsolutePath('NOTESD_TORRENT_DIR', env.NOTESD_TORRENT_DIR) ?? path.join(dataDir, 'movies', 'torrents'),
@@ -962,8 +976,9 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     remux: parseSwitch('NOTESD_TORRENT_REMUX', env.NOTESD_TORRENT_REMUX),
     subtitleUrl: parseUrlOrOff('NOTESD_TORRENT_SUBTITLE_URL', env.NOTESD_TORRENT_SUBTITLE_URL, DEFAULT_TORRENT_SUBTITLE_URL),
-    wyzieKey: (env.WYZIE_API_KEY ?? '').trim() || null,
-    wyzieUrl: parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL),
+    wyzieKey,
+    wyzieUrl,
+    wyzieSync: sync && wyzieKey !== null && wyzieUrl !== null ? { python: whisperPython(env, dataDir) } : null,
     sites: parseTorrentSites(env),
     whisper: parseTorrentWhisper(env, dataDir),
   }
@@ -971,9 +986,17 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
 
 const WHISPER_MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 
+const whisperDir = (env: Record<string, string | undefined>, dataDir: string): string =>
+  parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_DIR', env.NOTESD_TORRENT_WHISPER_DIR) ?? path.join(dataDir, 'whisper')
+
+/** The Python of Whisper's environment, whether or not the Whisper tier is on (Wyzie Synced runs its speech detector with it). */
+function whisperPython(env: Record<string, string | undefined>, dataDir: string): string {
+  return parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_PYTHON', env.NOTESD_TORRENT_WHISPER_PYTHON) ?? path.join(whisperDir(env, dataDir), 'venv', 'bin', 'python')
+}
+
 export function parseTorrentWhisper(env: Record<string, string | undefined>, dataDir: string): TorrentWhisperConfig {
   if (!parseSwitch('NOTESD_TORRENT_WHISPER', env.NOTESD_TORRENT_WHISPER)) return { enabled: false }
-  const dir = parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_DIR', env.NOTESD_TORRENT_WHISPER_DIR) ?? path.join(dataDir, 'whisper')
+  const dir = whisperDir(env, dataDir)
   const model = env.NOTESD_TORRENT_WHISPER_MODEL?.trim() || DEFAULT_TORRENT_WHISPER_MODEL
   if (!WHISPER_MODEL_NAME.test(model) || model.includes('..')) {
     throw new ConfigError(`NOTESD_TORRENT_WHISPER_MODEL must be a model name such as small or a repo id, got "${env.NOTESD_TORRENT_WHISPER_MODEL}"`)
@@ -985,7 +1008,7 @@ export function parseTorrentWhisper(env: Record<string, string | undefined>, dat
   return {
     enabled: true,
     dir,
-    python: parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_PYTHON', env.NOTESD_TORRENT_WHISPER_PYTHON) ?? path.join(dir, 'venv', 'bin', 'python'),
+    python: whisperPython(env, dataDir),
     model,
     threads: parsePositiveInt('NOTESD_TORRENT_WHISPER_THREADS', env.NOTESD_TORRENT_WHISPER_THREADS, DEFAULT_TORRENT_WHISPER_THREADS),
     stretchS,

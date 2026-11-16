@@ -37,6 +37,10 @@ import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
 import { CueFeeds, cueFeedUrl, whisperTrackId } from './directStream/torrent/subtitles/feed.js';
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
+import { OutsideSubtitles } from './directStream/outsideSubtitles.js';
+import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubtitles.js';
+import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
+import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
 import { buildWhisperTier } from './directStream/torrent/subtitles/whisper.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
@@ -221,10 +225,38 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const torrentSiteFallback = torrentSiteIndexes(torrentSites, torrentSitesScriptRunner({ cliPath: torrentSites.cli }));
   // Torrent phase 5: the remux of files Chrome cannot play as is; null with torrents or NOTESD_TORRENT_REMUX off.
   const torrentRemux = buildTorrentRemux(config.torrent);
+  // The subtitle services (Wyzie Subs with a key, then the OpenSubtitles add-on) and Wyzie Synced, for every stream
+  // session: a torrent's `service` tier, and a cloud session whose stream has no English subtitle. Their settings
+  // are the torrent ones, read whether or not torrents are on. Synced: null with NOTESD_TORRENT_WYZIE_SYNC=off or no key.
+  const wyzie =
+    config.torrent === undefined || config.torrent.wyzieKey === null || config.torrent.wyzieUrl === null ? null : { baseUrl: config.torrent.wyzieUrl, key: config.torrent.wyzieKey };
+  const subtitleSync = buildSubtitleSync({
+    sync: config.torrent?.wyzieSync,
+    wyzie,
+    ffmpegBin: config.torrent?.ffmpegBin ?? DEFAULT_FFMPEG_BIN,
+    fetch: (url, init) => fetch(url, init),
+    log: (line) => console.log(line),
+  });
+  const titleSubtitles = new TitleSubtitleShelf(join(config.dataDir, TITLE_SUBS_SUBDIR));
+  const outsideSubtitles =
+    movieStreams === null || config.torrent === undefined
+      ? null
+      : new OutsideSubtitles({
+          shelf: titleSubtitles,
+          services: { baseUrl: config.torrent.subtitleUrl, wyzie, fetch: (url, init) => fetch(url, init), log: (line) => console.log(line) },
+          sync: subtitleSync,
+          imdbId: (ref) => movieStreams.imdbId(ref),
+        });
   let torrentSource: TorrentSource | null = null;
   const torrentSourceOf = (): TorrentSource | null => {
     const torrents = deps.torrents ?? null;
     if (torrentSource === null && torrents !== null && config.torrent?.enabled === true) {
+      const place = {
+        torrentDir: config.torrent.dir,
+        shelf: new SubtitleShelf(config.torrent.dir),
+        input: async (infoHash: string, fileIndex: number): Promise<string> =>
+          (await torrents.filePath(infoHash, fileIndex)) ?? `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+      };
       torrentSource = buildTorrentSource(config, torrents, {
         localBase: () => `http://127.0.0.1:${boundPort ?? config.port}`,
         tiers: buildSubtitleTiers({
@@ -232,7 +264,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           torrents,
           log: (line) => console.log(line),
           subtitleUrl: config.torrent.subtitleUrl,
-          wyzie: config.torrent.wyzieKey === null || config.torrent.wyzieUrl === null ? null : { baseUrl: config.torrent.wyzieUrl, key: config.torrent.wyzieKey },
+          wyzie,
           fetch: (url, init) => fetch(url, init),
           // The borrow reads the title's English subtitle from a cloud provider, out of sight.
           lend: () => (directStream === null ? null : (ref, options) => directStream.subtitleText(ref, options)),
@@ -243,6 +275,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
         remux: torrentRemux,
         fallback: torrentSiteFallback,
+        sync:
+          subtitleSync === null
+            ? null
+            : { start: ({ infoHash, fileIndex, ...rest }) => subtitleSync.start({ ...rest, key: `${infoHash}-${fileIndex}`, place: torrentSyncPlace(place, infoHash, fileIndex) }) },
       });
     }
     return torrentSource;
@@ -256,6 +292,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     // it is read at play time (deps exists by then).
     caches: () => deps.streamCache?.player() ?? null,
     torrent: torrentSourceOf,
+    outside: () => outsideSubtitles,
     hooks:
       movieStreams === null
         ? undefined
@@ -356,6 +393,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
   deps.torrentWhisper = whisperTier;
+  // Wyzie Synced and the per-title subtitle shelf: closed by startBackground's stop; read by the `/api/stream/subs` route.
+  deps.torrentSync = subtitleSync;
+  deps.titleSubtitles = titleSubtitles;
   // The player's report button (stream-cache-and-bug-report phase 4): phase 1's snapshot, then a
   // tmux window running claude on /report-stream-bug in this checkout. Nothing runs until a click.
   const reportStream = deps.directStream ?? null;

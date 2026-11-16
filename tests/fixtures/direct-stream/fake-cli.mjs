@@ -81,6 +81,8 @@ function main() {
     );
   }
   const { origin } = JSON.parse(readFileSync(path.join(dir, 'upstream.json'), 'utf8'));
+  // <dir>/no_subtitle: the stream names no subtitle at all (a cloud session then asks the subtitle services).
+  const noSubtitle = existsSync(path.join(dir, 'no_subtitle'));
   const chosen = providers.length > 1 ? providers[1] : providers[0];
   const attempts = providers.length > 1 ? [{ provider: providers[0], outcome: 'bot_check', took_s: 1.2, detail: 'fake: Just a moment...' }] : [];
   attempts.push({ provider: chosen, outcome: 'resolved', took_s: 2.5, detail: '' });
@@ -99,9 +101,9 @@ function main() {
       manifest_url: manifestUrl,
       manifest_kind: mode === 'dash' || mode === 'dash_film' ? 'dash' : 'hls',
       headers: { referer: FIXTURE_REFERER, origin: FIXTURE_ORIGIN, user_agent: FIXTURE_USER_AGENT },
-      subtitles: [{ url: `${origin}/subs/en.srt`, lang: 'en', label: 'English', format: 'srt', source: 'request' }],
+      subtitles: noSubtitle ? [] : [{ url: `${origin}/subs/en.srt`, lang: 'en', label: 'English', format: 'srt', source: 'request' }],
       best_height: 1080,
-      en_subtitle: true,
+      en_subtitle: !noSubtitle,
       took_s: 2.5,
       ...(mode === 'hls_token' ? { audio: { languages: ['en', 'ko'], tracks: 2, original: true, track: { lang: 'ko', label: 'Korean' } } } : {}),
     },

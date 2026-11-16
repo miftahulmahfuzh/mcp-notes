@@ -54,7 +54,7 @@ describe('direct streaming in the movies store', () => {
   let seen: MovieChangeEvent[]
   let clock: Date
   let tmdbCalls: number
-  const sessions = new Map<string, StreamSessionRef>()
+  const sessions = new Map<string, StreamSessionRef & { torrent?: { subtitleRev: number } }>()
 
   beforeAll(() => {
     db = openTestDb()
@@ -143,7 +143,10 @@ describe('direct streaming in the movies store', () => {
         clock = at(i)
         const res = await report(a, 'sess-1', { position_s: position, duration_s: 8340, ended: false })
         expect(res.status).toBe(200)
+        // A session that is no torrent never had its subtitle replaced.
+        expect(await res.json()).toMatchObject({ ok: true, subtitle_rev: 0 })
       }
+
       const rows = await streamRows()
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({
@@ -175,6 +178,15 @@ describe('direct streaming in the movies store', () => {
       // History's SQL "finished" agrees with streamState.
       const finished = await repo.titlesFinishedBetween({ from: at(-1), to: at(120) })
       expect(finished.map((f) => f.id)).toContain('movie-550')
+    })
+
+    it('says in every answer how many times a torrent session\'s subtitle was replaced (Wyzie Synced), so the page loads it again', async () => {
+      sessions.set('sess-t', { id: 'sess-t', ref: FIGHT_CLUB, source: { provider: 'Torrent' }, torrent: { subtitleRev: 1 } })
+      const live = new StreamLive()
+      const a = app(moviesOf(), true, live)
+      expect(await (await report(a, 'sess-t', { position_s: 5, duration_s: 8340 })).json()).toMatchObject({ ok: true, subtitle_rev: 1 })
+      // A paused page's beat writes nothing and still carries it.
+      expect(await (await report(a, 'sess-t', { position_s: 5, duration_s: 8340, paused: true, beat: true })).json()).toEqual({ ok: true, play_id: null, ended: false, subtitle_rev: 1 })
     })
 
     it('a new session starts a second row, closes the first at its last report, and resumes from it', async () => {
@@ -282,7 +294,7 @@ describe('direct streaming in the movies store', () => {
       for (let i = 1; i <= 6; i += 1) {
         clock = new Date(T0.getTime() + i * 5_000)
         const res = await report(a, 'sess-1', { position_s: 300, duration_s: 8340, paused: true, beat: true })
-        expect(await res.json()).toEqual({ ok: true, play_id: null, ended: false })
+        expect(await res.json()).toEqual({ ok: true, play_id: null, ended: false, subtitle_rev: 0 })
       }
       // Thirty seconds on, past the 20 s a silent page is kept: still paused, and the row untouched.
       expect(await onScreen(a)).toMatchObject({ state: 'paused', position: 300 })

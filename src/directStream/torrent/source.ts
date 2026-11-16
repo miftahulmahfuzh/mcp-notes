@@ -6,6 +6,7 @@ import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeEr
 import { canRemux, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleTier } from './subtitles/chain.js';
 import { FILE_LIST_TIMEOUT_MS, orderByFileLists } from './subtitles/files.js';
+import type { TorrentSyncRequest } from './subtitles/synced.js';
 import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick } from './types.js';
 
 /**
@@ -74,6 +75,8 @@ export interface TorrentSourceOptions {
   tiers: readonly SubtitleTier[];
   /** The remux for a file Chrome cannot play as is (torrent phase 5); null or unset: such a file is `unplayable`. */
   remux?: TorrentRemux | null;
+  /** Wyzie Synced: re-times a subtitle that came from outside the torrent after the play started; null or unset: never. */
+  sync?: { start(request: TorrentSyncRequest): unknown } | null;
   /** This daemon's origin as ffprobe reaches it (`http://127.0.0.1:<port>`); read at play time. */
   localBase: () => string;
   now?: () => number;
@@ -180,6 +183,8 @@ function standIn(torrent: SessionTorrent, probe: MediaProbe, audioLang: string |
 export class TorrentSource {
   private readonly now: () => number;
   private readonly log: (line: string) => void;
+  /** What a session's sync was asked with, to start it again when the session takes its torrent back (a reload of the page). */
+  private readonly syncs = new WeakMap<SessionTorrent, Omit<TorrentSyncRequest, 'signal' | 'target'>>();
 
   constructor(private readonly opts: TorrentSourceOptions) {
     this.now = opts.now ?? (() => Date.now());
@@ -307,6 +312,7 @@ export class TorrentSource {
       manifestUrl: page.manifestUrl,
       manifestKind: page.manifestKind,
       subtitles: chain.subtitles,
+      subtitleRev: 0,
       candidates: [],
       durationS: probe.durationS,
       candidate: null,
@@ -315,6 +321,7 @@ export class TorrentSource {
       query: null,
       stop,
     };
+    this.startSync(torrent, { ref, imdbId: null, infoHash: download.infoHash, fileIndex: download.fileIndex, durationS: probe.durationS });
     return { torrent, source: standIn(torrent, probe, options.audioLang, null), attempts: chain.attempts };
   }
 
@@ -326,6 +333,9 @@ export class TorrentSource {
     await this.opts.swarm.use(c.infoHash, [...torrent.selected]);
     if (torrent.stop.signal.aborted) torrent.stop = new AbortController();
     torrent.held = true;
+    // A sync the release stopped starts over; one that finished changed the subtitle, and nothing starts.
+    const sync = this.syncs.get(torrent);
+    if (sync !== undefined) this.startSync(torrent, sync);
     // A remux stopped with the release starts again (torrent phase 5); its playlist keeps its address.
     if (torrent.manifestKind === 'hls') await this.opts.remux?.resume(torrent.infoHash, torrent.fileIndex);
   }
@@ -368,6 +378,13 @@ export class TorrentSource {
     return { manifestUrl: play.manifestUrl, manifestKind: 'hls' };
   }
 
+  /** Wyzie Synced for the session's subtitle, behind the play: it starts only for a subtitle from outside the torrent (synced.ts). */
+  private startSync(torrent: SessionTorrent, request: Omit<TorrentSyncRequest, 'signal' | 'target'>): void {
+    if (this.opts.sync == null) return;
+    this.syncs.set(torrent, request);
+    void this.opts.sync.start({ ...request, signal: torrent.stop.signal, target: torrent });
+  }
+
   private letGo(infoHash: string): void {
     void Promise.resolve()
       .then(() => this.opts.swarm.release(infoHash))
@@ -392,7 +409,9 @@ export class TorrentSource {
       attempts.push(tried.attempt);
       if (tried.ok) {
         attempts.push(...tried.subtitleAttempts);
-        return { ok: true, torrent: { ...tried.torrent, candidates: candidates.slice(i + 1) }, source: tried.source, attempts };
+        // The same object, not a copy: the sync tryOne started writes its subtitle into it.
+        tried.torrent.candidates = candidates.slice(i + 1);
+        return { ok: true, torrent: tried.torrent, source: tried.source, attempts };
       }
     }
     return { ok: false, error: 'no_source', attempts };
@@ -471,6 +490,7 @@ export class TorrentSource {
         manifestUrl: page.manifestUrl,
         manifestKind: page.manifestKind,
         subtitles: chain.subtitles,
+        subtitleRev: 0,
         candidates: [],
         durationS: probe.durationS,
         candidate: c,
@@ -480,6 +500,7 @@ export class TorrentSource {
         stop,
       };
       torrent.state = await this.state(torrent);
+      this.startSync(torrent, { ref, imdbId: play.imdbId, infoHash: c.infoHash, fileIndex: picked.video, durationS: probe.durationS });
       const tookS = seconds(started, this.now());
       return { ok: true, torrent, source: standIn(torrent, probe, audioLang, tookS), attempt: attempt('resolved', `${describeProbe(probe)}${page.manifestKind === 'hls' ? ', remuxed' : ''}, ${c.seeds} seeds`), subtitleAttempts: chain.attempts };
     } catch (err) {
@@ -509,6 +530,8 @@ export function buildTorrentSource(
     fallback?: readonly TorrentIndex[];
     /** The remux of files Chrome cannot play as is (torrent phase 5); null or unset: such a file is `unplayable`. */
     remux?: TorrentRemux | null;
+    /** Wyzie Synced (buildSubtitleSync); null or unset: no subtitle is re-timed. */
+    sync?: { start(request: TorrentSyncRequest): unknown } | null;
   },
 ): TorrentSource | null {
   if (config.torrent?.enabled !== true || torrents === null) return null;
@@ -528,6 +551,7 @@ export function buildTorrentSource(
     probe: ffprobeFile({ ffprobeBin: config.movies.ffprobeBin }),
     tiers: wiring.tiers ?? [],
     remux: wiring.remux ?? null,
+    sync: wiring.sync ?? null,
     localBase: wiring.localBase,
     ...(wiring.log === undefined ? {} : { log: wiring.log }),
   });

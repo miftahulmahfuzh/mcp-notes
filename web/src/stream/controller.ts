@@ -75,6 +75,8 @@ export const PAUSE_CACHE_DELAY_MS = 2_000;
 export const CACHE_POLL_MS = 4_000;
 /** How often a torrent session asks for its peers, its speed and what is on disk, while it downloads and the tab shows. */
 export const TORRENT_POLL_MS = 2_000;
+/** The label of a subtitle Wyzie Synced re-timed (`English (Wyzie, synced)`). */
+const SYNCED_LABEL = /\bsynced\)\s*$/i;
 /** `sourceNotice` after an ask that found nothing; the page words it for a cloud source or a torrent. */
 export const NO_OTHER_SOURCE = 'No other source';
 const LOG_MAX = 20;
@@ -167,6 +169,8 @@ export interface StreamState {
   caption: string;
   /** How much later (positive) or earlier (negative) the subtitles show than their file says, in ms (G and H). */
   subtitleDelayMs: number;
+  /** Times the daemon replaced the subtitle with a re-timed one while the film played (Wyzie Synced); the page says `Subtitles synced` each time it goes up. */
+  subtitleSyncs: number;
   /** The stretches of the title on this machine's disk (a cached play or a torrent), in seconds: the timeline's thick grey bar. */
   cachedRanges: TimeRange[];
   /** A torrent session (torrent-stream-source phase 4): the mark beside the title and the wait for a part not on disk. Null: not a torrent. */
@@ -200,6 +204,7 @@ export const INITIAL_STATE: StreamState = {
   sourceNotice: null,
   caption: '',
   subtitleDelayMs: 0,
+  subtitleSyncs: 0,
   cachedRanges: [],
   torrent: null,
   errors: [],
@@ -244,6 +249,8 @@ export class StreamController {
   private generation = 0;
   private readySinceAttach = false;
   private subtitleChosen = false;
+  /** The session is being read again for a subtitle the daemon replaced. */
+  private readingSubtitles = false;
   private lastPositionS = 0;
   private fileTracks: FileTrack[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -1178,7 +1185,45 @@ export class StreamController {
       ...(extra.closed === true ? { closed: true } : {}),
     };
     this.set({ reportedS: report.position_s });
-    void postPosition(this.sessionId, report, this.deps.fetch);
+    const asked = this.sessionId;
+    void postPosition(asked, report, this.deps.fetch).then((rev) => {
+      if (rev !== null) void this.followSubtitleRev(asked, rev);
+    });
+  }
+
+  /**
+   * The daemon changed the session's subtitle while the film plays, and the answer to a position report
+   * said so: Wyzie Synced re-timed a subtitle that came from outside the stream, or a cloud stream with
+   * no English subtitle got one from a subtitle service. The session is read again and its subtitle
+   * files loaded anew: the film and its position stay as they are, subtitles the viewer turned off stay
+   * off, and a subtitle that arrives where there was none is shown like any English one. A re-timed
+   * file sets the owner's G/H delay for the title back to 0, since it was set against the old timing.
+   */
+  private async followSubtitleRev(asked: string, rev: number): Promise<void> {
+    const session = this.session;
+    if (this.disposed || this.readingSubtitles || session === null || this.sessionId !== asked || rev === session.subtitleRev || !this.onFilm()) return;
+    this.readingSubtitles = true;
+    try {
+      const fresh = await fetchSession(asked, this.deps.fetch);
+      if (this.disposed || this.session !== session || this.sessionId !== asked || fresh.subtitleRev === session.subtitleRev) return;
+      session.subtitles = fresh.subtitles;
+      session.subtitleRev = fresh.subtitleRev;
+      this.clearFileTracks();
+      await this.loadFileSubtitles(session);
+      if (this.disposed || this.session !== session) return;
+      const subtitles = [...this.state.subtitles.filter((o) => o.source === 'manifest'), ...this.fileTracks.map((t) => t.option)];
+      const was = this.state.subtitle;
+      const subtitle = was !== null && subtitles.some((o) => o.id === was) ? was : was === null && this.subtitleChosen ? null : pickDefaultSubtitle(subtitles);
+      this.showSubtitle(subtitles, subtitle);
+      const synced = fresh.subtitles.some((s) => SYNCED_LABEL.test(s.label));
+      this.set({ subtitles, subtitle, ...(synced ? { subtitleSyncs: this.state.subtitleSyncs + 1 } : {}) });
+      if (synced && this.state.subtitleDelayMs !== 0) this.shiftSubtitles(-this.state.subtitleDelayMs);
+      this.note(`subtitles ${synced ? 'synced' : 'changed'}: ${fresh.subtitles.map((s) => s.label).join(', ') || 'none'}`);
+    } catch (err) {
+      this.note(`subtitles not reloaded: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+    } finally {
+      this.readingSubtitles = false;
+    }
   }
 
   private async refresh(status: number): Promise<void> {

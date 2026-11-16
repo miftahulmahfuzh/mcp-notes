@@ -479,6 +479,39 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
   seeds and 40-hex `info_hash`).
 
+## Wyzie Synced, and a cloud stream with no English subtitle
+- Wyzie Synced: a torrent session's subtitle from the `service` or `borrow` tier (also when `kept` answers it
+  on a replay) is re-timed behind the play. ffmpeg cuts the film's audio in 5-minute stretches,
+  `claude/streaming/torrent/vad.py` (Whisper's Python) finds the speech, `POST <wyzie>/sync` answers the
+  subtitle that fits; horizons 30 min, 60 min, the whole film (a 422 goes on to the next). The synced file
+  is kept as `synced-<file index>.vtt` (`English (Wyzie, synced)`), the outcome as `synced-<file index>.json`
+  beside it, the session's `subtitle_rev` goes up, and the open page (which reads `subtitle_rev` in the answer
+  to `POST /api/stream/sessions/:id/position`) loads it without touching the film, says `Subtitles synced`
+  and sets the G/H delay back to 0. `NOTESD_TORRENT_WYZIE_SYNC=off`, no key, or no Python: nothing is synced.
+- A cloud session whose source shows no English subtitle gets the title's outside one (Wyzie, then the
+  add-on by IMDb id): a local subtitle `English (Wyzie)` / `English (OpenSubtitles)` at
+  `GET /api/stream/subs/<movie-550 | tv-1396-s1e2>/outside.vtt`, kept under
+  `<data dir>/movies/stream-subs/`, reused by every later play of the title, asked for at most 4 s inline
+  (later: `subtitle_rev` goes up). It is synced the same way, its audio cut from the stream (the captured
+  headers) or from this machine's cache of it; the synced file is `synced.vtt`. A stream with an English
+  subtitle asks nothing. `direct_stream_dialogue` reads the outside file when the source has no English track.
+- Logic: `npx vitest run tests/unit/directStream/torrent/subtitles/synced.test.ts tests/unit/directStream/outsideSubtitles.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/config.torrent.test.ts web/src/stream/controller.test.tsx web/src/stream/StreamApp.test.tsx`;
+  the position answer's `subtitle_rev` in `tests/integration/movies.streams.int.test.ts`.
+- Throwaway daemon: `NOTESD_TORRENT_WHISPER=off NOTESD_TORRENT_WHISPER_PYTHON=$PWD/tests/fixtures/torrent/fake-vad.mjs $V up --web --torrent`,
+  then `.claude/skills/verify-notesd/scripts/torrent/synced.sh RUN` (stages `torrent`, `cloud`, `english`;
+  about two minutes). The fake speech detector stands in for Whisper's Python (8.5 s of "speech" in every
+  10 s of the WAV ffmpeg really cut); the fake subtitle service answers `POST /sync` in mode `sync` once
+  `$SUBS/sync-go` exists (`$SUBS/sync-refuse`: 422), so `scripts/stream/subtitles-synced.steps.mjs` watches the
+  real page go from "Wyzie subtitle line" to "Synced subtitle line". `$DIRECT/no_subtitle` makes the fake
+  resolver answer a stream with no subtitle; the cloud stage plays `hls_film`, whose host refuses a request
+  without the captured Referer. The transcript ends with `synced: PASS (torrent cloud english)`.
+- Real pieces, checked by hand on the owner's machine (never by a throwaway daemon): `vad.py` on five
+  minutes of a library film gave the same stretches as the brief's sample, and the sample
+  (`tests/fixtures/torrent-subtitles/wyzie-synced-speech.json`) through `wyzieSynced` with the real key
+  answered offset -0.89 s, fps `23.976:24`, confidence 1 (one sync: 60 requests; do not repeat it idly).
+- Gotcha: a sync job waits on the torrent's file route until the film is downloaded as far as it cuts; the
+  loopback seeder uploads at 200 kB/s, so keep a fixture film small.
+
 ## Torrent subtitles: Whisper, the last resort
 
 - When the torrent's subtitle file, the subtitle service, the cloud borrow and the embedded text track

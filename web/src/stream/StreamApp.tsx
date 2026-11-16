@@ -148,6 +148,10 @@ function TorrentMark({ torrent }: { torrent: TorrentView }) {
   );
 }
 
+/** The line over the picture after Wyzie Synced re-timed the subtitle, and how long it stays. */
+export const SYNCED_NOTICE = 'Subtitles synced';
+export const SYNCED_NOTICE_MS = 4000;
+
 /** The line over the picture about the last ask for another source; a torrent session speaks of torrents. Null: nothing to say. */
 export function sourceLine(changing: boolean, notice: string | null, torrent: boolean): string | null {
   if (changing) return torrent ? 'Looking for another torrent…' : 'Looking for another source…';
@@ -508,6 +512,14 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     },
     [controller],
   );
+  // `Subtitles synced`, for a moment, each time the daemon replaced the subtitle with a re-timed one.
+  const [syncShown, setSyncShown] = useState(false);
+  useEffect(() => {
+    if (state.subtitleSyncs === 0) return;
+    setSyncShown(true);
+    const timer = setTimeout(() => setSyncShown(false), SYNCED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [state.subtitleSyncs]);
   useEffect(
     () => () => {
       if (delayTimer.current !== null) clearTimeout(delayTimer.current);
@@ -562,7 +574,12 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
               {sourceText}
             </span>
           )}
-          {delayShown && (
+          {syncShown && (
+            <span className="st-notice" role="status">
+              {SYNCED_NOTICE}
+            </span>
+          )}
+          {delayShown && !syncShown && (
             <span className="st-notice" role="status">
               {delayText(state.subtitleDelayMs)}
             </span>

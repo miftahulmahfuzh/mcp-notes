@@ -58,7 +58,9 @@ describe('parseSession', () => {
       nextEpisode: null,
       cached: null,
       torrent: null,
+      subtitleRev: 0,
     });
+    expect(parseSession(streamSessionJson({ subtitle_rev: 2 })).subtitleRev).toBe(2);
     // A series' session names its neighbours; anything else there is no neighbour.
     expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
       prevEpisode: { season: 17, episode: 729 },
@@ -1115,6 +1117,114 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     const reads = (hash = HASH) => t.calls.filter((c) => c.method === 'GET' && c.url === `/api/stream/torrent/${hash}`).length;
     return { ...t, reads };
   }
+
+  describe('a subtitle the daemon re-timed while the film plays (Wyzie Synced)', () => {
+    const OLD = `/api/stream/torrent/${HASH}/sub/service-wyzie-9.vtt`;
+    const NEW = `/api/stream/torrent/${HASH}/sub/synced-0.vtt`;
+    const vtt = (line: string) => new Response(`WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n${line}\n`, { status: 200 });
+    const store = () => {
+      const kept = new Map<string, string>();
+      return { kept, getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) };
+    };
+
+    /** A torrent session with a Wyzie subtitle; `rev` is what the daemon says now, in the session and in the answer to a position report. */
+    async function synced(storage?: ReturnType<typeof store>) {
+      const daemon = { rev: 0 };
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      const { made, createEngine } = fakeEngines();
+      const { fetchImpl, calls } = routeFetch({
+        [`GET ${S1}`]: () =>
+          jsonResponse(
+            onTorrent({
+              subtitle_rev: daemon.rev,
+              subtitles: [daemon.rev === 0 ? sessionTrack(OLD, 'en', 'English (Wyzie)') : sessionTrack(NEW, 'en', 'English (Wyzie, synced)')],
+            }),
+          ),
+        [`GET ${OLD}`]: () => vtt('Out of step.'),
+        [`GET ${NEW}`]: () => vtt('In step.'),
+        [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: daemon.rev }),
+        [STATUS]: () => downloading(),
+        [MAP]: sixtyOnDisk,
+      });
+      const { video, media, fire } = fakeVideo();
+      const texts: string[] = [];
+      const controller = new StreamController('S1', video, { fetch: fetchImpl, createEngine, textUrl: (t) => `blob:vtt-${texts.push(t)}`, revokeTextUrl: () => {}, ...(storage === undefined ? {} : { storage }) });
+      controllers.push(controller);
+      void controller.start();
+      await vi.waitFor(() => expect(made).toHaveLength(1));
+      made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+      Object.assign(media, { currentTime: 30, duration: 888, paused: false });
+      fire('timeupdate');
+      const tracks = () => [...video.querySelectorAll('track')].map((el) => el.label);
+      const sessionReads = () => calls.filter((c) => c.method === 'GET' && c.url === S1).length;
+      return { controller, daemon, made, video, media, fire, texts, tracks, sessionReads };
+    }
+
+    it('loads the synced file in place of the old one: the film, the position and the choice stay, and the delay goes back to 0', async () => {
+      const storage = store();
+      const t = await synced(storage);
+      expect(t.tracks()).toEqual(['English (Wyzie)']);
+      expect(t.controller.getState()).toMatchObject({ subtitle: 'file-0', subtitleSyncs: 0 });
+      t.controller.shiftSubtitles(-900);
+      expect(storage.kept.size).toBe(1);
+      // A report whose answer says nothing new changes nothing.
+      await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+      expect(t.sessionReads()).toBe(1);
+      t.daemon.rev = 1;
+      await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+      await vi.waitFor(() => expect(t.tracks()).toEqual(['English (Wyzie, synced)']));
+      expect(t.texts.at(-1)).toContain('In step.');
+      expect(t.controller.getState()).toMatchObject({ stage: 'ready', subtitle: 'file-0', subtitleSyncs: 1, subtitleDelayMs: 0 });
+      expect(t.controller.getState().subtitles.map((o) => o.label)).toEqual(['English (Wyzie, synced)']);
+      expect(storage.kept.size).toBe(0);
+      // The film was never loaded again.
+      expect(t.made).toHaveLength(1);
+      expect(t.made[0].destroy).not.toHaveBeenCalled();
+      expect(t.media.currentTime).toBe(30);
+      expect(t.controller.getState().log.at(-1)).toBe('subtitles synced: English (Wyzie, synced)');
+      // The same number again: read once, not on every report.
+      await vi.advanceTimersByTimeAsync(3 * POSITION_INTERVAL_MS);
+      expect(t.sessionReads()).toBe(2);
+      expect(t.controller.getState().subtitleSyncs).toBe(1);
+    });
+
+    it('subtitles the viewer turned off stay off', async () => {
+      const t = await synced();
+      t.controller.selectSubtitle(null);
+      t.daemon.rev = 1;
+      await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+      await vi.waitFor(() => expect(t.tracks()).toEqual(['English (Wyzie, synced)']));
+      expect(t.controller.getState()).toMatchObject({ subtitle: null, subtitleSyncs: 1 });
+      // Turned on again, it is the synced one.
+      t.controller.selectSubtitle('file-0');
+      expect(t.controller.getState().subtitle).toBe('file-0');
+    });
+  });
+
+  it('a cloud stream with no subtitle shows the outside one that arrives behind the play, with no "synced" line', async () => {
+    const URL_ = '/api/stream/subs/movie-550/outside.vtt';
+    let rev = 0;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ subtitle_rev: rev, subtitles: rev === 0 ? [] : [sessionTrack(URL_, 'en', 'English (Wyzie)')] })),
+      [`GET ${URL_}`]: () => new Response('WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nFrom outside.\n', { status: 200 }),
+      [`POST ${S1}/position`]: () => jsonResponse({ ok: true, play_id: 'p1', ended: false, subtitle_rev: rev }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 30, duration: 888, paused: false });
+    t.fire('timeupdate');
+    expect(t.controller.getState()).toMatchObject({ subtitles: [], subtitle: null });
+    t.controller.shiftSubtitles(200);
+    rev = 1;
+    await vi.advanceTimersByTimeAsync(POSITION_INTERVAL_MS);
+    await vi.waitFor(() => expect(t.controller.getState().subtitle).toBe('file-0'));
+    // Not a re-timed file: nothing says "synced", and the delay is the owner's still.
+    expect(t.controller.getState()).toMatchObject({ subtitleSyncs: 0, subtitleDelayMs: 200 });
+    expect(t.controller.getState().log.at(-1)).toBe('subtitles changed: English (Wyzie)');
+    expect(t.made).toHaveLength(1);
+  });
 
   it('reads the torrent a session plays, and nothing it cannot use', () => {
     expect(parseSession(onTorrent()).torrent).toEqual({ infoHash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', seeds: 52, state: 'downloading' });

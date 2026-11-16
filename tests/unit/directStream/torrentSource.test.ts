@@ -5,6 +5,7 @@ import { parseRelease, type TorrentCandidate } from '../../../src/directStream/t
 import { ProbeError, type MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { runSubtitleChain, SUBTITLE_BUDGET_MS, type SubtitleTier } from '../../../src/directStream/torrent/subtitles/chain.js';
 import { MAX_TORRENT_TRIES, TorrentSource, type DownloadOnDisk, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
+import type { TorrentSyncRequest as SyncRequest } from '../../../src/directStream/torrent/subtitles/synced.js';
 import type { TorrentFileInfo } from '../../../src/directStream/torrent/types.js';
 
 const FILM: StreamRef = { kind: 'movie', tmdbId: 467905 };
@@ -44,6 +45,8 @@ interface Fakes {
   disk?: DownloadOnDisk | null;
   tiers?: SubtitleTier[];
   onFind?: (query: unknown) => void;
+  /** Wyzie Synced as a recorder of what it was started with. */
+  sync?: SyncRequest[];
 }
 
 function setup(o: Fakes = {}) {
@@ -86,6 +89,7 @@ function setup(o: Fakes = {}) {
       return p;
     },
     tiers: o.tiers ?? [],
+    ...(o.sync === undefined ? {} : { sync: { start: (request) => (o.sync?.push(request), null) } }),
     localBase: () => BASE,
     log: () => undefined,
   });
@@ -211,6 +215,39 @@ describe('TorrentSource.next, hold and release', () => {
     await t.source.hold(FILM, first.torrent);
     expect(first.torrent.held).toBe(true);
     expect(t.calls.slice(-2)).toEqual([`open ${h(1)}`, `use ${h(1)} 0`]);
+  });
+});
+
+describe('TorrentSource and Wyzie Synced', () => {
+  const serviceTier: SubtitleTier = { name: 'service', blocks: true, find: async (ctx) => [{ url: `/api/stream/torrent/${ctx.infoHash}/sub/service-wyzie-1.vtt`, lang: 'en', label: 'English (Wyzie)' }] };
+
+  it('hands the sync the session\'s own torrent after the chain, and again when the session takes the torrent back', async () => {
+    const sync: SyncRequest[] = [];
+    const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A'), candidate(h(2), 'Film.2026.720p.WEB-DL.x264.AAC-B')], tiers: [serviceTier], sync });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    if (!out.ok) throw new Error('not resolved');
+    expect(sync).toHaveLength(1);
+    expect(sync[0]).toMatchObject({ ref: FILM, imdbId: 'tt0467905', infoHash: h(1), fileIndex: 0, durationS: 62 });
+    // The very object the session keeps: what the sync writes is what the page reads.
+    expect(sync[0]!.target).toBe(out.torrent);
+    expect(out.torrent.subtitleRev).toBe(0);
+    expect(out.torrent.candidates.map((c) => c.infoHash)).toEqual([h(2)]);
+    expect(sync[0]!.signal).toBe(out.torrent.stop.signal);
+    t.source.release(out.torrent);
+    expect(sync[0]!.signal.aborted).toBe(true);
+    await t.source.hold(FILM, out.torrent);
+    expect(sync).toHaveLength(2);
+    expect(sync[1]!.signal.aborted).toBe(false);
+    expect(sync[1]!.target).toBe(out.torrent);
+  });
+
+  it('a replay from disk is handed over too, by the TMDB id (no IMDb id is known)', async () => {
+    const sync: SyncRequest[] = [];
+    const t = setup({ disk: { infoHash: h(5), name: 'Film.2026.720p', fileIndex: 0, state: 'ready' }, ready: [h(5)], tiers: [serviceTier], sync });
+    const out = await t.source.fromDisk(FILM, { audioLang: 'en' });
+    expect(sync).toHaveLength(1);
+    expect(sync[0]).toMatchObject({ imdbId: null, infoHash: h(5), fileIndex: 0, durationS: 62 });
+    expect(sync[0]!.target).toBe(out?.torrent);
   });
 });
 

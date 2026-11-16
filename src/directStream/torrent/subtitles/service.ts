@@ -192,77 +192,114 @@ async function getFile(fetchImpl: FetchLike, url: string): Promise<string | null
   return body === null ? null : vttFromBytes(body);
 }
 
-export interface ServiceTierDeps {
+/** The subtitle services as a caller names them: the torrent `service` tier, and a cloud session's outside subtitle (titleSubtitles.ts). */
+export interface OutsideServices {
   /** The OpenSubtitles add-on's address; null: only Wyzie is asked. */
   baseUrl: string | null;
   /** Wyzie Subs, asked first (phase 6 addendum); null without WYZIE_API_KEY. */
   wyzie?: { baseUrl: string; key: string; timeoutMs?: number } | null;
   fetch: FetchLike;
-  torrents: TorrentFilePaths;
-  shelf: SubtitleShelf;
-  hashTimeoutMs?: number;
   log?: (line: string) => void;
 }
 
+export interface OutsideQuery {
+  ref: StreamRef;
+  /** `tt…`, or null: the add-on is then not asked, and Wyzie is asked by the TMDB id. */
+  imdbId: string | null;
+  /** The release the entries are ranked against; '' ranks a plain file before a hearing-impaired one, then by downloads. */
+  release: string;
+  /** The video file's OpenSubtitles hash, read when the add-on is asked; unset or null: by IMDb id alone. */
+  hash?: () => Promise<VideoHash | null>;
+  /** Names the play in the log (an info hash, a title). */
+  tag: string;
+}
+
+export interface OutsideSubtitle {
+  from: 'wyzie' | 'opensubtitles';
+  /** The service's id of the entry. */
+  id: string;
+  vtt: string;
+  /** The add-on matched it to the file's hash. */
+  hashMatched: boolean;
+}
+
 /**
- * The third tier (R3.3). With a Wyzie key, Wyzie Subs is asked first (at most 12 s) and its best
- * English file is kept as `service-wyzie-<id>.vtt`, labelled `English (Wyzie)`; when it lists
- * nothing usable, fails or times out, the add-on is asked as below. The add-on (`opensubtitles`)
- * is asked by the file's hash first, then by the IMDb id alone (when the hash request failed or
- * listed no English subtitle); the best of its English entries (up to three tries) is kept as
- * `service-<id>.vtt`. Answers [] when no service lists anything English or no file could be read;
- * throws when no service answered at all. Without an IMDb id the add-on is not asked.
+ * An English subtitle from outside the stream. With a Wyzie key, Wyzie Subs is asked first (at most 12 s); when it
+ * lists nothing usable, fails or times out, the add-on (`opensubtitles`) is asked by the file's hash, then by the
+ * IMDb id alone (when the hash request failed or listed no English subtitle), and the best of its English entries
+ * (up to three tries) is read. Null when no service lists anything English or no file could be read; throws when no
+ * service answered at all. Without an IMDb id the add-on is not asked.
+ */
+export async function findOutsideSubtitle(deps: OutsideServices, query: OutsideQuery): Promise<OutsideSubtitle | null> {
+  const wyzie = deps.wyzie ?? null;
+  const imdbId = query.imdbId !== null && IMDB_ID.test(query.imdbId) ? query.imdbId : null;
+  const failures: string[] = [];
+  let answered = false;
+  if (wyzie !== null) {
+    try {
+      const got = await wyzieSubtitle(
+        { baseUrl: wyzie.baseUrl, key: wyzie.key, fetch: deps.fetch, userAgent: SUBTITLE_SERVICE_USER_AGENT, ...(wyzie.timeoutMs === undefined ? {} : { timeoutMs: wyzie.timeoutMs }) },
+        { ref: query.ref, imdbId, release: query.release },
+      );
+      answered = true;
+      if (got !== null) return { from: 'wyzie', id: got.id, vtt: got.vtt, hashMatched: false };
+    } catch (err) {
+      // Only the step and the status: Wyzie's addresses carry the key and a token.
+      failures.push(`wyzie: ${withoutSecrets(messageOf(err))}`);
+      deps.log?.(`[notesd] torrent: wyzie gave no subtitle for ${query.tag}: ${withoutSecrets(messageOf(err))}`);
+    }
+  }
+  if (deps.baseUrl === null || imdbId === null) {
+    if (!answered && failures.length > 0) throw new Error(`the subtitle service did not answer (${failures.join('; ')})`);
+    return null;
+  }
+  const baseUrl = deps.baseUrl;
+  const hash = query.hash === undefined ? null : await query.hash().catch(() => null);
+  let list: ServiceSubtitle[] = [];
+  for (const by of hash === null ? [null] : [hash, null]) {
+    try {
+      list = await getList(deps.fetch, serviceListUrl(baseUrl, query.ref, imdbId, by));
+      answered = true;
+      if (list.length > 0) break;
+    } catch (err) {
+      failures.push(`opensubtitles ${by === null ? 'by IMDb id' : 'by hash'}: ${messageOf(err)}`);
+    }
+  }
+  if (!answered) throw new Error(`the subtitle service did not answer (${failures.join('; ')})`);
+  for (const entry of chooseServiceSubtitles(list, query.release).slice(0, FILE_TRIES)) {
+    const vtt = await getFile(deps.fetch, entry.url).catch(() => null);
+    if (vtt !== null) return { from: 'opensubtitles', id: entry.id, vtt, hashMatched: entry.hashMatched };
+  }
+  return null;
+}
+
+export interface ServiceTierDeps extends OutsideServices {
+  torrents: TorrentFilePaths;
+  shelf: SubtitleShelf;
+  hashTimeoutMs?: number;
+}
+
+/**
+ * The third tier (R3.3): findOutsideSubtitle for the torrent's chosen file. Wyzie's file is kept as
+ * `service-wyzie-<id>.vtt`, labelled `English (Wyzie)`; the add-on's as `service-<id>.vtt`, labelled `English`
+ * when it matched the file's hash, else `English (matched by title)`.
  */
 export function serviceTier(deps: ServiceTierDeps): SubtitleTier {
-  const wyzie = deps.wyzie ?? null;
   return {
     name: 'service',
     blocks: true,
     async find(ctx): Promise<CacheSubtitleView[]> {
-      const failures: string[] = [];
-      let answered = false;
-      if (wyzie !== null) {
-        try {
-          const got = await wyzieSubtitle(
-            { baseUrl: wyzie.baseUrl, key: wyzie.key, fetch: deps.fetch, userAgent: SUBTITLE_SERVICE_USER_AGENT, ...(wyzie.timeoutMs === undefined ? {} : { timeoutMs: wyzie.timeoutMs }) },
-            { ref: ctx.ref, imdbId: ctx.imdbId !== null && IMDB_ID.test(ctx.imdbId) ? ctx.imdbId : null, release: ctx.release },
-          );
-          answered = true;
-          if (got !== null) {
-            const name = `service-wyzie-${got.id.toLowerCase().replace(/[^a-z0-9-]/g, '-')}.vtt`;
-            return [await deps.shelf.save(ctx.infoHash, name, got.vtt, { lang: 'en', label: 'English (Wyzie)' })];
-          }
-        } catch (err) {
-          // Only the step and the status: Wyzie's addresses carry the key and a token.
-          failures.push(`wyzie: ${withoutSecrets(messageOf(err))}`);
-          deps.log?.(`[notesd] torrent: wyzie gave no subtitle for ${ctx.infoHash}: ${withoutSecrets(messageOf(err))}`);
-        }
-      }
-      if (deps.baseUrl === null || ctx.imdbId === null || !IMDB_ID.test(ctx.imdbId)) {
-        if (!answered && failures.length > 0) throw new Error(`the subtitle service did not answer (${failures.join('; ')})`);
-        return [];
-      }
-      const baseUrl = deps.baseUrl;
-      const imdbId = ctx.imdbId;
-      const hash = await videoHash(ctx, deps.torrents, deps.hashTimeoutMs ?? HASH_TIMEOUT_MS).catch(() => null);
-      let list: ServiceSubtitle[] = [];
-      for (const by of hash === null ? [null] : [hash, null]) {
-        try {
-          list = await getList(deps.fetch, serviceListUrl(baseUrl, ctx.ref, imdbId, by));
-          answered = true;
-          if (list.length > 0) break;
-        } catch (err) {
-          failures.push(`opensubtitles ${by === null ? 'by IMDb id' : 'by hash'}: ${messageOf(err)}`);
-        }
-      }
-      if (!answered) throw new Error(`the subtitle service did not answer (${failures.join('; ')})`);
-      for (const entry of chooseServiceSubtitles(list, ctx.release).slice(0, FILE_TRIES)) {
-        const vtt = await getFile(deps.fetch, entry.url).catch(() => null);
-        if (vtt === null) continue;
-        const name = `service-${entry.id.toLowerCase().replace(/[^a-z0-9-]/g, '-')}.vtt`;
-        return [await deps.shelf.save(ctx.infoHash, name, vtt, { lang: 'en', label: entry.hashMatched ? 'English' : 'English (matched by title)' })];
-      }
-      return [];
+      const got = await findOutsideSubtitle(deps, {
+        ref: ctx.ref,
+        imdbId: ctx.imdbId,
+        release: ctx.release,
+        hash: () => videoHash(ctx, deps.torrents, deps.hashTimeoutMs ?? HASH_TIMEOUT_MS),
+        tag: ctx.infoHash,
+      });
+      if (got === null) return [];
+      const id = got.id.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      if (got.from === 'wyzie') return [await deps.shelf.save(ctx.infoHash, `service-wyzie-${id}.vtt`, got.vtt, { lang: 'en', label: 'English (Wyzie)' })];
+      return [await deps.shelf.save(ctx.infoHash, `service-${id}.vtt`, got.vtt, { lang: 'en', label: got.hashMatched ? 'English' : 'English (matched by title)' })];
     },
   };
 }
