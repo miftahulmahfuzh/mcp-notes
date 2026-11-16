@@ -61,22 +61,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "b71c316",
       "depends_on": [
         1,
         2
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "report button + tmux session landed; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-143927-945688/evidence (neighbor player.steps not run, quota economy)",
       "package": "src/directStream`, `src/http`, `web/src/stream",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:41:30+07:00",
       "satisfies": [
         "R4"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A124",
       "title": "Report button and its tmux session"
     },
     {
@@ -116,7 +116,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Play from the cache"
     }
@@ -124,6 +124,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-cache-and-bug-report",
-  "updated": "2026-11-16T14:33:40+07:00",
+  "updated": "2026-11-16T14:41:44+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
 }
