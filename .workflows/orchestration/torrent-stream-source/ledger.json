@@ -61,21 +61,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "27cb19f",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 4,
-      "note": null,
+      "note": "player page on a torrent: mark with peers/speed, on-disk bar from /map, fetching wait, no auto move, shuffle names next torrent, window.notesdStream.torrent; branch phase-4-torrent-stream-source; no code drift; decision: ran in per-phase worktree (rung 6); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-230947-1955504/evidence (J2) and 1116-231419-1975896/evidence (J1) | self-verified (owner's verifier-cost feedback; phase's own proof verified-first-pass); coordinator checked commit file list = write set + bookkeeping",
       "package": "web/src/stream",
       "plan": ".workflows/plan/torrent-stream-source/phase-4.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T23:24:14+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A130",
       "title": "The player page on a torrent"
     },
     {
@@ -100,21 +100,21 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "37dd9f0e40a0ff3a462b05d57ca19f230aa208eb",
       "depends_on": [
         3
       ],
       "difficulty": "NORMAL",
       "n": 6,
-      "note": null,
+      "note": "kept/files/service/borrow tiers, R3.2 reorder, /sub/:name route, addendum built (Wyzie first with WYZIE_API_KEY, NOTESD_TORRENT_WYZIE_URL; TorrentConfig.wyzieKey, wyzieUrl after subtitleUrl); decisions: Wyzie track labelled 'English (Wyzie)' = the service attempt's detail (runner untouched), service tier stays for Wyzie alone when add-on off, Wyzie by TMDB id without IMDb id, verify.sh pins both services off/fake on every up, wyzie journey replays quiet's episode; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231509-1981479/evidence | self-verified (owner's verifier-cost feedback; phase's own proof verified-first-pass); coordinator checked commit file list = write set + bookkeeping; addendum (Wyzie) built, diff checked: no key, only fake tok values",
       "package": "src/directStream/torrent/subtitles",
       "plan": ".workflows/plan/torrent-stream-source/phase-6.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T23:24:14+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A132",
       "title": "Subtitle files: in the torrent, from a subtitle service, from a cloud provider"
     },
     {
@@ -164,10 +164,10 @@
       ],
       "difficulty": "HARD",
       "n": 9,
-      "note": "1337x and ext.to as the finder's fallback through the streaming Chrome (background tab), fake sites script for verify.sh; phase 1's config.torrent.test.ts expectations gained sites per invariant 1 (phase 6 meets the same two lines at merge); feature-map entry is its own section per invariant 10; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence",
+      "note": "1337x and ext.to as the finder's fallback through the streaming Chrome (background tab), fake sites script for verify.sh; phase 1's config.torrent.test.ts expectations gained sites per invariant 1 (phase 6 meets the same two lines at merge); feature-map entry is its own section per invariant 10; proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1116-231139-1967682/evidence | self-verified (owner's verifier-cost feedback; phase's own proof verified-first-pass); coordinator checked commit file list = write set + bookkeeping",
       "package": "claude/streaming/torrent",
       "plan": ".workflows/plan/torrent-stream-source/phase-9.md",
-      "reported_at": "2026-11-16T23:16:21+07:00",
+      "reported_at": "2026-11-16T23:24:14+07:00",
       "satisfies": [
         "R1"
       ],
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T23:16:21+07:00",
+  "updated": "2026-11-16T23:24:14+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
