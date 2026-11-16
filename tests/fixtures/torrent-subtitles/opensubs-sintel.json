@@ -1,0 +1,65 @@
+{
+  "subtitles": [
+    {
+      "id": "3871796",
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952537611",
+      "SubEncoding": "ASCII",
+      "lang": "eng",
+      "m": "i",
+      "g": "1",
+      "subtitleFileName": "sintel_en.srt",
+      "fpsMilli": 24000,
+      "season": 0,
+      "episode": 0
+    },
+    {
+      "id": "6738581",
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1955318586",
+      "SubEncoding": "UTF-8",
+      "lang": "eng",
+      "m": "i",
+      "g": "1",
+      "subtitleFileName": "Sintel (2010).eng.srt",
+      "movieReleaseName": "Sintel (2010)",
+      "season": 0,
+      "episode": 0
+    },
+    {
+      "id": "4784578",
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1953329013",
+      "SubEncoding": "UTF-8",
+      "lang": "eng",
+      "m": "i",
+      "g": "1",
+      "subtitleFileName": "sintel.he.srt",
+      "movieReleaseName": "sintel",
+      "season": 0,
+      "episode": 0
+    },
+    {
+      "id": "3863890",
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952529149",
+      "SubEncoding": "ASCII",
+      "lang": "eng",
+      "m": "i",
+      "g": "2",
+      "subtitleFileName": "sintel_en.srt",
+      "movieReleaseName": "Sintel.2010.Xvid-VODO",
+      "fpsMilli": 24000,
+      "season": 0,
+      "episode": 0
+    },
+    {
+      "id": "6738584",
+      "url": "https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1955318589",
+      "SubEncoding": "UTF-8",
+      "lang": "fre",
+      "m": "i",
+      "g": "1",
+      "subtitleFileName": "Sintel (2010).fre.srt",
+      "movieReleaseName": "Sintel (2010)",
+      "season": 0,
+      "episode": 0
+    }
+  ]
+}

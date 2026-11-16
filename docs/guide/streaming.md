@@ -1234,6 +1234,46 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   stretches on disk, in seconds. The log says `from torrent <hash start> <release> (<state>)` when
   the page opens it and `torrent <hash start> on disk` when the download completes.
 
+### Subtitles for a torrent
+
+A torrent session gets its English subtitle from the first of these that has one. The play
+answer's `attempts` list each one asked as `Subtitles: <tier>`.
+
+1. **Kept.** What an earlier play of the same torrent chose, from
+   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A replay from disk asks nothing else.
+2. **A file in the torrent.** Releases often carry `Film.en.srt`, `Film.eng.srt`, `English.srt`
+   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video, and
+   the play waits up to 15 s for them. A plain English file comes before an SDH one, SubRip
+   before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is never used. With
+   no English file, the torrent's one subtitle file is used when its name gives no language; the
+   player shows it like an English one. A file that has not arrived in 15 s is skipped for this
+   play, and the next play finds it.
+3. **The subtitle service** (`NOTESD_TORRENT_SUBTITLE_URL`, Stremio's OpenSubtitles add-on). It is
+   asked first by the video's OpenSubtitles hash (its size and its first and last 64 KiB, read
+   from the torrent ahead of the rest), so the lines match this exact file. If that fails, it is
+   asked by the title's IMDb id, and the English file whose name shares the most words with the
+   release is taken; it is labelled "English (matched by title)". With `WYZIE_API_KEY` set, Wyzie
+   Subs is asked before the add-on (by the IMDb id, for at most 12 s; machine translations are
+   left out) and its file is labelled "English (Wyzie)"; when Wyzie has nothing or fails, the
+   add-on is asked as above.
+4. **A cloud provider.** The title is resolved out of sight, as `direct_stream_dialogue` does,
+   and that provider's English subtitle is kept as `borrow.vtt`, labelled with the provider. It
+   is skipped when the torrent was the fall-through after the cloud providers answered
+   `no_source`. Its failure never stops the play.
+
+These four hold up a play for at most 40 s together: one that would start later is `skipped`, and
+the play goes on without a subtitle.
+
+A subtitle matched by title or borrowed from a provider may be cut for another release, so its
+lines can come early or late. The player's G and H keys move them 50 ms at a time, and the delay
+is kept for the title (see [The player](#the-player)).
+
+Before the first torrent is opened, the file lists of the best three candidates are read in
+parallel (metadata only), and one whose files hold an English subtitle is tried first. The
+others leave their swarms at once.
+
+Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
+
 ## Where the code is
 
 | Path | What |
@@ -1255,6 +1295,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
+| `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |

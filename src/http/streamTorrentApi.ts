@@ -1,7 +1,9 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
+import { fileResponse } from '../directStream/cache/serve.js';
 import type { TorrentStreams } from '../directStream/torrent/service.js';
+import { SubtitleShelf, isFile } from '../directStream/torrent/subtitles/disk.js';
 import { mediaOf, normalizeInfoHash, TORRENT_OPEN_TIMEOUT_MS, TorrentError } from '../directStream/torrent/types.js';
 import type { StreamRef } from '../directStream/types.js';
 import { DIRECT_STREAM_OFF } from './directStreamApi.js';
@@ -78,7 +80,7 @@ export function torrentErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'torrents'>>): Hono {
+export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'torrents' | 'config'>>): Hono {
   const r = new Hono();
   /** Info hashes POST /api/stream/torrent holds in use (one user each) until their release route. */
   const held = new Set<string>();
@@ -163,6 +165,22 @@ export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partia
     const raw = c.req.param('index');
     const index = /^\d{1,7}$/.test(raw) ? Number(raw) : -1;
     return torrents.serve(c.req.param('hash'), index, c.req.header('range') ?? null);
+  });
+
+  // Phase 6: a torrent's subtitle files (WebVTT), kept under its folder by the subtitle tiers.
+  r.get('/api/stream/torrent/:hash/sub/:name', async (c) => {
+    const torrents = deps.torrents ?? null;
+    const dir = deps.config?.torrent?.dir ?? null;
+    if (torrents === null || dir === null) return c.json(TORRENT_OFF, 503);
+    const hash = c.req.param('hash').toLowerCase();
+    const name = c.req.param('name');
+    const file = new SubtitleShelf(dir).file(hash, name);
+    if (file !== null && (await isFile(file))) return fileResponse(file, name, c.req.header('range') ?? null);
+    const view = file === null ? null : await torrents.view(hash);
+    if (view !== null && view.available === false) {
+      return c.json({ error: 'not_on_this_machine', message: `That torrent is on ${view.host}, not on this machine.`, host: view.host }, 404);
+    }
+    return c.json({ error: 'not_found', message: 'This machine has no subtitle file by that name for that torrent.' }, 404);
   });
 
   return r;

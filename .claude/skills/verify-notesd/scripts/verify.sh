@@ -227,6 +227,14 @@ EOF
     echo $! >"$dir/torrent-index.pid"
     for _ in $(seq 1 40); do [ -s "$dir/torrent/index.port" ] && break; sleep 0.25; done
     [ -s "$dir/torrent/index.port" ] || die "--torrent: the fake index did not start (log: $dir/torrent/index.out; verify.sh down $run)"
+    # Torrent phase 6: a fake subtitle service in the shape of Stremio's OpenSubtitles add-on, which also
+    # answers as Wyzie Subs (/search) for a fake key; never the real ones.
+    mkdir -p "$dir/torrent/subs"
+    setsid node "$HERE/torrent/fake-subs.mjs" --state "$dir/torrent/subs" --info "$dir/torrent/subs/info.json" \
+      --wyzie-key verify-fake-wyzie-key </dev/null >"$dir/torrent/subs/out.log" 2>&1 &
+    echo $! >"$dir/subs.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/torrent/subs/info.json" ] && break; sleep 0.25; done
+    [ -s "$dir/torrent/subs/info.json" ] || die "--torrent: the fake subtitle service did not start (log: $dir/torrent/subs/out.log; verify.sh down $run)"
   fi
 
   # Real env wins over .env.local, so these pin the instance to the run's own state.
@@ -317,6 +325,15 @@ EOF
   else
     env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
   fi
+  # Torrent phase 6: a throwaway daemon never asks the real subtitle services (.env.local may hold the owner's
+  # WYZIE_API_KEY). --torrent points both at the fake one, with a fake key.
+  if [ "$torrent" = 1 ]; then
+    local subs_origin
+    subs_origin="$(jq -r .origin "$dir/torrent/subs/info.json")"
+    env+=("NOTESD_TORRENT_SUBTITLE_URL=$subs_origin" "NOTESD_TORRENT_WYZIE_URL=$subs_origin" WYZIE_API_KEY=verify-fake-wyzie-key)
+  else
+    env+=(NOTESD_TORRENT_SUBTITLE_URL=off NOTESD_TORRENT_WYZIE_URL=off WYZIE_API_KEY=)
+  fi
   # NOTESD_STREAM_PROBER=off unless --prober: a throwaway daemon never probes on its own. --prober=off
   # leaves the setting blank, which is how "unset" reaches the daemon (the real environment wins over
   # .env.local). Direct streaming itself is --direct-stream (fake resolver).
@@ -364,6 +381,7 @@ EOF
   if [ "$movies" = 1 ]; then echo "MOVIES=$dir/movies"; fi
   if [ "$direct" = 1 ]; then echo "DIRECT=$dir/direct"; fi
   if [ "$torrent" = 1 ]; then echo "TORRENT=$dir/torrent"; fi
+  if [ "$torrent" = 1 ]; then echo "SUBS=$dir/torrent/subs"; fi
 }
 
 cmd_doctor() {
@@ -534,6 +552,13 @@ stop_run() {
     rm -f "$dir/torrent-index.pid"
   fi
   if [ -f "$dir/torrent/index.jsonl" ]; then cp "$dir/torrent/index.jsonl" "$dir/evidence/torrent-index-requests.jsonl"; fi
+  # --torrent: the fake subtitle service was started by `up`; keep its request logs.
+  if [ -f "$dir/subs.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/subs.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/subs.pid")" 2>/dev/null || true
+    rm -f "$dir/subs.pid"
+  fi
+  if [ -f "$dir/torrent/subs/requests.jsonl" ]; then cp "$dir/torrent/subs/requests.jsonl" "$dir/evidence/torrent-subtitle-requests.jsonl"; fi
+  if [ -f "$dir/torrent/subs/wyzie-requests.jsonl" ]; then cp "$dir/torrent/subs/wyzie-requests.jsonl" "$dir/evidence/torrent-wyzie-requests.jsonl"; fi
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi

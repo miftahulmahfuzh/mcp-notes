@@ -119,15 +119,35 @@
   - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.8
   - **Depends on**: P1-NOTES-A129, P1-NOTES-A133
   - **Plan**: `.workflows/plan/P1-NOTES-A131.md`
-- [ ] **P1-NOTES-A132** Phase 6: Subtitle files: in the torrent, from a subtitle service, from a cloud provider
+- [x] **P1-NOTES-A132** Phase 6: Subtitle files: in the torrent, from a subtitle service, from a cloud provider
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/subtitles/{disk,files,service,borrow}.ts` and the `kept`, `files`, `service`, `borrow` tiers in phase 3's chain (all blocking, the borrow within the shared budget and skipped when Whisper covers an English original); R3.2's reordering at phase 3's marked line; the `/api/stream/torrent/:hash/sub/:name` route; the OpenSubtitles hash; `NOTESD_TORRENT_SUBTITLE_URL`; `parseUrlOrOff` (replacing `parseAnimeMapUrl`); `subtitleText`'s `deadlineS`; the fake subtitle service and its fixtures. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; `subtitles.sh RUN` ends `subtitles: PASS (files replay lone ass service byid borrow quiet prefer)`.
-  - **Status**: blocked
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 6 of 9)
   - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.1, R3.2, R3.3
   - **Depends on**: P1-NOTES-A129
   - **Plan**: `.workflows/plan/P1-NOTES-A132.md`
+  - **Completed**: 2026-11-16 23:20
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/subtitles/{disk,files,service,wyzie,borrow,chain}.ts, src/directStream/torrent/source.ts, src/directStream/service.ts, src/directStream/cache/upstream.ts, src/config.ts, src/daemon.ts, src/http/streamTorrentApi.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/torrent/{fake-subs.mjs,make-subtitle-fixtures.sh,subtitles.sh,subtitle-page.steps.mjs}, tests/fixtures/torrent-subtitles/{opensubs-sintel,wyzie-sintel}.json, tests/unit/directStream/torrent/subtitles/{disk,files,service,wyzie,borrow,chain}.test.ts, tests/unit/directStream/torrent/subtitles/context.ts, tests/unit/directStream/torrent/subtitleRoute.test.ts, tests/unit/config.test.ts, tests/unit/config.torrent.test.ts, .workflows/todos.md
+  - **Proof**: verified-first-pass — 10 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-231509-1981479/evidence (subtitles: PASS (files replay lone ass service byid borrow quiet prefer wyzie)); neighbor journey.sh seed hls and torrent.sh off at /home/miftah/.local/state/notesd-verify/1116-231626-1988302/evidence
+  - **Drift**:
+    - The phase-6 addendum (.workflows/orchestration/torrent-stream-source/phase-6-addendum.md, main checkout) was built with the phase: Wyzie Subs is asked before the OpenSubtitles add-on when WYZIE_API_KEY is set (subtitles/wyzie.ts; TorrentConfig.wyzieKey, wyzieUrl after subtitleUrl).
+    - The whole-object torrent config expectations live in tests/unit/config.torrent.test.ts (phase 3 moved them); the plan's new config test went there, and tests/unit/config.test.ts's defaults expectation gained subtitleUrl and wyzieUrl.
+    - verify.sh starts the fake subtitle service with $HERE/torrent/fake-subs.mjs (the file's own convention); every `up` without --torrent pins NOTESD_TORRENT_SUBTITLE_URL=off, NOTESD_TORRENT_WYZIE_URL=off and WYZIE_API_KEY= so the owner's real key is never used.
+    - The guide subsection is `### Subtitles for a torrent` under `## Torrents` (reconciliation row 27), plus one code-table row for src/directStream/torrent/subtitles/.
+    - The worktree had no node_modules; `npm ci` was run (no package change).
+    - swarm.release returns unknown in phase 3's TorrentSwarm, so the R3.2 release callback awaits it in a block.
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p6 / phase-6-torrent-stream-source → proceeded here (rung 6: the swarm gives each phase its own worktree)
+    - Addendum wants the `Subtitles: service` detail to name the service, but the chain's runner writes track labels as the detail → Wyzie's track is labelled `English (Wyzie)` and kept as `service-wyzie-<id>.vtt`; the add-on's labels stay `English` / `English (matched by title)`; a failure names `wyzie:` or `opensubtitles` in the error detail (rung 1/2)
+    - The Wyzie base address setting → NOTESD_TORRENT_WYZIE_URL (default https://sub.wyzie.io, `off` = never asked), parsed by parseUrlOrOff (rung 3; rung 6 for the name)
+    - Subtitle route guard: phase 1's torrentsOf() vs the plan's `deps.torrents ?? null` with 503 torrent_off → the plan's code (rung 3)
+    - With the add-on off and a Wyzie key → the service tier stays in the chain and asks Wyzie alone (rung 4: R3.3)
+    - No IMDb id (a replay from disk) → Wyzie is asked by the TMDB id; the add-on is still not asked without one (rung 3)
+    - The Wyzie journey needed a title and the fake TMDB has none unused → it plays quiet's episode again instead of adding a title to phase 3's fake TMDB (tie-break: narrower blast radius)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-3 in this set; the coordinator's integrator reconciles them. P1-NOTES-A133 stays blocked: it also depends on P1-NOTES-A130 (phase 4), still open.
 - [ ] **P1-NOTES-A133** Phase 7: The embedded subtitle track and the growing cue feed
   - **Difficulty**: HARD
   - **Type**: Feature

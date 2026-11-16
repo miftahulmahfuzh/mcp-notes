@@ -192,6 +192,10 @@ export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streami
 
 /** The public index that maps a TMDB id to an anime's AniList id and episodes (src/directStream/anime.ts). */
 export const DEFAULT_ANIME_MAP_URL = 'https://api.ani.zip'
+/** Stremio's OpenSubtitles add-on: English subtitles by IMDb id and file hash, no key (src/directStream/torrent/subtitles/service.ts). */
+export const DEFAULT_TORRENT_SUBTITLE_URL = 'https://opensubtitles-v3.strem.io'
+/** Wyzie Subs: asked before the add-on when WYZIE_API_KEY is set (src/directStream/torrent/subtitles/wyzie.ts). */
+export const DEFAULT_TORRENT_WYZIE_URL = 'https://sub.wyzie.io'
 
 /** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
 export interface DirectStreamConfig {
@@ -310,6 +314,19 @@ export interface TorrentConfig {
   finder?: TorrentFinderConfig
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
   ffmpegBin: string
+  /**
+   * `NOTESD_TORRENT_SUBTITLE_URL`, default https://opensubtitles-v3.strem.io: the subtitle service a
+   * torrent without an English subtitle file asks, by the file's OpenSubtitles hash and then by the
+   * IMDb id (Stremio's OpenSubtitles add-on; no key). `off`: null, and that tier is not in the chain.
+   */
+  subtitleUrl: string | null
+  /**
+   * `WYZIE_API_KEY`, trimmed; null when unset or blank. With a key, the subtitle service tier asks
+   * Wyzie Subs before the add-on. Never logged, never written into attempts or kept files.
+   */
+  wyzieKey: string | null
+  /** `NOTESD_TORRENT_WYZIE_URL`, default https://sub.wyzie.io: where Wyzie Subs is asked. `off`: null, never asked. */
+  wyzieUrl: string | null
 }
 
 /**
@@ -326,6 +343,9 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   peers: [],
   finder: DEFAULT_TORRENT_FINDER_CONFIG,
   ffmpegBin: DEFAULT_FFMPEG_BIN,
+  subtitleUrl: null,
+  wyzieKey: null,
+  wyzieUrl: null,
 }
 
 /** Seer Adversarial reviewer (src/adversary/*). */
@@ -795,18 +815,18 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
     freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
     cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
-    animeMapUrl: parseAnimeMapUrl(env.NOTESD_ANIME_MAP_URL),
+    animeMapUrl: parseUrlOrOff('NOTESD_ANIME_MAP_URL', env.NOTESD_ANIME_MAP_URL, DEFAULT_ANIME_MAP_URL),
     cacheDir: parseOptionalAbsolutePath('NOTESD_STREAM_CACHE_DIR', env.NOTESD_STREAM_CACHE_DIR),
     prober: parseStreamProber(env),
   }
 }
 
-/** `NOTESD_ANIME_MAP_URL`: unset or blank is the default index, `off` is null, anything else must be an http(s) address. */
-function parseAnimeMapUrl(raw: string | undefined): string | null {
+/** An address setting: unset or blank is `fallback`, `off` is null, anything else must be an http(s) address (trailing slashes dropped). */
+function parseUrlOrOff(name: string, raw: string | undefined, fallback: string): string | null {
   const value = (raw ?? '').trim()
-  if (value === '') return DEFAULT_ANIME_MAP_URL
+  if (value === '') return fallback
   if (value.toLowerCase() === 'off') return null
-  if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`NOTESD_ANIME_MAP_URL must be an http(s) address or off (got ${value})`)
+  if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`${name} must be an http(s) address or off (got ${value})`)
   return value.replace(/\/+$/, '')
 }
 
@@ -852,6 +872,9 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     finder: parseTorrentFinder(env),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
+    subtitleUrl: parseUrlOrOff('NOTESD_TORRENT_SUBTITLE_URL', env.NOTESD_TORRENT_SUBTITLE_URL, DEFAULT_TORRENT_SUBTITLE_URL),
+    wyzieKey: (env.WYZIE_API_KEY ?? '').trim() || null,
+    wyzieUrl: parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL),
   }
 }
 

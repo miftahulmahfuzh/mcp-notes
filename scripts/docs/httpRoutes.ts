@@ -280,6 +280,8 @@ export const HTTP_GROUPS: HttpGroup[] = [
         'What of the video is on this machine\'s disk: `{duration_s, ranges, length, byte_ranges}`. `byte_ranges` are `[from, to)` byte stretches in order; `ranges` the same in seconds by proportion once a duration is known, empty before. 404 `unknown_torrent` (also for the other machine\'s download).',
       'GET /api/stream/torrent/:hash/f/:index':
         'A chosen file of a download, with `Range` (206, 416): from disk once it is whole, else from the swarm, which fetches the pieces of the asked range before the rest of the file. Only the video and subtitle files chosen for it are served, as video or text, never run. 404 `unknown_torrent`, 404 `not_selected`, 404 `not_on_this_machine` with `host`, 409 `not_in_swarm` (unfinished and not open: play it again), 503 `closing`.',
+      'GET /api/stream/torrent/:hash/sub/:name':
+        'A subtitle file of a torrent on this machine, as WebVTT, with `Range` (206, 416): `file-<index>.vtt` (a subtitle file inside the torrent: SubRip converted, ASS/SSA converted with ffmpeg), `service-wyzie-<id>.vtt` or `service-<id>.vtt` (from a subtitle service: Wyzie Subs with `WYZIE_API_KEY`, else the add-on at `NOTESD_TORRENT_SUBTITLE_URL`) or `borrow.vtt` (a cloud provider\'s English subtitle). They are kept under `<NOTESD_TORRENT_DIR>/<hash>/.notesd-subs/`, so a replay from disk has them, and a torrent session\'s `subtitles` point here. 404 `not_found`; 404 `not_on_this_machine` with `host` for a torrent the other machine downloaded; 503 when torrents are off.',
     },
   },
   {

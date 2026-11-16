@@ -30,7 +30,7 @@ function retryable(status: number): boolean {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-async function readBody(res: Response, cap: number, truncate: boolean): Promise<Buffer | null> {
+export async function readBody(res: Response, cap: number, truncate: boolean): Promise<Buffer | null> {
   if (res.body === null) return Buffer.alloc(0);
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
