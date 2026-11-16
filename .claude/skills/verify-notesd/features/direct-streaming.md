@@ -292,3 +292,23 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   without it is notesd's refusal (`unknown_session`, `forbidden_host`).
 - `up --web` is required: the player is a separate bundle (`web/dist/stream.html`); without a fresh
   build `/stream/<id>` serves the wall's `index.html`.
+
+## Reporting a stream bug from the player
+- The player's error stage shows an icon-only bug button (`Report this stream bug`). A click posts
+  the page's own log to `POST /api/stream/sessions/:id/report` (same-origin): the daemon writes
+  phase 1's evidence snapshot at once, adds `report.json` (the page's view, the outcome) to the
+  folder, and opens one tmux window `stream-bug-<id6>` running claude `--permission-mode auto` on
+  `/report-stream-bug <folder>` in the mcp-notes checkout. One report per session, also after a
+  restart (`409 already_reported {dir}`); no tmux or no runnable claude keeps the snapshot
+  (`409 no_tmux` / `500 spawn_failed`, both with `dir`) and the page says "Report saved but not
+  opened". An ended session is still reported from the page's log (`complete: false`).
+- Proven by `npx vitest run tests/unit/directStream/report.test.ts tests/unit/directStream/reportRoute.test.ts web/src/stream`
+  (fake tmux and snapshot; restart; concurrent clicks; address queries dropped).
+- Throwaway daemon (every run's tmux is the fake `scripts/stream/fake-tmux.sh`; nothing opens on
+  the owner's screen): `$V up --web --direct-stream` (note `TMUX_FAKE=`), then
+  `TMUX_FAKE=<that path> $V ui RUN .claude/skills/verify-notesd/scripts/stream/report-button.steps.mjs`.
+  The transcript has `BUTTON PASS`, `REPORT PASS` (one `new-window` carrying the prompt),
+  `ALREADY PASS`, `NO_TMUX PASS` and `SPAWN_FAILED PASS`. Needs `claude` on PATH (the daemon checks
+  the binary can run before asking tmux); elsewhere start `up` with `NOTESD_CLAUDE_BIN=$(command -v true)`.
+- Live: a click on the owner's daemon opens a real Claude Code window that runs the skill and
+  writes a `#stream-bug` note; it is the owner's to click.

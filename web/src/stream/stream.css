@@ -168,6 +168,19 @@
   text-align: center;
   color: #c9c8c0;
 }
+.st-report {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.st-report .st-btn {
+  color: #ecebe4;
+}
+.st-error .st-report-text {
+  max-width: 60ch;
+  overflow-wrap: anywhere;
+}
 .st-spin {
   animation: st-spin 0.9s linear infinite;
 }

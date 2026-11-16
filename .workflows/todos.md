@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-16
-**Total Active Tasks**: 10
+**Total Active Tasks**: 9
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 10
+- P1 High: 9
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 2
-- Completed: 118
+- Blocked: 0
+- Completed: 119
 
 ---
 
@@ -39,20 +39,11 @@
     - Code blocks applied verbatim from the plan. The four skill-list doc lines lacked direct-stream and update-cloud-source, as the plan said; rewritten to match SKILL_NAMES.
     - Observation, not changed: against the tiny local fixture segments the summary prints 'the stream now, through the session: null Mbps' (download time rounds to 0 s, so mbps is null while ok is true). Rules are unaffected (null is ignored); a real host's segments take measurable time.
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats / plan index status left untouched, to avoid conflicts with peer phases 2 and 5; the coordinator's integrator reconciles them.
-- [ ] **P1-NOTES-A124** Phase 4: Report button and its tmux session
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `src/directStream/report.ts` (`StreamReporter`: snapshot through phase 1's `StreamEvidence` into its `reportsDir` (`STREAM_REPORTS_SUBDIR`), liveness through `evidenceSource`, claude started with `--permission-mode auto`, one report per session id remembered in memory and by a marker in the snapshot folder, then a tmux window running claude with `/report-stream-bug <folder>` in the mcp-notes repo directory); the window opener exported from `src/sessions/resume.ts` for reuse (no behaviour change there); `POST /api/stream/sessions/:id/report` (same-origin) in a new routes file; the icon-only button in the error overlay, its states (sending, opened, saved but not opened, already reported); wiring; route docs, guide, feature map; a recording fake tmux pinned by every `verify.sh up` (no picture: the guide shows no player page). Exit criteria: with a fake `CommandRunner`, a click yields one `new-window` call carrying the prompt; a second click yields none; no tmux yields `no_tmux` with the folder kept.
-  - **Status**: blocked
-  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 4 of 6)
-  - **Satisfies**: R4 — A "report" button in the playback UI (icon only, Phosphor), shown in the error state: a click snapshots the evidence immediately, then spawns a new tmux Claude Code session that runs /report-stream-bug and documents the bug in a note. · criteria: R4.1, R4.2, R4.3, R4.4
-  - **Depends on**: P1-NOTES-A121, P1-NOTES-A122
-  - **Plan**: `.workflows/plan/P1-NOTES-A124.md`
 - [ ] **P1-NOTES-A126** Phase 6: Play from the cache
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `DirectStreamService.play` / `resolve` using a cache on this host (a complete cache makes a session with no resolver run; a downloading one plays the local playlist while the file route fetches missing segments); `POST /api/stream/cache/:id/play` (404 `not_on_this_machine` for the other machine's cache); `SessionInfo.cached` and the page's reading of it; `CACHED_BUFFER_AHEAD_S` (600) through phase 2's `bufferAheadS` for a complete cache; the "from cache" mark beside the title on the player page; position reports and resume unchanged; `SessionSource.cache` in phase 1's snapshot and the `created` record of a session made from a cache; the `direct_stream_play` tool text, `src/mcp/instructions.ts`, `claude/skills/direct-stream/SKILL.md` ("cache it first", "play from the cache", what the answer says) and the "cache it first" advice in `claude/skills/report-stream-bug/SKILL.md`; docs, feature map. Exit criteria: with a `ready` cache and a resolver that would fail, a play starts and the page plays local files; with a half-downloaded cache a segment not on disk is fetched on demand and plays; the other machine's cache is refused by id (404 `not_on_this_machine`) and ignored by title; without a cache nothing changes.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 6 of 6)
   - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy (R1.4 and R1.5's play-by-id part). · criteria: R1.4, R1.5
   - **Depends on**: P1-NOTES-A122, P1-NOTES-A123, P1-NOTES-A124, P1-NOTES-A125
@@ -121,6 +112,22 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-A124** Phase 4: Report button and its tmux session
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/report.ts` (`StreamReporter`: snapshot through phase 1's `StreamEvidence` into its `reportsDir` (`STREAM_REPORTS_SUBDIR`), liveness through `evidenceSource`, claude started with `--permission-mode auto`, one report per session id remembered in memory and by a marker in the snapshot folder, then a tmux window running claude with `/report-stream-bug <folder>` in the mcp-notes repo directory); the window opener exported from `src/sessions/resume.ts` for reuse (no behaviour change there); `POST /api/stream/sessions/:id/report` (same-origin) in a new routes file; the icon-only button in the error overlay, its states (sending, opened, saved but not opened, already reported); wiring; route docs, guide, feature map; a recording fake tmux pinned by every `verify.sh up` (no picture: the guide shows no player page). Exit criteria: with a fake `CommandRunner`, a click yields one `new-window` call carrying the prompt; a second click yields none; no tmux yields `no_tmux` with the folder kept.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R4 — A "report" button in the playback UI (icon only, Phosphor), shown in the error state: a click snapshots the evidence immediately, then spawns a new tmux Claude Code session that runs /report-stream-bug and documents the bug in a note. · criteria: R4.1, R4.2, R4.3, R4.4
+  - **Depends on**: P1-NOTES-A121, P1-NOTES-A122
+  - **Plan**: `.workflows/plan/P1-NOTES-A124.md`
+  - **Completed**: 2026-11-16 14:45
+  - **Method**: /implement
+  - **Files**: src/sessions/resume.ts, src/directStream/report.ts, src/http/streamReportApi.ts, src/deps.ts, src/daemon.ts, src/http/app.ts, web/src/stream/session.ts, web/src/stream/controller.ts, web/src/stream/StreamApp.tsx, web/src/stream/stream.css, web/src/stream/controller.test.tsx, web/src/stream/StreamApp.test.tsx, tests/unit/directStream/report.test.ts, tests/unit/directStream/reportRoute.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/streaming.md, .claude/skills/verify-notesd/scripts/stream/fake-tmux.sh, .claude/skills/verify-notesd/scripts/stream/report-button.steps.mjs, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/SKILL.md, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md
+  - **Proof**: verified-first-pass — 3 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-143927-945688/evidence
+  - **Drift**:
+    - streaming.md: snapshot_failed row already existed from phase 1; extended it instead of adding a duplicate row
+    - calls.log shows 2 new-window lines in the proof (opened + refused attempt)
 
 - [x] **P1-NOTES-A122** Phase 2: Player recovers from network errors and buffers further
   - **Difficulty**: NORMAL

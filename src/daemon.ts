@@ -9,7 +9,7 @@ import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
-import type { Config } from './config.js';
+import { REPO_ROOT, type Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -33,6 +33,8 @@ import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
+import { StreamReporter } from './directStream/report.js';
+import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
 import { SessionEvents } from './sessions/events.js';
@@ -246,6 +248,21 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
+  // The player's report button (stream-cache-and-bug-report phase 4): phase 1's snapshot, then a
+  // tmux window running claude on /report-stream-bug in this checkout. Nothing runs until a click.
+  const reportStream = deps.directStream ?? null;
+  const reportEvidence = deps.streamEvidence ?? null;
+  deps.streamReporter =
+    reportStream === null || reportEvidence === null
+      ? null
+      : new StreamReporter({
+          evidence: reportEvidence,
+          // Phase 1's evidenceSource peeks without marking the session used.
+          isLive: (id) => reportStream.evidenceSource(id) !== null,
+          reportsDir: reportEvidence.reportsDir,
+          cwd: REPO_ROOT,
+          window: () => defaultClaudeWindowDeps({ claudeBin: config.chat.claudeBin }),
+        });
   let agent: AgentChatBackend | null = null;
   let chat: ChatBackend;
   if (options.chat !== undefined) {

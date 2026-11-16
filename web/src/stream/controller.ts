@@ -13,11 +13,13 @@ import {
   postEvents,
   postPosition,
   refreshSession,
+  reportStreamBug,
   SessionError,
   switchEpisode,
   type EpisodeNumber,
   type ManifestKind,
   type PlayerLogLine,
+  type ReportAnswer,
   type StreamSession,
 } from './session';
 import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
@@ -31,6 +33,9 @@ const LOG_MAX = 20;
 
 /** `recovering`: a network error; the engine loads again after a wait while the film stays on the page. */
 export type Stage = 'loading' | 'ready' | 'refreshing' | 'recovering' | 'error';
+
+/** The report button (only shown in the error stage): nothing sent, being sent, or the daemon's answer. */
+export type BugReportState = { status: 'idle' } | { status: 'sending' } | ReportAnswer;
 
 export interface StreamState {
   stage: Stage;
@@ -60,6 +65,8 @@ export interface StreamState {
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
   log: string[];
+  /** The report button's state for this session; back to idle when the page plays another session. */
+  bugReport: BugReportState;
 }
 
 export const INITIAL_STATE: StreamState = {
@@ -80,6 +87,7 @@ export const INITIAL_STATE: StreamState = {
   switchError: null,
   errors: [],
   log: [],
+  bugReport: { status: 'idle' },
 };
 
 export interface ControllerDeps {
@@ -230,7 +238,7 @@ export class StreamController {
     this.fileTracks = [];
     this.sessionId = nextId;
     this.lastPositionS = 0;
-    this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null });
+    this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
     try {
@@ -240,6 +248,36 @@ export class StreamController {
     } catch (err) {
       if (!this.disposed) this.fail(err);
     }
+  }
+
+  /**
+   * The report button: asks the daemon to snapshot this session's evidence and open a Claude Code
+   * window on it, sending the page's own log (the daemon may have lost the session). One report per
+   * session: a click while one is being sent, after a window opened, or after the daemon said it
+   * was reported before does nothing. A report saved but not opened may be sent again; the daemon
+   * reuses its folder.
+   */
+  async reportBug(): Promise<void> {
+    if (this.disposed) return;
+    const now = this.state.bugReport.status;
+    if (now === 'sending' || now === 'opened' || now === 'already') return;
+    const sessionId = this.sessionId;
+    this.set({ bugReport: { status: 'sending' } });
+    const answer = await reportStreamBug(
+      sessionId,
+      {
+        stage: this.state.stage,
+        error: this.state.error,
+        errors: this.state.errors,
+        log: this.state.log,
+        title: this.state.title,
+        position_s: this.lastPositionS > 0 ? round1(this.lastPositionS) : null,
+      },
+      this.deps.fetch,
+    );
+    if (this.disposed || sessionId !== this.sessionId) return;
+    this.set({ bugReport: answer });
+    this.note(answer.status === 'failed' ? `report: failed ${answer.code}` : `report: ${answer.status} ${answer.dir}`);
   }
 
   selectSubtitle(id: string | null): void {

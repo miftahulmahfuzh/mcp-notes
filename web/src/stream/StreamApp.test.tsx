@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, episodeLabel, formatClock, switchErrorText } from './StreamApp';
+import { StreamApp, episodeLabel, formatClock, reportLabel, reportText, switchErrorText } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -185,6 +185,60 @@ describe('StreamApp', () => {
     const el = render(<StreamApp sessionId={null} />);
     expect(el.querySelector('[role="alert"]')?.textContent).toContain('no stream in this address');
   });
+
+  it('shows an icon-only report button beside the error and says when the report was saved but not opened', async () => {
+    const { createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({
+      'GET /api/stream/sessions/S1': () => jsonResponse({ error: 'unknown_session' }, 403),
+      'POST /api/stream/sessions/S1/report': () => jsonResponse({ error: 'no_tmux', dir: '/data/movies/stream-reports/r1', complete: false }, 409),
+    });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine }} />);
+    await settle();
+    const alert = el.querySelector('[role="alert"]')!;
+    const report = alert.querySelector('button[aria-label="Report this stream bug"]');
+    expect(report).not.toBeNull();
+    expect(report!.textContent).toBe('');
+    expect(report!.querySelector('svg')).not.toBeNull();
+    click(report);
+    await settle();
+    const status = alert.querySelector('[role="status"]')?.textContent ?? '';
+    expect(status).toContain('Report saved but not opened');
+    expect(status).toContain('/data/movies/stream-reports/r1');
+    expect(button(alert, 'Open the report again')).not.toBeNull();
+    expect(calls.filter((c) => c.method === 'POST' && c.url === '/api/stream/sessions/S1/report')).toHaveLength(1);
+  });
+
+  it('after the window opened the button is spent', async () => {
+    const { createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({
+      'GET /api/stream/sessions/S1': () => jsonResponse({ error: 'unknown_session' }, 403),
+      'POST /api/stream/sessions/S1/report': () => jsonResponse({ ok: true, dir: '/d/r1', window: 'note:3', complete: false }),
+    });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine }} />);
+    await settle();
+    click(button(el, 'Report this stream bug'));
+    await settle();
+    const spent = button(el, 'Report opened in tmux') as HTMLButtonElement | null;
+    expect(spent?.disabled).toBe(true);
+    expect(el.querySelector('[role="alert"] [role="status"]')?.textContent).toContain('note:3');
+    click(spent);
+    await settle();
+    expect(calls.filter((c) => c.url === '/api/stream/sessions/S1/report')).toHaveLength(1);
+  });
+
+  it('shows no report button while the film plays, nor when the address has no session', async () => {
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl } = routeFetch({ 'GET /api/stream/sessions/S1': () => jsonResponse(streamSessionJson()) });
+    const el = render(<StreamApp sessionId="S1" deps={{ fetch: fetchImpl, createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {} }} />);
+    await settle();
+    act(() => made[0].req.handlers.onReady({ qualities: [], subtitles: [] }));
+    await settle();
+    expect(button(el, 'Report this stream bug')).toBeNull();
+    act(() => root?.unmount());
+    host?.remove();
+    const none = render(<StreamApp sessionId={null} />);
+    expect(button(none, 'Report this stream bug')).toBeNull();
+  });
 });
 
 describe('formatClock', () => {
@@ -250,5 +304,15 @@ describe('formatClock', () => {
       expect(switchErrorText('next', 'no_episode')).toBe('There is no next episode.');
       expect(switchErrorText('previous', 'resolve_failed')).toBe('The previous episode could not be started (resolve_failed).');
     });
+  });
+});
+
+describe('reportLabel and reportText', () => {
+  it('name every state of the report button', () => {
+    expect(reportLabel({ status: 'idle' })).toBe('Report this stream bug');
+    expect(reportText({ status: 'idle' })).toBeNull();
+    expect(reportText({ status: 'already', dir: '/d/r0' })).toBe('Already reported: /d/r0');
+    expect(reportText({ status: 'saved', dir: '/d/r1', reason: 'spawn_failed' })).toBe('Report saved but not opened, Claude Code could not be started: /d/r1');
+    expect(reportText({ status: 'failed', code: 'snapshot_failed' })).toBe('The report could not be made (snapshot_failed).');
   });
 });

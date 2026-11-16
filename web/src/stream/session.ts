@@ -134,6 +134,7 @@ export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
+export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -234,4 +235,43 @@ export async function fetchText(url: string, fetchImpl: typeof fetch): Promise<s
   const res = await fetchImpl(url);
   if (!res.ok) throw new Error(`http_${res.status}`);
   return res.text();
+}
+
+/** What the page sends with a report: its own view of the failure (the daemon may no longer know the session). */
+export interface PageReport {
+  stage: string;
+  error: string | null;
+  errors: string[];
+  log: string[];
+  title: string;
+  position_s: number | null;
+}
+
+/** The daemon's answer to a report, as the page shows it. */
+export type ReportAnswer =
+  | { status: 'opened'; dir: string; window: string }
+  | { status: 'already'; dir: string }
+  | { status: 'saved'; dir: string; reason: 'no_tmux' | 'spawn_failed' }
+  | { status: 'failed'; code: string };
+
+/**
+ * The report button: POST /api/stream/sessions/:id/report with the page's log. Never throws: a
+ * window opened, a report made before, a snapshot saved but not opened (`no_tmux`,
+ * `spawn_failed`), or a failure with the daemon's code.
+ */
+export async function reportStreamBug(id: string, page: PageReport, fetchImpl: typeof fetch): Promise<ReportAnswer> {
+  let res: Response;
+  try {
+    res = await fetchImpl(reportUrl(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page }) });
+  } catch {
+    return { status: 'failed', code: 'network' };
+  }
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const dir = body !== null && typeof body.dir === 'string' && body.dir !== '' ? body.dir : null;
+  const error = body !== null && typeof body.error === 'string' ? body.error : null;
+  const window = body !== null && typeof body.window === 'string' ? body.window : '';
+  if (res.ok && dir !== null) return { status: 'opened', dir, window };
+  if (dir !== null && error === 'already_reported') return { status: 'already', dir };
+  if (dir !== null && (error === 'no_tmux' || error === 'spawn_failed')) return { status: 'saved', dir, reason: error };
+  return { status: 'failed', code: error ?? `http_${res.status}` };
 }

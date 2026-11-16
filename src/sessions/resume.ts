@@ -141,6 +141,15 @@ export interface ResumeDeps {
   now(): number;
 }
 
+/** The part of ResumeDeps that reaches tmux. */
+export type TmuxDeps = Pick<ResumeDeps, 'run' | 'tmuxBin' | 'tmuxSocket'>;
+
+/**
+ * What opening a Claude Code window needs: tmux and the claude binary. The player's report button
+ * (src/directStream/report.ts) opens its window with this alone.
+ */
+export type ClaudeWindowDeps = TmuxDeps & Pick<ResumeDeps, 'claudeBin'>;
+
 const execFileAsync = promisify(execFile);
 
 /** The real CommandRunner: execFile (no shell) with a timeout. */
@@ -166,7 +175,7 @@ export function tmuxArgs(deps: Pick<ResumeDeps, 'tmuxSocket'>, args: readonly st
   return deps.tmuxSocket !== null ? ['-S', deps.tmuxSocket, ...args] : [...args];
 }
 
-function tmux(deps: ResumeDeps, args: readonly string[]): Promise<string> {
+function tmux(deps: TmuxDeps, args: readonly string[]): Promise<string> {
   return deps.run(deps.tmuxBin, tmuxArgs(deps, args));
 }
 
@@ -337,7 +346,7 @@ export function toResumeNode(row: SessionRowLike): ResumeNode {
 }
 
 /** The most recently attached tmux session's name, or null when no server is running. */
-export async function pickTmuxSession(deps: ResumeDeps): Promise<string | null> {
+export async function pickTmuxSession(deps: TmuxDeps): Promise<string | null> {
   try {
     return parseLatest(await tmux(deps, ['list-sessions', '-F', '#{session_last_attached} #{session_name}']));
   } catch {
@@ -361,7 +370,7 @@ export function parseTmuxPath(stdout: string): string | null {
  * tmux client that asked for it, which here is the daemon's (a systemd unit with a bare PATH),
  * so a resumed claude could not find tools like $EDITOR that the user's shell puts on PATH.
  */
-export async function tmuxGlobalPath(deps: ResumeDeps): Promise<string | null> {
+export async function tmuxGlobalPath(deps: TmuxDeps): Promise<string | null> {
   try {
     return parseTmuxPath(await tmux(deps, ['show-environment', '-g', 'PATH']));
   } catch {
@@ -370,7 +379,7 @@ export async function tmuxGlobalPath(deps: ResumeDeps): Promise<string | null> {
 }
 
 /** The most recently active client (its tty name), or null. */
-export async function pickClient(deps: ResumeDeps): Promise<string | null> {
+export async function pickClient(deps: TmuxDeps): Promise<string | null> {
   try {
     return parseLatest(await tmux(deps, ['list-clients', '-F', '#{client_activity} #{client_name}']));
   } catch {
@@ -399,7 +408,7 @@ async function windowLabel(deps: ResumeDeps, paneId: string): Promise<string | n
 }
 
 /** Best effort: show `target` on the most recently active client. */
-async function switchMostRecentClient(deps: ResumeDeps, target: string): Promise<void> {
+async function switchMostRecentClient(deps: TmuxDeps, target: string): Promise<void> {
   const client = await pickClient(deps);
   if (client === null) return;
   try {
@@ -516,10 +525,11 @@ export async function resolveCwd(
 
 /**
  * A new window in tmux session `session` at `cwd`, named `name`, running claude with `claudeArgs`,
- * tmux's global PATH and `extraEnv`; shown on the most recently active client.
+ * tmux's global PATH and `extraEnv`; shown on the most recently active client. Shared by resume and
+ * the player's report button (src/directStream/report.ts).
  */
-async function openClaudeWindow(
-  deps: ResumeDeps,
+export async function openClaudeWindow(
+  deps: ClaudeWindowDeps,
   session: string,
   cwd: string,
   name: string,
@@ -697,6 +707,25 @@ export function createSessionResumer(opts: CreateSessionResumerOptions): Session
   };
 }
 
+export interface DefaultClaudeWindowDepsInput {
+  /** config.chat.claudeBin (NOTESD_CLAUDE_BIN); resolved against PATH to an absolute path. */
+  claudeBin: string;
+  /** Defaults to process.env (NOTESD_TMUX_SOCKET, NOTESD_TMUX_BIN, PATH). */
+  env?: Readonly<Record<string, string | undefined>>;
+}
+
+/** This machine's tmux (NOTESD_TMUX_BIN, NOTESD_TMUX_SOCKET) and claude binary: what opening a Claude Code window needs. */
+export function defaultClaudeWindowDeps(input: DefaultClaudeWindowDepsInput): ClaudeWindowDeps {
+  const env = input.env ?? process.env;
+  const socket = env[TMUX_SOCKET_ENV]?.trim();
+  return {
+    run: (cmd, args) => runCommand(cmd, args),
+    tmuxBin: env[TMUX_BIN_ENV]?.trim() || 'tmux',
+    tmuxSocket: socket !== undefined && socket !== '' ? socket : null,
+    claudeBin: resolveExecutable(input.claudeBin, env.PATH),
+  };
+}
+
 export interface DefaultResumeDepsInput {
   /** config.chat.claudeBin (NOTESD_CLAUDE_BIN); resolved against PATH to an absolute path. */
   claudeBin: string;
@@ -720,14 +749,9 @@ async function isDirectory(p: string): Promise<boolean> {
 
 /** The real ResumeDeps for the daemon. */
 export function defaultResumeDeps(input: DefaultResumeDepsInput): ResumeDeps {
-  const env = input.env ?? process.env;
-  const socket = env[TMUX_SOCKET_ENV]?.trim();
   return {
     host: os.hostname(),
-    run: (cmd, args) => runCommand(cmd, args),
-    tmuxBin: env[TMUX_BIN_ENV]?.trim() || 'tmux',
-    tmuxSocket: socket !== undefined && socket !== '' ? socket : null,
-    claudeBin: resolveExecutable(input.claudeBin, env.PATH),
+    ...defaultClaudeWindowDeps({ claudeBin: input.claudeBin, env: input.env }),
     homeDir: os.homedir(),
     worktreesDir: input.worktreesDir,
     dataDir: input.dataDir,

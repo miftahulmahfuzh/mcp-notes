@@ -4,6 +4,8 @@ import {
   ArrowArcRight,
   ArrowsIn,
   ArrowsOut,
+  Bug,
+  CheckCircle,
   CircleNotch,
   ClosedCaptioning,
   GearSix,
@@ -16,7 +18,7 @@ import {
   SpeakerSlash,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { INITIAL_STATE, StreamController, type ControllerDeps, type StreamState } from './controller';
+import { INITIAL_STATE, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
 import type { EpisodeNumber } from './session';
@@ -221,7 +223,59 @@ function Menu({ label, items }: { label: string; items: MenuItem[] }) {
 
 const BUSY_LABELS = { loading: 'Loading', refreshing: 'Reconnecting', recovering: 'Reconnecting after a network error' } as const;
 
-function StageOverlay({ state }: { state: StreamState }) {
+/** The report button's name (its aria-label and title): it has no visible text. */
+export function reportLabel(report: BugReportState): string {
+  switch (report.status) {
+    case 'sending':
+      return 'Sending the report';
+    case 'opened':
+      return 'Report opened in tmux';
+    case 'already':
+      return 'Already reported';
+    case 'saved':
+      return 'Open the report again';
+    default:
+      return 'Report this stream bug';
+  }
+}
+
+/** The line under the report button once the daemon answered; null before. */
+export function reportText(report: BugReportState): string | null {
+  switch (report.status) {
+    case 'opened':
+      return report.window !== '' ? `Report opened in tmux window ${report.window}: ${report.dir}` : `Report opened in tmux: ${report.dir}`;
+    case 'already':
+      return `Already reported: ${report.dir}`;
+    case 'saved':
+      return report.reason === 'no_tmux'
+        ? `Report saved but not opened, no tmux is running: ${report.dir}`
+        : `Report saved but not opened, Claude Code could not be started: ${report.dir}`;
+    case 'failed':
+      return `The report could not be made (${report.code}).`;
+    default:
+      return null;
+  }
+}
+
+function ReportButton({ report, onReport }: { report: BugReportState; onReport: () => void }) {
+  const label = reportLabel(report);
+  const text = reportText(report);
+  const spent = report.status === 'sending' || report.status === 'opened' || report.status === 'already';
+  return (
+    <div className="st-report">
+      <button type="button" className="st-btn" aria-label={label} title={label} disabled={spent} onClick={onReport}>
+        {report.status === 'sending' ? <CircleNotch className="st-spin" /> : report.status === 'opened' || report.status === 'already' ? <CheckCircle /> : <Bug />}
+      </button>
+      {text !== null && (
+        <span className="st-report-text" role="status">
+          {text}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StageOverlay({ state, onReport }: { state: StreamState; onReport?: () => void }) {
   if (state.stage === 'loading' || state.stage === 'refreshing' || state.stage === 'recovering') {
     return (
       <div className="st-center" role="status" aria-label={BUSY_LABELS[state.stage]}>
@@ -235,6 +289,7 @@ function StageOverlay({ state }: { state: StreamState }) {
       <div className="st-center st-error" role="alert">
         <WarningCircle />
         <span>{ERRORS[code] ?? `Playback stopped (${code}).`}</span>
+        {onReport !== undefined && <ReportButton report={state.bugReport} onReport={onReport} />}
       </div>
     );
   }
@@ -307,6 +362,9 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     },
     [controller],
   );
+  const reportBug = useCallback(() => {
+    void controller?.reportBug();
+  }, [controller]);
   const toggleSubtitles = useCallback(() => {
     if (controller === null) return;
     const s = controller.getState();
@@ -355,7 +413,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             </span>
           )}
         </div>
-        <StageOverlay state={state} />
+        <StageOverlay state={state} onReport={controller !== null && sessionId !== null ? reportBug : undefined} />
         <div className="st-bar">
           <IconButton label={view.paused ? 'Play' : 'Pause'} onClick={togglePlay}>
             {view.paused ? <Play /> : <Pause />}

@@ -141,6 +141,10 @@ not implementation.
 
 ## Gotchas
 
+- Every run's tmux is a recording fake (`scripts/stream/fake-tmux.sh`, `NOTESD_TMUX_BIN`), so the
+  player's report button opens nothing on the owner's screen: its calls are in
+  `$TMUX_FAKE/calls.log` (`up` prints `TMUX_FAKE=`); `touch $TMUX_FAKE/down` acts as no tmux
+  server, `touch $TMUX_FAKE/fail-new-window` as a refused window.
 - `--web` matters: without it the wall serves whatever `web/dist` was built last, which may not
   be your change. `up` builds web only when `web/dist` is missing or `--web` is passed.
 - Never drive these in verification, because they reach outside the sandbox: `POST .../reveal`

@@ -633,3 +633,49 @@ describe('StreamController: a network error (R1.7) and the buffer (R1.8)', () =>
     expect(t.controller.getState()).toMatchObject({ stage: 'ready', refreshes: 1 });
   });
 });
+
+describe('StreamController: the report button (R4)', () => {
+  const failed = async (report: () => Response) => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()), [`POST ${S1}/report`]: report });
+    await t.controller.start();
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    expect(t.controller.getState().stage).toBe('error');
+    const reports = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/report`);
+    return { ...t, reports };
+  };
+
+  it("sends the page's own log once; after the window opened a second click sends nothing", async () => {
+    const { controller, reports } = await failed(() => jsonResponse({ ok: true, dir: '/d/r1', window: 'note:3', complete: true }));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'opened', dir: '/d/r1', window: 'note:3' });
+    await controller.reportBug();
+    expect(reports()).toHaveLength(1);
+    expect(reports()[0].body).toMatchObject({
+      page: { stage: 'error', error: 'networkError fragLoadError', errors: ['networkError fragLoadError'], title: 'Fight Club (1999)' },
+    });
+  });
+
+  it('a report saved but not opened says so and may be sent again', async () => {
+    let n = 0;
+    const { controller, reports } = await failed(() =>
+      ++n === 1 ? jsonResponse({ error: 'no_tmux', dir: '/d/r1', complete: true }, 409) : jsonResponse({ ok: true, dir: '/d/r1', window: 'note:4', complete: true }),
+    );
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'saved', dir: '/d/r1', reason: 'no_tmux' });
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'opened', dir: '/d/r1', window: 'note:4' });
+    expect(reports()).toHaveLength(2);
+  });
+
+  it('keeps the first folder when the daemon says the session was reported before', async () => {
+    const { controller } = await failed(() => jsonResponse({ error: 'already_reported', dir: '/d/r0' }, 409));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'already', dir: '/d/r0' });
+  });
+
+  it("an answer without a folder is a failure with the daemon's code", async () => {
+    const { controller } = await failed(() => jsonResponse({ error: 'unknown_session' }, 403));
+    await controller.reportBug();
+    expect(controller.getState().bugReport).toEqual({ status: 'failed', code: 'unknown_session' });
+  });
+});

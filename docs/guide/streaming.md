@@ -467,7 +467,11 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | `forbidden_host` | The address is not on a host the session may reach |
 | `upstream_error` | The stream host did not answer, or redirected too often |
 | `invalid_session` | An evidence route was given something that is not a stream session id |
-| `snapshot_failed` | The snapshot folder could not be written; the evidence log is untouched |
+| `snapshot_failed` | The snapshot folder could not be written; the evidence log is untouched. For the report button nothing is remembered, so a later click tries again |
+| `already_reported` | The report button: this stream session was reported before; `dir` is the first report's folder and no window opens |
+| `no_tmux` | The report button: the snapshot was written to `dir`, but no tmux server is running to open Claude Code in |
+| `spawn_failed` | The report button: the snapshot was written to `dir`, but the claude binary could not be run or tmux refused the window (`message`) |
+| `report_off` | The report button: this daemon has no evidence log to snapshot |
 
 ### The player
 
@@ -541,6 +545,19 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   found the page plays the new session from where that episode was left, without leaving full
   screen, and its address changes to the new session; the play of the episode it left is closed.
   When none is found nothing changes, and a line beside the title says why.
+- **Report.** When the page stops with an error, a bug icon sits under the message. A click asks
+  the daemon (`POST /api/stream/sessions/<id>/report`) to write the session's evidence snapshot at
+  once (sessions live in memory and tokens expire), then to open a new window in the most recently
+  used tmux session, named `stream-bug-<first 6 characters of the session id>`, running Claude Code
+  in the mcp-notes checkout on `/report-stream-bug <snapshot folder>`. It runs in `auto` permission
+  mode, so it collects, diagnoses and saves its note without waiting for you, while the permission
+  classifier still checks what it runs (the evidence holds text from the stream hosts). The page
+  sends its own error and log lines with the click, kept in the folder as `report.json`, so a
+  session the daemon has lost (a restart) is still reported, marked incomplete. One report per
+  session: `report.json` remembers it across restarts, and a second click opens nothing (`Already
+  reported`). With no tmux running, or a claude binary that cannot be run, the snapshot is kept and
+  the page says the report was saved but not opened, with the folder; a later click opens it on the
+  same folder.
 
 The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
 `recovering` or `error`; `kind`, `levels`, `level`, subtitle
@@ -963,6 +980,7 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
+| `src/directStream/report.ts`, `src/http/streamReportApi.ts` | The player's report button: the snapshot, `report.json`, one tmux window per stream session (the opener is `openClaudeWindow` in `src/sessions/resume.ts`) |
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |

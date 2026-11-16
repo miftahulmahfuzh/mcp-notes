@@ -29,6 +29,7 @@ import { directStreamRoutes } from './directStreamApi.js';
 import { streamProberRoutes } from './streamProberApi.js';
 import { streamEvidenceRoutes } from './streamEvidenceApi.js';
 import { streamCacheRoutes } from './streamCacheApi.js';
+import { streamReportRoutes } from './streamReportApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -143,6 +144,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', streamProberRoutes(deps));
   app.route('/', streamEvidenceRoutes(deps));
   app.route('/', streamCacheRoutes(deps));
+  app.route('/', streamReportRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }
