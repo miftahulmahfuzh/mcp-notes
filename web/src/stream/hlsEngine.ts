@@ -17,6 +17,23 @@ function upstreamOf(details: unknown): string | null {
   return null;
 }
 
+/**
+ * A torrent remux's playlist (src/directStream/torrent/remux.ts) is an EVENT playlist that grows while the file
+ * downloads. Its address says so (`remux=1`) and names the film's full length (`total_s`) when the probe knew it.
+ */
+export interface GrowingPlaylist {
+  totalS: number | null;
+}
+
+export function growingPlaylist(src: string): GrowingPlaylist | null {
+  const q = src.indexOf('?');
+  if (q === -1) return null;
+  const params = new URLSearchParams(src.slice(q + 1));
+  if (params.get('remux') !== '1') return null;
+  const total = Number(params.get('total_s'));
+  return { totalS: Number.isFinite(total) && total > 0 ? total : null };
+}
+
 export function createHlsEngine({ video, src, startAt, handlers, audioTrack, bufferAheadS = BUFFER_AHEAD_S }: EngineRequest): PlayerEngine {
   if (!Hls.isSupported()) {
     handlers.onFatal('hls_unsupported');
@@ -26,10 +43,15 @@ export function createHlsEngine({ video, src, startAt, handlers, audioTrack, buf
   // maxMaxBufferLength (up to 600 s by default). Both are bufferAheadS, so a play keeps exactly that
   // much loaded ahead (R1.8): 120 s, or 30 s under ?muted=1 so the expiry checks (playcheck.mjs,
   // player.steps.mjs J3) still find segments not yet loaded when the token expires.
+  const growing = growingPlaylist(src);
   const hls = new Hls({
-    startPosition: startAt > 0 ? startAt : -1,
+    // A growing remux starts at the resume position or at 0: hls.js would start a live playlist at its edge.
+    startPosition: growing !== null ? Math.max(0, startAt) : startAt > 0 ? startAt : -1,
     maxBufferLength: bufferAheadS,
     maxMaxBufferLength: bufferAheadS,
+    // hls.js's latency controller pulls a play that is past the end of a live playlist back to the live edge on every
+    // reload. A growing remux is a film: a seek past what is remuxed waits there until the remux reaches it.
+    ...(growing !== null ? { latencyController: undefined } : {}),
   });
   let subtitleTracks: MediaPlaylist[] = [];
   let mediaRecovered = false;
@@ -84,7 +106,8 @@ export function createHlsEngine({ video, src, startAt, handlers, audioTrack, buf
   });
 
   hls.loadSource(src);
-  hls.attachMedia(video);
+  // The film's full length from the probe, so the timeline is the whole film and a seek past the remux is possible.
+  hls.attachMedia(growing !== null && growing.totalS !== null ? { media: video, overrides: { duration: growing.totalS } } : video);
 
   return {
     setQuality(index) {

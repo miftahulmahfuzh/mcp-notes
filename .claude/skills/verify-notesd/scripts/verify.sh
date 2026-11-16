@@ -331,6 +331,12 @@ EOF
   else
     env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
   fi
+  # Torrent phase 5: the remux runs with this machine's ffmpeg; NOTESD_TORRENT_REMUX=off from the caller passes through.
+  if [ "$torrent" = 1 ]; then
+    env+=(
+      "NOTESD_TORRENT_REMUX=${NOTESD_TORRENT_REMUX:-on}"
+    )
+  fi
   # Torrent phase 6: a throwaway daemon never asks the real subtitle services (.env.local may hold the owner's
   # WYZIE_API_KEY). --torrent points both at the fake one, with a fake key.
   if [ "$torrent" = 1 ]; then

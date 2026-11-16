@@ -1234,6 +1234,35 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   stretches on disk, in seconds. The log says `from torrent <hash start> <release> (<state>)` when
   the page opens it and `torrent <hash start> on disk` when the download completes.
 
+### The remux for files Chrome cannot play
+
+A torrent's file is often an MKV, or carries AC3, E-AC3 or DTS sound, or HEVC video, none of which Chrome plays as a
+plain file. When the probe says the file is not one Chrome plays as is, the session plays an ffmpeg remux of it:
+
+- **One ffmpeg per file.** It reads the file through the daemon's own file route while the torrent downloads (a read
+  waits for its pieces, and the download follows ffmpeg from the start of the film), or straight from disk once the
+  download is whole.
+- **Video copied, sound converted.** The video is never re-encoded (HEVC is tagged `hvc1`). The audio track in the
+  title's original language (else the first) becomes AAC stereo; other audio tracks and embedded subtitles are left out.
+- **An HLS playlist that grows.** `index.m3u8`, `init.mp4` and fMP4 segments of about 6 s go to
+  `<NOTESD_TORRENT_DIR>/<info hash>/notesd-remux/<file index>/`, served by
+  `GET /api/stream/torrent/<hash>/hls/<index>/<file>`. The playlist grows a segment at a time and is closed with
+  `EXT-X-ENDLIST` only once ffmpeg has read the whole file and exited cleanly (`done.json`): ffmpeg closes a playlist
+  even when its input dies, so that mark alone decides.
+- **On the page.** The session's `manifest_kind` is `hls` and its `manifest_url` carries `remux=1` and `total_s` (the
+  film's length from the probe). The player starts at the resume position or at 0, never at a live edge; its timeline
+  is the whole film; a seek past what is remuxed waits there until the remux reaches it. The torrent's map
+  (`GET /api/stream/torrent/<hash>/map`) answers the remuxed stretch, so the grey bar shows how far the remux is.
+- **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time, or
+  stops with an error first, makes the torrent `unplayable` with the reason, and the next one is tried. Video other
+  than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
+- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg; the half-made remux starts over
+  the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
+  download is cleared.
+- **HEVC** plays where the streaming Chrome decodes it. Where it cannot, the page stops with `mediaError ...` in its
+  log, and the shuffle button (S) moves to the next torrent.
+- `NOTESD_TORRENT_REMUX=off` makes such a file `unplayable` again; `NOTESD_FFMPEG_BIN` names the ffmpeg.
+
 ### Subtitles for a torrent
 
 A torrent session gets its English subtitle from the first of these that has one. The play
@@ -1352,6 +1381,7 @@ To see what a site lists, by hand:
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
 | `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
+| `src/directStream/torrent/remux.ts`, `src/http/streamTorrentRemuxApi.ts` | The torrent remux: ffmpeg into a growing HLS playlist, its files and map |
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
 | `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |

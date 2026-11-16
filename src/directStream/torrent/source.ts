@@ -3,6 +3,7 @@ import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
 import { defaultIndexes, findCandidates, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
+import { canRemux, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleTier } from './subtitles/chain.js';
 import { FILE_LIST_TIMEOUT_MS, orderByFileLists } from './subtitles/files.js';
 import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick } from './types.js';
@@ -71,6 +72,8 @@ export interface TorrentSourceOptions {
   find: FindTorrents;
   probe: ProbeFile;
   tiers: readonly SubtitleTier[];
+  /** The remux for a file Chrome cannot play as is (torrent phase 5); null or unset: such a file is `unplayable`. */
+  remux?: TorrentRemux | null;
   /** This daemon's origin as ffprobe reaches it (`http://127.0.0.1:<port>`); read at play time. */
   localBase: () => string;
   now?: () => number;
@@ -131,14 +134,18 @@ function queryOf(ref: StreamRef, imdbId: string, names: TitleNames | null, audio
   return ref.kind === 'movie' ? { ...common, kind: 'movie' } : { ...common, kind: 'tv', season: ref.season, episode: ref.episode };
 }
 
-/** Why a probed file is not played, or null when it plays: a dub first (original language only), then a file Chrome cannot play. */
-function refusalOf(probe: MediaProbe, audioLang: string | null): { outcome: ResolveOutcome; detail: string } | null {
+/**
+ * Why a probed file is not played, or null when it plays: a dub first (original language only), then a file Chrome
+ * cannot play that the remux cannot help either (the remux off, or video Chrome cannot decode).
+ */
+function refusalOf(probe: MediaProbe, audioLang: string | null, remux: TorrentRemux | null): { outcome: ResolveOutcome; detail: string } | null {
   const languages = audioLanguages(probe);
   if (audioLang !== null && languages.length > 0 && !languages.includes(audioLang)) {
     return { outcome: 'dubbed', detail: `its audio is ${languages.join(', ')}, not the original ${audioLang}` };
   }
-  // Phase 5 replaces this refusal with the remux for a file ffmpeg can remux.
-  if (!probe.direct) return { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is` };
+  if (probe.direct) return null;
+  if (remux === null) return { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is` };
+  if (!canRemux(probe)) return { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is, and a remux cannot make its video playable` };
   return null;
 }
 
@@ -254,9 +261,16 @@ export class TorrentSource {
       this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} could not be read: ${messageOf(err)}`);
       return null;
     }
-    const refusal = refusalOf(probe, options.audioLang);
+    const refusal = refusalOf(probe, options.audioLang, this.opts.remux ?? null);
     if (refusal !== null) {
       this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} is not played again (${refusal.outcome}: ${refusal.detail})`);
+      return null;
+    }
+    let page: { manifestUrl: string; manifestKind: 'mp4' | 'hls' };
+    try {
+      page = await this.fileForPage(download.infoHash, download.fileIndex, probe, options.audioLang);
+    } catch (err) {
+      this.log(`[notesd] torrent: the download ${download.infoHash} of ${refLabel(ref)} could not be remuxed: ${messageOf(err)}`);
       return null;
     }
     this.noteDuration(download.infoHash, probe);
@@ -290,8 +304,8 @@ export class TorrentSource {
       seeds: null,
       state: 'ready',
       height: probe.video?.height ?? null,
-      manifestUrl,
-      manifestKind: 'mp4',
+      manifestUrl: page.manifestUrl,
+      manifestKind: page.manifestKind,
       subtitles: chain.subtitles,
       candidates: [],
       durationS: probe.durationS,
@@ -312,6 +326,8 @@ export class TorrentSource {
     await this.opts.swarm.use(c.infoHash, [...torrent.selected]);
     if (torrent.stop.signal.aborted) torrent.stop = new AbortController();
     torrent.held = true;
+    // A remux stopped with the release starts again (torrent phase 5); its playlist keeps its address.
+    if (torrent.manifestKind === 'hls') await this.opts.remux?.resume(torrent.infoHash, torrent.fileIndex);
   }
 
   /** Lets go of the session's torrent (once), and stops its growing subtitle tiers. */
@@ -319,6 +335,7 @@ export class TorrentSource {
     torrent.stop.abort();
     if (!torrent.held) return;
     torrent.held = false;
+    if (torrent.manifestKind === 'hls') this.opts.remux?.release(torrent.infoHash, torrent.fileIndex);
     this.letGo(torrent.infoHash);
   }
 
@@ -329,6 +346,26 @@ export class TorrentSource {
     } catch {
       return torrent.state;
     }
+  }
+
+  /**
+   * The address the page plays the file from: its file route when Chrome plays it as is, else the remux playlist
+   * (torrent phase 5), answered once the remux's first segment is on disk. ffmpeg reads the file from disk once it is
+   * whole, else through the file route. Throws RemuxError.
+   */
+  private async fileForPage(
+    infoHash: string,
+    fileIndex: number,
+    probe: MediaProbe,
+    audioLang: string | null,
+    timeoutMs?: number,
+  ): Promise<{ manifestUrl: string; manifestKind: 'mp4' | 'hls' }> {
+    const fileUrl = this.opts.swarm.localUrl(infoHash, fileIndex);
+    const remux = this.opts.remux ?? null;
+    if (probe.direct || remux === null) return { manifestUrl: fileUrl, manifestKind: 'mp4' };
+    const input = (await this.opts.swarm.filePath(infoHash, fileIndex)) ?? `${this.opts.localBase()}${fileUrl}`;
+    const play = await remux.start({ infoHash, fileIndex, input, probe, audioLang }, timeoutMs === undefined ? {} : { timeoutMs });
+    return { manifestUrl: play.manifestUrl, manifestKind: 'hls' };
   }
 
   private letGo(infoHash: string): void {
@@ -392,8 +429,14 @@ export class TorrentSource {
           ? fail('no_stream', `the swarm sent too little of the file to read it within ${Math.round(probeMs / 1000)} s`)
           : fail('error', `ffprobe could not read the file: ${messageOf(err)}`);
       }
-      const refusal = refusalOf(probe, audioLang);
+      const refusal = refusalOf(probe, audioLang, this.opts.remux ?? null);
       if (refusal !== null) return fail(refusal.outcome, refusal.detail);
+      let page: { manifestUrl: string; manifestKind: 'mp4' | 'hls' };
+      try {
+        page = await this.fileForPage(c.infoHash, picked.video, probe, audioLang, Math.max(PROBE_MIN_MS, budgetMs - (this.now() - started)));
+      } catch (err) {
+        return fail('unplayable', `${describeProbe(probe)}: the remux did not start (${messageOf(err)})`);
+      }
       this.noteDuration(c.infoHash, probe);
       const stop = new AbortController();
       const chain = await runSubtitleChain(
@@ -425,8 +468,8 @@ export class TorrentSource {
         seeds: c.seeds,
         state: 'downloading',
         height: probe.video?.height ?? c.release.height ?? null,
-        manifestUrl,
-        manifestKind: 'mp4',
+        manifestUrl: page.manifestUrl,
+        manifestKind: page.manifestKind,
         subtitles: chain.subtitles,
         candidates: [],
         durationS: probe.durationS,
@@ -438,7 +481,7 @@ export class TorrentSource {
       };
       torrent.state = await this.state(torrent);
       const tookS = seconds(started, this.now());
-      return { ok: true, torrent, source: standIn(torrent, probe, audioLang, tookS), attempt: attempt('resolved', `${describeProbe(probe)}, ${c.seeds} seeds`), subtitleAttempts: chain.attempts };
+      return { ok: true, torrent, source: standIn(torrent, probe, audioLang, tookS), attempt: attempt('resolved', `${describeProbe(probe)}${page.manifestKind === 'hls' ? ', remuxed' : ''}, ${c.seeds} seeds`), subtitleAttempts: chain.attempts };
     } catch (err) {
       return fail('error', messageOf(err));
     }
@@ -464,6 +507,8 @@ export function buildTorrentSource(
     tiers?: readonly SubtitleTier[];
     /** 1337x and ext.to (phase 9), asked only when the JSON indexes leave no usable candidate. */
     fallback?: readonly TorrentIndex[];
+    /** The remux of files Chrome cannot play as is (torrent phase 5); null or unset: such a file is `unplayable`. */
+    remux?: TorrentRemux | null;
   },
 ): TorrentSource | null {
   if (config.torrent?.enabled !== true || torrents === null) return null;
@@ -482,6 +527,7 @@ export function buildTorrentSource(
       }),
     probe: ffprobeFile({ ffprobeBin: config.movies.ffprobeBin }),
     tiers: wiring.tiers ?? [],
+    remux: wiring.remux ?? null,
     localBase: wiring.localBase,
     ...(wiring.log === undefined ? {} : { log: wiring.log }),
   });
