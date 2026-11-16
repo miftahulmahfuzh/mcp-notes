@@ -6,6 +6,7 @@ import type { TorrentStreams } from '../service.js';
 import type { TorrentFileInfo, TorrentHandle } from '../types.js';
 import { borrowTier, type SubtitleLender } from './borrow.js';
 import { SubtitleShelf, keptTier } from './disk.js';
+import { embeddedTier, type EmbeddedSubtitles } from './embedded.js';
 import { ffmpegAssConverter, filesTier, type AssConverter } from './files.js';
 import { serviceTier } from './service.js';
 
@@ -86,7 +87,9 @@ export interface SubtitleTierDeps {
   lend: () => SubtitleLender | null;
   /** ASS/SSA to WebVTT (phase 6); src/daemon.ts passes ffmpegAssConverter(config.torrent.ffmpegBin). */
   convertAss?: AssConverter;
-  // Phase 7: embedded. Phase 8: whisper.
+  /** The extraction of a file's English text track into a growing cue feed (phase 7); null with torrents off. */
+  embedded?: EmbeddedSubtitles | null;
+  // Phase 8: whisper.
 }
 
 /** The daemon's subtitle tiers, in order. Each later phase inserts its tiers at its comment. */
@@ -98,6 +101,7 @@ export function buildSubtitleTiers(deps: SubtitleTierDeps): SubtitleTier[] {
     keptTier(shelf),
     filesTier({ torrents: deps.torrents, shelf, convertAss: deps.convertAss ?? ffmpegAssConverter() }),
     // Phase 7: embedded.
+    ...(deps.embedded == null ? [] : [embeddedTier(deps.embedded)]),
     // Phase 6: service, borrow. The service tier is left out when neither service may be asked.
     ...(deps.subtitleUrl === null && wyzie === null ? [] : [serviceTier({ baseUrl: deps.subtitleUrl, wyzie, fetch: deps.fetch, torrents: deps.torrents, shelf, log: deps.log })]),
     borrowTier({ lend: deps.lend, shelf }),

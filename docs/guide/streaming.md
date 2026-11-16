@@ -1274,6 +1274,32 @@ others leave their swarms at once.
 
 Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
 
+### The subtitle track inside the file
+
+When the torrent holds no subtitle file, the video file's own English text track is used: SubRip,
+ASS/SSA, mov_text or WebVTT, chosen by language (`eng`, `en`), a full track before an SDH one,
+SubRip before ASS. A forced track (only the lines spoken in another language) is used only when it
+is the file's one English text track. Picture tracks (PGS, VobSub, DVB) are never turned into text:
+the daemon log says `no English text subtitle track in <hash> (...)`, and the next tier, the
+subtitle service, is asked.
+
+- **It grows as the film downloads.** Subtitle packets are spread through the whole file, so ffmpeg
+  can give the cues only as far as the torrent has downloaded. It reads the file from its start
+  through the daemon's own file route, which waits for each piece, and every cue it writes goes into
+  a cue feed: `GET /api/stream/torrent/<hash>/cues/embedded-<file index>-<stream index>`. The session's subtitle
+  carries `growing: true`; the page starts the track empty and reads the feed again every 4 seconds
+  from where it stopped, until the feed is `complete`.
+- **A seek past what is extracted shows no line** until the extraction gets there. The extraction
+  follows the download from the beginning of the file, so after a seek far ahead the lines come back
+  once the torrent has filled the file up to there.
+- **On disk, beside the torrent.** The feed is `<torrent folder>/notesd-cues/<track>.jsonl`. A file
+  already complete on disk is read from its path at full speed, in seconds, and a complete feed is
+  used again on a replay without ffmpeg. An extraction that stopped (the torrent was left, the route
+  sent nothing for 5 minutes, the daemon restarted) is started over on the next play.
+- **Times are the file's own** (`-copyts`): the cues are not moved by the file's start, and G/H
+  still move them for the viewer.
+- Whisper (the last tier) appends its cues to a feed of the same kind, `whisper-<file index>`.
+
 ### When the indexes have nothing: 1337x and ext.to
 
 When every JSON index answers nothing usable for a title, the finder asks two torrent sites, 1337x
@@ -1328,6 +1354,7 @@ To see what a site lists, by hand:
 | `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
 | `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
 | `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
+| `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |

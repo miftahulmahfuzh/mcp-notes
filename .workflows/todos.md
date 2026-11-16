@@ -148,20 +148,32 @@
     - No IMDb id (a replay from disk) → Wyzie is asked by the TMDB id; the add-on is still not asked without one (rung 3)
     - The Wyzie journey needed a title and the fake TMDB has none unused → it plays quiet's episode again instead of adding a title to phase 3's fake TMDB (tie-break: narrower blast radius)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-3 in this set; the coordinator's integrator reconciles them. P1-NOTES-A133 stays blocked: it also depends on P1-NOTES-A130 (phase 4), still open.
-- [ ] **P1-NOTES-A133** Phase 7: The embedded subtitle track and the growing cue feed
+- [x] **P1-NOTES-A133** Phase 7: The embedded subtitle track and the growing cue feed
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/subtitles/feed.ts` (the growing cue feed, any append order) and `embedded.ts` (the growing `embedded` tier, ffmpeg extracting an English text track to WebVTT as the file downloads), `src/http/streamTorrentCuesApi.ts`, `AppDeps.torrentCues`, `CacheSubtitleView.growing`, `SessionSubtitle.growing` and `localSubtitle`, and `web/src/stream/subtitles.ts` plus its edits to phase 4's `session.ts` and `controller.ts` reading a growing track until it is complete. Exit criteria: on a throwaway daemon, a torrent whose file carries an English text track and no subtitle file plays with that track's cues on screen, read from a feed that grows and ends complete; a file with picture tracks only gets no feed and the chain asks the next tier; `npm run typecheck` and `npm test` pass.
-  - **Status**: blocked
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 7 of 9)
   - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.4, R3.5
   - **Depends on**: P1-NOTES-A130, P1-NOTES-A132
   - **Plan**: `.workflows/plan/P1-NOTES-A133.md`
+  - **Completed**: 2026-11-16 23:40
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/subtitles/{feed,embedded,chain}.ts, src/http/streamTorrentCuesApi.ts, src/directStream/cachePlay.ts, src/directStream/service.ts, src/deps.ts, src/http/app.ts, src/daemon.ts, web/src/stream/{subtitles,session,controller}.ts, web/src/stream/{subtitles,controller}.test.tsx, tests/unit/directStream/torrent/subtitles/{feed,embedded,embedded.ffmpeg}.test.ts, tests/unit/directStream/torrent/cuesRoute.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/stream/{make-torrent-sub-fixtures.sh,embedded-subtitle.steps.mjs}, .workflows/todos.md
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-233542-2055487/evidence (J1: EMBEDDED SESSION/FEED/CAPTION/SEEK PASS), /home/miftah/.local/state/notesd-verify/1116-233602-2056959/evidence (J4: embedded no_stream then service resolved, no growing), J2/J3/J5 vitest transcripts (real ffmpeg); neighbor player.steps.mjs J1/J2 PASS at /home/miftah/.local/state/notesd-verify/1116-233624-2058338/evidence
+  - **Drift**:
+    - Line numbers moved since the plan (phases 3, 4, 6, 9 landed); every quoted block still matched. chain.ts carried phase 6's SubtitleTierDeps fields (subtitleUrl, wyzie, fetch, lend, convertAss) with the phase-7 comments in place.
+    - The worktree had no node_modules; ran npm ci (allowScripts honoured), no package.json or lockfile change.
+    - web/src/App.movies.test.tsx failed once ('answer collapsed') in the first full npm test run under load; it passes alone and the second full run was all green. Not touched by this phase.
+  - **Decided**:
+    - The guide's Whisper feed name: plan text said `whisper` → wrote `whisper-<file index>` (rung 1: the index's shared contract for track ids)
+    - The 'Phase 7 adds embedded here; phase 8 whisper' comments in chain.ts and daemon.ts → kept as phase-8-only markers after inserting the phase 7 lines (rung 6: the set's marker convention)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-6 in this set; the coordinator's integrator reconciles them. P1-NOTES-A134 unblocked (its only dependency is this phase).
 - [ ] **P1-NOTES-A134** Phase 8: Whisper, the last resort
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/subtitles/whisper.ts` (the growing `whisper` tier, last; audio cut with ffmpeg, a CPU Whisper per stretch, cues appended to phase 7's `whisper-<file index>` feed, progress under `<dir>/<hash>/notesd-whisper/`), `whisperCovers` on phase 6's borrow line, `claude/streaming/torrent/whisper.py`, the Whisper install in `scripts/install.sh`, its settings (`NOTESD_TORRENT_WHISPER*`), `AppDeps.torrentWhisper`. Exit criteria: `npm run typecheck` and `npm test` pass; J1 shows a growing `English (Whisper)` track filled stretch by stretch and completed (the borrow `skipped`), J2 shows its cue drawn in the player, J3 shows the real model's timed English cues for Sintel; with `NOTESD_TORRENT_WHISPER=off` no tier is built.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 8 of 9)
   - **Satisfies**: R3 — "3. making sure we have english subtitle by any means necessary.. i think i've seen that one torrent file can have several files inside, so it has the movie file and the subtitle file.. maybe we can make use of this?" · criteria: R3.6
   - **Depends on**: P1-NOTES-A133

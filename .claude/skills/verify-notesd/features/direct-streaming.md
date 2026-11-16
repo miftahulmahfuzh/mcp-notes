@@ -426,6 +426,22 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   key in `.env.local` is never used. Fixture torrents come from
   `scripts/torrent/make-subtitle-fixtures.sh` (cached in `$VERIFY_HOME/.torrent-subtitle-fixtures`).
   The transcript ends with `subtitles: PASS (...)`; `down` copies the request logs into the evidence.
+- The subtitle track inside a torrent's file (torrent-stream-source phase 7): with no subtitle
+  file in the torrent, the file's English text track (SubRip, ASS, mov_text, WebVTT) is extracted
+  with ffmpeg into a growing cue feed, `GET /api/stream/torrent/<hash>/cues/embedded-<file>-<stream>?after=<i>`
+  (`{cues, next, complete}`), and the page reads it every 4 s until complete; picture tracks (PGS,
+  VobSub) are skipped and the next tier is asked. Fixtures (MP4 that Chrome plays as is):
+  `FX=$(bash .claude/skills/verify-notesd/scripts/stream/make-torrent-sub-fixtures.sh "$HOME/.local/state/notesd-verify/.torrent-sub-fixture")`
+  gives `$FX/sub-text.mp4` (English mov_text, cue N "Line N" from 3N-2 s to 3N s) and
+  `$FX/sub-picture.mp4` (English VobSub only). Page journey:
+  `TORRENT_FIXTURE_FILE="$FX/sub-text.mp4" $V up --web --direct-stream --torrent`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/embedded-subtitle.steps.mjs`: the transcript
+  has `EMBEDDED SESSION PASS`, `EMBEDDED FEED PASS`, `EMBEDDED CAPTION PASS`, `EMBEDDED SEEK PASS`.
+  Picture only: `TORRENT_FIXTURE_FILE="$FX/sub-picture.mp4" $V up --direct-stream --torrent`, play
+  `{"kind":"movie","tmdb_id":467905,"provider":"torrent"}`: no subtitle has `growing`, the log says
+  `no English text subtitle track`, and no `notesd-cues` folder exists. Logic:
+  `npx vitest run tests/unit/directStream/torrent web/src/stream/subtitles.test.tsx web/src/stream/controller.test.tsx`
+  (the real ffmpeg is in `embedded.ffmpeg.test.ts`).
 
 ## Torrent fallback sites: 1337x and ext.to (torrent phase 9)
 - Torrent fallback sites: when the JSON torrent indexes answer nothing usable, 1337x and ext.to are
