@@ -103,6 +103,10 @@ describe('App: the Stream side of /movies', () => {
     expect(screen.queryByText(/Play opens VLC/)).toBeNull();
     await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
     expect(within(switcher()).getByRole('button', { name: 'Stream' }).getAttribute('aria-pressed')).toBe('true');
+    // One row of controls: the switch sits in the grid's filter row, before a separator, and there is no toolbar row above it.
+    expect(switcher().closest('.mv-filter')).not.toBeNull();
+    expect(switcher().nextElementSibling?.className).toBe('mv-fsep');
+    expect(document.querySelector('.mv-tools')).toBeNull();
     // A title with no file is not "gone" on this side, and there is no gone pill.
     expect(document.querySelector('.mv-tile.gone')).toBeNull();
     expect(screen.queryByRole('button', { name: /^gone/ })).toBeNull();

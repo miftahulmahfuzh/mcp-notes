@@ -26,7 +26,14 @@
 .mv-fpill.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .mv-fn { opacity: .6; margin-left: 4px; }
 .mv-fkinds { display: flex; gap: 2px; }
-.mv-fkinds .ibtn { width: 32px; height: 32px; font-size: 16px; }
+.mv-filter .ibtn { width: 32px; height: 32px; font-size: 16px; position: relative; }
+.mv-filter .ibtn:disabled { opacity: .35; cursor: default; }
+/* The page's switch and tools share this row: the switch first, a hairline, then the filters. */
+.mv-filter .mv-side { margin-right: 0; }
+.mv-filter .mv-side .ibtn:not(:hover):not(.on) { background: transparent; }
+.mv-fsep { width: 1px; height: 20px; background: var(--line-25); }
+.mv-ftools { display: flex; align-items: center; gap: 2px; }
+.mv-ftools:empty { display: none; }
 .mv-ftext { display: flex; align-items: center; gap: 6px; margin-left: auto; border-bottom: 1px solid var(--line-25); padding: 4px 2px; color: var(--dim); font-size: 14px; }
 .mv-ftext input { background: transparent; border: 0; color: var(--fg); font: inherit; font-size: 13px; width: 180px; }
 

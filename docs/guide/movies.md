@@ -378,9 +378,12 @@ happens after it and says so, unless you ask for spoilers outright. For a later 
 that part, and in `/n`, Claude reads `last_play` from `movies_get` again before it talks about the
 plot, and never reuses a position from earlier in the conversation.
 
-**Toolbar.** The Library / Stream switch, Back to the library (Back to Stream on a title opened
+**Controls.** The Library / Stream switch, Back to the library (Back to Stream on a title opened
 from Stream), and on the Library side the unmatched list with a count of this machine's unmatched
-and pending files (`/movies/unmatched`) and Rescan the library, which starts a pass at once.
+and pending files (`/movies/unmatched`) and Rescan the library, which starts a pass at once. Over
+a grid they share one row with the filters: the switch first, a hairline, the state pills, the
+kind icons and the text filter, then the Library's two buttons at the right. On a title, the
+unmatched list or an empty page they are a toolbar of their own.
 
 **Live updates.** The page listens on `/api/movies/events` and reloads on every change, polls once
 a minute for changes made by the other machine, and while a play is followed re-reads the player
@@ -393,7 +396,9 @@ filters, filled from `GET /api/movies/stream` instead of the library. A title is
 provider returned a playable stream for it on this machine within the freshness window
 (`NOTESD_STREAM_FRESH_DAYS`, 7 days by default) and its last try did not fail. Nothing else is
 shown there, so every poster plays. A title with no file is not dimmed on this side, and there is
-no `gone` pill. The header says how many titles are verified and over how many days.
+no `gone` pill. The title played last is first, at the top left, whatever its state; a title that
+was verified but never played comes after, newest first. The header says how many titles are
+verified and over how many days.
 
 ![The Stream side: the titles verified to stream on this machine, with the same filters as the library](img/movies/stream.png)
 

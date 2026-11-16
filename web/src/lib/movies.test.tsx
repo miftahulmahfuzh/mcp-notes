@@ -94,6 +94,17 @@ describe('grid order and filter', () => {
     expect(sortTitles(TITLES).map((t) => t.id)).toEqual(['movie-467905', 'tv-247718', 'movie-9001']);
   });
 
+  it('on the Stream side puts the title played last first, whatever its state, and never-played titles after', () => {
+    const at = (id: string, last: string | null, created: string, state: 'in_progress' | 'finished' | 'unwatched') => ({ ...TITLES[0]!, id, state, last_played_at: last, created_at: created });
+    const list = [
+      at('old-in-progress', '2026-11-10T10:00:00.000Z', '2026-11-01T00:00:00.000Z', 'in_progress'),
+      at('probed-older', null, '2026-11-12T00:00:00.000Z', 'unwatched'),
+      at('just-finished', '2026-11-15T23:59:00.000Z', '2026-11-02T00:00:00.000Z', 'finished'),
+      at('probed-newer', null, '2026-11-14T00:00:00.000Z', 'unwatched'),
+    ];
+    expect(sortTitles(list, 'stream').map((t) => t.id)).toEqual(['just-finished', 'old-in-progress', 'probed-newer', 'probed-older']);
+  });
+
   it('filters by state, kind and text, and counts each state under the other filters', () => {
     expect(ids({ ...NO_MOVIES_FILTER, state: 'gone' })).toEqual(['movie-9001']);
     expect(ids({ ...NO_MOVIES_FILTER, state: 'in_progress' })).toEqual(['tv-247718', 'movie-467905']);

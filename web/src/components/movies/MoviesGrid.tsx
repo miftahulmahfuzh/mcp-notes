@@ -1,5 +1,6 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 import type { PlayerState, TitleListItem } from '../../moviesApi';
 import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, tileLivePlace, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
@@ -15,10 +16,14 @@ export interface MoviesGridProps {
   onOpen: (titleId: string) => void;
   /** `stream`: the Stream side's grid. A title there has no file by design, so nothing is "gone" and there is no gone pill. */
   side?: MoviesSide;
+  /** Shown first in the filter row, before a separator: the page's Library / Stream switch. */
+  lead?: ReactNode;
+  /** Shown last in the filter row, after the text filter: the page's tool buttons. */
+  tail?: ReactNode;
 }
 
-/** The library or the Stream side: a filter row (state pills with counts, kind icons, a text filter), then one poster per title. */
-export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, side = 'library' }: MoviesGridProps) {
+/** The library or the Stream side: one row of controls (the page's switch, state pills with counts, kind icons, a text filter, the page's tools), then one poster per title. */
+export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, side = 'library', lead = null, tail = null }: MoviesGridProps) {
   const counts = stateCounts(titles, filter, side);
   const shown = sortTitles(
     titles.filter((t) => matchesFilter(t, filter, side)),
@@ -27,6 +32,12 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, si
   return (
     <section className="mv-lib mv-content" aria-label={side === 'stream' ? 'Stream' : 'Library'}>
       <div className="mv-filter">
+        {lead !== null && (
+          <>
+            {lead}
+            <span className="mv-fsep" aria-hidden="true" />
+          </>
+        )}
         <div className="mv-fstates" role="group" aria-label="State">
           {stateFilters(side).map((s) => (
             <button
@@ -65,6 +76,7 @@ export function MoviesGrid({ titles, player = null, filter, onFilter, onOpen, si
           <MagnifyingGlass weight="duotone" />
           <input type="search" value={filter.text} placeholder="Filter titles" aria-label="Filter titles" onChange={(e) => onFilter({ ...filter, text: e.target.value })} />
         </label>
+        {tail !== null && <div className="mv-ftools">{tail}</div>}
       </div>
       {shown.length === 0 ? (
         <p className="mv-empty">Nothing matches this filter.</p>

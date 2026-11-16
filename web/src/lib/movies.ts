@@ -201,8 +201,20 @@ function rank(t: TitleListItem, side: MoviesSide): number {
   return 2;
 }
 
-/** In progress first (what to continue), then unwatched (what to start), then finished, then gone; newest play, newest year, title. */
+/**
+ * Library: in progress first (what to continue), then unwatched (what to start), then finished,
+ * then gone; newest play, newest year, title. Stream: the title played last is first, whatever its
+ * state, and a title never played (verified by the prober) comes after, newest first.
+ */
 export function sortTitles(titles: TitleListItem[], side: MoviesSide = 'library'): TitleListItem[] {
+  if (side === 'stream') {
+    return [...titles].sort(
+      (a, b) =>
+        (b.last_played_at ?? '').localeCompare(a.last_played_at ?? '') ||
+        b.created_at.localeCompare(a.created_at) ||
+        a.title.localeCompare(b.title),
+    );
+  }
   return [...titles].sort(
     (a, b) =>
       rank(a, side) - rank(b, side) ||
