@@ -86,7 +86,7 @@ function setup(o: Setup = {}) {
     await new Promise((r) => setTimeout(r, 0));
     return swarmCalls;
   };
-  return { app, svc, finds, recorded, settled, resolves: () => count('resolve'), opens: () => count('open') };
+  return { app, svc, finds, recorded, settled, resolves: () => count('resolve'), resolveArgs: () => runs.filter((a) => a[0] === 'resolve'), opens: () => count('open') };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,6 +164,27 @@ describe('a torrent session', () => {
     expect(status).toBe(502);
     expect(json).toMatchObject({ error: 'resolve_failed', reason: 'no_chrome' });
     expect(json.attempts.map((a: { provider: string }) => a.provider)).toEqual(['Index: torrentio']);
+  });
+
+  it('provider "cloud" (any case) never plays a torrent: a cloud no_source is the answer, and no index is asked', async () => {
+    const t = setup();
+    const { status, json } = await post(t.app, '/api/stream/play', { ...PLAY_FILM, provider: 'Cloud' });
+    expect(status).toBe(502);
+    expect(json).toMatchObject({ error: 'no_source', attempts: NO_SOURCE.attempts });
+    expect(t.resolves()).toBe(1);
+    expect(t.finds).not.toHaveBeenCalled();
+    expect(await t.settled()).toEqual([]);
+  });
+
+  it('provider "cloud" passes over a finished torrent download and asks every cloud provider', async () => {
+    const t = setup({ resolve: RESOLVED, disk: { infoHash: h(7), name: 'Film.2026.720p.WEB-DL.x264.AAC-D', fileIndex: 0, state: 'ready' }, ready: [h(7)] });
+    const { status, json } = await post(t.app, '/api/stream/play', { ...PLAY_FILM, provider: 'cloud' });
+    expect(status).toBe(200);
+    expect(json.session).toMatchObject({ provider: 'Alpha', torrent: null });
+    expect(t.resolves()).toBe(1);
+    // Every provider, not one named "cloud": the resolver was given no --only.
+    expect(t.resolveArgs()[0]).not.toContain('--only');
+    expect(t.finds).not.toHaveBeenCalled();
   });
 
   it('plays a finished download from disk first: no resolve, no index, no swarm (R2.9)', async () => {

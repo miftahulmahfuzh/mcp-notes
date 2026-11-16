@@ -16,7 +16,7 @@ import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
-import { namesTorrent, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
+import { namesCloud, namesTorrent, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -88,7 +88,7 @@ export interface DirectStreamHooks {
    * The title's names and year (the stored title), for the torrent finder's title check and phase 9's 1337x search
    * (torrent phase 3). Null: unknown; the finder then checks no title.
    */
-  titleNames?: (ref: StreamRef) => Promise<{ title: string; originalTitle: string | null; year: number | null } | null>;
+  titleNames?: (ref: StreamRef) => Promise<{ title: string; originalTitle: string | null; year: number | null; episodeInSeason?: number | null } | null>;
 }
 
 export interface SessionSubtitle {
@@ -319,13 +319,16 @@ export class DirectStreamService {
     const resumeS = options.resumeS ?? null;
     // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
     // "torrent" asks the torrent source alone: a finished download on this machine first, else the swarm.
+    // "cloud" asks the cloud providers alone: this host's stream cache first, and never a torrent, on disk or in the swarm.
     const only = options.provider ?? null;
     const session =
       only === null
         ? await this.sessionFor(ref, resumeS)
         : namesTorrent(only)
           ? ((await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null)))
-          : await this.resolve(ref, { resumeS, only });
+          : namesCloud(only)
+            ? ((await this.cachedSession(ref, resumeS)) ?? (await this.resolve(ref, { resumeS, vet: true })))
+            : await this.resolve(ref, { resumeS, only });
     return this.openPage(session);
   }
 

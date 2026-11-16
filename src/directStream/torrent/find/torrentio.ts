@@ -53,7 +53,9 @@ export function torrentioIndex(base: string): TorrentIndex {
   return {
     name: 'torrentio',
     async find(query, ctx) {
-      const path = query.kind === 'movie' ? `movie/${query.imdbId}` : `series/${query.imdbId}:${query.season}:${query.episode}`;
+      // Torrentio numbers an episode within its season: `alt` when TMDB's number runs on across seasons.
+      const episode = query.kind === 'movie' ? null : (query.alt ?? query);
+      const path = episode === null ? `movie/${query.imdbId}` : `series/${query.imdbId}:${episode.season}:${episode.episode}`;
       const got = await getIndexJson(ctx, `${root}/stream/${path}.json`);
       if (!got.ok) return failedAnswer(got);
       const streams = asRecord(got.json)?.streams;

@@ -120,6 +120,23 @@ describe('TmdbDiscovery', () => {
     });
   });
 
+  it('discovers by genres that must all fit, keywords any of which may fit, and several original languages', async () => {
+    const f = routedFetch({ '/discover/movie': MOVIES, '/search/keyword': { results: [{ id: 10391, name: 'mafia' }, { id: 155538, name: 'sicilian mafia' }] } });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    await client.discover('movie', { originalLanguage: 'zh|cn', genreIds: [28, 35], keywordIds: [10391, 155538], companyIds: [] });
+    expect(Object.fromEntries(f.urls[0]!.searchParams)).toEqual({
+      with_original_language: 'zh|cn',
+      with_genres: '28,35',
+      with_keywords: '10391|155538',
+      sort_by: 'popularity.desc',
+      include_adult: 'false',
+      page: '1',
+    });
+    expect(await client.searchKeyword(' mafia ')).toEqual([{ id: 10391, name: 'mafia', country: null }, { id: 155538, name: 'sicilian mafia', country: null }]);
+    expect(f.urls[1]!.searchParams.get('query')).toBe('mafia');
+    expect(await client.searchKeyword(' ')).toEqual([]);
+  });
+
   it('discovers series by first air date and popularity, and sends no region without a service', async () => {
     const f = routedFetch({ '/discover/tv': SHOWS });
     const client = createTmdbClient(CONFIG, f.fetch);

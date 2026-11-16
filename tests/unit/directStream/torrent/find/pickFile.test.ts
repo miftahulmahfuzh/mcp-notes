@@ -66,3 +66,18 @@ describe('pickFile', () => {
     expect(pickFile(files(['Breaking.Bad.S01E01.720p.mkv', 400 * MB], ['Breaking.Bad.S01E01.720p.srt', 1]), episode(1, 1))).toEqual({ video: 0, subtitles: [1] });
   });
 });
+
+describe('pickFile with an episode numbered two ways', () => {
+  // One Piece: TMDB's season 21, episode 1000 is the 109th of that season.
+  const query: TorrentQuery = { kind: 'tv', imdbId: 'tt0388629', season: 21, episode: 1000, absoluteEpisode: 1000, alt: { season: 21, episode: 109 } };
+
+  it('finds the file by its number within the season when the name says the season', () => {
+    const list = files(['One Piece S21/One.Piece.S21E108.mkv', 300 * MB], ['One Piece S21/One.Piece.S21E109.mkv', 300 * MB], ['One Piece S21/One.Piece.S21E110.mkv', 300 * MB]);
+    expect(pickFile(list, query)?.video).toBe(1);
+  });
+
+  it('finds the file by the running number when the name says no season, and never takes that number for the one within the season', () => {
+    const list = files(['One Piece/One Piece - 0109.mkv', 300 * MB], ['One Piece/One Piece - 1000.mkv', 300 * MB]);
+    expect(pickFile(list, query)?.video).toBe(1);
+  });
+});

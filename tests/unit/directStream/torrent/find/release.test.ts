@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { episodeFit, parseEpisodeRef, parseRelease } from '../../../../../src/directStream/torrent/find/release.js';
+import { episodeFit, episodeFitOf, parseEpisodeRef, parseRelease } from '../../../../../src/directStream/torrent/find/release.js';
 
 const DUNE = { title: 'Dune: Part Two', originalLanguage: 'en' };
 
@@ -104,5 +104,24 @@ describe('episodeFit', () => {
     expect(episodeFit('Breaking Bad S01 Complete - 1080p', 'Ep 01 - Pilot.mkv', 1, 1)).toBe('match');
     expect(episodeFit('Breaking Bad S01 Complete - 1080p', 'Ep 01 - Pilot.mkv', 1, 2)).toBe('other');
     expect(episodeFit('Breaking Bad 1080p', null, 1, 1)).toBe('unknown');
+  });
+});
+
+describe('episodeFitOf', () => {
+  // One Piece: TMDB's season 21, episode 1000 is the 109th of that season.
+  const query = { season: 21, episode: 1000, absoluteEpisode: 1000, alt: { season: 21, episode: 109 } };
+
+  it('takes a name that says the season by the number within it, and a bare number as the running one', () => {
+    expect(episodeFitOf('[AnoZu] One Piece S21E109 1080p', null, query)).toBe('match');
+    expect(episodeFitOf('One Piece', 'One.Piece.1999.S21E109.1080p.mkv', query)).toBe('match');
+    expect(episodeFitOf('[SubsPlease] One Piece - 1000 (1080p)', '[SubsPlease] One Piece - 1000 (1080p).mkv', query)).toBe('match');
+    // Episode 109 counted over the whole series is another episode: nothing says it is this one.
+    expect(episodeFitOf('[SubsPlease] One Piece - 109 (1080p)', '[SubsPlease] One Piece - 109 (1080p).mkv', query)).toBe('unknown');
+    expect(episodeFitOf('One Piece S20E109', null, query)).toBe('other');
+  });
+
+  it('is episodeFit without a second numbering', () => {
+    expect(episodeFitOf('Breaking.Bad.S01E01.720p', null, { season: 1, episode: 1 })).toBe('match');
+    expect(episodeFitOf('Breaking.Bad.S01E02.720p', null, { season: 1, episode: 1, alt: null })).toBe('other');
   });
 });

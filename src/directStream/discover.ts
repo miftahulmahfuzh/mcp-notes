@@ -1,4 +1,4 @@
-import type { TmdbNamedHit } from '../movies/tmdb.js';
+import type { TmdbGenre, TmdbNamedHit } from '../movies/tmdb.js';
 import { normalizeName } from './match.js';
 
 /** Titles direct_stream_discover lists when the caller names no limit, and at most. */
@@ -10,6 +10,8 @@ export const DISCOVER_MAX_OTHERS = 5;
 export const DISCOVER_DEFAULT_REGION = 'US';
 /** Companies one name stands for at most ("Blumhouse" is Blumhouse Productions, Television, International, ...). */
 export const DISCOVER_MAX_COMPANIES = 6;
+/** Keywords one word stands for at most ("mafia" is mafia, sicilian mafia, japanese mafia, ...). */
+export const DISCOVER_MAX_KEYWORDS = 8;
 /** How much of a synopsis a listed title carries. */
 export const DISCOVER_OVERVIEW_CHARS = 240;
 
@@ -95,6 +97,118 @@ export function rankByName<T extends Pick<TmdbNamedHit, 'name'>>(list: readonly 
     else if (own.includes(wanted)) contains.push(item);
   }
   return [...exact, ...starts, ...contains];
+}
+
+/**
+ * TMDB's codes for a language as the owner says it. One code for most; "Chinese" is both of TMDB's,
+ * `zh` (Mandarin) and `cn` (Cantonese), since a Hong Kong film is as Chinese as a mainland one.
+ * Null when it is neither a name nor a code.
+ */
+export function languageCodes(value: string): string[] | null {
+  if (value.trim().toLowerCase() === 'chinese') return ['zh', 'cn'];
+  const code = languageCode(value);
+  return code === null ? null : [code];
+}
+
+/** Words the owner uses for a genre, as TMDB's own word for it (normalized). */
+const GENRE_WORDS: Readonly<Record<string, string>> = {
+  sciencefiction: 'scifi',
+  romantic: 'romance',
+  romcom: 'romance',
+  funny: 'comedy',
+  comedies: 'comedy',
+  scary: 'horror',
+  animated: 'animation',
+  anime: 'animation',
+  cartoon: 'animation',
+  documentaries: 'documentary',
+  docu: 'documentary',
+  historical: 'history',
+  musical: 'music',
+  thrillers: 'thriller',
+  mysteries: 'mystery',
+  political: 'politics',
+};
+
+const genreWord = (text: string): string => {
+  const word = normalizeName(text);
+  return GENRE_WORDS[word] ?? word;
+};
+
+/**
+ * The genre of one kind's list a word means: the one called that ("Horror"), else the one that has
+ * the word as a part of its name, which is how TMDB files series ("action" is "Action & Adventure",
+ * "sci-fi" and "fantasy" are "Sci-Fi & Fantasy", "war" is "War & Politics"). Null when the kind has
+ * no such genre: TMDB has no Horror, Thriller or Romance for series.
+ */
+export function genreNamed(list: readonly TmdbGenre[], name: string): TmdbGenre | null {
+  const wanted = genreWord(name);
+  if (wanted === '') return null;
+  return (
+    list.find((g) => genreWord(g.name) === wanted) ??
+    list.find((g) =>
+      g.name
+        .split('&')
+        .map(genreWord)
+        .includes(wanted),
+    ) ??
+    null
+  );
+}
+
+/**
+ * The keywords a word stands for: the one called exactly that first, then the ones that hold it as
+ * a whole word ("mafia": mafia, sicilian mafia, japanese mafia), in the list's own order, capped at
+ * DISCOVER_MAX_KEYWORDS. A title carrying any of them passes. [] when nothing fits.
+ */
+export function keywordsNamed<T extends Pick<TmdbNamedHit, 'name'>>(list: readonly T[], name: string): T[] {
+  const wanted = name.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (wanted === '') return [];
+  const own = (item: T): string => item.name.trim().toLowerCase().replace(/\s+/g, ' ');
+  const exact = list.filter((item) => own(item) === wanted);
+  const holds = list.filter((item) => own(item) !== wanted && ` ${own(item)} `.includes(` ${wanted} `));
+  return [...exact, ...holds].slice(0, DISCOVER_MAX_KEYWORDS);
+}
+
+/** Letters changed, added or dropped to turn one text into the other. */
+export function editDistance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    row = next;
+  }
+  return row[b.length] ?? 0;
+}
+
+/**
+ * Shorter searches for a person's name that found nobody, to catch a misspelt last word ("park bo
+ * yeung" for Park Bo-young): the name with its last word cut to one letter, then without it. []
+ * for a single word.
+ */
+export function looserNames(name: string): string[] {
+  const words = name.trim().split(/\s+/);
+  const last = words.pop();
+  if (last === undefined || words.length === 0) return [];
+  const head = words.join(' ');
+  return [`${head} ${last.slice(0, 1)}`, head];
+}
+
+/**
+ * The entries whose name is the asked one but for a letter or two (one letter per five, at least
+ * one), closest first, each group in the list's own order.
+ */
+export function nearlyNamed<T extends Pick<TmdbNamedHit, 'name'>>(list: readonly T[], name: string): T[] {
+  const wanted = normalizeName(name);
+  if (wanted === '') return [];
+  const allowed = Math.max(1, Math.floor(wanted.length / 5));
+  return list
+    .map((item, at) => ({ item, at, distance: editDistance(normalizeName(item.name), wanted) }))
+    .filter((x) => x.distance <= allowed)
+    .sort((a, b) => a.distance - b.distance || a.at - b.at)
+    .map((x) => x.item);
 }
 
 export interface DateRange {

@@ -1,6 +1,6 @@
 import { normalizeName } from '../../match.js';
 import { isUsableHash } from './candidate.js';
-import { episodeFit, type EpisodeFit } from './release.js';
+import { episodeFitOf, type EpisodeFit } from './release.js';
 import type { ExcludedCandidate, ExcludeReason, ReleaseHeight, TorrentCandidate, TorrentQuery } from './types.js';
 
 /** Fewer seeds than this and a torrent is never picked. */
@@ -32,7 +32,7 @@ export interface Ranked {
 const FIT_ORDER: Record<EpisodeFit, number> = { match: 0, pack: 1, unknown: 2, other: 3 };
 
 function fitOf(c: TorrentCandidate, query: TorrentQuery): EpisodeFit {
-  return query.kind === 'tv' ? episodeFit(c.name, c.fileName, query.season, query.episode) : 'match';
+  return query.kind === 'tv' ? episodeFitOf(c.name, c.fileName, query) : 'match';
 }
 
 /** One candidate for every listing of one info hash. */

@@ -286,7 +286,8 @@ describe('buildInstructions: Movies', () => {
     expect(order.indexOf('Movies')).toBe(order.indexOf('Connectors') + 1);
     expect(order.indexOf('Streaming')).toBe(order.indexOf('Movies') + 1);
     expect(order.indexOf('Direct streaming')).toBe(order.indexOf('Streaming') + 1);
-    expect(order.indexOf('Adversary')).toBe(order.indexOf('Direct streaming') + 1);
+    expect(order.indexOf('Codenames')).toBe(order.indexOf('Direct streaming') + 1);
+    expect(order.indexOf('Adversary')).toBe(order.indexOf('Codenames') + 1);
     expect(order.at(-1)).toBe('Sessions');
   });
 });
@@ -299,6 +300,17 @@ describe('buildInstructions: Streaming', () => {
     const p = paragraphs[0]!;
     for (const word of ['streaming_find', 'streaming_play', 'idlix', 'lk21', 'only when the user asks to watch, play or put something on', 'never a link you built', 'F11']) {
       expect(p).toContain(word);
+    }
+  });
+});
+
+describe('buildInstructions: Codenames', () => {
+  it('has one Codenames paragraph that maps the six words to the library, cloud only and torrent', () => {
+    const paragraphs = buildInstructions().split('\n\n').filter((p) => p.startsWith('Codenames.'));
+    expect(paragraphs).toHaveLength(1);
+    const p = paragraphs[0] ?? '';
+    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'movies_continue', 'provider "cloud"', 'provider "torrent"', 'never part of a title', '"continue OP TS"', 'asks for nothing', 'pass no provider', 'keywords_dropped', 'a season alone']) {
+      expect(p, word).toContain(word);
     }
   });
 });

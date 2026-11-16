@@ -201,9 +201,34 @@ describe('direct-stream MCP tools', () => {
     const c = await connect(f.deps);
     expect(json(await c.call('direct_stream_play', { title: 'the bear' }))).toMatchObject({ started: true, season: 1, episode: 2 });
     expect(f.tmdb.tvDetails).not.toHaveBeenCalled();
-    const r = await c.call('direct_stream_play', { title: 'the bear', season: 2 });
+    const r = await c.call('direct_stream_play', { title: 'the bear', episode: 2 });
     expect(r.isError).toBe(true);
-    expect(text(r)).toMatch(/^invalid_input: The Bear \(2022\) is a series: pass both season and episode/);
+    expect(text(r)).toMatch(/^invalid_input: The Bear \(2022\) is a series: pass the season with the episode/);
+    await c.close();
+  });
+
+  it('starts a season named without an episode at its first unfinished episode, and a finished season again at its first', async () => {
+    // Season 1 was marked finished and never played; season 2 is untouched.
+    const marked = fakeDeps({ progress: async () => [ep(1, 1, 'finished'), ep(1, 2, 'finished'), ep(2, 1), ep(2, 2)] });
+    let c = await connect(marked.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 2 }))).toMatchObject({ started: true, season: 2, episode: 1, picked: 'first' });
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 1 }))).toMatchObject({ started: true, season: 1, episode: 1, picked: 'first' });
+    expect(marked.tmdb.tvDetails).toHaveBeenCalledTimes(1);
+    await c.close();
+
+    const partway = fakeDeps({ progress: async () => [ep(2, 1, 'finished', '2026-11-10T12:00:00.000Z'), ep(2, 2, 'in_progress', '2026-11-11T12:00:00.000Z'), ep(2, 3)] });
+    c = await connect(partway.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 2, provider: 'torrent' }))).toMatchObject({ started: true, season: 2, episode: 2, picked: 'resume' });
+    expect(partway.play.mock.calls).toEqual([[{ kind: 'tv', tmdbId: 136315, season: 2, episode: 2 }, 'torrent']]);
+    await c.close();
+
+    // Not stored: TMDB's list names the season's episodes. A season no list holds starts nothing.
+    const listed = fakeDeps({ tmdbEpisodes: [{ season: 1, episode: 1, airDate: '2022-08-21' }, { season: 2, episode: 1, airDate: '2024-06-16' }, { season: 3, episode: 1, airDate: '2027-01-01' }] });
+    c = await connect(listed.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 2 }))).toMatchObject({ started: true, season: 2, episode: 1, picked: 'first' });
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 3 }))).toMatchObject({ started: false, skipped_play: 'not_aired', season: 3, episode: 1, air_date: '2027-01-01' });
+    expect(json(await c.call('direct_stream_play', { title: 'the bear', season: 9 }))).toMatchObject({ started: false, skipped_play: 'no_such_season', season: 9 });
+    expect(listed.play).toHaveBeenCalledTimes(1);
     await c.close();
   });
 
@@ -269,6 +294,29 @@ describe('direct-stream MCP tools', () => {
     expect(json(r)).toMatchObject({ error: 'torrent_off', started: false, title: { title: 'Saltburn' } });
     expect(json(r).next).toContain('without provider');
     await o.close();
+  });
+
+  it('passes provider "cloud" through (NTM, NTS: never a torrent), and its no_source says no torrent was tried', async () => {
+    const f = fakeDeps();
+    const c = await connect(f.deps);
+    expect(json(await c.call('direct_stream_play', { title: 'saltburn', provider: 'cloud' }))).toMatchObject({ started: true });
+    expect(f.play.mock.calls).toEqual([[{ kind: 'movie', tmdbId: 930564 }, 'cloud']]);
+    await c.close();
+    const none = fakeDeps({ play: vi.fn(async () => { throw new DirectStreamError('no_source', 'No provider could stream it.', { attempts: [{ provider: 'Alpha', outcome: 'no_stream', took_s: 2, detail: '' }] }); }) });
+    const n = await connect(none.deps);
+    const r = await n.call('direct_stream_play', { title: 'saltburn', provider: 'Cloud' });
+    expect(r.isError).toBe(true);
+    expect(json(r)).toMatchObject({ error: 'no_source', started: false, attempts: [{ provider: 'Alpha' }] });
+    expect(json(r).next).toContain('no torrent was tried');
+    await n.close();
+  });
+
+  it('names the six codenames in the play tool, so every client reads them', async () => {
+    const c = await connect(fakeDeps().deps);
+    const { tools } = await c.client.listTools();
+    const play = tools.find((t) => t.name === 'direct_stream_play')?.description ?? '';
+    for (const word of ['TM', 'TS', 'NTM', 'NTS', 'DM', 'DS']) expect(play).toMatch(new RegExp(`\\b${word}\\b`));
+    await c.close();
   });
 
   it('refuses a season or episode for a film', async () => {
@@ -385,6 +433,18 @@ describe('direct-stream MCP tools', () => {
         discover,
         searchCompany,
         watchProviders,
+        genres: vi.fn(async (kind: 'movie' | 'tv') =>
+          kind === 'movie'
+            ? [{ id: 28, name: 'Action' }, { id: 35, name: 'Comedy' }, { id: 27, name: 'Horror' }, { id: 878, name: 'Science Fiction' }]
+            : [{ id: 10759, name: 'Action & Adventure' }, { id: 35, name: 'Comedy' }, { id: 10765, name: 'Sci-Fi & Fantasy' }],
+        ),
+        searchKeyword: vi.fn(async (query: string) =>
+          query === 'mafia'
+            ? [{ id: 10391, name: 'mafia', country: null }, { id: 155538, name: 'sicilian mafia', country: null }, { id: 1, name: 'mafiaboss', country: null }]
+            : query === 'gangster'
+              ? [{ id: 3149, name: 'gangster', country: null }]
+              : [],
+        ),
         ...over,
       } as unknown as NonNullable<DirectStreamToolDeps['tmdb']>;
       return { tmdb, discover, searchCompany, watchProviders };
@@ -399,7 +459,7 @@ describe('direct-stream MCP tools', () => {
       });
       const c = await connect(f.deps);
       const out = json(await c.call('direct_stream_discover', { kind: 'tv', language: 'Spanish', year: 2026 }));
-      expect(t.discover.mock.calls).toEqual([['tv', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyIds: null, providerId: null, watchRegion: 'US', sort: 'popular' }]]);
+      expect(t.discover.mock.calls).toEqual([['tv', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', genreIds: null, keywordIds: null, companyIds: null, providerId: null, watchRegion: 'US', sort: 'popular' }]]);
       expect(out.filters).toMatchObject({ kind: 'tv', released_from: '2026-01-01', released_to: '2026-11-16', language: 'es', sort: 'popular' });
       expect(out.titles).toEqual([
         {
@@ -479,12 +539,80 @@ describe('direct-stream MCP tools', () => {
       await c.close();
     });
 
+    it('filters by genre, read per kind, and by keywords any of which may fit; Chinese is both of TMDB\'s codes', async () => {
+      const t = discoverTmdb();
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const action = json(await c.call('direct_stream_discover', { language: 'Chinese', genre: 'action' }));
+      expect(action.filters).toMatchObject({ language: ['zh', 'cn'], genres: { movie: [{ id: 28, name: 'Action' }], tv: [{ id: 10759, name: 'Action & Adventure' }] } });
+      expect(t.discover.mock.calls.map((x) => [x[0], (x[1] as any).originalLanguage, (x[1] as any).genreIds])).toEqual([['movie', 'zh|cn', [28]], ['tv', 'zh|cn', [10759]]]);
+
+      // A genre series do not have leaves series out when films have it, and is refused for series alone.
+      t.discover.mockClear();
+      const horror = json(await c.call('direct_stream_discover', { genre: ['Horror', 'comedies'] }));
+      expect(horror.filters.genres).toEqual({ movie: [{ id: 27, name: 'Horror' }, { id: 35, name: 'Comedy' }] });
+      expect(t.discover.mock.calls.map((x) => [x[0], (x[1] as any).genreIds])).toEqual([['movie', [27, 35]]]);
+      const refused = await c.call('direct_stream_discover', { kind: 'tv', genre: 'horror' });
+      expect(refused.isError).toBe(true);
+      expect(text(refused)).toMatch(/^invalid_input: TMDB has no series genre called "horror" \(it has Action & Adventure, Comedy, Sci-Fi & Fantasy\)\. Pass what is not a genre there as keyword/);
+
+      t.discover.mockClear();
+      const mafia = json(await c.call('direct_stream_discover', { kind: 'movie', language: 'Korean', keyword: ['mafia', 'gangster', 'nothing-like-it'], year: 2026 }));
+      expect(mafia.filters.keywords).toEqual([{ id: 10391, name: 'mafia' }, { id: 155538, name: 'sicilian mafia' }, { id: 3149, name: 'gangster' }]);
+      expect(mafia.filters.keywords_dropped).toBeUndefined();
+      expect(t.discover.mock.calls.map((x) => (x[1] as any).keywordIds)).toEqual([[10391, 155538, 3149]]);
+      await c.close();
+    });
+
+    it('lists without the keyword, and says so, when no title carries it', async () => {
+      const t = discoverTmdb();
+      t.discover.mockImplementation(async (_kind, filter) => ((filter as any).keywordIds === null ? [hit({ title: 'A Film', tmdbId: 3, releaseDate: '2026-05-05' })] : []));
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const out = json(await c.call('direct_stream_discover', { kind: 'movie', keyword: 'mafia' }));
+      expect(t.discover.mock.calls.map((x) => (x[1] as any).keywordIds)).toEqual([[10391, 155538], null]);
+      expect(out.filters.keywords_dropped).toBe(true);
+      expect(out.titles.map((x: any) => x.title)).toEqual(['A Film']);
+      expect(out.next).toContain('NOT filtered');
+      // A word TMDB has no keyword for goes straight to the list without it.
+      t.discover.mockClear();
+      const unknown = json(await c.call('direct_stream_discover', { kind: 'movie', keyword: 'zzz' }));
+      expect(t.discover.mock.calls.map((x) => (x[1] as any).keywordIds)).toEqual([null]);
+      expect(unknown.filters).toMatchObject({ keywords: [], keywords_dropped: true });
+      await c.close();
+    });
+
+    it('filters a person\'s titles by genre, and finds a person whose name is a letter off', async () => {
+      const credit = (tmdbId: number, title: string, releaseDate: string, genreIds: number[]) => ({ kind: 'movie', tmdbId, title, releaseDate, year: Number(releaseDate.slice(0, 4)), posterPath: null, popularity: 1, credit: 'cast', character: null, job: null, department: null, episodeCount: null, originalLanguage: 'cn', genreIds });
+      const searchPerson = vi.fn(async (query: string) =>
+        query === 'jackie chan'
+          ? [{ personId: 18897, name: 'Jackie Chan', knownFor: 'Acting', profilePath: null, popularity: 20 }]
+          : query === 'park bo y'
+          ? [
+              { personId: 7, name: 'Park Bo-yeon', knownFor: 'Acting', profilePath: null, popularity: 9 },
+              { personId: 83036, name: 'Park Bo-young', knownFor: 'Acting', profilePath: null, popularity: 2 },
+            ]
+          : [],
+      );
+      const t = discoverTmdb({ searchPerson, personCredits: vi.fn(async () => [credit(1, 'Fists', '2025-08-16', [28, 80]), credit(2, 'Jokes', '2025-05-08', [35]), credit(3, 'Kicks', '2024-07-05', [28])]) });
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const action = json(await c.call('direct_stream_discover', { person: 'jackie chan', kind: 'movie', genre: 'action', language: 'chinese', sort: 'newest' }));
+      expect(action.titles.map((x: any) => [x.title, x.release_date])).toEqual([['Fists', '2025-08-16'], ['Kicks', '2024-07-05']]);
+
+      const park = json(await c.call('direct_stream_discover', { person: 'park bo yeung', sort: 'newest' }));
+      expect(searchPerson.mock.calls.map((x) => x[0]).slice(1)).toEqual(['park bo yeung', 'park bo y']);
+      expect(park.other_people).toEqual([{ id: 7, name: 'Park Bo-yeon', known_for: 'Acting' }]);
+      expect(park.filters.person).toEqual({ id: 83036, name: 'Park Bo-young', known_for: 'Acting', asked_as: 'park bo yeung' });
+      const nobody = await c.call('direct_stream_discover', { person: 'zed zedson' });
+      expect(text(nobody)).toMatch(/^not_found: TMDB knows no person named "zed zedson", nor one a letter or two away/);
+      await c.close();
+    });
+
     it('refuses what it cannot answer, and is off without the service', async () => {
       const t = discoverTmdb();
       const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
       const cases: Array<[Record<string, unknown>, RegExp]> = [
         [{ person: 'johnny depp', company: 'Blumhouse' }, /^invalid_input: person cannot be combined/],
         [{ role: 'cast' }, /^invalid_input: role belongs to person/],
+        [{ person: 'johnny depp', keyword: 'pirates' }, /^invalid_input: keyword cannot be combined with person/],
         [{ language: 'klingonese' }, /^invalid_input: "klingonese" is not a language/],
         [{ year_from: 2026, year_to: 2020 }, /^invalid_input: year_from is after year_to/],
       ];

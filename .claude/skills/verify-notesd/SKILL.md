@@ -28,6 +28,7 @@ $V up --direct-stream # Direct streaming ON (implies --movies) against a fake re
 $V up --discovery     # --direct-stream plus the fake TMDB's discovery titles, people, studios and services
 $V up --direct-stream --prober  # the stream prober on (a pass every 5 s) over the fake resolver; --prober=off: setting unset
 $V up --torrent       # --direct-stream plus torrents ON against a loopback seeder of a generated film and pack (scripts/torrent/)
+$V up --discovery --torrent  # both: what scripts/direct-stream/codenames.sh (the watch codenames' ten requests) runs on
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,

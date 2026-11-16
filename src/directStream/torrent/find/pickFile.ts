@@ -1,4 +1,4 @@
-import { baseName, covers, extensionOf, parseEpisodeRef, stripExtension, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './release.js';
+import { baseName, covers, extensionOf, namesNumber, parseEpisodeRef, stripExtension, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './release.js';
 import type { FilePick, TorrentFileLike, TorrentQuery, TvQuery } from './types.js';
 
 /** A video smaller than this is skipped when a bigger one exists (samples, previews). */
@@ -45,17 +45,13 @@ function seasonOf(path: string): number | null {
   return parseEpisodeRef(stripExtension(baseName(path))).season ?? folderSeason(path);
 }
 
-/** The stem names `n` as a number of its own ("One Piece - 1071", "[1071v2]"). */
-function namesNumber(stem: string, n: number): boolean {
-  return new RegExp(`(?<![0-9a-z])0*${n}(?:v\\d)?(?![0-9a-z])`, 'i').test(stem);
-}
-
 function matchesEpisode(path: string, query: TvQuery, oneSeason: boolean): boolean {
   const stem = stripExtension(baseName(path));
   const ref = parseEpisodeRef(stem);
   if (ref.episode !== null) {
     const season = ref.season ?? folderSeason(path);
-    if (season !== null) return season === query.season && covers(ref, query.episode);
+    // A name that says its season may number the episode within it (`alt`); a bare number never does.
+    if (season !== null) return (season === query.season && covers(ref, query.episode)) || (query.alt != null && season === query.alt.season && covers(ref, query.alt.episode));
     if (query.absoluteEpisode != null && ref.episode === query.absoluteEpisode) return true;
     return oneSeason && covers(ref, query.episode);
   }

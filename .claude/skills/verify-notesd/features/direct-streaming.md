@@ -212,6 +212,28 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Live, read-only (plays nothing): `direct_stream_discover` against the installed daemon reads the
   real TMDB. A real play is the owner's to run.
 
+## Watch codenames, genre and keyword, cloud only, a season alone
+- The six codenames (DM, DS: the library; NTM, NTS: `direct_stream_play` with `provider: "cloud"`,
+  never a torrent; TM, TS: `provider: "torrent"`) are told to Claude in the MCP instructions, the
+  chat prompt, the `direct-stream` and `n` skills and the play tool's description.
+  `direct_stream_discover` takes `genre` (read per kind, every one must fit) and `keyword` (any may
+  fit; `filters.keywords_dropped` when no title carries one), reads "Chinese" as `zh` and `cn`, and
+  finds a person whose name is a letter or two off (`filters.person.asked_as`).
+  `direct_stream_play` takes a season alone (`picked` first, resume or next; `no_such_season`). The
+  torrent finder asks for an episode TMDB numbers on across seasons by its place in the season
+  (One Piece S16E629 is `16:1`).
+- Proven by `npx vitest run tests/unit/mcp.directStreamTools.test.ts tests/unit/directStream/discover.test.ts tests/unit/directStream/episodePick.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/torrent/find tests/unit/movies/tmdb.lists.test.ts tests/unit/chat-prompt.test.ts tests/unit/mcp.instructions.test.ts`.
+- Throwaway daemon: `$V up --discovery --torrent`, then
+  `.claude/skills/verify-notesd/scripts/direct-stream/codenames.sh RUN`. It makes the tool calls the
+  skill names for each of the owner's ten requests (`docs/guide/streaming.md`, "Codenames") and ends
+  with `codenames: PASS (10 requests)`. One request plays for real from the loopback torrent
+  (Karate Kid: Legends, the fixture's audio being English); for the others the fake index lists
+  nothing and the check is `no_source` from the torrent source alone, the index asked by the right
+  address, and no cloud resolve. `provider: "cloud"` is checked both ways at the end.
+  `discovery.sh RUN` passes on the same run when it goes first.
+- Live, read-only: `direct_stream_discover` against the installed daemon reads the real TMDB. A
+  real TM or TS play joins a real swarm and takes over the screen: the owner's to run.
+
 ## Anime, subtitles behind a relay, and answers that are no playlist
 - An anime (original language Japanese, known to `api.ani.zip`) is resolved through the anime
   embeds first (`anime.seed.json`, keyed by AniList id and the episode counted through the series):

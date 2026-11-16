@@ -177,6 +177,18 @@ describe('TorrentSource.resolve', () => {
     expect(out.ok && out.torrent.query).toEqual(asked[0]);
   });
 
+  it('adds the number within the season to the query when TMDB\'s number runs on across seasons (One Piece)', async () => {
+    const asked: any[] = [];
+    const t = setup({ candidates: [candidate(h(1), 'Show.S01E02.720p.WEB-DL.x264.AAC-A')], files: { [h(1)]: [file(0, 'Show.S01E02.720p.mp4')] }, probes: { [h(1)]: MP4_UNTAGGED }, onFind: (q) => asked.push(q) });
+    const names = { title: 'One Piece', originalTitle: null, year: 1999 };
+    await t.source.resolve({ kind: 'tv', tmdbId: 37854, season: 21, episode: 1000 }, { audioLang: 'ja', imdbId: 'tt0388629', names: { ...names, episodeInSeason: 109 } });
+    expect(asked[0]).toMatchObject({ season: 21, episode: 1000, absoluteEpisode: 1000, alt: { season: 21, episode: 109 } });
+    // A number that is already the one within the season adds nothing.
+    await t.source.resolve({ kind: 'tv', tmdbId: 37854, season: 2, episode: 3 }, { audioLang: 'ja', imdbId: 'tt0388629', names: { ...names, episodeInSeason: 3 } });
+    expect(asked[1]).not.toHaveProperty('alt');
+    expect(asked[1]).not.toHaveProperty('absoluteEpisode');
+  });
+
   it('chooses the asked episode\'s file inside a season pack (R1.4)', async () => {
     const pack = candidate(h(9), 'Show.S01.720p.WEB-DL.x264.AAC-PACK');
     const t = setup({

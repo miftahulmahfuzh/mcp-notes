@@ -405,6 +405,8 @@ export interface MergedCredit {
   director: boolean;
   popularity: number;
   originalLanguage: string | null;
+  /** TMDB's genre ids of the title; [] when the credit carried none. */
+  genreIds: readonly number[];
 }
 
 function roleText(c: TmdbPersonCredit): string {
@@ -419,7 +421,7 @@ export function mergeCredits(credits: readonly TmdbPersonCredit[]): MergedCredit
     const key = `${c.kind}:${c.tmdbId}`;
     const entry =
       byTitle.get(key) ??
-      { kind: c.kind, tmdbId: c.tmdbId, title: c.title, releaseDate: c.releaseDate, roles: [], cast: false, crew: false, director: false, popularity: c.popularity, originalLanguage: c.originalLanguage ?? null };
+      { kind: c.kind, tmdbId: c.tmdbId, title: c.title, releaseDate: c.releaseDate, roles: [], cast: false, crew: false, director: false, popularity: c.popularity, originalLanguage: c.originalLanguage ?? null, genreIds: c.genreIds ?? [] };
     const role = roleText(c);
     if (!entry.roles.includes(role)) entry.roles.push(role);
     if (c.credit === 'cast') entry.cast = true;

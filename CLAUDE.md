@@ -96,6 +96,18 @@ The rules that are easy to break. The guides have the rest.
 - **Web app** (`web/`, Vite + React 19, Phosphor icons) is built to `web/dist` and served statically by the daemon; `web/fullscreen.html` is the separate full-screen photo page (`/full/:imageId`).
 - **DB:** Drizzle schema in `src/db/schema.ts`, SQL migrations in `drizzle/`. The pooled Neon host is used by the daemon, the direct host by migrations; a non-Neon URL goes through `node-postgres`.
 
+## Watch codenames
+
+The owner names where a title is watched from with one upper-case word, usually the last of a request and never part of a title. A request without one behaves as it always did.
+
+| Codename | Source | How it plays |
+| --- | --- | --- |
+| DM, DS | the library: a film, a series the owner downloaded | `movies_continue`, VLC |
+| NTM, NTS | a cloud provider, never a torrent: a film, a series | `direct_stream_play` with `provider: "cloud"` |
+| TM, TS | a torrent: a film, a series | `direct_stream_play` with `provider: "torrent"` |
+
+The same words are told to every client in `src/mcp/instructions.ts`, `src/chat/prompt.ts` and the `direct-stream` and `n` skills: change them together. The ten requests they were written for are in `docs/guide/streaming.md` ("Codenames") and run in `verify.sh up --discovery` (`direct-stream/codenames.sh`).
+
 ## Conventions
 
 - **Ids are generated, never invented.** Note ids (`A-B32`, `src/notes/ids.ts`) and session node ids (`A0-3G`, `src/sessions/ids.ts`) come from the server; movie ids (`M-23T4`) come from database triggers, never application code. Note lookup is case-insensitive and tolerates a missing dash.

@@ -25,6 +25,12 @@ export type TorrentQuery =
       episode: number;
       /** The episode's number counted over the whole series (anime); read by pickFile only. */
       absoluteEpisode?: number | null;
+      /**
+       * The same episode numbered within its season, when TMDB's number runs on across seasons (One Piece: TMDB's
+       * season 21, episode 1000 is the season's 109th). Torrentio is keyed by it, and a release that names the season
+       * ("S21E109") uses it. Null or absent: TMDB's number is already the one within the season.
+       */
+      alt?: { season: number; episode: number } | null;
     });
 
 export type TvQuery = Extract<TorrentQuery, { kind: 'tv' }>;

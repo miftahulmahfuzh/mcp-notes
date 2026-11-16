@@ -3,7 +3,9 @@
 //   node fake-tmdb.mjs --data tmdb.json --port-file FILE --log FILE [--extra tmdb-discovery.json]
 // --extra adds the titles, people, companies and streaming services of `verify.sh up --discovery`
 // (a compact file, expanded by expandExtra below), and with them company search, the watch-provider
-// list and discover's date, language, company and service filters.
+// list and discover's date, language, company and service filters. The same file gives TMDB's two
+// genre lists (films and series differ) and a few keywords, for discover's genre and keyword
+// filters and /search/keyword.
 // The daemon reaches it through TMDB_API_BASE=http://127.0.0.1:<port>/3 and
 // TMDB_IMAGE_BASE=http://127.0.0.1:<port>/t/p. Every request is appended to the log, with
 // `api_key` taken out of the query and no header values.
@@ -24,15 +26,23 @@ const tvs = data.tv
 const people = data.people
 const companies = new Map()
 const watchProviders = []
+// --extra: TMDB's own genre lists per kind, and its keywords. Without it a kind's genres are those its titles carry.
+const genreLists = { movie: null, tv: null }
+const keywords = []
 for (const x of [...movies, ...tvs]) for (const c of x.production_companies ?? []) companies.set(c.id, c)
 if (opts.extra) expandExtra(JSON.parse(readFileSync(opts.extra, 'utf8')))
 
 // The compact discovery file -> full TMDB objects. A title names its companies and services by id,
+// its genres (`genre_ids`, of its kind's list; Drama without them) and keywords (`keywords`) by id,
 // its cast as [person id, character] and its director by person id; a series gives each season as
 // {season, from, to, air_date} (episode numbers from..to, a week apart). People get their
 // combined_credits from the titles that name them.
 function expandExtra(extra) {
   for (const c of extra.companies ?? []) companies.set(c.id, { logo_path: null, ...c })
+  genreLists.movie = extra.genres?.movie ?? null
+  genreLists.tv = extra.genres?.tv ?? null
+  keywords.push(...(extra.keywords ?? []))
+  const genresFor = (kind, ids) => (ids ?? [18]).map((id) => (genreLists[kind] ?? []).find((g) => g.id === id) ?? { id, name: id === 18 ? 'Drama' : `Genre ${id}` })
   watchProviders.push(...(extra.watch_providers ?? []))
   const persons = new Map((extra.people ?? []).map((p) => [p.id, { profile_path: null, biography: 'Verify fixture.', combined_credits: { cast: [], crew: [] }, ...p }]))
   const companyRefs = (ids) => (ids ?? []).map((id) => companies.get(id))
@@ -42,12 +52,12 @@ function expandExtra(extra) {
     const cast = (m.cast ?? []).map(([id, character], order) => ({ id, name: persons.get(id).name, character, order, profile_path: null, known_for_department: 'Acting' }))
     const crew = m.director ? [{ id: m.director, name: persons.get(m.director).name, job: 'Director', department: 'Directing', profile_path: null }] : []
     const full = {
-      original_title: m.title, vote_average: 7, vote_count: 300, runtime: 110, poster_path: null, backdrop_path: null, genres: [{ id: 18, name: 'Drama' }],
-      overview: `Verify fixture. ${m.title}.`, videos: { results: [] }, ...m,
+      original_title: m.title, vote_average: 7, vote_count: 300, runtime: 110, poster_path: null, backdrop_path: null,
+      overview: `Verify fixture. ${m.title}.`, videos: { results: [] }, ...m, genres: genresFor('movie', m.genre_ids), keywords: m.keywords ?? [],
       production_companies: companyRefs(m.companies), watch_providers: m.providers ?? [], credits: { cast, crew },
     }
     movies.push(full)
-    const summary = { id: m.id, media_type: 'movie', title: full.title, original_title: full.original_title, original_language: full.original_language, release_date: full.release_date, poster_path: null, popularity: full.popularity, vote_count: full.vote_count }
+    const summary = { id: m.id, media_type: 'movie', title: full.title, original_title: full.original_title, original_language: full.original_language, release_date: full.release_date, poster_path: null, popularity: full.popularity, vote_count: full.vote_count, genre_ids: full.genres.map((g) => g.id) }
     for (const [id, character] of m.cast ?? []) credit('cast', id, { ...summary, character, credit_id: `fxd-c-${m.id}-${id}` })
     if (m.director) credit('crew', m.director, { ...summary, job: 'Director', department: 'Directing', credit_id: `fxd-d-${m.id}` })
   }
@@ -64,15 +74,15 @@ function expandExtra(extra) {
     }
     const cast = (t.cast ?? []).map(([id, character], order) => ({ id, name: persons.get(id).name, profile_path: null, order, total_episode_count: 1, roles: [{ credit_id: `fxd-${t.id}-${id}`, character, episode_count: 1 }] }))
     const full = {
-      original_name: t.name, origin_country: [], episode_run_time: [45], vote_average: 7.5, vote_count: 300, poster_path: null, backdrop_path: null, genres: [{ id: 18, name: 'Drama' }],
-      overview: `Verify fixture. ${t.name}.`, created_by: [], videos: { results: [] }, ...t,
+      original_name: t.name, origin_country: [], episode_run_time: [45], vote_average: 7.5, vote_count: 300, poster_path: null, backdrop_path: null,
+      overview: `Verify fixture. ${t.name}.`, created_by: [], videos: { results: [] }, ...t, genres: genresFor('tv', t.genre_ids), keywords: t.keywords ?? [],
       number_of_seasons: seasons.length, number_of_episodes: seasons.reduce((n, s) => n + s.episode_count, 0),
       production_companies: companyRefs(t.companies), watch_providers: t.providers ?? [], seasons, seasons_detail,
       aggregate_credits: { cast, crew: [] }, credits: { cast: [], crew: [] },
     }
     tvs.push(full)
     for (const [id, character] of t.cast ?? []) {
-      credit('cast', id, { id: t.id, media_type: 'tv', name: full.name, original_name: full.original_name, original_language: full.original_language, first_air_date: full.first_air_date, poster_path: null, popularity: full.popularity, vote_count: full.vote_count, character, episode_count: 1, credit_id: `fxd-c-${t.id}-${id}` })
+      credit('cast', id, { id: t.id, media_type: 'tv', name: full.name, original_name: full.original_name, original_language: full.original_language, first_air_date: full.first_air_date, poster_path: null, popularity: full.popularity, vote_count: full.vote_count, genre_ids: full.genres.map((g) => g.id), character, episode_count: 1, credit_id: `fxd-c-${t.id}-${id}` })
     }
   }
   people.push(...persons.values())
@@ -156,6 +166,7 @@ function listOf(kind, keep = () => true) {
   return kind === 'movie' ? byPopularity(movies.filter(keep)).map(movieSummary) : byPopularity(tvs.filter(keep)).map(tvSummary)
 }
 function genresOf(kind) {
+  if (genreLists[kind]) return genreLists[kind]
   const seen = new Map()
   for (const x of kind === 'movie' ? movies : tvs) for (const g of x.genres) seen.set(g.id, g.name)
   return [...seen].map(([id, name]) => ({ id, name }))
@@ -200,26 +211,38 @@ function route(url) {
   if ((m = p.match(/^\/(movie|tv)\/popular$/))) return [200, page(firstPageOnly(s, listOf(m[1])))]
   if ((m = p.match(/^\/genre\/(movie|tv)\/list$/))) return [200, { genres: genresOf(m[1]) }]
   if ((m = p.match(/^\/discover\/(movie|tv)$/))) {
-    const want = s.get('with_genres')
+    // Like TMDB: ids joined by `,` must all fit, ids joined by `|` any one.
+    const idsOf = (name) => {
+      const raw = s.get(name)
+      return raw ? { all: !raw.includes('|'), ids: raw.split(/[,|]/) } : null
+    }
+    const fits = (want, has) => !want || (want.all ? want.ids.every((id) => has.includes(id)) : want.ids.some((id) => has.includes(id)))
+    const want = idsOf('with_genres')
+    const wantKeywords = idsOf('with_keywords')
     const dateKey = m[1] === 'movie' ? 'release_date' : 'first_air_date'
     const dateParam = m[1] === 'movie' ? 'primary_release_date' : 'first_air_date'
     const from = s.get(`${dateParam}.gte`)
     const to = s.get(`${dateParam}.lte`)
-    const language = s.get('with_original_language')
+    const language = s.get('with_original_language')?.split('|') ?? null
     const company = s.get('with_companies')?.split('|') ?? null
     const provider = s.get('with_watch_providers')
     // Like TMDB: a service filter without a region filters nothing out.
     const region = s.get('watch_region')
     const keep = (x) =>
-      (!want || x.genres.some((g) => String(g.id) === want)) &&
+      fits(want, x.genres.map((g) => String(g.id))) &&
+      fits(wantKeywords, (x.keywords ?? []).map(String)) &&
       (!from || String(x[dateKey] ?? '') >= from) &&
       (!to || (x[dateKey] && String(x[dateKey]) <= to)) &&
-      (!language || x.original_language === language) &&
+      (!language || language.includes(x.original_language)) &&
       (!company || (x.production_companies ?? []).some((c) => company.includes(String(c.id)))) &&
       (!provider || !region || (x.watch_providers ?? []).some((id) => String(id) === provider))
     const listed = listOf(m[1], keep)
     if ((s.get('sort_by') ?? '').endsWith('_date.desc')) listed.sort((a, b) => String(b[dateKey] ?? '').localeCompare(String(a[dateKey] ?? '')))
     return [200, page(firstPageOnly(s, listed))]
+  }
+  if (p === '/search/keyword') {
+    const q = String(s.get('query') ?? '').trim().toLowerCase()
+    return [200, page(q ? keywords.filter((k) => k.name.includes(q)) : [])]
   }
   if (p === '/search/company') {
     const q = norm(s.get('query'))

@@ -9,8 +9,12 @@ import {
   DISCOVER_DEFAULT_REGION,
   DISCOVER_MAX_LIMIT,
   DISCOVER_MAX_OTHERS,
+  genreNamed,
   inWindow,
-  languageCode,
+  keywordsNamed,
+  languageCodes,
+  looserNames,
+  nearlyNamed,
   rankByName,
   releaseWindow,
   shortOverview,
@@ -19,7 +23,7 @@ import { dialoguePage } from '../directStream/dialogue.js';
 import { loadDialogue, type StoredDialogue } from '../directStream/dialogueStore.js';
 
 export type { StoredDialogue };
-import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type AbsoluteChoice, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
+import { pickAbsoluteEpisode, pickEpisode, pickEpisodeInSeason, withListedEpisodes, type AbsoluteChoice, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
 import {
   dbTitleLibrary,
   LookupError,
@@ -41,7 +45,7 @@ import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSourc
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { MovieStreams } from '../movies/streams.js';
-import { TmdbError, type TmdbClient, type TmdbDiscovery, type TmdbNamedHit } from '../movies/tmdb.js';
+import { TmdbError, type TmdbCatalog, type TmdbClient, type TmdbDiscovery, type TmdbGenre, type TmdbNamedHit } from '../movies/tmdb.js';
 import { titleId, type TitleKind } from '../movies/types.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
 import { libraryMarks, markedTitle, mergeCredits, movieErrorResult, type LibraryMark } from './movieTools.js';
@@ -66,7 +70,7 @@ export interface FreshSource {
 export interface DirectStreamToolDeps {
   library: TitleLibrary;
   /** Without the discovery calls (a fake that lacks them), direct_stream_discover answers tmdb_unavailable for a company, a service or a plain list. */
-  tmdb: (TmdbClient & LookupTmdb & Partial<TmdbDiscovery>) | null;
+  tmdb: (TmdbClient & LookupTmdb & Partial<TmdbDiscovery> & Partial<Pick<TmdbCatalog, 'genres'>>) | null;
   /** A stored series' episodes with their watch state (files and streams) and last play; [] when the series is not stored. */
   progress(tmdbId: number): Promise<EpisodeProgress[]>;
   /** Stores `name` (normalized) as one more name of the title, storing the title first when it is new. False when nothing was added. */
@@ -153,8 +157,11 @@ const PLAY_DESCRIPTION =
   'Before a provider\'s stream of a title plays for the first time the daemon looks at two frames of it and passes over a cinema recording or a copy with a burned-in advert for the next provider (its attempt says "picture: watermark" or "picture: recording"; "picture: clean" is the one that plays), which adds 10 to 40 seconds to a first play. When no provider had a proper copy, the first one found plays: say so. ' +
   'provider asks one named provider only (a name from direct_stream_sources) and passes over a cache: for "stream it from VidLink", or when the stream that started is a cinema recording or a dub and another provider is known to be clean. ' +
   'provider "torrent" asks only the torrent source: a torrent of the title found by its IMDb id, downloaded from the swarm while it plays and served by this daemon (for "stream it from a torrent"). ' +
+  'provider "cloud" asks the cloud providers only and never a torrent, neither a download on disk nor the swarm (no_source then means no cloud provider had it). ' +
+  'The owner\'s codenames name the source, as one upper-case word, usually the last of the request and never part of the title: TM (a film) and TS (a series) are provider "torrent"; NTM and NTS are provider "cloud"; DM and DS are the library (movies_continue, VLC), not this tool. "continue OP TS" is title "OP", provider "torrent". Without a codename pass no provider. ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
   'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both); ' +
+  'a season named without an episode ("play House of the Dragon season 2") is season alone: the daemon starts the season\'s first unfinished episode (picked first, resume or next; a season already finished starts again at its first episode), or answers skipped_play no_such_season; ' +
   'when the owner named an episode by one number without a season ("One Piece episode 730", "resume one piece from episode 730"), pass absolute_episode alone: the daemon maps it to the season and episode TMDB lists (the 730th episode in order; a long anime\'s own numbers run on across seasons) and answers picked absolute with the season and episode it chose, ' +
   'or skipped_play episode_unclear with candidates when the count and the numbering name different episodes (list them and ask; then call again with that season and episode), or no_such_episode when the series is shorter. Otherwise: ' +
   'without them the daemon picks the episode from what was watched, on file or streamed (picked: first, nothing played yet; resume, the episode played last is unfinished and carries on where it stopped; next, the episode after the last finished one). ' +
@@ -249,10 +256,16 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
 }
 
 const DISCOVER_DESCRIPTION =
-  "Find films and series on TMDB to stream, by anything but a title: kind (movie or tv; both when left out), year or year_from / year_to, language (the original language, as a name or code: \"Spanish\", \"ko\"), " +
+  "Find films and series on TMDB to stream, by anything but a title: kind (movie or tv; both when left out), year or year_from / year_to, language (the original language, as a name or code: \"Spanish\", \"ko\"; \"Chinese\" is Mandarin and Cantonese together), " +
+  'genre (one or several English names, every one must fit: "horror", "action", "comedy"), keyword (one or several words for what it is about, any one may fit: "mafia", "zombie", "revenge"), ' +
   'person (a name; role any, cast, crew or director), company (a production company or studio: "Blumhouse", "A24") and service (a streaming service or network: "Shudder", "Netflix"; region picks the country whose catalogue is read, default US). ' +
   'sort is popular (default) or newest (release date, newest first). Titles not released yet are left out. ' +
   '"Spanish series released this year" is kind tv, language Spanish, year this year; "the most recent Shudder movie" is kind movie, service Shudder, sort newest; "Blumhouse films this year" is company Blumhouse with the year; "a Johnny Depp movie, the more recent the better" is person Johnny Depp, role cast, kind movie, sort newest; "one of Nolan\'s movies" is person Christopher Nolan, role director. ' +
+  '"an Indonesian horror movie released this year" is kind movie, language Indonesian, genre horror, year this year; "a Thai comedy from 2025" is kind movie, language Thai, genre comedy, year 2025; "a Chinese action movie" is kind movie, language Chinese, genre action; ' +
+  '"a Kdrama with bloody action" is kind tv, language Korean, genre action, keyword ["gore", "bloody", "violence", "revenge"]; "Korean mafia movies this year" is kind movie, language Korean, keyword ["mafia", "gangster", "organized crime"], year this year. ' +
+  'A genre is read per kind, since TMDB files series under fewer genres: for a series "action" and "adventure" are Action & Adventure, "sci-fi" and "fantasy" are Sci-Fi & Fantasy, and there is no Horror, Thriller or Romance (pass those as keyword for a series). filters.genres says what was understood. ' +
+  'A keyword stands for the TMDB keyword of that name and the ones that hold it as a word (filters.keywords). TMDB tags few titles, recent and non-English ones least: when no title carries a keyword the list comes back without the keyword filter and filters.keywords_dropped is true; then choose by overview and by what you know of the titles (a web search helps), and say the list was not filtered by it. keyword cannot be combined with person. ' +
+  'A person no search finds is looked for again by a shorter form of the name, and one whose name differs by a letter or two is taken ("park bo yeung" is Park Bo-young; filters.person.asked_as keeps the words asked): still, pass the right spelling when you know it. A person\'s most recent project is person with sort newest and no kind (films and series together); leave out the entries where their role is Self or a gala. ' +
   'Names are resolved to TMDB ids here: the best match is used and named in filters, and other_people, other_companies and other_services list what else the name fits; pass person_id, company_id or service_id to pick one of those instead. ' +
   'A studio\'s name stands for every company that starts with it ("Blumhouse" is Blumhouse Productions, Blumhouse Television and the others, listed in filters.companies), unless one company has exactly that name; company_id narrows to one. person cannot be combined with company or service. ' +
   'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
@@ -281,6 +294,8 @@ const seasonField = z.number().int().min(0).max(1000);
 const episodeField = z.number().int().min(0).max(100000);
 const nameField = z.string().trim().min(1).max(120);
 const tmdbIdField = z.number().int().positive();
+/** One name or a short list of them (genres, keywords). */
+const namesField = z.union([nameField, z.array(nameField).min(1).max(6)]);
 
 function ok(value: unknown): CallToolResult {
   return jsonResult(value, true);
@@ -367,6 +382,19 @@ export async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps):
   if (stored.length > 0 && choice.pick !== 'caught_up') return choice;
   const listed = await listedEpisodes(c, d);
   return listed === null ? choice : pickEpisode(withListedEpisodes(stored, listed), today);
+}
+
+/**
+ * The episode a season named without one streams (episodePick.ts pickEpisodeInSeason). The stored
+ * episodes decide while the season has one left to watch; otherwise TMDB's list is read too (a
+ * series not stored, or a season still airing). Null: no list holds the season.
+ */
+export async function chooseInSeason(c: TitleCandidate, season: number, d: DirectStreamToolDeps): Promise<EpisodeChoice | null> {
+  const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
+  const stored = await d.progress(c.tmdbId);
+  if (stored.some((e) => e.season === season && e.state !== 'finished')) return pickEpisodeInSeason(stored, season, today);
+  const listed = await listedEpisodes(c, d);
+  return pickEpisodeInSeason(listed === null ? stored : withListedEpisodes(stored, listed), season, today);
 }
 
 /** The air date of one episode in a list, or null. */
@@ -487,9 +515,9 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         title: titleField.describe('The film or series title without the year, a movie id (M-23T4; an episode\'s id names its season and episode), or a title key (movie-550).'),
         year: yearField.optional().describe('The release year, when known.'),
         kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
-        season: seasonField.optional().describe('A series only: the season to stream from.'),
+        season: seasonField.optional().describe('A series only: the season to stream from. Alone, without episode, it starts the first unfinished episode of that season.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
-        provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink"), or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked. "torrent" asks the torrent source only ("stream it from a torrent").'),
+        provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink") or a codename, or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked. "torrent" asks the torrent source only ("stream it from a torrent", TM, TS); "cloud" asks the cloud providers only, never a torrent (NTM, NTS).'),
         absolute_episode: z
           .number()
           .int()
@@ -578,10 +606,25 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
           target = { kind: 'tv', tmdbId: c.tmdbId, season: absolute.season, episode: absolute.episode };
         }
         if (target === null) {
-          if (season !== undefined || episode !== undefined) {
-            throw new LookupError('invalid_input', `${label(c)} is a series: pass both season and episode, or neither to carry on from the last episode watched.`);
+          if (episode !== undefined) {
+            throw new LookupError('invalid_input', `${label(c)} is a series: pass the season with the episode, a season alone to start that season, or neither to carry on from the last episode watched.`);
           }
-          choice = await chooseEpisode(c, d);
+          if (season !== undefined) {
+            const inSeason = await chooseInSeason(c, season, d);
+            if (inSeason === null) {
+              return ok({
+                started: false,
+                skipped_play: 'no_such_season',
+                title: candidateView(c, wall),
+                season,
+                seasons: await seasonsOf(c, d),
+                next: `Nothing started: ${label(c)} has no season ${season} listed. Say so with seasons.`,
+              });
+            }
+            choice = inSeason;
+          } else {
+            choice = await chooseEpisode(c, d);
+          }
           if (choice.pick === 'caught_up') {
             return ok({
               started: false,
@@ -639,7 +682,10 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
               title: candidateView(await stored(), wall),
               ...picked,
               attempts: failure.attempts,
-              next: 'No provider and no torrent could stream it, and nothing started. Tell the owner, one short line per attempt with its outcome (an "Index: " attempt is a torrent index asked, a "Torrent: " attempt one torrent tried), and offer /idlix or /lk21.',
+              next:
+                provider !== undefined && provider.trim().toLowerCase() === 'cloud'
+                  ? 'No cloud provider could stream it, and nothing started; no torrent was tried, since cloud only was asked. Tell the owner, one short line per attempt with its outcome, and offer a torrent (provider "torrent": TM, TS), /idlix or /lk21.'
+                  : 'No provider and no torrent could stream it, and nothing started. Tell the owner, one short line per attempt with its outcome (an "Index: " attempt is a torrent index asked, a "Torrent: " attempt one torrent tried), and offer /idlix or /lk21.',
             });
           }
           if (failure.error === 'torrent_off') {
@@ -771,14 +817,16 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
   server.registerTool(
     DISCOVER,
     {
-      title: 'Find titles to stream by year, language, person, studio or service',
+      title: 'Find titles to stream by year, language, genre, keyword, person, studio or service',
       description: DISCOVER_DESCRIPTION,
       inputSchema: {
         kind: kindField.optional().describe('"movie" or "tv" (a series). Both when left out.'),
         year: yearField.optional().describe('Released (a film) or first aired (a series) in this year.'),
         year_from: yearField.optional().describe('Released or first aired in this year or later.'),
         year_to: yearField.optional().describe('Released or first aired in this year or earlier.'),
-        language: z.string().trim().min(2).max(40).optional().describe('The original language, as an English name or a code: "Spanish", "Korean", "id".'),
+        language: z.string().trim().min(2).max(40).optional().describe('The original language, as an English name or a code: "Spanish", "Korean", "id". "Chinese" is Mandarin (zh) and Cantonese (cn) together.'),
+        genre: namesField.optional().describe('One genre or several, by English name: "horror", "action", ["action", "comedy"]. Every one must fit. A series has no Horror, Thriller or Romance genre: pass those as keyword.'),
+        keyword: namesField.optional().describe('What it is about, as one word or several: "mafia", ["gore", "revenge"]. A title carrying any one of them passes. Not with person.'),
         person: nameField.optional().describe('A person by name, e.g. "Johnny Depp". Not with company or service.'),
         person_id: tmdbIdField.optional().describe('A TMDB person id from other_people, to pick that person instead of the best match.'),
         role: z.enum(['any', 'cast', 'crew', 'director']).optional().describe('With person: "cast" (acted in), "director", "crew" (directed, wrote, produced, ...) or "any" (default).'),
@@ -820,6 +868,8 @@ interface DiscoverArgs {
   year_from?: number | undefined;
   year_to?: number | undefined;
   language?: string | undefined;
+  genre?: string | string[] | undefined;
+  keyword?: string | string[] | undefined;
   person?: string | undefined;
   person_id?: number | undefined;
   role?: 'any' | 'cast' | 'crew' | 'director' | undefined;
@@ -846,6 +896,27 @@ interface Discovered {
   roles: string[] | null;
 }
 
+const listed = (value: string | string[] | undefined): string[] => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
+
+/**
+ * The genres asked for as TMDB ids, per kind: a kind's own list is read ("action" is Action for a film and
+ * Action & Adventure for a series). A kind that lacks one of them is left out when the other kind has them all;
+ * when no kind asked for has them all, the answer says which genres that kind has.
+ */
+async function genresByKind(names: readonly string[], kinds: readonly TitleKind[], genres: (kind: TitleKind) => Promise<TmdbGenre[]>): Promise<Map<TitleKind, TmdbGenre[]>> {
+  const out = new Map<TitleKind, TmdbGenre[]>();
+  const missing: string[] = [];
+  for (const kind of kinds) {
+    const list = await genres(kind);
+    const picked = names.map((name) => genreNamed(list, name));
+    const lacks = names.filter((_, i) => picked[i] === null);
+    if (lacks.length === 0) out.set(kind, [...new Map(picked.flatMap((g) => (g === null ? [] : [[g.id, g] as const]))).values()]);
+    else missing.push(`TMDB has no ${kind === 'movie' ? 'film' : 'series'} genre called ${lacks.map((n) => `"${n}"`).join(' or ')} (it has ${list.map((g) => g.name).join(', ')})`);
+  }
+  if (out.size === 0) throw new LookupError('invalid_input', `${missing.join('; ')}. Pass what is not a genre there as keyword instead.`);
+  return out;
+}
+
 const named = (hit: TmdbNamedHit) => ({ id: hit.id, name: hit.name, ...(hit.country === null ? {} : { country: hit.country }) });
 
 /** The entry a name means among `ranked` (best first), or the one `id` picks; `others` is the rest, capped. */
@@ -867,13 +938,20 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
     throw new LookupError('invalid_input', 'person cannot be combined with company or service: TMDB lists a person\'s titles without them. Ask for the person alone, or for the company or service alone.');
   }
   if (args.role !== undefined && !byPerson) throw new LookupError('invalid_input', 'role belongs to person: pass person too.');
-  if ((args.year_from ?? args.year ?? 0) > (args.year_to ?? args.year ?? 9999)) throw new LookupError('invalid_input', 'year_from is after year_to.');
-  let language: string | null = null;
-  if (args.language !== undefined) {
-    language = languageCode(args.language);
-    if (language === null) throw new LookupError('invalid_input', `"${args.language}" is not a language name or code this tool knows. Pass the English name ("Spanish") or the two-letter code ("es").`);
+  const genreNames = listed(args.genre);
+  const keywordNames = listed(args.keyword);
+  if (byPerson && keywordNames.length > 0) {
+    throw new LookupError('invalid_input', 'keyword cannot be combined with person: TMDB lists a person\'s titles without their keywords. Ask for the person (with genre, if any) and choose from the list.');
   }
-  const kinds: TitleKind[] = args.kind === undefined ? ['movie', 'tv'] : [args.kind];
+  if ((args.year_from ?? args.year ?? 0) > (args.year_to ?? args.year ?? 9999)) throw new LookupError('invalid_input', 'year_from is after year_to.');
+  let languages: string[] | null = null;
+  if (args.language !== undefined) {
+    languages = languageCodes(args.language);
+    if (languages === null) throw new LookupError('invalid_input', `"${args.language}" is not a language name or code this tool knows. Pass the English name ("Spanish") or the two-letter code ("es").`);
+  }
+  // One code as it always was; "Chinese" is both of TMDB's.
+  const language = languages === null ? null : languages.length === 1 ? (languages[0] ?? null) : languages;
+  let kinds: TitleKind[] = args.kind === undefined ? ['movie', 'tv'] : [args.kind];
   const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
   const window = releaseWindow(args.year, args.year_from, args.year_to, today);
   const sort = args.sort ?? 'popular';
@@ -881,16 +959,36 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
   const filters: Record<string, unknown> = { kind: args.kind ?? 'any', released_from: window.from, released_to: window.to, language, sort };
   const others: Record<string, unknown> = {};
   let found: Discovered[];
+  let genreIds: Map<TitleKind, TmdbGenre[]> | null = null;
+  if (genreNames.length > 0) {
+    if (tmdb.genres === undefined) throw new LookupError('tmdb_unavailable', 'this server\'s TMDB client cannot list genres.');
+    genreIds = await genresByKind(genreNames, kinds, tmdb.genres.bind(tmdb));
+    // A kind without the genre lists nothing of it.
+    kinds = kinds.filter((kind) => genreIds?.has(kind));
+    filters.genres = Object.fromEntries([...genreIds].map(([kind, list]) => [kind, list.map((g) => ({ id: g.id, name: g.name }))]));
+  }
+  const hasGenres = (kind: TitleKind, ids: readonly number[]): boolean => (genreIds?.get(kind) ?? []).every((g) => ids.includes(g.id));
 
   if (byPerson) {
-    const people = args.person === undefined ? [] : await tmdb.searchPerson(args.person);
+    let people = args.person === undefined ? [] : await tmdb.searchPerson(args.person);
+    // Nobody by that name: a shorter search, kept only for a name a letter or two away (a misspelling).
+    let respelled = false;
+    if (people.length === 0 && args.person !== undefined && args.person_id === undefined) {
+      for (const shorter of looserNames(args.person)) {
+        const near = nearlyNamed(await tmdb.searchPerson(shorter), args.person);
+        if (near.length === 0) continue;
+        people = near;
+        respelled = true;
+        break;
+      }
+    }
     const person =
       args.person_id !== undefined
         ? (people.find((p) => p.personId === args.person_id) ?? { personId: args.person_id, name: args.person ?? String(args.person_id), knownFor: null })
         : people[0];
-    if (person === undefined) throw new LookupError('not_found', `TMDB knows no person named "${args.person}".`);
+    if (person === undefined) throw new LookupError('not_found', `TMDB knows no person named "${args.person}", nor one a letter or two away. Check the spelling (your own knowledge, or a web search) and call again with the right name.`);
     const role = args.role ?? 'any';
-    filters.person = { id: person.personId, name: person.name, known_for: person.knownFor };
+    filters.person = { id: person.personId, name: person.name, known_for: person.knownFor, ...(respelled ? { asked_as: args.person } : {}) };
     filters.role = role;
     others.other_people = people
       .filter((p) => p.personId !== person.personId)
@@ -900,7 +998,8 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
       .filter((c) => kinds.includes(c.kind))
       .filter((c) => role === 'any' || (role === 'cast' ? c.cast : role === 'director' ? c.director : c.crew))
       .filter((c) => inWindow(c.releaseDate, window))
-      .filter((c) => language === null || c.originalLanguage === language)
+      .filter((c) => languages === null || (c.originalLanguage !== null && languages.includes(c.originalLanguage)))
+      .filter((c) => hasGenres(c.kind, c.genreIds))
       .map((c) => ({
         kind: c.kind,
         tmdbId: c.tmdbId,
@@ -948,11 +1047,37 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
       filters.region = region;
       others.other_services = rest.map(named);
     }
-    const pages = await Promise.all(
-      kinds.map((kind) =>
-        discover.call(tmdb, kind, { dateFrom: window.from, dateTo: window.to, originalLanguage: language, companyIds, providerId, watchRegion: region, sort }),
-      ),
-    );
+    let keywordIds: number[] | null = null;
+    if (keywordNames.length > 0) {
+      const { searchKeyword } = tmdb;
+      if (searchKeyword === undefined) throw new LookupError('tmdb_unavailable', 'this server\'s TMDB client cannot search keywords.');
+      const picked = (await Promise.all(keywordNames.map(async (name) => keywordsNamed(await searchKeyword.call(tmdb, name), name)))).flat();
+      const keywords = [...new Map(picked.map((k) => [k.id, k])).values()];
+      keywordIds = keywords.map((k) => k.id);
+      filters.keywords = keywords.map((k) => ({ id: k.id, name: k.name }));
+    }
+    const page = (withKeywords: boolean) =>
+      Promise.all(
+        kinds.map((kind) =>
+          discover.call(tmdb, kind, {
+            dateFrom: window.from,
+            dateTo: window.to,
+            originalLanguage: languages === null ? null : languages.join('|'),
+            genreIds: genreIds === null ? null : (genreIds.get(kind) ?? []).map((g) => g.id),
+            keywordIds: withKeywords ? keywordIds : null,
+            companyIds,
+            providerId,
+            watchRegion: region,
+            sort,
+          }),
+        ),
+      );
+    let pages = keywordIds === null || keywordIds.length > 0 ? await page(true) : [];
+    // TMDB tags few titles with keywords: when none carries one, the list is the other filters alone, and says so.
+    if (keywordIds !== null && pages.flat().length === 0) {
+      pages = await page(false);
+      filters.keywords_dropped = true;
+    }
     found = pages.flat().map((h) => ({
       kind: h.kind,
       tmdbId: h.tmdbId,
@@ -1004,6 +1129,8 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
     next:
       titles.length === 0
         ? 'No title passes these filters (titles not released yet are left out). Say so; try fewer filters, another year, or one of the other_ entries.'
-        : 'Nothing was started. To stream one, call direct_stream_play with its title_key as title. If the owner asked you to choose ("pick one for me", "play one"), choose one they have not seen and did not mark not_interested, play it, and say which one and why. If they only asked what there is, list the titles with their years and start nothing.',
+        : filters.keywords_dropped === true
+          ? 'Nothing was started. No title carries the keyword with these filters (TMDB tags few titles), so this list is NOT filtered by it: choose from it by overview and by what you know of the titles (check with a web search when unsure), say that you did, and play your choice with direct_stream_play and its title_key. If nothing listed fits what the owner described, find a title that does yourself and play it by name and year.'
+          : 'Nothing was started. To stream one, call direct_stream_play with its title_key as title. If the owner asked you to choose ("pick one for me", "play one"), choose one they have not seen and did not mark not_interested, play it, and say which one and why. If they only asked what there is, list the titles with their years and start nothing.',
   };
 }

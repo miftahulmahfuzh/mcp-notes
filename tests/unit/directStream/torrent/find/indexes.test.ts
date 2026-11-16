@@ -29,6 +29,13 @@ function ctxFor(routes: Record<string, string | Response>): { ctx: IndexContext;
 }
 
 describe('torrentio', () => {
+  it('asks for an episode by its number within the season when the query carries one', async () => {
+    const { ctx, urls } = ctxFor({ 'https://torrentio.example/stream/series/tt0388629:21:109.json': JSON.stringify({ streams: [] }) });
+    const query: TorrentQuery = { kind: 'tv', imdbId: 'tt0388629', season: 21, episode: 1000, absoluteEpisode: 1000, alt: { season: 21, episode: 109 } };
+    expect((await torrentioIndex('https://torrentio.example').find(query, ctx)).outcome).toBe('empty');
+    expect(urls).toEqual(['https://torrentio.example/stream/series/tt0388629:21:109.json']);
+  });
+
   it('reads a film answer: release, file, seeds, size, site, trackers', async () => {
     const { ctx, urls } = ctxFor({ 'https://torrentio.example/stream/movie/tt1727587.json': fixture('torrentio-movie-sintel.json') });
     const answer = await torrentioIndex('https://torrentio.example/').find(SINTEL, ctx);

@@ -1,7 +1,7 @@
 ---
 name: direct-stream
-description: Stream a film or one episode of a series straight from a cloud source into mcp-notes' own player page, full screen in the streaming Chrome on Windows, with an English subtitle when a source has one and no site adverts. Use whenever the user types "/direct-stream <title>" or "/direct-stream <title> <year>" in any Claude Code session — e.g. "/direct-stream saltburn", "/direct-stream dune 2021", "/direct-stream the bear season 2 episode 3", "this is a LOTR night. let's /direct-stream the first one" — and for a plain-English request to the same effect, such as "stream Saltburn directly", "direct-stream that one" — and for a request to stream something the user describes instead of naming: "stream a Johnny Depp movie, the more recent the better", "pick a Spanish series from this year and play it", "let's stream the most recent Shudder movie", "play one of Nolan's movies", "resume One Piece from episode 730", "I watched House of the Dragon season 1 last year, start season 2". Also use it to cache one on this laptop before watching it — "cache One Piece episode 790 first", "download the next episode so it doesn't lag", "is it cached?", "clear the cache of that one." A question such as "can I stream Saltburn directly?" is a lookup that starts nothing.
-argument-hint: <title> [year] [season N episode M] | <a description: a person, studio, service, language, year>
+description: Stream a film or one episode of a series straight from a cloud source into mcp-notes' own player page, full screen in the streaming Chrome on Windows, with an English subtitle when a source has one and no site adverts. Use whenever the user types "/direct-stream <title>" or "/direct-stream <title> <year>" in any Claude Code session — e.g. "/direct-stream saltburn", "/direct-stream dune 2021", "/direct-stream the bear season 2 episode 3", "this is a LOTR night. let's /direct-stream the first one" — and for a plain-English request to the same effect, such as "stream Saltburn directly", "direct-stream that one" — and for a request to stream something the user describes instead of naming: "stream a Johnny Depp movie, the more recent the better", "pick a Spanish series from this year and play it", "let's stream the most recent Shudder movie", "play one of Nolan's movies", "resume One Piece from episode 730", "I watched House of the Dragon season 1 last year, start season 2". Also for a request that ends with one of the user's watch codenames: TM or TS (stream a film or a series from a torrent), NTM or NTS (from a cloud provider, never a torrent) — "play some chinese action movie TM", "continue OP TS". Also use it to cache one on this laptop before watching it — "cache One Piece episode 790 first", "download the next episode so it doesn't lag", "is it cached?", "clear the cache of that one." A question such as "can I stream Saltburn directly?" is a lookup that starts nothing.
+argument-hint: <title> [year] [season N episode M] [TM|TS|NTM|NTS] | <a description: a person, studio, service, language, genre, year>
 ---
 
 # /direct-stream — stream a film straight to the player page
@@ -14,6 +14,27 @@ the daemon finds the source and opens the player.
 
 How it works, and what can go wrong, is in `docs/guide/streaming.md` of the mcp-notes repo
 ("Direct streaming").
+
+## Codenames
+
+The user names where a title is watched from with one upper-case word. It is a whole word, usually
+the last of the request, and never part of the title: take it off before reading the title.
+
+| Codename | Source | Kind | How it plays |
+| --- | --- | --- | --- |
+| DM | the library (a file the user downloaded) | film | `movies_continue`, VLC (the `/n` skill) |
+| DS | the library | series | `movies_continue`, VLC |
+| NTM | a cloud provider, never a torrent | film | `direct_stream_play` with `provider: "cloud"` |
+| NTS | a cloud provider, never a torrent | series | `direct_stream_play` with `provider: "cloud"` |
+| TM | a torrent | film | `direct_stream_play` with `provider: "torrent"` |
+| TS | a torrent | series | `direct_stream_play` with `provider: "torrent"` |
+
+- The M or S also gives the `kind` (`movie` or `tv`) when you look a title up or discover one.
+- A codename at the start of a remark ("TM shadow edge is smooth af") says what was played and how.
+  It asks for nothing; a request that follows in the same message keeps that codename.
+- Without a codename nothing changes: pass no `provider`.
+- `provider: "cloud"` never falls back to a torrent, and `provider: "torrent"` asks no cloud
+  provider. When one answers `no_source`, say so and offer the other; do not switch unasked.
 
 ## Step 1: work out one title
 
@@ -32,7 +53,17 @@ How it works, and what can go wrong, is in `docs/guide/streaming.md` of the mcp-
 - **An episode named by one number, without a season** ("resume one piece from episode 730",
   "the bear episode 11"): pass `absolute_episode` alone, never a season you worked out. The daemon
   maps it to the season and episode TMDB lists and answers which one it chose.
+- **A season named without an episode** ("play House of the Dragon season 2"): pass `season`
+  alone. The daemon starts that season's first unfinished episode (`picked`: `first`, `resume` or
+  `next`); a season already finished starts again at its first episode.
 - **"Rewatch" a series** is `season: 1, episode: 1`, unless the user names another episode.
+- **A title the user half remembers** ("a spanish movie called something like looking through your
+  window"): work out the real title first, from what you know and then `WebSearch` (Through My
+  Window, 2022), and play it by that name and year. Say which title you took it for. `did_you_mean`
+  covers a near miss; a description is yours to resolve.
+- **"The film X made before this one"** is `direct_stream_discover` with `person`, `kind: "movie"`
+  and `sort: "newest"`: every title carries its `release_date`, so take the first one released
+  before the film named, leaving out galas and voice roles.
 - **A person tells two titles of one name apart:** "James Gunn's Superman" names a director, and
   TMDB lists several films called Superman, two of them in 2025. Look with
   `direct_stream_discover` (`person`, `role: "director"`) and play the match by its `title_key`;
@@ -57,6 +88,23 @@ titles. Find them with `direct_stream_discover`, which starts nothing:
 | a studio ("Blumhouse", "A24") | `company` (it stands for every company whose name starts with it; `filters.companies` lists them) |
 | a streaming service or network ("Shudder", "Netflix") | `service` (`region` when not the US) |
 | "the most recent", "the newer the better" | `sort: "newest"` |
+| "horror", "action", "comedy" | `genre`, one or several (every one must fit) |
+| what it is about: "mafia", "zombies", "bloody" | `keyword`, one or several (any may fit) |
+| "Kdrama" | `kind: "tv"`, `language: "Korean"` |
+| "Chinese" | `language: "Chinese"`: Mandarin (`zh`) and Cantonese (`cn`) together |
+| a person's "most recent project" | `person`, `sort: "newest"`, no `kind`; skip entries where the role is Self |
+
+- **A genre is read per kind.** TMDB files series under fewer genres: for a series "action" is
+  Action & Adventure and "sci-fi" is Sci-Fi & Fantasy, and there is no Horror, Thriller or Romance.
+  Pass those as `keyword` for a series. `filters.genres` says what was understood.
+- **A keyword is a hint, not a promise.** TMDB tags few titles, recent and non-English ones least.
+  Pass a few words that mean the same ("mafia", "gangster", "organized crime") and, when a genre is
+  close, the genre too ("crime"). When no title carries a keyword, the list comes back without the
+  keyword filter and `filters.keywords_dropped` is `true`: choose from it by overview and by what
+  you know of the titles (`WebSearch` when unsure), and say the list was not filtered by it. When
+  nothing listed fits, find a title that does yourself and play it by name and year.
+- **A misspelt person** ("park bo yeung") is still found when the name is a letter or two off
+  (`filters.person.asked_as` keeps the words asked). Pass the right spelling when you know it.
 
 Each title comes back marked against the library: `seen`, `started`, `not_interested`, and
 `stream.verified` (this laptop has a recently verified source). `filters` names the person,
@@ -89,6 +137,21 @@ Worked examples (the year is this year's):
 | i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
 | let's watch James Gunn's superman | `direct_stream_discover {person: "James Gunn", role: "director", kind: "movie"}`, then `direct_stream_play {title: <the title_key of Superman>}` |
 
+The ten requests the codenames were written for:
+
+| The user said | Calls |
+| --- | --- |
+| play some chinese action movie TM | `direct_stream_discover {kind: "movie", language: "Chinese", genre: "action"}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| TM shadow edge is smooth af. let's play jackie chan's movie before this one now | The first sentence is a remark (The Shadow's Edge, 2025, played from a torrent) and its codename carries to the request. `direct_stream_discover {person: "Jackie Chan", role: "cast", kind: "movie", sort: "newest"}`; take the first film with a `release_date` before The Shadow's Edge's, leaving out galas and voice roles; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| continue OP TS | `direct_stream_play {title: "OP", provider: "torrent"}` (OP is a name the library holds for One Piece; no episode, so it carries on) |
+| there is a spanish movie called smth like looking through your window . TM | Work the title out first (Through My Window, 2022), then `direct_stream_play {title: "Through My Window", year: 2022, provider: "torrent"}` |
+| play one of indonesian horror movie released this year TM | `direct_stream_discover {kind: "movie", language: "Indonesian", genre: "horror", year}`, then play one with `provider: "torrent"` |
+| play one of thai comedy movie released on 2025 TM | `direct_stream_discover {kind: "movie", language: "Thai", genre: "comedy", year: 2025}`, then play one with `provider: "torrent"` |
+| play one of Kdrama with bloody action genre TS | `direct_stream_discover {kind: "tv", language: "Korean", genre: "action", keyword: ["gore", "bloody", "violence", "revenge"]}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| what is the most recent park bo yeung project? let's watch it TS | `direct_stream_discover {person: "Park Bo-young", sort: "newest"}` (no `kind`: films and series together); the first entry where she is not Self; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| i miss korean mafia movies. play one released this year TM | `direct_stream_discover {kind: "movie", language: "Korean", genre: "crime", keyword: ["mafia", "gangster", "organized crime"], year}`, then play one with `provider: "torrent"` |
+| play House of Dragon season 2 TS | `direct_stream_play {title: "House of the Dragon", season: 2, provider: "torrent"}` |
+
 `movies_mark` with `season` marks that season's episodes finished, not the series, and it stores
 a series the library does not hold yet when `title` is its `title_key` (`tv-94997`).
 `movies_mark {title, not_interested: true}` is for "I am not interested in that one".
@@ -116,7 +179,8 @@ A play needs nothing extra: `direct_stream_play` uses this laptop's cache of the
 `/direct-stream <title>` and "stream it" mean start it: call `direct_stream_play` once with
 `title`, `year` when known, `kind` when known, and `season` and `episode` when the user named
 them. It takes 5 to 40 seconds; wait for it.
-"stream it from a torrent" is `provider: "torrent"`: only the torrent source is asked.
+"stream it from a torrent", TM and TS are `provider: "torrent"`: only the torrent source is asked.
+NTM and NTS are `provider: "cloud"`: only the cloud providers are asked, and never a torrent.
 
 A series named without an episode starts where the user left it. The daemon keeps every play
 (streams and VLC) in its database, so this works across sessions and restarts: `picked` is
@@ -156,6 +220,7 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   the `candidates` as season and episode and ask which; then call again with that `season` and
   `episode`.
 - **`skipped_play: "no_such_episode"`:** the series has `episodes` episodes; say so.
+- **`skipped_play: "no_such_season"`:** the series has no such season; say so with `seasons`.
 - **`skipped_play: "no_match"` with `did_you_mean`:** a site often calls a title by another name
   than TMDB does. Say no title has that exact name, list each `did_you_mean` entry with its year
   and kind, and ask whether one of them is meant. Do not play one unasked. When the user picks
@@ -170,6 +235,8 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
   may end with `Index: <name>` (a torrent index asked) and `Torrent: <release>` (a torrent tried;
   `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
+  With `provider: "cloud"` (NTM, NTS) no torrent was tried, and with `provider: "torrent"` (TM, TS)
+  no cloud provider: say which, and offer the other source.
 - **Error `torrent_off`:** torrents are off on this machine (`NOTESD_TORRENT=off`); say so and offer
   to stream it from a cloud provider (call again without `provider`).
 - **`direct_stream_off`:** direct streaming is off on this daemon (or this is the machine

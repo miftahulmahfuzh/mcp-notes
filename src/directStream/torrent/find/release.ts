@@ -346,6 +346,37 @@ export function episodeFit(name: string, fileName: string | null, season: number
   return named.complete ? 'pack' : 'unknown';
 }
 
+/** The stem names `n` as a number of its own ("One Piece - 1071", "[1071v2]"). */
+export function namesNumber(stem: string, n: number): boolean {
+  return new RegExp(`(?<![0-9a-z])0*${n}(?:v\\d)?(?![0-9a-z])`, 'i').test(stem);
+}
+
+/** A tv query's episode as episodeFitOf reads it (find/types.ts TvQuery fits). */
+export interface EpisodeNumbers {
+  season: number;
+  episode: number;
+  absoluteEpisode?: number | null;
+  alt?: { season: number; episode: number } | null;
+}
+
+/**
+ * episodeFit for a query whose episode TMDB numbers on across seasons (a long anime): it also carries the number
+ * within the season (`alt`) and the running number (`absoluteEpisode`). The number within the season counts only
+ * for a name that says its season ("S21E109"); a name with no episode marker fits when it holds the running number
+ * as a number of its own ("One Piece - 1000"), and a bare 109 there is another episode.
+ */
+export function episodeFitOf(name: string, fileName: string | null, query: EpisodeNumbers): EpisodeFit {
+  const fit = episodeFit(name, fileName, query.season, query.episode);
+  if (fit === 'match') return fit;
+  const stem = fileName === null ? null : stripExtension(baseName(fileName));
+  const refs = [stem === null ? null : parseEpisodeRef(stem), parseEpisodeRef(name)];
+  const naming = refs.find((ref) => ref !== null && ref.episode !== null) ?? null;
+  const alt = query.alt ?? null;
+  if (naming !== null) return alt !== null && naming.season === alt.season && naming.seasonTo === null && covers(naming, alt.episode) ? 'match' : fit;
+  const running = query.absoluteEpisode ?? null;
+  return fit === 'unknown' && running !== null && namesNumber(stem ?? name, running) ? 'match' : fit;
+}
+
 /** Reads a release name, and the named file inside it when there is one. */
 export function parseRelease(name: string, context: ReleaseContext = {}): ReleaseInfo {
   const titles = [context.title, context.originalTitle].filter((t): t is string => typeof t === 'string' && t.trim() !== '');

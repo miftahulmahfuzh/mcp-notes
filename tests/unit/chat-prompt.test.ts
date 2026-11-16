@@ -213,6 +213,13 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/Do not start a stream because you recommended a film; only when asked/);
   });
 
+  it('knows the six watch codenames, and what the ten requests they were written for lean on', () => {
+    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'provider "cloud"', 'provider "torrent"', 'never part of a title', 'asks for nothing', 'pass no provider']) expect(prompt, word).toContain(word);
+    expect(prompt).toMatch(/when filters\.keywords_dropped is true the list was not filtered by the keyword/);
+    expect(prompt).toMatch(/Through My Window, 2022/);
+    expect(prompt).toMatch(/is direct_stream_play with season alone/);
+  });
+
   it('picks and plays from direct_stream_discover when asked to choose, lists when asked what there is, and knows absolute episodes and season marks', () => {
     expect(prompt).toMatch(/through four tools: direct_stream_find, direct_stream_play, direct_stream_discover and direct_stream_dialogue/);
     expect(prompt).toMatch(/direct_stream_dialogue reads what is said in a film or in one episode/);

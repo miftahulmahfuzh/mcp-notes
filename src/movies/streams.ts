@@ -181,12 +181,22 @@ export class MovieStreams {
    * names neither, and phase 9's 1337x search has nothing else to go by. The stored title row (ensured first, as
    * `animeRef` does); null when it is not stored and cannot be.
    */
-  async titleNames(target: StreamTarget): Promise<{ title: string; originalTitle: string | null; year: number | null } | null> {
+  async titleNames(target: StreamTarget): Promise<{ title: string; originalTitle: string | null; year: number | null; episodeInSeason: number | null } | null> {
     try {
       const id = await this.ensureTitle(target);
       const row = id === null ? null : await this.movies.repo.titleById(id);
-      if (row === null) return null;
-      return { title: row.title, originalTitle: row.originalTitle === row.title ? null : row.originalTitle, year: row.year };
+      if (row === null || id === null) return null;
+      // An episode's place in its season: the torrent indexes count there, where TMDB's number may run on (One Piece).
+      let episodeInSeason: number | null = null;
+      const episode = target.kind === 'tv' ? (target.episode ?? null) : null;
+      if (target.kind === 'tv' && episode !== null) {
+        const season = ((await this.movies.repo.loadTitleMetadata(id))?.episodes ?? []).filter((e) => e.season === target.season).sort((a, b) => a.episode - b.episode);
+        const at = season.findIndex((e) => e.episode === episode);
+        const last = season[season.length - 1];
+        // An episode newer than the stored list (a series still airing) follows on from its last one.
+        episodeInSeason = at !== -1 ? at + 1 : last !== undefined && episode > last.episode ? season.length + (episode - last.episode) : null;
+      }
+      return { title: row.title, originalTitle: row.originalTitle === row.title ? null : row.originalTitle, year: row.year, episodeInSeason };
     } catch (err) {
       this.log(`[notesd] direct stream: could not read the names of ${describeTarget(target)}: ${messageOf(err)}`);
       return null;
