@@ -1,0 +1,28 @@
+{
+  "measured_at": "2026-11-16T05:00:00.000Z",
+  "reference": {
+    "url": "https://speed.cloudflare.com/__down?bytes=25000000",
+    "ok": true,
+    "status": 200,
+    "upstream": null,
+    "ttfb_ms": 45,
+    "bytes": 25000000,
+    "seconds": 2.34,
+    "mbps": 85.47,
+    "truncated": false,
+    "error": null
+  },
+  "stream": {
+    "ok": false,
+    "reason": "session_ended",
+    "status": 403
+  },
+  "stream_skipped": null,
+  "host_probe": {
+    "ok": true,
+    "host": "cdn.fixture.example",
+    "status": 403,
+    "ttfb_ms": 120,
+    "error": null
+  }
+}
