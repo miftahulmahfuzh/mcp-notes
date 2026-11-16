@@ -28,11 +28,12 @@ import {
   type PlayerLogLine,
   type ReportAnswer,
   type StreamSession,
+  type SessionSubtitle,
   type CachedInfo,
   type TorrentInfo,
   type TorrentState,
 } from './session';
-import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
+import { addFeedCue, followCueFeed, isEnglish, pickDefaultSubtitle, toWebVtt, type CueFeedFollower, type SubtitleOption } from './subtitles';
 import { isPageVisible, startAdaptivePoll, type AdaptivePoll } from '../lib/pageActive';
 
 export const POSITION_INTERVAL_MS = 5_000;
@@ -224,6 +225,8 @@ interface FileTrack {
   option: SubtitleOption;
   element: HTMLTrackElement;
   url: string;
+  /** A growing subtitle's reader of its feed, once the track has loaded; null for a file. */
+  follower: CueFeedFollower | null;
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -656,9 +659,9 @@ export class StreamController {
   private async loadFileSubtitles(session: StreamSession): Promise<void> {
     for (const [index, sub] of session.subtitles.entries()) {
       try {
-        // One more try: a stream host that fails once would leave the whole film without the track.
-        const text = await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch));
-        const vtt = toWebVtt(text);
+        // A growing subtitle (a cue feed) starts as an empty file; its cues are added as they come.
+        // One more try for a file: a stream host that fails once would leave the whole film without the track.
+        const vtt = sub.growing === true ? 'WEBVTT\n\n' : toWebVtt(await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch)));
         const url = this.deps.textUrl(vtt);
         const element = this.video.ownerDocument.createElement('track');
         element.kind = 'subtitles';
@@ -666,15 +669,40 @@ export class StreamController {
         if (sub.lang !== null) element.srclang = sub.lang;
         element.src = url;
         this.video.appendChild(element);
-        this.fileTracks.push({
+        const fileTrack: FileTrack = {
           option: { id: `file-${index}`, source: 'file', index, label: sub.label, lang: sub.lang, english: sub.english },
           element,
           url,
-        });
+          follower: null,
+        };
+        if (sub.growing === true) this.followGrowing(fileTrack, sub);
+        this.fileTracks.push(fileTrack);
       } catch (err) {
         this.note(`subtitle ${sub.label}: ${messageOf(err)}`);
       }
     }
+  }
+
+  /**
+   * A growing subtitle's cues come from its feed, read again every few seconds until it is complete.
+   * Chrome empties a <track>'s cues when it first loads its file, and loads it only when the track is
+   * first turned on, so the feed is read from then on: at once for the English track shown by default.
+   */
+  private followGrowing(fileTrack: FileTrack, sub: SessionSubtitle): void {
+    fileTrack.element.addEventListener(
+      'load',
+      () => {
+        const track = fileTrack.element.track;
+        if (this.disposed || fileTrack.follower !== null || !this.fileTracks.includes(fileTrack) || !track) return;
+        fileTrack.follower = followCueFeed(sub.url, {
+          fetch: this.deps.fetch,
+          add: (cue) => addFeedCue(track, cue),
+          onError: (message) => this.note(`subtitle ${sub.label}: ${message}`),
+          onComplete: (count) => this.note(`subtitle ${sub.label}: complete, ${count} cues`),
+        });
+      },
+      { once: true },
+    );
   }
 
   private async attach(session: StreamSession, startAt: number): Promise<void> {
@@ -1018,6 +1046,7 @@ export class StreamController {
   // last line of episode 787 stayed over the whole of 788), so a track is switched off before it goes.
   private clearFileTracks(): void {
     for (const track of this.fileTracks) {
+      track.follower?.stop();
       if (track.element.track) track.element.track.mode = 'disabled';
       track.element.remove();
       this.deps.revokeTextUrl(track.url);

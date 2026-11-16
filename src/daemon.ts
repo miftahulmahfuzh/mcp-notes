@@ -32,6 +32,8 @@ import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
+import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
+import { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
@@ -213,7 +215,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           // The borrow reads the title's English subtitle from a cloud provider, out of sight.
           lend: () => (directStream === null ? null : (ref, options) => directStream.subtitleText(ref, options)),
           convertAss: ffmpegAssConverter(config.torrent.ffmpegBin),
-          // Phase 7 adds embedded here; phase 8 whisper (one line each).
+          embedded: embeddedSubtitles,
+          // Phase 8 adds whisper here (one line).
         }),
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
         fallback: torrentSiteFallback,
@@ -257,6 +260,20 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
   const torrents = buildTorrentStreams(config, directStream, db);
+  // Phase 7: the growing cue feeds (the subtitle track inside a torrent's file; phase 8's Whisper) and
+  // the ffmpeg extraction that fills them. ffmpeg reads the file from disk once it is complete, else
+  // through this daemon's own file route, which waits for the pieces as the torrent downloads.
+  const torrentDir = config.torrent?.dir ?? null;
+  const torrentCues = torrents === null || torrentDir === null ? null : new CueFeeds({ folderOf: (infoHash) => join(torrentDir, infoHash) });
+  const embeddedSubtitles =
+    torrents === null || torrentCues === null || config.torrent === undefined
+      ? null
+      : new EmbeddedSubtitles({
+          ffmpegBin: config.torrent.ffmpegBin,
+          feeds: torrentCues,
+          input: async (infoHash, fileIndex) =>
+            (await torrents.filePath(infoHash, fileIndex)) ?? `http://127.0.0.1:${boundPort ?? config.port}${torrents.localUrl(infoHash, fileIndex)}`,
+        });
   // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
   const movieStories =
     movies === null
@@ -286,6 +303,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     directStream,
     streamCache,
     torrents,
+    torrentCues,
     movieStories,
     streamLive,
     streamEvidence,

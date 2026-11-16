@@ -4,6 +4,7 @@ import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURC
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
+import { CUE_FEED_POLL_MS } from './subtitles';
 
 const S1 = '/api/stream/sessions/S1';
 const controllers: StreamController[] = [];
@@ -1243,5 +1244,58 @@ describe('a torrent session (torrent-stream-source phase 4)', () => {
     t.fire('pause');
     await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS * 2);
     expect(t.calls.filter((c) => c.url === `${S1}/cache`)).toEqual([]);
+  });
+});
+
+describe('a growing subtitle (a cue feed)', () => {
+  it('starts the track empty, reads the feed once the track has loaded, adds each cue as it arrives, and stops at complete', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const added: { startTime: number; endTime: number; text: string }[] = [];
+    const fakeTrack = { mode: 'disabled', addCue: (cue: { startTime: number; endTime: number; text: string }) => added.push(cue) };
+    const had = Object.getOwnPropertyDescriptor(HTMLTrackElement.prototype, 'track');
+    Object.defineProperty(HTMLTrackElement.prototype, 'track', { configurable: true, get: () => fakeTrack });
+    vi.stubGlobal(
+      'VTTCue',
+      class {
+        constructor(
+          public startTime: number,
+          public endTime: number,
+          public text: string,
+        ) {}
+      },
+    );
+    try {
+      const FEED = `/api/stream/torrent/${'a'.repeat(40)}/cues/embedded-2`;
+      const t = setup({
+        [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'mp4', manifest_url: '/api/stream/torrent/x/f/0', subtitles: [sessionTrack(FEED, 'en', 'English', { format: 'cues', growing: true })] })),
+        [`GET ${FEED}?after=0`]: () => jsonResponse({ cues: [{ start_s: 1, end_s: 3, text: 'Line 1' }, { start_s: 4, end_s: 6, text: 'Line 2' }], next: 2, complete: false }),
+        [`GET ${FEED}?after=2`]: () => jsonResponse({ cues: [{ start_s: 7, end_s: 9, text: 'Line 3' }], next: 3, complete: true }),
+      });
+      void t.controller.start();
+      await vi.waitFor(() => expect(t.made).toHaveLength(1));
+      // The track starts as an empty WebVTT file; nothing was fetched for it yet.
+      expect(t.texts).toEqual(['WEBVTT\n\n']);
+      expect(t.calls.some((c) => c.url.startsWith(FEED))).toBe(false);
+      t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+      expect(t.controller.getState().subtitle).toBe('file-0');
+      expect(fakeTrack.mode).toBe('hidden');
+      t.video.querySelector('track')?.dispatchEvent(new Event('load'));
+      await vi.waitFor(() => expect(added.map((c) => c.text)).toEqual(['Line 1', 'Line 2']));
+      await vi.advanceTimersByTimeAsync(CUE_FEED_POLL_MS);
+      await vi.waitFor(() => expect(added.map((c) => [c.startTime, c.endTime, c.text])).toEqual([[1, 3, 'Line 1'], [4, 6, 'Line 2'], [7, 9, 'Line 3']]));
+      await vi.advanceTimersByTimeAsync(CUE_FEED_POLL_MS * 3);
+      expect(t.calls.filter((c) => c.url.startsWith(FEED)).map((c) => c.url)).toEqual([`${FEED}?after=0`, `${FEED}?after=2`]);
+      expect(t.controller.getState().log).toContain('subtitle English: complete, 3 cues');
+    } finally {
+      if (had) Object.defineProperty(HTMLTrackElement.prototype, 'track', had);
+      else delete (HTMLTrackElement.prototype as { track?: unknown }).track;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('parses growing only when the daemon says so', () => {
+    const FEED = '/api/stream/torrent/x/cues/embedded-2';
+    expect(parseSession(streamSessionJson({ subtitles: [sessionTrack(FEED, 'en', 'English', { format: 'cues', growing: true })] })).subtitles).toEqual([{ url: FEED, lang: 'en', label: 'English', english: true, growing: true }]);
+    expect(parseSession(streamSessionJson({ subtitles: [sessionTrack('/x', 'en', 'English', { growing: 'yes' })] })).subtitles).toEqual([{ url: '/x', lang: 'en', label: 'English', english: true }]);
   });
 });

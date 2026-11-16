@@ -12,6 +12,7 @@ import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
+import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -73,6 +74,12 @@ export interface AppDeps {
    * NOTESD_TORRENT=off. startBackground starts its tick and closes it.
    */
   torrents?: TorrentStreams | null;
+  /**
+   * The growing cue feeds of torrent sessions (torrent-stream-source phase 7: the subtitle track inside
+   * a torrent's file; phase 8: Whisper). Built next to `torrents`; null or absent with torrents off,
+   * and GET /api/stream/torrent/:hash/cues/:track then answers 503 torrent_off.
+   */
+  torrentCues?: CueFeeds | null;
   /**
    * The stories of films and episodes (src/movies/story.ts): read from the store, written by
    * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story

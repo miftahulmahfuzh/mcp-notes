@@ -9,6 +9,8 @@ export interface SessionSubtitle {
   label: string;
   /** Phase 3's `english` when it sent one, else isEnglish(lang, label). */
   english: boolean;
+  /** A cue feed: `url` answers JSON cues after an index (subtitles.ts followCueFeed), read until complete. Absent: a WebVTT or SRT file. */
+  growing?: true;
 }
 
 /** What the player needs from GET /api/stream/sessions/:id, checked once in parseSession. */
@@ -151,7 +153,7 @@ export function parseSession(json: unknown): StreamSession {
       if (url === null) continue;
       const lang = text(s.lang);
       const label = text(s.label) ?? lang ?? 'Subtitle';
-      subtitles.push({ url, lang, label, english: typeof s.english === 'boolean' ? s.english : isEnglish(lang, label) });
+      subtitles.push({ url, lang, label, english: typeof s.english === 'boolean' ? s.english : isEnglish(lang, label), ...(s.growing === true ? { growing: true as const } : {}) });
     }
   }
   const resume = o.resume_s;

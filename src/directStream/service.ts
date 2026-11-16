@@ -5,7 +5,7 @@ import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
-import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type PlayableCaches, type SessionCache } from './cachePlay.js';
+import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type CacheSubtitleView, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { deliveryByProvider, type Delivery } from './delivery.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
@@ -89,14 +89,16 @@ export interface DirectStreamHooks {
 }
 
 export interface SessionSubtitle {
-  /** Pass-through address on this daemon; an `.srt` track's carries `&vtt=1`. */
+  /** Pass-through address on this daemon; an `.srt` track's carries `&vtt=1`. A cache's or a torrent's: its local route. */
   url: string;
   lang: string | null;
   label: string;
-  /** `vtt` for an `.srt` track (served converted); otherwise the resolver's format. */
+  /** `vtt` for an `.srt` track (served converted); `cues` for a cue feed; otherwise the resolver's format. */
   format: string;
   source: 'request' | 'manifest';
   english: boolean;
+  /** A cue feed (`format: "cues"`): the page reads `url` again, from where it stopped, until the feed is complete. */
+  growing?: true;
 }
 
 /** What GET /api/stream/sessions/:id answers: what the player page needs. */
@@ -209,6 +211,19 @@ export interface SwitchSourceAnswer {
   /** The provider the player was on when it asked. */
   from: string;
   session: SessionInfo;
+}
+
+/** A local subtitle (a cache's file, a torrent's file or cue feed) as the page reads it. */
+function localSubtitle(view: CacheSubtitleView): SessionSubtitle {
+  return {
+    url: view.url,
+    lang: view.lang,
+    label: view.label,
+    format: view.growing === true ? 'cues' : 'vtt',
+    source: 'request',
+    english: isEnglish(view),
+    ...(view.growing === true ? { growing: true as const } : {}),
+  };
 }
 
 /**
@@ -951,7 +966,7 @@ export class DirectStreamService {
                 english: isEnglish(t),
               };
             })
-          : local.subtitles.map((t) => ({ url: t.url, lang: t.lang, label: t.label, format: 'vtt', source: 'request' as const, english: isEnglish(t) })),
+          : local.subtitles.map(localSubtitle),
       best_height: source.best_height,
       audio_lang: session.audioLang,
       audio: source.audio ?? null,

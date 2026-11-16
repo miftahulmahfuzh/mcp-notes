@@ -32,6 +32,7 @@ import { streamCacheRoutes } from './streamCacheApi.js';
 import { streamCachePlayRoutes } from './streamCachePlayApi.js';
 import { streamTorrentRoutes } from './streamTorrentApi.js';
 import { streamReportRoutes } from './streamReportApi.js';
+import { streamTorrentCuesRoutes } from './streamTorrentCuesApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -149,6 +150,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', streamCachePlayRoutes(deps));
   app.route('/', streamTorrentRoutes(deps));
   app.route('/', streamReportRoutes(deps));
+  app.route('/', streamTorrentCuesRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

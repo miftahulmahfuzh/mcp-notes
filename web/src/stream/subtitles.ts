@@ -54,3 +54,117 @@ export function toWebVtt(input: string): string {
     .join('\n');
   return `WEBVTT\n\n${body.trim()}\n`;
 }
+
+/** One cue of a growing subtitle, as GET /api/stream/torrent/:hash/cues/:track answers it. */
+export interface FeedCue {
+  start_s: number;
+  end_s: number;
+  text: string;
+}
+
+/** One answer of a cue feed. */
+export interface CueFeedPage {
+  cues: FeedCue[];
+  next: number;
+  complete: boolean;
+}
+
+/** How often a growing subtitle is read again while it is not complete. */
+export const CUE_FEED_POLL_MS = 4_000;
+
+/** A feed answer, checked once; null when it is not one. A cue without text or length is left out. */
+export function parseCueFeed(json: unknown): CueFeedPage | null {
+  if (typeof json !== 'object' || json === null) return null;
+  const o = json as Record<string, unknown>;
+  if (!Array.isArray(o.cues) || typeof o.next !== 'number' || !Number.isInteger(o.next) || o.next < 0 || typeof o.complete !== 'boolean') return null;
+  const cues: FeedCue[] = [];
+  for (const entry of o.cues) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { start_s: start, end_s: end, text } = entry as Record<string, unknown>;
+    if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    if (typeof text !== 'string' || text.trim() === '') continue;
+    cues.push({ start_s: start, end_s: end, text });
+  }
+  return { cues, next: o.next, complete: o.complete };
+}
+
+export interface CueFeedFollower {
+  stop(): void;
+}
+
+export interface FollowCueFeedDeps {
+  fetch: typeof fetch;
+  /** Each cue, as it arrives. */
+  add: (cue: FeedCue) => void;
+  /** A read failed: said once per run of failures. A 404 (no such feed on this machine) ends the following. */
+  onError?: (message: string) => void;
+  /** The feed is complete: `count` cues in all. */
+  onComplete?: (count: number) => void;
+  pollMs?: number;
+}
+
+/**
+ * Reads a growing subtitle from the start, adds each cue, and reads it again every `pollMs` from
+ * where it stopped until the feed says it is complete. A failed read is tried again at the next
+ * poll; a 404 stops.
+ */
+export function followCueFeed(url: string, deps: FollowCueFeedDeps): CueFeedFollower {
+  const fetchImpl = deps.fetch;
+  const pollMs = deps.pollMs ?? CUE_FEED_POLL_MS;
+  let next = 0;
+  let stopped = false;
+  let failing = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fail = (message: string): void => {
+    if (!failing) deps.onError?.(message);
+    failing = true;
+  };
+  const later = (): void => {
+    if (!stopped) timer = setTimeout(() => void read(), pollMs);
+  };
+  const read = async (): Promise<void> => {
+    timer = null;
+    let page: CueFeedPage | null = null;
+    try {
+      const res = await fetchImpl(`${url}${url.includes('?') ? '&' : '?'}after=${next}`, { cache: 'no-store' });
+      if (res.status === 404) {
+        if (!stopped) deps.onError?.('http_404');
+        stopped = true;
+        return;
+      }
+      page = res.ok ? parseCueFeed(await res.json()) : null;
+      if (page === null) fail(res.ok ? 'not a cue feed' : `http_${res.status}`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    if (stopped) return;
+    if (page === null) {
+      later();
+      return;
+    }
+    failing = false;
+    for (const cue of page.cues) deps.add(cue);
+    next = Math.max(next, page.next);
+    if (page.complete) {
+      stopped = true;
+      deps.onComplete?.(next);
+      return;
+    }
+    later();
+  };
+  void read();
+  return {
+    stop() {
+      stopped = true;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
+/** Adds a feed's cue to a text track as a browser cue. Without VTTCue (not a browser) nothing is added. */
+export function addFeedCue(track: Pick<TextTrack, 'addCue'>, cue: FeedCue): void {
+  const Cue = (globalThis as { VTTCue?: new (start: number, end: number, text: string) => TextTrackCue }).VTTCue;
+  if (Cue === undefined) return;
+  track.addCue(new Cue(cue.start_s, cue.end_s, cue.text));
+}
