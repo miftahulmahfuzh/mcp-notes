@@ -1150,7 +1150,7 @@ export const movieEpisodeMarks = pgTable(
  * The dialogue of a film (season 0, episode 0) or of one episode: the text of its English
  * subtitle as a stream source carried it (src/directStream/dialogue.ts), one line per cue,
  * `mm:ss<TAB>text`. Read once and kept, so both machines answer "what is this episode about"
- * without resolving again. Written only by `MoviesRepo.saveDialogue`.
+ * without resolving again. Written only by `MoviesRepo.saveDialogue` and `saveStory`.
  */
 export const movieDialogues = pgTable(
   'movie_dialogues',
@@ -1168,6 +1168,10 @@ export const movieDialogues = pgTable(
     lastCueS: integer('last_cue_s').notNull(),
     body: text('body').notNull(),
     fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /** The story Claude wrote from the dialogue (src/movies/story.ts): written once, on the owner's click, and kept. */
+    story: text('story'),
+    storyModel: text('story_model'),
+    storyAt: timestamp('story_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     primaryKey({ columns: [t.titleId, t.season, t.episode] }),

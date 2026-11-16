@@ -15,7 +15,10 @@ import {
   releaseWindow,
   shortOverview,
 } from '../directStream/discover.js';
-import { dialogueBody, dialoguePage, parseCues } from '../directStream/dialogue.js';
+import { dialoguePage } from '../directStream/dialogue.js';
+import { loadDialogue, type StoredDialogue } from '../directStream/dialogueStore.js';
+
+export type { StoredDialogue };
 import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type AbsoluteChoice, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
 import {
   dbTitleLibrary,
@@ -57,19 +60,6 @@ export interface FreshSource {
   bestHeight: number | null;
   enSubtitle: boolean | null;
   verifiedAt: Date;
-}
-
-/** A title's dialogue as the tool reads it. */
-export interface StoredDialogue {
-  provider: string;
-  cues: number;
-  /** The second the last line is said at. */
-  lastCueS: number;
-  /** One line per cue, `mm:ss<TAB>text` (dialogueBody). */
-  body: string;
-  fetchedAt: Date;
-  /** True when it came from the store and nothing was resolved. */
-  cached: boolean;
 }
 
 /** What the direct-streaming tools need, bound once per daemon by directStreamToolDeps (tests build their own). */
@@ -139,29 +129,9 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     marks: (ids) => libraryMarks(deps.db, { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
     freshTitles: async () => new Set(await movies.repo.freshStreamTitleIds(movies.host, streamFreshSince(new Date(), config.freshDays))),
     dialogue: async (target, { refresh }) => {
-      const key = targetKey(target);
-      const season = target.kind === 'tv' ? target.season : 0;
-      const episode = target.kind === 'tv' ? target.episode : 0;
-      if (!refresh) {
-        const stored = await movies.repo.dialogue(key, season, episode);
-        if (stored !== null) return { provider: stored.provider, cues: stored.cues, lastCueS: stored.lastCueS, body: stored.body, fetchedAt: stored.fetchedAt, cached: true };
-      }
-      const read = await service.subtitleText(target);
-      const cues = parseCues(read.vtt);
-      const row = {
-        titleId: key,
-        season,
-        episode,
-        lang: 'en',
-        provider: read.provider,
-        cues: cues.length,
-        lastCueS: Math.round(cues[cues.length - 1]?.startS ?? 0),
-        body: dialogueBody(cues),
-        fetchedAt: new Date(),
-      };
-      // The resolve stored the title; without a TMDB credential it could not, and the dialogue is answered unstored.
-      if ((await movies.repo.titleById(key)) !== null) await movies.repo.saveDialogue(row);
-      return { provider: row.provider, cues: row.cues, lastCueS: row.lastCueS, body: row.body, fetchedAt: row.fetchedAt, cached: false };
+      const read = await loadDialogue(movies.repo, service, target, { refresh });
+      if (read === null) throw new DirectStreamError('no_subtitle', 'There is no dialogue for it.');
+      return read;
     },
     providers: () => service.providers(),
     updateSource: (site, pages) => service.updateSource(site, pages),
@@ -289,7 +259,8 @@ const DIALOGUE_DESCRIPTION =
   'Pass title (words without the year, a movie id, or a title key) with year and kind when known; for a series the episode is required: season and episode, or absolute_episode for an episode named by one number ("One Piece episode 760"), or an episode\'s movie id as title. ' +
   '"The last episode I watched" is movies_get first (last_play.season and episode). ' +
   'The first call for a title resolves a stream source out of sight in the streaming Chrome (5 to 40 seconds; no window, no sound, nothing plays) and stores the dialogue; later calls answer from the store at once, on both machines. ' +
-  'Returns { title, season, episode, dialogue: { language, provider, cues, minutes, fetched_at, cached, from_minute, next_from_minute, lines, text } }: text is one line per subtitle cue, "[mm:ss] what is said" (minutes run on past the hour). ' +
+  'Returns { title, season, episode, dialogue: { language, provider, cues, minutes, fetched_at, cached, from_minute, next_from_minute, lines, text }, story }: text is one line per subtitle cue, "[mm:ss] what is said" (minutes run on past the hour); ' +
+  'story is there only when the owner had the story written on the wall (the book icon of an episode): a retelling made from this same dialogue, { text, model, written_at }, good for a quick answer while the lines stay the source. ' +
   'A long film comes in pages: when next_from_minute is not null, call again with from_minute set to it for the rest. refresh true reads the subtitle again. ' +
   'It is dialogue only: it does not describe silent action, and it does not say who speaks; say so when the answer depends on either. It holds the whole story, the ending included. ' +
   'started nothing: skipped says why when there is no dialogue (several_matches, no_match, needs_episode, episode_unclear, no_such_episode). ' +
@@ -739,6 +710,8 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
               cached: stored.cached,
               ...page,
             },
+            // The story already written from this dialogue on the wall, when there is one: it saves reading every line.
+            ...(stored.story === null ? {} : { story: { text: stored.story.text, model: stored.story.model, written_at: stored.story.writtenAt?.toISOString() ?? null } }),
             next:
               page.next_from_minute === null
                 ? 'This is every line said, the ending included. Answer from it; it does not describe silent action or say who speaks.'

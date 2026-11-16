@@ -26,6 +26,8 @@ import { buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
+import { loadDialogue } from './directStream/dialogueStore.js';
+import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
@@ -188,6 +190,18 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.error(`[notesd] direct stream: could not load the provider seed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // The story of an episode, written from its dialogue when the owner asks (one model call, then kept).
+  const movieStories =
+    movies === null
+      ? null
+      : new MovieStories({
+          repo: movies.repo,
+          dialogue: (target) => loadDialogue(movies.repo, directStream, target),
+          writer:
+            config.movies.storyModel === null || config.movies.storyModel === undefined
+              ? null
+              : createStoryWriter({ claudeBin: config.chat.claudeBin, model: config.movies.storyModel, cwd: join(config.dataDir, 'movies-story') }),
+        });
   const deps: AppDeps = {
     config,
     db,
@@ -203,6 +217,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     sessionEvents,
     streaming,
     directStream,
+    movieStories,
     streamLive: movies === null ? null : new StreamLive(),
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;

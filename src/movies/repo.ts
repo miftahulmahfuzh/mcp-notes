@@ -2,6 +2,9 @@ import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sq
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client.js';
 import type { MovieDialogueRow } from '../db/schema.js';
+
+/** A dialogue as it is read from a subtitle: the story columns are written later, by saveStory. */
+export type NewMovieDialogue = Omit<MovieDialogueRow, 'story' | 'storyModel' | 'storyAt'>;
 import {
   movieCompanies,
   movieCredits,
@@ -918,8 +921,8 @@ export class MoviesRepo {
     return rows[0] ?? null;
   }
 
-  /** Stores (or replaces) one dialogue. The title row must exist. */
-  async saveDialogue(row: MovieDialogueRow): Promise<void> {
+  /** Stores (or replaces) one dialogue. The title row must exist. A story written from the earlier text is kept. */
+  async saveDialogue(row: NewMovieDialogue): Promise<void> {
     await this.db
       .insert(movieDialogues)
       .values(row)
@@ -927,6 +930,24 @@ export class MoviesRepo {
         target: [movieDialogues.titleId, movieDialogues.season, movieDialogues.episode],
         set: { lang: row.lang, provider: row.provider, cues: row.cues, lastCueS: row.lastCueS, body: row.body, fetchedAt: row.fetchedAt },
       });
+  }
+
+  /** Keeps the story written from a stored dialogue. False when there is no dialogue row to put it on. */
+  async saveStory(titleIdValue: string, season: number, episode: number, story: string, model: string, at: Date = new Date()): Promise<boolean> {
+    const rows = await this.db
+      .update(movieDialogues)
+      .set({ story, storyModel: model, storyAt: at })
+      .where(and(eq(movieDialogues.titleId, titleIdValue), eq(movieDialogues.season, season), eq(movieDialogues.episode, episode)))
+      .returning({ season: movieDialogues.season });
+    return rows.length > 0;
+  }
+
+  /** The episodes of a title (a film: season 0, episode 0) that have a story. */
+  async storySlots(titleIdValue: string): Promise<EpisodeRef[]> {
+    return this.db
+      .select({ season: movieDialogues.season, episode: movieDialogues.episode })
+      .from(movieDialogues)
+      .where(and(eq(movieDialogues.titleId, titleIdValue), isNotNull(movieDialogues.story)));
   }
 
   // ---------- history (R3.8) ----------

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CaretDown, CaretRight, CheckCircle, Checks } from '@phosphor-icons/react';
+import { BookOpenText, CaretDown, CaretRight, CheckCircle, Checks } from '@phosphor-icons/react';
 import type { EpisodeView, FileView, PlayerState, TitleDetail } from '../../moviesApi';
 import { episodeAction, episodeCode, episodeLive, filePlayLabel, primaryFile, seasonsShown, streamLabel, streamSourceText, TILE_LIVE_LABEL, trailerTarget, type MoviesSide, type PlayButtonState, type StreamTarget, type TrailerTarget } from '../../lib/movies';
 import { FileFlags, FileRow, Meter, PlayButton, StreamAltButton, TrailerButton, WatchedButton } from './parts';
@@ -22,6 +22,8 @@ export interface EpisodeListProps {
   onEpisodeWatched: (e: EpisodeView, watched: boolean) => void;
   /** Plays a season's trailer in the page's pop-up. */
   onTrailer: (t: TrailerTarget) => void;
+  /** Opens an episode's story (StoryModal). Left out, the rows have no book icon. */
+  onStory?: (e: EpisodeView) => void;
 }
 
 /** A season counts as finished when every episode is, by a play, a file flag or the owner's mark. */
@@ -77,7 +79,7 @@ function SeasonFoldButton({ name, folded, onToggle }: { name: string; folded: bo
 }
 
 /** A series' seasons (Library: those with a file on any machine; Stream: all), each with its trailer and every episode with its progress, flags and play icons; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer }: EpisodeListProps) {
+export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory }: EpisodeListProps) {
   const { seasons, hidden } = seasonsShown(detail, focus, side);
   const list = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => readCollapsed(detail.id));
@@ -129,6 +131,7 @@ export function EpisodeList({ detail, player, focus = null, busy, side, streamEn
                 onStream={onStream}
                 onWatched={onWatched}
                 onEpisodeWatched={onEpisodeWatched}
+                onStory={onStory}
               />
             ))}
           </ol>
@@ -161,9 +164,10 @@ interface EpisodeItemProps {
   onStream: (t: StreamTarget) => void;
   onWatched: (f: FileView) => void;
   onEpisodeWatched: (e: EpisodeView, watched: boolean) => void;
+  onStory?: ((e: EpisodeView) => void) | undefined;
 }
 
-function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onWatched, onEpisodeWatched }: EpisodeItemProps) {
+function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onWatched, onEpisodeWatched, onStory }: EpisodeItemProps) {
   const code = episodeCode(e.season, e.episode);
   const file = primaryFile(e);
   const act = episodeAction(detail, e, side);
@@ -187,6 +191,18 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
       data-state={e.state}
     >
       <span className="mv-code">{code}</span>
+      {onStory !== undefined && (
+        <button
+          type="button"
+          className="pbtn hov mv-story"
+          data-tip={e.has_story === true ? `The story of ${code} (stored; full spoilers)` : `Write the story of ${code} from its subtitle (full spoilers; Claude writes it once)`}
+          aria-label={e.has_story === true ? `The story of ${code}` : `Write the story of ${code}`}
+          data-stored={e.has_story === true ? 'true' : undefined}
+          onClick={() => onStory(e)}
+        >
+          <BookOpenText weight={e.has_story === true ? 'fill' : 'duotone'} />
+        </button>
+      )}
       <span className="mv-row-t">
         <span className="mv-row-name">{e.name ?? code}</span>
         {e.movie_id !== null && (

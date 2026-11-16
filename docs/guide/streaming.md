@@ -642,6 +642,9 @@ how does Saltburn end?
 - **What it is not.** Dialogue only: silent action is not described and the speaker is not named.
   It holds the whole story, so in the chat bar the spoiler limit for a title you have not
   finished still applies.
+- **The story.** On the wall, an episode's book icon has Claude retell the episode from this
+  dialogue, once, and keeps the result beside it ([movies.md](movies.md#the-movies-page)). The
+  tool hands a stored story back as `story`, next to the lines.
 - **When there is none:** `no_subtitle` (the source that resolved has no English subtitle) or
   `no_source`. Claude then answers from the synopsis and a web search, and says so.
 

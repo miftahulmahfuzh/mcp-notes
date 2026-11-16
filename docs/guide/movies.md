@@ -346,6 +346,15 @@ characters (the first 18, with an icon for the rest).
   machine, one row per episode with its code, name, movie id, a progress meter, a watched icon and a
   play icon. A deleted file is flagged "deleted" with its date in the tooltip; a file on the other
   machine is flagged "on <host>". Seasons with no file anywhere are counted, not listed.
+- **An episode's story.** The book icon between an episode's code and its name opens the whole
+  story of that episode, every spoiler included, in a pop-up. The first press has it written:
+  the daemon reads the episode's dialogue (the stored one, else the English subtitle of a stream
+  source, resolved out of sight; see [streaming.md](streaming.md#what-a-title-says-its-dialogue))
+  and Claude retells it in one call (`NOTESD_MOVIES_STORY_MODEL`), which takes about a minute. The
+  story is kept with the dialogue, so it is written once: after that the icon is filled and the
+  story opens at once, on both machines. Nothing is written until you press. When there is no
+  English subtitle, or no source has the episode, the pop-up says so. Closing the pop-up while it
+  is being written does not stop it.
 - **Folding a season.** The caret before a season's name hides its episodes and shows a count in
   their place ("56 episodes, 12 finished"); another press shows them again. The season's trailer
   and "finished" buttons stay. The fold is kept per title in this browser, so a long series opens

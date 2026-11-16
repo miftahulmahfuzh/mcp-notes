@@ -1,3 +1,5 @@
+import { DirectStreamError } from '../directStream/types.js';
+import { StoryError, type StoryView } from '../movies/story.js';
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
@@ -52,6 +54,11 @@ export interface UnmatchedResponse {
 export type MoviesStatusResponse = Awaited<ReturnType<MoviesService['status']>> & { counts: StatusCounts };
 export interface TmdbSearchResponse {
   results: TmdbHitView[];
+}
+/** GET and POST /api/movies/:id/story. `cached` is false only when this call had the story written. */
+export interface StoryResponse {
+  story: StoryView | null;
+  cached: boolean;
 }
 /** POST /api/movies/:id/episodes/watched: `changed` is what an undo sends back with `watched` flipped. */
 export interface EpisodesWatchedResponse {
@@ -133,6 +140,7 @@ const TITLE_PATH = '/api/movies/:id{[a-z]+-[0-9]+}';
 const MOVIE_ID_PATH = '/api/movies/:movieId{[Mm]-[0-9A-Za-z]+}';
 const USER_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/user';
 const EPISODES_WATCHED_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/episodes/watched';
+const STORY_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/story';
 const FILE_WATCHED_PATH = '/api/movies/files/:fileId{[0-9]+}/watched';
 const FILE_ASSIGN_PATH = '/api/movies/files/:fileId{[0-9]+}/assign';
 
@@ -170,6 +178,11 @@ const userBody = z
   .refine((b) => b.watched !== undefined || b.not_interested !== undefined || b.rating !== undefined || b.review !== undefined, {
     message: 'set at least one of watched, not_interested, rating, review',
   });
+
+/** A film is season 0, episode 0 (the default); an episode names both. */
+const storySlot = z
+  .object({ season: z.coerce.number().int().min(0).max(1000).default(0), episode: z.coerce.number().int().min(0).max(100_000).default(0) })
+  .refine((s) => s.episode > 0 || s.season === 0, { message: 'a season needs an episode' });
 
 const episodeRefSchema = z.object({ season: z.number().int().min(0).max(1000), episode: z.number().int().min(1).max(100_000) }).strict();
 /** A whole season, or a list of episodes (what an undo sends back); exactly one of the two. */
@@ -213,7 +226,7 @@ function errorMessage(err: unknown): string {
 }
 
 export function moviesApiRoutes(
-  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'>,
+  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'> & Partial<Pick<AppDeps, 'movieStories'>>,
   options: MoviesApiOptions = {},
 ): Hono {
   const api = new Hono();
@@ -438,6 +451,48 @@ export function moviesApiRoutes(
       if (changed.length > 0) movies.events.changed('user', { titleIds: [id.data] });
       const body: EpisodesWatchedResponse = { watched, changed, title: await titleResponse(id.data, ctx) };
       return c.json(body);
+    }),
+  );
+
+  // The story of a film or an episode (src/movies/story.ts). GET only reads the store; POST writes it once.
+  api.get(
+    STORY_PATH,
+    withMovies(async (c) => {
+      const id = titleIdSchema.safeParse(c.req.param('id'));
+      const slot = storySlot.safeParse({ season: c.req.query('season'), episode: c.req.query('episode') });
+      if (!id.success || !slot.success) return c.json({ error: 'invalid_query' }, 400);
+      const stories = deps.movieStories ?? null;
+      if (stories === null) return c.json({ error: 'story_off' }, 503);
+      const body: StoryResponse = { story: await stories.get(id.data, slot.data.season, slot.data.episode), cached: true };
+      return c.json(body);
+    }),
+  );
+
+  api.post(
+    STORY_PATH,
+    sameOriginOnly,
+    withMovies(async (c) => {
+      const id = titleIdSchema.safeParse(c.req.param('id'));
+      if (!id.success) return c.json({ error: 'invalid_id' }, 400);
+      const json = await readJson(c);
+      const slot = storySlot.safeParse(json.ok ? (json.value ?? {}) : null);
+      if (!slot.success) return c.json({ error: 'invalid_body' }, 400);
+      const stories = deps.movieStories ?? null;
+      if (stories === null) return c.json({ error: 'story_off' }, 503);
+      try {
+        const body: StoryResponse = await stories.write(id.data, slot.data.season, slot.data.episode);
+        // A new story: open pages show the episode's book icon as filled.
+        if (!body.cached) deps.movies?.events.changed('user', { titleIds: [id.data] });
+        return c.json(body);
+      } catch (err) {
+        if (err instanceof StoryError) {
+          const status = err.code === 'not_found' ? 404 : err.code === 'story_failed' ? 502 : 503;
+          return c.json({ error: err.code, message: err.message }, status);
+        }
+        // The dialogue could not be read: no source has the title, or the one that has it carries no English subtitle.
+        if (err instanceof DirectStreamError) return c.json({ error: err.code, reason: err.reason, message: err.message }, 502);
+        throw err;
+      }
     }),
   );
 

@@ -99,6 +99,7 @@ The library and playback are described in [movies.md](../movies.md).
 | `NOTESD_MOVIES_DONE_DIRS` | `Done` | Folder names (not paths) separated by `:`, any case. A file found in or moved into one, at any depth below a root, counts as finished. |
 | `NOTESD_MOVIES_SCAN_MS` | `120000` | Pause between library passes. The folders are polled, never watched: `/mnt/c` sends WSL no file events. |
 | `NOTESD_MOVIES_MIN_SECONDS` | `900` | Videos shorter than this go to the unmatched list as `too_short`, without a TMDB lookup. |
+| `NOTESD_MOVIES_STORY_MODEL` | `sonnet` | Claude model that writes the story of an episode from its dialogue when you press the episode's book icon: one call per story, and the story is kept. `off`: no story is written; stored ones still open. |
 | `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model asked for a title and year when a file name has no confident TMDB match: one short call per such file. `off`: no fallback. |
 | `TMDB_API_READ_ACCESS_TOKEN` | unset | TMDB v4 read access token, sent as a Bearer header. Preferred. |
 | `TMDB_API_KEY` | unset | TMDB v3 API key, used only when there is no token. With neither, files are registered but all unmatched as `no_tmdb_credentials`. |

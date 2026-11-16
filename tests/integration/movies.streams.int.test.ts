@@ -361,7 +361,7 @@ describe('direct streaming in the movies store', () => {
       const row = { titleId: 'tv-247718', season: 1, episode: 2, lang: 'en', provider: 'VidNest Anime', cues: 2, lastCueS: 723, body: '00:17\tFight\n12:03\tThe gas', fetchedAt: T0 }
       expect(await repo.dialogue('tv-247718', 1, 2)).toBeNull()
       await repo.saveDialogue(row)
-      expect(await repo.dialogue('tv-247718', 1, 2)).toEqual(row)
+      expect(await repo.dialogue('tv-247718', 1, 2)).toEqual({ ...row, story: null, storyModel: null, storyAt: null })
       expect(await repo.dialogue('tv-247718', 1, 3)).toBeNull()
       await repo.saveDialogue({ ...row, provider: 'Other', cues: 1, body: '00:01\tHello.' })
       expect(await repo.dialogue('tv-247718', 1, 2)).toMatchObject({ provider: 'Other', cues: 1, body: '00:01\tHello.' })

@@ -126,6 +126,8 @@ export interface EpisodeView {
   state: WatchState;
   /** The owner's manual "finished" mark on this episode. */
   watched: boolean;
+  /** A story of this episode is stored: opening it calls no model. Absent from a server older than stories. */
+  has_story?: boolean;
   has_file: boolean;
   present_here: boolean;
   /** It has files and every one is deleted. */
@@ -520,6 +522,30 @@ export interface EpisodeRef {
 export async function setEpisodesWatched(titleId: string, target: { season: number } | { episodes: EpisodeRef[] }, watched: boolean): Promise<EpisodeRef[]> {
   const j = await postJson<{ changed?: EpisodeRef[] }>(`/api/movies/${enc(titleId)}/episodes/watched`, { ...target, watched });
   return list(j?.changed);
+}
+
+/** The story of a film or an episode, written by Claude from its dialogue (`POST /api/movies/:id/story`). */
+export interface StoryView {
+  season: number;
+  episode: number;
+  /** Plain paragraphs, separated by a blank line. */
+  text: string;
+  model: string | null;
+  written_at: string | null;
+  /** The stream provider whose subtitle it was written from, and how many lines that was. */
+  provider: string;
+  cues: number;
+}
+
+/**
+ * The story of one episode: the stored one, else the daemon reads the dialogue and has it written
+ * (a model call, up to a few minutes), then keeps it. `cached` is false only for a story this
+ * call had written. Throws ApiError: `story_off`, `no_subtitle`, `no_source`, `story_failed`, ...
+ */
+export async function writeStory(titleId: string, season: number, episode: number): Promise<{ story: StoryView; cached: boolean }> {
+  const j = await postJson<{ story?: StoryView | null; cached?: boolean }>(`/api/movies/${enc(titleId)}/story`, { season, episode });
+  if (j === null || j.story === null || j.story === undefined) throw new ApiError(502, 'story_failed', 'The daemon answered no story.');
+  return { story: j.story, cached: j.cached === true };
 }
 
 /** `GET /api/stream/prober`, the part the Stream side reads. */

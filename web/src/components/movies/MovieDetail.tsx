@@ -34,6 +34,7 @@ import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from 
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
+import { StoryModal } from './StoryModal';
 import { TrailerModal } from './TrailerModal';
 
 export interface MovieDetailProps {
@@ -70,6 +71,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   useEffect(() => setRating(d.rating), [d.rating]);
   /** The trailer playing in the pop-up. It has a video id: a title without one searches YouTube in a new tab instead. */
   const [trailer, setTrailer] = useState<TrailerTarget | null>(null);
+  /** The episode whose story is open in the pop-up. */
+  const [story, setStory] = useState<EpisodeView | null>(null);
   useEffect(() => setTrailer(null), [d.id]);
 
   const action = titleAction(d, side);
@@ -321,6 +324,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
           onTrailer={setTrailer}
+          onStory={setStory}
         />
       ) : (
         (side === 'library' || d.files.length > 0) && (
@@ -335,6 +339,16 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
         )
       )}
       {trailer !== null && trailer.key !== null && <TrailerModal videoKey={trailer.key} name={trailer.name} onClose={() => setTrailer(null)} />}
+      {story !== null && (
+        <StoryModal
+          titleId={d.id}
+          season={story.season}
+          episode={story.episode}
+          name={`${d.title} ${episodeCode(story.season, story.episode)}${story.name === null ? '' : ` · ${story.name}`}`}
+          stored={story.has_story === true}
+          onClose={() => setStory(null)}
+        />
+      )}
     </article>
   );
 }

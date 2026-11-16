@@ -358,6 +358,7 @@ describe('movies config', () => {
         extraArgs: [],
       },
       fallbackModel: 'haiku',
+      storyModel: 'sonnet',
     })
   })
 
@@ -401,12 +402,15 @@ describe('movies config', () => {
         extraArgs: ['--avcodec-hw=none', '--no-video-title-show'],
       },
       fallbackModel: 'claude-haiku-4-5',
+      storyModel: 'sonnet',
     })
   })
 
   it('turns the Haiku fallback off with NOTESD_MOVIES_FALLBACK_MODEL=off', () => {
     expect(movies({ NOTESD_MOVIES_FALLBACK_MODEL: 'off' }).fallbackModel).toBeNull()
     expect(movies({ NOTESD_MOVIES_FALLBACK_MODEL: 'OFF' }).fallbackModel).toBeNull()
+    expect(movies({ NOTESD_MOVIES_STORY_MODEL: 'off' }).storyModel).toBeNull()
+    expect(movies({ NOTESD_MOVIES_STORY_MODEL: 'opus' }).storyModel).toBe('opus')
   })
 
   it('treats blank TMDB credentials as unset', () => {

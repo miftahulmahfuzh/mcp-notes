@@ -56,7 +56,7 @@ function fakeDeps(
     updateSource: vi.fn(),
     marks: async () => new Map(),
     freshTitles: async () => new Set<string>(),
-    dialogue: vi.fn(async () => ({ provider: 'VidNest Anime', cues: 3, lastCueS: 1435, body: '00:17\tFight\n12:03\tThe gas\n23:44\tI\'m gonna be the King of the Pirates!', fetchedAt: new Date('2026-11-16T05:00:00Z'), cached: true })),
+    dialogue: vi.fn(async () => ({ provider: 'VidNest Anime', cues: 3, lastCueS: 1435, body: '00:17\tFight\n12:03\tThe gas\n23:44\tI\'m gonna be the King of the Pirates!', fetchedAt: new Date('2026-11-16T05:00:00Z'), cached: true, story: null })),
     ...over,
   };
   return { deps, tmdb, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource, rememberAlias: deps.rememberAlias as typeof rememberAlias };

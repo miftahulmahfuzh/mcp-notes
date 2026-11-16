@@ -269,6 +269,8 @@ export const DEFAULT_VLC_HEALTH_MS = 30_000
 /** A non-zero NOTESD_VLC_HEALTH_MS below this is rejected: one PowerShell detail read takes ~0.5 s. */
 export const MIN_VLC_HEALTH_MS = 5_000
 export const DEFAULT_MOVIES_FALLBACK_MODEL = 'haiku'
+/** The model that writes an episode's story from its dialogue (src/movies/story.ts). */
+export const DEFAULT_MOVIES_STORY_MODEL = 'sonnet'
 
 /** TMDB credentials and hosts (src/movies/tmdb.ts). Secrets are never logged. */
 export interface TmdbConfig {
@@ -327,6 +329,12 @@ export interface MoviesConfig {
    * `off` gives null: no Haiku fallback (phase 3 then builds none; verify.sh pins it off).
    */
   fallbackModel: string | null
+  /**
+   * `NOTESD_MOVIES_STORY_MODEL`: Agent SDK alias or model id that writes an episode's story from its
+   * dialogue when the owner presses the book icon (src/movies/story.ts). `off` gives null: no story
+   * is written (stored ones are still shown; verify.sh pins it off).
+   */
+  storyModel?: string | null
 }
 
 /** Movies off, no roots, no TMDB credentials, no VLC ini. Tests build `Config` literals with it. */
@@ -348,6 +356,7 @@ export const DEFAULT_MOVIES_CONFIG: MoviesConfig = {
     extraArgs: [],
   },
   fallbackModel: DEFAULT_MOVIES_FALLBACK_MODEL,
+  storyModel: DEFAULT_MOVIES_STORY_MODEL,
 }
 
 export interface Config {
@@ -666,6 +675,10 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
       env.NOTESD_MOVIES_FALLBACK_MODEL?.trim().toLowerCase() === 'off'
         ? null
         : parseModel('NOTESD_MOVIES_FALLBACK_MODEL', env.NOTESD_MOVIES_FALLBACK_MODEL, DEFAULT_MOVIES_FALLBACK_MODEL),
+    storyModel:
+      env.NOTESD_MOVIES_STORY_MODEL?.trim().toLowerCase() === 'off'
+        ? null
+        : parseModel('NOTESD_MOVIES_STORY_MODEL', env.NOTESD_MOVIES_STORY_MODEL, DEFAULT_MOVIES_STORY_MODEL),
   }
 }
 

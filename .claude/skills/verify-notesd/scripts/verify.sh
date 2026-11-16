@@ -222,6 +222,8 @@ EOF
       NOTESD_MOVIES_SCAN_MS=3600000
       NOTESD_MOVIES_MIN_SECONDS=900
       NOTESD_MOVIES_FALLBACK_MODEL=off
+      # No story is ever written (a billed model call) on a throwaway daemon; a stored one still opens.
+      NOTESD_MOVIES_STORY_MODEL=off
       TMDB_API_READ_ACCESS_TOKEN=verify-fake-token
       TMDB_API_KEY=
       "TMDB_API_BASE=http://127.0.0.1:$tmdb_port/3"

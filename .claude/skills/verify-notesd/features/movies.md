@@ -20,7 +20,12 @@
   that marks all its episodes finished (`POST /api/movies/:id/episodes/watched`), an episode
   without a file has its own, and the notice offers an undo of exactly what changed. The caret
   before a season's name folds its episodes into a count, kept per title in the browser
-  (`npx vitest run web/src/components/movies/EpisodeList.test.tsx`). Proof:
+  (`npx vitest run web/src/components/movies/EpisodeList.test.tsx`). The book icon of an episode
+  opens its story, written once by Claude from the stored dialogue and kept
+  (`POST /api/movies/:id/story`): `npx vitest run tests/unit/movies/story.test.ts web/src/components/movies/StoryModal.test.tsx`,
+  `npm run test:int -- tests/integration/movies.api.int.test.ts` ("the story of an episode"). A
+  throwaway daemon never writes one (`NOTESD_MOVIES_STORY_MODEL=off` is pinned): seed a dialogue row
+  with a story through `$V exec` and open it on the page. Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`,
   `tests/unit/directStream/prober.test.ts` ("an asked pass").
 - VLC health (phase 9). Every `NOTESD_VLC_HEALTH_MS` (default 30 s; off at 0 or with no roots) each

@@ -3,6 +3,7 @@ import type { Db } from '../db/client.js';
 import {
   movieCompanies,
   movieCredits,
+  movieDialogues,
   movieEpisodeMarks,
   movieEpisodes,
   movieFiles,
@@ -116,6 +117,8 @@ export interface EpisodeView {
   state: WatchState;
   /** The owner's manual "finished" mark on this episode (it makes the state finished). */
   watched: boolean;
+  /** A story of this episode is stored (src/movies/story.ts): opening it costs nothing. Set by getTitle only. */
+  has_story: boolean;
   has_file: boolean;
   present_here: boolean;
   deleted: boolean;
@@ -208,6 +211,8 @@ export interface PlayView {
 }
 
 export interface TitleDetail extends TitleListItem {
+  /** A film: its story is stored (an episode's flag is on the episode). */
+  has_story: boolean;
   original_title: string;
   release_date: string | null;
   overview: string;
@@ -593,6 +598,7 @@ function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): E
     still_url: imageUrl(ctx, slot.row?.stillPath ?? null, IMAGE_SIZES.still),
     state: slot.markedAt !== null ? 'finished' : slotState(slot.files, slot.stream),
     watched: slot.markedAt !== null,
+    has_story: false,
     has_file: slot.files.length > 0,
     present_here: slot.files.some((f) => f.available),
     deleted: slot.files.length > 0 && slot.files.every((f) => f.deleted),
@@ -921,15 +927,22 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
   if (t === undefined) return null;
   const parts = (await loadParts(db, [t], ctx)).get(t.id) ?? emptyParts();
   const built = buildTitle(t, parts, ctx, IMAGE_SIZES.detail);
-  const [companies, credits, review, plays, streamSources] = await Promise.all([
+  const [companies, credits, review, plays, streamSources, stories] = await Promise.all([
     titleCompanies(db, t.id, ctx),
     titleCredits(db, t.id),
     reviewOf(db, t.reviewNoteId),
     history(db, { titleId: t.id, limit: DETAIL_PLAY_LIMIT }),
     streamSourceViews(db, t.id, ctx.host),
+    db
+      .select({ season: movieDialogues.season, episode: movieDialogues.episode })
+      .from(movieDialogues)
+      .where(and(eq(movieDialogues.titleId, t.id), isNotNull(movieDialogues.story))),
   ]);
+  const storied = new Set(stories.map((s) => `${s.season}x${s.episode}`));
+  for (const season of built.seasons) for (const e of season.episodes) e.has_story = storied.has(`${e.season}x${e.episode}`);
   return {
     ...built.item,
+    has_story: storied.has('0x0'),
     original_title: t.originalTitle,
     release_date: dateOnly(t.releaseDate),
     overview: t.overview,

@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { loadDialogue } from '../../src/directStream/dialogueStore.js';
 import { moviesApiRoutes } from '../../src/http/moviesApi.js';
+import { MovieStories } from '../../src/movies/story.js';
 import type { FileChangeResponse, MoviesStatusResponse, SyncResponse, TitleListResponse, TmdbSearchResponse, UnmatchedResponse } from '../../src/http/moviesApi.js';
 import type { TitleDetail } from '../../src/movies/read.js';
 import { buildMoviesService, type MoviesService } from '../../src/movies/service.js';
@@ -287,6 +289,76 @@ describe('status, sync and the changed stream', () => {
     expect(parseSse(text)).toContainEqual({ event: 'changed', data: { type: 'changed', reason: 'user', title_ids: ['movie-467905'], file_ids: [] } });
     await reader.cancel();
     await waitFor(() => here.events.listenerCount() === 0);
+  });
+});
+
+describe('the story of an episode', () => {
+  const storyApp = (written: string[], writer: boolean = true): Hono => {
+    const stories = new MovieStories({
+      repo: here.repo,
+      // No stream service in this test: only a stored dialogue can be read.
+      dialogue: (target) => loadDialogue(here.repo, null, target),
+      writer: writer
+        ? {
+            model: 'test-model',
+            write: async (input) => {
+              written.push(input.dialogue);
+              return `The story of ${input.title} ${input.code}.\n\nIt ends.`;
+            },
+          }
+        : null,
+      log: () => undefined,
+    });
+    const app = new Hono();
+    app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG }, movies: here, movieStories: stories }, { sseHeartbeatMs: 50 }));
+    return app;
+  };
+  const seedDialogue = () =>
+    here.repo.saveDialogue({ titleId: 'tv-247718', season: 1, episode: 2, lang: 'en', provider: 'VidNest Anime', cues: 2, lastCueS: 70, body: '00:05\tWho are you?\n01:10\tI am the fixer.', fetchedAt: new Date('2026-11-16T05:00:00Z') });
+
+  it('is written once from the stored dialogue on POST, kept, and marked on the episode; GET never writes', async () => {
+    const written: string[] = [];
+    const app = storyApp(written);
+    await seedDialogue();
+    const before = await getJson<{ story: unknown }>(app, '/api/movies/tv-247718/story?season=1&episode=2');
+    expect(before).toEqual({ status: 200, body: { story: null, cached: true } });
+    expect(written).toEqual([]);
+
+    const res = await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 });
+    expect(res.status).toBe(200);
+    const first = (await res.json()) as { story: { text: string; model: string; cues: number; provider: string }; cached: boolean };
+    expect(first).toMatchObject({ cached: false, story: { season: 1, episode: 2, text: 'The story of MobLand (2025) S01E02.\n\nIt ends.', model: 'test-model', cues: 2, provider: 'VidNest Anime' } });
+    expect(written).toEqual(['[00:05] Who are you?\n[01:10] I am the fixer.']);
+
+    const again = (await (await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 })).json()) as { cached: boolean; story: { text: string } };
+    expect(again).toMatchObject({ cached: true, story: { text: first.story.text } });
+    expect(written).toHaveLength(1);
+    expect((await getJson<{ story: { text: string } }>(app, '/api/movies/tv-247718/story?season=1&episode=2')).body.story.text).toBe(first.story.text);
+
+    const detail = await getJson<{ has_story: boolean; seasons: Array<{ episodes: Array<{ episode: number; has_story: boolean }> }> }>(app, '/api/movies/tv-247718');
+    expect(detail.body.has_story).toBe(false);
+    expect(detail.body.seasons[0]?.episodes.map((e) => [e.episode, e.has_story])).toEqual([[1, false], [2, true], [3, false]]);
+    // A subtitle read again keeps the story that was written.
+    await seedDialogue();
+    expect((await here.repo.dialogue('tv-247718', 1, 2))?.story).toBe(first.story.text);
+    expect(await here.repo.storySlots('tv-247718')).toEqual([{ season: 1, episode: 2 }]);
+  });
+
+  it('answers why there is none: no dialogue here, stories off, an unknown title, another origin, a bad slot', async () => {
+    const written: string[] = [];
+    const app = storyApp(written);
+    const none = await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 3 });
+    expect([none.status, ((await none.json()) as { error: string }).error]).toEqual([503, 'no_dialogue']);
+    expect((await post(app, '/api/movies/tv-999999/story', { season: 1, episode: 1 })).status).toBe(404);
+    expect((await post(app, '/api/movies/tv-247718/story', { season: 1, episode: 2 }, {})).status).toBe(403);
+    expect((await post(app, '/api/movies/tv-247718/story', { season: 1 })).status).toBe(400);
+    expect((await app.request('/api/movies/tv-247718/story?season=x')).status).toBe(400);
+    await seedDialogue();
+    const off = await post(storyApp(written, false), '/api/movies/tv-247718/story', { season: 1, episode: 2 });
+    expect([off.status, ((await off.json()) as { error: string }).error]).toEqual([503, 'story_off']);
+    // Without the stories service at all (a daemon older than it): 503.
+    expect((await post(appFor(here), '/api/movies/tv-247718/story', { season: 1, episode: 2 })).status).toBe(503);
+    expect(written).toEqual([]);
   });
 });
 

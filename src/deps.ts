@@ -7,6 +7,7 @@ import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import type { MoviePlayer } from './movies/player.js';
 import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
+import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamLive } from './movies/streamLive.js';
@@ -56,6 +57,12 @@ export interface AppDeps {
    * null; every /api/stream/* route then answers 503 direct_stream_off.
    */
   directStream?: DirectStreamService | null;
+  /**
+   * The stories of films and episodes (src/movies/story.ts): read from the store, written by
+   * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story
+   * routes answer 503.
+   */
+  movieStories?: MovieStories | null;
   /** The stream on screen in the player page (src/movies/streamLive.ts); null or absent with the movie library off. */
   streamLive?: StreamLive | null;
   /**

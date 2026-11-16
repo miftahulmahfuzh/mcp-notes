@@ -15,6 +15,16 @@
 /* The trailer pop-up: the same scrim and box, as wide as the page allows, with a 16:9 player. */
 .mm-panel.mm-trailer { width: min(1100px, 100%, calc((100vh - 110px) * 16 / 9)); overflow: hidden; }
 .mm-frame { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; }
+/* The story pop-up: a column of prose, scrolled inside the box. */
+.mm-panel.mm-story { width: min(760px, 100%); }
+.mm-story-text { padding: 22px 28px 26px; }
+.mm-story-text p { margin: 0 0 14px; font-size: 15.5px; line-height: 1.62; color: var(--text); }
+.mm-story-text p:first-child { font-size: 18px; line-height: 1.45; letter-spacing: -.005em; }
+.mm-story-text .mm-story-foot { margin: 22px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.mm-story-wait { display: flex; align-items: flex-start; gap: 12px; line-height: 1.5; }
+.mm-story-wait svg { flex: none; font-size: 16px; margin-top: 1px; }
+.mm-spin { animation: mm-spin 0.9s linear infinite; }
+@keyframes mm-spin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
   .mm-body { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 14px; }
   .mm-title { font-size: 20px; }
