@@ -20,7 +20,8 @@
   pointer shows the watched flag (a series: every season) and, on the Stream side, "not
   interested", one click each with an undo and no confirmation (`.mv-tile-acts` is at opacity 0
   until `.mv-cell` is hovered; hover a poster with Playwright on an `up --web --movies` run, click
-  `Mark <title> as watched`, read the title back as `finished`); each season has one button
+  `Mark <title> as watched`: the poster is gone from `all` at once and is under `finished`; read
+  the title back as `finished`); each season has one button
   that marks all its episodes finished (`POST /api/movies/:id/episodes/watched`), an episode
   without a file has its own, and the notice offers an undo of exactly what changed. The caret
   before a season's name folds its episodes into a count, kept per title in the browser

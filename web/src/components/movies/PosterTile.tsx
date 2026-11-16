@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { CheckCircle, EyeSlash } from '@phosphor-icons/react';
-import type { TitleListItem, TitleUserPatch } from '../../moviesApi';
-import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type LivePlace, type MoviesSide, type TileLive } from '../../lib/movies';
+import type { TitleListItem } from '../../moviesApi';
+import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type LivePlace, type MoviesSide, type TileLive, type TitleMark } from '../../lib/movies';
 import { moviesHref } from '../../lib/route';
 import { Poster } from './Poster';
 
@@ -15,7 +15,7 @@ export interface PosterTileProps {
   side?: MoviesSide;
   onOpen: (titleId: string) => void;
   /** Sets the title's watched flag or its "not interested" mark from the grid. Without it the poster has no buttons. */
-  onMark?: (title: TitleListItem, patch: TitleUserPatch) => void;
+  onMark?: (title: TitleListItem, patch: TitleMark) => void;
 }
 
 /**

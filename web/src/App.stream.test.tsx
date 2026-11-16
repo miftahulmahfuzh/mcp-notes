@@ -260,19 +260,29 @@ describe('App: the Stream side of /movies', () => {
     await waitFor(() => expect(tileIds()).toEqual(['M-FC55']));
   });
 
-  it('a poster carries watched and not interested: one click each, no confirmation, with an undo', async () => {
+  it('a poster carries watched and not interested: one click each, no confirmation, and the poster leaves the grid at the click', async () => {
     at('/movies?side=stream');
     render(<App />);
     await waitFor(() => expect(tileIds()).toEqual(['M-23T4', 'M-FC55']));
     const user = () => posts.filter((p) => p.url === '/api/movies/movie-550/user').map((p) => p.body);
+    // The list the daemon answers never changes in this test: the poster goes because of the click alone.
     fireEvent.click(screen.getByRole('button', { name: 'Mark Fight Club as watched' }));
+    expect(tileIds()).toEqual(['M-23T4']);
     await waitFor(() => expect(user()).toEqual([{ watched: true }]));
-    expect(await screen.findByText('Fight Club: watched')).toBeTruthy();
+    expect(await screen.findByText('Fight Club: watched, under finished')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^finished/ }));
+    expect(tileIds()).toEqual(['M-FC55']);
+    fireEvent.click(screen.getByRole('button', { name: /^all/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'undo' }));
+    expect(tileIds()).toEqual(['M-23T4', 'M-FC55']);
+    await waitFor(() => expect(user()).toEqual([{ watched: true }, { watched: false }]));
+
     fireEvent.click(screen.getByRole('button', { name: 'Not interested in Fight Club: take it off the Stream grid' }));
-    await waitFor(() => expect(user()).toEqual([{ watched: true }, { not_interested: true }]));
-    fireEvent.click(await screen.findByRole('button', { name: 'undo' }));
-    await waitFor(() => expect(user()).toEqual([{ watched: true }, { not_interested: true }, { not_interested: false }]));
+    expect(tileIds()).toEqual(['M-23T4']);
+    await waitFor(() => expect(user()).toEqual([{ watched: true }, { watched: false }, { not_interested: true }]));
+    fireEvent.click(screen.getByRole('button', { name: /^not interested/ }));
+    expect(tileIds()).toEqual(['M-FC55']);
     // The buttons are beside the poster's link, not inside it: a click never opens the title.
     expect(window.location.pathname).toBe('/movies');
   });

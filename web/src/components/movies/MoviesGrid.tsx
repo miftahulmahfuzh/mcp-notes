@@ -1,8 +1,8 @@
 import { FilmSlate, MagnifyingGlass, SquaresFour, Television } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import type { PlayerState, TitleListItem, TitleUserPatch } from '../../moviesApi';
-import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, tileLivePlace, type KindFilter, type MoviesFilter, type MoviesSide } from '../../lib/movies';
+import type { PlayerState, TitleListItem } from '../../moviesApi';
+import { KIND_FILTERS, matchesFilter, sortTitles, stateCounts, stateFilters, tileLive, tileLivePlace, type KindFilter, type MoviesFilter, type MoviesSide, type TitleMark } from '../../lib/movies';
 import { PosterTile } from './PosterTile';
 
 const KIND_ICON: Record<KindFilter, Icon> = { all: SquaresFour, movie: FilmSlate, tv: Television };
@@ -15,7 +15,7 @@ export interface MoviesGridProps {
   onFilter: (f: MoviesFilter) => void;
   onOpen: (titleId: string) => void;
   /** The poster's hover buttons: the watched flag and, on the Stream side, "not interested". */
-  onMark?: (title: TitleListItem, patch: TitleUserPatch) => void;
+  onMark?: (title: TitleListItem, patch: TitleMark) => void;
   /** `stream`: the Stream side's grid. A title there has no file by design, so nothing is "gone" and there is no gone pill. */
   side?: MoviesSide;
   /** Shown first in the filter row, before a separator: the page's Library / Stream switch. */

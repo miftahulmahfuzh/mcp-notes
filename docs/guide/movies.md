@@ -310,11 +310,14 @@ the share of episodes finished, and a title with no file left on any machine is 
 appears at its top right: one click sets or clears the title's watched flag, without opening the
 title and without a confirmation. On a series that is the whole series, every season. On the Stream
 side a crossed-eye icon beside it marks the title "not interested" (see
-[The Stream side](#the-stream-side)). The notice offers an undo, and a title marked watched by
-mistake is still there under `finished`.
+[The Stream side](#the-stream-side)). The poster leaves the grid at the click, without a reload: a
+title whose watched flag is set shows under `finished` (and `gone`) only, not under `all`, on both
+sides. A title finished by playing it stays under `all`. The notice offers an undo, and a title
+marked by mistake is still there under `finished`, where the same icon clears the flag.
 
 **Filters.** The state pills (`all`, `unwatched`, `in progress`, `finished`, `gone`) carry counts.
-`finished` includes `seen`; `gone` is about files, not state, so it overlaps the others. Three icons
+`finished` includes `seen`; `gone` is about files, not state, so it overlaps the others. `all` leaves
+out a title whose watched flag you set by hand. Three icons
 choose all kinds, films or series, and the text box filters on title and year. The filter survives
 opening a title and coming back.
 
@@ -443,8 +446,8 @@ titles it found.
 crossed-eye icon marks it "not interested".
 The title leaves the grid and shows only under the `not interested` filter, where the same icon
 puts it back; the notice offers an undo. Its place in the prober's catalog goes to another title.
-A title you finish by hand (the check icon) stays on the grid under `finished` and frees its place
-in the catalog too.
+A title you finish by hand (the check icon) shows under `finished` only and frees its place in the
+catalog too.
 
 A poster opens the title's page at `/movies/<id>?side=stream`, the same page as from the library
 (poster, facts, people, trailer, review), with one more line under the facts naming the stream

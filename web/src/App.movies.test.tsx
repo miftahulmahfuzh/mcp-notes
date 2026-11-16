@@ -238,7 +238,11 @@ describe('App: Movies', () => {
     expect(within(btn.closest('.mv-cell') as HTMLElement).queryByRole('button', { name: /^Not interested/ })).toBeNull();
     fireEvent.click(btn);
     await waitFor(() => expect(postsTo('/api/movies/tv-247718/user')).toEqual([{ watched: true }]));
-    expect(await screen.findByText('MobLand: watched, every season')).toBeTruthy();
+    // It leaves the grid at the click and shows under `finished`.
+    expect(screen.queryByRole('button', { name: 'MobLand: watched (click to unmark)' })).toBeNull();
+    expect(await screen.findByText('MobLand: watched, every season, under finished')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^finished/ }));
+    expect(screen.getByRole('button', { name: 'MobLand: watched (click to unmark)' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'undo' }));
     await waitFor(() => expect(postsTo('/api/movies/tv-247718/user')).toEqual([{ watched: true }, { watched: false }]));
   });

@@ -177,7 +177,8 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
   if (side === 'stream' && (f.state === 'not_interested') !== t.not_interested) return false;
   switch (f.state) {
     case 'all':
-      return true;
+      // A title marked watched by hand leaves the grid: it shows under `finished` (and `gone`).
+      return !t.watched;
     case 'unwatched':
       return t.state === 'unwatched';
     case 'in_progress':
@@ -189,6 +190,33 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
     case 'not_interested':
       return side === 'stream';
   }
+}
+
+/** A poster's hover buttons set one of these. */
+export type TitleMark = { watched: boolean } | { not_interested: boolean };
+
+/**
+ * The grid's titles with the marks just clicked laid over them, so a poster leaves the grid at
+ * the click and not when the next read of the list arrives.
+ */
+export function withMarks(titles: TitleListItem[], marks: ReadonlyMap<string, TitleMark>): TitleListItem[] {
+  if (marks.size === 0) return titles;
+  return titles.map((t) => {
+    const m = marks.get(t.id);
+    if (m === undefined) return t;
+    return 'watched' in m ? { ...t, watched: m.watched, ...(m.watched ? { state: 'finished' as const } : {}) } : { ...t, ...m };
+  });
+}
+
+/** The marks the lists have not caught up with yet: one that a list now shows is dropped. */
+export function pendingMarks(marks: ReadonlyMap<string, TitleMark>, lists: readonly (readonly TitleListItem[] | null | undefined)[]): Map<string, TitleMark> {
+  const out = new Map<string, TitleMark>();
+  for (const [id, m] of marks) {
+    const seen = lists.flatMap((l) => l ?? []).filter((t) => t.id === id);
+    const caughtUp = seen.length > 0 && seen.every((t) => ('watched' in m ? t.watched === m.watched : t.not_interested === m.not_interested));
+    if (!caughtUp) out.set(id, m);
+  }
+  return out;
 }
 
 /** How many titles each state pill would show under the current kind and text filter. */
