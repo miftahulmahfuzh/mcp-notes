@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CS
 import {
   ArrowArcLeft,
   ArrowArcRight,
+  ArrowDown,
   ArrowsIn,
   ArrowsOut,
   Bug,
@@ -12,6 +13,7 @@ import {
   GearSix,
   HardDrive,
   IconContext,
+  Magnet,
   Pause,
   Play,
   Shuffle,
@@ -19,9 +21,10 @@ import {
   SkipForward,
   SpeakerHigh,
   SpeakerSlash,
+  UsersThree,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { INITIAL_STATE, SUBTITLE_DELAY_STEP_MS, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
+import { INITIAL_STATE, NO_OTHER_SOURCE, SUBTITLE_DELAY_STEP_MS, StreamController, type BugReportState, type ControllerDeps, type StreamState, type TorrentView } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
 import type { CachedInfo, EpisodeNumber, TimeRange } from './session';
@@ -107,6 +110,53 @@ function CachedMark({ cached }: { cached: CachedInfo }) {
     </span>
   );
 }
+
+/** A download speed the daemon gives in kilobits per second, the way a torrent client writes it: `850 kB/s`, `3.4 MB/s`. */
+export function formatSpeed(kbps: number): string {
+  const bytesPerS = (Math.max(0, kbps) * 1000) / 8;
+  return bytesPerS >= 1_000_000 ? `${(bytesPerS / 1_000_000).toFixed(1)} MB/s` : `${Math.round(bytesPerS / 1000)} kB/s`;
+}
+
+/** The torrent mark's tooltip and accessible name. */
+export function torrentLabel(t: TorrentView): string {
+  if (t.state === 'ready') return `Playing a torrent download from this machine's disk (${t.name})`;
+  if (t.state === 'failed') return `The torrent download stopped (${t.name})`;
+  if (t.peers === null || t.downKbps === null) return `Playing from a torrent (${t.name}), finding peers`;
+  const share = t.progress === null ? '' : `, ${Math.round(t.progress * 100)}% on disk`;
+  return `Playing from a torrent (${t.name}): ${t.peers} ${t.peers === 1 ? 'peer' : 'peers'}, ${formatSpeed(t.downKbps)}${share}`;
+}
+
+/** Icons and two numbers, no words: a magnet with the peers and the speed while it downloads, a drive once the whole file is on disk. */
+function TorrentMark({ torrent }: { torrent: TorrentView }) {
+  const label = torrentLabel(torrent);
+  return (
+    <span className="st-torrent" role="img" aria-label={label} title={label} data-state={torrent.state}>
+      {torrent.state === 'ready' ? <HardDrive /> : <Magnet />}
+      {torrent.state === 'downloading' && torrent.peers !== null && (
+        <span className="st-torrent-stat">
+          <UsersThree />
+          {torrent.peers}
+        </span>
+      )}
+      {torrent.state === 'downloading' && torrent.downKbps !== null && (
+        <span className="st-torrent-stat">
+          <ArrowDown />
+          {formatSpeed(torrent.downKbps)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** The line over the picture about the last ask for another source; a torrent session speaks of torrents. Null: nothing to say. */
+export function sourceLine(changing: boolean, notice: string | null, torrent: boolean): string | null {
+  if (changing) return torrent ? 'Looking for another torrent…' : 'Looking for another source…';
+  if (notice === null) return null;
+  if (notice === NO_OTHER_SOURCE) return torrent ? 'No other torrent' : NO_OTHER_SOURCE;
+  return torrent ? `Torrent: ${notice}` : `Source: ${notice}`;
+}
+
+export const FETCHING_LABEL = 'Fetching this part from peers';
 
 export function qualityLabel(q: Quality): string {
   if (q.height !== null) return `${q.height}p`;
@@ -349,6 +399,14 @@ function StageOverlay({ state, onReport }: { state: StreamState; onReport?: () =
       </div>
     );
   }
+  if (state.stage === 'ready' && state.torrent?.fetching === true) {
+    return (
+      <div className="st-center st-fetching" role="status" aria-label={FETCHING_LABEL}>
+        <CircleNotch className="st-spin" />
+        <span>{FETCHING_LABEL}</span>
+      </div>
+    );
+  }
   if (state.stage === 'error') {
     const code = state.error ?? 'unknown';
     return (
@@ -489,6 +547,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
   // A series' session names a neighbour on at least one side; a film's never does.
   const series = state.prevEpisode !== null || state.nextEpisode !== null;
   const fill = view.duration > 0 ? (Math.min(view.time, view.duration) / view.duration) * 100 : 0;
+  const sourceText = sourceLine(state.changingSource, state.sourceNotice, state.torrent !== null);
 
   return (
     <IconContext.Provider value={ICONS}>
@@ -497,9 +556,10 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <div className="st-top">
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
-          {(state.changingSource || state.sourceNotice !== null) && (
+          {state.torrent !== null && <TorrentMark torrent={state.torrent} />}
+          {sourceText !== null && (
             <span className="st-notice" role="status">
-              {state.changingSource ? 'Looking for another source…' : state.sourceNotice === 'No other source' ? state.sourceNotice : `Source: ${state.sourceNotice}`}
+              {sourceText}
             </span>
           )}
           {delayShown && (
@@ -569,7 +629,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
             {view.muted ? <SpeakerSlash /> : <SpeakerHigh />}
           </IconButton>
           {state.cached === null && !muted && (
-            <IconButton label="Another source (S)" disabled={state.changingSource} onClick={() => controller?.anotherSource()}>
+            <IconButton label={state.torrent !== null ? 'Another torrent (S)' : 'Another source (S)'} disabled={state.changingSource} onClick={() => controller?.anotherSource()}>
               {state.changingSource ? <CircleNotch className="st-spin" /> : <Shuffle />}
             </IconButton>
           )}

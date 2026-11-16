@@ -66,6 +66,14 @@
   idle, TMDB and resolver), `npm run test:int -- tests/integration/streamProber.int.test.ts` (the SQL),
   and `GET /api/stream/prober` on `verify.sh up --direct-stream --prober` (candidates listed from the
   fake TMDB, the pass stopped at `not_idle`, nothing probed).
+- The player page on a torrent (torrent-stream-source phase 4): beside the title a magnet with the
+  peers and the download speed (`GET /api/stream/torrent/<hash>` every 2 s while it downloads and the
+  tab shows; a drive once the file is on disk), the timeline's grey bar fed by
+  `GET /api/stream/torrent/<hash>/map`, a spinner and `Fetching this part from peers` for a seek past
+  what is on disk, no automatic move to another source (its stalls are only logged), the shuffle
+  button (`Another torrent (S)`) moving to the next torrent and naming it, no pause cache;
+  `window.notesdStream.torrent`. Logic proven by `npx vitest run web/src/stream`; in a real browser by
+  `torrent-player.steps.mjs` and `torrent-live.steps.mjs` (below).
 
 ## How to get to it (user POV)
 Play on a stream (phase 9) or `/direct-stream <title>` (phase 7) opens the player page full screen in
@@ -114,6 +122,22 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   disk, the cache mark shows) and `CACHE PLAY PASS` (play goes on from disk, no pass-through request),
   with screenshots `streaming-bar` and `cached-bar`. The queue order, the map and the three-day clearing
   are in `tests/integration/directStream.cache.int.test.ts`.
+- The player on a torrent, with the session and the torrent routes faked by Playwright (the real page
+  build; a 300 s H.264/AAC MP4 made once with ffmpeg under `~/.local/state/notesd-verify/.torrent-film`,
+  40% of it "on disk" until the steps release the rest): `$V up --web`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-player.steps.mjs` (about 90 s). The
+  transcript has `TORRENT STATUS PASS` (7 peers and 2.0 MB/s beside the title, the grey bar at 40%),
+  `HIDDEN PASS` (a hidden tab asks nothing and asks again when it shows), `TORRENT WAIT PASS` (a seek to
+  200 s shows `Fetching this part from peers`), `NO AUTO MOVE PASS` (three stalls logged, no
+  `POST .../source`), `TORRENT READY PASS` (released: it plays on past 200 s, the bar reaches 100%, the
+  drive mark shows, no more asks) and `SHUFFLE PASS` (S moves to the next torrent and the line names it),
+  with screenshots `torrent-status`, `torrent-fetching` and `torrent-ready`.
+- The player on a real torrent session (phase 1's loopback fixture torrent, phase 3's fake index):
+  `$V up --web --direct-stream --torrent`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-live.steps.mjs`. The transcript has
+  `TORRENT LIVE PASS` (the page read the daemon's peers and speed into the mark and
+  `window.notesdStream.torrent`) and `TORRENT DISK PASS` (the download completes, the bar covers the
+  film, the page stops asking).
 - A film that keeps stalling moves to another provider (same fixture and `up --web --direct-stream` as the
   DASH expiry below, on its own run: it counts the resolves in `calls.jsonl`):
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/source-switch.steps.mjs`

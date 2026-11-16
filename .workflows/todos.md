@@ -90,15 +90,26 @@
     - 20 s open timeout vs TCP-only fixture seeder → seeder speaks uTP, plan's 20 s kept (rung 2: J1-J6 must pass; pre-warming inside this phase's journey would leave phases 4-9 to hit the same wall)
     - DEFAULT_FFMPEG_BIN placement → above the torrent block (rung 1: invariant 1, the tree builds)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1 and 2 in this set; the coordinator's integrator reconciles them.
-- [ ] **P1-NOTES-A130** Phase 4: The player page on a torrent
+- [x] **P1-NOTES-A130** Phase 4: The player page on a torrent
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `web/src/stream/session.ts` (parsing `torrent`), `StreamApp.tsx`, `controller.ts`, `stream.css`: the torrent mark and status line (peers, speed), the loaded bar fed by `/map`, the wait for a part not on disk, the automatic stall move off for a torrent session, the shuffle button's messages, `window.notesdStream.torrent`; `scripts/stream/torrent-player.steps.mjs` and `torrent-live.steps.mjs`. Exit criteria: `npm run typecheck` and `npm test` pass; J2's transcript holds all six PASS lines; J1's holds `TORRENT LIVE PASS` and `TORRENT DISK PASS` on a `--torrent` run; the neighbor journeys still pass.
-  - **Status**: open
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 4 of 9)
   - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.7
   - **Depends on**: P1-NOTES-A129
   - **Plan**: `.workflows/plan/P1-NOTES-A130.md`
+  - **Completed**: 2026-11-16 23:20
+  - **Method**: /implement
+  - **Files**: web/src/stream/session.ts, web/src/stream/controller.ts, web/src/stream/StreamApp.tsx, web/src/stream/stream.css, web/src/stream/controller.test.tsx, web/src/stream/StreamApp.test.tsx, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/stream/torrent-player.steps.mjs, .claude/skills/verify-notesd/scripts/stream/torrent-live.steps.mjs, .workflows/todos.md
+  - **Proof**: verified-first-pass — 2 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-230947-1955504/evidence (J2), /home/miftah/.local/state/notesd-verify/1116-231419-1975896/evidence (J1)
+  - **Drift**:
+    - No code drift: every anchor in phase-4.md matched the tree after phase 3.
+    - First full `npm test` had one failure in web/src/App.movies.test.tsx (trailer dialog), a file this phase does not touch; it passed alone and the full suite passed 3549/3549 on the re-run (machine under load from peer phases).
+    - The worktree had no node_modules; `npm ci` was run locally (no package.json or lockfile change).
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p4 / phase-4-torrent-stream-source → proceeded here (rung 6: the swarm cuts one worktree per phase)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-3 in this set; the coordinator's integrator reconciles them.
 - [ ] **P1-NOTES-A131** Phase 5: The remux for files Chrome cannot play
   - **Difficulty**: HARD
   - **Type**: Feature
