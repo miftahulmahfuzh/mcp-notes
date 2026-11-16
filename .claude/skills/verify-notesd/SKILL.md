@@ -25,6 +25,7 @@ $V up --embed         # keep OPENROUTER_API_KEY: real embeddings, billed (defaul
 $V up --adversary     # Seer reviewer ON against a throwaway Seer DB built from ${SEER_DIR:-~/seer}/db/migrations
 $V up --movies        # Movies ON against a generated video library, a fake TMDB and a fake vlc.exe/curl.exe
 $V up --direct-stream # Direct streaming ON (implies --movies) against a fake resolver and a fixture stream host
+$V up --discovery     # --direct-stream plus the fake TMDB's discovery titles, people, studios and services
 $V up --direct-stream --prober  # the stream prober on (a pass every 5 s) over the fake resolver; --prober=off: setting unset
 ```
 

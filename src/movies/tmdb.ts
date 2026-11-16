@@ -36,6 +36,8 @@ export interface TmdbSearchHit {
   overview: string;
   posterPath: string | null;
   popularity: number;
+  /** TMDB's `original_language` ("es"); absent or null when the list did not carry it. */
+  originalLanguage?: string | null;
 }
 
 export interface TmdbPersonHit {
@@ -61,6 +63,8 @@ export interface TmdbPersonCredit {
   department: string | null;
   /** Series: episodes this person is credited on. */
   episodeCount: number | null;
+  /** TMDB's `original_language` ("id"); absent or null when the credit did not carry it. */
+  originalLanguage?: string | null;
 }
 
 export interface TmdbClient {
@@ -118,6 +122,47 @@ export interface TmdbTitleNames {
   alternativeTitles(kind: TitleKind, tmdbId: number): Promise<string[]>;
   /** TMDB's `original_language` of a title ("ko"), in one request; null when TMDB does not know the title or its language. */
   originalLanguage(kind: TitleKind, tmdbId: number): Promise<string | null>;
+}
+
+/** A production company or a streaming service as TMDB names it. */
+export interface TmdbNamedHit {
+  id: number;
+  name: string;
+  /** A company's origin country ("US"); null for a service, or when TMDB has none. */
+  country: string | null;
+}
+
+/** What `TmdbDiscovery.discover` filters on. Every field is optional; ids come from the lookups below. */
+export interface TmdbDiscoverFilter {
+  /** Released (a film) or first aired (a series) on or after this day, `YYYY-MM-DD`. */
+  dateFrom?: string | null;
+  /** Released or first aired on or before this day, `YYYY-MM-DD`. */
+  dateTo?: string | null;
+  /** TMDB's language code of the original language ("es", "ko"). */
+  originalLanguage?: string | null;
+  /** A production company's TMDB id. */
+  companyId?: number | null;
+  /** A streaming service's TMDB watch-provider id; needs `watchRegion`. */
+  providerId?: number | null;
+  /** The country the service's catalogue is read for ("US"). */
+  watchRegion?: string | null;
+  /** `newest`: release date, newest first; `popular` (default): TMDB's popularity. */
+  sort?: 'newest' | 'popular';
+  page?: number;
+}
+
+/**
+ * Discovery for direct_stream_discover (src/mcp/directStreamTools.ts): titles by date, language,
+ * company and streaming service, and the name lookups behind the two ids. Kept apart from
+ * TmdbClient for the same reason as TmdbCatalog; createTmdbClient returns it too.
+ */
+export interface TmdbDiscovery {
+  /** One page (20 titles) of `kind` that pass every filter given. */
+  discover(kind: TitleKind, filter: TmdbDiscoverFilter): Promise<TmdbSearchHit[]>;
+  /** Production companies matching `query`, in TMDB's order. '' answers [] without a request. */
+  searchCompany(query: string): Promise<TmdbNamedHit[]>;
+  /** Every streaming service TMDB lists for `kind` in `region` ("US"), most prominent first. */
+  watchProviders(kind: TitleKind, region: string): Promise<TmdbNamedHit[]>;
 }
 
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
@@ -251,6 +296,7 @@ const MovieSearchSchema = z.object({
         overview: text,
         poster_path: text,
         popularity: num,
+        original_language: text,
       }),
     )
     .nullish(),
@@ -267,9 +313,18 @@ const TvSearchSchema = z.object({
         overview: text,
         poster_path: text,
         popularity: num,
+        original_language: text,
       }),
     )
     .nullish(),
+});
+
+const CompanySearchSchema = z.object({
+  results: z.array(z.object({ id: intId, name: z.string(), origin_country: text })).nullish(),
+});
+
+const WatchProvidersSchema = z.object({
+  results: z.array(z.object({ provider_id: intId, provider_name: z.string(), display_priority: num })).nullish(),
 });
 
 const PersonSearchSchema = z.object({
@@ -301,6 +356,7 @@ const PersonCreditSchema = z.object({
   poster_path: text,
   popularity: num,
   episode_count: num,
+  original_language: text,
 });
 const CombinedCreditsSchema = z.object({
   cast: z.array(PersonCreditSchema).nullish(),
@@ -499,6 +555,7 @@ function searchHit(
     overview: string | null | undefined;
     poster: string | null | undefined;
     popularity: number | null | undefined;
+    language?: string | null | undefined;
   },
 ): TmdbSearchHit {
   const releaseDate = orNull(r.date);
@@ -512,6 +569,7 @@ function searchHit(
     overview: r.overview ?? '',
     posterPath: orNull(r.poster),
     popularity: r.popularity ?? 0,
+    originalLanguage: orNull(r.language),
   };
 }
 
@@ -525,6 +583,7 @@ function movieHits(raw: z.infer<typeof MovieSearchSchema>): TmdbSearchHit[] {
       overview: r.overview,
       poster: r.poster_path,
       popularity: r.popularity,
+      language: r.original_language,
     }),
   );
 }
@@ -539,6 +598,7 @@ function tvHits(raw: z.infer<typeof TvSearchSchema>): TmdbSearchHit[] {
       overview: r.overview,
       poster: r.poster_path,
       popularity: r.popularity,
+      language: r.original_language,
     }),
   );
 }
@@ -567,6 +627,7 @@ function personCredit(c: PersonCreditJson, credit: 'cast' | 'crew'): TmdbPersonC
     job: credit === 'crew' ? orNull(c.job) : null,
     department: credit === 'crew' ? orNull(c.department) : null,
     episodeCount: positiveOrNull(c.episode_count),
+    originalLanguage: orNull(c.original_language),
   };
 }
 
@@ -576,7 +637,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient & TmdbCatalog & TmdbTitleNames {
+): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -850,6 +911,37 @@ export function createTmdbClient(
     async originalLanguage(kind, tmdbId) {
       const json = await getOrNull(`/${kind}/${tmdbId}`, {});
       return json === null ? null : orNull(decode(OriginalLanguageSchema, json, `${kind} ${tmdbId}`).original_language);
+    },
+
+    async discover(kind, filter) {
+      // A film's date is its first release anywhere; a series' is its first air date.
+      const date = kind === 'movie' ? 'primary_release_date' : 'first_air_date';
+      const json = await get(`/discover/${kind}`, {
+        [`${date}.gte`]: filter.dateFrom,
+        [`${date}.lte`]: filter.dateTo,
+        with_original_language: filter.originalLanguage,
+        with_companies: filter.companyId,
+        with_watch_providers: filter.providerId,
+        watch_region: filter.providerId === null || filter.providerId === undefined ? undefined : filter.watchRegion,
+        sort_by: filter.sort === 'newest' ? `${date}.desc` : 'popularity.desc',
+        include_adult: false,
+        page: filter.page ?? 1,
+      });
+      return hitsOf(kind, json, `${kind} discover`);
+    },
+
+    async searchCompany(query) {
+      const q = query.trim();
+      if (q === '') return [];
+      const raw = decode(CompanySearchSchema, await get('/search/company', { query: q }), 'company search');
+      return (raw.results ?? []).map((r) => ({ id: r.id, name: r.name, country: orNull(r.origin_country) }));
+    },
+
+    async watchProviders(kind, region) {
+      const raw = decode(WatchProvidersSchema, await get(`/watch/providers/${kind}`, { watch_region: region }), `${kind} watch providers`);
+      return [...(raw.results ?? [])]
+        .sort((a, b) => (a.display_priority ?? Number.MAX_SAFE_INTEGER) - (b.display_priority ?? Number.MAX_SAFE_INTEGER))
+        .map((r) => ({ id: r.provider_id, name: r.provider_name, country: null }));
     },
   };
 }

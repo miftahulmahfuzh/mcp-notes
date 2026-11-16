@@ -16,6 +16,8 @@ function fakeMovies(over: Partial<MovieToolDeps> = {}): MovieToolDeps {
     tmdb: null,
     setTitleUser: vi.fn(async () => {}),
     setFileWatched: vi.fn(async () => {}),
+    setSeasonWatched: vi.fn(async () => ({ episodes: 0, changed: 0 })),
+    ensureTitle: vi.fn(async () => null),
     saveReview: vi.fn(async () => null),
     fetchPicture: vi.fn(async () => ({ data: Buffer.from('jpg'), mime: 'image/jpeg' })),
     continueTitle: vi.fn(async (): Promise<ContinueResult> => ({ action: 'no_match', query: null })),
@@ -116,9 +118,12 @@ describe('movie MCP tools without a database', () => {
     const cases: Array<[Record<string, unknown>, RegExp]> = [
       [{ title: 'mobland', file_id: 3, watched: true }, /^invalid_input: pass exactly one of title/],
       [{ watched: true }, /^invalid_input: pass exactly one of title/],
-      [{ file_id: 3, rating: 4 }, /^invalid_input: rating and review belong to a title/],
+      [{ file_id: 3, rating: 4 }, /^invalid_input: rating, review, not_interested and season belong to a title/],
       [{ file_id: 3 }, /^invalid_input: file_id needs watched/],
       [{ title: 'mobland' }, /^invalid_input: nothing to change/],
+      [{ title: 'mobland', season: 1 }, /^invalid_input: season needs watched/],
+      [{ file_id: 3, watched: true, season: 1 }, /^invalid_input: rating, review, not_interested and season belong to a title/],
+      [{ file_id: 3, watched: true, not_interested: true }, /^invalid_input: rating, review, not_interested and season belong to a title/],
     ];
     for (const [args, expected] of cases) {
       const r = await c.call('movies_mark', args);
@@ -129,6 +134,7 @@ describe('movie MCP tools without a database', () => {
     expect(outOfRange.isError).toBe(true);
     expect(movies.setTitleUser).not.toHaveBeenCalled();
     expect(movies.setFileWatched).not.toHaveBeenCalled();
+    expect(movies.setSeasonWatched).not.toHaveBeenCalled();
     expect(movies.saveReview).not.toHaveBeenCalled();
     await c.close();
   });

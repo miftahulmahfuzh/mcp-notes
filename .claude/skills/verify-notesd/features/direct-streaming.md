@@ -100,6 +100,30 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Live: `/direct-stream saltburn` in Claude Code against the installed daemon. It resolves
   through the streaming Chrome and plays full screen with sound: the owner's to run.
 
+## Discovery, absolute episodes and season marks
+- `direct_stream_discover` (MCP, chat bar, the `/direct-stream` skill): TMDB titles by kind, year,
+  original language, person and role, production company or streaming service, newest or most
+  popular first, each marked against the library (`in_library`, `state`, `seen`, `started`,
+  `not_interested`) and this host's verified sources (`stream.verified`). Names resolve to TMDB
+  ids in the tool; the others a name fits come back as `other_people`, `other_companies`,
+  `other_services`. It starts nothing. `direct_stream_play` takes `absolute_episode` ("One Piece
+  episode 730") and answers `picked: "absolute"`, `episode_unclear`, `no_such_episode` or
+  `not_aired`. `movies_mark` takes `season` (that season's episodes finished or not),
+  `not_interested`, and a title key the library does not hold, which is stored from TMDB first.
+- Proven by `npx vitest run tests/unit/mcp.directStreamTools.test.ts tests/unit/directStream/discover.test.ts tests/unit/directStream/episodePick.test.ts tests/unit/movies/tmdb.lists.test.ts tests/unit/mcp.movieTools.test.ts`
+  (fake TMDB client, fake service) and `npm run test:int -- tests/integration/movies.mcp.int.test.ts`
+  (the season marks, not interested, a title stored from its key).
+- Throwaway daemon: `$V up --discovery` (implies `--direct-stream`; the fake TMDB also loads
+  `scripts/movies/tmdb-discovery.json`), then
+  `.claude/skills/verify-notesd/scripts/direct-stream/discovery.sh RUN`. It makes the tool calls
+  the skill names for each of the ten requests of
+  `docs/plans/2026-11-16-direct-stream-discovery-brief.md`, picks from the answers, and ends with
+  `discovery: PASS (10 requests)`; every call's output is in the evidence folder. Plays go to the
+  fake resolver. Add a title to `tmdb-discovery.json`, not to `tmdb.json`: the prober checks and
+  the guide pictures count the titles of `tmdb.json`.
+- Live, read-only (plays nothing): `direct_stream_discover` against the installed daemon reads the
+  real TMDB. A real play is the owner's to run.
+
 ## Original audio, and the stream on screen
 - A dub is never a source: the resolver reads what each stream speaks (manifest audio tracks, else
   the first segment's MPEG-TS programme table or MP4 track header), skips a stream in another

@@ -5,7 +5,7 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--prober]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--discovery] [--prober]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
@@ -15,6 +15,9 @@
 #                                       --direct-stream turns direct streaming on (implies --movies) against a
 #                                       fake resolver and a fixture stream host (tests/fixtures/direct-stream/);
 #                                       without it NOTESD_DIRECT_STREAM=off is pinned
+#                                       --discovery (implies --direct-stream) adds scripts/movies/tmdb-discovery.json
+#                                       to the fake TMDB: people, studios, streaming services and the titles
+#                                       direct_stream_discover and absolute episode numbers are proven on
 #                                       --prober (needs --direct-stream) turns the stream prober on, a pass every
 #                                       5 s; the fake powershell.exe reports $MOVIES/idle_ms (0: someone is
 #                                       typing). --prober=off: the prober setting unset. Without either the prober
@@ -81,7 +84,7 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 prober=""
+  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 discovery=0 prober=""
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
@@ -90,6 +93,7 @@ cmd_up() {
       --adversary) adversary=1 ;;
       --movies) movies=1 ;;
       --direct-stream) direct=1; movies=1 ;;
+      --discovery) discovery=1; direct=1; movies=1 ;;
       --prober) prober=on ;;
       --prober=on|--prober=off) prober="${a#--prober=}" ;;
       *) die "up: unknown flag $a" ;;
@@ -169,7 +173,10 @@ idle=\$(cat "$dir/movies/idle_ms" 2>/dev/null || echo 0)
 echo "{\"found\":false,\"idle_ms\":\$idle}"
 EOF
     chmod +x "$dir/movies/bin/vlc.exe" "$dir/movies/bin/curl.exe" "$dir/movies/bin/powershell.exe"
-    setsid node "$HERE/movies/fake-tmdb.mjs" --data "$HERE/movies/tmdb.json" \
+    # --discovery: the fake TMDB also knows the titles, people, studios and services of tmdb-discovery.json.
+    local tmdb_extra=()
+    if [ "$discovery" = 1 ]; then tmdb_extra=(--extra "$HERE/movies/tmdb-discovery.json"); fi
+    setsid node "$HERE/movies/fake-tmdb.mjs" --data "$HERE/movies/tmdb.json" "${tmdb_extra[@]}" \
       --port-file "$dir/movies/tmdb.port" --log "$dir/movies/tmdb.log" </dev/null >"$dir/movies/tmdb.out" 2>&1 &
     echo $! >"$dir/tmdb.pid"
     for _ in $(seq 1 40); do [ -s "$dir/movies/tmdb.port" ] && break; sleep 0.25; done

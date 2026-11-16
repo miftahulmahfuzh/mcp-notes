@@ -830,12 +830,27 @@ Differences between the two places:
 | `/n I watched Oldboy, four stars, the middle drags` | `movies_mark {"title":"Oldboy","watched":true,"rating":4,"review":"..."}` | Both |
 | `/n mark M-OHSV watched` | `movies_mark {"title":"M-OHSV","watched":true}` (that episode's files) | Both |
 | `/n mark that file watched` | `movies_mark {"file_id":9,"watched":true}` with an id from `movies_get` `files[].id` | Both |
+| `/n I watched season 1 of MobLand last year` | `movies_mark {"title":"mobland","season":1,"watched":true}`: every episode of that season is finished, the series is not | Both |
+| `/n I did not finish season 1 of MobLand after all` | `movies_mark {"title":"mobland","season":1,"watched":false}` | Both |
+| `/n I am not interested in M-154P` | `movies_mark {"title":"M-154P","not_interested":true}` (`false` takes it back) | Both |
+| `I watched House of the Dragon season 1 last year. start season 2` | `direct_stream_find`, then `movies_mark {"title":"tv-94997","season":1,"watched":true}`, then `direct_stream_play` with season 2, episode 1 | Both |
 | `/n find my review that mentions Glen Powell` | `search {"query":"Glen Powell"}` (the review is a note) | Both |
 | `/n who is the woman on the poster of M-CNJ0?` | `movies_pictures {"title":"M-CNJ0"}`: the poster and backdrop come back as images Claude looks at (an episode's id adds its still), then `movies_get` for the cast | Both |
 
 - Pass exactly one of `title` or `file_id`, and at least one change.
-- Rating and review belong to a title. An episode's movie id and a `file_id` take `watched` only;
-  anything else answers `invalid_input`.
+- Rating, review and "not interested" belong to a title. An episode's movie id and a `file_id`
+  take `watched` only; anything else answers `invalid_input`.
+- `season` with `watched` is the page's "season finished" button: it marks that season's episodes
+  (the ones TMDB lists and the ones a file names), never the series, and the answer's `season`
+  says how many episodes there are, how many the call changed and how many are finished now.
+  `watched: false` takes the marks back; an episode a play or a file finished stays finished. A
+  season the series does not have answers `not_found`, a film `invalid_input`.
+- A title the library does not hold yet (never played, no file) is marked by its title key
+  (`tv-94997`, the `title_key` of `direct_stream_find` and `direct_stream_discover`): it is read
+  from TMDB and stored first, as its first stream would. Such a title is not in the Library grid.
+  Words find only stored titles.
+- "Not interested" is the mark of [the Stream side](#the-stream-side): the title leaves the Stream
+  grid and is not proposed again.
 - A new review replaces the earlier one in the same note; the earlier text is kept as a revision
   of that note.
 - `watched: false` clears the flag and nothing else: a film whose last play reached 90 %, or whose
@@ -866,10 +881,11 @@ at all.
 - **History filters:** by machine, or by one file.
 - **Edits:** delete a title, a file row or a play; change a title's metadata or refresh it from
   TMDB; rate or review one episode.
-- **Titles you do not have:** there is no TMDB title search and no wish list. `movies_person` is
-  the only way to see films outside the library, and "films like this" is a web search checked
-  against `movies_list`. Finding such a film on pahe.ink, or finding and playing it on idlix or
-  lk21, is in [streaming.md](streaming.md).
+- **Titles you do not have:** there is no wish list. `movies_person` lists a person's films
+  outside the library, `direct_stream_discover` finds titles by year, language, person, studio or
+  streaming service ([streaming.md](streaming.md#finding-something-to-stream)), and "films like
+  this" is a web search checked against `movies_list`. Finding such a film on pahe.ink, or finding
+  and playing it on idlix or lk21, is in [streaming.md](streaming.md).
 
 ## Off switches and failure answers
 

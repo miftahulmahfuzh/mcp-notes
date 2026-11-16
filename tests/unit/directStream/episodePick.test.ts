@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickEpisode, withListedEpisodes, type EpisodeProgress } from '../../../src/directStream/episodePick.js';
+import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type EpisodeProgress } from '../../../src/directStream/episodePick.js';
 
 const TODAY = '2026-11-16';
 const ep = (season: number, episode: number, state: EpisodeProgress['state'] = 'unwatched', lastPlayedAt: string | null = null, airDate: string | null = null): EpisodeProgress => ({
@@ -45,5 +45,55 @@ describe('withListedEpisodes', () => {
       stored[0],
       ep(1, 2, 'unwatched', null, '2026-10-16'),
     ]);
+  });
+});
+
+describe('pickEpisode with episodes marked finished and never played', () => {
+  it('starts after a season the owner marked finished, and says caught_up when every episode is marked', () => {
+    const marked = [ep(1, 1, 'finished'), ep(1, 2, 'finished'), ep(2, 1), ep(2, 2)];
+    expect(pickEpisode(marked, TODAY)).toEqual({ pick: 'next', season: 2, episode: 1 });
+    expect(pickEpisode([ep(1, 1, 'finished'), ep(1, 2, 'finished')], TODAY)).toEqual({ pick: 'caught_up', last: { season: 1, episode: 2 } });
+  });
+});
+
+describe('pickAbsoluteEpisode', () => {
+  const range = (season: number, from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => ({ season, episode: from + i }));
+
+  it('maps a running number to its season when the numbers run on across seasons (One Piece)', () => {
+    const onePiece = [{ season: 0, episode: 1 }, ...range(1, 1, 61), ...range(2, 62, 77), ...range(3, 78, 92)];
+    expect(pickAbsoluteEpisode(onePiece, 70)).toEqual({ pick: 'absolute', season: 2, episode: 70 });
+    expect(pickAbsoluteEpisode(onePiece, 92)).toEqual({ pick: 'absolute', season: 3, episode: 92 });
+    expect(pickAbsoluteEpisode(onePiece, 93)).toEqual({ pick: 'unknown', episodes: 92 });
+  });
+
+  it('counts over seasons when each season starts again at 1', () => {
+    const series = [...range(1, 1, 10), ...range(2, 1, 8)];
+    expect(pickAbsoluteEpisode(series, 3)).toEqual({ pick: 'absolute', season: 1, episode: 3 });
+    expect(pickAbsoluteEpisode(series, 15)).toEqual({ pick: 'absolute', season: 2, episode: 5 });
+    expect(pickAbsoluteEpisode(series, 0)).toEqual({ pick: 'unknown', episodes: 18 });
+  });
+
+  it('is unclear when the count and the numbering name different episodes', () => {
+    const longer = [...range(1, 1, 10), ...range(2, 1, 13)];
+    expect(pickAbsoluteEpisode(longer, 12)).toEqual({
+      pick: 'unclear',
+      candidates: [
+        { season: 2, episode: 2, reading: 'count' },
+        { season: 2, episode: 12, reading: 'number' },
+      ],
+    });
+    // A list with a gap: the 70th listed episode is numbered 71.
+    const gap = [...range(1, 1, 61), ...range(2, 63, 80)];
+    expect(pickAbsoluteEpisode(gap, 70)).toEqual({
+      pick: 'unclear',
+      candidates: [
+        { season: 2, episode: 71, reading: 'count' },
+        { season: 2, episode: 70, reading: 'number' },
+      ],
+    });
+  });
+
+  it('takes the one episode with that number when the list is shorter than the number', () => {
+    expect(pickAbsoluteEpisode([...range(1, 1, 5), ...range(2, 700, 730)], 730)).toEqual({ pick: 'absolute', season: 2, episode: 730 });
   });
 });

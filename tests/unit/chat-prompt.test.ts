@@ -212,4 +212,14 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/A film that is in the library is played with movies_continue in VLC unless the owner says stream or \/direct-stream/);
     expect(prompt).toMatch(/Do not start a stream because you recommended a film; only when asked/);
   });
+
+  it('picks and plays from direct_stream_discover when asked to choose, lists when asked what there is, and knows absolute episodes and season marks', () => {
+    expect(prompt).toMatch(/through three tools: direct_stream_find, direct_stream_play and direct_stream_discover/);
+    expect(prompt).toMatch(/that is a request to play: call direct_stream_discover with what they said/);
+    expect(prompt).toMatch(/choose one title they have not seen and did not mark not_interested, call direct_stream_play with its title_key as title, and say which one you chose and why/);
+    expect(prompt).toMatch(/When they only ask what there is .* list the titles with their years and start nothing/);
+    expect(prompt).toMatch(/pass absolute_episode alone and say which season and episode the daemon chose/);
+    expect(prompt).toMatch(/movies_mark with its title_key \(or its movie id\), season 1 and watched true/);
+    expect(prompt).toMatch(/"James Gunn's Superman" is Superman \(2025\)/);
+  });
 });

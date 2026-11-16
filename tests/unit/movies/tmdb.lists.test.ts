@@ -25,7 +25,7 @@ describe('TmdbCatalog', () => {
     const f = routedFetch({ '/trending/movie/week': MOVIES, '/tv/popular': SHOWS });
     const client = createTmdbClient(CONFIG, f.fetch);
     expect(await client.list('trending', 'movie', 2)).toEqual([
-      { kind: 'movie', tmdbId: 550, title: 'Fight Club', originalTitle: 'Fight Club', releaseDate: '1999-10-15', year: 1999, overview: '', posterPath: '/fc.jpg', popularity: 60 },
+      { kind: 'movie', tmdbId: 550, title: 'Fight Club', originalTitle: 'Fight Club', releaseDate: '1999-10-15', year: 1999, overview: '', posterPath: '/fc.jpg', popularity: 60, originalLanguage: null },
     ]);
     expect(f.urls[0]?.searchParams.get('page')).toBe('2');
     const [show] = await client.list('popular', 'tv');
@@ -82,5 +82,59 @@ describe('TmdbTitleNames', () => {
 
   it('answers no names for a title TMDB does not know', async () => {
     expect(await createTmdbClient(CONFIG, routedFetch({}).fetch).alternativeTitles('tv', 1)).toEqual([]);
+  });
+});
+
+describe('TmdbDiscovery', () => {
+  it('discovers films by release window, language, company and service, newest first', async () => {
+    const f = routedFetch({ '/discover/movie': { results: [{ ...MOVIES.results[0], original_language: 'en' }] }, '/discover/tv': SHOWS });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    const [film] = await client.discover('movie', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyId: 3172, providerId: 99, watchRegion: 'US', sort: 'newest' });
+    expect(film).toMatchObject({ kind: 'movie', tmdbId: 550, originalLanguage: 'en' });
+    const q = f.urls[0]!.searchParams;
+    expect(Object.fromEntries(q)).toEqual({
+      'primary_release_date.gte': '2026-01-01',
+      'primary_release_date.lte': '2026-11-16',
+      with_original_language: 'es',
+      with_companies: '3172',
+      with_watch_providers: '99',
+      watch_region: 'US',
+      sort_by: 'primary_release_date.desc',
+      include_adult: 'false',
+      page: '1',
+    });
+  });
+
+  it('discovers series by first air date and popularity, and sends no region without a service', async () => {
+    const f = routedFetch({ '/discover/tv': SHOWS });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    await client.discover('tv', { dateFrom: '2026-01-01', dateTo: null, originalLanguage: 'es', watchRegion: 'US' });
+    expect(Object.fromEntries(f.urls[0]!.searchParams)).toEqual({
+      'first_air_date.gte': '2026-01-01',
+      with_original_language: 'es',
+      sort_by: 'popularity.desc',
+      include_adult: 'false',
+      page: '1',
+    });
+  });
+
+  it('searches companies and lists a region\'s streaming services, most prominent first', async () => {
+    const f = routedFetch({
+      '/search/company': { results: [{ id: 3172, name: 'Blumhouse Productions', origin_country: 'US', logo_path: null }, { id: 9, name: 'Blumhouse Television', origin_country: '' }] },
+      '/watch/providers/movie': { results: [{ provider_id: 99, provider_name: 'Shudder', display_priority: 30 }, { provider_id: 8, provider_name: 'Netflix', display_priority: 1 }] },
+    });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    expect(await client.searchCompany(' blumhouse ')).toEqual([
+      { id: 3172, name: 'Blumhouse Productions', country: 'US' },
+      { id: 9, name: 'Blumhouse Television', country: null },
+    ]);
+    expect(f.urls[0]!.searchParams.get('query')).toBe('blumhouse');
+    expect(await client.searchCompany('  ')).toEqual([]);
+    expect(await client.watchProviders('movie', 'US')).toEqual([
+      { id: 8, name: 'Netflix', country: null },
+      { id: 99, name: 'Shudder', country: null },
+    ]);
+    expect(f.urls[1]!.searchParams.get('watch_region')).toBe('US');
+    expect(f.urls).toHaveLength(2);
   });
 });

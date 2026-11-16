@@ -85,13 +85,16 @@ export type StreamingToolName = (typeof STREAMING_TOOL_NAMES)[number];
  * and says whether this machine has a fresh verified stream of it; direct_stream_play resolves
  * one film or episode and opens the daemon's player page full screen in the streaming Chrome
  * (/direct-stream); direct_stream_sources lists the provider registry,
- * direct_stream_update_source adds a site's new providers (/update-cloud-source).
+ * direct_stream_update_source adds a site's new providers (/update-cloud-source);
+ * direct_stream_discover finds TMDB titles by year, language, person, studio or streaming
+ * service, marked against the library, and starts nothing.
  */
 export const DIRECT_STREAM_TOOL_NAMES = [
   'direct_stream_find',
   'direct_stream_play',
   'direct_stream_sources',
   'direct_stream_update_source',
+  'direct_stream_discover',
 ] as const;
 
 export type DirectStreamToolName = (typeof DIRECT_STREAM_TOOL_NAMES)[number];
@@ -134,7 +137,7 @@ const MCP_PREFIX = `mcp__${NOTES_MCP_SERVER}__`;
 
 /**
  * Exactly the 19 notes tools, the 5 session tools, the 3 adversary tools, the 6 movie tools, the 2
- * streaming tools, the 3 direct-stream tools the chat bar may call (not direct_stream_update_source), the connector tools and WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes
+ * streaming tools, the 4 direct-stream tools the chat bar may call (not direct_stream_update_source), the connector tools and WebSearch + WebFetch (CONNECTORS_PLAN invariant 8, which supersedes
  * CHAT_BAR_BRAIN_PLAN invariant 4; SEMANTIC_SEARCH_PLAN phase 5 adds `related`; WALL_EDITING_PLAN
  * phase 3 adds `attach_image`, `remove_image` and `restore_image`; CHAT_HISTORY_FILES_IMAGE_SEARCH_PLAN
  * phase 6 adds `similar_images`; PROJECT_SESSION_GRAPH_PLAN phase 7 adds the session tools;
@@ -273,6 +276,8 @@ export function captionForToolUse(name: string, input: unknown): string | null {
       return 'reading the stream providers';
     case 'direct_stream_update_source':
       return 'adding stream providers';
+    case 'direct_stream_discover':
+      return 'looking for titles to stream';
     case 'dword_vocab_lookup':
       return 'looking up a word';
     case 'dword_vocab_add':

@@ -3,7 +3,18 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { DIRECT_STREAM_TOOL_NAMES } from '../chat/status.js';
 import type { AppDeps } from '../deps.js';
-import { pickEpisode, withListedEpisodes, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
+import {
+  DISCOVER_DEFAULT_LIMIT,
+  DISCOVER_DEFAULT_REGION,
+  DISCOVER_MAX_LIMIT,
+  DISCOVER_MAX_OTHERS,
+  inWindow,
+  languageCode,
+  rankByName,
+  releaseWindow,
+  shortOverview,
+} from '../directStream/discover.js';
+import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type AbsoluteChoice, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
 import {
   dbTitleLibrary,
   LookupError,
@@ -25,14 +36,14 @@ import type { UpdateSourceAnswer } from '../directStream/updateSource.js';
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { MovieStreams } from '../movies/streams.js';
-import { TmdbError, type TmdbClient } from '../movies/tmdb.js';
-import { titleId } from '../movies/types.js';
+import { TmdbError, type TmdbClient, type TmdbDiscovery, type TmdbNamedHit } from '../movies/tmdb.js';
+import { titleId, type TitleKind } from '../movies/types.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
-import { movieErrorResult } from './movieTools.js';
+import { libraryMarks, markedTitle, mergeCredits, movieErrorResult, type LibraryMark } from './movieTools.js';
 import { jsonResult, type ToolDeps } from './tools.js';
 
 const [FIND, PLAY] = DIRECT_STREAM_TOOL_NAMES;
-const [, , SOURCES, UPDATE_SOURCE] = DIRECT_STREAM_TOOL_NAMES;
+const [, , SOURCES, UPDATE_SOURCE, DISCOVER] = DIRECT_STREAM_TOOL_NAMES;
 
 export const DIRECT_STREAM_OFF =
   'direct_stream_off: direct streaming is not running on this server (NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off, or the daemon was started without it), so nothing can be streamed here.';
@@ -49,7 +60,8 @@ export interface FreshSource {
 /** What the direct-streaming tools need, bound once per daemon by directStreamToolDeps (tests build their own). */
 export interface DirectStreamToolDeps {
   library: TitleLibrary;
-  tmdb: (TmdbClient & LookupTmdb) | null;
+  /** Without the discovery calls (a fake that lacks them), direct_stream_discover answers tmdb_unavailable for a company, a service or a plain list. */
+  tmdb: (TmdbClient & LookupTmdb & Partial<TmdbDiscovery>) | null;
   /** A stored series' episodes with their watch state (files and streams) and last play; [] when the series is not stored. */
   progress(tmdbId: number): Promise<EpisodeProgress[]>;
   /** Stores `name` (normalized) as one more name of the title, storing the title first when it is new. False when nothing was added. */
@@ -60,6 +72,10 @@ export interface DirectStreamToolDeps {
   play(target: StreamTarget): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
+  /** What the library knows of each of these title keys (movieTools.ts libraryMarks); a key it does not hold is absent. */
+  marks(ids: readonly string[]): Promise<Map<string, LibraryMark>>;
+  /** The title keys with a source verified on this host inside the freshness window (a series: any episode). */
+  freshTitles(): Promise<Set<string>>;
   /** DirectStreamService.providers(): the registry with this host's health (direct_stream_sources). */
   providers(): Promise<ProviderView[]>;
   /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
@@ -99,6 +115,8 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
         ? null
         : { provider: row.provider ?? '', manifestKind: row.manifestKind ?? '', bestHeight: row.bestHeight, enSubtitle: row.enSubtitle, verifiedAt: row.verifiedAt };
     },
+    marks: (ids) => libraryMarks(deps.db, { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
+    freshTitles: async () => new Set(await movies.repo.freshStreamTitleIds(movies.host, streamFreshSince(new Date(), config.freshDays))),
     providers: () => service.providers(),
     updateSource: (site) => service.updateSource(site),
   };
@@ -117,7 +135,9 @@ const PLAY_DESCRIPTION =
   'Stream one film, or one episode of a series, directly: the daemon finds a cloud source (providers with an English subtitle first), then opens its own player page full screen in the streaming Chrome window on the Windows side, ' +
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
-  'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both): ' +
+  'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both); ' +
+  'when the owner named an episode by one number without a season ("One Piece episode 730", "resume one piece from episode 730"), pass absolute_episode alone: the daemon maps it to the season and episode TMDB lists (the 730th episode in order; a long anime\'s own numbers run on across seasons) and answers picked absolute with the season and episode it chose, ' +
+  'or skipped_play episode_unclear with candidates when the count and the numbering name different episodes (list them and ask; then call again with that season and episode), or no_such_episode when the series is shorter. Otherwise: ' +
   'without them the daemon picks the episode from what was watched, on file or streamed (picked: first, nothing played yet; resume, the episode played last is unfinished and carries on where it stopped; next, the episode after the last finished one). ' +
   'started true: the player page is open, season and episode say which episode, and play carries the session and the source (provider, quality, subtitles). ' +
   'started false with skipped_play says why nothing started: several_matches (list candidates with their years and ask which, then call again with that one\'s movie_id, or title and year), ' +
@@ -197,11 +217,24 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
   );
 }
 
+const DISCOVER_DESCRIPTION =
+  "Find films and series on TMDB to stream, by anything but a title: kind (movie or tv; both when left out), year or year_from / year_to, language (the original language, as a name or code: \"Spanish\", \"ko\"), " +
+  'person (a name; role any, cast, crew or director), company (a production company or studio: "Blumhouse", "A24") and service (a streaming service or network: "Shudder", "Netflix"; region picks the country whose catalogue is read, default US). ' +
+  'sort is popular (default) or newest (release date, newest first). Titles not released yet are left out. ' +
+  '"Spanish series released this year" is kind tv, language Spanish, year this year; "the most recent Shudder movie" is kind movie, service Shudder, sort newest; "Blumhouse films this year" is company Blumhouse with the year; "a Johnny Depp movie, the more recent the better" is person Johnny Depp, role cast, kind movie, sort newest; "one of Nolan\'s movies" is person Christopher Nolan, role director. ' +
+  'Names are resolved to TMDB ids here: the best match is used and named in filters, and other_people, other_companies and other_services list what else the name fits; pass person_id, company_id or service_id to pick one of those instead. person cannot be combined with company or service. ' +
+  'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
+  'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
+  'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one"), choose one yourself, play it and say which and why; when they only asked what there is, list the titles and start nothing. ' +
+  'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
+
 const titleField = z.string().trim().min(1).max(200);
 const yearField = z.number().int().min(1880).max(2100);
 const kindField = z.enum(['movie', 'tv']);
 const seasonField = z.number().int().min(0).max(1000);
 const episodeField = z.number().int().min(0).max(100000);
+const nameField = z.string().trim().min(1).max(120);
+const tmdbIdField = z.number().int().positive();
 
 function ok(value: unknown): CallToolResult {
   return jsonResult(value, true);
@@ -288,6 +321,28 @@ async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promis
   if (stored.length > 0 && choice.pick !== 'caught_up') return choice;
   const listed = await listedEpisodes(c, d);
   return listed === null ? choice : pickEpisode(withListedEpisodes(stored, listed), today);
+}
+
+/** The air date of one episode in a list, or null. */
+function airDateOf(list: readonly { season: number; episode: number; airDate: string | null }[], season: number, episode: number): string | null {
+  return list.find((e) => e.season === season && e.episode === episode)?.airDate ?? null;
+}
+
+/**
+ * The episode an absolute number names (episodePick.ts pickAbsoluteEpisode), with the list it was
+ * read from. The stored episodes decide; TMDB's list is read when the series is not stored, or
+ * when the stored list is too short for the number (a series still airing).
+ */
+async function chooseAbsolute(
+  c: TitleCandidate,
+  n: number,
+  d: DirectStreamToolDeps,
+): Promise<{ choice: AbsoluteChoice; list: readonly { season: number; episode: number; airDate: string | null }[] }> {
+  const stored = await d.progress(c.tmdbId);
+  const choice = pickAbsoluteEpisode(stored, n);
+  if (stored.length > 0 && choice.pick !== 'unknown') return { choice, list: stored };
+  const listed = await listedEpisodes(c, d);
+  return listed === null || listed.length <= stored.length ? { choice, list: stored } : { choice: pickAbsoluteEpisode(listed, n), list: listed };
 }
 
 async function streamView(d: DirectStreamToolDeps, target: StreamTarget | null) {
@@ -379,13 +434,20 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
         season: seasonField.optional().describe('A series only: the season to stream from.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
+        absolute_episode: z
+          .number()
+          .int()
+          .min(1)
+          .max(100000)
+          .optional()
+          .describe('A series only, instead of season and episode: an episode named by one number without a season ("One Piece episode 730").'),
         asked_as: titleField
           .optional()
           .describe('Only after the owner picked a title from did_you_mean: the name they first used for it, word for word. It is remembered as another name of this title.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode, asked_as }) => {
+    async ({ title, year, kind, season, episode, absolute_episode, asked_as }) => {
       const d = deps.directStream;
       if (!d) return off();
       return respond(async () => {
@@ -416,6 +478,49 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
           asked_as !== undefined && normalizeName(asked_as) !== '' && !sameTitle(c, { name: asked_as, year: null }) ? await d.rememberAlias(c, asked_as) : false;
         let target = targetFor(c, result.episode, season, episode);
         let choice: EpisodeChoice | null = null;
+        if (absolute_episode !== undefined) {
+          if (c.kind !== 'tv') throw new LookupError('invalid_input', `${label(c)} is a film: it takes no episode.`);
+          if (target !== null || season !== undefined || episode !== undefined) {
+            throw new LookupError('invalid_input', 'pass absolute_episode alone, or season and episode: not both.');
+          }
+          const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
+          const { choice: absolute, list } = await chooseAbsolute(c, absolute_episode, d);
+          if (absolute.pick === 'unknown') {
+            return ok({
+              started: false,
+              skipped_play: 'no_such_episode',
+              title: candidateView(c, wall),
+              absolute_episode,
+              episodes: absolute.episodes,
+              seasons: await seasonsOf(c, d),
+              next: `Nothing started: ${label(c)} has ${absolute.episodes} episodes listed, so there is no episode ${absolute_episode}. Say so with seasons.`,
+            });
+          }
+          if (absolute.pick === 'unclear') {
+            return ok({
+              started: false,
+              skipped_play: 'episode_unclear',
+              title: candidateView(c, wall),
+              absolute_episode,
+              candidates: absolute.candidates.map((e) => ({ season: e.season, episode: e.episode, reading: e.reading, air_date: airDateOf(list, e.season, e.episode) })),
+              next: `Nothing started: episode ${absolute_episode} can be read two ways. reading count is the ${absolute_episode}th episode in order, reading number the episode numbered ${absolute_episode} in its season. List the candidates as season and episode and ask which; then call again with that season and episode.`,
+            });
+          }
+          const airDate = airDateOf(list, absolute.season, absolute.episode);
+          if (airDate !== null && airDate > today) {
+            return ok({
+              started: false,
+              skipped_play: 'not_aired',
+              title: candidateView(c, wall),
+              absolute_episode,
+              season: absolute.season,
+              episode: absolute.episode,
+              air_date: airDate,
+              next: 'Nothing started: that episode has not aired yet. Say which episode and its air date.',
+            });
+          }
+          target = { kind: 'tv', tmdbId: c.tmdbId, season: absolute.season, episode: absolute.episode };
+        }
         if (target === null) {
           if (season !== undefined || episode !== undefined) {
             throw new LookupError('invalid_input', `${label(c)} is a series: pass both season and episode, or neither to carry on from the last episode watched.`);
@@ -447,19 +552,25 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         const picked = {
           ...(target.kind === 'tv' ? { season: target.season, episode: target.episode } : { season: null, episode: null }),
           ...(choice === null ? {} : { picked: choice.pick }),
+          ...(absolute_episode === undefined ? {} : { picked: 'absolute', absolute_episode }),
           ...(remembered ? { remembered_as: asked_as } : {}),
         };
+        // A title played by a key the library did not hold (a pick from direct_stream_discover) has no
+        // name until the resolve stores it: read it again, so the answer names what plays.
+        const stored = async (): Promise<TitleCandidate> => (c.movieId === null ? ((await d.library.byKey(c.kind, c.tmdbId)) ?? c) : c);
         try {
           const play = await d.play(target);
           return ok({
             started: true,
-            title: candidateView(c, wall),
+            title: candidateView(await stored(), wall),
             ...picked,
             play,
             next:
-              choice === null
-                ? 'Say it is playing full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.'
-                : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.',
+              absolute_episode !== undefined
+                ? `Say which season and episode is playing and that it is episode ${absolute_episode} counted from the first, that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.`
+                : choice === null
+                  ? 'Say it is playing full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.'
+                  : 'Say which season and episode is playing and why (picked: first, resume from where it stopped, or next), that it plays full screen in the streaming Chrome window, and that a double click, F, Esc or F11 leaves full screen.',
           });
         } catch (err) {
           const failure = playFailure(err);
@@ -468,7 +579,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             return failJson({
               error: 'no_source',
               started: false,
-              title: candidateView(c, wall),
+              title: candidateView(await stored(), wall),
               ...picked,
               attempts: failure.attempts,
               next: 'No provider could stream it and nothing started. Tell the owner, one short line per provider with its outcome, and offer /idlix or /lk21.',
@@ -478,7 +589,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             error: failure.error,
             reason: failure.reason,
             started: false,
-            title: candidateView(c, wall),
+            title: candidateView(await stored(), wall),
             ...picked,
             attempts: failure.attempts,
             message: failure.message,
@@ -489,5 +600,238 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
     },
   );
 
+  server.registerTool(
+    DISCOVER,
+    {
+      title: 'Find titles to stream by year, language, person, studio or service',
+      description: DISCOVER_DESCRIPTION,
+      inputSchema: {
+        kind: kindField.optional().describe('"movie" or "tv" (a series). Both when left out.'),
+        year: yearField.optional().describe('Released (a film) or first aired (a series) in this year.'),
+        year_from: yearField.optional().describe('Released or first aired in this year or later.'),
+        year_to: yearField.optional().describe('Released or first aired in this year or earlier.'),
+        language: z.string().trim().min(2).max(40).optional().describe('The original language, as an English name or a code: "Spanish", "Korean", "id".'),
+        person: nameField.optional().describe('A person by name, e.g. "Johnny Depp". Not with company or service.'),
+        person_id: tmdbIdField.optional().describe('A TMDB person id from other_people, to pick that person instead of the best match.'),
+        role: z.enum(['any', 'cast', 'crew', 'director']).optional().describe('With person: "cast" (acted in), "director", "crew" (directed, wrote, produced, ...) or "any" (default).'),
+        company: nameField.optional().describe('A production company or studio by name, e.g. "Blumhouse".'),
+        company_id: tmdbIdField.optional().describe('A TMDB company id from other_companies, to pick that company instead of the best match.'),
+        service: nameField.optional().describe('A streaming service or network by name, e.g. "Shudder", "Netflix".'),
+        service_id: tmdbIdField.optional().describe('A TMDB watch-provider id from other_services, to pick that service instead of the best match.'),
+        region: z
+          .string()
+          .trim()
+          .regex(/^[A-Za-z]{2}$/)
+          .optional()
+          .describe(`With service: the two-letter country whose catalogue is read. Default ${DISCOVER_DEFAULT_REGION}.`),
+        sort: z.enum(['popular', 'newest']).optional().describe('"popular" (default) or "newest" (release date, newest first).'),
+        unseen_only: z.boolean().optional().describe('true: leave out the titles the owner has seen or marked not interested.'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(DISCOVER_MAX_LIMIT)
+          .optional()
+          .describe(`At most this many titles, 1-${DISCOVER_MAX_LIMIT}. Default ${DISCOVER_DEFAULT_LIMIT}.`),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (args) => {
+      const d = deps.directStream;
+      if (!d) return off();
+      return respond(async () => ok(await discoverTitles(args, d, wall)));
+    },
+  );
+
   registerDirectStreamSourceTools(server, deps);
+}
+
+interface DiscoverArgs {
+  kind?: TitleKind | undefined;
+  year?: number | undefined;
+  year_from?: number | undefined;
+  year_to?: number | undefined;
+  language?: string | undefined;
+  person?: string | undefined;
+  person_id?: number | undefined;
+  role?: 'any' | 'cast' | 'crew' | 'director' | undefined;
+  company?: string | undefined;
+  company_id?: number | undefined;
+  service?: string | undefined;
+  service_id?: number | undefined;
+  region?: string | undefined;
+  sort?: 'popular' | 'newest' | undefined;
+  unseen_only?: boolean | undefined;
+  limit?: number | undefined;
+}
+
+/** One title before it is marked against the library. */
+interface Discovered {
+  kind: TitleKind;
+  tmdbId: number;
+  title: string;
+  originalTitle: string | null;
+  releaseDate: string | null;
+  originalLanguage: string | null;
+  overview: string | null;
+  popularity: number;
+  roles: string[] | null;
+}
+
+const named = (hit: TmdbNamedHit) => ({ id: hit.id, name: hit.name, ...(hit.country === null ? {} : { country: hit.country }) });
+
+/** The entry a name means among `ranked` (best first), or the one `id` picks; `others` is the rest, capped. */
+function pickNamed(ranked: readonly TmdbNamedHit[], id: number | undefined, name: string | undefined): { picked: TmdbNamedHit | null; others: TmdbNamedHit[] } {
+  const picked = id !== undefined ? (ranked.find((h) => h.id === id) ?? { id, name: name ?? String(id), country: null }) : (ranked[0] ?? null);
+  return { picked, others: ranked.filter((h) => h.id !== picked?.id).slice(0, DISCOVER_MAX_OTHERS) };
+}
+
+/** direct_stream_discover: TMDB titles by filter, each marked against the library and this host's verified sources. Starts nothing. */
+async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall: string) {
+  const tmdb = d.tmdb;
+  if (tmdb === null) {
+    throw new LookupError('tmdb_unavailable', 'this server has no TMDB credentials (TMDB_API_READ_ACCESS_TOKEN or TMDB_API_KEY), so titles cannot be discovered. Name a title instead, or use web search.');
+  }
+  const byPerson = args.person !== undefined || args.person_id !== undefined;
+  const byCompany = args.company !== undefined || args.company_id !== undefined;
+  const byService = args.service !== undefined || args.service_id !== undefined;
+  if (byPerson && (byCompany || byService)) {
+    throw new LookupError('invalid_input', 'person cannot be combined with company or service: TMDB lists a person\'s titles without them. Ask for the person alone, or for the company or service alone.');
+  }
+  if (args.role !== undefined && !byPerson) throw new LookupError('invalid_input', 'role belongs to person: pass person too.');
+  if ((args.year_from ?? args.year ?? 0) > (args.year_to ?? args.year ?? 9999)) throw new LookupError('invalid_input', 'year_from is after year_to.');
+  let language: string | null = null;
+  if (args.language !== undefined) {
+    language = languageCode(args.language);
+    if (language === null) throw new LookupError('invalid_input', `"${args.language}" is not a language name or code this tool knows. Pass the English name ("Spanish") or the two-letter code ("es").`);
+  }
+  const kinds: TitleKind[] = args.kind === undefined ? ['movie', 'tv'] : [args.kind];
+  const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
+  const window = releaseWindow(args.year, args.year_from, args.year_to, today);
+  const sort = args.sort ?? 'popular';
+  const limit = args.limit ?? DISCOVER_DEFAULT_LIMIT;
+  const filters: Record<string, unknown> = { kind: args.kind ?? 'any', released_from: window.from, released_to: window.to, language, sort };
+  const others: Record<string, unknown> = {};
+  let found: Discovered[];
+
+  if (byPerson) {
+    const people = args.person === undefined ? [] : await tmdb.searchPerson(args.person);
+    const person =
+      args.person_id !== undefined
+        ? (people.find((p) => p.personId === args.person_id) ?? { personId: args.person_id, name: args.person ?? String(args.person_id), knownFor: null })
+        : people[0];
+    if (person === undefined) throw new LookupError('not_found', `TMDB knows no person named "${args.person}".`);
+    const role = args.role ?? 'any';
+    filters.person = { id: person.personId, name: person.name, known_for: person.knownFor };
+    filters.role = role;
+    others.other_people = people
+      .filter((p) => p.personId !== person.personId)
+      .slice(0, DISCOVER_MAX_OTHERS)
+      .map((p) => ({ id: p.personId, name: p.name, known_for: p.knownFor }));
+    found = mergeCredits(await tmdb.personCredits(person.personId))
+      .filter((c) => kinds.includes(c.kind))
+      .filter((c) => role === 'any' || (role === 'cast' ? c.cast : role === 'director' ? c.director : c.crew))
+      .filter((c) => inWindow(c.releaseDate, window))
+      .filter((c) => language === null || c.originalLanguage === language)
+      .map((c) => ({
+        kind: c.kind,
+        tmdbId: c.tmdbId,
+        title: c.title,
+        originalTitle: null,
+        releaseDate: c.releaseDate,
+        originalLanguage: c.originalLanguage,
+        overview: null,
+        popularity: c.popularity,
+        roles: c.roles,
+      }));
+  } else {
+    const { discover, searchCompany, watchProviders } = tmdb;
+    if (discover === undefined || searchCompany === undefined || watchProviders === undefined) {
+      throw new LookupError('tmdb_unavailable', 'this server\'s TMDB client cannot discover titles.');
+    }
+    let companyId: number | null = null;
+    if (byCompany) {
+      const ranked = args.company === undefined ? [] : rankByName(await searchCompany.call(tmdb, args.company), args.company);
+      const { picked, others: rest } = pickNamed(ranked, args.company_id, args.company);
+      if (picked === null) throw new LookupError('not_found', `TMDB knows no production company called "${args.company}". A streaming service or network goes in service.`);
+      companyId = picked.id;
+      filters.company = named(picked);
+      others.other_companies = rest.map(named);
+    }
+    let providerId: number | null = null;
+    const region = (args.region ?? DISCOVER_DEFAULT_REGION).toUpperCase();
+    if (byService) {
+      const lists = await Promise.all(kinds.map((kind) => watchProviders.call(tmdb, kind, region)));
+      const all = [...new Map(lists.flat().map((p) => [p.id, p])).values()];
+      const ranked = args.service === undefined ? all.filter((p) => p.id === args.service_id) : rankByName(all, args.service);
+      const { picked, others: rest } = pickNamed(ranked, args.service_id, args.service);
+      if (picked === null) {
+        throw new LookupError(
+          'not_found',
+          `TMDB lists no streaming service called "${args.service}" in ${region}${all.length === 0 ? '' : ` (it lists ${all.slice(0, 12).map((p) => p.name).join(', ')}, ...)`}. A TV network that is not a streaming service is usually a production company too: try company.`,
+        );
+      }
+      providerId = picked.id;
+      filters.service = named(picked);
+      filters.region = region;
+      others.other_services = rest.map(named);
+    }
+    const pages = await Promise.all(
+      kinds.map((kind) =>
+        discover.call(tmdb, kind, { dateFrom: window.from, dateTo: window.to, originalLanguage: language, companyId, providerId, watchRegion: region, sort }),
+      ),
+    );
+    found = pages.flat().map((h) => ({
+      kind: h.kind,
+      tmdbId: h.tmdbId,
+      title: h.title,
+      originalTitle: h.originalTitle,
+      releaseDate: h.releaseDate,
+      originalLanguage: h.originalLanguage ?? null,
+      overview: h.overview,
+      popularity: h.popularity,
+      roles: null,
+    }));
+  }
+
+  found.sort((a, b) =>
+    sort === 'newest'
+      ? (b.releaseDate ?? '').localeCompare(a.releaseDate ?? '') || b.popularity - a.popularity
+      : b.popularity - a.popularity || (b.releaseDate ?? '').localeCompare(a.releaseDate ?? ''),
+  );
+  const [marks, fresh] = await Promise.all([d.marks(found.map((t) => titleId(t.kind, t.tmdbId))), d.freshTitles()]);
+  const titleUrl = (id: string): string => `${wall}/movies/${encodeURIComponent(id)}`;
+  const all = found.map((t) => {
+    const { kind, tmdb_id, title_id, movie_id, url, tmdb_url, ...library } = markedTitle(t.kind, t.tmdbId, marks, titleUrl);
+    return {
+      kind,
+      tmdb_id,
+      title_key: title_id,
+      movie_id,
+      title: t.title,
+      ...(t.originalTitle !== null && t.originalTitle !== t.title ? { original_title: t.originalTitle } : {}),
+      release_date: t.releaseDate,
+      original_language: t.originalLanguage,
+      ...(t.overview === null || t.overview.trim() === '' ? {} : { overview: shortOverview(t.overview) }),
+      ...(t.roles === null ? {} : { roles: t.roles }),
+      ...library,
+      not_interested: marks.get(title_id)?.notInterested ?? false,
+      stream: { verified: fresh.has(title_id) },
+      url,
+      tmdb_url,
+    };
+  });
+  const kept = all.filter((t) => !(args.unseen_only ?? false) || (!t.seen && !t.not_interested));
+  const titles = kept.slice(0, limit);
+  return {
+    filters,
+    ...others,
+    count: titles.length,
+    ...(kept.length > titles.length ? { more: kept.length - titles.length } : {}),
+    titles,
+    next:
+      titles.length === 0
+        ? 'No title passes these filters (titles not released yet are left out). Say so; try fewer filters, another year, or one of the other_ entries.'
+        : 'Nothing was started. To stream one, call direct_stream_play with its title_key as title. If the owner asked you to choose ("pick one for me", "play one"), choose one they have not seen and did not mark not_interested, play it, and say which one and why. If they only asked what there is, list the titles with their years and start nothing.',
+  };
 }

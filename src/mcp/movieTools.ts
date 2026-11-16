@@ -10,6 +10,7 @@ import { continueTitle, playSomething, type ContinueResult, type SomethingResult
 import { movieIdFor, normalizeMovieId, resolveMovieId, type MovieIdTarget } from '../movies/ids.js';
 import { getTitle, history, listTitles, type HistoryFilter, type ReadContext, type TitleDetail, type TitleFilter, type TitleListItem } from '../movies/read.js';
 import { saveReview } from '../movies/reviewNote.js';
+import { MovieStreams } from '../movies/streams.js';
 import { TmdbError, type TmdbClient, type TmdbPersonCredit } from '../movies/tmdb.js';
 import { titleId, type TitleKind, type WatchState } from '../movies/types.js';
 import { parseDateBound } from '../notes/dates.js';
@@ -40,10 +41,18 @@ const SEEN_STATES: ReadonlySet<WatchState> = new Set<WatchState>(['finished', 's
 const STARTED_STATES: ReadonlySet<WatchState> = new Set<WatchState>(['in_progress', 'dropped']);
 
 const TITLE_ID = /^(movie|tv)-\d+$/i;
+const TITLE_KEY_PARTS = /^(movie|tv)-([1-9]\d{0,9})$/i;
 
 export interface TitleUserPatch {
   watched?: boolean;
+  notInterested?: boolean;
   rating?: number | null;
+}
+
+/** What a season mark did: how many episodes the season has, and how many of them the call changed. */
+export interface SeasonMarkResult {
+  episodes: number;
+  changed: number;
 }
 
 /**
@@ -59,6 +68,14 @@ export interface MovieToolDeps {
   tmdb: TmdbClient | null;
   setTitleUser(titleId: string, patch: TitleUserPatch): Promise<void>;
   setFileWatched(fileId: number, watched: boolean): Promise<void>;
+  /** Sets or clears the owner's "finished" mark on every episode of one season (MoviesRepo.seasonEpisodes + setEpisodesWatched). */
+  setSeasonWatched(titleId: string, season: number, watched: boolean): Promise<SeasonMarkResult>;
+  /**
+   * Stores a title the library does not have yet from its TMDB id (TMDB details, then
+   * MoviesRepo.upsertTitle, as the first stream of it would). Null when it cannot be stored: no
+   * TMDB credential, or TMDB does not answer for that id.
+   */
+  ensureTitle(kind: TitleKind, tmdbId: number): Promise<string | null>;
   /** Creates or updates the title's review note through NotesService (phase 4's saveReview). */
   saveReview(titleId: string, text: string): Promise<unknown>;
   /** Phase 5's continueTitle on the daemon's one MoviePlayer: may open VLC on this machine. */
@@ -97,10 +114,18 @@ export function movieToolDeps(deps: AppDeps): MovieToolDeps | null {
     tmdb: movies.tmdb,
     async setTitleUser(id, patch) {
       await movies.repo.setTitleUser(id, patch);
+      movies.events.changed('user', { titleIds: [id] });
     },
     async setFileWatched(fileId, watched) {
       await movies.repo.setFileWatched(fileId, watched);
     },
+    async setSeasonWatched(id, season, watched) {
+      const episodes = await movies.repo.seasonEpisodes(id, season);
+      const changed = await movies.repo.setEpisodesWatched(id, episodes, watched);
+      if (changed.length > 0) movies.events.changed('user', { titleIds: [id] });
+      return { episodes: episodes.length, changed: changed.length };
+    },
+    ensureTitle: (kind, tmdbId) => new MovieStreams(movies).ensureTitle({ kind, tmdbId }),
     saveReview: (id, text) => saveReview(movies, deps.service, id, text),
     // The daemon's one MoviePlayer, the same instance POST /api/movies/continue drives.
     continueTitle: async (title) => {
@@ -181,6 +206,23 @@ interface ResolvedTitle {
   target: MovieIdTarget | null;
 }
 
+/**
+ * The title movies_mark is about. A title key the library does not hold yet (tv-94997, from
+ * direct_stream_find or direct_stream_discover) is stored first, so "I watched season 1 last year"
+ * can be marked before anything of the series was played.
+ */
+async function resolveOrStoreTitle(db: Db, m: MovieToolDeps, ctx: ReadContext, query: string): Promise<ResolvedTitle> {
+  const key = TITLE_KEY_PARTS.exec(query.trim());
+  if (key === null) return resolveTitle(db, ctx, query);
+  const kind = key[1]!.toLowerCase() as TitleKind;
+  const id = titleId(kind, Number(key[2]));
+  const [stored] = await db.select({ id: movieTitles.id }).from(movieTitles).where(eq(movieTitles.id, id)).limit(1);
+  if (stored === undefined && (await m.ensureTitle(kind, Number(key[2]))) === null) {
+    throw new MovieToolError('not_found', `${id} is not stored and could not be read from TMDB (no TMDB credentials on this server, TMDB did not answer, or it knows no such title), so nothing was marked.`);
+  }
+  return { titleId: id, target: null };
+}
+
 /** resolveTitleId, keeping which episode a movie id named. */
 async function resolveTitle(db: Db, ctx: ReadContext, query: string): Promise<ResolvedTitle> {
   const q = query.trim();
@@ -208,7 +250,7 @@ async function resolveTitleId(db: Db, ctx: ReadContext, query: string): Promise<
   if (hits.length === 0) {
     throw new MovieToolError(
       'not_found',
-      `no title in the library matches "${q}". movies_list lists titles; movies_person finds films that are not in the library.`,
+      `no title in the library matches "${q}". movies_list lists titles; movies_person finds films that are not in the library. To mark a title that is not stored yet, pass its title key (movie-<tmdb id> or tv-<tmdb id>, the title_key direct_stream_find and direct_stream_discover return).`,
     );
   }
   const exact = hits.filter((t) => normalizedTitle(t.title) === normalizedTitle(q));
@@ -307,44 +349,51 @@ async function continueLinks(db: Db, r: ContinueResult, titleUrl: (id: string) =
 }
 
 type MarkRequest =
-  | { target: 'title'; title: string; watched?: boolean; rating?: number | null; review?: string }
+  | { target: 'title'; title: string; season?: number; watched?: boolean; notInterested?: boolean; rating?: number | null; review?: string }
   | { target: 'file'; fileId: number; watched: boolean };
 
 interface MarkArgs {
   title?: string | undefined;
   file_id?: number | undefined;
+  season?: number | undefined;
   watched?: boolean | undefined;
+  not_interested?: boolean | undefined;
   rating?: number | null | undefined;
   review?: string | undefined;
 }
 
 /** The one place movies_mark's arguments are checked: a title takes any mark, a file only watched. */
 function markRequest(args: MarkArgs): MarkRequest {
-  const { title, file_id: fileId, watched, rating, review } = args;
+  const { title, file_id: fileId, season, watched, not_interested: notInterested, rating, review } = args;
   if ((title === undefined) === (fileId === undefined)) {
     throw new MovieToolError('invalid_input', 'pass exactly one of title (a title id or name) or file_id (one file, from movies_get files[].id).');
   }
   if (fileId !== undefined) {
-    if (rating !== undefined || review !== undefined) {
-      throw new MovieToolError('invalid_input', 'rating and review belong to a title, not a file: pass title instead of file_id.');
+    if (rating !== undefined || review !== undefined || notInterested !== undefined || season !== undefined) {
+      throw new MovieToolError('invalid_input', 'rating, review, not_interested and season belong to a title, not a file: pass title instead of file_id.');
     }
     if (watched === undefined) throw new MovieToolError('invalid_input', 'file_id needs watched (true or false).');
     return { target: 'file', fileId, watched };
   }
   if (title === undefined) throw new MovieToolError('invalid_input', 'pass title or file_id.');
-  if (watched === undefined && rating === undefined && review === undefined) {
-    throw new MovieToolError('invalid_input', 'nothing to change: pass watched, rating or review.');
+  if (season !== undefined && watched === undefined) {
+    throw new MovieToolError('invalid_input', 'season needs watched (true: the whole season is finished; false: take that mark back).');
+  }
+  if (watched === undefined && notInterested === undefined && rating === undefined && review === undefined) {
+    throw new MovieToolError('invalid_input', 'nothing to change: pass watched, not_interested, rating or review.');
   }
   return {
     target: 'title',
     title,
+    ...(season !== undefined ? { season } : {}),
     ...(watched !== undefined ? { watched } : {}),
+    ...(notInterested !== undefined ? { notInterested } : {}),
     ...(rating !== undefined ? { rating } : {}),
     ...(review !== undefined ? { review } : {}),
   };
 }
 
-interface MergedCredit {
+export interface MergedCredit {
   kind: TitleKind;
   tmdbId: number;
   title: string;
@@ -352,6 +401,10 @@ interface MergedCredit {
   roles: string[];
   cast: boolean;
   crew: boolean;
+  /** True when one of the crew credits is the job "Director". */
+  director: boolean;
+  popularity: number;
+  originalLanguage: string | null;
 }
 
 function roleText(c: TmdbPersonCredit): string {
@@ -360,17 +413,18 @@ function roleText(c: TmdbPersonCredit): string {
 }
 
 /** TMDB lists a person once per role; one entry per title, roles merged, newest release first, undated last. */
-function mergeCredits(credits: readonly TmdbPersonCredit[]): MergedCredit[] {
+export function mergeCredits(credits: readonly TmdbPersonCredit[]): MergedCredit[] {
   const byTitle = new Map<string, MergedCredit>();
   for (const c of credits) {
     const key = `${c.kind}:${c.tmdbId}`;
     const entry =
       byTitle.get(key) ??
-      { kind: c.kind, tmdbId: c.tmdbId, title: c.title, releaseDate: c.releaseDate, roles: [], cast: false, crew: false };
+      { kind: c.kind, tmdbId: c.tmdbId, title: c.title, releaseDate: c.releaseDate, roles: [], cast: false, crew: false, director: false, popularity: c.popularity, originalLanguage: c.originalLanguage ?? null };
     const role = roleText(c);
     if (!entry.roles.includes(role)) entry.roles.push(role);
     if (c.credit === 'cast') entry.cast = true;
     else entry.crew = true;
+    if (c.credit === 'crew' && c.job === 'Director') entry.director = true;
     byTitle.set(key, entry);
   }
   return [...byTitle.values()].sort((a, b) => {
@@ -379,6 +433,48 @@ function mergeCredits(credits: readonly TmdbPersonCredit[]): MergedCredit[] {
     if (b.releaseDate === null) return -1;
     return a.releaseDate < b.releaseDate ? 1 : -1;
   });
+}
+
+/** What the library knows of a TMDB title: its movie id and the owner's state. */
+export interface LibraryMark {
+  movieId: string | null;
+  /** Null past the first PERSON_STATE_LOOKUPS stored titles of one call. */
+  state: WatchState | null;
+  notInterested: boolean;
+}
+
+/** The stored titles among `ids` (title keys, in the order to read them), each with its state: how movies_person and direct_stream_discover mark a TMDB list. */
+export async function libraryMarks(db: Db, ctx: ReadContext, ids: readonly string[]): Promise<Map<string, LibraryMark>> {
+  const marks = new Map<string, LibraryMark>();
+  if (ids.length === 0) return marks;
+  const rows = await db.select({ id: movieTitles.id }).from(movieTitles).where(inArray(movieTitles.id, [...ids]));
+  for (const { id } of rows) marks.set(id, { movieId: null, state: null, notInterested: false });
+  await Promise.all(
+    rows.slice(0, PERSON_STATE_LOOKUPS).map(async ({ id }) => {
+      const detail = await getTitle(db, id, ctx);
+      if (detail !== null) marks.set(id, { movieId: detail.movie_id, state: detail.state, notInterested: detail.not_interested });
+    }),
+  );
+  return marks;
+}
+
+/** One TMDB title as movies_person and direct_stream_discover list it against the library. */
+export function markedTitle(kind: TitleKind, tmdbId: number, marks: ReadonlyMap<string, LibraryMark>, titleUrl: (id: string) => string) {
+  const id = titleId(kind, tmdbId);
+  const mark = marks.get(id) ?? null;
+  const state = mark?.state ?? null;
+  return {
+    kind,
+    tmdb_id: tmdbId,
+    title_id: id,
+    movie_id: mark?.movieId ?? null,
+    in_library: mark !== null,
+    state,
+    seen: state !== null && SEEN_STATES.has(state),
+    started: state !== null && STARTED_STATES.has(state),
+    url: mark !== null ? titleUrl(mark.movieId ?? id) : null,
+    tmdb_url: `https://www.themoviedb.org/${kind}/${tmdbId}`,
+  };
 }
 
 const titleField = z
@@ -441,9 +537,12 @@ const PICTURES_DESCRIPTION =
   'title is a movie id (M-23T4), a title id (movie-467905, tv-247718) or the name. A picture TMDB lacks, or one that cannot be loaded, comes back as a line saying so. Read-only.';
 
 const MARK_DESCRIPTION =
-  "Sets the owner's own marks. On a title (title = movie id, title id or name; an episode's movie id takes watched only and marks that episode): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it) and review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review). " +
+  "Sets the owner's own marks. On a title (title = movie id, title id or name; an episode's movie id takes watched only and marks that episode): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it), review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review) " +
+  'and not_interested (true: the owner does not want this title, so the Stream side stops showing and proposing it; false takes that back). ' +
+  'On one season of a series (title plus season): watched true marks every episode of that season finished ("I watched House of the Dragon season 1 last year" is season 1, watched true), false takes those marks back; the series itself is not marked, so a later season still plays next. ' +
+  'A title that is not stored yet (never played, no file) is marked by its title key, movie-<tmdb id> or tv-<tmdb id> (title_key from direct_stream_find or direct_stream_discover): it is read from TMDB and stored first. ' +
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
-  'Returns { title_id, title, state, watched_at, rating, review_note_id, url } after the change, plus file for file_id.';
+  'Returns { title_id, title, state, watched_at, not_interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
 
 /** The six movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
 export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'movies' | 'wallUrl'>): void {
@@ -699,44 +798,11 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (person === undefined) throw new MovieToolError('not_found', `TMDB knows no person named "${args.name}".`);
 
         const merged = mergeCredits(await tmdb.personCredits(person.personId));
-        const ids = merged.map((c) => titleId(c.kind, c.tmdbId));
-        const inLibrary =
-          ids.length === 0
-            ? []
-            : await deps.db.select({ id: movieTitles.id }).from(movieTitles).where(inArray(movieTitles.id, ids));
-        const states = new Map<string, WatchState>();
-        const movieIdOf = new Map<string, string>();
-        await Promise.all(
-          inLibrary.slice(0, PERSON_STATE_LOOKUPS).map(async ({ id }) => {
-            const detail = await getTitle(deps.db, id, ctxOf(m));
-            if (detail === null) return;
-            states.set(id, detail.state);
-            if (detail.movie_id !== null) movieIdOf.set(id, detail.movie_id);
-          }),
-        );
-        const libraryIds = new Set(inLibrary.map((r) => r.id));
+        const marks = await libraryMarks(deps.db, ctxOf(m), merged.map((c) => titleId(c.kind, c.tmdbId)));
 
         const all = merged.map((c) => {
-          const id = titleId(c.kind, c.tmdbId);
-          const state = states.get(id) ?? null;
-          const inLib = libraryIds.has(id);
-          return {
-            kind: c.kind,
-            tmdb_id: c.tmdbId,
-            title_id: id,
-            movie_id: movieIdOf.get(id) ?? null,
-            title: c.title,
-            release_date: c.releaseDate,
-            roles: c.roles,
-            cast: c.cast,
-            crew: c.crew,
-            in_library: inLib,
-            state,
-            seen: state !== null && SEEN_STATES.has(state),
-            started: state !== null && STARTED_STATES.has(state),
-            url: inLib ? titleUrl(movieIdOf.get(id) ?? id) : null,
-            tmdb_url: `https://www.themoviedb.org/${c.kind}/${c.tmdbId}`,
-          };
+          const { kind, tmdb_id, title_id, movie_id, ...library } = markedTitle(c.kind, c.tmdbId, marks, titleUrl);
+          return { kind, tmdb_id, title_id, movie_id, title: c.title, release_date: c.releaseDate, roles: c.roles, cast: c.cast, crew: c.crew, ...library };
         });
         const role = args.role ?? 'any';
         const credits = all
@@ -820,7 +886,9 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
       inputSchema: {
         title: titleField.optional(),
         file_id: z.number().int().positive().optional().describe('One file (an episode), from movies_get files[].id. Takes watched only.'),
-        watched: z.boolean().optional().describe('true: set the watched flag; false: clear it.'),
+        season: z.number().int().min(0).max(1000).optional().describe('A series only, with watched: mark every episode of this season finished (true) or take those marks back (false).'),
+        watched: z.boolean().optional().describe('true: set the watched flag; false: clear it. With season it is about that season\'s episodes.'),
+        not_interested: z.boolean().optional().describe('true: the owner does not want this title; false: take that back.'),
         rating: z.number().int().min(0).max(5).nullable().optional().describe('Stars, 0-5, whole numbers. null clears the rating.'),
         review: z
           .string()
@@ -859,10 +927,10 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             file: detail.files.find((f) => f.id === req.fileId) ?? null,
           };
         }
-        const { titleId: id, target } = await resolveTitle(deps.db, ctxOf(m), req.title);
+        const { titleId: id, target } = await resolveOrStoreTitle(deps.db, m, ctxOf(m), req.title);
         if (target !== null && target.season !== null) {
           // An episode's movie id: watched goes on that episode's files, never on the whole series.
-          if (req.rating !== undefined || req.review !== undefined || req.watched === undefined) {
+          if (req.rating !== undefined || req.review !== undefined || req.notInterested !== undefined || req.season !== undefined || req.watched === undefined) {
             throw new MovieToolError('invalid_input', `${target.movieId} is one episode: it takes watched only. Rating and review belong to the series; pass its movie id or name.`);
           }
           const before = await getTitle(deps.db, id, ctxOf(m));
@@ -880,22 +948,47 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             episode: after.seasons.flatMap((s) => s.episodes).find((e) => e.season === target.season && e.episode === target.episode) ?? null,
           };
         }
+        let seasonMark: SeasonMarkResult | null = null;
+        if (req.season !== undefined && req.watched !== undefined) {
+          // One season: the marks go on its episodes, never on the series, so the next season still plays next.
+          const before = await getTitle(deps.db, id, ctxOf(m));
+          if (before === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
+          if (before.kind !== 'tv') throw new MovieToolError('invalid_input', `${before.title} is a film: it has no seasons. Leave season out to mark the film.`);
+          seasonMark = await m.setSeasonWatched(id, req.season, req.watched);
+          if (seasonMark.episodes === 0) {
+            const known = before.seasons.map((s) => s.season).join(', ');
+            throw new MovieToolError('not_found', `${before.title} has no season ${req.season}${known === '' ? '' : ` (seasons: ${known})`}, so nothing was marked.`);
+          }
+        }
         const patch: TitleUserPatch = {};
-        if (req.watched !== undefined) patch.watched = req.watched;
+        if (req.watched !== undefined && req.season === undefined) patch.watched = req.watched;
+        if (req.notInterested !== undefined) patch.notInterested = req.notInterested;
         if (req.rating !== undefined) patch.rating = req.rating;
-        if (patch.watched !== undefined || patch.rating !== undefined) await m.setTitleUser(id, patch);
+        if (Object.keys(patch).length > 0) await m.setTitleUser(id, patch);
         if (req.review !== undefined) await m.saveReview(id, req.review);
         const detail = await getTitle(deps.db, id, ctxOf(m));
         if (detail === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
+        const marked = detail.seasons.find((s) => s.season === req.season);
         return {
           title_id: detail.id,
           movie_id: detail.movie_id,
           title: detail.title,
           state: detail.state,
           watched_at: detail.watched_at,
+          not_interested: detail.not_interested,
           rating: detail.rating,
           review_note_id: detail.review_note_id,
           url: titleUrl(detail.movie_id ?? detail.id),
+          ...(seasonMark !== null && req.season !== undefined && req.watched !== undefined
+            ? {
+                season: {
+                  season: req.season,
+                  watched: req.watched,
+                  ...seasonMark,
+                  finished: (marked?.episodes ?? []).filter((e) => e.state === 'finished').length,
+                },
+              }
+            : {}),
         };
       });
     },

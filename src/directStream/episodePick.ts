@@ -19,7 +19,7 @@ export interface EpisodeRef {
 /**
  * Which episode a series named without one streams:
  * `first` (nothing played yet), `resume` (the episode played last is unfinished), `next` (the first
- * unfinished episode after it); or nothing: `caught_up` (no episode after the last one played) and
+ * unfinished episode after it, or after the episodes marked finished when none was played); or nothing: `caught_up` (no episode after the last one played) and
  * `not_aired` (the episode to play airs after today).
  */
 export type EpisodeChoice =
@@ -48,7 +48,15 @@ export function pickEpisode(episodes: readonly EpisodeProgress[], today: string)
   for (const e of list) {
     if (e.lastPlayedAt !== null && (last === null || last.lastPlayedAt === null || e.lastPlayedAt >= last.lastPlayedAt)) last = e;
   }
-  if (last === null) return aired(first, 'first');
+  if (last === null) {
+    // Nothing was played, but the owner may have marked episodes finished ("I watched season 1 last year").
+    const open = list.find((e) => e.state !== 'finished');
+    if (open === undefined) {
+      const end = list[list.length - 1] ?? first;
+      return { pick: 'caught_up', last: { season: end.season, episode: end.episode } };
+    }
+    return aired(open, open === first ? 'first' : 'next');
+  }
   if (last.state !== 'finished') return { pick: 'resume', season: last.season, episode: last.episode };
   const played = last;
   const next = list.find((e) => inOrder(e, played) > 0 && e.state !== 'finished');
@@ -64,4 +72,39 @@ export function withListedEpisodes(stored: readonly EpisodeProgress[], listed: r
       .filter((e) => !known.has(`${e.season}x${e.episode}`))
       .map((e) => ({ season: e.season, episode: e.episode, state: 'unwatched' as const, lastPlayedAt: null, airDate: e.airDate })),
   ];
+}
+
+/** How an absolute episode number was read: `count`, the n-th episode over seasons 1 and up; `number`, the episode whose own number is n. */
+export type AbsoluteReading = 'count' | 'number';
+
+export type AbsoluteChoice =
+  | ({ pick: 'absolute' } & EpisodeRef)
+  /** The two readings name different episodes: nothing is certain, so nothing starts. */
+  | { pick: 'unclear'; candidates: (EpisodeRef & { reading: AbsoluteReading })[] }
+  | { pick: 'unknown'; /** Episodes in seasons 1 and up. */ episodes: number };
+
+/**
+ * The season and episode of an episode named by one number alone ("One Piece episode 730").
+ * Two readings: the n-th episode counted over seasons 1 and up in order (absoluteToSeasonEpisode,
+ * the rule a file named "One Piece - 730" is placed by), and the episode whose own number is n
+ * (a long anime's numbers run on across seasons). The answer is certain when the counted episode
+ * is also numbered n in its season, or when no episode is numbered n; otherwise both readings come
+ * back as candidates. Specials (season 0) never count.
+ */
+export function pickAbsoluteEpisode(episodes: readonly EpisodeRef[], n: number): AbsoluteChoice {
+  const list = episodes.filter((e) => e.season >= 1).sort(inOrder);
+  const counted = Number.isInteger(n) && n >= 1 ? list[n - 1] : undefined;
+  const numbered = list.filter((e) => e.episode === n);
+  if (counted === undefined) {
+    const [only] = numbered;
+    return numbered.length === 1 && only !== undefined ? { pick: 'absolute', season: only.season, episode: only.episode } : { pick: 'unknown', episodes: list.length };
+  }
+  if (numbered.length === 0 || numbered.some((e) => inOrder(e, counted) === 0)) return { pick: 'absolute', season: counted.season, episode: counted.episode };
+  return {
+    pick: 'unclear',
+    candidates: [
+      { season: counted.season, episode: counted.episode, reading: 'count' },
+      ...numbered.map((e) => ({ season: e.season, episode: e.episode, reading: 'number' as const })),
+    ],
+  };
 }

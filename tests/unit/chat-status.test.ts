@@ -24,7 +24,7 @@ describe('allowedChatTools', () => {
     expect(MOVIE_TOOL_NAMES).toHaveLength(7);
     expect(ALL_CONNECTOR_TOOL_NAMES).toHaveLength(22);
     expect(STREAMING_TOOL_NAMES).toHaveLength(2);
-    expect(DIRECT_STREAM_TOOL_NAMES).toEqual(['direct_stream_find', 'direct_stream_play', 'direct_stream_sources', 'direct_stream_update_source']);
+    expect(DIRECT_STREAM_TOOL_NAMES).toEqual(['direct_stream_find', 'direct_stream_play', 'direct_stream_sources', 'direct_stream_update_source', 'direct_stream_discover']);
     expect(tools).toHaveLength(19 + 5 + 3 + 7 + 2 + (DIRECT_STREAM_TOOL_NAMES.length - CLAUDE_CODE_ONLY_TOOL_NAMES.length) + 22 + 2);
     expect(new Set(tools).size).toBe(tools.length);
     expect(tools).toContain('mcp__notes__view_images');
@@ -77,6 +77,7 @@ describe('allowedChatTools', () => {
     expect(captionForToolUse(n('streaming_play'), { site: 'idlix', title: 'pilot' })).toBe('starting a film');
     expect(captionForToolUse(n('direct_stream_find'), { title: 'saltburn' })).toBe('looking for a stream');
     expect(captionForToolUse(n('direct_stream_play'), { title: 'saltburn' })).toBe('starting a stream');
+    expect(captionForToolUse(n('direct_stream_discover'), { kind: 'tv' })).toBe('looking for titles to stream');
   });
 
   it('offers no tool that deletes permanently', () => {

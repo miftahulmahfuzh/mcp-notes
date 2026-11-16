@@ -54,6 +54,8 @@ function fakeDeps(
     now: () => new Date('2026-11-16T03:00:00Z'),
     providers: vi.fn(async () => []),
     updateSource: vi.fn(),
+    marks: async () => new Map(),
+    freshTitles: async () => new Set<string>(),
     ...over,
   };
   return { deps, tmdb, play: deps.play as typeof play, freshSource: deps.freshSource as typeof freshSource, rememberAlias: deps.rememberAlias as typeof rememberAlias };
@@ -265,5 +267,194 @@ describe('direct-stream MCP tools', () => {
     expect(json(await c.call('direct_stream_find', { title: 'nothing like it' }))).toMatchObject({ status: 'none', matches: [] });
     expect(f.play).not.toHaveBeenCalled();
     await c.close();
+  });
+
+  describe('absolute episode numbers', () => {
+    const range = (season: number, from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => ep(season, from + i, 'unwatched', null, '2001-01-01'));
+    const ONE_PIECE: TitleCandidate = { kind: 'tv', tmdbId: 37854, title: 'One Piece', originalTitle: 'ワンピース', year: 1999, movieId: 'M-0P1E' };
+
+    it('maps "episode 730" to the season and episode TMDB lists and says which was chosen', async () => {
+      const f = fakeDeps({ stored: [ONE_PIECE], progress: async () => [...range(1, 1, 61), ...range(2, 62, 700), ...range(3, 701, 800)] });
+      const c = await connect(f.deps);
+      const out = json(await c.call('direct_stream_play', { title: 'one piece', absolute_episode: 730 }));
+      expect(out).toMatchObject({ started: true, season: 3, episode: 730, picked: 'absolute', absolute_episode: 730 });
+      expect(out.next).toMatch(/episode 730 counted from the first/);
+      expect(f.play.mock.calls).toEqual([[{ kind: 'tv', tmdbId: 37854, season: 3, episode: 730 }]]);
+      await c.close();
+    });
+
+    it('reads TMDB\'s list when the series is not stored, and counts over seasons that restart at 1', async () => {
+      const listed = [...range(1, 1, 8), ...range(2, 1, 10)].map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate }));
+      const f = fakeDeps({ tmdbEpisodes: listed });
+      const c = await connect(f.deps);
+      expect(json(await c.call('direct_stream_play', { title: 'the bear', absolute_episode: 11 }))).toMatchObject({ started: true, season: 2, episode: 3, picked: 'absolute' });
+      await c.close();
+    });
+
+    it('lists both readings and starts nothing when they differ; says so when the series is shorter or the episode has not aired', async () => {
+      const f = fakeDeps({ progress: async () => [...range(1, 1, 8), ...range(2, 1, 10), ep(3, 1, 'unwatched', null, '2027-01-01')] });
+      const c = await connect(f.deps);
+      expect(json(await c.call('direct_stream_play', { title: 'the bear', absolute_episode: 9 }))).toMatchObject({
+        started: false,
+        skipped_play: 'episode_unclear',
+        candidates: [
+          { season: 2, episode: 1, reading: 'count', air_date: '2001-01-01' },
+          { season: 2, episode: 9, reading: 'number' },
+        ],
+      });
+      expect(json(await c.call('direct_stream_play', { title: 'the bear', absolute_episode: 19 }))).toMatchObject({ started: false, skipped_play: 'not_aired', season: 3, episode: 1, air_date: '2027-01-01' });
+      expect(json(await c.call('direct_stream_play', { title: 'the bear', absolute_episode: 400 }))).toMatchObject({ started: false, skipped_play: 'no_such_episode', episodes: 19 });
+      expect(f.play).not.toHaveBeenCalled();
+      await c.close();
+    });
+
+    it('refuses an absolute episode for a film, or together with a season and episode', async () => {
+      const f = fakeDeps();
+      const c = await connect(f.deps);
+      expect(text(await c.call('direct_stream_play', { title: 'saltburn', absolute_episode: 3 }))).toMatch(/^invalid_input: Saltburn \(2023\) is a film/);
+      expect(text(await c.call('direct_stream_play', { title: 'the bear', season: 1, episode: 2, absolute_episode: 3 }))).toMatch(/^invalid_input: pass absolute_episode alone/);
+      expect(f.play).not.toHaveBeenCalled();
+      await c.close();
+    });
+  });
+
+  describe('direct_stream_discover', () => {
+    const discoverTmdb = (over: Record<string, unknown> = {}) => {
+      const discover = vi.fn(async (kind: 'movie' | 'tv', _filter: unknown) =>
+        kind === 'tv'
+          ? [
+              hit({ kind: 'tv', title: 'Old Hit', tmdbId: 1, releaseDate: '2026-01-10', popularity: 90, originalLanguage: 'es', overview: 'A hit.' }),
+              hit({ kind: 'tv', title: 'New One', originalTitle: 'La Nueva', tmdbId: 2, releaseDate: '2026-09-01', popularity: 20, originalLanguage: 'es' }),
+            ]
+          : [hit({ title: 'A Film', tmdbId: 3, releaseDate: '2026-05-05', popularity: 50, originalLanguage: 'es' })],
+      );
+      const searchCompany = vi.fn(async () => [
+        { id: 7, name: 'Blumhouse Television', country: 'US' },
+        { id: 3172, name: 'Blumhouse Productions', country: 'US' },
+        { id: 8, name: 'Blumhouse', country: null },
+      ]);
+      const watchProviders = vi.fn(async () => [
+        { id: 8, name: 'Netflix', country: null },
+        { id: 204, name: 'Shudder Amazon Channel', country: null },
+        { id: 99, name: 'Shudder', country: null },
+      ]);
+      const tmdb = {
+        searchMovie: async () => [],
+        searchTv: async () => [],
+        searchPerson: vi.fn(async () => [
+          { personId: 85, name: 'Johnny Depp', knownFor: 'Acting', profilePath: null, popularity: 30 },
+          { personId: 86, name: 'Johnny Deep', knownFor: 'Crew', profilePath: null, popularity: 1 },
+        ]),
+        personCredits: vi.fn(async () => [
+          { kind: 'movie', tmdbId: 10, title: 'Newest', releaseDate: '2026-03-01', year: 2026, posterPath: null, popularity: 5, credit: 'cast', character: 'Jack', job: null, department: null, episodeCount: null, originalLanguage: 'en' },
+          { kind: 'movie', tmdbId: 11, title: 'Classic', releaseDate: '2003-07-09', year: 2003, posterPath: null, popularity: 80, credit: 'cast', character: 'Sparrow', job: null, department: null, episodeCount: null, originalLanguage: 'en' },
+          { kind: 'movie', tmdbId: 12, title: 'Directed', releaseDate: '2024-01-01', year: 2024, posterPath: null, popularity: 9, credit: 'crew', character: null, job: 'Director', department: 'Directing', episodeCount: null, originalLanguage: 'en' },
+          { kind: 'movie', tmdbId: 13, title: 'Not Out Yet', releaseDate: '2027-02-02', year: 2027, posterPath: null, popularity: 99, credit: 'cast', character: null, job: null, department: null, episodeCount: null },
+          { kind: 'movie', tmdbId: 14, title: 'Undated', releaseDate: null, year: null, posterPath: null, popularity: 99, credit: 'cast', character: null, job: null, department: null, episodeCount: null },
+          { kind: 'tv', tmdbId: 15, title: 'A Series', releaseDate: '2010-01-01', year: 2010, posterPath: null, popularity: 3, credit: 'cast', character: null, job: null, department: null, episodeCount: 2 },
+        ]),
+        discover,
+        searchCompany,
+        watchProviders,
+        ...over,
+      } as unknown as NonNullable<DirectStreamToolDeps['tmdb']>;
+      return { tmdb, discover, searchCompany, watchProviders };
+    };
+
+    it('lists Spanish series of this year, most popular first, marked against the library and this host\'s verified sources', async () => {
+      const t = discoverTmdb();
+      const f = fakeDeps({
+        tmdb: t.tmdb,
+        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false }]]),
+        freshTitles: async () => new Set(['tv-2']),
+      });
+      const c = await connect(f.deps);
+      const out = json(await c.call('direct_stream_discover', { kind: 'tv', language: 'Spanish', year: 2026 }));
+      expect(t.discover.mock.calls).toEqual([['tv', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyId: null, providerId: null, watchRegion: 'US', sort: 'popular' }]]);
+      expect(out.filters).toMatchObject({ kind: 'tv', released_from: '2026-01-01', released_to: '2026-11-16', language: 'es', sort: 'popular' });
+      expect(out.titles).toEqual([
+        {
+          kind: 'tv', tmdb_id: 1, title_key: 'tv-1', movie_id: 'M-0LD1', title: 'Old Hit', release_date: '2026-01-10', original_language: 'es', overview: 'A hit.',
+          in_library: true, state: 'finished', seen: true, started: false, not_interested: false, stream: { verified: false },
+          url: 'http://localhost:7317/movies/M-0LD1', tmdb_url: 'https://www.themoviedb.org/tv/1',
+        },
+        {
+          kind: 'tv', tmdb_id: 2, title_key: 'tv-2', movie_id: null, title: 'New One', original_title: 'La Nueva', release_date: '2026-09-01', original_language: 'es',
+          in_library: false, state: null, seen: false, started: false, not_interested: false, stream: { verified: true },
+          url: null, tmdb_url: 'https://www.themoviedb.org/tv/2',
+        },
+      ]);
+      expect(out.next).toMatch(/Nothing was started/);
+      const unseen = json(await c.call('direct_stream_discover', { kind: 'tv', language: 'es', unseen_only: true, sort: 'newest' }));
+      expect(unseen.titles.map((x: any) => x.title_key)).toEqual(['tv-2']);
+      expect(f.play).not.toHaveBeenCalled();
+      await c.close();
+    });
+
+    it('resolves a company and a service by name, lists the others, and takes an id to pick one', async () => {
+      const t = discoverTmdb();
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const blumhouse = json(await c.call('direct_stream_discover', { company: 'Blumhouse', year: 2026 }));
+      expect(blumhouse.filters.company).toEqual({ id: 8, name: 'Blumhouse' });
+      expect(blumhouse.other_companies).toEqual([
+        { id: 7, name: 'Blumhouse Television', country: 'US' },
+        { id: 3172, name: 'Blumhouse Productions', country: 'US' },
+      ]);
+      expect(t.discover.mock.calls.map((x) => [x[0], (x[1] as any).companyId])).toEqual([['movie', 8], ['tv', 8]]);
+      // Both kinds, merged by popularity.
+      expect(blumhouse.titles.map((x: any) => x.title_key)).toEqual(['tv-1', 'movie-3', 'tv-2']);
+
+      const picked = json(await c.call('direct_stream_discover', { company: 'Blumhouse', company_id: 3172, kind: 'movie' }));
+      expect(picked.filters.company).toEqual({ id: 3172, name: 'Blumhouse Productions', country: 'US' });
+
+      t.discover.mockClear();
+      const shudder = json(await c.call('direct_stream_discover', { kind: 'movie', service: 'shudder', sort: 'newest' }));
+      expect(shudder.filters).toMatchObject({ service: { id: 99, name: 'Shudder' }, region: 'US', sort: 'newest' });
+      expect(shudder.other_services).toEqual([{ id: 204, name: 'Shudder Amazon Channel' }]);
+      expect(t.discover.mock.calls[0]?.[1]).toMatchObject({ providerId: 99, watchRegion: 'US', sort: 'newest' });
+
+      const none = await c.call('direct_stream_discover', { service: 'tvN' });
+      expect(none.isError).toBe(true);
+      expect(text(none)).toMatch(/^not_found: TMDB lists no streaming service called "tvN" in US \(it lists Netflix, .*try company/);
+      await c.close();
+    });
+
+    it('lists a person\'s released titles by role, kind, year and language, newest first when asked', async () => {
+      const t = discoverTmdb();
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const depp = json(await c.call('direct_stream_discover', { person: 'johnny depp', role: 'cast', kind: 'movie', sort: 'newest' }));
+      expect(depp.filters).toMatchObject({ person: { id: 85, name: 'Johnny Depp', known_for: 'Acting' }, role: 'cast' });
+      expect(depp.other_people).toEqual([{ id: 86, name: 'Johnny Deep', known_for: 'Crew' }]);
+      expect(depp.titles.map((x: any) => [x.title, x.roles])).toEqual([['Newest', ['cast as Jack']], ['Classic', ['cast as Sparrow']]]);
+      expect(t.discover).not.toHaveBeenCalled();
+      const popular = json(await c.call('direct_stream_discover', { person: 'johnny depp' }));
+      expect(popular.titles.map((x: any) => x.title)).toEqual(['Classic', 'Directed', 'Newest', 'A Series']);
+      expect(json(await c.call('direct_stream_discover', { person: 'johnny depp', role: 'director' })).titles.map((x: any) => x.title)).toEqual(['Directed']);
+      expect(json(await c.call('direct_stream_discover', { person: 'johnny depp', year_from: 2020, year_to: 2025 })).titles.map((x: any) => x.title)).toEqual(['Directed']);
+      await c.close();
+    });
+
+    it('refuses what it cannot answer, and is off without the service', async () => {
+      const t = discoverTmdb();
+      const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      const cases: Array<[Record<string, unknown>, RegExp]> = [
+        [{ person: 'johnny depp', company: 'Blumhouse' }, /^invalid_input: person cannot be combined/],
+        [{ role: 'cast' }, /^invalid_input: role belongs to person/],
+        [{ language: 'klingonese' }, /^invalid_input: "klingonese" is not a language/],
+        [{ year_from: 2026, year_to: 2020 }, /^invalid_input: year_from is after year_to/],
+      ];
+      for (const [args, expected] of cases) {
+        const r = await c.call('direct_stream_discover', args);
+        expect(r.isError, JSON.stringify(args)).toBe(true);
+        expect(text(r)).toMatch(expected);
+      }
+      await c.close();
+      const noTmdb = await connect(fakeDeps({ tmdb: null }).deps);
+      expect(text(await noTmdb.call('direct_stream_discover', { kind: 'tv' }))).toMatch(/^tmdb_unavailable/);
+      await noTmdb.close();
+      const off = await connect(null);
+      expect(text(await off.call('direct_stream_discover', { kind: 'tv' }))).toBe(DIRECT_STREAM_OFF);
+      await off.close();
+    });
   });
 });

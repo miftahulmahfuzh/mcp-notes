@@ -9,8 +9,10 @@ import { createMcpServer } from '../../src/mcp/server.js';
 import { continueTitle, playSomething } from '../../src/movies/continue.js';
 import type { MoviePlayer, PlayStarted } from '../../src/movies/player.js';
 import { MoviesRepo } from '../../src/movies/repo.js';
+import { MovieEvents } from '../../src/movies/service.js';
 import { resumePosition } from '../../src/movies/state.js';
-import type { TmdbClient } from '../../src/movies/tmdb.js';
+import { MovieStreams } from '../../src/movies/streams.js';
+import { TmdbError, type TmdbClient } from '../../src/movies/tmdb.js';
 import { createApiHarness, type ApiHarness } from './helpers/api-harness.js';
 import { clearMovies, insertPlay, seedLibrary, THIS_HOST, OTHER_HOST, type SeededLibrary } from './helpers/moviesMcpSeed.js';
 
@@ -27,6 +29,17 @@ const fakeTmdb = {
           { personId: 42, name: 'Margaret Qualls', knownFor: 'Writing', profilePath: null, popularity: 1 },
         ]
       : [];
+  },
+  /** House of the Dragon as TMDB would answer it: two seasons, the second still airing. */
+  async tvDetails(id: number) {
+    if (id !== 94997) throw new TmdbError('http', 'TMDB /tv returned 404', 404);
+    const episode = (season: number, n: number, airDate: string) => ({ season, episode: n, name: `Episode ${n}`, airDate, runtimeMin: 60, overview: null, stillPath: null });
+    return {
+      kind: 'tv', tmdbId: 94997, title: 'House of the Dragon', originalTitle: 'House of the Dragon', originalLanguage: 'en', year: 2022, releaseDate: '2022-08-21',
+      overview: '', posterPath: null, backdropPath: null, runtimeMin: 60, genres: [], seasonCount: 2, episodeCount: 5, companies: [], credits: [],
+      episodes: [episode(1, 1, '2022-08-21'), episode(1, 2, '2022-08-28'), episode(1, 3, '2022-09-04'), episode(2, 1, '2024-06-16'), episode(2, 2, '2024-06-23')],
+      trailers: { title: null, seasons: {} },
+    };
   },
   async personCredits(personId: number) {
     if (personId !== 1373737) return [];
@@ -94,6 +107,12 @@ beforeAll(async () => {
     async setFileWatched(fileId, watched) {
       await repo.setFileWatched(fileId, watched);
     },
+    async setSeasonWatched(id, season, watched) {
+      const episodes = await repo.seasonEpisodes(id, season);
+      return { episodes: episodes.length, changed: (await repo.setEpisodesWatched(id, episodes, watched)).length };
+    },
+    // The real storing path (MovieStreams.ensureTitle) over a fake TMDB that knows one series.
+    ensureTitle: (kind, tmdbId) => new MovieStreams({ repo, tmdb: fakeTmdb, events: new MovieEvents(), host: THIS_HOST }, { log: () => {} }).ensureTitle({ kind, tmdbId }),
     async saveReview(titleId, reviewText) {
       reviews.push({ titleId, text: reviewText });
     },
@@ -474,5 +493,57 @@ describe('movie MCP tools', () => {
 
     const cleared = await callJson<{ rating: number | null }>('movies_mark', { title: 'tv-1003', rating: null });
     expect(cleared.rating).toBeNull();
+  });
+
+  it('movies_mark with a season marks that season\'s episodes finished, never the series, and takes the marks back', async () => {
+    interface SeasonMark {
+      title_id: string;
+      state: string;
+      watched_at: string | null;
+      season: { season: number; watched: boolean; episodes: number; changed: number; finished: number };
+    }
+    const marked = await callJson<SeasonMark>('movies_mark', { title: 'Series Gap', season: 1, watched: true });
+    expect(marked).toMatchObject({ title_id: 'tv-1004', watched_at: null, season: { season: 1, watched: true, episodes: 3, changed: 3, finished: 3 } });
+    const marks = await h.deps.db.execute(sql`select episode from movie_episode_marks where title_id = 'tv-1004' and season = 1 order by episode`);
+    expect(marks.rows.map((r) => Number((r as { episode: unknown }).episode))).toEqual([1, 2, 3]);
+    expect((await callJson<SeasonMark>('movies_mark', { title: 'tv-1004', season: 1, watched: true })).season.changed).toBe(0);
+
+    const cleared = await callJson<SeasonMark>('movies_mark', { title: 'tv-1004', season: 1, watched: false });
+    expect(cleared.season).toMatchObject({ watched: false, changed: 3 });
+    // Episode 1 was finished by a play: taking the mark back leaves it finished.
+    expect(cleared.season.finished).toBe(1);
+
+    const noSeason = await call('movies_mark', { title: 'tv-1004', season: 7, watched: true });
+    expect(noSeason.isError).toBe(true);
+    expect(text(noSeason)).toMatch(/^not_found: Series Gap has no season 7 \(seasons: 1\)/);
+    const film = await call('movies_mark', { title: 'movie-467905', season: 1, watched: true });
+    expect(text(film)).toMatch(/^invalid_input: How to Make a Killing is a film/);
+  });
+
+  it('movies_mark sets and clears not interested', async () => {
+    const set = await callJson<{ not_interested: boolean }>('movies_mark', { title: 'tv-1003', not_interested: true });
+    expect(set.not_interested).toBe(true);
+    const row = await h.deps.db.execute(sql`select not_interested_at from movie_titles where id = 'tv-1003'`);
+    expect((row.rows[0] as { not_interested_at: unknown }).not_interested_at).not.toBeNull();
+    expect((await callJson<{ not_interested: boolean }>('movies_mark', { title: 'tv-1003', not_interested: false })).not_interested).toBe(false);
+  });
+
+  it('movies_mark stores a title the library does not hold from its title key, then marks its season', async () => {
+    const marked = await callJson<{ title_id: string; title: string; movie_id: string; season: { episodes: number; changed: number; finished: number } }>('movies_mark', {
+      title: 'tv-94997',
+      season: 1,
+      watched: true,
+    });
+    expect(marked).toMatchObject({ title_id: 'tv-94997', title: 'House of the Dragon', season: { episodes: 3, changed: 3, finished: 3 } });
+    expect(marked.movie_id).toMatch(/^M-[0-9A-Z]{4}$/);
+    const got = await callJson<{ seasons: Array<{ season: number; episodes: Array<{ state: string }> }> }>('movies_get', { title: 'tv-94997' });
+    expect(got.seasons.map((s) => [s.season, s.episodes.map((e) => e.state)])).toEqual([
+      [1, ['finished', 'finished', 'finished']],
+      [2, ['unwatched', 'unwatched']],
+    ]);
+
+    const unknown = await call('movies_mark', { title: 'tv-555555', watched: true });
+    expect(unknown.isError).toBe(true);
+    expect(text(unknown)).toMatch(/^not_found: tv-555555 is not stored and could not be read from TMDB/);
   });
 });

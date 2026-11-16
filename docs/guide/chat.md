@@ -62,7 +62,7 @@ The status is a short caption for the tool call in progress. It clears when text
 | reading Seer Adversarial, reading Claude's verdicts, reading Claude's record | reading the adversary tools |
 | searching movies, reading a title, reading watch history, reading a filmography, marking a title, looking at a title's pictures, opening VLC | using the movie tools |
 | searching the streaming sites, starting a film | using the streaming tools |
-| looking for a stream, starting a stream, reading the stream providers | using the direct-streaming tools |
+| looking for a stream, starting a stream, looking for titles to stream, reading the stream providers | using the direct-streaming tools |
 | searching the web, reading a web page | calling WebSearch or WebFetch |
 
 ### Ids in an answer are links
@@ -161,7 +161,7 @@ The allow list, by group. Arguments are in the [MCP tool reference](reference/mc
 | Seer Adversarial | `adversary_overview`, `adversary_verdicts`, `adversary_scorecard` | No |
 | Movies | `movies_list`, `movies_get`, `movies_history`, `movies_person`, `movies_mark`, `movies_pictures`, `movies_continue` | `movies_mark` stores a mark; `movies_continue` starts VLC |
 | Streaming sites | `streaming_find`, `streaming_play` | `streaming_play` opens Chrome and starts a film |
-| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources` | `direct_stream_play` opens the player page full screen in the streaming Chrome; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only |
+| Direct streaming | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_sources` | `direct_stream_discover` only reads TMDB and the library; `direct_stream_play` opens the player page full screen in the streaming Chrome; `direct_stream_update_source` is Claude Code's `/update-cloud-source` only |
 | Web | `WebSearch`, `WebFetch` | No |
 
 Not on the list: `link_note` and `unlink_note` (linking a note to a session is `/n` only) and the
@@ -199,6 +199,11 @@ These rules come from the system prompt, so they shape every answer:
   `direct_stream_play`, which plays it full screen in notesd's own player page in the streaming
   Chrome. A question ("can I stream it directly?") is `direct_stream_find`, which starts nothing.
   See [streaming.md](streaming.md#direct-stream).
+- Asked to stream something it has to choose ("stream a Johnny Depp movie, the more recent the
+  better", "pick a Spanish series from this year"), it calls `direct_stream_discover`, picks one
+  title the owner has not seen, plays it and says which and why. Asked only what there is, it
+  lists the titles and starts nothing. See
+  [streaming.md](streaming.md#finding-something-to-stream).
 
 ### Claude first, GLM as fallback
 

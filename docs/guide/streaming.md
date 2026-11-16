@@ -19,6 +19,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [What you can ask](#what-you-can-ask) · [How a film is started](#how-a-film-is-started) ·
 [The streaming Chrome](#the-streaming-chrome) · [In the chat bar](#in-the-chat-bar) ·
 [Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
+[Finding something to stream](#finding-something-to-stream) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -154,6 +155,11 @@ this is a LOTR night. let's /direct-stream the first one
 /direct-stream the bear season 2 episode 3
 /direct-stream M-23T4
 can I stream saltburn directly?
+resume one piece from episode 730
+stream a johnny depp movie. the more recent the better
+let's watch some spanish series. pick one for me, one released this year
+let's stream the most recent Shudder movie
+what are Blumhouse's movies released this year? play one
 ```
 
 | You type | What happens |
@@ -165,9 +171,16 @@ can I stream saltburn directly?
 | `/direct-stream the bear season 2 episode 3` | That episode plays |
 | A film no source can stream | `no_source`, with what each provider did. Nothing starts |
 | `can I stream saltburn directly?` | A lookup: the match, and whether this laptop has a recently verified source |
+| `resume one piece from episode 730` | The 730th episode, whatever season TMDB files it under; the answer names the season and episode |
+| `stream a johnny depp movie. the more recent the better` | Claude lists his films newest first, picks one you have not seen, plays it and says which and why |
+| `what are Blumhouse's movies released this year?` | A list, marked seen or not. Nothing starts until you add "play one" |
+
+Requests that name no title are in [Finding something to stream](#finding-something-to-stream).
 
 - **`/direct-stream` streams even a film you have.** Without it, a library film plays in VLC.
 - **A question is a lookup**, and **a recommendation is not a request**.
+- **"Pick one for me" and "play one" are requests.** Claude chooses from the list it found, plays
+  that title and says which one and why.
 - **It continues where the last stream stopped.**
 
 ### `/create-streaming-skill`: another site
@@ -431,7 +444,8 @@ play, and its `start()`.
 ### `/direct-stream`
 
 `/direct-stream <title>` in Claude Code (the `claude/skills/direct-stream` skill) and the same
-words in the chat bar end in the same two MCP tools:
+words in the chat bar end in the same MCP tools (a request that names no title goes through
+`direct_stream_discover` first: [Finding something to stream](#finding-something-to-stream)):
 
 - `direct_stream_find` looks the title up and says, per match, whether this laptop has a source
   verified inside the freshness window. It resolves nothing and opens nothing.
@@ -468,6 +482,7 @@ and VLC), so the progress survives sessions and restarts:
 | What was played | What starts | `picked` |
 | --- | --- | --- |
 | Nothing | Season 1, episode 1 | `first` |
+| Nothing, and you marked episodes finished ("I watched season 1 last year") | The first episode that is not finished | `next` |
 | The episode played last is unfinished | That episode, from the position it stopped at | `resume` |
 | The episode played last is finished | The first unfinished episode after it, into the next season | `next` |
 
@@ -475,11 +490,82 @@ Specials (season 0) are never picked. When the stored episode list has nothing l
 current list is read first, since a series still airing has newer episodes than the stored ones.
 A named season and episode always wins over the pick.
 
+**An episode named by one number** ("One Piece episode 730") is passed as `absolute_episode`, and
+the daemon maps it to TMDB's season and episode (`pickAbsoluteEpisode` in `episodePick.ts`) from
+the stored episode list, or TMDB's when the series is not stored or the stored list is shorter.
+The number can be read two ways: the n-th episode counted over seasons 1 and up, which is how a
+file named `One Piece - 730` is placed, and the episode whose own number is n, since a long
+anime's numbers run on across seasons.
+
+| The list says | Answer |
+| --- | --- |
+| The n-th episode is also numbered n (One Piece), or no episode is numbered n (a series whose seasons restart at 1) | That episode plays: `picked: "absolute"`, with its `season` and `episode` |
+| The n-th episode and the episode numbered n differ (a list with a gap; episode 12 of a series whose second season has 13) | `episode_unclear` with both as `candidates`. Nothing starts |
+| The series has fewer episodes | `no_such_episode`, with the count |
+| The episode airs after today | `not_aired`, with its air date |
+
+Specials (season 0) never count.
+
 Nothing starts when several titles match (the candidates come back with their years), when no
 title matches (`no_match`), when no episode is left after the last one played (`caught_up`), when
 the next episode airs after today (`not_aired`, with its air date), or when no provider resolves:
 then the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
 `dubbed`, `skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
+
+### Finding something to stream
+
+`direct_stream_discover` answers requests that describe a title instead of naming one. It reads
+TMDB and the library and starts nothing; Claude then plays one title with `direct_stream_play`,
+by its `title_key`.
+
+| You say | Filter |
+| --- | --- |
+| a film, a series | `kind` (both when left out) |
+| this year, 2019, the nineties | `year`, or `year_from` and `year_to` |
+| Spanish, Korean, Indonesian | `language`: the original language, as an English name or a code |
+| an actor; "Nolan's", "directed by" | `person`, with `role` `cast` or `director` (`crew`, `any`) |
+| Blumhouse, A24 | `company`: a production company |
+| Shudder, Netflix | `service`: a streaming service, read from one country's catalogue (`region`, default `US`) |
+| the most recent | `sort: "newest"` (the default is `popular`) |
+
+- **Names become TMDB ids inside the tool.** A person is the most popular match of TMDB's person
+  search; a company is the match called exactly that, else the first whose name starts with the
+  words; a service is matched the same way against TMDB's watch-provider list for the region.
+  `filters` says what was understood, and `other_people`, `other_companies` and `other_services`
+  list what else the name fits; `person_id`, `company_id` or `service_id` picks one of those.
+- **Every title is marked against the library**, in the shape `movies_person` uses: `in_library`,
+  `state`, `seen`, `started`, plus `not_interested` and `stream.verified` (this machine has a
+  source verified inside the freshness window; a series counts when any episode has one).
+- **Only released titles.** The window never reaches past today, and a person's undated credits
+  are left out: a title that is not out cannot be streamed.
+- **A person's titles come from their filmography**, filtered here by kind, role, year and
+  language, since TMDB cannot filter series by person. So `person` cannot be combined with
+  `company` or `service`.
+- **A service is a streaming catalogue, not a list of originals.** "The most recent Shudder
+  movie" is the newest film Shudder offers in that country. TMDB has no search for TV networks:
+  a network that is not also a streaming service is asked for as `company`.
+- One page per kind is read (20 titles), then merged; `limit` is 20 by default and 40 at most.
+
+The ten requests the tool was built for, each run against the fake TMDB of
+`verify.sh up --discovery` (the year is this year's):
+
+| You say | Tool calls |
+| --- | --- |
+| let's watch some spanish series. pick one for me. find the one that was released this year | `direct_stream_discover {kind: "tv", language: "Spanish", year}`, then `direct_stream_play {title: <title_key>}` |
+| stream a johnny depp movie. the more recent the better | `direct_stream_discover {person: "Johnny Depp", role: "cast", kind: "movie", sort: "newest"}`, then play the first |
+| let's start resume one piece from episode 730 | `direct_stream_play {title: "one piece", absolute_episode: 730}` |
+| i wanna rewatch penguin. let's stream it | `direct_stream_play {title: "the penguin", kind: "tv", season: 1, episode: 1}` |
+| let's stream the most recent Shudder movie | `direct_stream_discover {kind: "movie", service: "Shudder", sort: "newest"}`, then play the first |
+| what are Blumhouse's movie that was released this year? play one | `direct_stream_discover {company: "Blumhouse", kind: "movie", year}`, then play one |
+| play one of Nolan's movie | `direct_stream_discover {person: "Christopher Nolan", role: "director", kind: "movie"}`, then play one |
+| i watched House of The Dragon season 1 last year. start season 2 | `direct_stream_find`, `movies_mark {title: <title_key>, season: 1, watched: true}`, `direct_stream_play {title: <title_key>, season: 2, episode: 1}` |
+| i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
+| let's watch James Gunn's superman | `direct_stream_play {title: "superman", year: 2025}` |
+
+When the title Claude picked answers `no_source`, it picks another from the list, at most twice
+more. After a season is marked finished with `movies_mark`, a series named without an episode
+starts at the first episode that is not finished, so "continue House of the Dragon" also starts
+season 2.
 
 ### `/update-cloud-source`: providers from another site
 
@@ -609,7 +695,8 @@ and the last pass.
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
-| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play` |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover` |
+| `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |

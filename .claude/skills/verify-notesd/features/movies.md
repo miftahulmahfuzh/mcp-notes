@@ -94,6 +94,12 @@
   `web/src/App.movies.test.tsx` ("the trailer icon").
 - MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
+- `movies_mark` beyond watched, rating and review: `season` with `watched` marks one season's
+  episodes finished or takes the marks back (the page's season button), `not_interested` sets or
+  clears that mark, and a title key the library does not hold (`tv-94997`) is stored from TMDB
+  first. Proof: `npm run test:int -- tests/integration/movies.mcp.int.test.ts`; on a
+  `$V up --discovery` run, `direct-stream/discovery.sh RUN` (request 8 and "marks") and
+  `$V mcp RUN movies_mark '{"title":"mobland","season":1,"watched":true}'` after a sync.
 
 ## How to get to it (user POV)
 Wall: the Movies icon in the rail or sidebar -> `/movies` (poster grid; the Library / Stream icons
