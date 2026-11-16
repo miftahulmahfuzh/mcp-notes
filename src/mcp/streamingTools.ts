@@ -19,6 +19,8 @@ const FIND_DESCRIPTION =
   'Pass the title, and the release year when you know it. Omit site to ask every site at once. ' +
   'Each site answers with matches (the results whose English or original name is the asked title, and whose year is the asked year when one was given; ' +
   'each has title, kind movie or series, year, quality or seasons, and url) and others (a few other results, mostly unrelated: use them only to offer a near miss, and say it is not exact). ' +
+  'For one episode of a series pass episode, and season when the owner named one: a site that plays episodes (idlix) then answers episode { season, episode, name, url, title } when exactly one matching series has it, ' +
+  'since a long anime numbers its episodes through the seasons (One Piece 787 is in season 18) and the site says where; otherwise episode is null and episode_candidates lists the ones that fit. ' +
   'A site that could not be asked answers ok: false with an error; say which site and do not guess a link. ' +
   'Never build a link yourself: a link counts only when this tool returned it. This tool only looks; nothing opens on screen.';
 
@@ -29,7 +31,10 @@ const PLAY_DESCRIPTION =
   'Call it only when the owner asks to watch, play or put on something on one of these sites; finding a link is streaming_find. ' +
   'Pass site and title (with year when known): the film starts only when exactly one film matches. ' +
   'play.skipped_play says why nothing started: several_matches (show the matches and ask which, then call again with that match\'s url), ' +
-  'series (a series has episodes to choose: give the link), or no_match. To start a result you already have, pass its url and no title. ' +
+  'series (a series has episodes to choose: give the link, or call again with episode), or no_match. To start a result you already have, pass its url and no title. ' +
+  'One episode of a series ("/idlix one piece 787", "play La Brea season 2 episode 3 on idlix") is title with episode, and season only when the owner named one: the episode starts when exactly one matching series has it, and episode says which season it is in. ' +
+  'Then skipped_play can also be no_episode (no matching series has that episode), several_episodes (list episode_candidates with their series and season and ask which, then call again with that one\'s url), ' +
+  'no_video (the site lists the episode without a video) or no_episodes (this site does not play episodes: lk21). ' +
   'play.playing true means the film is on screen; with false, stage or error says where it stopped (a hidden or minimized window stops a countdown; calling again starts over). ' +
   'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
@@ -37,8 +42,16 @@ const siteField = z.enum(STREAMING_SITES);
 const titleField = z.string().trim().min(1).max(200);
 const yearField = z.number().int().min(1880).max(2100);
 
-function queryArgs(title: string, year: number | undefined): string[] {
-  return year === undefined ? [title] : [title, String(year)];
+const seasonField = z.number().int().min(0).max(1000);
+const episodeField = z.number().int().min(1).max(99_999);
+
+function queryArgs(title: string, year: number | undefined, season?: number, episode?: number): string[] {
+  return [
+    title,
+    ...(year === undefined ? [] : [String(year)]),
+    ...(episode === undefined ? [] : ['--episode', String(episode)]),
+    ...(episode === undefined || season === undefined ? [] : ['--season', String(season)]),
+  ];
 }
 
 /** Cuts the unrelated results of one script answer down to a few. */
@@ -54,9 +67,9 @@ function requireRunner(runner: StreamingRunner | null | undefined): StreamingRun
   return runner;
 }
 
-async function findOnSite(runner: StreamingRunner, site: StreamingSite, title: string, year: number | undefined): Promise<unknown> {
+async function findOnSite(runner: StreamingRunner, site: StreamingSite, title: string, year: number | undefined, season?: number, episode?: number): Promise<unknown> {
   try {
-    return trimOthers(await runner(site, queryArgs(title, year)));
+    return trimOthers(await runner(site, queryArgs(title, year, season, episode)));
   } catch (err) {
     return { ok: false, site, error: err instanceof Error ? err.message : String(err) };
   }
@@ -77,14 +90,16 @@ export function registerStreamingTools(server: McpServer, deps: Pick<ToolDeps, '
         title: titleField.describe('The film or series title, without the year.'),
         year: yearField.optional().describe('The release year, when known. Tells a remake from its original.'),
         site: siteField.optional().describe(`One site (${SITE_LIST}). Omit to ask every site.`),
+        season: seasonField.optional().describe('With episode, when the owner named a season.'),
+        episode: episodeField.optional().describe('One episode of a series, by its number as the owner said it ("one piece 787").'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ title, year, site }) =>
+    async ({ title, year, site, season, episode }) =>
       run(async () => {
         const runner = requireRunner(deps.streaming);
         const sites = site === undefined ? STREAMING_SITES : [site];
-        return { sites: await Promise.all(sites.map((name) => findOnSite(runner, name, title, year))) };
+        return { sites: await Promise.all(sites.map((name) => findOnSite(runner, name, title, year, season, episode))) };
       }),
   );
 
@@ -98,15 +113,17 @@ export function registerStreamingTools(server: McpServer, deps: Pick<ToolDeps, '
         title: titleField.optional().describe('The film title, without the year. Give this or url.'),
         year: yearField.optional().describe('The release year, when known.'),
         url: z.string().url().max(500).optional().describe("A result's url from streaming_find or an earlier answer, to start exactly that one. Give this or title."),
+        season: seasonField.optional().describe('With episode, when the owner named a season.'),
+        episode: episodeField.optional().describe('One episode of a series, by its number as the owner said it ("one piece 787"). With title, not url.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ site, title, year, url }) =>
+    async ({ site, title, year, url, season, episode }) =>
       run(async () => {
         const runner = requireRunner(deps.streaming);
         if (url !== undefined) return runner(site, ['--play-url', url]);
         if (title === undefined) throw new Error('give a title or a url');
-        return trimOthers(await runner(site, ['--play', ...queryArgs(title, year)]));
+        return trimOthers(await runner(site, ['--play', ...queryArgs(title, year, season, episode)]));
       }),
   );
 }

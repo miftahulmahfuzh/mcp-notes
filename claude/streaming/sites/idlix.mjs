@@ -44,6 +44,50 @@ export function toResult(item, origin = ORIGIN) {
   };
 }
 
+const EPISODE_PROBES_AT_ONCE = 6;
+
+/**
+ * The expression evaluated in the tab: which episodes of a series the site has under one episode
+ * number. The site's own API is asked, the way its episode page asks it
+ * (/api/series/<slug>/season/<s>/episode/<n>: 200 with the episode, 404 without). With a season
+ * only that one is asked; without, every season the series lists, since a long anime's episode
+ * numbers run on across seasons (One Piece 787 is in season 18) and only the site knows where.
+ */
+export function episodeExpression(slug, season, episode) {
+  return `(async () => {
+  const get = async (path) => {
+    const res = await fetch(path, { headers: { accept: 'application/json' } });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    return { status: res.status, body };
+  };
+  const slug = ${JSON.stringify(slug)};
+  let seasons = ${season === null ? 'null' : JSON.stringify([season])};
+  let status = 200;
+  if (seasons === null) {
+    const series = await get('/api/series/' + slug);
+    status = series.status;
+    seasons = series.body && Array.isArray(series.body.seasons) ? series.body.seasons.map((s) => s.seasonNumber).filter((n) => Number.isInteger(n)) : [];
+  }
+  const hits = [];
+  for (let i = 0; i < seasons.length; i += ${EPISODE_PROBES_AT_ONCE}) {
+    await Promise.all(seasons.slice(i, i + ${EPISODE_PROBES_AT_ONCE}).map(async (s) => {
+      const found = await get('/api/series/' + slug + '/season/' + s + '/episode/' + ${JSON.stringify(episode)});
+      if (found.status !== 200 && found.status !== 404) status = found.status;
+      const e = found.body && found.body.episode;
+      if (found.status === 200 && e) hits.push({ season: s, episode: e.episodeNumber, name: e.name || null, has_video: e.hasVideo !== false });
+    }));
+  }
+  return { status, title: document.title, hits: hits.sort((a, b) => a.season - b.season) };
+})()`;
+}
+
+/** The slug of a series page on the site, or null for any other address. */
+export function seriesSlug(url, origin = ORIGIN) {
+  const pathname = pathOnSite(url, origin, /^\/series\/[a-z0-9-]+$/);
+  return pathname === null ? null : pathname.slice('/series/'.length);
+}
+
 /** Step 1: wait for the big play button on the title page and click it. */
 export const CLICK_PLAY_EXPRESSION = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -86,7 +130,22 @@ export default {
   originEnv: 'IDLIX_ORIGIN',
   playerSelector: FRAME,
 
-  titlePath: (url) => pathOnSite(url, ORIGIN, /^\/(movie|series)\/[a-z0-9-]+$/),
+  titlePath: (url) => pathOnSite(url, ORIGIN, /^\/(movie|series)\/[a-z0-9-]+$/) ?? pathOnSite(url, ORIGIN, /^\/series\/[a-z0-9-]+\/season\/\d+\/episode\/\d+$/),
+
+  /**
+   * The episodes a series has under one episode number: [{ season, episode, name, has_video, url }],
+   * one per season that has it. The address is the series page the search returned plus the season
+   * and episode the site's own API confirmed; nothing is guessed.
+   */
+  async episodes(seriesUrl, { season, episode }) {
+    const slug = seriesSlug(seriesUrl);
+    if (slug === null) throw new Error(`not a series page on ${ORIGIN}: ${seriesUrl}`);
+    const value = await evaluateInChrome(ORIGIN, episodeExpression(slug, season, episode));
+    if (!value || value.status !== 200 || !Array.isArray(value.hits)) {
+      throw new Error(`the site answered HTTP ${value?.status ?? '?'} (page title: ${value?.title ?? '?'})`);
+    }
+    return value.hits.map((hit) => ({ ...hit, url: `${ORIGIN}/series/${slug}/season/${hit.season}/episode/${hit.episode}` }));
+  },
 
   async search(query) {
     const value = await evaluateInChrome(ORIGIN, searchExpression(query.name));

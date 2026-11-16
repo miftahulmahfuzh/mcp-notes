@@ -30,6 +30,10 @@ has no surface of its own: `/direct-stream` and the Stream side of `/movies` run
 - Live play: `node claude/streaming/cli.mjs <site> --play <film>`. It brings Chrome to the front,
   goes full screen and plays with sound. Run it only when the owner expects it, and say so in
   the report.
+- An episode on idlix, live: `node claude/streaming/cli.mjs idlix one piece --episode 787` answers
+  `episode` with `season: 18` and its address (a lookup, nothing starts); `--episode 1` answers
+  `episode: null` with three `episode_candidates` (two series, two seasons); with `--play` the
+  one that fits starts like a film. The rules are in `tests/unit/scripts/streamingSites.test.ts`.
 - Resolver order, offline: `node claude/streaming/direct/cli.mjs providers [--health <file>]`
   prints the providers in the order a resolve tries them.
 - Resolver against local fixtures, no outside site: serve `tests/fixtures/direct-stream/` with

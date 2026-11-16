@@ -4,7 +4,9 @@ import { pathOnSite, pickMatches } from '../../../claude/streaming/match.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { fillScreenExpression } from '../../../claude/streaming/play.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import idlix, { CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, searchExpression, toResult as idlixResult } from '../../../claude/streaming/sites/idlix.mjs';
+import idlix, { CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, episodeExpression, searchExpression, seriesSlug, toResult as idlixResult } from '../../../claude/streaming/sites/idlix.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { findEpisode, readEpisodeFlags } from '../../../claude/streaming/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import lk21, { START_PLAYER_EXPRESSION, searchHost, splitTitle, toResult as lk21Result } from '../../../claude/streaming/sites/lk21.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -94,6 +96,83 @@ describe('idlix', () => {
     expect(idlix.titlePath(`${idlix.origin}/movie/no-other-choice-2025`)).toBe('/movie/no-other-choice-2025');
     expect(idlix.titlePath(`${idlix.origin}/series/la-brea-2021`)).toBe('/series/la-brea-2021');
     expect(idlix.titlePath(`${idlix.origin}/auth/login`)).toBeNull();
+  });
+
+  it('plays an episode page, and nothing else under a series', () => {
+    expect(idlix.titlePath(`${idlix.origin}/series/one-piece-1999/season/18/episode/787`)).toBe('/series/one-piece-1999/season/18/episode/787');
+    expect(idlix.titlePath(`${idlix.origin}/series/one-piece-1999/season/18`)).toBeNull();
+    expect(idlix.titlePath(`${idlix.origin}/movie/x-2020/season/1/episode/1`)).toBeNull();
+    expect(seriesSlug(`${idlix.origin}/series/one-piece-1999`)).toBe('one-piece-1999');
+    expect(seriesSlug(`${idlix.origin}/movie/one-piece-film-red-2022`)).toBeNull();
+    expect(seriesSlug('https://elsewhere.example/series/one-piece-1999')).toBeNull();
+  });
+
+  it("asks the site's own episode API: the named season, or every season the series lists", () => {
+    const every = episodeExpression('one-piece-1999', null, 787);
+    parses(every);
+    expect(every).toContain("'/api/series/' + slug");
+    expect(every).toContain("'/season/' + s + '/episode/' + 787");
+    expect(every).toContain('let seasons = null;');
+    const one = episodeExpression('la-brea-2021', 2, 3);
+    parses(one);
+    expect(one).toContain('let seasons = [2];');
+    // Read only: nothing is pressed and nothing is posted.
+    expect(`${every}${one}`).not.toMatch(/\.click\(|method:/);
+  });
+});
+
+describe('an episode of a series (cli.mjs)', () => {
+  const OP = { title: 'One Piece (1999)', kind: 'series', url: 'https://site.example/series/one-piece-1999' };
+  const LIVE = { title: 'ONE PIECE (2023)', kind: 'series', url: 'https://site.example/series/one-piece-2023' };
+  const FILM = { title: 'One Piece Film: Red (2022)', kind: 'movie', url: 'https://site.example/movie/red' };
+  const hit = (url: string, season: number, episode: number, has_video = true) => ({ season, episode, name: `S${season}E${episode}`, has_video, url: `${url}/season/${season}/episode/${episode}` });
+  /** A site whose series have the episodes listed per series url. */
+  const site = (have: Record<string, [number, number, boolean?][]>) => {
+    const asked: unknown[] = [];
+    return {
+      asked,
+      episodes: async (url: string, want: { season: number | null; episode: number }) => {
+        asked.push([url, want]);
+        return (have[url] ?? []).filter(([s, e]) => e === want.episode && (want.season === null || s === want.season)).map(([s, e, v]) => hit(url, s, e, v));
+      },
+    };
+  };
+
+  it('reads --episode and --season out of the words, in any place', () => {
+    expect(readEpisodeFlags(['one', 'piece', '--episode', '787'])).toEqual({ words: ['one', 'piece'], season: null, episode: 787, bad: null });
+    expect(readEpisodeFlags(['--season', '2', 'la', 'brea', '2021', '--episode', '3'])).toEqual({ words: ['la', 'brea', '2021'], season: 2, episode: 3, bad: null });
+    expect(readEpisodeFlags(['la', 'brea'])).toEqual({ words: ['la', 'brea'], season: null, episode: null, bad: null });
+    expect(readEpisodeFlags(['x', '--episode', 'three']).bad).toBe('--episode takes a whole number');
+    expect(readEpisodeFlags(['x', '--episode']).bad).toBe('--episode takes a whole number');
+    expect(readEpisodeFlags(['x', '--season', '2']).bad).toBe('--season needs --episode');
+  });
+
+  it('finds the one series that has the episode, in the season the site names', async () => {
+    const s = site({ [OP.url]: [[18, 787]], [LIVE.url]: [[1, 1], [2, 1]] });
+    const found = await findEpisode(s, [OP, LIVE, FILM], { season: null, episode: 787 });
+    expect(found).toEqual({ episode: { ...hit(OP.url, 18, 787), title: 'One Piece (1999)' } });
+    // Only series are asked, never a film.
+    expect(s.asked).toEqual([[OP.url, { season: null, episode: 787 }], [LIVE.url, { season: null, episode: 787 }]]);
+  });
+
+  it('starts nothing when several episodes fit, none does, the episode has no video, or there is no series', async () => {
+    const s = site({ [OP.url]: [[1, 1], [18, 788, false]], [LIVE.url]: [[1, 1], [2, 1]] });
+    const several = await findEpisode(s, [OP, LIVE], { season: null, episode: 1 });
+    expect(several).toMatchObject({ episode: null, skipped: 'several_episodes' });
+    expect(several.candidates.map((c: { title: string; season: number }) => [c.title, c.season])).toEqual([['One Piece (1999)', 1], ['ONE PIECE (2023)', 1], ['ONE PIECE (2023)', 2]]);
+    // A season narrows it, but two series still have season 1 episode 1.
+    expect((await findEpisode(s, [OP, LIVE], { season: 2, episode: 1 })).episode).toMatchObject({ title: 'ONE PIECE (2023)', season: 2 });
+    expect(await findEpisode(s, [OP, LIVE], { season: null, episode: 5000 })).toEqual({ episode: null, skipped: 'no_episode' });
+    expect(await findEpisode(s, [OP], { season: null, episode: 788 })).toMatchObject({ episode: null, skipped: 'no_video' });
+    expect(await findEpisode(s, [FILM], { season: null, episode: 1 })).toEqual({ episode: null, skipped: 'no_match' });
+  });
+
+  it('says so when the site plays no episodes, or could not be asked', async () => {
+    expect(await findEpisode({}, [OP], { season: null, episode: 1 })).toEqual({ episode: null, skipped: 'no_episodes' });
+    const down = { episodes: async () => { throw new Error('the site answered HTTP 403'); } };
+    expect(await findEpisode(down, [OP], { season: null, episode: 1 })).toEqual({ episode: null, skipped: 'episode_lookup_failed', error: 'the site answered HTTP 403' });
+    expect(typeof idlix.episodes).toBe('function');
+    expect(lk21.episodes).toBeUndefined();
   });
 
   it("ships page expressions that parse, and presses nothing but play and the site's own Skip Ad", () => {

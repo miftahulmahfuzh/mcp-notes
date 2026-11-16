@@ -56,7 +56,7 @@ Both streaming skills run one command, `claude/streaming/cli.mjs`, with a module
 | A plain request | Refused: Cloudflare answers 403 to `curl`, `WebFetch` and a headless browser | Answered |
 | Search | The site's own `/api/search`, asked from inside the streaming Chrome | The search host named on the home page (`data-search_url`), asked directly |
 | A film's page | `/movie/<slug>` | `/<slug>` |
-| A series | `/series/<slug>`: a link, not started | Forwards to another site: a link, not started |
+| A series | `/series/<slug>`: a link; one episode starts when asked for (`/series/<slug>/season/<n>/episode/<n>`) | Forwards to another site: a link, not started |
 | Before the film | A 7-second countdown, then an advert with "Skip Ad" after about 10 seconds | Nothing |
 | The player | In the page itself | In a frame from another host, inside a second one |
 | Time to a playing film | About 25 seconds | 6 to 20 seconds |
@@ -113,6 +113,8 @@ put that one on lk21
 | A title two films share, with no year | Several films match: the answer lists them with their years and asks which one |
 | `the 2019 one`, after that | That film starts, played by the link from the list |
 | `/idlix la brea` | A series: its link, with the number of seasons. Nothing starts |
+| `/idlix OP 787` | One Piece episode 787 starts. The site says it is in season 18 |
+| `/idlix la brea season 2 episode 3` | That episode starts |
 | `play it on lk21`, after a recommendation | The film from the conversation |
 
 Lookups, which start nothing:
@@ -145,7 +147,18 @@ The rules behind those answers:
 - **A question is a lookup.** "Is it on idlix?" answers with the link and starts nothing.
 - **Several matches start nothing.** The answer lists them; say which one and it is played by
   its link.
-- **A series is a link only.** It has episodes to choose, and on lk21 it lives on another site.
+- **A series without an episode is a link only**, and on lk21 it lives on another site.
+- **An episode on idlix** (`cli.mjs idlix --play <title> --episode <n> [--season <n>]`,
+  `streaming_play` with `episode`). The series comes from the site's search, as always. Then the
+  site's own episode API (`/api/series/<slug>/season/<s>/episode/<n>`, asked inside the streaming
+  Chrome) says which season has the episode: the named season, or every season the series lists,
+  because a long anime numbers its episodes through the seasons and only the site knows where
+  (One Piece 787 is in season 18). The episode starts only when exactly one matching series has
+  it. `skipped_play` says why not: `no_episode`, `several_episodes` (two series of that name, or
+  an episode number every season has: `episode_candidates` lists them and one is then played by
+  its link), `no_video`, or `no_episodes` on a site that plays none. An episode's address is
+  the series page the search returned plus the season and episode the site confirmed; it is
+  never guessed.
 - **A recommendation is not a request.** A film is never started because it was suggested.
 - **A film in the library plays in VLC** (`movies_continue`), unless you name the site.
 

@@ -103,6 +103,23 @@ describe('streaming MCP tools', () => {
     await c.close();
   });
 
+  it('passes an episode, and its season when named, to the script; a season without an episode is left out', async () => {
+    const runner = vi.fn<StreamingRunner>(async (site) => ({ ok: true, site, episode: { season: 18, episode: 787 }, play: { playing: true } }));
+    const c = await connect(runner);
+    expect(json(await c.call('streaming_play', { site: 'idlix', title: 'one piece', episode: 787 })).episode.season).toBe(18);
+    await c.call('streaming_play', { site: 'idlix', title: 'la brea', year: 2021, season: 2, episode: 3 });
+    await c.call('streaming_play', { site: 'idlix', title: 'la brea', season: 2 });
+    await c.call('streaming_find', { site: 'idlix', title: 'one piece', episode: 787 });
+    expect(runner.mock.calls).toEqual([
+      ['idlix', ['--play', 'one piece', '--episode', '787']],
+      ['idlix', ['--play', 'la brea', '2021', '--episode', '3', '--season', '2']],
+      ['idlix', ['--play', 'la brea']],
+      ['idlix', ['one piece', '--episode', '787']],
+    ]);
+    expect((await c.call('streaming_play', { site: 'idlix', title: 'x', episode: 0 })).isError).toBe(true);
+    await c.close();
+  });
+
   it('streaming_play refuses a call with neither title nor url, and an unknown site', async () => {
     const runner = vi.fn<StreamingRunner>(async () => ({}));
     const c = await connect(runner);
