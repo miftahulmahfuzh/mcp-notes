@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DIRECT_STREAM_TOOL_NAMES } from '../chat/status.js';
 import type { AppDeps } from '../deps.js';
 import {
+  companiesNamed,
   DISCOVER_DEFAULT_LIMIT,
   DISCOVER_DEFAULT_REGION,
   DISCOVER_MAX_LIMIT,
@@ -229,7 +230,8 @@ const DISCOVER_DESCRIPTION =
   'person (a name; role any, cast, crew or director), company (a production company or studio: "Blumhouse", "A24") and service (a streaming service or network: "Shudder", "Netflix"; region picks the country whose catalogue is read, default US). ' +
   'sort is popular (default) or newest (release date, newest first). Titles not released yet are left out. ' +
   '"Spanish series released this year" is kind tv, language Spanish, year this year; "the most recent Shudder movie" is kind movie, service Shudder, sort newest; "Blumhouse films this year" is company Blumhouse with the year; "a Johnny Depp movie, the more recent the better" is person Johnny Depp, role cast, kind movie, sort newest; "one of Nolan\'s movies" is person Christopher Nolan, role director. ' +
-  'Names are resolved to TMDB ids here: the best match is used and named in filters, and other_people, other_companies and other_services list what else the name fits; pass person_id, company_id or service_id to pick one of those instead. person cannot be combined with company or service. ' +
+  'Names are resolved to TMDB ids here: the best match is used and named in filters, and other_people, other_companies and other_services list what else the name fits; pass person_id, company_id or service_id to pick one of those instead. ' +
+  'A studio\'s name stands for every company that starts with it ("Blumhouse" is Blumhouse Productions, Blumhouse Television and the others, listed in filters.companies), unless one company has exactly that name; company_id narrows to one. person cannot be combined with company or service. ' +
   'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
   'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
   'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one"), choose one yourself, play it and say which and why; when they only asked what there is, list the titles and start nothing. ' +
@@ -622,7 +624,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         person_id: tmdbIdField.optional().describe('A TMDB person id from other_people, to pick that person instead of the best match.'),
         role: z.enum(['any', 'cast', 'crew', 'director']).optional().describe('With person: "cast" (acted in), "director", "crew" (directed, wrote, produced, ...) or "any" (default).'),
         company: nameField.optional().describe('A production company or studio by name, e.g. "Blumhouse".'),
-        company_id: tmdbIdField.optional().describe('A TMDB company id from other_companies, to pick that company instead of the best match.'),
+        company_id: tmdbIdField.optional().describe('A TMDB company id from filters.companies or other_companies, to search that one company only.'),
         service: nameField.optional().describe('A streaming service or network by name, e.g. "Shudder", "Netflix".'),
         service_id: tmdbIdField.optional().describe('A TMDB watch-provider id from other_services, to pick that service instead of the best match.'),
         region: z
@@ -756,14 +758,18 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
     if (discover === undefined || searchCompany === undefined || watchProviders === undefined) {
       throw new LookupError('tmdb_unavailable', 'this server\'s TMDB client cannot discover titles.');
     }
-    let companyId: number | null = null;
+    let companyIds: number[] | null = null;
     if (byCompany) {
-      const ranked = args.company === undefined ? [] : rankByName(await searchCompany.call(tmdb, args.company), args.company);
-      const { picked, others: rest } = pickNamed(ranked, args.company_id, args.company);
-      if (picked === null) throw new LookupError('not_found', `TMDB knows no production company called "${args.company}". A streaming service or network goes in service.`);
-      companyId = picked.id;
-      filters.company = named(picked);
-      others.other_companies = rest.map(named);
+      const hits = args.company === undefined ? [] : await searchCompany.call(tmdb, args.company);
+      // A name stands for every company that starts with it; company_id picks exactly one.
+      const { picked, others: rest } =
+        args.company_id !== undefined
+          ? { picked: [hits.find((h) => h.id === args.company_id) ?? { id: args.company_id, name: args.company ?? String(args.company_id), country: null }], others: hits.filter((h) => h.id !== args.company_id) }
+          : companiesNamed(hits, args.company ?? '');
+      if (picked.length === 0) throw new LookupError('not_found', `TMDB knows no production company called "${args.company}". A streaming service or network goes in service.`);
+      companyIds = picked.map((c) => c.id);
+      filters.companies = picked.map(named);
+      others.other_companies = rest.slice(0, DISCOVER_MAX_OTHERS).map(named);
     }
     let providerId: number | null = null;
     const region = (args.region ?? DISCOVER_DEFAULT_REGION).toUpperCase();
@@ -785,7 +791,7 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
     }
     const pages = await Promise.all(
       kinds.map((kind) =>
-        discover.call(tmdb, kind, { dateFrom: window.from, dateTo: window.to, originalLanguage: language, companyId, providerId, watchRegion: region, sort }),
+        discover.call(tmdb, kind, { dateFrom: window.from, dateTo: window.to, originalLanguage: language, companyIds, providerId, watchRegion: region, sort }),
       ),
     );
     found = pages.flat().map((h) => ({

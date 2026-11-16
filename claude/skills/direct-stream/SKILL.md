@@ -33,9 +33,10 @@ How it works, and what can go wrong, is in `docs/guide/streaming.md` of the mcp-
   "the bear episode 11"): pass `absolute_episode` alone, never a season you worked out. The daemon
   maps it to the season and episode TMDB lists and answers which one it chose.
 - **"Rewatch" a series** is `season: 1, episode: 1`, unless the user names another episode.
-- **A person tells two titles of one name apart:** "James Gunn's Superman" is Superman, 2025. When
-  you are not sure which title a person's name points at, look with
-  `direct_stream_discover` (`person`, `role: "director"`) and play the match by its `title_key`.
+- **A person tells two titles of one name apart:** "James Gunn's Superman" names a director, and
+  TMDB lists several films called Superman, two of them in 2025. Look with
+  `direct_stream_discover` (`person`, `role: "director"`) and play the match by its `title_key`;
+  a title and a year alone would answer `several_matches`.
 - **Words that are not part of the name** ("(TV Series 2026)", "the series", "the 2021 film") give
   the `kind` and the `year`; leave them out of `title`.
 - **A movie id or title key** from an earlier answer (`M-23T4`, `movie-550`) is passed as
@@ -53,13 +54,13 @@ titles. Find them with `direct_stream_discover`, which starts nothing:
 | "Spanish", "Korean", "Indonesian" | `language` (the original language, by name) |
 | an actor | `person`, `role: "cast"` |
 | "Nolan's", "directed by", "a Joko Anwar film" | `person`, `role: "director"` |
-| a studio ("Blumhouse", "A24") | `company` |
+| a studio ("Blumhouse", "A24") | `company` (it stands for every company whose name starts with it; `filters.companies` lists them) |
 | a streaming service or network ("Shudder", "Netflix") | `service` (`region` when not the US) |
 | "the most recent", "the newer the better" | `sort: "newest"` |
 
 Each title comes back marked against the library: `seen`, `started`, `not_interested`, and
 `stream.verified` (this laptop has a recently verified source). `filters` names the person,
-company or service the name was read as; `other_people`, `other_companies` and `other_services`
+companies or service the name was read as; `other_people`, `other_companies` and `other_services`
 list what else it fits. When the wrong one was used, call again with `person_id`, `company_id`
 or `service_id`.
 
@@ -86,7 +87,7 @@ Worked examples (the year is this year's):
 | play one of Nolan's movie | `direct_stream_discover {person: "Christopher Nolan", role: "director", kind: "movie"}`, then play one |
 | i watched House of The Dragon season 1 last year. start season 2 | `direct_stream_find {title: "house of the dragon"}`, `movies_mark {title: <title_key>, season: 1, watched: true}`, `direct_stream_play {title: <title_key>, season: 2, episode: 1}` |
 | i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
-| let's watch James Gunn's superman | `direct_stream_play {title: "superman", year: 2025}` |
+| let's watch James Gunn's superman | `direct_stream_discover {person: "James Gunn", role: "director", kind: "movie"}`, then `direct_stream_play {title: <the title_key of Superman>}` |
 
 `movies_mark` with `season` marks that season's episodes finished, not the series, and it stores
 a series the library does not hold yet when `title` is its `title_key` (`tv-94997`).

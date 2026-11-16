@@ -8,6 +8,8 @@ export const DISCOVER_MAX_LIMIT = 40;
 export const DISCOVER_MAX_OTHERS = 5;
 /** The country a streaming service's catalogue is read for when none is named. */
 export const DISCOVER_DEFAULT_REGION = 'US';
+/** Companies one name stands for at most ("Blumhouse" is Blumhouse Productions, Television, International, ...). */
+export const DISCOVER_MAX_COMPANIES = 6;
 /** How much of a synopsis a listed title carries. */
 export const DISCOVER_OVERVIEW_CHARS = 240;
 
@@ -57,6 +59,22 @@ export function languageCode(value: string): string | null {
   const named = namesToCodes().get(text);
   if (named !== undefined) return named;
   return /^[a-z]{2}$/.test(text) ? text : null;
+}
+
+/**
+ * The companies a studio's name stands for. The one called exactly that when there is one; else
+ * every company whose name starts with it, since TMDB files a studio under several ("Blumhouse"
+ * is Blumhouse Productions, Blumhouse Television, ...); else the first whose name contains it.
+ * `others` is what else the name fits. Both in the list's own order.
+ */
+export function companiesNamed<T extends Pick<TmdbNamedHit, 'name'>>(list: readonly T[], name: string): { picked: T[]; others: T[] } {
+  const wanted = normalizeName(name);
+  if (wanted === '') return { picked: [], others: [] };
+  const fits = list.filter((item) => normalizeName(item.name).includes(wanted));
+  const exact = fits.filter((item) => normalizeName(item.name) === wanted);
+  const starts = fits.filter((item) => normalizeName(item.name).startsWith(wanted));
+  const picked = exact.length > 0 ? exact.slice(0, 1) : starts.length > 0 ? starts.slice(0, DISCOVER_MAX_COMPANIES) : fits.slice(0, 1);
+  return { picked, others: fits.filter((item) => !picked.includes(item)) };
 }
 
 /**

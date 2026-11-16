@@ -83,8 +83,8 @@ ok "discover service Shudder newest -> $KEY started"
 
 stage "6 Blumhouse's movies released this year, play one"
 mcp direct_stream_discover "{\"company\":\"Blumhouse\",\"kind\":\"movie\",\"year\":$YEAR}"
-want '.filters.company.name == "Blumhouse Productions" and (.other_companies | map(.name) == ["Blumhouse Television"])' "Blumhouse Productions picked, Blumhouse Television listed"
-want '([.titles[].title] | (index("Mercy Line") == 0) and (index("The Quiet Floor") != null) and (index("Last Year'"'"'s Haunting") == null)) and all(.titles[]; .release_date[0:4] == "'"$YEAR"'")' "the Blumhouse films of $YEAR, most popular first, not last year's"
+want '(.filters.companies | map(.name) == ["Blumhouse Productions","Blumhouse Television"]) and (.other_companies == [])' "Blumhouse stands for both Blumhouse companies"
+want '([.titles[].title] | (index("Mercy Line") == 0) and (index("The Quiet Floor") != null) and (index("Late Shift") != null) and (index("Last Year'"'"'s Haunting") == null)) and all(.titles[]; .release_date[0:4] == "'"$YEAR"'")' "the Blumhouse films of $YEAR, most popular first, not last year's"
 KEY="$(pick)"
 OUT_LIST="$OUT"
 play "{\"title\":\"$KEY\"}"
@@ -124,12 +124,15 @@ ok "discover director Joko Anwar -> $KEY started, resolved with --audio-lang id 
 
 stage "10 James Gunn's superman"
 mcp direct_stream_play '{"title":"superman"}'
-want '.started == false and .skipped_play == "several_matches" and ([.candidates[].year] | sort == [1978,2025])' "two Supermans, nothing started without a year"
+want '.started == false and .skipped_play == "several_matches" and ([.candidates[].year] | sort == [1978,2025,2025])' "three Supermans, nothing started without a year"
+mcp direct_stream_play '{"title":"superman","year":2025}'
+want '.started == false and .skipped_play == "several_matches" and (.candidates | length == 2)' "two Supermans in 2025: the year alone starts nothing"
 mcp direct_stream_discover '{"person":"James Gunn","role":"director","kind":"movie"}'
 want '[.titles[] | [.title, .release_date[0:4]]] == [["Superman","2025"]]' "James Gunn directed the 2025 one"
-play '{"title":"superman","year":2025}'
-want '.title.tmdb_id == 1061474' "Superman (2025)"
-ok "two titles called Superman start nothing; the person names the 2025 one; it started"
+KEY="$(pick)"
+play "{\"title\":\"$KEY\"}"
+want '.title.tmdb_id == 1061474 and .title.title == "Superman"' "James Gunn's Superman (2025)"
+ok "titles called Superman start nothing, even with the year; the person names one ($KEY); it started"
 
 stage "marks"
 mcp movies_mark '{"title":"tv-94997","not_interested":true}'

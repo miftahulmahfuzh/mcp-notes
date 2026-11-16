@@ -531,8 +531,10 @@ by its `title_key`.
 | the most recent | `sort: "newest"` (the default is `popular`) |
 
 - **Names become TMDB ids inside the tool.** A person is the most popular match of TMDB's person
-  search; a company is the match called exactly that, else the first whose name starts with the
-  words; a service is matched the same way against TMDB's watch-provider list for the region.
+  search; a studio's name stands for the company called exactly that, else for every company
+  whose name starts with the words (TMDB files Blumhouse as Blumhouse Productions, Blumhouse
+  Television and others; a title by any of them passes); a service is the entry called exactly
+  that, else the first that starts with the words, in TMDB's watch-provider list for the region.
   `filters` says what was understood, and `other_people`, `other_companies` and `other_services`
   list what else the name fits; `person_id`, `company_id` or `service_id` picks one of those.
 - **Every title is marked against the library**, in the shape `movies_person` uses: `in_library`,
@@ -562,7 +564,7 @@ The ten requests the tool was built for, each run against the fake TMDB of
 | play one of Nolan's movie | `direct_stream_discover {person: "Christopher Nolan", role: "director", kind: "movie"}`, then play one |
 | i watched House of The Dragon season 1 last year. start season 2 | `direct_stream_find`, `movies_mark {title: <title_key>, season: 1, watched: true}`, `direct_stream_play {title: <title_key>, season: 2, episode: 1}` |
 | i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
-| let's watch James Gunn's superman | `direct_stream_play {title: "superman", year: 2025}` |
+| let's watch James Gunn's superman | `direct_stream_discover {person: "James Gunn", role: "director", kind: "movie"}`, then `direct_stream_play {title: <the title_key of Superman>}` |
 
 When the title Claude picked answers `no_source`, it picks another from the list, at most twice
 more. After a season is marked finished with `movies_mark`, a series named without an episode

@@ -206,7 +206,7 @@ function route(url) {
     const from = s.get(`${dateParam}.gte`)
     const to = s.get(`${dateParam}.lte`)
     const language = s.get('with_original_language')
-    const company = s.get('with_companies')
+    const company = s.get('with_companies')?.split('|') ?? null
     const provider = s.get('with_watch_providers')
     // Like TMDB: a service filter without a region filters nothing out.
     const region = s.get('watch_region')
@@ -215,7 +215,7 @@ function route(url) {
       (!from || String(x[dateKey] ?? '') >= from) &&
       (!to || (x[dateKey] && String(x[dateKey]) <= to)) &&
       (!language || x.original_language === language) &&
-      (!company || (x.production_companies ?? []).some((c) => String(c.id) === company)) &&
+      (!company || (x.production_companies ?? []).some((c) => company.includes(String(c.id)))) &&
       (!provider || !region || (x.watch_providers ?? []).some((id) => String(id) === provider))
     const listed = listOf(m[1], keep)
     if ((s.get('sort_by') ?? '').endsWith('_date.desc')) listed.sort((a, b) => String(b[dateKey] ?? '').localeCompare(String(a[dateKey] ?? '')))

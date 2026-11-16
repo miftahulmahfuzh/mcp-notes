@@ -140,8 +140,8 @@ export interface TmdbDiscoverFilter {
   dateTo?: string | null;
   /** TMDB's language code of the original language ("es", "ko"). */
   originalLanguage?: string | null;
-  /** A production company's TMDB id. */
-  companyId?: number | null;
+  /** Production companies' TMDB ids: a title made by any one of them passes. */
+  companyIds?: readonly number[] | null;
   /** A streaming service's TMDB watch-provider id; needs `watchRegion`. */
   providerId?: number | null;
   /** The country the service's catalogue is read for ("US"). */
@@ -920,7 +920,7 @@ export function createTmdbClient(
         [`${date}.gte`]: filter.dateFrom,
         [`${date}.lte`]: filter.dateTo,
         with_original_language: filter.originalLanguage,
-        with_companies: filter.companyId,
+        with_companies: filter.companyIds === null || filter.companyIds === undefined || filter.companyIds.length === 0 ? undefined : filter.companyIds.join('|'),
         with_watch_providers: filter.providerId,
         watch_region: filter.providerId === null || filter.providerId === undefined ? undefined : filter.watchRegion,
         sort_by: filter.sort === 'newest' ? `${date}.desc` : 'popularity.desc',

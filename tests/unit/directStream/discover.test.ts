@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DISCOVER_OVERVIEW_CHARS, inWindow, languageCode, rankByName, releaseWindow, shortOverview } from '../../../src/directStream/discover.js';
+import { companiesNamed, DISCOVER_OVERVIEW_CHARS, inWindow, languageCode, rankByName, releaseWindow, shortOverview } from '../../../src/directStream/discover.js';
 
 describe('languageCode', () => {
   it('reads an English name or a two-letter code, in any case', () => {
@@ -28,6 +28,22 @@ describe('rankByName', () => {
     expect(rankByName(list, 'blumhouse').map((x) => x.name)).toEqual(['BLUMHOUSE', 'Blumhouse Television', 'Blumhouse Productions', 'Not Blumhouse']);
     expect(rankByName(list, 'paramount')).toEqual([]);
     expect(rankByName(list, '  ')).toEqual([]);
+  });
+});
+
+describe('companiesNamed', () => {
+  const names = (list: { name: string }[]) => list.map((x) => x.name);
+
+  it('is the company called exactly that, else every company whose name starts with it, else the first that contains it', () => {
+    const tmdb = [{ name: 'Blumhouse Television' }, { name: 'Blumhouse International' }, { name: 'Blumhouse Productions' }, { name: 'Not Blumhouse' }];
+    const all = companiesNamed(tmdb, 'blumhouse');
+    expect(names(all.picked)).toEqual(['Blumhouse Television', 'Blumhouse International', 'Blumhouse Productions']);
+    expect(names(all.others)).toEqual(['Not Blumhouse']);
+    const exact = companiesNamed([...tmdb, { name: 'A24' }, { name: 'A24 Television' }], 'a24');
+    expect(names(exact.picked)).toEqual(['A24']);
+    expect(names(exact.others)).toEqual(['A24 Television']);
+    expect(names(companiesNamed(tmdb, 'international').picked)).toEqual(['Blumhouse International']);
+    expect(companiesNamed(tmdb, 'paramount')).toEqual({ picked: [], others: [] });
   });
 });
 

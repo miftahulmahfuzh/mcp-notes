@@ -370,7 +370,7 @@ describe('direct-stream MCP tools', () => {
       });
       const c = await connect(f.deps);
       const out = json(await c.call('direct_stream_discover', { kind: 'tv', language: 'Spanish', year: 2026 }));
-      expect(t.discover.mock.calls).toEqual([['tv', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyId: null, providerId: null, watchRegion: 'US', sort: 'popular' }]]);
+      expect(t.discover.mock.calls).toEqual([['tv', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyIds: null, providerId: null, watchRegion: 'US', sort: 'popular' }]]);
       expect(out.filters).toMatchObject({ kind: 'tv', released_from: '2026-01-01', released_to: '2026-11-16', language: 'es', sort: 'popular' });
       expect(out.titles).toEqual([
         {
@@ -394,18 +394,34 @@ describe('direct-stream MCP tools', () => {
     it('resolves a company and a service by name, lists the others, and takes an id to pick one', async () => {
       const t = discoverTmdb();
       const c = await connect(fakeDeps({ tmdb: t.tmdb }).deps);
+      // One company is called exactly that: it alone.
       const blumhouse = json(await c.call('direct_stream_discover', { company: 'Blumhouse', year: 2026 }));
-      expect(blumhouse.filters.company).toEqual({ id: 8, name: 'Blumhouse' });
+      expect(blumhouse.filters.companies).toEqual([{ id: 8, name: 'Blumhouse' }]);
       expect(blumhouse.other_companies).toEqual([
         { id: 7, name: 'Blumhouse Television', country: 'US' },
         { id: 3172, name: 'Blumhouse Productions', country: 'US' },
       ]);
-      expect(t.discover.mock.calls.map((x) => [x[0], (x[1] as any).companyId])).toEqual([['movie', 8], ['tv', 8]]);
+      expect(t.discover.mock.calls.map((x) => [x[0], (x[1] as any).companyIds])).toEqual([['movie', [8]], ['tv', [8]]]);
       // Both kinds, merged by popularity.
       expect(blumhouse.titles.map((x: any) => x.title_key)).toEqual(['tv-1', 'movie-3', 'tv-2']);
 
       const picked = json(await c.call('direct_stream_discover', { company: 'Blumhouse', company_id: 3172, kind: 'movie' }));
-      expect(picked.filters.company).toEqual({ id: 3172, name: 'Blumhouse Productions', country: 'US' });
+      expect(picked.filters.companies).toEqual([{ id: 3172, name: 'Blumhouse Productions', country: 'US' }]);
+
+      // No company is called exactly "Blumhouse" (as on TMDB): the name stands for every company that starts with it.
+      const real = discoverTmdb({
+        searchCompany: vi.fn(async () => [
+          { id: 68884, name: 'Blumhouse Television', country: 'US' },
+          { id: 3172, name: 'Blumhouse Productions', country: 'US' },
+          { id: 5, name: 'Not Blumhouse', country: null },
+        ]),
+      });
+      const rc = await connect(fakeDeps({ tmdb: real.tmdb }).deps);
+      const all = json(await rc.call('direct_stream_discover', { company: 'blumhouse', kind: 'movie' }));
+      expect(all.filters.companies.map((x: any) => x.id)).toEqual([68884, 3172]);
+      expect(all.other_companies).toEqual([{ id: 5, name: 'Not Blumhouse' }]);
+      expect((real.discover.mock.calls[0]?.[1] as any).companyIds).toEqual([68884, 3172]);
+      await rc.close();
 
       t.discover.mockClear();
       const shudder = json(await c.call('direct_stream_discover', { kind: 'movie', service: 'shudder', sort: 'newest' }));

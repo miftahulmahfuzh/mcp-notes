@@ -220,6 +220,6 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/When they only ask what there is .* list the titles with their years and start nothing/);
     expect(prompt).toMatch(/pass absolute_episode alone and say which season and episode the daemon chose/);
     expect(prompt).toMatch(/movies_mark with its title_key \(or its movie id\), season 1 and watched true/);
-    expect(prompt).toMatch(/"James Gunn's Superman" is Superman \(2025\)/);
+    expect(prompt).toMatch(/"James Gunn's Superman" is direct_stream_discover with person James Gunn and role director/);
   });
 });

@@ -89,14 +89,14 @@ describe('TmdbDiscovery', () => {
   it('discovers films by release window, language, company and service, newest first', async () => {
     const f = routedFetch({ '/discover/movie': { results: [{ ...MOVIES.results[0], original_language: 'en' }] }, '/discover/tv': SHOWS });
     const client = createTmdbClient(CONFIG, f.fetch);
-    const [film] = await client.discover('movie', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyId: 3172, providerId: 99, watchRegion: 'US', sort: 'newest' });
+    const [film] = await client.discover('movie', { dateFrom: '2026-01-01', dateTo: '2026-11-16', originalLanguage: 'es', companyIds: [3172, 68884], providerId: 99, watchRegion: 'US', sort: 'newest' });
     expect(film).toMatchObject({ kind: 'movie', tmdbId: 550, originalLanguage: 'en' });
     const q = f.urls[0]!.searchParams;
     expect(Object.fromEntries(q)).toEqual({
       'primary_release_date.gte': '2026-01-01',
       'primary_release_date.lte': '2026-11-16',
       with_original_language: 'es',
-      with_companies: '3172',
+      with_companies: '3172|68884',
       with_watch_providers: '99',
       watch_region: 'US',
       sort_by: 'primary_release_date.desc',
