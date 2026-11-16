@@ -16,11 +16,26 @@ export function isEnglish(lang: string | null, label: string | null): boolean {
   return label !== null && /\benglish\b/i.test(label);
 }
 
-/** English on by default: the first English track inside the manifest, else the first English file, else none. */
+/** A label that says nothing about the language ("", "Subtitle", "Track 1"; parseSession names an unlabelled file "Subtitle"). */
+const NO_NAME = /^(subtitles?|captions?|cc|default|unknown|und|track ?\d*)?$/i;
+
+/** True for a track that names no language at all: no language tag and a label that is empty or generic. */
+export function isUnnamed(option: Pick<SubtitleOption, 'lang' | 'label'>): boolean {
+  return (option.lang === null || option.lang.trim() === '' || /^und$/i.test(option.lang.trim())) && NO_NAME.test(option.label.trim());
+}
+
+/**
+ * English on by default: the first English track inside the manifest, else the first English file.
+ * Without one, a source's only subtitle is shown when it names no language: a provider that hands
+ * out one unnamed file means it for the viewer (Fake Profile S02E01 on VidLink). A track that
+ * names another language, or several tracks none of which is English, stay off.
+ */
 export function pickDefaultSubtitle(options: readonly SubtitleOption[]): string | null {
   const english = options.filter((o) => o.english);
   const chosen = english.find((o) => o.source === 'manifest') ?? english[0];
-  return chosen ? chosen.id : null;
+  if (chosen) return chosen.id;
+  const [only] = options;
+  return options.length === 1 && only !== undefined && isUnnamed(only) ? only.id : null;
 }
 
 const SRT_TIME = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/g;

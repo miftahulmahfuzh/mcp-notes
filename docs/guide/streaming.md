@@ -541,7 +541,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **English subtitles are on by default.** An English track inside the manifest comes first, then
   a separate English `.vtt` or `.srt` from the resolve (an `.srt` is converted to WebVTT in the
   page). A subtitle file whose first answer fails is asked for once more before the track is left
-  out. With no English track, subtitles start off and the others can still be picked.
+  out. With no English track, a source's only subtitle is shown when it names no language (no
+  tag, and a label that is empty or just "Subtitle"); otherwise subtitles start off and the
+  others can still be picked.
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Audio.** When the manifest names several audio tracks, the page selects the one in the
   title's original language (the session's `audio.track`), never the manifest's default.

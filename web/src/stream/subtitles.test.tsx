@@ -52,4 +52,17 @@ describe('pickDefaultSubtitle', () => {
     expect(pickDefaultSubtitle([opt('manifest', 0, 'Español', 'es')])).toBeNull();
     expect(pickDefaultSubtitle([])).toBeNull();
   });
+
+  it("shows a source's only subtitle when it names no language", () => {
+    // What parseSession makes of a file with no label and no language.
+    expect(pickDefaultSubtitle([opt('file', 0, 'Subtitle', null)])).toBe('file-0');
+    expect(pickDefaultSubtitle([opt('manifest', 0, '', 'und')])).toBe('manifest-0');
+    expect(pickDefaultSubtitle([opt('file', 0, 'Track 1', null)])).toBe('file-0');
+    // A name is a language it is not ours to guess; two unnamed ones are no single choice.
+    expect(pickDefaultSubtitle([opt('file', 0, 'Español', null)])).toBeNull();
+    expect(pickDefaultSubtitle([opt('file', 0, 'Subtitle', 'es')])).toBeNull();
+    expect(pickDefaultSubtitle([opt('file', 0, 'Subtitle', null), opt('file', 1, 'Subtitle', null)])).toBeNull();
+    // English still wins over an unnamed one.
+    expect(pickDefaultSubtitle([opt('file', 0, 'English', 'en')])).toBe('file-0');
+  });
 });
