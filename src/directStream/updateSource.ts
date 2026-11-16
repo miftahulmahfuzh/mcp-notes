@@ -49,12 +49,18 @@ export async function loadKnownTitles(file: string = DEFAULT_KNOWN_TITLES_PATH):
 const filmTemplate = z.string().startsWith('https://').includes('{id}');
 const episodeTemplate = z.string().startsWith('https://').includes('{id}').includes('{season}').includes('{episode}');
 
+/** Which reader found a provider: the site's scripts (plain requests), or the frames a watch page loads in the streaming Chrome. */
+export type TemplateReader = 'scripts' | 'frames';
+const readerField = z.enum(['scripts', 'frames']).default('scripts');
+
 /** What `cli.mjs templates <site>` prints (claude/streaming/direct/templates.mjs). */
 export const TemplatesAnswerSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(true),
     site: z.string().url(),
+    reader: readerField,
     scripts_read: z.number().int().nonnegative(),
+    frames_read: z.number().int().nonnegative().optional(),
     providers: z
       .array(
         z.object({
@@ -62,6 +68,7 @@ export const TemplatesAnswerSchema = z.discriminatedUnion('ok', [
           movie: filmTemplate,
           tv: episodeTemplate.nullable(),
           found_in: z.string().nullable(),
+          reader: readerField,
         }),
       )
       .min(1),
@@ -70,7 +77,7 @@ export const TemplatesAnswerSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(false),
     site: z.string().nullable(),
-    error: z.enum(['bad_url', 'unreachable', 'bot_check', 'no_templates', 'usage']),
+    error: z.enum(['bad_url', 'unreachable', 'bot_check', 'no_templates', 'chrome_unavailable', 'usage']),
     detail: z.string(),
     scripts_read: z.number().int().nonnegative(),
   }),
@@ -94,6 +101,8 @@ export interface AddedProvider {
   name: string;
   movie: string;
   tv: string | null;
+  /** The reader that found it. */
+  reader: TemplateReader;
   /** The site's name for it when that name was already taken by another provider. */
   renamed_from: string | null;
   /** True when at least one known film resolved through it. */
@@ -101,13 +110,17 @@ export interface AddedProvider {
   probes: ProbeResult[];
 }
 
-export type UpdateSourceError = 'bad_url' | 'unreachable' | 'bot_check' | 'no_templates' | 'usage' | 'reader_failed' | 'busy';
+export type UpdateSourceError = 'bad_url' | 'unreachable' | 'bot_check' | 'no_templates' | 'chrome_unavailable' | 'usage' | 'reader_failed' | 'busy';
 
 export type UpdateSourceAnswer =
   | {
       ok: true;
       site: string;
+      /** The reader that found the providers: `frames` only when the scripts held none. */
+      reader: TemplateReader;
       scripts_read: number;
+      /** Frame addresses read in the streaming Chrome; 0 when the scripts answered. */
+      frames_read: number;
       found: number;
       added: AddedProvider[];
       /** Found on the site and already in the registry (same template host and path), under registry_name. */
@@ -227,6 +240,7 @@ function notProbed(title: KnownTitle, detail: string): ProbeResult {
 
 async function probeProvider(
   row: NewStreamProvider,
+  reader: TemplateReader,
   renamedFrom: string | null,
   titles: KnownTitle[],
   probe: UpdateSourceDeps['probe'],
@@ -239,23 +253,35 @@ async function probeProvider(
       probes.push(resolves ? await probe(row.name, title) : notProbed(title, 'no known film resolved through it'));
     }
   }
-  return { name: row.name, movie: row.movie, tv: row.tv, renamed_from: renamedFrom, resolves, probes };
+  return { name: row.name, movie: row.movie, tv: row.tv, reader, renamed_from: renamedFrom, resolves, probes };
 }
 
 function failed(site: string, error: UpdateSourceError, detail: string): UpdateSourceAnswer {
   return { ok: false, site, error, detail, registry_changed: false };
 }
 
+/** Watch pages of the site for the frame reader: a film's page, and an episode's for the episode template. */
+export interface WatchPages {
+  watchPage?: string | undefined;
+  episodePage?: string | undefined;
+}
+
 /**
- * /update-cloud-source: read the site's templates, add the providers the registry lacks, probe
+ * /update-cloud-source: read the site's templates (its scripts; when they hold none, the frames a
+ * watch page loads in the streaming Chrome), add the providers the registry lacks, probe
  * each new one against the known titles, and report per provider. Nothing is written unless the
  * read succeeded.
  */
-export async function updateSource(site: string, deps: UpdateSourceDeps): Promise<UpdateSourceAnswer> {
+export async function updateSource(site: string, deps: UpdateSourceDeps, pages: WatchPages = {}): Promise<UpdateSourceAnswer> {
   const titles = await deps.knownTitles();
   let raw: unknown;
   try {
-    raw = await deps.runner(['templates', site]);
+    raw = await deps.runner([
+      'templates',
+      site,
+      ...(pages.watchPage === undefined ? [] : ['--watch', pages.watchPage]),
+      ...(pages.episodePage === undefined ? [] : ['--episode', pages.episodePage]),
+    ]);
   } catch (err) {
     return failed(site, 'reader_failed', err instanceof Error ? err.message : String(err));
   }
@@ -275,12 +301,15 @@ export async function updateSource(site: string, deps: UpdateSourceDeps): Promis
       known.push({ name: plan.renamed.get(row.name) ?? row.name, registry_name: row.name });
       continue;
     }
-    added.push(await probeProvider(row, plan.renamed.get(row.name) ?? null, titles, deps.probe));
+    const reader = answer.providers.find((p) => p.movie === row.movie)?.reader ?? answer.reader;
+    added.push(await probeProvider(row, reader, plan.renamed.get(row.name) ?? null, titles, deps.probe));
   }
   return {
     ok: true,
     site: answer.site,
+    reader: answer.reader,
     scripts_read: answer.scripts_read,
+    frames_read: answer.frames_read ?? 0,
     found: answer.providers.length,
     added,
     known,

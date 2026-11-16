@@ -32,7 +32,7 @@ import {
 import { normalizeName } from '../directStream/match.js';
 import type { ProviderView } from '../directStream/repo.js';
 import { DirectStreamError } from '../directStream/types.js';
-import type { UpdateSourceAnswer } from '../directStream/updateSource.js';
+import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSource.js';
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { MovieStreams } from '../movies/streams.js';
@@ -79,7 +79,7 @@ export interface DirectStreamToolDeps {
   /** DirectStreamService.providers(): the registry with this host's health (direct_stream_sources). */
   providers(): Promise<ProviderView[]>;
   /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
-  updateSource(site: string): Promise<UpdateSourceAnswer>;
+  updateSource(site: string, pages?: WatchPages): Promise<UpdateSourceAnswer>;
 }
 
 /** The tool deps of a running daemon, or null when direct streaming (or the movie library under it) is off. */
@@ -118,7 +118,7 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     marks: (ids) => libraryMarks(deps.db, { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
     freshTitles: async () => new Set(await movies.repo.freshStreamTitleIds(movies.host, streamFreshSince(new Date(), config.freshDays))),
     providers: () => service.providers(),
-    updateSource: (site) => service.updateSource(site),
+    updateSource: (site, pages) => service.updateSource(site, pages),
   };
 }
 
@@ -159,13 +159,16 @@ const SOURCES_DESCRIPTION =
 const UPDATE_SOURCE_DESCRIPTION =
   'Add the providers an aggregator streaming site uses that the registry lacks, and probe each new one. Use it for ' +
   '"/update-cloud-source <site url>" in Claude Code. It reads the site\'s page and scripts with plain requests (no browser) for ' +
-  'provider address templates, keeps the ones whose host and path the registry does not have (a name already taken by another host ' +
+  'provider address templates. When the scripts hold none, it opens a watch page of the site (watch_page, else the site address itself) in a background tab of the streaming Chrome, muted, ' +
+  'and derives templates from the addresses of the embed frames the page loads: the film\'s TMDB id becomes {id}, and with episode_page the season and episode too; such a provider is named after its frame\'s host. ' +
+  'reader says which way found the providers (scripts or frames), per provider too. A plain request answered with a bot check is read through the frames only when watch_page was given, and a bot check in the streaming Chrome is the answer bot_check: it is never got past. It keeps the ones whose host and path the registry does not have (a name already taken by another host ' +
   'is stored as "<name> (<host>)"; existing providers are never changed), inserts them, then resolves each known title (Fight Club ' +
   'and the others) with only that provider, recording its health on this machine. Probing opens tabs in the streaming Chrome out ' +
   'of sight, plays nothing and makes no sound; a provider that finds nothing takes about 35 seconds per title, so the call can take ' +
   'minutes. Answers ok: true with added (per provider: resolves, and per title the outcome, seconds, manifest kind, best height, ' +
   'English subtitle), known (found but already in the registry) and skipped; or ok: false with error bot_check, no_templates, ' +
-  'unreachable, bad_url, reader_failed or busy, and the registry unchanged. Reading the frames a site\'s server buttons load is not built.';
+  'chrome_unavailable (the streaming Chrome could not open the watch page), unreachable, bad_url, reader_failed or busy, and the registry unchanged. ' +
+  'Only the frames a page loads by itself are read: its other server buttons are not pressed.';
 
 const siteField = z
   .string()
@@ -206,13 +209,17 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
       description: UPDATE_SOURCE_DESCRIPTION,
       inputSchema: {
         site: siteField.describe('The aggregator site\'s address, such as https://ww6-fmovies.com/ (its home page or a film page).'),
+        watch_page: siteField
+          .optional()
+          .describe('Only when the owner gave one: a film\'s watch page on the site, for the frame reader (a page of a known title works best: Fight Club, TMDB 550).'),
+        episode_page: siteField.optional().describe('Only when the owner gave one: an episode\'s watch page on the site, for the episode template.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ site }) => {
+    async ({ site, watch_page, episode_page }) => {
       const d = deps.directStream;
       if (!d) return off();
-      return respond(async () => ok(await d.updateSource(site)));
+      return respond(async () => ok(await d.updateSource(site, { watchPage: watch_page, episodePage: episode_page })));
     },
   );
 }

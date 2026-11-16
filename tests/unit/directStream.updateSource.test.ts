@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { ResolveOutput } from '../../src/directStream/types.js';
-import { TemplatesAnswerSchema, loadKnownTitles, providerKey, toProbeResult, type KnownTitle } from '../../src/directStream/updateSource.js';
+import { TemplatesAnswerSchema, loadKnownTitles, providerKey, toProbeResult, updateSource, type KnownTitle } from '../../src/directStream/updateSource.js';
 // @ts-expect-error -- a plain .mjs script without type declarations
 import { extractTemplates, mergeProviders } from '../../claude/streaming/direct/templates.mjs';
 
@@ -71,5 +71,63 @@ describe('known titles and the reader answer', () => {
     const { providers, skipped } = mergeProviders(extractTemplates(chunk, 'https://ww6-fmovies.com/x.js'));
     const parsed = TemplatesAnswerSchema.safeParse({ ok: true, site: 'https://ww6-fmovies.com/', scripts_read: 1, providers, skipped });
     expect(parsed.success).toBe(true);
+    // An answer that names no reader (the script reader before the frame reader existed) is the scripts'.
+    expect(parsed.success && parsed.data.ok && [parsed.data.reader, parsed.data.providers[0]?.reader]).toEqual(['scripts', 'scripts']);
+  });
+});
+
+describe('updateSource with the frame reader', () => {
+  const framesAnswer = {
+    ok: true,
+    site: 'https://site.example/',
+    reader: 'frames',
+    scripts_read: 2,
+    frames_read: 3,
+    pages: ['https://site.example/movie/550'],
+    providers: [{ name: 'vidnew.example', movie: 'https://vidnew.example/embed/movie/{id}', tv: null, found_in: 'https://vidnew.example/embed/movie/550', reader: 'frames' }],
+    skipped: [],
+  };
+
+  function deps(answer: unknown) {
+    const asked: string[][] = [];
+    const inserted: string[] = [];
+    return {
+      asked,
+      inserted,
+      deps: {
+        runner: async (args: string[]) => {
+          asked.push(args);
+          return answer;
+        },
+        registry: {
+          list: async () => [{ name: 'VidFast', movie: 'https://vidfast.pro/movie/{id}', tv: null }],
+          insert: async (rows: Array<{ name: string }>) => {
+            inserted.push(...rows.map((r) => r.name));
+            return rows.map((r) => r.name);
+          },
+        },
+        knownTitles: async () => [FIGHT_CLUB],
+        probe: async (_provider: string, title: KnownTitle) => ({ title: title.label, outcome: 'resolved' as const, took_s: 3, manifest_kind: 'hls', best_height: 1080, en_subtitle: true, detail: '' }),
+      },
+    };
+  }
+
+  it('hands the watch pages to the reader and says which reader found each provider', async () => {
+    const t = deps(framesAnswer);
+    const out = await updateSource('https://site.example/', t.deps, { watchPage: 'https://site.example/movie/550', episodePage: 'https://site.example/tv/1396/2/3' });
+    expect(t.asked).toEqual([['templates', 'https://site.example/', '--watch', 'https://site.example/movie/550', '--episode', 'https://site.example/tv/1396/2/3']]);
+    expect(out).toMatchObject({ ok: true, reader: 'frames', scripts_read: 2, frames_read: 3, found: 1, added: [{ name: 'vidnew.example', reader: 'frames', resolves: true }] });
+    expect(t.inserted).toEqual(['vidnew.example']);
+  });
+
+  it('a frame provider the registry already has by address is known, whatever its name; the Chrome answers change nothing', async () => {
+    const known = deps({ ...framesAnswer, providers: [{ ...framesAnswer.providers[0], name: 'vidfast.pro', movie: 'https://www.vidfast.pro/movie/{id}?autoPlay=true' }] });
+    expect(await updateSource('https://site.example/', known.deps)).toMatchObject({ ok: true, added: [], known: [{ name: 'vidfast.pro', registry_name: 'VidFast' }] });
+    expect(known.asked).toEqual([['templates', 'https://site.example/']]);
+    for (const error of ['bot_check', 'chrome_unavailable', 'no_templates']) {
+      const failed = deps({ ok: false, site: 'https://site.example/', error, detail: 'x', scripts_read: 1 });
+      expect(await updateSource('https://site.example/', failed.deps)).toEqual({ ok: false, site: 'https://site.example/', error, detail: 'x', registry_changed: false });
+      expect(failed.inserted).toEqual([]);
+    }
   });
 });

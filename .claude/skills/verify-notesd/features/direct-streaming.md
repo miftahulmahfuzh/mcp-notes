@@ -34,7 +34,13 @@
 - `/update-cloud-source <site url>` (`direct_stream_update_source`) and `direct_stream_sources`:
   read an aggregator site's provider templates, add the ones the registry lacks (matched by
   template host and path), probe each new one against the known titles, report per provider; a
-  site that cannot be read changes nothing. Reader proven over the real fmovies chunk by
+  site that cannot be read changes nothing. A site whose scripts hold no template is read through
+  the embed frames a watch page loads in the streaming Chrome (`frames.mjs`, the sniffer): the
+  TMDB id, season and episode in a frame's address become `{id}`, `{season}`, `{episode}`, and the
+  answer says which reader found each provider. Frame reader proven with a fake sniffer by
+  `npx vitest run tests/unit/scripts/directFrames.test.ts tests/unit/directStream.updateSource.test.ts`
+  (never the real one: `templatesCommand` opens no browser unless it is handed a sniffer). Reader
+  proven over the real fmovies chunk by
   `npx vitest run tests/unit/scripts/directTemplates.test.ts`; insert-once, untouched rows,
   probes and the unchanged registry by
   `npm run test:int -- tests/integration/directStream.updateSource.int.test.ts`; the tools and
@@ -57,7 +63,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - `$V up --direct-stream` (implies `--movies`): `up` prints `DIRECT=<run>/direct`. The fixture stream
   host listens on two ports of 127.0.0.1 and answers 403 without `Referer: https://embed.fixture/`; the
   fake resolver returns addresses on the first port, the second is named only inside the playlists.
-  `echo dash > $DIRECT/mode` (or `no_source`, `no_chrome`) picks the next resolve's answer.
+  `echo dash > $DIRECT/mode` (or `dash_film`, `no_source`, `no_chrome`) picks the next resolve's answer.
 - `.claude/skills/verify-notesd/scripts/direct-stream/journey.sh RUN [seed|hls|dash|refuse]`: every check,
   saved as evidence; ends with `journey: PASS (...)`. Run `seed` first on a fresh run (it counts health
   after exactly one play).
@@ -76,10 +82,25 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   The transcript has `J1 PASS` (English over a French default, quality menu, resume), `API PASS`
   (`window.notesdStream` and the title), `J3 PASS` (403 with `X-Notesd-Upstream` mid-film, one
   refresh, continues at 100 s), `J2 PASS` (`.srt` as WebVTT), `MUTED PASS` (`?muted=1`) and `CDN PASS`.
+- A DASH token that expires, end to end (the real page and dash.js, the daemon's pass-through and
+  DASH rewriting, the fake resolver, the fixture stream host; Chromium, nothing of the owner's):
+  `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-dash-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-dash")`,
+  `$V up --web --direct-stream` (note `DIRECT=`), then
+  `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/dash-expiry.steps.mjs`.
+  The transcript has `DASH PLAY PASS`, `DASH EXPIRY PASS` (the host refuses the old token with 403,
+  one refresh, playback continues at 100 s under the new token, two resolves) and `DASH OVER PASS`
+  (a 403 without `X-Notesd-Upstream` ends the session, no refresh). The steps set
+  `<run>/direct/mode` to `dash_film` and raise `<run>/direct/token`; the host serves
+  `<run>/direct/film` only under the current token. Engine logic:
+  `npx vitest run web/src/stream/dashEngine.test.tsx`; the live gate's DASH path:
+  `npx vitest run tests/unit/scripts/playcheck.test.ts`.
 - The player against a real provider is phase 6's `playcheck.mjs` (muted, normal window).
+  `--check expiry` takes an HLS or a DASH provider (`--provider VidLink` for DASH).
 - Live template read, free, no browser:
-  `node claude/streaming/direct/cli.mjs templates https://ww6-fmovies.com/` prints `ok: true`
-  and the 24 providers. Never run `direct_stream_update_source` against the live daemon for a
+  `node claude/streaming/direct/cli.mjs templates https://ww6-fmovies.com/ --no-chrome` prints
+  `ok: true` and the 24 providers. Without `--no-chrome`, a site whose scripts hold no template is
+  opened in the owner's streaming Chrome (a background tab, muted): run that only when the owner
+  asked. Never run `direct_stream_update_source` against the live daemon for a
   site with new providers unless the owner asked: it writes the shared registry and probes in
   the streaming Chrome.
 - Live playback probe (owner's machine only; providers are live): `node claude/streaming/direct/playcheck.mjs setup --dir ~/.local/state/notesd-playcheck`, then `NOTESD_DIRECT_STREAM_CLI=$HOME/.local/state/notesd-playcheck/cli.mjs $V up --web --direct-stream`, then `node claude/streaming/direct/playcheck.mjs run --daemon <URL> --dir ~/.local/state/notesd-playcheck --check play|dash|vidnest|subtitle|expiry --provider <name> movie 550`. It prints one JSON report with a verdict. It brings the streaming Chrome to the front in a normal window, muted: say so before running it. Results go into the Playback section of `docs/plans/2026-11-15-direct-streaming-findings.md` with `playcheck.mjs findings`, and `playcheck.mjs audit` checks that section against the seed.

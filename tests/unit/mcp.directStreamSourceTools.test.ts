@@ -30,9 +30,11 @@ async function connect(directStream: unknown) {
 const ADDED: UpdateSourceAnswer = {
   ok: true,
   site: 'https://ww6-fmovies.com/',
+  reader: 'scripts',
   scripts_read: 40,
+  frames_read: 0,
   found: 25,
-  added: [{ name: 'Fresh', movie: 'https://fresh.example/movie/{id}', tv: null, renamed_from: null, resolves: false, probes: [] }],
+  added: [{ name: 'Fresh', movie: 'https://fresh.example/movie/{id}', tv: null, reader: 'scripts', renamed_from: null, resolves: false, probes: [] }],
   known: [{ name: 'VidFast', registry_name: 'VidFast' }],
   skipped: [],
 };
@@ -64,12 +66,12 @@ describe('direct-stream registry tools', () => {
 
   it('direct_stream_update_source passes the address and returns the report, failures included', async () => {
     const updateSource = vi
-      .fn<(site: string) => Promise<UpdateSourceAnswer>>()
+      .fn<(site: string, pages?: { watchPage?: string | undefined; episodePage?: string | undefined }) => Promise<UpdateSourceAnswer>>()
       .mockResolvedValueOnce(ADDED)
       .mockResolvedValueOnce({ ok: false, site: 'https://cf.example/', error: 'bot_check', detail: 'HTTP 403', registry_changed: false });
     const c = await connect({ updateSource, providers: vi.fn() });
     const ok = await c.call('direct_stream_update_source', { site: '  https://ww6-fmovies.com/ ' });
-    expect(updateSource).toHaveBeenNthCalledWith(1, 'https://ww6-fmovies.com/');
+    expect(updateSource).toHaveBeenNthCalledWith(1, 'https://ww6-fmovies.com/', { watchPage: undefined, episodePage: undefined });
     expect(JSON.parse(text(ok))).toEqual(ADDED);
     const refused = await c.call('direct_stream_update_source', { site: 'https://cf.example/' });
     expect(refused.isError).not.toBe(true);

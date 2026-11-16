@@ -472,10 +472,13 @@ table: `0020` (phase 3) < `0021` (phase 5, depends on 3) < `0022` (phase 10, dep
 - **The Stream grid picture:** `npm run docs:shots -- --live movies` once 7317 serves the merged
   branch and at least one title is verified (one `/direct-stream` play is enough); add
   `img/movies/stream.png` under "The Stream side" in `docs/guide/movies.md` if phase 9 could not.
-- **DASH expiry is not exercised:** phase 6's expiry gate handles HLS only; if a DASH provider
-  becomes the preferred source, its refresh needs its own check.
-- **The Chrome-frames template reader is not built:** a site whose scripts hold no readable
-  provider template answers `no_templates` or `bot_check` from `/update-cloud-source`.
+- **DASH expiry: done 2026-11-16** (`feature/stream-discovery`). dash.js's refresh on an expired
+  token is proven in jsdom (`web/src/stream/dashEngine.test.tsx`) and end to end on a throwaway
+  daemon (`scripts/stream/dash-expiry.steps.mjs`); the live gate takes a DASH source. Left for the
+  owner: `playcheck.mjs run --check expiry --provider VidLink` against the real provider.
+- **The Chrome-frames template reader: built 2026-11-16** (`claude/streaming/direct/frames.mjs`),
+  tested with a fake sniffer. It reads the frames a watch page loads by itself; a site's other
+  server buttons are still not pressed. Left for the owner: one live run against a real site.
 - **D5 and D6 were confirmed through session Z2-QN's relay**, not typed by the owner in this
   session. The prober ships default off; turning it on (`NOTESD_STREAM_PROBER=on`), and the two
   readings recorded in Decisions (candidate order, refresh before the idle gate), are the owner's

@@ -5,8 +5,13 @@
 // provider's name. Prints what it found; the daemon decides what is new
 // (src/directStream/updateSource.ts).
 //
-// Reading the frames a site's server buttons load through the streaming Chrome (the brief's
-// second way) is not built: a site whose scripts hold no readable template answers no_templates.
+// A site whose scripts hold no readable template is read a second way, by templatesCommand below:
+// frames.mjs opens a watch page in the streaming Chrome and derives templates from the frames it
+// loads. readSiteTemplates itself never opens a browser.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFrameTemplates } from './frames.mjs';
 
 /** Sent as is: this is a plain request, not a browser, and it does not pretend to be one. */
 export const USER_AGENT = 'notesd-update-cloud-source (plain request; reads public scripts)';
@@ -222,7 +227,17 @@ async function get(fetchImpl, url, limits) {
   }
 }
 
-const NOT_BUILT = 'Reading the frames its server buttons load through the streaming Chrome is not built.';
+const NOT_BUILT = "A plain request cannot read it; give a film's watch page (--watch) to read the frames it loads in the streaming Chrome instead.";
+
+const KNOWN_TITLES_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'known-titles.json');
+
+function knownTitles() {
+  try {
+    return JSON.parse(readFileSync(KNOWN_TITLES_PATH, 'utf8'));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Reads one site. Answers `{ ok: true, site, scripts_read, providers, skipped }` or
@@ -291,12 +306,83 @@ export async function readSiteTemplates(siteUrl, { fetch: fetchImpl = globalThis
   };
 }
 
-/** `cli.mjs templates <site url>`: the answer to print and the exit code (0 found, 1 not, 2 usage). */
-export async function templatesCommand(argv, options = {}) {
-  const site = argv[0];
-  if (site === undefined || site.trim() === '') {
-    return { code: 2, answer: { ok: false, site: null, error: 'usage', detail: 'usage: templates <site url>', scripts_read: 0 } };
+function pageAddress(text) {
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
   }
-  const answer = await readSiteTemplates(site.trim(), options);
-  return { code: answer.ok ? 0 : 1, answer };
+}
+
+/**
+ * `cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]`:
+ * the answer to print and the exit code (0 found, 1 not, 2 usage).
+ *
+ * The scripts are read first, with plain requests. The frames are read (frames.mjs, the streaming
+ * Chrome) only when the scripts gave nothing: on `no_templates`, from --watch or else the site
+ * address itself; on a plain request's `bot_check`, only from a --watch page that was asked for.
+ * --no-chrome never opens the browser. Every provider says which reader found it (`reader`:
+ * `scripts` or `frames`), and so does the answer.
+ * options: { fetch, limits, now } for the script reader; { sniff, known } for the frame reader.
+ * `sniff` is sniff.mjs's sniffEmbed, handed in by cli.mjs: without it no browser is opened, so
+ * nothing that calls this by itself (a test) can reach the streaming Chrome.
+ */
+export async function templatesCommand(argv, options = {}) {
+  const usage = (detail) => ({ code: 2, answer: { ok: false, site: null, error: 'usage', detail, scripts_read: 0 } });
+  const positional = [];
+  const flags = { watch: null, episode: null, chrome: true };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--no-chrome') flags.chrome = false;
+    else if (arg === '--watch' || arg === '--episode') {
+      const value = pageAddress(argv[i + 1] ?? '');
+      if (value === null) return usage(`${arg} needs an http or https address`);
+      flags[arg.slice(2)] = value;
+      i++;
+    } else if (arg.startsWith('--')) return usage(`unknown flag ${arg}`);
+    else positional.push(arg);
+  }
+  const site = positional[0];
+  if (site === undefined || site.trim() === '' || positional.length > 1) {
+    return usage('usage: templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]');
+  }
+  const scripts = await readSiteTemplates(site.trim(), options);
+  if (scripts.ok) {
+    return { code: 0, answer: { ...scripts, reader: 'scripts', providers: scripts.providers.map((p) => ({ ...p, reader: 'scripts' })) } };
+  }
+  const sniff = options.sniff ?? null;
+  const readFrames = flags.chrome && sniff !== null && (scripts.error === 'no_templates' || (scripts.error === 'bot_check' && flags.watch !== null));
+  if (!readFrames) return { code: 1, answer: scripts };
+
+  const frames = await readFrameTemplates(
+    { watch: flags.watch ?? scripts.site, episode: flags.episode },
+    { sniff, known: options.known ?? knownTitles() },
+  );
+  if (!frames.ok) {
+    return {
+      code: 1,
+      answer: { ok: false, site: scripts.site, error: frames.error, detail: `Scripts: ${scripts.detail} Frames: ${frames.detail}`, scripts_read: scripts.scripts_read },
+    };
+  }
+  const { providers, skipped } = mergeProviders(frames.entries);
+  if (providers.length === 0) {
+    return {
+      code: 1,
+      answer: { ok: false, site: scripts.site, error: 'no_templates', detail: `Scripts: ${scripts.detail} Frames: only an episode address was found, and a provider needs a film address.`, scripts_read: scripts.scripts_read },
+    };
+  }
+  return {
+    code: 0,
+    answer: {
+      ok: true,
+      site: scripts.site,
+      reader: 'frames',
+      scripts_read: scripts.scripts_read,
+      frames_read: frames.frames_read,
+      pages: frames.pages,
+      providers: providers.map((p) => ({ ...p, reader: 'frames' })),
+      skipped,
+    },
+  };
 }

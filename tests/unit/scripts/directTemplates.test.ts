@@ -123,7 +123,7 @@ describe('direct streaming: reading provider templates', () => {
     const { fetch, asked } = fakeFetch({ 'https://cf.example/': { status: 403, body: '<html><head><title>Just a moment...</title></head></html>' } });
     const answer = await readSiteTemplates('https://cf.example/', { fetch });
     expect(answer).toMatchObject({ ok: false, error: 'bot_check', scripts_read: 0 });
-    expect(answer.detail).toContain('not built');
+    expect(answer.detail).toContain("give a film's watch page (--watch)");
     expect(asked).toHaveLength(1);
   });
 

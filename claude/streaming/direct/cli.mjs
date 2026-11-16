@@ -5,7 +5,9 @@
 //   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>]
 //   cli.mjs providers [--providers <file>] [--health <file>]
 //   cli.mjs open <http://localhost:<port>/...> [--fullscreen]
-//   cli.mjs templates <site url>   read a site's provider templates (plain requests, no browser)
+//   cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]
+//                                  read a site's provider templates: its scripts with plain requests,
+//                                  and when they hold none, the frames a watch page loads in the streaming Chrome
 // Prints one JSON object. Exit 0 when ok, 1 when not, 2 for a usage or input error.
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
@@ -20,7 +22,7 @@ import { templatesCommand } from './templates.mjs';
 
 export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'providers.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url>';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -43,8 +45,8 @@ export class InputError extends Error {
   }
 }
 
-const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang']);
-const SWITCH_FLAGS = new Set(['--fullscreen']);
+const VALUE_FLAGS = new Set(['--only', '--providers', '--health', '--deadline-s', '--audio-lang', '--watch', '--episode']);
+const SWITCH_FLAGS = new Set(['--fullscreen', '--no-chrome']);
 const WHOLE = /^\d+$/;
 const DAEMON_HOSTS = new Set(['localhost', '127.0.0.1']);
 
@@ -125,9 +127,17 @@ export function parseArgs(argv) {
       if (rest.length !== 1) throw new InputError('usage', 'open takes one address');
       return { command, url: parseDaemonUrl(rest[0]), fullscreen: flags.fullscreen === true };
     case 'templates':
-      allow([]);
-      // templatesCommand checks the address itself (usage, bad_url) and answers in its own shape.
-      return { command, rest };
+      allow(['watch', 'episode', 'no-chrome']);
+      // templatesCommand checks the addresses itself (usage, bad_url) and answers in its own shape.
+      return {
+        command,
+        rest: [
+          ...rest,
+          ...(flags.watch === undefined ? [] : ['--watch', flags.watch]),
+          ...(flags.episode === undefined ? [] : ['--episode', flags.episode]),
+          ...(flags['no-chrome'] === true ? ['--no-chrome'] : []),
+        ],
+      };
     default:
       throw new InputError('usage', command === undefined ? 'no command' : `unknown command "${command}"`);
   }
@@ -293,7 +303,7 @@ export async function main(argv, io = {}) {
     return 2;
   }
   if (args.command === 'templates') {
-    const { code, answer } = await templatesCommand(args.rest);
+    const { code, answer } = await templatesCommand(args.rest, { sniff });
     print(answer);
     return code;
   }

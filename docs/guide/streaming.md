@@ -428,7 +428,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   reads the session again and carries on from where it was. It does this at most three times for
   one page, and stops with a message when a refreshed stream is refused before it plays. A 403
   without that header is notesd's own (the session ended, or the daemon restarted): the page says
-  the session has ended and does not refresh.
+  the session has ended and does not refresh. HLS and DASH behave the same: hls.js reports the
+  refused load through its error event, dash.js through a response interceptor, and a refusal
+  that arrives from the replaced player after the refresh began is dropped.
 - **Sound.** A play from `/direct-stream` or the movies page opens the page full screen and then
   calls its `start()` the way a click would, so the film starts with sound. If the browser still
   will not start it with sound, the page starts it muted and the speaker icon shows it.
@@ -576,7 +578,8 @@ which stream providers do we have?
 
 Aggregator sites are lists of provider templates. `/update-cloud-source` reads one site's list,
 adds the providers the registry lacks and tries each new one on the known titles (Fight Club and
-the others in `claude/streaming/direct/known-titles.json`). It runs in Claude Code only; the chat
+the others in `claude/streaming/direct/known-titles.json`). A site's list is read from its
+scripts, and from the frames of a watch page when the scripts hold none. It runs in Claude Code only; the chat
 bar can list the providers (`direct_stream_sources`) but not add one, because adding writes the
 provider list both machines share and probes for minutes.
 
@@ -587,29 +590,46 @@ provider list both machines share and probes for minutes.
    object entry whose value builds an `https` address around one id (a film) or three (an
    episode: id, season, episode), keyed by the provider's name. ww6-fmovies.com gave all 24 of
    its servers, each with a film and an episode template.
-2. **Keep the new ones.** A provider is already known when the registry has a template with the
+2. **Or read the frames, in the streaming Chrome.** Only when step 1 found no template. A watch
+   page of the site (`watch_page`, else the address you gave) is opened by the sniffer the
+   resolver uses: a background tab, muted, the `notesd-stream-chrome` profile, closed after 20
+   seconds. Each embed frame the page loaded, on another host than the site, whose address
+   carries the film's TMDB id as a whole path part or query value becomes a template with `{id}`
+   there (`claude/streaming/direct/frames.mjs`). The id is a known title's (a Fight Club page
+   carries 550) or a number the watch page's own address carries. With `episode_page`, an
+   episode's frame gives the episode template: `{season}` and `{episode}` where the season and
+   episode stand, by parameter name when the address names them. A frame has no name, so the
+   provider is called by its host (`vidlink.pro`). The answer's `reader` is `scripts` or
+   `frames`, and so is each provider's.
+   - A plain request answered with a bot check is not followed into the browser, unless you gave
+     a watch page. A bot check in the streaming Chrome is the answer `bot_check`; nothing clicks
+     through it and the client is never disguised.
+   - Only the frames a page loads by itself (and after the sniffer's own play click) are read.
+     The site's other server buttons are not pressed, so one page usually gives one provider.
+3. **Keep the new ones.** A provider is already known when the registry has a template with the
    same host (without `www.`), path and id parameter; `?autoPlay=true` and colours do not count.
    A new provider whose name is taken by another host is stored as `VidSrc (vidsrc.xyz)`.
    Existing rows are never changed, and nothing is written when the read failed.
-3. **Probe each new one.** Each known film is resolved with only that provider
+4. **Probe each new one.** Each known film is resolved with only that provider
    (`resolve --only`), in the streaming Chrome out of sight; the episode only when the provider
    has an episode template and resolved a film. Health is recorded for this machine, so the
    resolver orders the new provider like the others. A probe never marks a title stale.
-4. **Report** per provider: resolves or not, and per title the outcome, seconds, manifest kind,
+5. **Report** per provider: the reader that found it, resolves or not, and per title the outcome, seconds, manifest kind,
    best height and English subtitle.
 
 | Answer | Meaning |
 | --- | --- |
 | `ok: true`, `added: []` | The registry already has every provider the site uses |
-| `bot_check` | The site answers a plain request with a bot check. It is not got past |
-| `no_templates` | The page and the scripts read hold no provider template |
+| `bot_check` | The site answers a plain request with a bot check, or shows one in the streaming Chrome. It is not got past |
+| `no_templates` | Neither the scripts nor the frames of the page opened hold a provider template; `detail` says what each reader read |
+| `chrome_unavailable` | The streaming Chrome could not open the watch page (`no_chrome`, `chrome_not_reachable`) |
 | `unreachable` | The address does not answer, or answers an error |
 | `busy` | Another update is still probing |
 | `direct_stream_off` | Direct streaming is off, or the daemon runs without it |
 
-**Not built:** reading the frames a site's server buttons load through the streaming Chrome. It
-needs, per site, a film page with a known TMDB id, the selector of its server buttons and real
-clicks on a page full of adverts; a site that needs it answers `no_templates` or `bot_check`.
+**Not built:** pressing a site's server buttons. That needs, per site, the selector of its
+buttons and real clicks on a page full of adverts, so the frame reader sees the server a page
+loads first and no other.
 
 **The seed and the table.** New providers go to the `stream_providers` table, which both
 machines share, with the site they came from (`origin_site`) and when (`added_at`);
@@ -621,7 +641,8 @@ seed, copy its entry into `providers.seed.json` by hand.
 
 | Path | What |
 | --- | --- |
-| `claude/streaming/direct/templates.mjs` | The template reader (`cli.mjs templates`) |
+| `claude/streaming/direct/templates.mjs` | The script reader, and `cli.mjs templates`: scripts first, then frames |
+| `claude/streaming/direct/frames.mjs` | The frame reader: a watch page's embed frames to templates |
 | `src/directStream/updateSource.ts` | What is new, the probes, the report |
 | `src/mcp/directStreamTools.ts` | `direct_stream_sources`, `direct_stream_update_source` |
 | `claude/skills/update-cloud-source/` | The skill |
@@ -716,3 +737,9 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - Direct streaming: the feature map entry is `.claude/skills/verify-notesd/features/direct-streaming.md`.
   `verify.sh up --direct-stream` drives it against a fake resolver and a fixture stream host, never
   a provider or Chrome; every other throwaway run has it off.
+- An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
+  `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
+  stream host through the real pass-through and expires its token mid-film. Against a real
+  provider it is `playcheck.mjs run --check expiry --provider <name>`, whose gate takes an HLS or
+  a DASH source; that one brings the streaming Chrome to the front, muted, so it is run when you
+  expect it.

@@ -9,7 +9,7 @@ import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFi
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SessionStore, type StreamSession } from './sessions.js';
-import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer } from './updateSource.js';
+import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
   DirectStreamError,
   isEnglish,
@@ -280,12 +280,13 @@ export class DirectStreamService {
   }
 
   /**
-   * /update-cloud-source: reads a site's provider templates, adds the providers the registry
+   * /update-cloud-source: reads a site's provider templates (scripts first; the frames of a watch
+   * page in the streaming Chrome when the scripts hold none), adds the providers the registry
    * lacks and probes each against the known titles (resolve --only, health recorded for this
    * host). The probes open tabs in the streaming Chrome out of sight; nothing plays. A failed
    * probe marks no title stale: it goes through runResolve, not resolve().
    */
-  async updateSource(site: string): Promise<UpdateSourceAnswer> {
+  async updateSource(site: string, pages: WatchPages = {}): Promise<UpdateSourceAnswer> {
     if (this.updatingSource !== null) {
       return { ok: false, site, error: 'busy', detail: 'another /update-cloud-source is still probing; ask again when it has answered', registry_changed: false };
     }
@@ -303,7 +304,7 @@ export class DirectStreamService {
           return { title: title.label, outcome: 'error', took_s: null, manifest_kind: null, best_height: null, en_subtitle: null, detail: err instanceof Error ? err.message : String(err) };
         }
       },
-    });
+    }, pages);
     this.updatingSource = running;
     try {
       return await running;
