@@ -80,22 +80,22 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "d17049405c64d0b0efd2bcdc016d55c01fb8c2c1",
       "depends_on": [
         3,
         7
       ],
       "difficulty": "HARD",
       "n": 5,
-      "note": null,
+      "note": "remux for non-direct torrent files (ffmpeg -> growing HLS EVENT playlist, route /hls/:index/:name, map answers remux stretch, hlsEngine growing playlist, NOTESD_TORRENT_REMUX after ffmpegBin); guide subsection placed in phase order after phase 4's per index; torrent-remux.steps.mjs waits 180 s for done.json (seeder capped 200 kB/s), assertions unchanged; proof: verified-after-fix /home/miftah/.local/state/notesd-verify/1116-235447-2136842/evidence | self-verified (owner's verifier-cost feedback; proof verified-after-fix: only the journey's wait 60 s -> 180 s, assertions unchanged); ran after 6, 7, 9 (edge 7->5), plan edits applied to the tree as it stood; its one full npm test was 3700/3701 (tests/unit/movies/vlc.health.test.ts rotation timed out under load, passed alone, not its file); coordinator checked commit file list = write set + bookkeeping",
       "package": "src/directStream/torrent",
       "plan": ".workflows/plan/torrent-stream-source/phase-5.md",
-      "reported_at": null,
+      "reported_at": "2026-11-17T00:02:07+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "spawned",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A131",
       "title": "The remux for files Chrome cannot play"
     },
     {
@@ -179,6 +179,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "torrent-stream-source",
-  "updated": "2026-11-16T23:46:15+07:00",
+  "updated": "2026-11-17T00:02:07+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/torrent-stream-source"
 }
