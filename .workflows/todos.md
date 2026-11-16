@@ -110,15 +110,32 @@
   - **Decided**:
     - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p4 / phase-4-torrent-stream-source → proceeded here (rung 6: the swarm cuts one worktree per phase)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-3 in this set; the coordinator's integrator reconciles them.
-- [ ] **P1-NOTES-A131** Phase 5: The remux for files Chrome cannot play
+- [x] **P1-NOTES-A131** Phase 5: The remux for files Chrome cannot play
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/remux.ts` (ffmpeg reading the file route or the whole file, video copied, the original-language audio to AAC, a growing HLS EVENT playlist under `<dir>/<hash>/notesd-remux/`), `src/http/streamTorrentRemuxApi.ts`, `NOTESD_TORRENT_REMUX`, replacing phase 3's `unplayable` branch, the map answering the remux's stretch, `web/src/stream/hlsEngine.ts` for a growing playlist, stopping ffmpeg with the session; `scripts/stream/make-mkv-fixture.sh`, `scripts/torrent/offer-remux.sh`, `scripts/stream/torrent-remux.steps.mjs`. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; J1-J7 and the neighbor check pass (the MKV plays through the remux, seeks, replays from disk, holds a seek past a growing edge; with the remux off it is `unplayable`).
-  - **Status**: blocked
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 5 of 9)
   - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.8
   - **Depends on**: P1-NOTES-A129, P1-NOTES-A133
   - **Plan**: `.workflows/plan/P1-NOTES-A131.md`
+  - **Completed**: 2026-11-16 23:58
+  - **Method**: /implement
+  - **Files**: src/config.ts, src/directStream/torrent/remux.ts, src/directStream/torrent/source.ts, src/http/streamTorrentRemuxApi.ts, src/http/streamTorrentApi.ts, src/http/app.ts, src/deps.ts, src/daemon.ts, src/background.ts, web/src/stream/hlsEngine.ts, web/src/stream/hlsEngine.test.tsx, tests/unit/directStream/remuxFakes.ts, tests/unit/directStream/torrentRemux.test.ts, tests/unit/directStream/torrentRemux.ffmpeg.test.ts, tests/unit/directStream/torrentRemuxRoute.test.ts, tests/unit/directStream/torrentRemuxSource.test.ts, tests/unit/config.test.ts, tests/unit/config.torrent.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/stream/make-mkv-fixture.sh, .claude/skills/verify-notesd/scripts/torrent/offer-remux.sh, .claude/skills/verify-notesd/scripts/stream/torrent-remux.steps.mjs, .claude/skills/verify-notesd/features/direct-streaming.md, .workflows/todos.md
+  - **Proof**: verified-after-fix — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-235447-2136842/evidence (J1-J5: REMUX PLAY/TRACKS/SEEK/REPLAY/GROWING PASS); /home/miftah/.local/state/notesd-verify/1116-235647-2142633/evidence (J6: 502 no_source, unplayable, no notesd-remux folder); neighbor: 1116-235658-2143560 (player.steps all 7 PASS), 1116-235716-2144856 (TORRENT PAGE PASS, manifest still /f/<index>); J7: 6 files pass, real-ffmpeg test passed not skipped
+  - **Drift**:
+    - Phase ran in the last wave after phases 6, 7, 9 landed (base aac07b0), not beside 6 and 9 as planned: edits applied to source.ts / streamTorrentApi.ts / app.ts / deps.ts / daemon.ts / config.ts as they stand, same functions and intent.
+    - streamTorrentApi.ts takes a narrowed deps type, so 'torrentRemux' was added to its Partial<Pick<AppDeps,...>> (the plan allowed for this).
+    - tests/unit/config.torrent.test.ts (exact toEqual of parseTorrent) and the loadConfig defaults expectation in tests/unit/config.test.ts gained remux: true.
+    - First J1-J5 run failed at J2: the steps file waited 60 s for done.json but phase 1's loopback seeder is capped at 200 kB/s, so the 16.4 MB MKV takes ~82 s; the remux itself finished cleanly. The wait was lengthened to 180 s (no assertion changed) and the whole run passed on a fresh daemon.
+    - The worktree had no node_modules; npm ci was run locally (no package.json or lockfile change).
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p5 / phase-5-torrent-stream-source → proceeded here (rung 6: the swarm cuts one worktree per phase)
+    - Guide subsection 'The remux for files Chrome cannot play': the phase plan says right after 'Playing from a torrent', the index says subsections go in phase order → placed after phase 4's 'The player page on a torrent', before phase 6's (rung 1: the reconciled index over one phase's prose)
+    - TorrentConfig.remux placed right after ffmpegBin, before subtitleUrl/wyzie*/sites (rung 1: the index's field order; coordinator confirmed)
+    - J2's 60 s wait for done.json vs the seeder's 200 kB/s cap → wait raised to 180 s in torrent-remux.steps.mjs, assertions untouched (rung 2: J2's criterion is that done.json exists and the playlist is closed, not a time bound)
+    - Feature-map section 'Torrent remux' placed after 'Playing from a torrent' and before 'Torrent subtitles' (rung 3: the plan's 'after phase 3's Playing from a torrent')
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1-7 in this set; the coordinator's integrator reconciles them. No next phase unblocked from here (phase 8 runs in parallel in its own worktree).
 - [x] **P1-NOTES-A132** Phase 6: Subtitle files: in the torrent, from a subtitle service, from a cloud provider
   - **Difficulty**: NORMAL
   - **Type**: Feature

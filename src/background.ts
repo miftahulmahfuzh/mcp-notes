@@ -231,6 +231,8 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.adversary?.close(),
       deps.movies?.close(),
       prober?.close(),
+      // Before the torrents: ffmpeg stops reading the file route first.
+      deps.torrentRemux?.close(),
       streamCache?.close(),
       torrents?.close(),
     ]);

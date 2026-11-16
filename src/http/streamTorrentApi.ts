@@ -80,7 +80,7 @@ export function torrentErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'torrents' | 'config'>>): Hono {
+export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'torrents' | 'config' | 'torrentRemux'>>): Hono {
   const r = new Hono();
   /** Info hashes POST /api/stream/torrent holds in use (one user each) until their release route. */
   const held = new Set<string>();
@@ -154,6 +154,9 @@ export function streamTorrentRoutes(deps: Pick<AppDeps, 'directStream'> & Partia
   r.get('/api/stream/torrent/:hash/map', async (c) => {
     const torrents = torrentsOf();
     if (torrents === null) return off(c);
+    // Torrent phase 5: a remuxed file is played from its remux, so its stretches are what the remux holds.
+    const remuxed = (await deps.torrentRemux?.map(c.req.param('hash').toLowerCase())) ?? null;
+    if (remuxed !== null) return c.json(remuxed);
     const map = await torrents.map(c.req.param('hash'));
     if (map === null) return c.json({ ...UNKNOWN_TORRENT, message: 'This machine has no torrent download with this info hash.' }, 404);
     return c.json(map);

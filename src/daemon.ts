@@ -30,6 +30,7 @@ import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
+import { buildTorrentRemux } from './directStream/torrent/remux.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
@@ -199,6 +200,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // give nothing usable; NOTESD_TORRENT_<SITE>_ORIGIN=off leaves a site out.
   const torrentSites = config.torrent?.sites ?? DEFAULT_TORRENT_SITES_CONFIG;
   const torrentSiteFallback = torrentSiteIndexes(torrentSites, torrentSitesScriptRunner({ cliPath: torrentSites.cli }));
+  // Torrent phase 5: the remux of files Chrome cannot play as is; null with torrents or NOTESD_TORRENT_REMUX off.
+  const torrentRemux = buildTorrentRemux(config.torrent);
   let torrentSource: TorrentSource | null = null;
   const torrentSourceOf = (): TorrentSource | null => {
     const torrents = deps.torrents ?? null;
@@ -219,6 +222,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           // Phase 8 adds whisper here (one line).
         }),
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
+        remux: torrentRemux,
         fallback: torrentSiteFallback,
       });
     }
@@ -304,6 +308,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streamCache,
     torrents,
     torrentCues,
+    torrentRemux,
     movieStories,
     streamLive,
     streamEvidence,

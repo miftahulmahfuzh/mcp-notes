@@ -13,6 +13,7 @@ import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
+import type { TorrentRemux } from './directStream/torrent/remux.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -80,6 +81,12 @@ export interface AppDeps {
    * and GET /api/stream/torrent/:hash/cues/:track then answers 503 torrent_off.
    */
   torrentCues?: CueFeeds | null;
+  /**
+   * The remux of torrent files Chrome cannot play as is (torrent phase 5, src/directStream/torrent/remux.ts): its
+   * file route is /api/stream/torrent/:hash/hls/:index/:name. Null or absent with torrents or NOTESD_TORRENT_REMUX
+   * off. startBackground's close stops its ffmpeg runs.
+   */
+  torrentRemux?: TorrentRemux | null;
   /**
    * The stories of films and episodes (src/movies/story.ts): read from the store, written by
    * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story

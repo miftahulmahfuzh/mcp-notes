@@ -403,6 +403,28 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
   after about 40 s, longer than the 20 s a play waits for a torrent's file list.
 
+## Torrent remux (a file Chrome cannot play as is)
+- A torrent file the probe marks not `direct` (MKV, AC3/E-AC3/DTS, HEVC) with H.264, HEVC, AV1 or VP9 video plays as
+  an ffmpeg remux: `manifest_kind: "hls"`, `manifest_url`
+  `/api/stream/torrent/<hash>/hls/<index>/index.m3u8?remux=1&total_s=<film s>`. Video copied, the original-language
+  audio as AAC stereo, fMP4 segments in `<torrent dir>/<hash>/notesd-remux/<index>/`; the playlist is EVENT, grows
+  with the download and is served with `EXT-X-ENDLIST` only after `done.json` (a clean ffmpeg exit). The page starts
+  at the resume position or 0, shows the whole film, and holds a seek past the remuxed part until it is there; the map
+  answers the remuxed stretch. Other video (MPEG-2, VC-1) is `unplayable`; `NOTESD_TORRENT_REMUX=off` makes every such
+  file `unplayable`. A finished remux replays from disk with no ffmpeg.
+- Logic: `npx vitest run tests/unit/directStream/torrentRemux.test.ts tests/unit/directStream/torrentRemux.ffmpeg.test.ts tests/unit/directStream/torrentRemuxRoute.test.ts tests/unit/directStream/torrentRemuxSource.test.ts web/src/stream/hlsEngine.test.tsx`
+  (the ffmpeg file runs the real ffmpeg on a generated H.264 + AC3 MKV served at a trickle).
+- Throwaway daemon: `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-mkv-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-mkv")`,
+  `$V up --web --torrent` (note RUN), then
+  `RUN_DIR=$HOME/.local/state/notesd-verify/RUN $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-remux.steps.mjs`:
+  `REMUX PLAY PASS`, `REMUX TRACKS PASS`, `REMUX SEEK PASS`, `REMUX REPLAY PASS`, `REMUX GROWING PASS`, screenshots
+  `remux-playing` and `remux-growing`. Run `.claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN` before
+  the steps: it seeds the MKV through phase 1's `<run>/torrent/seed/remux/` and makes it the fake index's answer
+  (`<run>/torrent/candidates.json`).
+- Remux off: `NOTESD_TORRENT_REMUX=off $V up --torrent`, `.claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN`, then
+  `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":467905,"provider":"torrent"}'` answers 502 `no_source`
+  with a `Torrent: ...AC3-NOTESD` attempt `unplayable`.
+
 ## Torrent subtitles
 - A torrent session (`provider: "torrent"`, or the fall-through after a cloud `no_source`) carries an
   English subtitle from the first tier that has one: `kept` (an earlier play of the same torrent),

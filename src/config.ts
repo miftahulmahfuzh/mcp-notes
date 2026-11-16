@@ -341,6 +341,12 @@ export interface TorrentConfig {
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
   ffmpegBin: string
   /**
+   * `NOTESD_TORRENT_REMUX`, default on: a torrent file Chrome cannot play as is (MKV, AC3/E-AC3/DTS sound, HEVC)
+   * plays as an ffmpeg remux (src/directStream/torrent/remux.ts). `off`: such a file is `unplayable` and the next
+   * torrent is tried.
+   */
+  remux: boolean
+  /**
    * `NOTESD_TORRENT_SUBTITLE_URL`, default https://opensubtitles-v3.strem.io: the subtitle service a
    * torrent without an English subtitle file asks, by the file's OpenSubtitles hash and then by the
    * IMDb id (Stremio's OpenSubtitles add-on; no key). `off`: null, and that tier is not in the chain.
@@ -371,6 +377,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   peers: [],
   finder: DEFAULT_TORRENT_FINDER_CONFIG,
   ffmpegBin: DEFAULT_FFMPEG_BIN,
+  remux: false,
   subtitleUrl: null,
   wyzieKey: null,
   wyzieUrl: null,
@@ -901,6 +908,7 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
     finder: parseTorrentFinder(env),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
+    remux: parseSwitch('NOTESD_TORRENT_REMUX', env.NOTESD_TORRENT_REMUX),
     subtitleUrl: parseUrlOrOff('NOTESD_TORRENT_SUBTITLE_URL', env.NOTESD_TORRENT_SUBTITLE_URL, DEFAULT_TORRENT_SUBTITLE_URL),
     wyzieKey: (env.WYZIE_API_KEY ?? '').trim() || null,
     wyzieUrl: parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL),
