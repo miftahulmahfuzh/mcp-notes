@@ -313,7 +313,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   daemon down or the session ended it still writes the log tail and the measurement, and `missing:`
   says what is not there. No file in the folder holds a pass-through address or a token.
 - `diagnose.mjs classify|summary|note DIR` names the cause (`connection_slow`, `host_slow`,
-  `token_expired`, `provider_broken`, `session_ended`, `new`); the skill saves the note it writes
+  `token_expired`, `provider_broken`, `session_ended`, `torrent_swarm_slow`, `new`); the skill saves the note it writes
   (`#stream-bug`). Proven by `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (fake daemon
   and stream host, the fixture folders `tests/fixtures/stream-report/<cause>/`).
 - Throwaway daemon (free, nothing of the owner's): `$V up --direct-stream` (note `URL=`, `DIRECT=`),

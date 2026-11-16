@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { bestVariant, download, measureStream, netcheck, parseArgs, probeHost, targetHost } from '../../../claude/skills/report-stream-bug/netcheck.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { CAUSES, classify, noteBody, readFolder, summarize } from '../../../claude/skills/report-stream-bug/diagnose.mjs';
+import { CAUSES, classify, daemonFacts, noteBody, readFolder, summarize, torrentFacts } from '../../../claude/skills/report-stream-bug/diagnose.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const SKILL = path.join(REPO, 'claude', 'skills', 'report-stream-bug');
@@ -198,6 +198,35 @@ describe('netcheck.mjs', () => {
 describe('diagnose.mjs', () => {
   it.each(Object.keys(CAUSES))('names %s from its fixture folder', (cause) => {
     expect(classify(readFolder(path.join(FIXTURES, cause))).cause).toBe(cause);
+  });
+
+  it('reads a torrent session by its swarm: what it delivers against the film\'s bitrate, the peers, and the plays that never started', () => {
+    const ev = readFolder(path.join(FIXTURES, 'torrent_swarm_slow'));
+    expect(torrentFacts(ev)).toMatchObject({ state: 'downloading', bitrateMbps: 2.64, swarmMbps: 1.75, peers: 3 });
+    expect(daemonFacts(ev)).toEqual({
+      starts: ['Nov 17 03:47:06'],
+      plays: [
+        { at: 'Nov 17 03:47:04', ref: 'TMDB movie 818647', candidates: 6, played: null },
+        { at: 'Nov 17 03:51:02', ref: 'TMDB movie 818647', candidates: 6, played: null },
+        { at: 'Nov 17 03:55:44', ref: 'TMDB movie 818647', candidates: 6, played: 'Through My Window 2022 1080p WEBRip' },
+      ],
+    });
+    const cls = classify(ev);
+    expect(cls.signals.join('\n')).toMatch(/the swarm delivers 1\.75 Mbps and the film needs 2\.64 Mbps/);
+    expect(cls.signals.join('\n')).toMatch(/2 earlier torrent play\(s\) of it found no torrent that played in time/);
+    const summary = summarize(ev);
+    expect(summary).toContain('slow step: Index: yts error after 6 s');
+    expect(summary).toContain('daemon starts in the log window');
+    // A torrent has no stream host: nothing about one is reported missing.
+    expect(ev.missing.join('\n')).not.toMatch(/pass-through|stream host/);
+    expect(noteBody(ev, 'it took three tries')).toContain('swarm 1.75 Mbps, film 2.64 Mbps, 3 peer(s)');
+  });
+
+  it('leaves a torrent session on a slow connection to connection_slow, and one that keeps up to no known cause', () => {
+    const ev = readFolder(path.join(FIXTURES, 'torrent_swarm_slow'));
+    expect(classify({ ...ev, network: { ...ev.network, reference: { ok: true, mbps: 2 } } }).cause).toBe('connection_slow');
+    const fast = ev.torrentSamples.map((x: Record<string, unknown>, i: number) => ({ ...x, peers: 40, bytes_done: 91_980_620 + i * 20_000_000 }));
+    expect(classify({ ...ev, torrentSamples: fast }).cause).toBe('new');
   });
 
   it('writes a plain-text note that names the cause and ends with #stream-bug', () => {
