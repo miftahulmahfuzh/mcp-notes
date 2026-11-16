@@ -8,6 +8,8 @@ const ONE_PIECE = {
     '729': { airdate: '2016-02-14', absoluteEpisodeNumber: 729 },
     '730': { airdate: '2016-02-21', absoluteEpisodeNumber: 730 },
     S1: { airdate: '2016-02-21' },
+    '787': { airdate: '2017-05-07' },
+    '788': { airdate: '2017-05-14' },
     '900': { airdate: '2019-09-01' },
     '901': { airdate: '2019-09-01' },
   },
@@ -39,9 +41,22 @@ describe('the anime mapper', () => {
     expect(ANIME_MAP_USER_AGENT).not.toMatch(/Mozilla|Chrome/);
   });
 
-  it('maps nothing when no episode, or more than one, aired that day, and nothing without an air date', async () => {
+  it('takes the one episode that aired a day before or after when none aired on the day TMDB gives', async () => {
+    const index = fakeIndex({ '37854': { ...ONE_PIECE, episodes: { ...ONE_PIECE.episodes, '10': { airdate: '2000-01-01' }, '11': { airdate: '2000-01-03' } } } });
+    const mapper = createAnimeMapper({ baseUrl: 'https://index.example', fetch: index.fetch, ...quiet });
+    // TMDB files One Piece 787 on Saturday 2017-05-06, the index on Sunday.
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2017-05-06' })).toEqual({ id: 21, episode: 787 });
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2017-05-15' })).toEqual({ id: 21, episode: 788 });
+    // The exact day wins over a neighbour, two neighbours name no episode, and two days off is not a match.
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2017-05-07' })).toEqual({ id: 21, episode: 787 });
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2000-01-02' })).toBeNull();
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2017-05-09' })).toBeNull();
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: 'not a day' })).toBeNull();
+  });
+
+  it('maps nothing when no episode aired that day or the days beside it, or more than one did, and nothing without an air date', async () => {
     const mapper = createAnimeMapper({ baseUrl: 'https://index.example', fetch: fakeIndex({ '37854': ONE_PIECE }).fetch, ...quiet });
-    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2016-02-22' })).toBeNull();
+    expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2016-02-24' })).toBeNull();
     expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: '2019-09-01' })).toBeNull();
     expect(await mapper.lookup({ kind: 'tv', tmdbId: 37854, airDate: null })).toBeNull();
   });

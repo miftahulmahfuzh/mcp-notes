@@ -363,8 +363,10 @@ audio, an English subtitle file).
 - **The mapping** (`src/directStream/anime.ts`): for a title whose original language is Japanese,
   the daemon asks `api.ani.zip` (`NOTESD_ANIME_MAP_URL`) once per title for the AniList entry of
   the TMDB id, and takes the entry's episode that aired on the day TMDB gives for the episode
-  asked. Exactly one episode must have aired that day; otherwise the title has no anime key. The
-  resolver gets it as `--anime <AniList id>:<episode>`.
+  asked. Exactly one episode must have aired that day; otherwise the title has no anime key. When
+  none aired that day, the one episode that aired the day before or after is taken (TMDB files One
+  Piece 787 on the Saturday, the index on the Sunday). The resolver gets it as
+  `--anime <AniList id>:<episode>`.
 - **The order.** With an anime key the anime embeds are tried first, then the ordinary providers
   with TMDB's season and episode. Without one (not Japanese, the index does not know the title,
   a later season that AniList keeps as its own entry) only the ordinary providers are tried.

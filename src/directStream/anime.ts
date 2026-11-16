@@ -10,7 +10,10 @@ export { DEFAULT_ANIME_MAP_URL };
  * mapping comes from api.ani.zip, a public index that takes a TMDB id and lists the AniList
  * entry's episodes with their air dates. An episode is mapped only when exactly one of them aired
  * on the day TMDB gives: a series AniList splits into several entries simply has no match for the
- * episodes of its later entries, and those go to the ordinary providers.
+ * episodes of its later entries, and those go to the ordinary providers. TMDB and the index do not
+ * always agree on the day (One Piece from episode 787 on: TMDB says Saturday, the index Sunday, the
+ * same broadcast in two time zones), so when no episode aired on TMDB's day, the one episode that
+ * aired the day before or after is taken; two of them, and nothing is mapped.
  */
 
 export const ANIME_MAP_TIMEOUT_MS = 8_000;
@@ -81,11 +84,18 @@ function readMapping(json: unknown, tmdbId: number): Mapping | null {
   return { anilistId: m.anilist_id, film: (m.type ?? '').toUpperCase() === 'MOVIE', byAirDate };
 }
 
+/** `YYYY-MM-DD` moved by whole days; '' for a date that is not one. */
+function shiftDay(day: string, days: number): string {
+  const at = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(at) ? '' : new Date(at + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** The anime key of one query against a mapping; null when the kinds differ or the air date names no single episode. */
 export function animeRefFrom(mapping: Mapping, query: AnimeQuery): AnimeRef | null {
   if (query.kind === 'movie') return mapping.film ? { id: mapping.anilistId, episode: 1 } : null;
   if (mapping.film || query.airDate === null) return null;
-  const aired = mapping.byAirDate.get(query.airDate) ?? [];
+  let aired = mapping.byAirDate.get(query.airDate) ?? [];
+  if (aired.length === 0) aired = [-1, 1].flatMap((days) => mapping.byAirDate.get(shiftDay(query.airDate ?? '', days)) ?? []);
   const [only] = aired;
   return aired.length === 1 && only !== undefined ? { id: mapping.anilistId, episode: only } : null;
 }
