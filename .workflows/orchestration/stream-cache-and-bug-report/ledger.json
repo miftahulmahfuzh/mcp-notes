@@ -6,19 +6,19 @@
   "phases": [
     {
       "card": null,
-      "commit": null,
+      "commit": "1f62898",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": null,
+      "note": "self-verified (owner's verifier-cost feedback; proof verified-first-pass, 7 journeys, evidence ~/.local/state/notesd-verify/1116-141040-841189 + 1116-141121-844007); commit file list = plan write set + todos/plan bookkeeping. WARN: dash-expiry.steps.mjs J2 needs its own fresh verify.sh up --direct-stream run. Gate exit 2 ISOLATE (streaming.md, features/direct-streaming.md; phases 2/3/5): one worktree per phase from wave 1, keep-both at integration.",
       "package": "src/directStream`, `src/http`, `web/src/stream",
       "plan": ".workflows/plan/stream-cache-and-bug-report/phase-1.md",
-      "reported_at": null,
+      "reported_at": "2026-11-16T14:15:38+07:00",
       "satisfies": [
         "R2"
       ],
-      "status": "pending",
-      "task_id": null,
+      "status": "done",
+      "task_id": "P1-NOTES-A121",
       "title": "Stream evidence log and snapshot"
     },
     {
@@ -36,7 +36,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Player recovers from network errors and buffers further"
     },
@@ -55,7 +55,7 @@
       "satisfies": [
         "R3"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "The `/report-stream-bug` skill"
     },
@@ -94,7 +94,7 @@
       "satisfies": [
         "R1"
       ],
-      "status": "pending",
+      "status": "spawned",
       "task_id": null,
       "title": "Stream cache: table, downloader, routes, tool"
     },
@@ -124,6 +124,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "stream-cache-and-bug-report",
-  "updated": "2026-11-16T14:03:15+07:00",
+  "updated": "2026-11-16T14:15:39+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report"
 }

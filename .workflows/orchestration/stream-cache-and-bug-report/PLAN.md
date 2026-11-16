@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/stream-cache-and-bug-report`
 **Branch:** `feature/stream-cache-and-bug-report` (base: `origin/main` @ `e7c978c`)
 **Phases:** 6
-**Status:** planned
+**Status:** phase 1/6 complete
 **Coordinator:** —
 
 ---
@@ -90,12 +90,12 @@ The owner's words: "can we implement some kind of "caching" method, so i can cac
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Stream evidence log and snapshot | R2 | `src/directStream`, `src/http`, `web/src/stream` | 21 | — | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-1.md` | — | — |
-| 2 | Player recovers from network errors and buffers further | R1 | `web/src/stream` | 15 | 1 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-2.md` | — | — |
-| 3 | The `/report-stream-bug` skill | R3 | `claude/skills/report-stream-bug` | 12 (+24 fixture files) | 1 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-3.md` | — | — |
-| 4 | Report button and its tmux session | R4 | `src/directStream`, `src/http`, `web/src/stream` | 22 | 1, 2 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-4.md` | — | — |
-| 5 | Stream cache: table, downloader, routes, tool | R1 | `src/directStream/cache`, `src/db` | 42 | 1 | HARD | `.workflows/plan/stream-cache-and-bug-report/phase-5.md` | — | — |
-| 6 | Play from the cache | R1 | `src/directStream`, `web/src/stream`, `claude/skills` | 26 | 2, 3, 4, 5 | HARD | `.workflows/plan/stream-cache-and-bug-report/phase-6.md` | — | — |
+| 1 | Stream evidence log and snapshot | R2 | `src/directStream`, `src/http`, `web/src/stream` | 21 | — | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-1.md` | P1-NOTES-A121 | — |
+| 2 | Player recovers from network errors and buffers further | R1 | `web/src/stream` | 15 | 1 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-2.md` | P1-NOTES-A122 | — |
+| 3 | The `/report-stream-bug` skill | R3 | `claude/skills/report-stream-bug` | 12 (+24 fixture files) | 1 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-3.md` | P1-NOTES-A123 | — |
+| 4 | Report button and its tmux session | R4 | `src/directStream`, `src/http`, `web/src/stream` | 22 | 1, 2 | NORMAL | `.workflows/plan/stream-cache-and-bug-report/phase-4.md` | P1-NOTES-A124 | — |
+| 5 | Stream cache: table, downloader, routes, tool | R1 | `src/directStream/cache`, `src/db` | 42 | 1 | HARD | `.workflows/plan/stream-cache-and-bug-report/phase-5.md` | P1-NOTES-A125 | — |
+| 6 | Play from the cache | R1 | `src/directStream`, `web/src/stream`, `claude/skills` | 26 | 2, 3, 4, 5 | HARD | `.workflows/plan/stream-cache-and-bug-report/phase-6.md` | P1-NOTES-A126 | — |
 
 Phase 2 follows phase 1 because both edit `web/src/stream/controller.ts` (phase 1 posts the log, phase 2 adds lines to it). Phase 4 follows phase 2 because both edit the controller's stages and `StreamApp.tsx`'s overlay. Phase 6 follows phase 4 for the same files, phase 5 for the cache, and phase 3 because it edits the "What to do" cells of phase 3's `claude/skills/report-stream-bug/SKILL.md` (decision D5). Phases 2, 3 and 5 run side by side after phase 1, and phase 4 may run beside phase 5 (each follows only phase 1, and phase 4 phase 2): the files they share (`src/deps.ts`, `src/daemon.ts`, `src/http/app.ts`, `scripts/docs/httpRoutes.ts`, `docs/guide/streaming.md`, `docs/guide/architecture.md`, the verify-notesd feature map, `SKILL.md` and `verify.sh`) take additive edits anchored by text, as each plan's "Shared files" note says. Phases 4 and 6 quote every shared file as the earlier phases leave it. `docs/guide/reference/http-api.md` and `mcp-tools.md` are only regenerated (`npm run docs:gen`), never merged by hand.
 
