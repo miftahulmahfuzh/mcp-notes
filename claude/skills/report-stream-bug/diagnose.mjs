@@ -8,6 +8,8 @@
  *   diagnose.mjs note DIR [what seen]  a plain-text note body whose last line carries #stream-bug
  *   diagnose.mjs session-id DIR        the session id the folder is about, or nothing
  *   diagnose.mjs top-host DIR          the stream host most of the session's answers came from, or nothing
+ *   diagnose.mjs torrent-hash DIR      the info hash of the torrent the session plays from, or nothing
+ *   diagnose.mjs torrent-sample FILE   one line of torrent.json from the torrent route's answer in FILE
  *   diagnose.mjs answer-dir FILE       the folder a snapshot answer names, or nothing
  * Times in the evidence are UTC.
  */
@@ -52,7 +54,9 @@ export const FIELDS = {
   /** session.json: `{session_id, host, taken_at, live, source, sessions}`; `source` is null once the session ended. */
   snapshot: { id: 'session_id', live: 'live', source: 'source', sessions: 'sessions' },
   /** session.json's `source` (phase 1's SessionSource; `cache` {id, state} is added by phase 6 for a play from the cache). */
-  source: { ref: 'ref', provider: 'provider', attempts: 'attempts', hosts: 'hosts', refreshes: 'refreshes', cache: 'cache' },
+  source: { ref: 'ref', provider: 'provider', attempts: 'attempts', hosts: 'hosts', refreshes: 'refreshes', cache: 'cache', torrent: 'torrent' },
+  /** GET /api/stream/torrent/<info hash>: the fields a sample keeps (never `file_url`). */
+  torrent: ['state', 'progress', 'bytes_done', 'file_length', 'duration_s', 'peers', 'down_kbps', 'in_swarm', 'error'],
   /** player.json: `{session_id, lines: [player records]}`. */
   player: { list: 'lines' },
   /** report.json (phase 4's report button): the page's own view, the only copy of it once the session had ended. */
@@ -68,6 +72,8 @@ export const COLLECTED = {
   tail: 'evidence-tail.jsonl',
   network: 'network.json',
   daemonLog: 'notesd.log',
+  /** One JSON line per sample of the session's torrent, a few seconds apart: `{at, state, bytes_done, peers, down_kbps, ...}`. */
+  torrent: 'torrent.jsonl',
   missing: 'missing.txt',
 };
 
@@ -77,6 +83,7 @@ export const CAUSES = {
   token_expired: 'The token expired',
   provider_broken: "The provider's stream is broken",
   session_ended: 'The session ended',
+  torrent_swarm_slow: 'The torrent swarm is slow or thin',
   new: 'New: not in the known causes',
 };
 
@@ -93,6 +100,12 @@ export const THRESHOLDS = {
   mediaBytes: 262_144,
   /** The player gives up after this many refreshes on one page. */
   maxRefreshes: 3,
+  /** A swarm must deliver this many times the film's bitrate to play without stalls (the start, seeks and bursts need headroom). */
+  swarmHeadroom: 1.5,
+  /** A swarm with this many peers or fewer is thin: one of them leaving shows on screen. */
+  fewPeers: 5,
+  /** A step of a play (an index, a torrent's file list and header, a subtitle tier) that took this long is named in the summary. */
+  slowStepS: 5,
 };
 
 const R = FIELDS.record;
@@ -220,12 +233,17 @@ export function readFolder(dir) {
           hosts: strings(source?.[SRC.hosts]),
           refreshes: num(source?.[SRC.refreshes]) ?? num(last?.[R.refreshes]),
           cache: isObject(cache) ? str(cache.id) : str(cache),
+          torrent: isObject(source?.[SRC.torrent]) ? { infoHash: str(source[SRC.torrent].info_hash), name: str(source[SRC.torrent].name), index: str(source[SRC.torrent].index) } : null,
+          steps: Array.isArray(source?.[SRC.attempts]) ? source[SRC.attempts].filter(isObject) : [],
         };
+  const onTorrent = session !== null && (session.torrent !== null || session.provider === 'Torrent');
 
   const networkFile = readJson(COLLECTED.network);
   const network = isObject(networkFile) ? networkFile : null;
   if (network === null) missing.push(`${COLLECTED.network}: no network measurement`);
-  else if (network.stream === null || network.stream === undefined) {
+  else if (onTorrent) {
+    // A torrent has no stream host to measure: its swarm is sampled instead (torrent.jsonl).
+  } else if (network.stream === null || network.stream === undefined) {
     missing.push(`the stream host was not measured through the session (${network.stream_skipped ?? 'not asked'})`);
   } else if (network.stream.ok !== true && network.stream.reason === 'session_ended') {
     missing.push('the session has ended: the stream host was measured only by its first answer, not through the session');
@@ -254,7 +272,9 @@ export function readFolder(dir) {
   const fromPlayer = isObject(playerFile) && Array.isArray(playerFile[FIELDS.player.list]) ? playerFile[FIELDS.player.list].map(textOf) : [];
   const fromPage = page === null ? [] : [...strings(page[FIELDS.report.log]), ...strings(page[FIELDS.report.errors])];
   const playerLines = [...new Set([...fromRecords, ...fromPlayer, ...fromPage].filter((t) => t !== null))];
-  if (passes.length === 0) missing.push('no pass-through record of this session: the evidence log is empty for it, the play never reached the stream host, or it played from a ready cache');
+  const torrentSamples = readJsonl(COLLECTED.torrent).filter(isObject);
+  if (onTorrent && torrentSamples.length === 0) missing.push(`${COLLECTED.torrent}: the session plays from a torrent, and its swarm was not sampled (the daemon did not answer, or the session had ended)`);
+  if (passes.length === 0 && !onTorrent) missing.push('no pass-through record of this session: the evidence log is empty for it, the play never reached the stream host, or it played from a ready cache');
 
   return {
     dir,
@@ -264,8 +284,51 @@ export function readFolder(dir) {
     passes,
     playerLines,
     network,
+    onTorrent,
+    torrentSamples,
     daemonLines: readLines(COLLECTED.daemonLog),
     missing: [...new Set(missing)],
+  };
+}
+
+/** A daemon line's own clock ("Nov 17 03:47:06", local time), or ''. */
+const clockOf = (line) => /^[A-Z][a-z]{2} +\d+ [\d:]{8}/.exec(line)?.[0] ?? '';
+
+/**
+ * What the daemon's lines say beyond the session: every start of the daemon (a restart ends every session and
+ * every play in flight), and every torrent play with its outcome. A play that never started has no session, so
+ * these lines are its only trace.
+ */
+export function daemonFacts(ev) {
+  const starts = [];
+  const plays = [];
+  for (const line of ev.daemonLines) {
+    if (/direct stream: on, \d+ providers in the seed/.test(line)) starts.push(clockOf(line));
+    const m = /torrent: (TMDB .+?): (\d+) candidate\(s\), (none played|playing (.+))$/.exec(line);
+    if (m !== null) plays.push({ at: clockOf(line), ref: m[1], candidates: Number(m[2]), played: m[4] ?? null });
+  }
+  return { starts, plays };
+}
+
+/** The session's torrent as its samples show it: the film's bitrate, what the swarm delivers, and how many peers. */
+export function torrentFacts(ev) {
+  const xs = ev.torrentSamples;
+  if (xs.length === 0) return null;
+  const last = xs.at(-1);
+  const first = xs[0];
+  const length = num(last.file_length);
+  const duration = num(last.duration_s);
+  const dt = (Date.parse(last.at) - Date.parse(first.at)) / 1000;
+  const done = num(last.bytes_done) !== null && num(first.bytes_done) !== null ? last.bytes_done - first.bytes_done : null;
+  const measured = xs.length >= 2 && dt > 0 && done !== null && done >= 0 ? round((done * 8) / dt / 1e6) : null;
+  const reported = median(xs.map((x) => num(x.down_kbps)));
+  return {
+    state: str(last.state),
+    progress: num(last.progress),
+    bitrateMbps: length !== null && duration !== null && duration > 0 ? round((length * 8) / duration / 1e6) : null,
+    // Bytes on disk between the samples when there are two; else the rate the engine reports.
+    swarmMbps: measured ?? (reported === null ? null : round(reported / 1000)),
+    peers: Math.max(...xs.map((x) => num(x.peers) ?? 0)),
   };
 }
 
@@ -317,6 +380,33 @@ export const RULES = [
       return [
         ...lines.slice(-2).map((l) => `the player said: ${l}`),
         ...(refused.length > 0 ? [`${refused.length} request(s) refused by notesd as unknown_session`] : []),
+      ];
+    },
+  },
+  {
+    // A torrent session has no stream host and no token: its supply is the swarm.
+    cause: 'torrent_swarm_slow',
+    test(ev, f) {
+      if (!ev.onTorrent) return null;
+      // A slow or dead connection explains a slow swarm: connection_slow answers that.
+      if (f.referenceError !== null || (f.referenceMbps !== null && f.referenceMbps < THRESHOLDS.referenceSlowMbps)) return null;
+      const t = torrentFacts(ev);
+      const title = ev.session?.title ?? null;
+      const failedTries = daemonFacts(ev).plays.filter((p) => p.played === null && (title === null || p.ref === title));
+      const stalls = says(ev, /stalled at|waiting for the swarm|recovering/i);
+      const short = t !== null && t.swarmMbps !== null && t.bitrateMbps !== null && t.state !== 'ready' && t.swarmMbps < t.bitrateMbps * THRESHOLDS.swarmHeadroom;
+      const thin = t !== null && t.state !== 'ready' && t.peers <= THRESHOLDS.fewPeers;
+      if (!short && !(thin && (stalls.length > 0 || failedTries.length > 0))) return null;
+      const slow = (ev.session?.steps ?? []).filter((a) => String(a.provider ?? '').startsWith('Torrent: ') && (num(a.took_s) ?? 0) >= THRESHOLDS.slowStepS);
+      return [
+        ...(t.swarmMbps !== null && t.bitrateMbps !== null
+          ? [`the swarm delivers ${t.swarmMbps} Mbps and the film needs ${t.bitrateMbps} Mbps${short ? `: under ${THRESHOLDS.swarmHeadroom} times the film's bitrate, so it cannot stay ahead of the picture` : ''}`]
+          : []),
+        `${t.peers} peer(s) connected${thin ? ` (${THRESHOLDS.fewPeers} or fewer is a thin swarm)` : ''}; ${t.progress === null ? '?' : Math.round(t.progress * 100)}% of the file is on disk`,
+        ...slow.map((a) => `${a.provider} took ${a.took_s} s to give its file list and header`),
+        ...(failedTries.length > 0 ? [`${failedTries.length} earlier torrent play(s) of it found no torrent that played in time (${failedTries.map((p) => p.at).join(', ')})`] : []),
+        ...stalls.slice(-2).map((l) => `the player said: ${l}`),
+        ...(f.referenceMbps !== null ? [`the reference host gave ${f.referenceMbps} Mbps: this connection is not the limit`] : []),
       ];
     },
   },
@@ -430,7 +520,14 @@ export function summarize(ev, cls = classify(ev)) {
         : `reference download: failed (${ref.error ?? `HTTP ${ref.status}`})`,
   );
   const st = ev.network?.stream ?? null;
-  lines.push(
+  const tf = torrentFacts(ev);
+  if (ev.onTorrent) {
+    lines.push(
+      tf === null
+        ? `torrent ${s?.torrent?.name ?? '?'}: not sampled`
+        : `torrent ${s?.torrent?.name ?? '?'}: ${tf.state ?? '?'}, ${tf.progress === null ? '?' : Math.round(tf.progress * 100)}% on disk, ${tf.peers} peer(s), swarm ${tf.swarmMbps ?? '?'} Mbps, film ${tf.bitrateMbps ?? '?'} Mbps`,
+    );
+  } else lines.push(
     st === null
       ? `the stream now: not measured (${ev.network?.stream_skipped ?? 'no measurement'})`
       : st.ok === true
@@ -439,6 +536,12 @@ export function summarize(ev, cls = classify(ev)) {
   );
   const p = ev.network?.host_probe ?? null;
   if (p !== null) lines.push(p.ok === true ? `${p.host} answered its root with HTTP ${p.status} in ${p.ttfb_ms} ms` : `${p.host} did not answer its root (${p.error})`);
+  for (const a of s?.steps ?? []) {
+    if ((num(a.took_s) ?? 0) >= THRESHOLDS.slowStepS) lines.push(`slow step: ${a.provider} ${a.outcome} after ${a.took_s} s${str(a.detail) ? ` (${String(a.detail).slice(0, 120)})` : ''}`);
+  }
+  const df = daemonFacts(ev);
+  if (df.starts.length > 0) lines.push(`daemon starts in the log window (each ends every session and every play in flight): ${df.starts.slice(-5).join(', ')}`);
+  for (const p of df.plays.slice(-6)) lines.push(`torrent play ${p.at}: ${p.ref}, ${p.candidates} candidate(s), ${p.played === null ? 'none played' : `playing ${p.played}`}`);
   for (const l of ev.playerLines.slice(-5)) lines.push(`player: ${l}`);
   lines.push(`cause: ${cls.label} (${cls.cause})`);
   for (const sig of cls.signals) lines.push(`  - ${sig}`);
@@ -461,9 +564,16 @@ export function noteBody(ev, what = '', cls = classify(ev)) {
   if (s?.cache) lines.push(`It played from this machine's cache ${s.cache}.`);
   lines.push(`Cause: ${cls.label}.`);
   for (const sig of cls.signals) lines.push(`- ${sig}`);
+  const tf = torrentFacts(ev);
   lines.push(
-    `Network: reference ${f.referenceMbps ?? 'not measured'} Mbps; stream host ${f.hosts[0]?.host ?? 'unknown'} median ${f.hostMbps ?? '?'} Mbps, first byte ${f.ttfbMs ?? '?'} ms.`,
+    ev.onTorrent
+      ? `Network: reference ${f.referenceMbps ?? 'not measured'} Mbps; torrent ${s?.torrent?.name ?? 'unknown'}: swarm ${tf?.swarmMbps ?? '?'} Mbps, film ${tf?.bitrateMbps ?? '?'} Mbps, ${tf?.peers ?? '?'} peer(s).`
+      : `Network: reference ${f.referenceMbps ?? 'not measured'} Mbps; stream host ${f.hosts[0]?.host ?? 'unknown'} median ${f.hostMbps ?? '?'} Mbps, first byte ${f.ttfbMs ?? '?'} ms.`,
   );
+  const df = daemonFacts(ev);
+  const tries = df.plays.filter((p) => s?.title == null || p.ref === s.title);
+  if (tries.length > 0) lines.push(`Torrent plays of it in the daemon's log: ${tries.map((p) => `${p.at} ${p.played === null ? 'none played' : 'played'}`).join('; ')}.`);
+  if (df.starts.length > 0) lines.push(`Daemon starts in the log window: ${df.starts.slice(-5).join(', ')}.`);
   if (ev.missing.length > 0) lines.push(`Not known: ${ev.missing.join('; ')}.`);
   lines.push(`Evidence folder: ${ev.dir}`);
   lines.push('', '#stream-bug #direct-stream #mcp-notes');
@@ -473,7 +583,7 @@ export function noteBody(ev, what = '', cls = classify(ev)) {
 function main(argv) {
   const [cmd, target, ...rest] = argv;
   const usage = () => {
-    process.stderr.write('usage: diagnose.mjs classify|summary|note|session-id|top-host DIR [what seen] | answer-dir FILE\n');
+    process.stderr.write('usage: diagnose.mjs classify|summary|note|session-id|top-host|torrent-hash DIR [what seen] | answer-dir FILE | torrent-sample FILE\n');
     process.exit(2);
   };
   if (target === undefined) usage();
@@ -495,6 +605,22 @@ function main(argv) {
     case 'top-host': {
       const host = topHost(readFolder(target));
       if (host !== null) process.stdout.write(`${host}\n`);
+      break;
+    }
+    case 'torrent-hash': {
+      const hash = readFolder(target).session?.torrent?.infoHash ?? null;
+      if (hash !== null && /^[0-9a-f]{40}$/.test(hash)) process.stdout.write(`${hash}\n`);
+      break;
+    }
+    case 'torrent-sample': {
+      try {
+        const answer = JSON.parse(readFileSync(target, 'utf8'));
+        if (isObject(answer) && typeof answer.info_hash === 'string') {
+          process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), ...Object.fromEntries(FIELDS.torrent.map((k) => [k, answer[k] ?? null])) })}\n`);
+        }
+      } catch {
+        // Not JSON: no sample.
+      }
       break;
     }
     case 'answer-dir': {

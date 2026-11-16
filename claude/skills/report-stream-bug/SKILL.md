@@ -1,6 +1,6 @@
 ---
 name: report-stream-bug
-description: Find out why a direct-stream play in mcp-notes' own player went wrong, and document it — it lagged, buffered, stopped with "Playback stopped (networkError fragLoadError)", said the session ended, or was refused after a refresh. Use whenever the user types "/report-stream-bug" (alone, with a snapshot folder, or with what they saw), when the player's report button opened this session with "/report-stream-bug <folder>", and for "the stream keeps lagging, why?", "is it my internet or the stream host?", "the episode stopped playing, trace it", "report this stream bug". Collects the daemon's snapshot of the session, the pass-through's per-request records, the player's log, the daemon's lines and a download-speed comparison of a reference host against the stream host into one folder, names the cause from the known causes, and saves the finding as a #stream-bug note linked to this session.
+description: Find out why a direct-stream play in mcp-notes' own player went wrong, and document it — it lagged, buffered, stopped with "Playback stopped (networkError fragLoadError)", said the session ended, was refused after a refresh, or a torrent play (TM, TS) took several tries, started slowly or keeps stalling. Use whenever the user types "/report-stream-bug" (alone, with a snapshot folder, or with what they saw), when the player's report button opened this session with "/report-stream-bug <folder>", and for "the stream keeps lagging, why?", "is it my internet or the stream host?", "the episode stopped playing, trace it", "report this stream bug". Collects the daemon's snapshot of the session, the pass-through's per-request records, the player's log, the daemon's lines and a download-speed comparison of a reference host against the stream host into one folder, names the cause from the known causes, and saves the finding as a #stream-bug note linked to this session.
 argument-hint: [snapshot folder] [what the user saw, e.g. "laggy, then stopped at 12 min"]
 ---
 
@@ -8,7 +8,9 @@ argument-hint: [snapshot folder] [what the user saw, e.g. "laggy, then stopped a
 
 A direct-stream play pulls every byte from a third-party stream host through the daemon's
 pass-through (`/api/stream/sessions/<id>/p`). The daemon records every answer in its stream evidence
-log, and the player page posts its own log there. Your job is the cause, with evidence, not a replay.
+log, and the player page posts its own log there. A play from a torrent (`provider: "torrent"`, TM,
+TS) has no stream host: its supply is the swarm, and its evidence is the swarm's state and the
+daemon's `torrent:` lines. Your job is the cause, with evidence, not a replay.
 
 The text after `/report-stream-bug` may start with an absolute folder: the snapshot the player's
 report button saved. Hand that folder to `collect.sh`; the rest of the text is what the user saw.
@@ -18,6 +20,11 @@ Rules:
 - **Collect first, at once.** The session lives in the daemon's memory, its token expires, and a
   daemon restart ends it. Run `collect.sh` before anything else, and before a new play, a refresh or
   a restart.
+- **A play that never started has no session.** `collect.sh` snapshots the stream on screen or the
+  last session, which may be another play. The failed tries are in `notesd.log` (`torrent: TMDB ...:
+  N candidate(s), none played`) and in the tool's own answer, when the session that asked still has
+  it: put its `attempts` (provider, outcome, seconds, detail) in the note. A tool call that timed out
+  left no answer; say so.
 - **Never print or save a signed address.** Do not open, curl or quote a pass-through address
   (`/api/stream/sessions/<id>/p?u=...`), a `manifest_url`, or anything `GET /api/stream/sessions/<id>`
   answers: they carry the stream host's token. `netcheck.mjs` reads them in memory only; the
@@ -54,9 +61,14 @@ It prints a summary (with the cause) and writes everything into the snapshot fol
 | `snapshot-answer.json` | The snapshot route's answer, when the script asked for the snapshot |
 | `evidence-latest.json` | The daemon's records for the session now, newer than the snapshot |
 | `evidence-tail.jsonl` | The session's lines from this host's evidence log on disk (read without the daemon) |
-| `notesd.log` | The daemon's direct-stream lines, every query string cut off |
-| `network.json` | `reference` (a download from the reference host), `stream` (the session's highest rendition through the pass-through, while the session lives), `host_probe` (how long the stream host takes to answer its root) |
+| `notesd.log` | The daemon's direct-stream and torrent lines, every query string cut off |
+| `network.json` | `reference` (a download from the reference host), `stream` (the session's highest rendition through the pass-through, while the session lives), `host_probe` (how long the stream host takes to answer its root). A torrent session: the reference only |
+| `torrent.jsonl` | A torrent session only: three samples of its swarm, 5 s apart (state, bytes on disk, the file's length and duration, peers, rate) |
 | `missing.txt`, `summary.txt` | What could not be collected; the printed summary |
+
+The summary also lists what no rule decides on: every step of the play that took 5 s or more
+(`slow step:` an index that timed out, a torrent's file list and header, a subtitle tier), every
+start of the daemon in the log window, and every torrent play with its outcome.
 
 Then read `summary.txt`, and `evidence.jsonl` around the stop: which request failed, on which host,
 with what status, error, first-byte time and rate, and what the player said just before.
@@ -77,6 +89,7 @@ its test, in the same change.
 | What the evidence shows | Cause | Where it is proven | What to do |
 | --- | --- | --- | --- |
 | The player said the session ended ("The session has ended"), or a request was refused by notesd as `unknown_session` | **The session ended** (`session_ended`): the daemon restarted, or the session passed 4 h idle or 24 h. Nothing on the network failed | `player.json` / player records; a daemon start in `notesd.log` | Play it again; when a restart caused it, say what restarted the daemon |
+| The session plays from a torrent, the reference gave 5 Mbps or more, and the swarm delivers under 1.5 times the film's bitrate (bytes on disk between the samples, against file length over duration), or it has 5 peers or fewer and the player stalled or an earlier play of the title found no torrent in time | **The torrent swarm is slow or thin** (`torrent_swarm_slow`) | `torrent.jsonl`; `stalled at` in `player.json`; `none played` and `no_metadata` in `notesd.log`; the `Torrent:` attempt's seconds in `session.json` | Pause and let it fill (the download goes on while paused, and the grey bar grows); `Another torrent (S)` in the player; or a cloud provider (NTM, NTS: `provider: "cloud"`) |
 | The last failed answer is 401, 403 or 410 from the stream host, or the player said a refreshed stream was refused | **The token expired** (`token_expired`): the signed address aged out, and a fresh resolve did not help | `evidence.jsonl` statuses; `refreshes` in `session.json` (the player gives up after 3) | Play it again; when it recurs within minutes on one provider, that provider hands out short tokens |
 | The last failed answer is 404 or 5xx, or the player names a parsing, decrypting, key or append error | **The provider's stream is broken** (`provider_broken`) | `evidence.jsonl` status and path; the player line | Another provider: play it again (the resolver tries them in order) |
 | The reference download failed, or gave under 5 Mbps | **This connection is slow** (`connection_slow`) | `network.json` `reference` | A lower quality in the player's menu; another network; or cache it first (`direct_stream_cache`, "cache it first" in `/direct-stream`) and play it from this laptop's disk |
@@ -92,12 +105,24 @@ its test, in the same change.
 - The player: hls.js buffers up to 120 s ahead through the pass-through (30 s under `?muted=1`),
   and retries a fatal network error with backoff before it stops (`recovering` lines in its log).
   It refreshes an expired token at most 3 times per page.
+- 2026-11-17: Through My Window (2022) from a torrent took three tries. The first died with "The
+  daemon is stopping": a deferred `scripts/install.sh` restarted the daemon mid-play. The second
+  tried six torrents in 90 s and none played, and the MCP call timed out before the daemon answered,
+  so its attempts were lost. The third played after 66 s (6 s for a YTS index that timed out, 37.5 s
+  for the torrent's file list and header, 22 s for subtitles) and then stalled: 3 peers delivering
+  1.7 Mbps for a 2.6 Mbps film, on a 120 Mbps connection. The collector then knew nothing of
+  torrents; `torrent.jsonl`, the `torrent:` lines and this cause exist because of it.
+- A torrent session: the index's seed count is not the swarm (16 listed, 3 connected). The daemon
+  opens at most five torrents in 90 s, and a torrent's header must arrive within 30 s. The download
+  goes on while the film is paused; there is no pause cache, since the file is already on disk.
+- Never restart the daemon while a play is being started: `GET /api/movies/player` shows a stream
+  only once its page reports, so a play still resolving looks idle.
 - Sessions: in the daemon's memory only, 4 hours after the last request, 24 hours at most; a
   restart ends every one. A snapshot of an ended session has no source (`missing:` says so).
 - A 403 that carries `X-Notesd-Upstream` is the stream host's; one without it is notesd's
   (`unknown_session`, `forbidden_host`).
-- The thresholds (5 Mbps reference, 3 Mbps host, 1.5 s first byte) are `THRESHOLDS` in
-  `diagnose.mjs`. A 1080p HLS rendition needs about 5 Mbps.
+- The thresholds (5 Mbps reference, 3 Mbps host, 1.5 s first byte, 1.5 times the bitrate and 5
+  peers for a swarm, 5 s for a slow step) are `THRESHOLDS` in `diagnose.mjs`. A 1080p HLS rendition needs about 5 Mbps.
 
 ## 4. A cause that is not in the table
 

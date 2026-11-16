@@ -19,6 +19,10 @@ ROUTE_SNAPSHOT=/api/stream/evidence/snapshot
 SNAPSHOT_BODY='{}'
 ROUTE_EVIDENCE=/api/stream/evidence
 EVIDENCE_LIMIT=2000
+# A torrent session's swarm (state, bytes on disk, peers, rate): read-only, and its answer carries no token.
+ROUTE_TORRENT=/api/stream/torrent
+TORRENT_SAMPLES=3
+TORRENT_SAMPLE_GAP_S=5
 
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 WALL="${NOTESD_WALL_URL:-http://localhost:${NOTESD_PORT:-7317}}"
@@ -139,7 +143,8 @@ fi
 
 # Cut every query string off an address: a resolver's detail can name a signed address.
 REDACT='s#(https?://[^[:space:]?"]+)\?[^[:space:]"]*#\1?<query removed>#g'
-LINES='direct stream|stream evidence'
+# The torrent source's lines too: a torrent play that never started has no session, so they are its only trace.
+LINES='direct stream|stream evidence|\] torrent:'
 if [[ -n "$LOG_FILE" ]]; then
   if [[ -r "$LOG_FILE" ]]; then
     grep -iE "$LINES" "$LOG_FILE" | tail -n 400 | sed -E "$REDACT" >"$OUT/notesd.log"
@@ -157,13 +162,28 @@ else
   missing "no daemon line about direct streaming in the last $HOURS h"
 fi
 
+# A session that plays from a torrent: sample its swarm a few seconds apart (bytes on disk, peers, rate).
+HASH="$(node "$HERE/diagnose.mjs" torrent-hash "$OUT")"
+if [[ -n "$HASH" && $DAEMON -eq 1 ]]; then
+  echo "== sampling the torrent's swarm: $TORRENT_SAMPLES samples, $TORRENT_SAMPLE_GAP_S s apart"
+  : >"$OUT/torrent.jsonl"
+  for i in $(seq 1 "$TORRENT_SAMPLES"); do
+    [[ $i -gt 1 ]] && sleep "$TORRENT_SAMPLE_GAP_S"
+    code="$(curl -s -m 10 -o "$TMP/torrent.json" -w '%{http_code}' -H "Origin: $ORIGIN" "$WALL$ROUTE_TORRENT/$HASH" 2>/dev/null)"
+    [[ "$code" == 200 ]] && node "$HERE/diagnose.mjs" torrent-sample "$TMP/torrent.json" >>"$OUT/torrent.jsonl"
+  done
+  [[ -s "$OUT/torrent.jsonl" ]] || { rm -f "$OUT/torrent.jsonl"; missing "the torrent $HASH: $ROUTE_TORRENT answered HTTP $code"; }
+fi
+
 HOST="$(node "$HERE/diagnose.mjs" top-host "$OUT")"
 NET_ARGS=()
 [[ -n "$REFERENCE" ]] && NET_ARGS+=(--reference "$REFERENCE")
-[[ -n "$SID" ]] && NET_ARGS+=(--session "$SID")
+# A torrent session has no stream host: only the reference is measured.
+[[ -n "$SID" && -z "$HASH" ]] && NET_ARGS+=(--session "$SID")
 [[ $DAEMON -eq 1 ]] && NET_ARGS+=(--daemon "$WALL")
 [[ -n "$HOST" ]] && NET_ARGS+=(--host "$HOST" --host-scheme "$HOST_SCHEME")
-echo "== measuring: a reference download${SID:+, the stream through session $SID}${HOST:+, the first answer of $HOST}"
+if [[ -n "$HASH" ]]; then echo "== measuring: a reference download"; else
+echo "== measuring: a reference download${SID:+, the stream through session $SID}${HOST:+, the first answer of $HOST}"; fi
 node "$HERE/netcheck.mjs" ${NET_ARGS[@]+"${NET_ARGS[@]}"} >"$OUT/network.json" \
   || { rm -f "$OUT/network.json"; missing "the network measurement did not run"; }
 

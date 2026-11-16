@@ -1,0 +1,6 @@
+Nov 17 03:47:04 pc node[1]: [notesd] torrent: TMDB movie 818647: 6 candidate(s), none played
+Nov 17 03:47:06 pc node[2]: [notesd] direct stream: on, 26 providers in the seed (0 new, 0 updated)
+Nov 17 03:50:55 pc node[2]: [notesd] torrent: Through My Window 2022 720p WEBRip: no_metadata: No peer sent the file list within 20 s.
+Nov 17 03:51:02 pc node[2]: [notesd] torrent: TMDB movie 818647: 6 candidate(s), none played
+Nov 17 03:55:44 pc node[2]: [notesd] torrent: TMDB movie 818647: 6 candidate(s), playing Through My Window 2022 1080p WEBRip
+Nov 17 03:55:47 pc node[2]: [notesd] direct stream: playing TMDB movie 818647 from the torrent Through My Window 2022 1080p WEBRip (downloading)

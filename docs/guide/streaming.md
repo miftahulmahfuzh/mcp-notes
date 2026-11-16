@@ -1251,8 +1251,9 @@ a new one (the stream on screen, else the last session); with neither it makes
 | `snapshot-answer.json` | The snapshot's answer, when the skill asked for it |
 | `evidence-latest.json` | The daemon's records for the session, newer than the snapshot |
 | `evidence-tail.jsonl` | The session's lines from this host's evidence log on disk, read without the daemon |
-| `notesd.log` | The daemon's direct-stream lines of the last 6 hours, every query string cut off |
+| `notesd.log` | The daemon's direct-stream and torrent lines of the last 6 hours, every query string cut off |
 | `network.json` | The reference download, the stream through the session, and the stream host's first answer |
+| `torrent.jsonl` | A torrent session only: three samples of its swarm, 5 s apart (bytes on disk, peers, rate) |
 | `missing.txt`, `summary.txt` | What could not be collected; the summary it printed, with the cause |
 
 **My internet or the stream host?** `netcheck.mjs` downloads up to 25 MB for at most 10 seconds
@@ -1264,10 +1265,14 @@ runs, not when the play broke, so the pass-through's own rates from the play wei
 has passed.
 
 **The cause.** `diagnose.mjs` tries the known causes in order and takes the first that matches:
-the session ended, the token expired, the provider's stream is broken, this connection is slow
+the session ended, the torrent swarm is slow or thin (a torrent session whose swarm delivers under
+1.5 times the film's bitrate, or has 5 peers or fewer and stalled, on a connection that is fine),
+the token expired, the provider's stream is broken, this connection is slow
 (the reference failed or gave under 5 Mbps), the stream host is slow or far (the reference is fine
 and the host gave under 3 Mbps, or under a quarter of the reference, or its first byte took over
-1.5 s); else the cause is new. Claude reads the evidence as well, tells you what happened, and saves
+1.5 s); else the cause is new. The summary also names every step of the play that took 5 s or more,
+every start of the daemon in the log window, and every torrent play with its outcome: a play that
+never started has no session, so the daemon's lines are its only trace. Claude reads the evidence as well, tells you what happened, and saves
 the finding as a note tagged `#stream-bug`, linked to the session it ran in.
 
 **Without the daemon.** When the daemon does not answer, or the session has ended, the skill still
