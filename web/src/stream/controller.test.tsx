@@ -510,3 +510,52 @@ describe('StreamController: the previous and next episode', () => {
     expect(controller.getState().switching).toBeNull();
   });
 });
+
+describe('the page log reaches the daemon (R2.2)', () => {
+  const lines = (t: ReturnType<typeof setup>) => t.posts(`${S1}/events`).flatMap((b) => (b as { lines: Record<string, unknown>[] }).lines);
+
+  it('posts a refresh line and the error that followed, with the stage and the position', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/refresh`]: () => jsonResponse({ error: 'no_source' }, 502),
+      [`POST ${S1}/events`]: () => jsonResponse({ ok: true, recorded: 1 }),
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    t.media.currentTime = 42;
+    t.fire('timeupdate');
+    t.made[0].req.handlers.onAuthError(403);
+    await vi.waitFor(() => expect(t.controller.getState().stage).toBe('error'));
+    await vi.waitFor(() => expect(lines(t)).toHaveLength(2));
+    expect(lines(t)).toEqual([
+      expect.objectContaining({ text: 'refresh after 403 at 42 s', stage: 'refreshing', position_s: 42 }),
+      expect.objectContaining({ text: 'error: no_source', stage: 'error', position_s: 42 }),
+    ]);
+    expect(typeof lines(t)[0].at).toBe('string');
+  });
+
+  it('posts a fatal engine error as the page shows it', async () => {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    await vi.waitFor(() => expect(lines(t)).toHaveLength(1));
+    expect(lines(t)[0]).toMatchObject({ text: 'error: networkError fragLoadError', stage: 'error' });
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError' });
+  });
+
+  it('a daemon that refuses the lines changes nothing on the page', async () => {
+    const t = setup({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson()),
+      [`POST ${S1}/events`]: () => {
+        throw new Error('daemon gone');
+      },
+    });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onFatal('networkError fragLoadError');
+    await vi.waitFor(() => expect(t.posts(`${S1}/events`)).toHaveLength(1));
+    expect(t.controller.getState()).toMatchObject({ stage: 'error', errors: ['networkError fragLoadError'] });
+  });
+});

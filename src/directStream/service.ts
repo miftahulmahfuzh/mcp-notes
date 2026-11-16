@@ -7,10 +7,11 @@ import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
+import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
-import { SessionStore, type StreamSession } from './sessions.js';
+import { SESSION_ID_PATTERN, SessionStore, type StreamSession } from './sessions.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
   DirectStreamError,
@@ -141,6 +142,8 @@ export interface DirectStreamServiceOptions {
   fetch?: FetchLike;
   now?: () => Date;
   log?: (line: string) => void;
+  /** This host's stream evidence log (evidence.ts): every pass-through answer and session change is recorded into it. Null or unset: nothing is recorded. */
+  evidence?: EvidenceSink | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -162,6 +165,7 @@ export class DirectStreamService {
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
   private readonly fetchImpl: FetchLike;
+  private readonly evidence: EvidenceSink | null;
   private chain: Promise<void> = Promise.resolve();
   /** The running /update-cloud-source, if any: one at a time through the one streaming Chrome. */
   private updatingSource: Promise<UpdateSourceAnswer> | null = null;
@@ -173,6 +177,7 @@ export class DirectStreamService {
     this.sessions = opts.sessions ?? new SessionStore(this.now);
     this.log = opts.log ?? ((line: string) => console.log(line));
     this.fetchImpl = opts.fetch ?? ((url, init) => fetch(url, init));
+    this.evidence = opts.evidence ?? null;
   }
 
   get host(): string {
@@ -198,7 +203,9 @@ export class DirectStreamService {
     let resumeS = options.resumeS ?? null;
     const hook = this.opts.hooks?.resumeS;
     if (resumeS === null && hook !== undefined) resumeS = await this.hookValue('resumeS', () => hook(ref));
-    return this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
+    const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
   }
 
   /** Resolves, then opens this daemon's player page for the session full screen in the streaming Chrome. */
@@ -239,8 +246,15 @@ export class DirectStreamService {
   async refresh(id: string): Promise<SessionInfo> {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
-    const out = await this.resolveSource(session.ref);
+    let out: ResolvedOutput;
+    try {
+      out = await this.resolveSource(session.ref);
+    } catch (err) {
+      safeRecord(this.evidence, sessionRecord(session, 'refresh_failed', err instanceof DirectStreamError ? `${err.code}: ${err.message}` : messageOf(err)));
+      throw err;
+    }
     this.sessions.replaceSource(session, out.source, out.attempts);
+    safeRecord(this.evidence, sessionRecord(session, 'refreshed', null));
     return this.sessionInfo(session);
   }
 
@@ -306,11 +320,24 @@ export class DirectStreamService {
     return parts.length === 0 ? null : parts.join('\n\n');
   }
 
-  /** GET /api/stream/sessions/:id/p: 403 `unknown_session` before anything else, then forward(). */
+  /**
+   * GET /api/stream/sessions/:id/p: 403 `unknown_session` before anything else, then forward(),
+   * observed for the evidence log (one record per answer, written when its body ends).
+   */
   async passThrough(id: string, req: ForwardRequest): Promise<Response> {
     const session = this.sessions.get(id);
-    if (session === null) return jsonError(403, 'unknown_session', 'That stream session is unknown or has ended.');
-    return forward(session, req, this.fetchImpl);
+    if (session === null) {
+      // A well-formed id the daemon no longer holds is evidence too ("the session ended").
+      if (SESSION_ID_PATTERN.test(id)) safeRecord(this.evidence, refusedRecord(id, req, 403, 'unknown_session'));
+      return jsonError(403, 'unknown_session', 'That stream session is unknown or has ended.');
+    }
+    return observeForward(session, req, this.fetchImpl, this.evidence);
+  }
+
+  /** A snapshot's view of a live session (no header value, no query); null when it ended. Does not mark it used. */
+  evidenceSource(id: string): SessionSource | null {
+    const session = this.sessions.peek(id);
+    return session === null ? null : sessionSource(session, this.sessions.expiresAt(session));
   }
 
   /** Every provider with this host's health. */
@@ -527,6 +554,8 @@ export interface DirectStreamWiring {
   pageBase: () => string;
   /** Phase 5's movie-store hooks. */
   hooks?: DirectStreamHooks;
+  /** This host's stream evidence log; null or unset records nothing. */
+  evidence?: EvidenceSink | null;
 }
 
 /** Test seams. */
@@ -559,6 +588,7 @@ export function buildDirectStreamService(
     animeSeedFile: overrides.seedFile === undefined ? DEFAULT_ANIME_SEED_FILE : null,
     pageBase: wiring.pageBase,
     hooks: wiring.hooks,
+    evidence: wiring.evidence ?? null,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

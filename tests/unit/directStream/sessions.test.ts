@@ -72,6 +72,21 @@ describe('SessionStore', () => {
     expect(store.size).toBe(MAX_SESSIONS);
     expect(store.get(first.id)).toBeNull();
   });
+
+  it('counts refreshes, and peek() reads a session without keeping it alive', () => {
+    const c = clock();
+    const store = new SessionStore(c.now);
+    const s = store.create(REF, SOURCE, []);
+    expect(s.refreshes).toBe(0);
+    store.replaceSource(s, SOURCE, []);
+    store.replaceSource(s, SOURCE, []);
+    expect(s.refreshes).toBe(2);
+    c.advance(SESSION_IDLE_MS - 1000);
+    expect(store.peek(s.id)).toBe(s);
+    c.advance(1000);
+    expect(store.peek(s.id)).toBeNull();
+    expect(store.peek('nope')).toBeNull();
+  });
 });
 
 describe('the host allow list', () => {

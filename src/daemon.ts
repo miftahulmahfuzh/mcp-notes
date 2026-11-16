@@ -22,13 +22,14 @@ import { NotesService } from './notes/service.js';
 import { buildMoviePlayback, type MoviePlayer } from './movies/player.js';
 import { windowsForegrounder } from './movies/vlc/foreground.js';
 import { buildVlcFinder, buildVlcHealth, type HealthMonitor } from './movies/vlc/health.js';
-import { buildMoviesService } from './movies/service.js';
+import { MOVIES_SUBDIR, buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
+import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
 import { scriptRunner } from './streaming/service.js';
 import { SUMMARIES_SUBDIR, createAgentSummarizer, type Summarizer } from './sessions/summarize.js';
@@ -167,9 +168,24 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
   // null with NOTESD_ANIME_MAP_URL=off: no lookup is made and an anime resolves like any series.
   const animeMapper = createAnimeMapper({ baseUrl: config.directStream?.animeMapUrl ?? null });
+  // The stream on screen in the player page: built here so the evidence log can ask for it.
+  const streamLive = movies === null ? null : new StreamLive();
+  // Stream bug reporting phase 1: this machine's stream evidence log. The service records every
+  // pass-through answer and session change into it; a snapshot reads the live session back through
+  // the service (a closure: the service is built next) and the stream on screen through streamLive.
+  const streamEvidence =
+    movies === null || config.directStream?.enabled !== true
+      ? null
+      : new StreamEvidence({
+          dir: join(config.dataDir, MOVIES_SUBDIR),
+          host: movies.host,
+          source: (id) => directStream?.evidenceSource(id) ?? null,
+          onScreen: () => streamLive?.current()?.session_id ?? null,
+        });
   const directStream = buildDirectStreamService(config, db, {
     movies,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
+    evidence: streamEvidence,
     hooks:
       movieStreams === null
         ? undefined
@@ -218,7 +234,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     streaming,
     directStream,
     movieStories,
-    streamLive: movies === null ? null : new StreamLive(),
+    streamLive,
+    streamEvidence,
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
@@ -279,6 +296,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       await moviesHealth?.close();
       await stopBackground();
       await closeServer(server);
+      await streamEvidence?.flushed();
       await closeDb(db);
     })();
     return stopping;

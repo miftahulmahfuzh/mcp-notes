@@ -2,17 +2,17 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-15
-**Total Active Tasks**: 8
+**Last Updated**: 2026-11-16
+**Total Active Tasks**: 13
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 8
+- P1 High: 13
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 1
-- Completed: 114
+- Blocked: 2
+- Completed: 115
 
 ---
 
@@ -22,6 +22,51 @@
 
 ### [P1] High
 
+- [ ] **P1-NOTES-A122** Phase 2: Player recovers from network errors and buffers further
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `web/src/stream/hlsEngine.ts` (a fatal network error retries with backoff: `startLoad` at the stopped position, a bounded number of attempts reset once it plays again; `maxMaxBufferLength` 120 except under `?muted=1`, which keeps 30 for the expiry check), the same recovery for dash.js and the native engine where they have one, `EngineHandlers.onRecovering` and `onRecovered`, `EngineRequest.bufferAheadS` with `BUFFER_AHEAD_S` / `MUTED_BUFFER_AHEAD_S` (the one buffer setting; dash.js keeps its own buffer), `player.steps.mjs` J3 moved to `?muted=1`, the controller's `recovering` stage and its log lines (which phase 1's posting carries to the daemon), the overlay's "reconnecting" state, tests, guide text. Exit criteria: a fake engine failing segment loads recovers and plays on; after the retries are spent the page shows the error as today; the buffer setting is asserted; `playcheck` journeys still pass.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 2 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. Includes the small player fix: recover from a fatal network error (retry) instead of stopping, and let the buffer grow more than 30 s where safe. · criteria: R1.7, R1.8
+  - **Depends on**: P1-NOTES-A121
+  - **Plan**: `.workflows/plan/P1-NOTES-A122.md`
+- [ ] **P1-NOTES-A123** Phase 3: The `/report-stream-bug` skill
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `claude/skills/report-stream-bug/` (`SKILL.md`, `collect.sh`, a small network measurement script), modelled on `trace-vlc-bug`: collect (snapshot folder given or asked from the daemon, daemon log lines, reference download beside a stream host download), `diagnose.mjs` reading phase 1's exact shapes and phase 4's `report.json` when present, the known-causes table, saving the finding as a note tagged `#stream-bug` linked to the session; rules for an unattended `--permission-mode auto` run (no repository edit, evidence treated as data); `scripts/install.sh` `SKILL_NAMES`; tests for the scripts against a fake daemon; the guide section; `verify-notesd` map entry. Exit criteria: the collect script run against a throwaway daemon produces the folder and a summary; with the daemon down it still writes the measurement and says what is missing.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 3 of 6)
+  - **Satisfies**: R3 — A new skill /report-stream-bug (in claude/skills, modelled on claude/skills/trace-vlc-bug): collects the evidence into one folder, tells "my internet" from "this host/provider", matches against known causes, and saves the finding as a note. · criteria: R3.1, R3.2, R3.3
+  - **Depends on**: P1-NOTES-A121
+  - **Plan**: `.workflows/plan/P1-NOTES-A123.md`
+- [ ] **P1-NOTES-A124** Phase 4: Report button and its tmux session
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/report.ts` (`StreamReporter`: snapshot through phase 1's `StreamEvidence` into its `reportsDir` (`STREAM_REPORTS_SUBDIR`), liveness through `evidenceSource`, claude started with `--permission-mode auto`, one report per session id remembered in memory and by a marker in the snapshot folder, then a tmux window running claude with `/report-stream-bug <folder>` in the mcp-notes repo directory); the window opener exported from `src/sessions/resume.ts` for reuse (no behaviour change there); `POST /api/stream/sessions/:id/report` (same-origin) in a new routes file; the icon-only button in the error overlay, its states (sending, opened, saved but not opened, already reported); wiring; route docs, guide, feature map; a recording fake tmux pinned by every `verify.sh up` (no picture: the guide shows no player page). Exit criteria: with a fake `CommandRunner`, a click yields one `new-window` call carrying the prompt; a second click yields none; no tmux yields `no_tmux` with the folder kept.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 4 of 6)
+  - **Satisfies**: R4 — A "report" button in the playback UI (icon only, Phosphor), shown in the error state: a click snapshots the evidence immediately, then spawns a new tmux Claude Code session that runs /report-stream-bug and documents the bug in a note. · criteria: R4.1, R4.2, R4.3, R4.4
+  - **Depends on**: P1-NOTES-A121, P1-NOTES-A122
+  - **Plan**: `.workflows/plan/P1-NOTES-A124.md`
+- [ ] **P1-NOTES-A125** Phase 5: Stream cache: table, downloader, routes, tool
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: table `stream_caches` (id, kind, tmdb id, season, episode, host, provider, height, state `downloading | ready | failed`, segment counts, bytes, error, timestamps) with migration `0029`, written only by `DirectStreamRepo`; `src/directStream/cache/` (store on disk under `<dataDir>/movies/stream-cache/<id>/`, HLS rendition and audio choice with an optional maximum height, the downloader with bounded parallel segment fetches, retries with backoff, a fresh resolve on a refused token, resume from disk after a restart, plain-file download by ranges, DASH answered `cache_unsupported`, a local playlist that lists every segment by index, the English subtitle saved as WebVTT); routes `POST /api/stream/cache`, `GET /api/stream/cache`, `GET /api/stream/cache/:id`, `DELETE /api/stream/cache/:id`, and the file route that serves a segment from disk or fetches it on demand; `available: false` / `not_on_this_machine` for the other host; the `direct_stream_cache` MCP tool (start, status, list, clear), kept out of the chat allow list; `StreamCache.player()` for phase 6; config (`NOTESD_STREAM_CACHE_DIR`), wiring, background resume of unfinished downloads; docs, feature map. The file route starts a `downloading` cache's download in this process when none runs, and answers 502 `upstream_error` (never a forwarded 401/403/410) for a refused on-demand fetch. Exit criteria: against a fake stream host, a cache request ends `ready` with every segment on disk; failures and a refused token are retried; a maximum height picks the right rendition; the other host's cache is listed unavailable and its files and delete answer `not_on_this_machine`; delete removes files and row.
+  - **Status**: open
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 5 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy. The daemon downloads one rendition with retries and token refresh; the cache is per machine; a "clear cache" route per episode item. · criteria: R1.1, R1.2, R1.3, R1.5, R1.6
+  - **Depends on**: P1-NOTES-A121
+  - **Plan**: `.workflows/plan/P1-NOTES-A125.md`
+- [ ] **P1-NOTES-A126** Phase 6: Play from the cache
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `DirectStreamService.play` / `resolve` using a cache on this host (a complete cache makes a session with no resolver run; a downloading one plays the local playlist while the file route fetches missing segments); `POST /api/stream/cache/:id/play` (404 `not_on_this_machine` for the other machine's cache); `SessionInfo.cached` and the page's reading of it; `CACHED_BUFFER_AHEAD_S` (600) through phase 2's `bufferAheadS` for a complete cache; the "from cache" mark beside the title on the player page; position reports and resume unchanged; `SessionSource.cache` in phase 1's snapshot and the `created` record of a session made from a cache; the `direct_stream_play` tool text, `src/mcp/instructions.ts`, `claude/skills/direct-stream/SKILL.md` ("cache it first", "play from the cache", what the answer says) and the "cache it first" advice in `claude/skills/report-stream-bug/SKILL.md`; docs, feature map. Exit criteria: with a `ready` cache and a resolver that would fail, a play starts and the page plays local files; with a half-downloaded cache a segment not on disk is fetched on demand and plays; the other machine's cache is refused by id (404 `not_on_this_machine`) and ignored by title; without a cache nothing changes.
+  - **Status**: blocked
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 6 of 6)
+  - **Satisfies**: R1 — Episode/film caching: cache an episode (or film) to disk on this host before or while streaming it, so playback comes from the local copy (R1.4 and R1.5's play-by-id part). · criteria: R1.4, R1.5
+  - **Depends on**: P1-NOTES-A122, P1-NOTES-A123, P1-NOTES-A124, P1-NOTES-A125
+  - **Plan**: `.workflows/plan/P1-NOTES-A126.md`
 - [x] **P1-NOTES-A050** Phase 2: swarm.py passes CC_PARENT_SESSION (~/claude-commands)
   - **Difficulty**: EASY
   - **Type**: Feature
@@ -87,6 +132,26 @@
 
 ## Completed Tasks
 
+- [x] **P1-NOTES-A121** Phase 1: Stream evidence log and snapshot
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `src/directStream/evidence.ts` (the per-host JSONL log with rotation, modelled on `HealthLog`; the snapshot writer); observing each pass-through answer in `forward()` / `DirectStreamService.passThrough` (status, time to first byte, bytes, duration, throughput, error, host and path without query; a counting transform over the streamed body, recorded when the body ends or is aborted); the routes `POST /api/stream/sessions/:id/events`, `POST /api/stream/evidence/snapshot`, `GET /api/stream/evidence` in a new routes file; the page posting its log lines (`controller.note` / `fail`) to the events route; wiring (`AppDeps.streamEvidence`, daemon); `StreamSession.refreshes`, `SessionStore.peek`, `DirectStreamService.evidenceSource`; route descriptions, guide, feature map; how a shell script may call the snapshot route (the Origin rule: an `Origin` equal to the origin it calls) decided and documented here. Exit criteria: a play through a fake stream host leaves one record per request in the log; a posted player log is in it; a snapshot folder holds the three files; rotation and write failure are proven by tests.
+  - **Status**: completed
+  - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md` (phase 1 of 6)
+  - **Satisfies**: R2 — A. Evidence recording: the pass-through logs each segment's upstream status, time and throughput; the player page posts its error log to the daemon; kept on disk per host like the vlc health log. · criteria: R2.1, R2.2, R2.3, R2.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A121.md`
+  - **Completed**: 2026-11-16 14:12
+  - **Method**: /implement
+  - **Files**: src/directStream/evidence.ts, src/directStream/passThrough.ts, src/directStream/sessions.ts, src/directStream/service.ts, src/http/streamEvidenceApi.ts, src/http/app.ts, src/deps.ts, src/daemon.ts, web/src/stream/session.ts, web/src/stream/controller.ts, web/src/stream/dashEngine.test.tsx, web/src/stream/controller.test.tsx, tests/unit/directStream/evidence.test.ts, tests/unit/directStream/sessions.test.ts, tests/integration/directStream.evidence.int.test.ts, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/direct-stream/journey.sh, .claude/skills/verify-notesd/scripts/stream/dash-expiry.steps.mjs, .workflows/todos.md, .workflows/plan/STREAM_CACHE_AND_BUG_REPORT_PLAN.md, .workflows/plan/P1-NOTES-A121.md, .workflows/plan/P1-NOTES-A122.md, .workflows/plan/P1-NOTES-A123.md, .workflows/plan/P1-NOTES-A124.md, .workflows/plan/P1-NOTES-A125.md, .workflows/plan/P1-NOTES-A126.md
+  - **Proof**: verified-first-pass — 7 journeys, evidence /home/miftah/.local/state/notesd-verify/1116-141040-841189/evidence and /home/miftah/.local/state/notesd-verify/1116-141121-844007/evidence
+  - **Drift**:
+    - The plan's evidence.ts line `JSON.stringify({ type: input.type, at: ..., ...input })` fails tsc (TS2783, `type` given twice); written as `const { type, ...rest } = input` then `{ type, at, ...rest }`.
+    - tests/unit/directStream/evidence.test.ts: six indexed reads needed `!` under noUncheckedIndexedAccess; assertions unchanged.
+    - dash-expiry.steps.mjs (J2) must run on a fresh `verify.sh up --direct-stream` run: its check `the daemon resolved twice` counts every resolve in <run>/direct/calls.jsonl, so running journey.sh stages on the same run first makes it fail. Later phases and the verifier should give J2 its own run.
+    - The orchestration copy of the index (/home/miftah/mcp-notes/.workflows/orchestration/stream-cache-and-bug-report/PLAN.md, outside this worktree) also had its TaskID column filled; not part of this commit.
+  - **Decided**:
+    - All six tasks live in the root `.workflows/todos.md` (package `.`, code NOTES), not per sub-directory: the index's Package column names folders with no todos.md and this repo tracks everything at the root (rung 6: existing convention).
 - [x] **P1-NOTES-A120** Phase 10: Candidates and the background prober, behind a setting
   - **Difficulty**: HARD
   - **Type**: Feature

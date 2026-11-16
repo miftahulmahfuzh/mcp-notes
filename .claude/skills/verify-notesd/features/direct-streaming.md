@@ -14,6 +14,16 @@
   playlists, manifests and redirects named. Proven by `journey.sh RUN hls dash refuse` and
   `npm run test:int -- tests/integration/directStream.api.int.test.ts`.
 - Refresh: `POST /api/stream/sessions/:id/refresh` resolves again under the same id.
+- Stream evidence (stream-cache-and-bug-report phase 1): every pass-through answer is one line in
+  `<data dir>/movies/stream-evidence-<host>.jsonl` (host and path, never the query; upstream status,
+  `ttfb_ms`, `bytes`, `duration_ms`, `kbps`, `outcome`), the page's log lines arrive through
+  `POST /api/stream/sessions/:id/events` (same-origin), and `POST /api/stream/evidence/snapshot`
+  writes `stream-reports/<stamp>-<id start>/` with `session.json`, `evidence.jsonl`, `player.json`.
+  Rotated at 5 MB into `.1.jsonl`; a failed write never fails an answer. Proven by
+  `npx vitest run tests/unit/directStream/evidence.test.ts web/src/stream/controller.test.tsx`,
+  `npm run test:int -- tests/integration/directStream.evidence.int.test.ts`,
+  `journey.sh RUN evidence playerlog snapshot unwritable`, and `DASH EVIDENCE PASS` in
+  `dash-expiry.steps.mjs`.
 - Off: `NOTESD_DIRECT_STREAM=off` or `NOTESD_MOVIES=off` answers 503 `direct_stream_off` on every
   `/api/stream/*` route, and nothing is built that could start Chrome
   (`npx vitest run tests/unit/directStream/build.test.ts`).
@@ -64,9 +74,10 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   host listens on two ports of 127.0.0.1 and answers 403 without `Referer: https://embed.fixture/`; the
   fake resolver returns addresses on the first port, the second is named only inside the playlists.
   `echo dash > $DIRECT/mode` (or `dash_film`, `no_source`, `no_chrome`) picks the next resolve's answer.
-- `.claude/skills/verify-notesd/scripts/direct-stream/journey.sh RUN [seed|hls|dash|refuse]`: every check,
+- `.claude/skills/verify-notesd/scripts/direct-stream/journey.sh RUN [seed|hls|dash|refuse|evidence|playerlog|snapshot|unwritable]`: every check,
   saved as evidence; ends with `journey: PASS (...)`. Run `seed` first on a fresh run (it counts health
-  after exactly one play).
+  after exactly one play). `evidence`, `playerlog`, `snapshot` and `unwritable` read
+  `<run>/data/movies/stream-evidence-<hostname>.jsonl` and `<run>/data/movies/stream-reports/`.
 - Every run without `--direct-stream` pins `NOTESD_DIRECT_STREAM=off`, so `$V up --movies` alone shows the
   off answer: `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":550}'` answers 503.
 - `down` copies `upstream.jsonl` and `calls.jsonl` into the evidence folder.
@@ -89,7 +100,9 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/dash-expiry.steps.mjs`.
   The transcript has `DASH PLAY PASS`, `DASH EXPIRY PASS` (the host refuses the old token with 403,
   one refresh, playback continues at 100 s under the new token, two resolves) and `DASH OVER PASS`
-  (a 403 without `X-Notesd-Upstream` ends the session, no refresh). The steps set
+  (a 403 without `X-Notesd-Upstream` ends the session, no refresh) and `DASH EVIDENCE PASS` (the
+  daemon's evidence log holds the 403s under the old token, the manifest under the new one, and the
+  page's `refresh after 403` and `error: session_over` lines). The steps set
   `<run>/direct/mode` to `dash_film` and raise `<run>/direct/token`; the host serves
   `<run>/direct/film` only under the current token. Engine logic:
   `npx vitest run web/src/stream/dashEngine.test.tsx`; the live gate's DASH path:

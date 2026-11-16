@@ -133,6 +133,7 @@ export const sessionUrl = (id: string): string => `/api/stream/sessions/${encode
 export const refreshUrl = (id: string): string => `${sessionUrl(id)}/refresh`;
 export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
+export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 
 async function errorCode(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -195,6 +196,37 @@ export async function postPosition(id: string, report: PositionReport, fetchImpl
     });
   } catch {
     // ignored: the position is reported again in 5 s
+  }
+}
+
+/** One line of the page's log as it goes to the daemon's stream evidence log (POST /api/stream/sessions/:id/events). */
+export interface PlayerLogLine {
+  text: string;
+  /** When the page wrote it (ISO 8601). */
+  at: string;
+  stage: string;
+  /** The film's position then, in seconds; null when unknown. */
+  position_s: number | null;
+  /** Seconds buffered ahead of the position then; null when the browser cannot say. */
+  buffer_s: number | null;
+}
+
+/**
+ * Fire and forget, like postPosition: the daemon appends the lines to this machine's stream evidence
+ * log. Every failure is ignored; the play never waits on it. Sent `keepalive`, so the lines of a page
+ * that is closing still arrive.
+ */
+export async function postEvents(id: string, lines: readonly PlayerLogLine[], fetchImpl: typeof fetch): Promise<void> {
+  if (lines.length === 0) return;
+  try {
+    await fetchImpl(eventsUrl(id), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lines }),
+      keepalive: true,
+    });
+  } catch {
+    // ignored: evidence must never disturb the play
   }
 }
 

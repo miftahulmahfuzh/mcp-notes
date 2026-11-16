@@ -409,6 +409,50 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 - When a token expires mid-film, `POST /api/stream/sessions/<id>/refresh` resolves again and keeps
   the same session and page.
 
+### Stream evidence
+
+Every answer the pass-through gives goes to this machine's evidence log,
+`<data dir>/movies/stream-evidence-<host>.jsonl`, as one JSON line. The line is written once the
+body has ended, broken off, or been dropped by the player. It holds:
+
+- the session id and the provider
+- the stream host and the path, never the query, which is where the signed tokens are
+- the stream host's status and what the player got
+- the time until the stream host answered, the bytes sent, the duration and the throughput in kbit/s
+- how it ended (`end`, `aborted`, `error`, `refused`), with the error
+
+A request notesd turns away (an unknown or ended session, a host the session may not reach) is
+logged too. Each session created and each refresh is a `session` line.
+
+The player page posts every line it adds to its own log to
+`POST /api/stream/sessions/<id>/events`: refreshes, recoveries, errors and subtitle failures. Each
+line goes with the position and the seconds buffered ahead, and lands in the same log as a `player`
+line. `GET /api/stream/evidence?session=<id>` reads the log back.
+
+The log is written in batches in the background. A write that fails is counted, logged at most
+once a minute (`[notesd] stream evidence: could not write ...`), and never fails or delays an
+answer. Like the VLC health log it is capped at 5 MB. When it is full it becomes
+`stream-evidence-<host>.1.jsonl` and a new file starts.
+
+`POST /api/stream/evidence/snapshot` copies one session's evidence into a new folder,
+`<data dir>/movies/stream-reports/<stamp>-<first 6 characters of the id>/`, with three files:
+
+- `session.json`: the source, meaning the provider, the attempts, the hosts and the refreshes
+- `evidence.jsonl`: the session's records
+- `player.json`: the page's lines
+
+Take a snapshot while the session lives. Sessions are kept only in memory, and once a session
+ends only its log lines are left (`complete: false`). No header value captured by the resolve is
+written anywhere in the evidence, only the header names.
+
+The two POSTs are same-origin only. A script with no browser sends the origin of the address it
+calls:
+
+```sh
+curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application/json' \
+  -d '{}' http://127.0.0.1:7317/api/stream/evidence/snapshot
+```
+
 ### Direct streaming answers
 
 | Answer | Meaning |
@@ -420,6 +464,8 @@ through `/api/stream/sessions/<id>/p?u=<address>`:
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
 | `forbidden_host` | The address is not on a host the session may reach |
 | `upstream_error` | The stream host did not answer, or redirected too often |
+| `invalid_session` | An evidence route was given something that is not a stream session id |
+| `snapshot_failed` | The snapshot folder could not be written; the evidence log is untouched |
 
 ### The player
 
@@ -796,6 +842,8 @@ and the last pass.
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
+| `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
+| `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
 | `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |

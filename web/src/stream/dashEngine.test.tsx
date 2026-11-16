@@ -115,7 +115,7 @@ describe('createDashEngine: what a refused answer means', () => {
 describe('a DASH stream whose token expires (R2.5 through dashEngine)', () => {
   it('refreshes once and continues from the last position in a new dash.js player', async () => {
     const { fetchImpl, calls } = routeFetch({
-      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash', manifest_url: `${S1}/p?u=t${calls.filter((c) => c.method === 'POST').length + 1}.mpd` })),
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash', manifest_url: `${S1}/p?u=t${calls.filter((c) => c.method === 'POST' && c.url === `${S1}/refresh`).length + 1}.mpd` })),
       [`POST ${S1}/refresh`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'dash' })),
     });
     const { video, media, fire } = fakeVideo();

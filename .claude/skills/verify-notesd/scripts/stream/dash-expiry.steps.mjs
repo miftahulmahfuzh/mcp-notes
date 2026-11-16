@@ -6,7 +6,7 @@
 // Chromium here, never the owner's streaming Chrome; nothing leaves this machine.
 //   FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-dash-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-dash")
 //   DIRECT=<the DIRECT= path `up` printed> DASH_FIXTURE="$FIX" verify.sh ui RUN <this file>
-// Logs "DASH PLAY PASS", "DASH EXPIRY PASS", "DASH OVER PASS"; the first failed check throws and fails the run.
+// Logs "DASH PLAY PASS", "DASH EXPIRY PASS", "DASH OVER PASS", "DASH EVIDENCE PASS"; the first failed check throws and fails the run.
 import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -86,4 +86,25 @@ export default async ({ page, base, shot, log }) => {
   const over = await page.evaluate(() => ({ error: window.notesdStream.error, refreshes: window.notesdStream.refreshes }))
   check(over.error === 'session_over' && over.refreshes === 1, `a 403 without X-Notesd-Upstream ends the session without a refresh (got ${JSON.stringify(over)})`)
   log('DASH OVER PASS a 403 without X-Notesd-Upstream stopped the page with session_over and no further refresh')
+
+  // Stream evidence: the daemon kept the pass-through's answers and the page's own lines for this session.
+  let evidence = []
+  for (let i = 0; i < 20; i++) {
+    const res = await page.request.get(`${base}/api/stream/evidence?session=${sid}&limit=2000`)
+    check(res.ok(), `GET /api/stream/evidence answered ${res.status()}`)
+    evidence = (await res.json()).records
+    const said = evidence.filter((r) => r.type === 'player').map((r) => r.text)
+    if (said.some((t) => t.startsWith('refresh after 403')) && said.includes('error: session_over')) break
+    await page.waitForTimeout(250)
+  }
+  const said = evidence.filter((r) => r.type === 'player').map((r) => r.text)
+  const reqs = evidence.filter((r) => r.type === 'request')
+  log(`DASH EVIDENCE ${reqs.length} request record(s); page lines ${JSON.stringify(said)}`)
+  check(reqs.some((r) => (r.path ?? '').startsWith('/film/t1/') && r.status === 403 && r.answer === 403), 'the evidence log holds a 403 from the stream host under the old token')
+  check(reqs.some((r) => r.path === '/film/t2/manifest.mpd' && r.status === 200 && r.kind === 'dash'), 'the evidence log holds the manifest read under the new token')
+  check(reqs.some((r) => r.kind === 'media' && r.bytes > 0 && typeof r.kbps === 'number' && typeof r.ttfb_ms === 'number'), 'segments carry bytes, time to first byte and throughput')
+  check(said.some((t) => t.startsWith('refresh after 403')), "the page's refresh line reached the daemon")
+  check(said.includes('error: session_over'), "the page's error line reached the daemon")
+  check(evidence.some((r) => r.type === 'session' && r.event === 'refreshed'), 'the refresh is a session record')
+  log('DASH EVIDENCE PASS the daemon recorded each answer of the play and the page posted its refresh and error lines')
 }

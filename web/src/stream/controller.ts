@@ -2,12 +2,14 @@ import type { CreateEngine, EngineReady, PlayerEngine, Quality } from './engine'
 import {
   fetchSession,
   fetchText,
+  postEvents,
   postPosition,
   refreshSession,
   SessionError,
   switchEpisode,
   type EpisodeNumber,
   type ManifestKind,
+  type PlayerLogLine,
   type StreamSession,
 } from './session';
 import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
@@ -15,6 +17,9 @@ import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from '.
 export const POSITION_INTERVAL_MS = 5_000;
 export const MAX_REFRESHES = 3;
 const LOG_MAX = 20;
+  /** The daemon refuses a longer line or a bigger batch (src/http/streamEvidenceApi.ts). */
+  const EVENT_TEXT_MAX = 2_000;
+  const EVENTS_PER_POST = 50;
 
 export type Stage = 'loading' | 'ready' | 'refreshing' | 'error';
 
@@ -105,6 +110,8 @@ export class StreamController {
   private fileTracks: FileTrack[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
+  private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
   /** Resolved the first time the stream is ready or the play has failed (playWithSound waits on it). */
   private settle: () => void = () => {};
@@ -266,6 +273,7 @@ export class StreamController {
 
   private note(line: string): void {
     this.set({ log: [...this.state.log, line].slice(-LOG_MAX) });
+    this.send(line);
   }
 
   private fail(err: unknown): void {
@@ -276,7 +284,60 @@ export class StreamController {
       errors: [...this.state.errors, code].slice(-LOG_MAX),
       log: [...this.state.log, `error: ${code}`].slice(-LOG_MAX),
     });
+    this.send(`error: ${code}`);
     this.settle();
+  }
+
+  /**
+   * Every log line also goes to the daemon's stream evidence log (R2.2): errors, refreshes, subtitle
+   * failures, and whatever else note() is given. Lines are batched per tick, so an error travels with
+   * the line before it. Fire and forget: nothing here waits or throws.
+   */
+  private send(text: string): void {
+    this.unsent.push({
+      sessionId: this.sessionId,
+      line: {
+        text: text.slice(0, EVENT_TEXT_MAX),
+        at: new Date().toISOString(),
+        stage: this.state.stage,
+        position_s: this.positionNow(),
+        buffer_s: this.bufferAhead(),
+      },
+    });
+    if (this.unsent.length === 1) queueMicrotask(this.flushUnsent);
+  }
+
+  private readonly flushUnsent = (): void => {
+    const batch = this.unsent.splice(0);
+    const bySession = new Map<string, PlayerLogLine[]>();
+    for (const { sessionId, line } of batch) {
+      const lines = bySession.get(sessionId) ?? [];
+      lines.push(line);
+      bySession.set(sessionId, lines);
+    }
+    for (const [sessionId, lines] of bySession) {
+      for (let i = 0; i < lines.length; i += EVENTS_PER_POST) void postEvents(sessionId, lines.slice(i, i + EVENTS_PER_POST), this.deps.fetch);
+    }
+  };
+
+  private positionNow(): number | null {
+    const t = this.video.currentTime;
+    return Number.isFinite(t) && t >= 0 ? round1(t) : null;
+  }
+
+  /** Seconds buffered ahead of the position: the end of the range holding it, else 0; null when the browser cannot say. */
+  private bufferAhead(): number | null {
+    try {
+      const ranges = this.video.buffered;
+      const t = this.video.currentTime;
+      if (ranges === undefined || ranges === null || !Number.isFinite(t)) return null;
+      for (let i = 0; i < ranges.length; i += 1) {
+        if (ranges.start(i) <= t + 0.5 && t <= ranges.end(i)) return round1(Math.max(0, ranges.end(i) - t));
+      }
+      return 0;
+    } catch {
+      return null;
+    }
   }
 
   private async loadFileSubtitles(session: StreamSession): Promise<void> {

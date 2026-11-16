@@ -12,6 +12,7 @@ import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
+import type { StreamEvidence } from './directStream/evidence.js';
 import type { NoteEvents } from './notes/events.js';
 import type { NotesService } from './notes/service.js';
 import type { SessionEvents } from './sessions/events.js';
@@ -71,6 +72,12 @@ export interface AppDeps {
    * reports it off. Started and closed by startBackground.
    */
   streamProber?: StreamProberHandle | null;
+  /**
+   * This host's stream evidence log (src/directStream/evidence.ts): every pass-through answer, the
+   * player page's log lines, and snapshots under <dataDir>/movies/stream-reports/. The daemon builds
+   * it with direct streaming; null or absent, the evidence routes answer 503 direct_stream_off.
+   */
+  streamEvidence?: StreamEvidence | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

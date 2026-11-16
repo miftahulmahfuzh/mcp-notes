@@ -26,6 +26,8 @@ export interface StreamSession {
   audioLang: string | null;
   readonly createdAt: Date;
   refreshedAt: Date;
+  /** Times a refresh replaced the source (a token expired); 0 for a fresh session. */
+  refreshes: number;
   lastUsedAt: Date;
 }
 
@@ -74,6 +76,7 @@ export class SessionStore {
       audioLang,
       createdAt: at,
       refreshedAt: at,
+      refreshes: 0,
       lastUsedAt: at,
     };
     this.sessions.set(session.id, session);
@@ -100,12 +103,21 @@ export class SessionStore {
     return session;
   }
 
+  /** The live session with this id, without marking it used (a snapshot must not keep a session alive); null like get(). */
+  peek(id: string): StreamSession | null {
+    if (!SESSION_ID_PATTERN.test(id)) return null;
+    const session = this.sessions.get(id);
+    if (session === undefined) return null;
+    return this.now().getTime() >= this.expiresAt(session).getTime() ? null : session;
+  }
+
   /** A refresh: the new source, its hosts added to the ones the session already had. */
   replaceSource(session: StreamSession, source: ResolvedSource, attempts: ResolveAttempt[]): void {
     session.source = source;
     session.attempts = attempts;
     for (const host of sourceHosts(source)) session.allowedHosts.add(host);
     session.refreshedAt = this.now();
+    session.refreshes += 1;
   }
 
   expiresAt(session: StreamSession): Date {
