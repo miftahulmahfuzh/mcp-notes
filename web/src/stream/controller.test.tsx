@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
+import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
+import { CUE_FEED_POLL_MS } from './subtitles';
 
 const S1 = '/api/stream/sessions/S1';
 const controllers: StreamController[] = [];
@@ -56,6 +57,7 @@ describe('parseSession', () => {
       prevEpisode: null,
       nextEpisode: null,
       cached: null,
+      torrent: null,
     });
     // A series' session names its neighbours; anything else there is no neighbour.
     expect(parseSession(streamSessionJson({ prev_episode: { season: 17, episode: 729 }, next_episode: { season: 'x', episode: 1 } }))).toMatchObject({
@@ -1083,5 +1085,217 @@ it('reads the lines to show from the tracks, keeps every track hidden, and clear
     expect(second.getState().subtitleDelayMs).toBe(-150);
     second.shiftSubtitles(150);
     expect(storage.kept.size).toBe(0);
+  });
+});
+
+describe('a torrent session (torrent-stream-source phase 4)', () => {
+  const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
+  const NEXT = '0123456789abcdef0123456789abcdef01234567';
+  const STATUS = `GET /api/stream/torrent/${HASH}`;
+  const MAP = `GET /api/stream/torrent/${HASH}/map`;
+  const torrentJson = (over: Record<string, unknown> = {}) => ({ info_hash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', state: 'downloading', seeds: 52, ...over });
+  const onTorrent = (over: Record<string, unknown> = {}) =>
+    streamSessionJson({ provider: 'Torrent', manifest_kind: 'mp4', manifest_url: `/api/stream/torrent/${HASH}/f/0`, torrent: torrentJson(), ...over });
+  const downloading = (over: Record<string, unknown> = {}) => jsonResponse({ info_hash: HASH, state: 'downloading', peers: 5, down_kbps: 4000, up_kbps: 800, progress: 0.2, ...over });
+  const sixtyOnDisk = () => jsonResponse({ duration_s: 888, ranges: [[0, 60]] });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function playing(routes: Record<string, (call: FetchCall) => Response>, session: Record<string, unknown> = onTorrent()) {
+    // Before the page starts: a torrent session sets its poll's timer at once.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(session), ...routes });
+    void t.controller.start();
+    await vi.waitFor(() => expect(t.made).toHaveLength(1));
+    t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    Object.assign(t.media, { currentTime: 30, duration: 888, paused: false });
+    t.fire('timeupdate');
+    const reads = (hash = HASH) => t.calls.filter((c) => c.method === 'GET' && c.url === `/api/stream/torrent/${hash}`).length;
+    return { ...t, reads };
+  }
+
+  it('reads the torrent a session plays, and nothing it cannot use', () => {
+    expect(parseSession(onTorrent()).torrent).toEqual({ infoHash: HASH, name: 'Sintel.2010.1080p.WEB.x264', index: 'Torrentio', seeds: 52, state: 'downloading' });
+    expect(parseSession(onTorrent({ torrent: torrentJson({ info_hash: HASH.toUpperCase(), state: 'ready', seeds: 'x', index: 3 }) })).torrent).toEqual({
+      infoHash: HASH,
+      name: 'Sintel.2010.1080p.WEB.x264',
+      index: null,
+      seeds: null,
+      state: 'ready',
+    });
+    expect(parseSession(onTorrent({ torrent: torrentJson({ info_hash: 'magnet:?xt=urn:btih:x' }) })).torrent).toBeNull();
+    expect(parseSession(streamSessionJson()).torrent).toBeNull();
+    // A session is never both: the torrent wins over a cache it should not name.
+    expect(parseSession(onTorrent({ cached: { id: 'c1', state: 'ready', height: 720 } })).cached).toBeNull();
+  });
+
+  it('shows the peers, the speed and what is on disk while it downloads, and stops asking once it is complete', async () => {
+    let ready = false;
+    const t = await playing({
+      [STATUS]: () => (ready ? jsonResponse({ info_hash: HASH, state: 'ready', peers: 0, down_kbps: 0, progress: 1 }) : downloading({ peers: 12, down_kbps: 27200, progress: 0.37 })),
+      [MAP]: () => jsonResponse({ duration_s: 888, ranges: ready ? [[0, 888]] : [[0, 60], [400, 420]] }),
+    });
+    await vi.waitFor(() => expect(t.controller.getState().torrent).toMatchObject({ infoHash: HASH, state: 'downloading', peers: 12, downKbps: 27200, progress: 0.37, fetching: false }));
+    expect(t.controller.getState().cachedRanges).toEqual([[0, 60], [400, 420]]);
+    expect(t.controller.getState().cached).toBeNull();
+    expect(t.controller.getState().log).toContain('from torrent 08ada5a7 Sintel.2010.1080p.WEB.x264 (downloading)');
+    const before = t.reads();
+    await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS);
+    expect(t.reads()).toBeGreaterThan(before);
+    ready = true;
+    await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS);
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ torrent: { state: 'ready' }, cachedRanges: [[0, 888]] }));
+    expect(t.controller.getState().log).toContain('torrent 08ada5a7 on disk');
+    const done = t.reads();
+    await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS * 5);
+    expect(t.reads()).toBe(done);
+  });
+
+  it("puts the map on the film's own clock when the daemon counted it against another length", () => {
+    expect(scaleRanges([[0, 100], [500, 1000]], 1000, 500)).toEqual([[0, 50], [250, 500]]);
+    expect(scaleRanges([[0, 100]], null, 500)).toEqual([[0, 100]]);
+    expect(scaleRanges([[0, 100]], 1000, 0)).toEqual([[0, 100]]);
+    expect(onDisk([[0, 60]], 59.9)).toBe(true);
+    expect(onDisk([[0, 60]], 61)).toBe(false);
+  });
+
+  it('asks nothing while the tab is hidden, and asks again as soon as it shows', async () => {
+    let visibility: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const t = await playing({ [STATUS]: () => downloading({ peers: 3 }), [MAP]: sixtyOnDisk });
+    await vi.waitFor(() => expect(t.controller.getState().torrent?.peers).toBe(3));
+    visibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    const hidden = t.reads();
+    await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS * 6);
+    expect(t.reads()).toBe(hidden);
+    visibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.waitFor(() => expect(t.reads()).toBe(hidden + 1));
+  });
+
+  it('a torrent that buffers never asks for another source by itself; the button moves to the next torrent and names it', async () => {
+    const t = await playing({
+      [STATUS]: () => downloading(),
+      [MAP]: sixtyOnDisk,
+      [`GET /api/stream/torrent/${NEXT}`]: () => jsonResponse({ info_hash: NEXT, state: 'ready', peers: 0, down_kbps: 0, progress: 1 }),
+      [`GET /api/stream/torrent/${NEXT}/map`]: () => jsonResponse({ duration_s: 888, ranges: [[0, 888]] }),
+      [`POST ${S1}/source`]: () =>
+        jsonResponse({
+          ...onTorrent({ manifest_url: `/api/stream/torrent/${NEXT}/f/0`, torrent: torrentJson({ info_hash: NEXT, name: 'Sintel.2010.720p.BluRay.x264', state: 'ready' }) }),
+          switched: true,
+          reason: null,
+          from: 'Torrent',
+          provider: 'Torrent',
+        }),
+    });
+    await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 60]]));
+    for (let i = 0; i < STALLS_TO_SWITCH * 2; i++) {
+      t.fire('waiting');
+      await vi.advanceTimersByTimeAsync(STALL_MIN_MS);
+      t.fire('playing');
+    }
+    const asks = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/source`);
+    expect(asks()).toHaveLength(0);
+    expect(t.controller.getState().log.filter((line) => line.startsWith('stalled at'))).toHaveLength(STALLS_TO_SWITCH * 2);
+    expect(t.controller.getState().log.some((line) => line.includes('asking for another source'))).toBe(false);
+    t.controller.anotherSource();
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(asks()).toHaveLength(1);
+    expect(t.made[1].req).toMatchObject({ kind: 'mp4', src: `/api/stream/torrent/${NEXT}/f/0`, startAt: 30 });
+    await vi.waitFor(() => expect(t.controller.getState().torrent).toMatchObject({ infoHash: NEXT, state: 'ready' }));
+    expect(t.controller.getState().sourceNotice).toBe('Sintel.2010.720p.BluRay.x264');
+    await vi.waitFor(() => expect(t.reads(NEXT)).toBeGreaterThanOrEqual(1));
+    const first = t.reads();
+    const next = t.reads(NEXT);
+    await vi.advanceTimersByTimeAsync(TORRENT_POLL_MS * 3);
+    // The torrent it left is no longer read, and the next one is complete: nothing more to ask.
+    expect(t.reads()).toBe(first);
+    expect(t.reads(NEXT)).toBe(next);
+  });
+
+  it('a seek past what is on disk waits for it, and the wait ends when the part arrives', async () => {
+    const t = await playing({ [STATUS]: () => downloading(), [MAP]: sixtyOnDisk });
+    await vi.waitFor(() => expect(t.controller.getState().cachedRanges).toEqual([[0, 60]]));
+    t.media.currentTime = 400;
+    t.fire('seeking');
+    expect(t.controller.getState().torrent?.fetching).toBe(true);
+    expect(t.controller.getState().log).toContain('waiting for the torrent at 400 s');
+    t.fire('seeked');
+    expect(t.controller.getState().torrent?.fetching).toBe(false);
+    t.media.currentTime = 20;
+    t.fire('seeking');
+    expect(t.controller.getState().torrent?.fetching).toBe(false);
+  });
+
+  it('a cloud stream has no torrent and never waits this way', async () => {
+    const t = await playing({}, streamSessionJson());
+    t.media.currentTime = 400;
+    t.fire('seeking');
+    expect(t.controller.getState().torrent).toBeNull();
+    expect(t.calls.some((c) => c.url.startsWith('/api/stream/torrent/'))).toBe(false);
+  });
+
+  it('a pause asks for no stream cache: the torrent is already on this machine', async () => {
+    const t = await playing({ [STATUS]: () => downloading(), [MAP]: sixtyOnDisk, [`POST ${S1}/cache`]: () => jsonResponse({}) });
+    t.media.paused = true;
+    t.fire('pause');
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS * 2);
+    expect(t.calls.filter((c) => c.url === `${S1}/cache`)).toEqual([]);
+  });
+});
+
+describe('a growing subtitle (a cue feed)', () => {
+  it('starts the track empty, reads the feed once the track has loaded, adds each cue as it arrives, and stops at complete', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const added: { startTime: number; endTime: number; text: string }[] = [];
+    const fakeTrack = { mode: 'disabled', addCue: (cue: { startTime: number; endTime: number; text: string }) => added.push(cue) };
+    const had = Object.getOwnPropertyDescriptor(HTMLTrackElement.prototype, 'track');
+    Object.defineProperty(HTMLTrackElement.prototype, 'track', { configurable: true, get: () => fakeTrack });
+    vi.stubGlobal(
+      'VTTCue',
+      class {
+        constructor(
+          public startTime: number,
+          public endTime: number,
+          public text: string,
+        ) {}
+      },
+    );
+    try {
+      const FEED = `/api/stream/torrent/${'a'.repeat(40)}/cues/embedded-2`;
+      const t = setup({
+        [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ manifest_kind: 'mp4', manifest_url: '/api/stream/torrent/x/f/0', subtitles: [sessionTrack(FEED, 'en', 'English', { format: 'cues', growing: true })] })),
+        [`GET ${FEED}?after=0`]: () => jsonResponse({ cues: [{ start_s: 1, end_s: 3, text: 'Line 1' }, { start_s: 4, end_s: 6, text: 'Line 2' }], next: 2, complete: false }),
+        [`GET ${FEED}?after=2`]: () => jsonResponse({ cues: [{ start_s: 7, end_s: 9, text: 'Line 3' }], next: 3, complete: true }),
+      });
+      void t.controller.start();
+      await vi.waitFor(() => expect(t.made).toHaveLength(1));
+      // The track starts as an empty WebVTT file; nothing was fetched for it yet.
+      expect(t.texts).toEqual(['WEBVTT\n\n']);
+      expect(t.calls.some((c) => c.url.startsWith(FEED))).toBe(false);
+      t.made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+      expect(t.controller.getState().subtitle).toBe('file-0');
+      expect(fakeTrack.mode).toBe('hidden');
+      t.video.querySelector('track')?.dispatchEvent(new Event('load'));
+      await vi.waitFor(() => expect(added.map((c) => c.text)).toEqual(['Line 1', 'Line 2']));
+      await vi.advanceTimersByTimeAsync(CUE_FEED_POLL_MS);
+      await vi.waitFor(() => expect(added.map((c) => [c.startTime, c.endTime, c.text])).toEqual([[1, 3, 'Line 1'], [4, 6, 'Line 2'], [7, 9, 'Line 3']]));
+      await vi.advanceTimersByTimeAsync(CUE_FEED_POLL_MS * 3);
+      expect(t.calls.filter((c) => c.url.startsWith(FEED)).map((c) => c.url)).toEqual([`${FEED}?after=0`, `${FEED}?after=2`]);
+      expect(t.controller.getState().log).toContain('subtitle English: complete, 3 cues');
+    } finally {
+      if (had) Object.defineProperty(HTMLTrackElement.prototype, 'track', had);
+      else delete (HTMLTrackElement.prototype as { track?: unknown }).track;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('parses growing only when the daemon says so', () => {
+    const FEED = '/api/stream/torrent/x/cues/embedded-2';
+    expect(parseSession(streamSessionJson({ subtitles: [sessionTrack(FEED, 'en', 'English', { format: 'cues', growing: true })] })).subtitles).toEqual([{ url: FEED, lang: 'en', label: 'English', english: true, growing: true }]);
+    expect(parseSession(streamSessionJson({ subtitles: [sessionTrack('/x', 'en', 'English', { growing: 'yes' })] })).subtitles).toEqual([{ url: '/x', lang: 'en', label: 'English', english: true }]);
   });
 });

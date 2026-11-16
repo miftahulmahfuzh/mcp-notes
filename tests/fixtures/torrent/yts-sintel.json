@@ -1,0 +1,35 @@
+{
+ "status": "ok",
+ "status_message": "Query was successful",
+ "data": {
+  "movie_count": 2,
+  "limit": 20,
+  "page_number": 1,
+  "movies": [
+   {
+    "id": 2468,
+    "imdb_code": "tt1727587",
+    "title": "Sintel",
+    "title_long": "Sintel (2010)",
+    "year": 2010,
+    "language": "en",
+    "torrents": [
+     {"hash": "A779FA758F2229586EEBC2E5960EB32FE5659596", "quality": "720p", "type": "bluray", "video_codec": "x264", "seeds": 30, "peers": 2, "size": "136.47 MB", "size_bytes": 143099167},
+     {"hash": "B9C4E2D4C0F43A5D1E8F7A6B5C4D3E2F1A0B9C8D", "quality": "1080p", "type": "bluray", "video_codec": "x264", "seeds": 12, "peers": 1, "size": "258.4 MB", "size_bytes": 270951219},
+     {"hash": "3D0000000000000000000000000000000000AB3D", "quality": "3D", "type": "bluray", "video_codec": "x264", "seeds": 9, "peers": 0, "size": "258.4 MB", "size_bytes": 270951219}
+    ]
+   },
+   {
+    "id": 9999,
+    "imdb_code": "tt9999999",
+    "title": "Sintel: The Making Of",
+    "title_long": "Sintel: The Making Of (2011)",
+    "year": 2011,
+    "language": "en",
+    "torrents": [
+     {"hash": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", "quality": "720p", "type": "web", "video_codec": "x264", "seeds": 50, "peers": 0, "size": "100 MB", "size_bytes": 104857600}
+    ]
+   }
+  ]
+ }
+}

@@ -6,6 +6,7 @@ import { fakeVideo } from '../testing/streamFakes';
 interface FakeHls {
   config: Record<string, unknown>;
   loadSource: Mock<(src: string) => void>;
+  attachMedia: Mock<(arg: unknown) => void>;
   startLoad: Mock<(position: number) => void>;
   recoverMediaError: Mock<() => void>;
   destroy: Mock<() => void>;
@@ -31,6 +32,7 @@ vi.mock('hls.js', () => {
       this.fake = {
         config,
         loadSource: vi.fn(),
+        attachMedia: vi.fn(),
         startLoad: vi.fn(),
         recoverMediaError: vi.fn(),
         destroy: vi.fn(),
@@ -46,7 +48,9 @@ vi.mock('hls.js', () => {
     loadSource(src: string): void {
       this.fake.loadSource(src);
     }
-    attachMedia(): void {}
+    attachMedia(arg: unknown): void {
+      this.fake.attachMedia(arg);
+    }
     startLoad(position: number): void {
       this.fake.startLoad(position);
     }
@@ -86,18 +90,18 @@ function handlers(): EngineHandlers & { calls: string[] } {
   };
 }
 
-function start(over: { bufferAheadS?: number; startAt?: number } = {}) {
+function start(over: { bufferAheadS?: number; startAt?: number; src?: string } = {}) {
   const { video, media } = fakeVideo();
   const h = handlers();
   const engine = createHlsEngine({
     kind: 'hls',
     video,
-    src: SRC,
+    src: over.src ?? SRC,
     startAt: over.startAt ?? 0,
     handlers: h,
     ...(over.bufferAheadS === undefined ? {} : { bufferAheadS: over.bufferAheadS }),
   });
-  return { engine, hls: instances.at(-1)!, media, h };
+  return { engine, hls: instances.at(-1)!, media, h, video };
 }
 
 describe('createHlsEngine: how far ahead it loads (R1.8)', () => {
@@ -188,5 +192,34 @@ describe('createHlsEngine: a fatal network error (R1.7)', () => {
     expect(hls.recoverMediaError).toHaveBeenCalledTimes(1);
     hls.emit('hlsError', { type: 'mediaError', details: 'bufferStalledError', fatal: true });
     expect(h.calls).toEqual(['fatal mediaError bufferStalledError']);
+  });
+});
+
+describe('createHlsEngine: a torrent remux that is still growing (R2.8)', () => {
+  const REMUX = '/api/stream/torrent/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/hls/0/index.m3u8';
+
+  it('starts at 0 or the resume position, never at the live edge, and has no latency controller to pull a seek back', () => {
+    const fresh = start({ src: `${REMUX}?remux=1&total_s=5400.5` }).hls.config;
+    expect(fresh.startPosition).toBe(0);
+    expect('latencyController' in fresh && fresh.latencyController === undefined).toBe(true);
+    expect(start({ src: `${REMUX}?remux=1&total_s=5400.5`, startAt: 1800 }).hls.config.startPosition).toBe(1800);
+  });
+
+  it("gives the page the film's whole length from the probe, not the length remuxed so far", () => {
+    const { hls, video } = start({ src: `${REMUX}?remux=1&total_s=5400.5` });
+    expect(hls.attachMedia).toHaveBeenCalledWith({ media: video, overrides: { duration: 5400.5 } });
+  });
+
+  it('a remux whose length is unknown still never starts at the live edge', () => {
+    const { hls, video } = start({ src: `${REMUX}?remux=1` });
+    expect(hls.config.startPosition).toBe(0);
+    expect(hls.attachMedia).toHaveBeenCalledWith(video);
+  });
+
+  it('plays a stream through the pass-through or the cache exactly as before', () => {
+    const { hls, video } = start();
+    expect(hls.config.startPosition).toBe(-1);
+    expect('latencyController' in hls.config).toBe(false);
+    expect(hls.attachMedia).toHaveBeenCalledWith(video);
   });
 });

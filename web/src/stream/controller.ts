@@ -20,15 +20,21 @@ import {
   switchSource,
   cacheSession,
   fetchCacheMap,
+  fetchTorrentMap,
+  fetchTorrentStatus,
   type TimeRange,
   type EpisodeNumber,
   type ManifestKind,
   type PlayerLogLine,
   type ReportAnswer,
   type StreamSession,
+  type SessionSubtitle,
   type CachedInfo,
+  type TorrentInfo,
+  type TorrentState,
 } from './session';
-import { isEnglish, pickDefaultSubtitle, toWebVtt, type SubtitleOption } from './subtitles';
+import { addFeedCue, followCueFeed, isEnglish, pickDefaultSubtitle, toWebVtt, type CueFeedFollower, type SubtitleOption } from './subtitles';
+import { isPageVisible, startAdaptivePoll, type AdaptivePoll } from '../lib/pageActive';
 
 export const POSITION_INTERVAL_MS = 5_000;
 export const MAX_REFRESHES = 3;
@@ -67,10 +73,55 @@ export function cueText(raw: string): string {
 export const PAUSE_CACHE_DELAY_MS = 2_000;
 /** How often the page asks where the download stands, and what is on disk. */
 export const CACHE_POLL_MS = 4_000;
+/** How often a torrent session asks for its peers, its speed and what is on disk, while it downloads and the tab shows. */
+export const TORRENT_POLL_MS = 2_000;
+/** `sourceNotice` after an ask that found nothing; the page words it for a cloud source or a torrent. */
+export const NO_OTHER_SOURCE = 'No other source';
 const LOG_MAX = 20;
   /** The daemon refuses a longer line or a bigger batch (src/http/streamEvidenceApi.ts). */
   const EVENT_TEXT_MAX = 2_000;
   const EVENTS_PER_POST = 50;
+
+/** A torrent session as the page shows it: the session's torrent, its live numbers once the daemon answered, and the wait for a part not on disk. */
+export interface TorrentView {
+  /** 40 lower-case hex characters. */
+  infoHash: string;
+  /** The release name. */
+  name: string;
+  /** The index that listed it; null when the session named none. */
+  index: string | null;
+  seeds: number | null;
+  state: TorrentState;
+  /** Peers connected now; null until the daemon answered. */
+  peers: number | null;
+  /** Download speed in kilobits per second; null until the daemon answered. */
+  downKbps: number | null;
+  /** 0 to 1 of the file on disk; null until the daemon answered. */
+  progress: number | null;
+  /** The play or a seek reached a part that is not on disk yet: the page shows that it waits for it. */
+  fetching: boolean;
+}
+
+/** The view of a session's torrent before the daemon has said anything about it. */
+export function torrentView(info: TorrentInfo | null): TorrentView | null {
+  if (info === null) return null;
+  return { ...info, peers: null, downKbps: null, progress: info.state === 'ready' ? 1 : null, fetching: false };
+}
+
+/** The position is inside a stretch on disk, with the half second of slack loadedGradient joins stretches by. */
+export function onDisk(ranges: readonly TimeRange[], t: number): boolean {
+  return ranges.some(([from, to]) => t >= from - 0.5 && t < to);
+}
+
+/**
+ * A map's seconds on the film's own clock. The daemon maps a torrent's bytes to seconds by
+ * proportion of the duration it knows, which may not be the one the browser reads from the file.
+ */
+export function scaleRanges(ranges: readonly TimeRange[], mapDurationS: number | null, filmDurationS: number): TimeRange[] {
+  if (mapDurationS === null || !(mapDurationS > 0) || !(filmDurationS > 0) || Math.abs(mapDurationS - filmDurationS) < 0.5) return [...ranges];
+  const k = filmDurationS / mapDurationS;
+  return ranges.map(([from, to]): TimeRange => [from * k, to * k]);
+}
 
 /** `recovering`: a network error; the engine loads again after a wait while the film stays on the page. */
 export type Stage = 'loading' | 'ready' | 'refreshing' | 'recovering' | 'error';
@@ -116,8 +167,10 @@ export interface StreamState {
   caption: string;
   /** How much later (positive) or earlier (negative) the subtitles show than their file says, in ms (G and H). */
   subtitleDelayMs: number;
-  /** The stretches of the title on this machine's disk (a cached play), in seconds: the timeline's thick grey bar. */
+  /** The stretches of the title on this machine's disk (a cached play or a torrent), in seconds: the timeline's thick grey bar. */
   cachedRanges: TimeRange[];
+  /** A torrent session (torrent-stream-source phase 4): the mark beside the title and the wait for a part not on disk. Null: not a torrent. */
+  torrent: TorrentView | null;
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
   errors: string[];
   /** Recent notes for scripts and people: refreshes, subtitle failures, errors. */
@@ -148,6 +201,7 @@ export const INITIAL_STATE: StreamState = {
   caption: '',
   subtitleDelayMs: 0,
   cachedRanges: [],
+  torrent: null,
   errors: [],
   log: [],
   bugReport: { status: 'idle' },
@@ -171,6 +225,8 @@ interface FileTrack {
   option: SubtitleOption;
   element: HTMLTrackElement;
   url: string;
+  /** A growing subtitle's reader of its feed, once the track has loaded; null for a file. */
+  follower: CueFeedFollower | null;
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -203,6 +259,9 @@ export class StreamController {
   private cacheTimer: ReturnType<typeof setTimeout> | null = null;
   /** The session a pause already asked a cache for: once per session. */
   private cacheAskedFor: string | null = null;
+  /** The torrent whose numbers and map are being read, and its poll; null once it is complete, failed or left. */
+  private torrentHash: string | null = null;
+  private torrentPoll: AdaptivePoll | null = null;
   /** The move onto the cache loads the film again: it stays paused when it was. */
   private holdPaused = false;
   /** Each cue's times as its file gave them, so a delay is always counted from there. */
@@ -266,6 +325,8 @@ export class StreamController {
     this.video.addEventListener('seeking', this.onTime);
     this.video.addEventListener('seeking', this.onSeek);
     this.video.addEventListener('seeked', this.readCaption);
+    this.video.addEventListener('seeked', this.onArrived);
+    this.video.addEventListener('canplay', this.onArrived);
     (this.video.textTracks as TextTrackList | undefined)?.addEventListener?.('change', this.readCaption);
     this.video.addEventListener('waiting', this.onWaiting);
     this.video.addEventListener('playing', this.onMoving);
@@ -285,15 +346,24 @@ export class StreamController {
     await this.open(session);
   }
 
-  /** Plays a session read from the daemon: its name, neighbours and cache, its subtitle files, then the engine at its resume position. */
+  /** Plays a session read from the daemon: its name, neighbours, cache or torrent, its subtitle files, then the engine at its resume position. */
   private async open(session: StreamSession): Promise<void> {
     this.session = session;
-    this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode, cached: session.cached });
+    this.set({
+      title: session.title,
+      kind: session.manifestKind,
+      prevEpisode: session.prevEpisode,
+      nextEpisode: session.nextEpisode,
+      cached: session.cached,
+      torrent: torrentView(session.torrent),
+    });
     if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
+    if (session.torrent !== null) this.note(`from torrent ${session.torrent.infoHash.slice(0, 8)} ${session.torrent.name} (${session.torrent.state})`);
     this.restoreSubtitleDelay();
     await this.loadFileSubtitles(session);
     if (this.disposed || this.session !== session) return;
     if (session.cached !== null) this.followCache(session.cached.id);
+    if (session.torrent !== null) this.followTorrent(session.torrent.infoHash);
     await this.attach(session, session.resumeS);
   }
 
@@ -330,7 +400,8 @@ export class StreamController {
     this.sourceSwitches = 0;
     this.lastSourceAskAt = 0;
     this.clearCacheTimers();
-    this.set({ cachedRanges: [] });
+    this.stopTorrent();
+    this.set({ cachedRanges: [], torrent: null });
     this.set({ stage: 'loading', switching: null, error: null, refreshes: 0, qualities: [], quality: -1, subtitles: [], reportedS: null, bugReport: { status: 'idle' } });
     this.note(`${to} episode: session ${nextId.slice(0, 6)}`);
     this.deps.onSession?.(nextId);
@@ -494,11 +565,14 @@ export class StreamController {
     this.video.removeEventListener('seeking', this.onTime);
     this.video.removeEventListener('seeking', this.onSeek);
     this.video.removeEventListener('seeked', this.readCaption);
+    this.video.removeEventListener('seeked', this.onArrived);
+    this.video.removeEventListener('canplay', this.onArrived);
     (this.video.textTracks as TextTrackList | undefined)?.removeEventListener?.('change', this.readCaption);
     this.video.removeEventListener('waiting', this.onWaiting);
     this.video.removeEventListener('playing', this.onMoving);
     this.clearStallTimer();
     this.clearCacheTimers();
+    this.stopTorrent();
     this.video.removeEventListener('pause', this.onPause);
     this.video.removeEventListener('play', this.onPlay);
     this.video.removeEventListener('ended', this.onEnded);
@@ -585,9 +659,9 @@ export class StreamController {
   private async loadFileSubtitles(session: StreamSession): Promise<void> {
     for (const [index, sub] of session.subtitles.entries()) {
       try {
-        // One more try: a stream host that fails once would leave the whole film without the track.
-        const text = await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch));
-        const vtt = toWebVtt(text);
+        // A growing subtitle (a cue feed) starts as an empty file; its cues are added as they come.
+        // One more try for a file: a stream host that fails once would leave the whole film without the track.
+        const vtt = sub.growing === true ? 'WEBVTT\n\n' : toWebVtt(await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch)));
         const url = this.deps.textUrl(vtt);
         const element = this.video.ownerDocument.createElement('track');
         element.kind = 'subtitles';
@@ -595,15 +669,40 @@ export class StreamController {
         if (sub.lang !== null) element.srclang = sub.lang;
         element.src = url;
         this.video.appendChild(element);
-        this.fileTracks.push({
+        const fileTrack: FileTrack = {
           option: { id: `file-${index}`, source: 'file', index, label: sub.label, lang: sub.lang, english: sub.english },
           element,
           url,
-        });
+          follower: null,
+        };
+        if (sub.growing === true) this.followGrowing(fileTrack, sub);
+        this.fileTracks.push(fileTrack);
       } catch (err) {
         this.note(`subtitle ${sub.label}: ${messageOf(err)}`);
       }
     }
+  }
+
+  /**
+   * A growing subtitle's cues come from its feed, read again every few seconds until it is complete.
+   * Chrome empties a <track>'s cues when it first loads its file, and loads it only when the track is
+   * first turned on, so the feed is read from then on: at once for the English track shown by default.
+   */
+  private followGrowing(fileTrack: FileTrack, sub: SessionSubtitle): void {
+    fileTrack.element.addEventListener(
+      'load',
+      () => {
+        const track = fileTrack.element.track;
+        if (this.disposed || fileTrack.follower !== null || !this.fileTracks.includes(fileTrack) || !track) return;
+        fileTrack.follower = followCueFeed(sub.url, {
+          fetch: this.deps.fetch,
+          add: (cue) => addFeedCue(track, cue),
+          onError: (message) => this.note(`subtitle ${sub.label}: ${message}`),
+          onComplete: (count) => this.note(`subtitle ${sub.label}: complete, ${count} cues`),
+        });
+      },
+      { once: true },
+    );
   }
 
   private async attach(session: StreamSession, startAt: number): Promise<void> {
@@ -682,11 +781,14 @@ export class StreamController {
   private readonly onSeek = (): void => {
     this.lastSeekAt = Date.now();
     this.clearStallTimer();
+    this.markFetching(true);
   };
 
   // The film ran out of data while it should be playing. A wait that outlasts STALL_MIN_MS is a
-  // stall; a seek's own wait, a pause and the first load are not.
+  // stall; a seek's own wait, a pause and the first load are not. A torrent's wait for a part that
+  // is not on disk yet is also shown as such.
   private readonly onWaiting = (): void => {
+    if (this.state.stage === 'ready') this.markFetching(true);
     if (this.state.stage !== 'ready' || this.video.paused) return;
     // A seek's own wait is not a stall, unless it outlasts the grace.
     this.armStall(STALL_MIN_MS + Math.max(0, this.lastSeekAt + SEEK_GRACE_MS - Date.now()));
@@ -707,6 +809,7 @@ export class StreamController {
 
   private readonly onMoving = (): void => {
     this.clearStallTimer();
+    this.markFetching(false);
   };
 
   private countStall(): void {
@@ -718,12 +821,14 @@ export class StreamController {
   /**
    * The film keeps stalling: ask the daemon for another provider of the same title. The film on
    * screen plays on while the daemon resolves; only when another provider answered does the page
-   * load its stream, at the position it had reached. A cached play has no provider to leave, and a
-   * muted check never moves (it measures the provider it was given).
+   * load its stream, at the position it had reached. A cached play has no provider to leave, a
+   * muted check never moves (it measures the provider it was given), and a torrent that buffers is
+   * still filling, so only the owner moves a torrent session (to the next torrent).
    */
   private async changeSource(byOwner = false): Promise<void> {
     const now = Date.now();
     if (this.disposed || this.askingSource || this.mutedMode || this.session === null || this.session.cached !== null || !this.onFilm()) return;
+    if (!byOwner && this.session.torrent !== null) return;
     // The page's own asks are limited; the owner's (the button, S) are not.
     if (!byOwner && (this.sourceSwitches >= MAX_SOURCE_SWITCHES || (this.lastSourceAskAt > 0 && now - this.lastSourceAskAt < SOURCE_SWITCH_COOLDOWN_MS))) return;
     this.askingSource = true;
@@ -737,7 +842,7 @@ export class StreamController {
       if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
       if (!answer.switched) {
         this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
-        if (byOwner) this.set({ sourceNotice: 'No other source' });
+        if (byOwner) this.set({ sourceNotice: NO_OTHER_SOURCE });
         return;
       }
       this.sourceSwitches += 1;
@@ -747,11 +852,23 @@ export class StreamController {
       this.engine = null;
       this.ready = null;
       this.clearFileTracks();
+      this.stopTorrent();
       this.session = answer.session;
       this.subtitleChosen = false;
-      this.set({ stage: 'refreshing', kind: answer.session.manifestKind, qualities: [], quality: -1, subtitles: [], cached: answer.session.cached });
+      this.set({
+        stage: 'refreshing',
+        kind: answer.session.manifestKind,
+        qualities: [],
+        quality: -1,
+        subtitles: [],
+        cached: answer.session.cached,
+        torrent: torrentView(answer.session.torrent),
+        cachedRanges: [],
+      });
       this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
-      this.set({ sourceNotice: answer.provider });
+      // Every torrent's provider is `Torrent`: a torrent is named by its release.
+      this.set({ sourceNotice: answer.session.torrent?.name ?? answer.provider });
+      if (answer.session.torrent !== null) this.followTorrent(answer.session.torrent.infoHash);
       await this.loadFileSubtitles(answer.session);
       if (this.disposed || this.session !== answer.session) return;
       await this.attach(answer.session, continueAt);
@@ -780,13 +897,22 @@ export class StreamController {
   }
 
   // A pause that lasts: the owner waits for the film to load, so the daemon downloads it to this
-  // machine meanwhile. Once per session; not for a play that is already a cache, a muted check,
-  // or DASH (which is never cached).
+  // machine meanwhile. Once per session; not for a play that is already a cache, a torrent (its
+  // download is already on this machine's disk), a muted check, or DASH (which is never cached).
   private armPauseCache(): void {
     if (this.pauseTimer !== null) clearTimeout(this.pauseTimer);
     this.pauseTimer = null;
     const session = this.session;
-    if (this.mutedMode || session === null || session.cached !== null || session.manifestKind === 'dash' || this.cacheAskedFor === this.sessionId || !this.onFilm() || this.video.ended) return;
+    if (
+      this.mutedMode ||
+      session === null ||
+      session.cached !== null ||
+      session.torrent !== null ||
+      session.manifestKind === 'dash' ||
+      this.cacheAskedFor === this.sessionId ||
+      !this.onFilm() ||
+      this.video.ended
+    ) return;
     this.pauseTimer = setTimeout(() => {
       this.pauseTimer = null;
       if (this.disposed || !this.video.paused || this.video.ended || !this.onFilm() || this.session !== session) return;
@@ -859,10 +985,68 @@ export class StreamController {
     void tick();
   }
 
+  /**
+   * Keeps a torrent session's numbers and `cachedRanges` current: now, then every TORRENT_POLL_MS
+   * while the tab shows, until the download is complete or failed. A hidden tab asks nothing and
+   * asks again as soon as it shows (startAdaptivePoll). Reads only.
+   */
+  private followTorrent(infoHash: string): void {
+    this.stopTorrent();
+    this.torrentHash = infoHash;
+    const run = async (): Promise<boolean> => {
+      const done = await this.readTorrent(infoHash);
+      if (done && this.torrentHash === infoHash) this.stopTorrent();
+      return true;
+    };
+    if (isPageVisible()) void run();
+    this.torrentPoll = startAdaptivePoll({ baseMs: TORRENT_POLL_MS, run });
+  }
+
+  private stopTorrent(): void {
+    this.torrentPoll?.stop();
+    this.torrentPoll = null;
+    this.torrentHash = null;
+  }
+
+  /** One read of the torrent's status and map. True once there is nothing more to follow (complete or failed). */
+  private async readTorrent(infoHash: string): Promise<boolean> {
+    const [status, map] = await Promise.all([fetchTorrentStatus(infoHash, this.deps.fetch), fetchTorrentMap(infoHash, this.deps.fetch)]);
+    const torrent = this.state.torrent;
+    if (this.disposed || this.torrentHash !== infoHash || torrent === null || torrent.infoHash !== infoHash) return false;
+    const duration = Number.isFinite(this.video.duration) ? this.video.duration : 0;
+    this.set({
+      // A map the daemon could not give leaves the bar as it was.
+      cachedRanges: map === null ? this.state.cachedRanges : scaleRanges(map.ranges, map.durationS, duration),
+      torrent: status === null ? torrent : { ...torrent, state: status.state, peers: status.peers, downKbps: status.downKbps, progress: status.progress },
+    });
+    const state = status?.state ?? torrent.state;
+    if (state === 'downloading') return false;
+    this.note(state === 'ready' ? `torrent ${infoHash.slice(0, 8)} on disk` : `torrent ${infoHash.slice(0, 8)} failed`);
+    return true;
+  }
+
+  /**
+   * A torrent's play or a seek reached a part that is not on disk yet (`on`), or that part arrived.
+   * Only a torrent session waits this way, and a part on disk is never waited for.
+   */
+  private markFetching(on: boolean): void {
+    const torrent = this.state.torrent;
+    if (torrent === null || torrent.fetching === on) return;
+    if (on && (torrent.state === 'ready' || onDisk(this.state.cachedRanges, this.video.currentTime))) return;
+    this.set({ torrent: { ...torrent, fetching: on } });
+    if (on) this.note(`waiting for the torrent at ${round1(this.video.currentTime)} s`);
+  }
+
+  // The part a torrent's play waited for is here: the seek landed, or the film can play.
+  private readonly onArrived = (): void => {
+    this.markFetching(false);
+  };
+
   // Chrome keeps a cue on the picture when its track is taken away while the film is detached (the
   // last line of episode 787 stayed over the whole of 788), so a track is switched off before it goes.
   private clearFileTracks(): void {
     for (const track of this.fileTracks) {
+      track.follower?.stop();
       if (track.element.track) track.element.track.mode = 'disabled';
       track.element.remove();
       this.deps.revokeTextUrl(track.url);
@@ -1022,7 +1206,9 @@ export class StreamController {
       if (this.disposed) return;
       this.session = session;
       // A refresh of a cached session either keeps the cache or moves to the pass-through (the cache was cleared).
-      this.set({ cached: session.cached });
+      this.set({ cached: session.cached, torrent: torrentView(session.torrent) });
+      if (session.torrent !== null) this.followTorrent(session.torrent.infoHash);
+      else this.stopTorrent();
       await this.attach(session, continueAt);
     } catch (err) {
       if (!this.disposed) this.fail(err);

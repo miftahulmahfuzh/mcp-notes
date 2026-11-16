@@ -122,6 +122,8 @@ export interface TmdbTitleNames {
   alternativeTitles(kind: TitleKind, tmdbId: number): Promise<string[]>;
   /** TMDB's `original_language` of a title ("ko"), in one request; null when TMDB does not know the title or its language. */
   originalLanguage(kind: TitleKind, tmdbId: number): Promise<string | null>;
+  /** TMDB's `external_ids.imdb_id` of a film or series (`tt0137523`), in one request; null when TMDB has none or does not know the title. */
+  imdbId(kind: TitleKind, tmdbId: number): Promise<string | null>;
 }
 
 /** A production company or a streaming service as TMDB names it. */
@@ -334,6 +336,7 @@ const PersonSearchSchema = z.object({
 });
 
 const OriginalLanguageSchema = z.object({ original_language: text });
+const ExternalIdsSchema = z.object({ imdb_id: text });
 
 /** `/movie/{id}/alternative_titles` answers `titles`, `/tv/{id}/alternative_titles` answers `results`. */
 const AlternativeTitlesSchema = z.object({
@@ -911,6 +914,13 @@ export function createTmdbClient(
     async originalLanguage(kind, tmdbId) {
       const json = await getOrNull(`/${kind}/${tmdbId}`, {});
       return json === null ? null : orNull(decode(OriginalLanguageSchema, json, `${kind} ${tmdbId}`).original_language);
+    },
+
+    async imdbId(kind, tmdbId) {
+      const json = await getOrNull(`/${kind}/${tmdbId}/external_ids`, {});
+      if (json === null) return null;
+      const id = orNull(decode(ExternalIdsSchema, json, `${kind} ${tmdbId} external ids`).imdb_id);
+      return id !== null && /^tt\d{5,10}$/.test(id) ? id : null;
     },
 
     async discover(kind, filter) {

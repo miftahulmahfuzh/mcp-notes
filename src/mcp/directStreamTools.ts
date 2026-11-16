@@ -152,6 +152,7 @@ const PLAY_DESCRIPTION =
   'resuming where the last stream of it stopped. It takes 5 to 40 seconds; call it once and wait. ' +
   'Before a provider\'s stream of a title plays for the first time the daemon looks at two frames of it and passes over a cinema recording or a copy with a burned-in advert for the next provider (its attempt says "picture: watermark" or "picture: recording"; "picture: clean" is the one that plays), which adds 10 to 40 seconds to a first play. When no provider had a proper copy, the first one found plays: say so. ' +
   'provider asks one named provider only (a name from direct_stream_sources) and passes over a cache: for "stream it from VidLink", or when the stream that started is a cinema recording or a dub and another provider is known to be clean. ' +
+  'provider "torrent" asks only the torrent source: a torrent of the title found by its IMDb id, downloaded from the swarm while it plays and served by this daemon (for "stream it from a torrent"). ' +
   'Call it only when the owner asks to stream (/direct-stream <title>, "stream it", "let\'s direct-stream the first one"). A film in the library plays in VLC with movies_continue unless the owner says stream; a recommendation is not a request; a question is direct_stream_find. ' +
   'Pass title (words without the year, a movie id, or a title key) with year when known. For a series pass season and episode only when the owner named them (an episode\'s movie id names both); ' +
   'when the owner named an episode by one number without a season ("One Piece episode 730", "resume one piece from episode 730"), pass absolute_episode alone: the daemon maps it to the season and episode TMDB lists (the 730th episode in order; a long anime\'s own numbers run on across seasons) and answers picked absolute with the season and episode it chose, ' +
@@ -162,7 +163,8 @@ const PLAY_DESCRIPTION =
   'caught_up (every episode after the last one played is finished or there is none: say so, with last and seasons), not_aired (the next episode airs on air_date), ' +
   'or no_match: did_you_mean lists titles close to the words, none of them the asked name; show them with their years and ask which. When the owner picks one, call again with its title_key (or movie_id) and asked_as set to the name the owner first used, ' +
   'so that name finds the title from then on. Never pass asked_as for a name the owner did not use. ' +
-  'The error no_source means no provider could stream it: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, skipped_browser_only, skipped_no_template), and nothing started; offer /idlix or /lk21. ' +
+  'The error no_source means no provider and no torrent could stream it, and nothing started: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, unplayable, skipped_browser_only, skipped_no_template); when no provider resolved, the torrent source was tried before answering, and its attempts follow: "Index: <name>" for each torrent index asked and "Torrent: <release>" for each torrent tried (dubbed: its audio is another language; unplayable: Chrome cannot play the file as is; no_stream: no file list or too little data from the swarm in time). Offer /idlix or /lk21. ' +
+  'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked. The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'When this machine holds a cache of the film or episode (made with direct_stream_cache), the play comes from it: play.session.cached is { id, state, height }. state ready plays from disk with no provider asked (attempts is empty, and it works with the internet down); state downloading plays what is on disk and fetches each part not there yet as the film reaches it. A failed cache, or one made on the other machine, is not used: the play resolves as usual. ' +
@@ -487,7 +489,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
         season: seasonField.optional().describe('A series only: the season to stream from.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
-        provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink"), or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked.'),
+        provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink"), or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked. "torrent" asks the torrent source only ("stream it from a torrent").'),
         absolute_episode: z
           .number()
           .int()
@@ -637,7 +639,17 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
               title: candidateView(await stored(), wall),
               ...picked,
               attempts: failure.attempts,
-              next: 'No provider could stream it and nothing started. Tell the owner, one short line per provider with its outcome, and offer /idlix or /lk21.',
+              next: 'No provider and no torrent could stream it, and nothing started. Tell the owner, one short line per attempt with its outcome (an "Index: " attempt is a torrent index asked, a "Torrent: " attempt one torrent tried), and offer /idlix or /lk21.',
+            });
+          }
+          if (failure.error === 'torrent_off') {
+            return failJson({
+              error: 'torrent_off',
+              started: false,
+              title: candidateView(await stored(), wall),
+              ...picked,
+              message: failure.message,
+              next: 'Nothing started: torrents are off on this machine (NOTESD_TORRENT=off). Say so in one line and offer to stream it from a cloud provider (call again without provider).',
             });
           }
           return failJson({

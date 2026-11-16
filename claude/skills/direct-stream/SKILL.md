@@ -116,6 +116,7 @@ A play needs nothing extra: `direct_stream_play` uses this laptop's cache of the
 `/direct-stream <title>` and "stream it" mean start it: call `direct_stream_play` once with
 `title`, `year` when known, `kind` when known, and `season` and `episode` when the user named
 them. It takes 5 to 40 seconds; wait for it.
+"stream it from a torrent" is `provider: "torrent"`: only the torrent source is asked.
 
 A series named without an episode starts where the user left it. The daemon keeps every play
 (streams and VLC) in its database, so this works across sessions and restarts: `picked` is
@@ -138,6 +139,9 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   episode, and with `picked` why that one: carried on from where it stopped (`resume`), the next
   episode (`next`), or the first (`first`).
   When `play.session.cached` is set, say it plays from this laptop's cache: `ready` (no provider was asked; it plays even offline) or `downloading` (a part not downloaded yet is fetched as it is reached). Name the provider from `play.session.provider`; `attempts` is empty.
+  When `play.session.torrent` is set (provider `Torrent`), say it plays from a torrent: name the release
+  (`torrent.name`), and say it downloads while it plays (`state: "downloading"`) or plays from this laptop's
+  disk (`ready`, no `Index:` or `Torrent:` attempt: no index and no swarm was asked).
 - **`skipped_play: "several_matches"`:** one line per candidate with its year and kind; ask which
   one. When the user picks, call `direct_stream_play` again with that candidate's `movie_id`
   (or its exact title and year when it has none).
@@ -162,8 +166,12 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   year). One retry is worth it when the title has an obvious other form (an original-language
   title); say which name found it.
 - **Error `no_source`:** nothing started. Say no source could stream it, then one short line per
-  provider from `attempts` with its `outcome` (`no_stream`, `bot_check`, `error`, `dubbed`,
-  `skipped_browser_only`). Offer `/idlix` or `/lk21`. Do not call again unless asked.
+  attempt from `attempts` with its `outcome` (`no_stream`, `bot_check`, `error`, `dubbed`,
+  `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
+  may end with `Index: <name>` (a torrent index asked) and `Torrent: <release>` (a torrent tried;
+  `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
+- **Error `torrent_off`:** torrents are off on this machine (`NOTESD_TORRENT=off`); say so and offer
+  to stream it from a cloud provider (call again without `provider`).
 - **`direct_stream_off`:** direct streaming is off on this daemon (or this is the machine
   without it). Say so; offer `/idlix` or `/lk21`.
 - **Error `resolve_failed` or `open_failed`:** the streaming Chrome could not be used; report

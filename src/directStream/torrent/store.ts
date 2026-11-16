@@ -1,0 +1,115 @@
+import { createReadStream } from 'node:fs';
+import { rm, rmdir, stat } from 'node:fs/promises';
+import path from 'node:path';
+import type { Readable } from 'node:stream';
+import type { TorrentFileInfo, TorrentHandle, TorrentStats } from './types.js';
+
+/** fs-chunk-store 5 (webtorrent's disk store) drops these characters from a file's last name; disk paths must match. */
+const RESERVED_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
+
+/**
+ * `<root>/<info hash>/`: where one torrent's files are written, at the paths webtorrent's store uses.
+ * Other phases may keep their own files under a torrent's folder (subtitles, a remux); this class only
+ * ever deletes the torrent's own files by path, or the whole folder when the download is cleared.
+ */
+export class TorrentFolder {
+  constructor(readonly root: string) {}
+
+  /** The info hash is checked (40 hex) before it gets here, so the folder never leaves the root. */
+  dirOf(infoHash: string): string {
+    return path.join(this.root, infoHash);
+  }
+
+  /**
+   * Where webtorrent writes a torrent file: `resolve(join(dir, dirname(path)))` plus the last name without
+   * reserved characters, exactly as fs-chunk-store does. Null when that would not be inside the folder.
+   */
+  diskPath(infoHash: string, filePath: string): string | null {
+    const dir = this.dirOf(infoHash);
+    const target = path.join(path.resolve(path.join(dir, path.dirname(filePath))), path.basename(filePath).replace(RESERVED_NAME_CHARS, ''));
+    return target.startsWith(`${dir}${path.sep}`) ? target : null;
+  }
+
+  contains(infoHash: string, filePath: string): boolean {
+    return this.diskPath(infoHash, filePath) !== null;
+  }
+
+  /** The file's absolute path when it is on disk at its full size, else null. */
+  async complete(infoHash: string, filePath: string, length: number): Promise<string | null> {
+    const target = this.diskPath(infoHash, filePath);
+    if (target === null) return null;
+    try {
+      const s = await stat(target);
+      return s.isFile() && s.size === length ? target : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Deletes these files of the torrent (those not chosen: the edge bytes of pieces they share with a chosen
+   * file), then the folders they leave empty. Anything else under the folder is left. Returns how many went.
+   */
+  async dropFiles(infoHash: string, filePaths: readonly string[]): Promise<number> {
+    const dir = this.dirOf(infoHash);
+    let removed = 0;
+    for (const filePath of filePaths) {
+      const target = this.diskPath(infoHash, filePath);
+      if (target === null) continue;
+      try {
+        await rm(target);
+      } catch {
+        continue; // never written
+      }
+      removed += 1;
+      let parent = path.dirname(target);
+      while (parent.startsWith(`${dir}${path.sep}`)) {
+        try {
+          await rmdir(parent);
+        } catch {
+          break; // not empty
+        }
+        parent = path.dirname(parent);
+      }
+    }
+    return removed;
+  }
+
+  /** Deletes the torrent's folder and everything in it. */
+  async remove(infoHash: string): Promise<void> {
+    await rm(this.dirOf(infoHash), { recursive: true, force: true });
+  }
+}
+
+/** A finished download read from disk: no swarm, no engine. Its files are the chosen ones only. */
+export class DiskHandle implements TorrentHandle {
+  readonly live = false;
+
+  constructor(
+    readonly infoHash: string,
+    readonly name: string,
+    readonly files: readonly TorrentFileInfo[],
+    private readonly paths: ReadonlyMap<number, string>,
+  ) {}
+
+  select(): void {}
+
+  read(index: number, range: { start: number; end: number }): Readable {
+    const file = this.paths.get(index);
+    if (file === undefined) throw new RangeError(`file ${index} of ${this.infoHash} is not on disk`);
+    return createReadStream(file, { start: range.start, end: range.end });
+  }
+
+  stats(): TorrentStats {
+    return { peers: 0, down_kbps: 0, up_kbps: 0 };
+  }
+
+  ranges(index: number): [number, number][] {
+    const file = this.files.find((f) => f.index === index);
+    return file !== undefined && file.length > 0 ? [[0, file.length]] : [];
+  }
+
+  done(index: number): boolean {
+    return this.paths.has(index);
+  }
+}

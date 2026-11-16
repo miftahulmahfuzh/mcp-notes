@@ -30,11 +30,13 @@ export function toStreamRef(input: StreamRefInput): StreamRef {
 }
 
 /**
- * How one provider's try ended, as claude/streaming/direct/cli.mjs reports it. The two skips are not
- * health, and neither is `dubbed` (a stream was found, in another language than the title's
- * original): it is about the title, not the provider.
+ * How one provider's try ended, as claude/streaming/direct/cli.mjs reports it, and how one torrent's or one subtitle
+ * tier's try ended (torrent phase 3). The skips are not health, and neither is `dubbed` (a stream was found, in another
+ * language than the title's original): it is about the title, not the provider. `unplayable` is a torrent's file
+ * Chrome cannot play as is (phase 5 remuxes it instead); `skipped` is a subtitle tier not asked, its detail says why
+ * (the 40 s subtitle budget was spent, or the tier does not apply). The resolver prints neither.
  */
-export const RESOLVE_OUTCOMES = [...STREAM_HEALTH_OUTCOMES, 'dubbed', 'skipped_browser_only', 'skipped_no_template'] as const;
+export const RESOLVE_OUTCOMES = [...STREAM_HEALTH_OUTCOMES, 'dubbed', 'skipped_browser_only', 'skipped_no_template', 'unplayable', 'skipped'] as const;
 export type ResolveOutcome = (typeof RESOLVE_OUTCOMES)[number];
 
 export const MANIFEST_KINDS = STREAM_MANIFEST_KINDS;
@@ -99,7 +101,7 @@ export type ResolveOutput =
 
 export type ResolvedOutput = Extract<ResolveOutput, { ok: true }>;
 
-export type DirectStreamErrorCode = 'no_source' | 'resolve_failed' | 'open_failed' | 'unknown_session' | 'no_episode' | 'no_subtitle';
+export type DirectStreamErrorCode = 'no_source' | 'resolve_failed' | 'open_failed' | 'unknown_session' | 'no_episode' | 'no_subtitle' | 'torrent_off';
 
 /** One episode of a series, by TMDB's season and episode. */
 export interface EpisodeNumber {

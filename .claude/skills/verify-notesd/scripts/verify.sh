@@ -5,7 +5,7 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--discovery] [--prober]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--discovery] [--prober] [--torrent]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
@@ -22,6 +22,9 @@
 #                                       5 s; the fake powershell.exe reports $MOVIES/idle_ms (0: someone is
 #                                       typing). --prober=off: the prober setting unset. Without either the prober
 #                                       is pinned off.
+#                                       --torrent (implies --direct-stream) turns torrents on against a loopback
+#                                       seeder of a generated film and pack (scripts/torrent/; TORRENT_FIXTURE_FILE=
+#                                       <path> seeds that file as the film); without it NOTESD_TORRENT=off is pinned
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
@@ -84,7 +87,7 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 discovery=0 prober=""
+  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 discovery=0 prober="" torrent=0
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
@@ -94,6 +97,7 @@ cmd_up() {
       --movies) movies=1 ;;
       --direct-stream) direct=1; movies=1 ;;
       --discovery) discovery=1; direct=1; movies=1 ;;
+      --torrent) torrent=1; direct=1; movies=1 ;;
       --prober) prober=on ;;
       --prober=on|--prober=off) prober="${a#--prober=}" ;;
       *) die "up: unknown flag $a" ;;
@@ -187,11 +191,52 @@ EOF
   # provider and never the streaming Chrome: the real resolver opens the owner's Chrome on Windows.
   if [ "$direct" = 1 ]; then
     mkdir -p "$dir/direct"
+    # The torrent sites script's stand-in keeps its mode and calls here (tests/fixtures/direct-stream/fake-torrent-sites.mjs).
+    mkdir -p "$dir/torrent-sites"
     setsid node "$root/tests/fixtures/direct-stream/upstream.mjs" --info "$dir/direct/upstream.json" \
       --log "$dir/direct/upstream.jsonl" --state "$dir/direct" </dev/null >"$dir/direct/upstream.out" 2>&1 &
     echo $! >"$dir/upstream.pid"
     for _ in $(seq 1 40); do [ -s "$dir/direct/upstream.json" ] && break; sleep 0.25; done
     [ -s "$dir/direct/upstream.json" ] || die "--direct-stream: the fixture stream host did not start (log: $dir/direct/upstream.out; verify.sh down $run)"
+  fi
+  # --torrent: a loopback seeder of a generated film and season pack (scripts/torrent/). Never a real swarm:
+  # the daemon gets NOTESD_TORRENT_DISCOVERY=off (no DHT, no tracker) and the seeder as its only peer.
+  # TORRENT_FIXTURE_FILE=<path> seeds that one file as the film (no subtitle file beside it).
+  local seed_port=""
+  if [ "$torrent" = 1 ]; then
+    local fixture film_name film
+    fixture="$("$HERE/torrent/make-fixture.sh" "$VERIFY_HOME/.torrent-fixture")" || die "--torrent: building the fixture torrents failed"
+    film_name=Fixture.Film.2026.1080p.WEB-DL.x264-NOTESD
+    film="$fixture/$film_name"
+    mkdir -p "$dir/torrent"
+    if [ -n "${TORRENT_FIXTURE_FILE:-}" ]; then
+      [ -f "$TORRENT_FIXTURE_FILE" ] || die "--torrent: TORRENT_FIXTURE_FILE=$TORRENT_FIXTURE_FILE is not a file"
+      film="$dir/torrent/custom/$film_name"
+      mkdir -p "$film"
+      cp "$TORRENT_FIXTURE_FILE" "$film/$film_name.${TORRENT_FIXTURE_FILE##*.}"
+    fi
+    setsid node "$HERE/torrent/seed.mjs" seed --film "$film" --pack "$fixture/Fixture.Show.S01.1080p.WEB-DL.x264-NOTESD" \
+      --state "$dir/torrent" --upload-kbps 200 </dev/null >"$dir/torrent/seeder.out" 2>&1 &
+    echo $! >"$dir/seeder.pid"
+    for _ in $(seq 1 80); do [ -s "$dir/torrent/fixture.json" ] && [ -s "$dir/torrent/pack.json" ] && break; sleep 0.25; done
+    [ -s "$dir/torrent/pack.json" ] || die "--torrent: the loopback seeder did not start (log: $dir/torrent/seeder.out; verify.sh down $run)"
+    seed_port="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).port)' "$dir/torrent/fixture.json")"
+  fi
+  # --torrent (torrent phase 3): a fake Torrentio that lists the seeded fixture(s). Never a real index.
+  if [ "$torrent" = 1 ]; then
+    setsid node "$HERE/torrent/fake-index.mjs" --fixtures "$dir/torrent" --titles "$HERE/movies/tmdb.json" \
+      --port-file "$dir/torrent/index.port" --log "$dir/torrent/index.jsonl" </dev/null >"$dir/torrent/index.out" 2>&1 &
+    echo $! >"$dir/torrent-index.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/torrent/index.port" ] && break; sleep 0.25; done
+    [ -s "$dir/torrent/index.port" ] || die "--torrent: the fake index did not start (log: $dir/torrent/index.out; verify.sh down $run)"
+    # Torrent phase 6: a fake subtitle service in the shape of Stremio's OpenSubtitles add-on, which also
+    # answers as Wyzie Subs (/search) for a fake key; never the real ones.
+    mkdir -p "$dir/torrent/subs"
+    setsid node "$HERE/torrent/fake-subs.mjs" --state "$dir/torrent/subs" --info "$dir/torrent/subs/info.json" \
+      --wyzie-key verify-fake-wyzie-key </dev/null >"$dir/torrent/subs/out.log" 2>&1 &
+    echo $! >"$dir/subs.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/torrent/subs/info.json" ] && break; sleep 0.25; done
+    [ -s "$dir/torrent/subs/info.json" ] || die "--torrent: the fake subtitle service did not start (log: $dir/torrent/subs/out.log; verify.sh down $run)"
   fi
 
   # Real env wins over .env.local, so these pin the instance to the run's own state.
@@ -207,6 +252,8 @@ EOF
     NOTESD_SWARM_SCRIPT="$dir/no-swarm.py"
     # A throwaway daemon never writes into the owner's stream cache folder (.env.local may name one).
     NOTESD_STREAM_CACHE_DIR="$dir/data/movies/stream-cache"
+    # A throwaway daemon never writes into the owner's torrent folder either.
+    NOTESD_TORRENT_DIR="$dir/data/movies/torrents"
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"
@@ -262,9 +309,44 @@ EOF
       NOTESD_STREAM_PICTURE_MODEL=off
       "NOTESD_DIRECT_STREAM_CLI=${NOTESD_DIRECT_STREAM_CLI:-$root/tests/fixtures/direct-stream/fake-cli.mjs}"
       "DIRECT_STREAM_FAKE_DIR=$dir/direct"
+      # Never the real torrent sites script: it drives the owner's streaming Chrome on Windows.
+      "NOTESD_TORRENT_SITES_CLI=$root/tests/fixtures/direct-stream/fake-torrent-sites.mjs"
+      "TORRENT_SITES_FAKE_DIR=$dir/torrent-sites"
+      "TORRENT_SITES_FIXTURE=$dir/torrent/fixture.json"
     )
   else
     env+=(NOTESD_DIRECT_STREAM=off)
+  fi
+  # NOTESD_TORRENT=off unless --torrent: a throwaway daemon never joins a real swarm. --torrent turns discovery
+  # off (no DHT, no tracker), names the loopback seeder as every torrent's peer and caps upload at 64 kB/s.
+  if [ "$torrent" = 1 ]; then
+    env+=(NOTESD_TORRENT=on NOTESD_TORRENT_DISCOVERY=off "NOTESD_TORRENT_PEERS=127.0.0.1:$seed_port" NOTESD_TORRENT_UPLOAD_KBPS=64 NOTESD_TORRENT_KEEP_DAYS=7)
+  else
+    env+=(NOTESD_TORRENT=off)
+  fi
+  # Torrent phase 3: the finder asks only the fake index on a --torrent run, and no index at all otherwise.
+  if [ "$torrent" = 1 ]; then
+    env+=(
+      "NOTESD_TORRENT_TORRENTIO_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")"
+      NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off NOTESD_TORRENT_MIN_SEEDS=1
+    )
+  else
+    env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
+  fi
+  # Torrent phase 5: the remux runs with this machine's ffmpeg; NOTESD_TORRENT_REMUX=off from the caller passes through.
+  if [ "$torrent" = 1 ]; then
+    env+=(
+      "NOTESD_TORRENT_REMUX=${NOTESD_TORRENT_REMUX:-on}"
+    )
+  fi
+  # Torrent phase 6: a throwaway daemon never asks the real subtitle services (.env.local may hold the owner's
+  # WYZIE_API_KEY). --torrent points both at the fake one, with a fake key.
+  if [ "$torrent" = 1 ]; then
+    local subs_origin
+    subs_origin="$(jq -r .origin "$dir/torrent/subs/info.json")"
+    env+=("NOTESD_TORRENT_SUBTITLE_URL=$subs_origin" "NOTESD_TORRENT_WYZIE_URL=$subs_origin" WYZIE_API_KEY=verify-fake-wyzie-key)
+  else
+    env+=(NOTESD_TORRENT_SUBTITLE_URL=off NOTESD_TORRENT_WYZIE_URL=off WYZIE_API_KEY=)
   fi
   # NOTESD_STREAM_PROBER=off unless --prober: a throwaway daemon never probes on its own. --prober=off
   # leaves the setting blank, which is how "unset" reaches the daemon (the real environment wins over
@@ -286,6 +368,7 @@ EOF
     echo "movies=$movies"
     echo "direct_stream=$direct"
     echo "prober=${prober:-pinned_off}"
+    echo "torrent=$torrent"
     [ "$adversary" = 1 ] && echo "seer_migrations=$seer_src"
   } >"$dir/meta"
 
@@ -311,6 +394,8 @@ EOF
   echo "TMUX_FAKE=$dir/tmux"
   if [ "$movies" = 1 ]; then echo "MOVIES=$dir/movies"; fi
   if [ "$direct" = 1 ]; then echo "DIRECT=$dir/direct"; fi
+  if [ "$torrent" = 1 ]; then echo "TORRENT=$dir/torrent"; fi
+  if [ "$torrent" = 1 ]; then echo "SUBS=$dir/torrent/subs"; fi
 }
 
 cmd_doctor() {
@@ -470,13 +555,32 @@ stop_run() {
   fi
   if [ -f "$dir/direct/upstream.jsonl" ]; then cp "$dir/direct/upstream.jsonl" "$dir/evidence/direct-upstream-requests.jsonl"; fi
   if [ -f "$dir/direct/calls.jsonl" ]; then cp "$dir/direct/calls.jsonl" "$dir/evidence/direct-resolver-calls.jsonl"; fi
+  if [ -f "$dir/torrent-sites/calls.jsonl" ]; then cp "$dir/torrent-sites/calls.jsonl" "$dir/evidence/torrent-sites-calls.jsonl"; fi
+  # --torrent: the loopback seeder was started by `up`; keep its log.
+  if [ -f "$dir/seeder.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/seeder.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/seeder.pid")" 2>/dev/null || true
+  fi
+  if [ -f "$dir/torrent/seeder.jsonl" ]; then cp "$dir/torrent/seeder.jsonl" "$dir/evidence/torrent-seeder.jsonl"; fi
+  # --torrent: the fake index was started by `up`; keep its request log.
+  if [ -f "$dir/torrent-index.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/torrent-index.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/torrent-index.pid")" 2>/dev/null || true
+    rm -f "$dir/torrent-index.pid"
+  fi
+  if [ -f "$dir/torrent/index.jsonl" ]; then cp "$dir/torrent/index.jsonl" "$dir/evidence/torrent-index-requests.jsonl"; fi
+  # --torrent: the fake subtitle service was started by `up`; keep its request logs.
+  if [ -f "$dir/subs.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/subs.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/subs.pid")" 2>/dev/null || true
+    rm -f "$dir/subs.pid"
+  fi
+  if [ -f "$dir/torrent/subs/requests.jsonl" ]; then cp "$dir/torrent/subs/requests.jsonl" "$dir/evidence/torrent-subtitle-requests.jsonl"; fi
+  if [ -f "$dir/torrent/subs/wyzie-requests.jsonl" ]; then cp "$dir/torrent/subs/wyzie-requests.jsonl" "$dir/evidence/torrent-wyzie-requests.jsonl"; fi
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi
   if [ -f "$dir/seer_db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/seer_db") with (force)" >/dev/null || true
   fi
-  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/seer" "$dir/movies" "$dir/pid" "$dir/port" "$dir/db" "$dir/seer_db" "$dir/tmdb.pid"
+  rm -rf "$dir/data" "$dir/claude" "$dir/worktrees" "$dir/seer" "$dir/movies" "$dir/pid" "$dir/port" "$dir/db" "$dir/seer_db" "$dir/tmdb.pid" "$dir/torrent" "$dir/seeder.pid"
   echo "verify: stopped $(basename "$dir"); evidence kept in $dir/evidence ($(find "$dir/evidence" -type f | wc -l) files)"
 }
 
@@ -512,5 +616,5 @@ case "$sub" in
   vlc) cmd_vlc "$@" ;;
   down) cmd_down "$@" ;;
   ls) cmd_ls ;;
-  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

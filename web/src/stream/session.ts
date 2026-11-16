@@ -9,6 +9,8 @@ export interface SessionSubtitle {
   label: string;
   /** Phase 3's `english` when it sent one, else isEnglish(lang, label). */
   english: boolean;
+  /** A cue feed: `url` answers JSON cues after an index (subtitles.ts followCueFeed), read until complete. Absent: a WebVTT or SRT file. */
+  growing?: true;
 }
 
 /** What the player needs from GET /api/stream/sessions/:id, checked once in parseSession. */
@@ -26,6 +28,8 @@ export interface StreamSession {
   nextEpisode: EpisodeNumber | null;
   /** Played from this machine's stream cache; null: through the pass-through. */
   cached: CachedInfo | null;
+  /** Played from a torrent on this machine (torrent-stream-source phase 3); null: not a torrent. Never set together with `cached`. */
+  torrent: TorrentInfo | null;
 }
 
 export interface EpisodeNumber {
@@ -41,6 +45,22 @@ export interface CachedInfo {
   id: string;
   state: CachedState;
   height: number | null;
+}
+
+/** A torrent download's state, as the session and GET /api/stream/torrent/:hash name it. */
+export type TorrentState = 'downloading' | 'ready' | 'failed';
+
+/** SessionInfo.torrent: the torrent the session plays (torrent-stream-source phase 3). */
+export interface TorrentInfo {
+  /** 40 lower-case hex characters. */
+  infoHash: string;
+  /** The release name. */
+  name: string;
+  /** The index that listed it (`Torrentio`, `apibay`); null when the session names none. */
+  index: string | null;
+  /** The seeds the index counted; null when unknown. */
+  seeds: number | null;
+  state: TorrentState;
 }
 
 /** An audio track as the manifest writes it. */
@@ -87,6 +107,26 @@ function cachedInfo(value: unknown): CachedInfo | null {
   return { id, state, height: typeof height === 'number' && Number.isInteger(height) && height > 0 ? height : null };
 }
 
+const INFO_HASH = /^[0-9a-f]{40}$/i;
+
+/** Any other word is a download still going: a torrent the page cannot name is still a torrent. */
+function torrentState(value: unknown): TorrentState {
+  return value === 'ready' || value === 'failed' ? value : 'downloading';
+}
+
+/** A count the daemon sent (peers, seeds); null when it is not one. */
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+
+function torrentInfo(value: unknown): TorrentInfo | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { info_hash, name, index, state, seeds } = value as Record<string, unknown>;
+  if (typeof info_hash !== 'string' || !INFO_HASH.test(info_hash)) return null;
+  const infoHash = info_hash.toLowerCase();
+  return { infoHash, name: text(name) ?? infoHash, index: text(index), seeds: count(seeds), state: torrentState(state) };
+}
+
 function episodeNumber(value: unknown): EpisodeNumber | null {
   if (typeof value !== 'object' || value === null) return null;
   const { season, episode } = value as Record<string, unknown>;
@@ -113,12 +153,14 @@ export function parseSession(json: unknown): StreamSession {
       if (url === null) continue;
       const lang = text(s.lang);
       const label = text(s.label) ?? lang ?? 'Subtitle';
-      subtitles.push({ url, lang, label, english: typeof s.english === 'boolean' ? s.english : isEnglish(lang, label) });
+      subtitles.push({ url, lang, label, english: typeof s.english === 'boolean' ? s.english : isEnglish(lang, label), ...(s.growing === true ? { growing: true as const } : {}) });
     }
   }
   const resume = o.resume_s;
   const named = (o.audio as { track?: unknown } | null | undefined)?.track;
   const track = typeof named === 'object' && named !== null ? (named as Record<string, unknown>) : null;
+  // A session plays either this machine's stream cache or a torrent, never both.
+  const torrent = torrentInfo(o.torrent);
   return {
     id,
     title: text(o.title) ?? 'Stream',
@@ -129,7 +171,8 @@ export function parseSession(json: unknown): StreamSession {
     audioTrack: track === null || (text(track.lang) === null && text(track.label) === null) ? null : { lang: text(track.lang), label: text(track.label) },
     prevEpisode: episodeNumber(o.prev_episode),
     nextEpisode: episodeNumber(o.next_episode),
-    cached: cachedInfo(o.cached),
+    cached: torrent === null ? cachedInfo(o.cached) : null,
+    torrent,
   };
 }
 
@@ -155,6 +198,8 @@ export const positionUrl = (id: string): string => `${sessionUrl(id)}/position`;
 export const sourceUrl = (id: string): string => `${sessionUrl(id)}/source`;
 export const sessionCacheUrl = (id: string): string => `${sessionUrl(id)}/cache`;
 export const cacheMapUrl = (cacheId: string): string => `/api/stream/cache/${encodeURIComponent(cacheId)}/map`;
+export const torrentUrl = (infoHash: string): string => `/api/stream/torrent/${encodeURIComponent(infoHash)}`;
+export const torrentMapUrl = (infoHash: string): string => `${torrentUrl(infoHash)}/map`;
 export const episodeUrl = (id: string): string => `${sessionUrl(id)}/episode`;
 export const eventsUrl = (id: string): string => `${sessionUrl(id)}/events`;
 export const reportUrl = (id: string): string => `${sessionUrl(id)}/report`;
@@ -231,18 +276,69 @@ export async function cacheSession(id: string, start: boolean, fetchImpl: typeof
 /** A stretch of the title, in seconds: [from, to]. */
 export type TimeRange = [number, number];
 
+/** A map of what is on this machine's disk: its stretches in seconds, and the duration they were counted against (null: not said). */
+export interface DiskMap {
+  durationS: number | null;
+  ranges: TimeRange[];
+}
+
+/** GET a `{ duration_s, ranges }` map (a cache's, a torrent's); null when the daemon cannot say. Never throws. */
+async function fetchDiskMap(url: string, fetchImpl: typeof fetch): Promise<DiskMap | null> {
+  try {
+    const res = await fetchImpl(url, { headers: { accept: 'application/json' } });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { duration_s?: unknown; ranges?: unknown } | null;
+    if (body === null || !Array.isArray(body.ranges)) return null;
+    const duration = body.duration_s;
+    return {
+      durationS: typeof duration === 'number' && Number.isFinite(duration) && duration > 0 ? duration : null,
+      ranges: body.ranges.flatMap((r): TimeRange[] =>
+        Array.isArray(r) && typeof r[0] === 'number' && typeof r[1] === 'number' && r[1] > r[0] && r[0] >= 0 ? [[r[0], r[1]]] : [],
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** The stretches of a cache that are on this machine's disk; [] when the daemon cannot say. Never throws. */
 export async function fetchCacheMap(cacheId: string, fetchImpl: typeof fetch): Promise<TimeRange[]> {
+  return (await fetchDiskMap(cacheMapUrl(cacheId), fetchImpl))?.ranges ?? [];
+}
+
+/** The stretches of a torrent's file on this machine's disk (GET /api/stream/torrent/:hash/map); null when the daemon cannot say. Never throws. */
+export function fetchTorrentMap(infoHash: string, fetchImpl: typeof fetch): Promise<DiskMap | null> {
+  return fetchDiskMap(torrentMapUrl(infoHash), fetchImpl);
+}
+
+/** GET /api/stream/torrent/:hash as the page uses it: where the download stands and its live numbers. */
+export interface TorrentStatus {
+  state: TorrentState;
+  /** Peers connected now; null when the daemon does not say. */
+  peers: number | null;
+  /** Download speed in kilobits per second (bytes × 8 / ms, as the stream evidence log counts `kbps`); null when not said. */
+  downKbps: number | null;
+  /** 0 to 1 of the chosen file on disk; null when not said. */
+  progress: number | null;
+}
+
+/** Where a torrent's download stands; null when the daemon cannot say (a 404, a network failure). Never throws. */
+export async function fetchTorrentStatus(infoHash: string, fetchImpl: typeof fetch): Promise<TorrentStatus | null> {
   try {
-    const res = await fetchImpl(cacheMapUrl(cacheId), { headers: { accept: 'application/json' } });
-    if (!res.ok) return [];
-    const body = (await res.json().catch(() => null)) as { ranges?: unknown } | null;
-    if (!Array.isArray(body?.ranges)) return [];
-    return body.ranges.flatMap((r): TimeRange[] =>
-      Array.isArray(r) && typeof r[0] === 'number' && typeof r[1] === 'number' && r[1] > r[0] && r[0] >= 0 ? [[r[0], r[1]]] : [],
-    );
+    const res = await fetchImpl(torrentUrl(infoHash), { headers: { accept: 'application/json' } });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (body === null || typeof body !== 'object') return null;
+    const down = body.down_kbps;
+    const progress = body.progress;
+    return {
+      state: torrentState(body.state),
+      peers: count(body.peers),
+      downKbps: typeof down === 'number' && Number.isFinite(down) && down >= 0 ? down : null,
+      progress: typeof progress === 'number' && Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : null,
+    };
   } catch {
-    return [];
+    return null;
   }
 }
 

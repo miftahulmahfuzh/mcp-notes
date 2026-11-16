@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseDotenv } from 'dotenv'
@@ -192,9 +192,14 @@ export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streami
 
 /** The public index that maps a TMDB id to an anime's AniList id and episodes (src/directStream/anime.ts). */
 export const DEFAULT_ANIME_MAP_URL = 'https://api.ani.zip'
+/** Stremio's OpenSubtitles add-on: English subtitles by IMDb id and file hash, no key (src/directStream/torrent/subtitles/service.ts). */
+export const DEFAULT_TORRENT_SUBTITLE_URL = 'https://opensubtitles-v3.strem.io'
+/** Wyzie Subs: asked before the add-on when WYZIE_API_KEY is set (src/directStream/torrent/subtitles/wyzie.ts). */
+export const DEFAULT_TORRENT_WYZIE_URL = 'https://sub.wyzie.io'
 
 /** The model that looks at a stream's picture before it plays (src/directStream/picture.ts). */
 export const DEFAULT_STREAM_PICTURE_MODEL = 'haiku'
+/** `NOTESD_FFMPEG_BIN`: the one ffmpeg, for the picture check's frames and for the torrent source (remux, subtitle extraction, Whisper's audio cuts). */
 export const DEFAULT_FFMPEG_BIN = 'ffmpeg'
 
 /** Direct streaming (src/directStream/*): the provider registry, resolves, sessions and the pass-through. */
@@ -239,6 +244,191 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
   cli: DEFAULT_DIRECT_STREAM_CLI,
   cacheDir: null,
   prober: DEFAULT_STREAM_PROBER_CONFIG,
+}
+
+/** `claude/streaming/torrent/whisper.py` in this checkout: the Whisper worker the torrent source runs (torrent phase 8). */
+export const DEFAULT_TORRENT_WHISPER_SCRIPT = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'whisper.py')
+export const DEFAULT_TORRENT_WHISPER_MODEL = 'small'
+export const DEFAULT_TORRENT_WHISPER_THREADS = 8
+/** Five minutes of audio per Whisper run: cues come in steps of this, well ahead of the picture (a 5-minute stretch took 2.5 s on 8 threads). */
+export const DEFAULT_TORRENT_WHISPER_STRETCH_S = 300
+export const MIN_TORRENT_WHISPER_STRETCH_S = 5
+
+/**
+ * Whisper, the last subtitle tier of a torrent session (src/directStream/torrent/subtitles/whisper.ts).
+ * Off carries nothing else: no folder, no model, no worker.
+ */
+export type TorrentWhisperConfig =
+  | { enabled: false }
+  | {
+      /** `NOTESD_TORRENT_WHISPER`, default on. `off`: no Whisper tier and no worker. */
+      enabled: true
+      /** `NOTESD_TORRENT_WHISPER_DIR`, absolute, default `<dataDir>/whisper`: `venv/`, `models/` and `hf/` (scripts/install.sh fills it). */
+      dir: string
+      /** `NOTESD_TORRENT_WHISPER_PYTHON`, absolute, default `<dir>/venv/bin/python`. */
+      python: string
+      /** `NOTESD_TORRENT_WHISPER_MODEL`, default `small`: a faster-whisper model name or Hugging Face repo id. */
+      model: string
+      /** `NOTESD_TORRENT_WHISPER_THREADS`, default 8: CPU threads of the worker. */
+      threads: number
+      /** `NOTESD_TORRENT_WHISPER_STRETCH_S`, default 300, at least 5: seconds of audio per Whisper run. */
+      stretchS: number
+    }
+
+/** Whisper off. DEFAULT_TORRENT_CONFIG carries it, so no test that builds a Config literal ever starts a worker. */
+export const DEFAULT_TORRENT_WHISPER_CONFIG: TorrentWhisperConfig = { enabled: false }
+
+export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
+export const DEFAULT_TORRENT_KEEP_DAYS = 7
+
+/** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
+export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts'] as const
+export type TorrentIndexName = (typeof TORRENT_INDEX_NAMES)[number]
+
+/**
+ * What the torrent finder is told (torrent phase 3). A field left unset keeps the finder's own default, so
+ * the defaults live in one place (phase 2's find/ module).
+ */
+export interface TorrentFinderConfig {
+  /** `NOTESD_TORRENT_MIN_SEEDS`: a candidate with fewer seeds is never picked. */
+  minSeeds?: number
+  /** `NOTESD_TORRENT_MAX_GB`, as bytes: a bigger release is left out. */
+  maxSizeBytes?: number
+  /** `NOTESD_TORRENT_INDEX_TIMEOUT_MS`: how long one index may take to answer. */
+  indexTimeoutMs?: number
+  /** `NOTESD_TORRENT_<NAME>_URL` per index: an address replaces the finder's, `off` (null) never asks that index. */
+  indexes: Partial<Record<TorrentIndexName, string | null>>
+}
+
+export const DEFAULT_TORRENT_FINDER_CONFIG: TorrentFinderConfig = { indexes: {} }
+
+/** Each index's address setting, spelled out (not built from the name) so `npm run docs:check` finds the names in the code. */
+const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
+  torrentio: 'NOTESD_TORRENT_TORRENTIO_URL',
+  apibay: 'NOTESD_TORRENT_APIBAY_URL',
+  eztv: 'NOTESD_TORRENT_EZTV_URL',
+  yts: 'NOTESD_TORRENT_YTS_URL',
+}
+
+/** The finder's settings; a bad number or a non-http address throws ConfigError. */
+export function parseTorrentFinder(env: Record<string, string | undefined>): TorrentFinderConfig {
+  const indexes: Partial<Record<TorrentIndexName, string | null>> = {}
+  for (const name of TORRENT_INDEX_NAMES) {
+    const key = TORRENT_INDEX_URL_KEYS[name]
+    const value = (env[key] ?? '').trim()
+    if (value === '') continue
+    if (value.toLowerCase() === 'off') {
+      indexes[name] = null
+      continue
+    }
+    if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`${key} must be an http(s) address or off (got ${value})`)
+    indexes[name] = value.replace(/\/+$/, '')
+  }
+  const optional = (name: string): number | undefined => {
+    const raw = env[name]
+    return raw === undefined || raw.trim() === '' ? undefined : parsePositiveInt(name, raw, 1)
+  }
+  const maxGb = optional('NOTESD_TORRENT_MAX_GB')
+  return {
+    minSeeds: optional('NOTESD_TORRENT_MIN_SEEDS'),
+    maxSizeBytes: maxGb === undefined ? undefined : maxGb * 1024 ** 3,
+    indexTimeoutMs: optional('NOTESD_TORRENT_INDEX_TIMEOUT_MS'),
+    indexes,
+  }
+}
+
+/** `claude/streaming/torrent/cli.mjs` in this checkout: the torrent sites script the daemon runs (torrent phase 9). */
+export const DEFAULT_TORRENT_SITES_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'cli.mjs')
+
+/** Where 1337x and ext.to are by default. claude/streaming/torrent/sites/*.mjs default to the same addresses (a test compares them). */
+export const TORRENT_SITE_ORIGIN_DEFAULTS = { '1337x': 'https://1337x.la', ext: 'https://ext.to' } as const
+
+/**
+ * The torrent sites the finder falls back on when the JSON indexes give nothing usable, asked through
+ * the streaming Chrome (src/directStream/torrent/find-sites.ts).
+ */
+export interface TorrentSitesConfig {
+  /**
+   * Each site's address, scheme and host only: `NOTESD_TORRENT_1337X_ORIGIN` (default
+   * https://1337x.la) and `NOTESD_TORRENT_EXT_ORIGIN` (default https://ext.to). Null: `off`, the
+   * site is never asked.
+   */
+  origins: { '1337x': string | null; ext: string | null }
+  /** `NOTESD_TORRENT_SITES_CLI`, absolute, default DEFAULT_TORRENT_SITES_CLI: the script run as `node <cli>`. */
+  cli: string
+}
+
+export const DEFAULT_TORRENT_SITES_CONFIG: TorrentSitesConfig = {
+  origins: { ...TORRENT_SITE_ORIGIN_DEFAULTS },
+  cli: DEFAULT_TORRENT_SITES_CLI,
+}
+
+/** Torrents as a direct-streaming source (src/directStream/torrent/*). They also need direct streaming on. */
+export interface TorrentConfig {
+  /**
+   * `NOTESD_TORRENT`, default on. `off`: AppDeps.torrents is null, no swarm is joined, and every
+   * /api/stream/torrent route answers torrent_off.
+   */
+  enabled: boolean
+  /** `NOTESD_TORRENT_DIR`, absolute, default `<dataDir>/movies/torrents`: one folder per info hash. Always resolved. */
+  dir: string
+  /** `NOTESD_TORRENT_UPLOAD_KBPS`, default 100: the upload cap in kB/s (1 kB = 1000 bytes), all torrents together. */
+  uploadKbps: number
+  /** `NOTESD_TORRENT_KEEP_DAYS`, default 7: a download not played for this many days is deleted with its files. */
+  keepDays: number
+  /** `NOTESD_TORRENT_DISCOVERY`, default on. `off`: no DHT and no trackers; peers come only from `peers`. */
+  discovery: boolean
+  /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
+  peers: string[]
+  /** The finder's settings (torrent phase 3); unset: the finder's defaults. */
+  finder?: TorrentFinderConfig
+  /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
+  ffmpegBin: string
+  /**
+   * `NOTESD_TORRENT_REMUX`, default on: a torrent file Chrome cannot play as is (MKV, AC3/E-AC3/DTS sound, HEVC)
+   * plays as an ffmpeg remux (src/directStream/torrent/remux.ts). `off`: such a file is `unplayable` and the next
+   * torrent is tried.
+   */
+  remux: boolean
+  /**
+   * `NOTESD_TORRENT_SUBTITLE_URL`, default https://opensubtitles-v3.strem.io: the subtitle service a
+   * torrent without an English subtitle file asks, by the file's OpenSubtitles hash and then by the
+   * IMDb id (Stremio's OpenSubtitles add-on; no key). `off`: null, and that tier is not in the chain.
+   */
+  subtitleUrl: string | null
+  /**
+   * `WYZIE_API_KEY`, trimmed; null when unset or blank. With a key, the subtitle service tier asks
+   * Wyzie Subs before the add-on. Never logged, never written into attempts or kept files.
+   */
+  wyzieKey: string | null
+  /** `NOTESD_TORRENT_WYZIE_URL`, default https://sub.wyzie.io: where Wyzie Subs is asked. `off`: null, never asked. */
+  wyzieUrl: string | null
+  /** 1337x and ext.to, the finder's fallback (phase 9). Unset: DEFAULT_TORRENT_SITES_CONFIG. */
+  sites?: TorrentSitesConfig
+  /** Whisper, the last subtitle tier (torrent phase 8). */
+  whisper: TorrentWhisperConfig
+}
+
+/**
+ * Torrents off. Tests build `Config` literals with it (or leave `torrent` out, which is the same). Its
+ * folder is under the OS temp folder, so a test that turns torrents on without a folder never writes into
+ * the owner's data directory.
+ */
+export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
+  enabled: false,
+  dir: path.join(tmpdir(), 'notesd-torrents'),
+  uploadKbps: DEFAULT_TORRENT_UPLOAD_KBPS,
+  keepDays: DEFAULT_TORRENT_KEEP_DAYS,
+  discovery: true,
+  peers: [],
+  finder: DEFAULT_TORRENT_FINDER_CONFIG,
+  ffmpegBin: DEFAULT_FFMPEG_BIN,
+  remux: false,
+  subtitleUrl: null,
+  wyzieKey: null,
+  wyzieUrl: null,
+  sites: DEFAULT_TORRENT_SITES_CONFIG,
+  whisper: DEFAULT_TORRENT_WHISPER_CONFIG,
 }
 
 /** Seer Adversarial reviewer (src/adversary/*). */
@@ -403,6 +593,8 @@ export interface Config {
   streaming?: StreamingConfig
   /** Direct streaming. Absent (a config built by a test) is the same as `enabled: false`. */
   directStream?: DirectStreamConfig
+  /** Torrents (direct streaming's torrent source). Absent (a config built by a test) is the same as `enabled: false`. */
+  torrent?: TorrentConfig
 }
 
 export interface LoadConfigOptions {
@@ -706,7 +898,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
     freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
     cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
-    animeMapUrl: parseAnimeMapUrl(env.NOTESD_ANIME_MAP_URL),
+    animeMapUrl: parseUrlOrOff('NOTESD_ANIME_MAP_URL', env.NOTESD_ANIME_MAP_URL, DEFAULT_ANIME_MAP_URL),
     cacheDir: parseOptionalAbsolutePath('NOTESD_STREAM_CACHE_DIR', env.NOTESD_STREAM_CACHE_DIR),
     pictureModel:
       env.NOTESD_STREAM_PICTURE_MODEL?.trim().toLowerCase() === 'off'
@@ -717,12 +909,12 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
   }
 }
 
-/** `NOTESD_ANIME_MAP_URL`: unset or blank is the default index, `off` is null, anything else must be an http(s) address. */
-function parseAnimeMapUrl(raw: string | undefined): string | null {
+/** An address setting: unset or blank is `fallback`, `off` is null, anything else must be an http(s) address (trailing slashes dropped). */
+function parseUrlOrOff(name: string, raw: string | undefined, fallback: string): string | null {
   const value = (raw ?? '').trim()
-  if (value === '') return DEFAULT_ANIME_MAP_URL
+  if (value === '') return fallback
   if (value.toLowerCase() === 'off') return null
-  if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`NOTESD_ANIME_MAP_URL must be an http(s) address or off (got ${value})`)
+  if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`${name} must be an http(s) address or off (got ${value})`)
   return value.replace(/\/+$/, '')
 }
 
@@ -740,6 +932,91 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
     idleSeconds: parsePositiveInt('NOTESD_STREAM_IDLE_SECONDS', env.NOTESD_STREAM_IDLE_SECONDS, DEFAULT_STREAM_IDLE_SECONDS),
     probeMs,
   }
+}
+
+const PEER_ADDRESS = /^(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+):(\d{1,5})$/
+
+function parsePeers(raw: string | undefined): string[] {
+  const out: string[] = []
+  for (const part of (raw ?? '').split(',')) {
+    const value = part.trim()
+    if (value === '') continue
+    const m = PEER_ADDRESS.exec(value)
+    const port = m === null ? 0 : Number(m[1])
+    if (port < 1 || port > 65535) throw new ConfigError(`NOTESD_TORRENT_PEERS takes host:port addresses separated by ",", got "${value}"`)
+    if (!out.includes(value)) out.push(value)
+  }
+  return out
+}
+
+/** `dataDir` is the resolved NOTES_DATA_DIR: the default folder is under it. */
+export function parseTorrent(env: Record<string, string | undefined>, dataDir: string): TorrentConfig {
+  return {
+    enabled: parseSwitch('NOTESD_TORRENT', env.NOTESD_TORRENT),
+    dir: parseOptionalAbsolutePath('NOTESD_TORRENT_DIR', env.NOTESD_TORRENT_DIR) ?? path.join(dataDir, 'movies', 'torrents'),
+    uploadKbps: parsePositiveInt('NOTESD_TORRENT_UPLOAD_KBPS', env.NOTESD_TORRENT_UPLOAD_KBPS, DEFAULT_TORRENT_UPLOAD_KBPS),
+    keepDays: parsePositiveInt('NOTESD_TORRENT_KEEP_DAYS', env.NOTESD_TORRENT_KEEP_DAYS, DEFAULT_TORRENT_KEEP_DAYS),
+    discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
+    peers: parsePeers(env.NOTESD_TORRENT_PEERS),
+    finder: parseTorrentFinder(env),
+    ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
+    remux: parseSwitch('NOTESD_TORRENT_REMUX', env.NOTESD_TORRENT_REMUX),
+    subtitleUrl: parseUrlOrOff('NOTESD_TORRENT_SUBTITLE_URL', env.NOTESD_TORRENT_SUBTITLE_URL, DEFAULT_TORRENT_SUBTITLE_URL),
+    wyzieKey: (env.WYZIE_API_KEY ?? '').trim() || null,
+    wyzieUrl: parseUrlOrOff('NOTESD_TORRENT_WYZIE_URL', env.NOTESD_TORRENT_WYZIE_URL, DEFAULT_TORRENT_WYZIE_URL),
+    sites: parseTorrentSites(env),
+    whisper: parseTorrentWhisper(env, dataDir),
+  }
+}
+
+const WHISPER_MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+export function parseTorrentWhisper(env: Record<string, string | undefined>, dataDir: string): TorrentWhisperConfig {
+  if (!parseSwitch('NOTESD_TORRENT_WHISPER', env.NOTESD_TORRENT_WHISPER)) return { enabled: false }
+  const dir = parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_DIR', env.NOTESD_TORRENT_WHISPER_DIR) ?? path.join(dataDir, 'whisper')
+  const model = env.NOTESD_TORRENT_WHISPER_MODEL?.trim() || DEFAULT_TORRENT_WHISPER_MODEL
+  if (!WHISPER_MODEL_NAME.test(model) || model.includes('..')) {
+    throw new ConfigError(`NOTESD_TORRENT_WHISPER_MODEL must be a model name such as small or a repo id, got "${env.NOTESD_TORRENT_WHISPER_MODEL}"`)
+  }
+  const stretchS = parsePositiveInt('NOTESD_TORRENT_WHISPER_STRETCH_S', env.NOTESD_TORRENT_WHISPER_STRETCH_S, DEFAULT_TORRENT_WHISPER_STRETCH_S)
+  if (stretchS < MIN_TORRENT_WHISPER_STRETCH_S) {
+    throw new ConfigError(`NOTESD_TORRENT_WHISPER_STRETCH_S must be at least ${MIN_TORRENT_WHISPER_STRETCH_S}, got "${env.NOTESD_TORRENT_WHISPER_STRETCH_S}"`)
+  }
+  return {
+    enabled: true,
+    dir,
+    python: parseOptionalAbsolutePath('NOTESD_TORRENT_WHISPER_PYTHON', env.NOTESD_TORRENT_WHISPER_PYTHON) ?? path.join(dir, 'venv', 'bin', 'python'),
+    model,
+    threads: parsePositiveInt('NOTESD_TORRENT_WHISPER_THREADS', env.NOTESD_TORRENT_WHISPER_THREADS, DEFAULT_TORRENT_WHISPER_THREADS),
+    stretchS,
+  }
+}
+
+export function parseTorrentSites(env: Record<string, string | undefined>): TorrentSitesConfig {
+  return {
+    origins: {
+      '1337x': parseTorrentSiteOrigin('NOTESD_TORRENT_1337X_ORIGIN', env.NOTESD_TORRENT_1337X_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS['1337x']),
+      ext: parseTorrentSiteOrigin('NOTESD_TORRENT_EXT_ORIGIN', env.NOTESD_TORRENT_EXT_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS.ext),
+    },
+    cli: parseOptionalAbsolutePath('NOTESD_TORRENT_SITES_CLI', env.NOTESD_TORRENT_SITES_CLI) ?? DEFAULT_TORRENT_SITES_CLI,
+  }
+}
+
+/** A torrent site's address: unset or blank is the default, `off` is null, anything else must be scheme and host only. */
+function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback: string): string | null {
+  const value = (raw ?? '').trim()
+  if (value === '') return fallback
+  if (value.toLowerCase() === 'off') return null
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ConfigError(`${name} must be a site address such as https://1337x.la, or off (got "${raw}")`)
+  }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.origin !== value.replace(/\/+$/, '')) {
+    throw new ConfigError(`${name} must be a site address such as https://1337x.la (scheme and host, no path), or off (got "${raw}")`)
+  }
+  return url.origin
 }
 
 /**
@@ -764,6 +1041,14 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
  * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
+ * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS,
+ * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
+ * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
+ * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL (a number below 1 or a non-http address throw ConfigError),
+ * NOTESD_FFMPEG_BIN.
+ * Torrent Whisper keys: NOTESD_TORRENT_WHISPER, NOTESD_TORRENT_WHISPER_DIR, NOTESD_TORRENT_WHISPER_PYTHON,
+ * NOTESD_TORRENT_WHISPER_MODEL, NOTESD_TORRENT_WHISPER_THREADS, NOTESD_TORRENT_WHISPER_STRETCH_S (a relative
+ * folder or Python, a model name with spaces or `..`, or a stretch under 5 s throw ConfigError).
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.
@@ -782,12 +1067,13 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   }
 
   const dataDirRaw = env.NOTES_DATA_DIR?.trim() || DEFAULT_DATA_DIR
+  const dataDir = path.resolve(expandHome(dataDirRaw))
 
   return {
     databaseUrl,
     port: parsePort(env.NOTESD_PORT),
     host: parseHost(env.NOTESD_HOST),
-    dataDir: path.resolve(expandHome(dataDirRaw)),
+    dataDir,
     chat: parseChat(env),
     embeddings: parseEmbeddings(env),
     sessions: parseSessions(env),
@@ -796,5 +1082,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     movies: parseMovies(env),
     streaming: { enabled: parseSwitch('NOTESD_STREAMING', env.NOTESD_STREAMING) },
     directStream: parseDirectStream(env),
+    torrent: parseTorrent(env, dataDir),
   }
 }

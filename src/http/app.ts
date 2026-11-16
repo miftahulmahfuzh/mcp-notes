@@ -30,7 +30,10 @@ import { streamProberRoutes } from './streamProberApi.js';
 import { streamEvidenceRoutes } from './streamEvidenceApi.js';
 import { streamCacheRoutes } from './streamCacheApi.js';
 import { streamCachePlayRoutes } from './streamCachePlayApi.js';
+import { streamTorrentRoutes } from './streamTorrentApi.js';
 import { streamReportRoutes } from './streamReportApi.js';
+import { streamTorrentCuesRoutes } from './streamTorrentCuesApi.js';
+import { streamTorrentRemuxRoutes } from './streamTorrentRemuxApi.js';
 import { sessionsApiRoutes } from './sessionsApi.js';
 import type { UnfinishedChecker } from '../sessions/unfinished.js';
 import { staticRoutes } from './static.js';
@@ -110,7 +113,7 @@ export function mcpToolDeps(
  * Adversarial read model, toggle and review-now), moviesApiRoutes and moviesPlayRoutes
  * (movies-library phases 4 and 5: library, user state, sync, playback), directStreamRoutes
  * (direct-streaming phase 3: play, the player's session, the pass-through, refresh),
- * streamProberRoutes (direct-streaming phase 10: the prober's status), streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), staticRoutes
+ * streamProberRoutes (direct-streaming phase 10: the prober's status), streamEvidenceRoutes (stream bug reporting: the evidence log, page lines, snapshots), streamCacheRoutes (stream-cache phase 5: the stream cache), streamTorrentRoutes (torrent-stream-source phase 1: torrent downloads and their file route), staticRoutes
  * (P6, last: it owns the SPA fallback; it reserves /api, so the order is for clarity).
  */
 export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
@@ -146,7 +149,10 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', streamEvidenceRoutes(deps));
   app.route('/', streamCacheRoutes(deps));
   app.route('/', streamCachePlayRoutes(deps));
+  app.route('/', streamTorrentRoutes(deps));
   app.route('/', streamReportRoutes(deps));
+  app.route('/', streamTorrentCuesRoutes(deps));
+  app.route('/', streamTorrentRemuxRoutes(deps));
   app.route('/', staticRoutes(deps));
   return app;
 }

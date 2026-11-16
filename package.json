@@ -21,6 +21,7 @@
     "hono": "4.13.14",
     "pg": "8.23.1",
     "sharp": "0.35.3",
+    "webtorrent": "3.0.21",
     "ws": "8.22.0",
     "zod": "4.4.3"
   },
@@ -75,5 +76,12 @@
     "docs:gen": "tsx scripts/docs/reference.ts",
     "docs:check": "tsx scripts/docs/reference.ts --check",
     "docs:shots": "node scripts/docs/capture.mjs"
+  },
+  "allowScripts": {
+    "node-datachannel@0.32.3": true,
+    "ip-set": false,
+    "bufferutil": false,
+    "utf-8-validate": false,
+    "utp-native": false
   }
 }

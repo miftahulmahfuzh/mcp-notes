@@ -1541,6 +1541,74 @@ export const streamCaches = pgTable(
   ],
 )
 
+/** What a torrent download is doing (src/directStream/torrent/). The CHECK below keeps the same list. */
+export const STREAM_TORRENT_STATES = ['downloading', 'ready', 'failed'] as const
+export type StreamTorrentState = (typeof STREAM_TORRENT_STATES)[number]
+/** One chosen file of a torrent download: its index in the torrent, its path inside it, its size. */
+export interface StreamTorrentFile {
+  index: number
+  path: string
+  length: number
+}
+
+/**
+ * One torrent download on one host (migration 0031, torrent-stream-source phase 1). Written only by
+ * TorrentsRepo (src/directStream/torrent/repo.ts). The files live in that host's torrent folder
+ * (`<NOTESD_TORRENT_DIR>/<info hash>/`), so the other machine lists the row with `available: false`.
+ * One row per host and info hash; the title slot is the one it was last opened for (a film is season 0,
+ * episode 0, as in stream_caches); opening it for another slot forgets the chosen files. `files` are the
+ * chosen files only (the video and its subtitles), `file_index` the video. `error` is set exactly when it
+ * failed; `completed_at` exactly when it is ready, which needs a chosen video.
+ */
+export const streamTorrents = pgTable(
+  'stream_torrents',
+  {
+    host: text('host').notNull(),
+    infoHash: text('info_hash').notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    season: integer('season').notNull().default(0),
+    episode: integer('episode').notNull().default(0),
+    /** The torrent's own name (its file list's root). */
+    name: text('name').notNull(),
+    /** The release name the index listed; null when it was opened by hash alone. */
+    release: text('release'),
+    trackers: jsonb('trackers').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    fileIndex: integer('file_index'),
+    files: jsonb('files').$type<StreamTorrentFile[]>().notNull().default(sql`'[]'::jsonb`),
+    fileLength: bigint('file_length', { mode: 'number' }),
+    bytesDone: bigint('bytes_done', { mode: 'number' }).notNull().default(0),
+    durationS: real('duration_s'),
+    state: text('state').$type<StreamTorrentState>().notNull().default('downloading'),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /** The video was last read through the file route; downloads not played for NOTESD_TORRENT_KEEP_DAYS are deleted. */
+    playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.host, t.infoHash] }),
+    index('stream_torrents_slot_idx').on(t.kind, t.tmdbId, t.season, t.episode, t.host),
+    check('stream_torrents_info_hash_check', sql`${t.infoHash} ~ '^[0-9a-f]{40}$'`),
+    check('stream_torrents_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check(
+      'stream_torrents_slot_check',
+      sql`${t.tmdbId} > 0 and ((${t.kind} = 'movie' and ${t.season} = 0 and ${t.episode} = 0) or (${t.kind} = 'tv' and ${t.season} >= 0 and ${t.episode} > 0))`,
+    ),
+    check('stream_torrents_state_check', sql`${t.state} in ('downloading', 'ready', 'failed')`),
+    check('stream_torrents_failed_check', sql`(${t.state} = 'failed') = (${t.error} is not null)`),
+    check(
+      'stream_torrents_ready_check',
+      sql`(${t.state} = 'ready') = (${t.completedAt} is not null) and (${t.state} <> 'ready' or ${t.fileIndex} is not null)`,
+    ),
+    check(
+      'stream_torrents_counts_check',
+      sql`${t.bytesDone} >= 0 and (${t.fileLength} is null or ${t.fileLength} >= 0) and (${t.fileIndex} is null or ${t.fileIndex} >= 0) and (${t.durationS} is null or ${t.durationS} > 0)`,
+    ),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -1583,3 +1651,4 @@ export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
 export type StreamProbeTitleRow = typeof streamProbeTitles.$inferSelect
 export type StreamCacheRow = typeof streamCaches.$inferSelect
+export type StreamTorrentRow = typeof streamTorrents.$inferSelect

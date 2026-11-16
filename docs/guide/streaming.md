@@ -442,10 +442,13 @@ and never stored (`src/directStream/delivery.ts`).
   log says `source: HyperLink -> VidNest Anime at 312 s`. The session never goes back to a
   provider it left, a token refresh included. With no other source the film stays as it is
   (`source kept: no_other_source`). At most two moves per session, one ask per two minutes;
-  a play from the cache and a `?muted=1` check never move.
+  a play from the cache, a torrent (it buffers because it is still filling, not failing; its stalls
+  are only logged) and a `?muted=1` check never move.
 - **By hand.** The shuffle button, or S, asks for another source at once and as often as wanted
   (a poor picture, a cinema recording): the same route, without the page's own limits. The line
   over the picture says `Looking for another source…`, then the new provider or `No other source`.
+  On a torrent session the button is `Another torrent (S)` and moves to the next torrent: the line
+  says `Looking for another torrent…`, then `Torrent: <release name>` or `No other torrent`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
   `stalls`, `median_kbps`, `at`), null when nothing played from it lately.
 
@@ -559,7 +562,8 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | Answer | Meaning |
 | --- | --- |
 | `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
-| `no_source` | No provider resolved the title; `attempts` lists each provider's outcome |
+| `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried |
+| `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
 | `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
 | `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
@@ -611,6 +615,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   title's original language (the session's `audio.track`), never the manifest's default.
 - **From the cache.** A session on this machine's stream cache plays its local files, with a drive
   icon beside the title (see "Playing from the cache").
+- **From a torrent.** A torrent session plays the file from this machine's disk as it downloads,
+  with a magnet, the peers and the download speed beside the title (see "The player page on a
+  torrent").
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
@@ -675,8 +682,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 
 The page keeps its state on `window.notesdStream` (`stage`: `loading`, `ready`, `refreshing`,
 `recovering` or `error`; `kind`, `levels`, `level`, subtitle
-choice, `refreshes`, `errors`, the last position sent and a short log), for scripts that check a
-play, and its `start()`.
+choice, `refreshes`, `errors`, the last position sent and a short log; `cached`, `torrent` and
+`cachedRanges` for a play from this machine's disk), for scripts that check a play, and its
+`start()`.
 
 ### `/direct-stream`
 
@@ -1138,6 +1146,285 @@ the finding as a note tagged `#stream-bug`, linked to the session it ran in.
 writes the evidence log's tail, the daemon's lines and the reference measurement, and the summary's
 `missing:` list names what is not there.
 
+## Torrents
+
+A torrent is the third way direct streaming gets a film, beside a cloud provider and the stream cache: the
+daemon joins the torrent's swarm, downloads the one video file (and its subtitle files) in playing order,
+and serves it from its own disk to the player page. Each torrent phase adds its subsection here.
+
+### The torrent engine and its file route
+
+The engine is WebTorrent 3, inside the daemon (`src/directStream/torrent/`). It starts with the first
+torrent opened and stops after the last one leaves: while nothing is open the daemon has no torrent port, no
+DHT node and no peer.
+
+1. A torrent is opened by its info hash; its file list comes from the peers, no `.torrent` file is needed.
+   Nothing is downloaded until files are chosen, and only video files (`.mp4`, `.m4v`, `.mkv`, `.webm`,
+   `.mov`, `.avi`, `.ts`, `.m2ts`, `.wmv`) and subtitle files (`.srt`, `.vtt`, `.ass`, `.ssa`) can be.
+   Nothing from a torrent is ever run.
+2. The chosen files are written under `<NOTESD_TORRENT_DIR>/<info hash>/` (default
+   `<NOTES_DATA_DIR>/movies/torrents/`), at the paths the torrent names. A torrent that names a path outside
+   that folder is refused before anything is written (`unsafe_path`).
+3. They download in order. `GET /api/stream/torrent/<hash>/f/<index>` answers a byte range with exactly
+   those bytes: from disk once the file is whole, else through the engine, which fetches the range's pieces
+   before the rest, so a seek plays as soon as its stretch arrives.
+4. Pieces at a file's edge are shared with the next file, so a few edge bytes of a file that was not chosen
+   are fetched too. They are deleted when the torrent leaves the swarm; the folder then holds only the
+   chosen files.
+5. Upload is capped at `NOTESD_TORRENT_UPLOAD_KBPS` (100 kB/s) for all torrents together. UPnP and NAT-PMP
+   are off; under WSL 2 no peer can connect in, so the daemon only connects out.
+6. A torrent is in the swarm only while something uses it (a stream session; for now
+   `POST /api/stream/torrent` with `files`, until its release). Once nothing does, a finished download
+   leaves at once and an unfinished one three minutes after its last file request.
+7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
+   A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
+
+A download belongs to the machine that made it: the other machine lists it with `available: false`, and
+its file routes answer 404 `not_on_this_machine`. `NOTESD_TORRENT=off` builds nothing and every route
+answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#torrents).
+
+| Answer | Meaning |
+| --- | --- |
+| `no_metadata` | No peer sent the file list within 60 s |
+| `unsafe_path` | The torrent names a file outside its folder; nothing of it was downloaded |
+| `not_media` | A chosen file is neither a video nor a subtitle file |
+| `not_selected` | That file of the torrent was not chosen, so it is not served |
+| `not_in_swarm` | The download is unfinished and nothing holds it now: play it again to carry on |
+| `not_on_this_machine` | The download is on the other laptop |
+| `torrent_off` | `NOTESD_TORRENT=off` on this machine |
+
+### Playing from a torrent
+
+A torrent is a source inside `/direct-stream`, not a command of its own.
+
+- **When it is asked.** `direct_stream_play` with `provider: "torrent"` (any case; "stream it from a torrent") asks
+  the torrent source alone, and passes over the stream cache. Without a provider a play looks, in order, at this
+  machine's stream cache, at a finished torrent download of the title on this machine, at the cloud providers, and
+  only when they answer `no_source` (or the resolve cannot run because the streaming Chrome is down: a torrent needs
+  no Chrome) at the torrent source. The Movies page's Play and the player's previous and next buttons go the same way.
+- **How a torrent is chosen.** The title's IMDb id comes from TMDB (`external_ids`; a series is asked by its own id
+  with the season and episode). The finder asks the torrent indexes and ranks what they list. The daemon then tries at
+  most five torrents in that order, within 90 seconds: the file list from the swarm (20 s at most), the film's file
+  (an episode's file inside a season pack), and ffprobe reading its header through the daemon's file route. A file
+  whose audio names only languages other than the title's original is `dubbed` and skipped, as a dubbed cloud stream
+  is; a file Chrome cannot play as is (MKV, HEVC, AC3, DTS) is `unplayable` and skipped; a torrent with no file list
+  or too little data in time is `no_stream`. The first that passes plays.
+- **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index asked
+  (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`), then
+  `Torrent: <release>` for each torrent tried. When none plays the answer is `no_source` with all of them; after a
+  resolve that could not run it stays `resolve_failed` with the torrent attempts added.
+- **The session.** `provider` is `Torrent`, `manifest_kind` `mp4`, `manifest_url` the torrent's file route
+  (`/api/stream/torrent/<hash>/f/<index>`), and `session.torrent` names the info hash, the file, the release, the
+  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The pass-through refuses
+  every address for it. The play is recorded with the provider `Torrent`; a torrent play does not mark the title's
+  Stream side verified (a cloud `no_source` before it still marks it stale).
+- **The shuffle button** moves to the next torrent the indexes listed, without asking them again, and lets go of the
+  old one. A torrent session is never moved into the stream cache: its download is already on this machine.
+- **Leaving the swarm.** A session lets go of its torrent when the page closes or the film ends, when it moves to
+  another torrent, after two minutes without a word from the page, and when the session ends; with no other session
+  on it the daemon leaves the swarm. Reopening the page takes the torrent again.
+- **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
+  no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
+  that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.
+- **Subtitles** come from the subtitle tiers, asked in order (the sections below add them: kept, files, embedded,
+  service, borrow, whisper) until one answers anything; every tier answers only English tracks, or the torrent's one
+  subtitle file that names no language. Each tier asked is an attempt `Subtitles: <tier>` (`resolved`, `no_stream`,
+  `error`, or `skipped` with the reason). The tiers that hold up a play share one budget of 40 seconds from the moment
+  the chain starts: one that would start after it is spent is `skipped`, and one still running when it runs out is an
+  `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the background, so
+  they are never counted.
+- **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (YTS timed out
+  from this network once, so it can be turned off). Every request says it is notesd; a bot check is the outcome
+  `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
+  out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
+  fewer seeds than `NOTESD_TORRENT_MIN_SEEDS` or more than `NOTESD_TORRENT_MAX_GB`. A release Chrome plays as is
+  (H.264, AAC, MP4, one audio track) comes before one that needs a remux, and among equals more seeds come first. For an
+  episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
+  (never a sample).
+- **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
+  without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
+
+### The player page on a torrent
+
+- **Beside the title** a magnet icon, the peers and the download speed (`7 peers`, `2.0 MB/s`), read
+  from `GET /api/stream/torrent/<info hash>` every 2 s while the file downloads. Its tooltip names
+  the release and how much of the file is on disk. Once the whole file is on disk the magnet becomes
+  a drive and the numbers go.
+- **The timeline's thick grey bar** is what the browser holds and what is on disk
+  (`GET /api/stream/torrent/<info hash>/map`, read with the status), put on the film's own clock,
+  so it grows as pieces arrive, paused or not.
+- **The page stops asking** once the download is complete or failed, and asks nothing while its tab
+  is hidden (it asks again as soon as the tab shows). These are reads: the position reports are those
+  of any play, and a paused page's `beat` still writes nothing.
+- **A seek past what is on disk waits.** A spinner and `Fetching this part from peers` show over the
+  picture until the pieces arrive (the file route fetches the pieces of the asked range first) and
+  the film plays on. The page's log says `waiting for the torrent at 200 s`.
+- **No automatic move.** A torrent that buffers is still filling, so the page never asks for another
+  source by itself; its `stalled at` lines still go to the stream evidence log. The shuffle button,
+  `Another torrent (S)`, moves to the next torrent, and the line over the picture names its release.
+- **No pause cache.** A pause asks for no stream cache: the download is already on this machine.
+- `window.notesdStream.torrent` holds `infoHash`, `name`, `index`, `seeds`, `state`, `peers`,
+  `downKbps` (kilobits per second), `progress` (0 to 1) and `fetching`; `cachedRanges` holds the
+  stretches on disk, in seconds. The log says `from torrent <hash start> <release> (<state>)` when
+  the page opens it and `torrent <hash start> on disk` when the download completes.
+
+### The remux for files Chrome cannot play
+
+A torrent's file is often an MKV, or carries AC3, E-AC3 or DTS sound, or HEVC video, none of which Chrome plays as a
+plain file. When the probe says the file is not one Chrome plays as is, the session plays an ffmpeg remux of it:
+
+- **One ffmpeg per file.** It reads the file through the daemon's own file route while the torrent downloads (a read
+  waits for its pieces, and the download follows ffmpeg from the start of the film), or straight from disk once the
+  download is whole.
+- **Video copied, sound converted.** The video is never re-encoded (HEVC is tagged `hvc1`). The audio track in the
+  title's original language (else the first) becomes AAC stereo; other audio tracks and embedded subtitles are left out.
+- **An HLS playlist that grows.** `index.m3u8`, `init.mp4` and fMP4 segments of about 6 s go to
+  `<NOTESD_TORRENT_DIR>/<info hash>/notesd-remux/<file index>/`, served by
+  `GET /api/stream/torrent/<hash>/hls/<index>/<file>`. The playlist grows a segment at a time and is closed with
+  `EXT-X-ENDLIST` only once ffmpeg has read the whole file and exited cleanly (`done.json`): ffmpeg closes a playlist
+  even when its input dies, so that mark alone decides.
+- **On the page.** The session's `manifest_kind` is `hls` and its `manifest_url` carries `remux=1` and `total_s` (the
+  film's length from the probe). The player starts at the resume position or at 0, never at a live edge; its timeline
+  is the whole film; a seek past what is remuxed waits there until the remux reaches it. The torrent's map
+  (`GET /api/stream/torrent/<hash>/map`) answers the remuxed stretch, so the grey bar shows how far the remux is.
+- **When it is not played.** The play starts once the first segment is written. ffmpeg that writes none in time, or
+  stops with an error first, makes the torrent `unplayable` with the reason, and the next one is tried. Video other
+  than H.264, HEVC, AV1 or VP9 (MPEG-2, VC-1, MPEG-4 Part 2) is `unplayable` without running ffmpeg.
+- **Stopping and replaying.** A session that lets go of its torrent stops its ffmpeg; the half-made remux starts over
+  the next time. A finished remux stays with the download and plays again from disk with no ffmpeg; it goes when the
+  download is cleared.
+- **HEVC** plays where the streaming Chrome decodes it. Where it cannot, the page stops with `mediaError ...` in its
+  log, and the shuffle button (S) moves to the next torrent.
+- `NOTESD_TORRENT_REMUX=off` makes such a file `unplayable` again; `NOTESD_FFMPEG_BIN` names the ffmpeg.
+
+### Subtitles for a torrent
+
+A torrent session gets its English subtitle from the first of these that has one. The play
+answer's `attempts` list each one asked as `Subtitles: <tier>`.
+
+1. **Kept.** What an earlier play of the same torrent chose, from
+   `<NOTESD_TORRENT_DIR>/<info hash>/.notesd-subs/`. A replay from disk asks nothing else.
+2. **A file in the torrent.** Releases often carry `Film.en.srt`, `Film.eng.srt`, `English.srt`
+   or `Subs/<film>/2_English.srt` beside the video. Those files are downloaded with the video, and
+   the play waits up to 15 s for them. A plain English file comes before an SDH one, SubRip
+   before WebVTT before ASS/SSA (converted with ffmpeg), and a `forced` file is never used. With
+   no English file, the torrent's one subtitle file is used when its name gives no language; the
+   player shows it like an English one. A file that has not arrived in 15 s is skipped for this
+   play, and the next play finds it.
+3. **The subtitle service** (`NOTESD_TORRENT_SUBTITLE_URL`, Stremio's OpenSubtitles add-on). It is
+   asked first by the video's OpenSubtitles hash (its size and its first and last 64 KiB, read
+   from the torrent ahead of the rest), so the lines match this exact file. If that fails, it is
+   asked by the title's IMDb id, and the English file whose name shares the most words with the
+   release is taken; it is labelled "English (matched by title)". With `WYZIE_API_KEY` set, Wyzie
+   Subs is asked before the add-on (by the IMDb id, for at most 12 s; machine translations are
+   left out) and its file is labelled "English (Wyzie)"; when Wyzie has nothing or fails, the
+   add-on is asked as above.
+4. **A cloud provider.** The title is resolved out of sight, as `direct_stream_dialogue` does,
+   and that provider's English subtitle is kept as `borrow.vtt`, labelled with the provider. It
+   is skipped when the torrent was the fall-through after the cloud providers answered
+   `no_source`. Its failure never stops the play.
+
+These four hold up a play for at most 40 s together: one that would start later is `skipped`, and
+the play goes on without a subtitle.
+
+A subtitle matched by title or borrowed from a provider may be cut for another release, so its
+lines can come early or late. The player's G and H keys move them 50 ms at a time, and the delay
+is kept for the title (see [The player](#the-player)).
+
+Before the first torrent is opened, the file lists of the best three candidates are read in
+parallel (metadata only), and one whose files hold an English subtitle is tried first. The
+others leave their swarms at once.
+
+Each kept file is served by `GET /api/stream/torrent/<hash>/sub/<name>`.
+
+### The subtitle track inside the file
+
+When the torrent holds no subtitle file, the video file's own English text track is used: SubRip,
+ASS/SSA, mov_text or WebVTT, chosen by language (`eng`, `en`), a full track before an SDH one,
+SubRip before ASS. A forced track (only the lines spoken in another language) is used only when it
+is the file's one English text track. Picture tracks (PGS, VobSub, DVB) are never turned into text:
+the daemon log says `no English text subtitle track in <hash> (...)`, and the next tier, the
+subtitle service, is asked.
+
+- **It grows as the film downloads.** Subtitle packets are spread through the whole file, so ffmpeg
+  can give the cues only as far as the torrent has downloaded. It reads the file from its start
+  through the daemon's own file route, which waits for each piece, and every cue it writes goes into
+  a cue feed: `GET /api/stream/torrent/<hash>/cues/embedded-<file index>-<stream index>`. The session's subtitle
+  carries `growing: true`; the page starts the track empty and reads the feed again every 4 seconds
+  from where it stopped, until the feed is `complete`.
+- **A seek past what is extracted shows no line** until the extraction gets there. The extraction
+  follows the download from the beginning of the file, so after a seek far ahead the lines come back
+  once the torrent has filled the file up to there.
+- **On disk, beside the torrent.** The feed is `<torrent folder>/notesd-cues/<track>.jsonl`. A file
+  already complete on disk is read from its path at full speed, in seconds, and a complete feed is
+  used again on a replay without ffmpeg. An extraction that stopped (the torrent was left, the route
+  sent nothing for 5 minutes, the daemon restarted) is started over on the next play.
+- **Times are the file's own** (`-copyts`): the cues are not moved by the file's start, and G/H
+  still move them for the viewer.
+- Whisper (the last tier) appends its cues to a feed of the same kind, `whisper-<file index>`.
+
+### Whisper: the last resort
+
+When no subtitle file in the torrent, no subtitle service, no cloud provider and no embedded text
+track gives an English subtitle, the session still starts at once, with a subtitle named
+**English (Whisper)** that grows while the film plays. A transcript is not a subtitle, and the name
+says so.
+
+The daemon cuts the chosen file's audio into stretches of five minutes
+(`NOTESD_TORRENT_WHISPER_STRETCH_S`) with ffmpeg, reading the torrent's own file route, so a stretch
+whose bytes are not downloaded yet waits for them. A CPU Whisper (faster-whisper, int8, the `small`
+model, `claude/streaming/torrent/whisper.py`, one worker that loads the model once) transcribes each
+stretch. A title whose original language is English is transcribed; any other is translated into
+English. The cues go into the same growing cue feed as an embedded track's, and the player picks them
+up as it reads the track again.
+
+The stretch the play starts in comes first, then each one after it, then those before it, so cues
+are ahead of the picture soon after the start. On the owner's laptop (22 cores, 8 threads) five
+minutes of Sintel took 2.5 s and a minute of steady dialogue 2.2 s: the voice filter skips music and
+silence. The worker holds about 850 MB while it runs and exits when no torrent needs it.
+
+When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
+the worker too. Cues already made stay in the feed, and
+`<torrent folder>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
+carries on from there, and a file transcribed to the end plays with its finished track and runs
+nothing.
+
+Limits: a line right after a long stretch of music can be missed, a cue stays on screen at most 7 s,
+names come out as heard, and the first audio stream is the one transcribed (the finder leaves
+dual-audio releases out). `scripts/install.sh` installs Whisper ([install.md](install.md));
+`NOTESD_TORRENT_WHISPER=off` turns it off.
+
+### When the indexes have nothing: 1337x and ext.to
+
+When every JSON index answers nothing usable for a title, the finder asks two torrent sites, 1337x
+and ext.to, side by side. Their releases go through the same filter and ranking as the indexes'.
+Each site is one more attempt in the play's answer (`Index: 1337x`, `Index: ext`), and a site that
+fails never fails the play.
+
+- **Only through the streaming Chrome**, in a tab out of sight. `claude/streaming/torrent/tab.ps1`
+  opens the site's tab in the background, or starts that Chrome minimized on the site, so nothing
+  comes to the front and a film on screen stays where it is. No other client talks to these sites.
+- **1337x** is asked with the title's words. Its search lists a row when any one word matches, so
+  small words such as "the" are left out. It searches Movies or TV and reads the first two result
+  pages. A row counts only when its release name is the title, by the same exact-title rule as the
+  streaming sites, and names the asked year if it names a year at all.
+- **ext.to** is asked by the title's IMDb id, most seeds first, with `S02E03` for an episode.
+  Cloudflare answers a script's request with a check, so the tab goes to the search page itself, as
+  a person would.
+- **Magnet links** come from the release pages of the five best-seeded rows that are seeded and
+  are not a dub, a cinema copy or 3D. On 1337x the page carries the link. On ext.to the page
+  gives it through its own "Copy magnet link" request.
+- **About 40 seconds** for both. A bot check is the attempt's outcome `bot_check` and is never
+  clicked through. A machine without the Windows Chrome answers `error` with `no_chrome`.
+- `NOTESD_TORRENT_1337X_ORIGIN` and `NOTESD_TORRENT_EXT_ORIGIN` move a site to another address, or
+  leave it out with `off`.
+
+To see what a site lists, by hand:
+
+    node claude/streaming/torrent/cli.mjs 1337x sintel 2010
+    node claude/streaming/torrent/cli.mjs ext sintel 2010 --imdb tt1727587
+
 ## Where the code is
 
 | Path | What |
@@ -1150,6 +1437,7 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
+| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs`, one module per site, `tab.ps1` (a tab in the background); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
@@ -1158,6 +1446,12 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 | `src/directStream/report.ts`, `src/http/streamReportApi.ts` | The player's report button: the snapshot, `report.json`, one tmux window per stream session (the opener is `openClaudeWindow` in `src/sessions/resume.ts`) |
 | `src/directStream/cache/` | The stream cache: HLS parsing and local playlists (`hls.ts`, `plan.ts`), one download (`job.ts`), the queue, views and file answers (`service.ts`) |
 | `src/http/streamCacheApi.ts`, `src/mcp/streamCacheTools.ts` | The `/api/stream/cache` routes; `direct_stream_cache` |
+| `src/directStream/torrent/` | Torrents: the WebTorrent engine (`engine.ts`), the torrent folder (`store.ts`), downloads, users and the swarm (`service.ts`), Range answers (`serve.ts`), `stream_torrents` (`repo.ts`) |
+| `src/directStream/torrent/remux.ts`, `src/http/streamTorrentRemuxApi.ts` | The torrent remux: ffmpeg into a growing HLS playlist, its files and map |
+| `src/directStream/torrent/subtitles/` | A torrent session's subtitle tiers: the chain (`chain.ts`), kept files (`disk.ts`), files in the torrent (`files.ts`), the subtitle services (`service.ts`, `wyzie.ts`), a cloud provider's subtitle (`borrow.ts`) |
+| `src/http/streamTorrentApi.ts` | The `/api/stream/torrent` routes |
+| `src/directStream/torrent/subtitles/embedded.ts`, `feed.ts`, `src/http/streamTorrentCuesApi.ts` | The subtitle track inside a torrent's file: track choice, the ffmpeg extraction, the growing cue feed and its route |
+| `src/directStream/torrent/subtitles/whisper.ts`, `claude/streaming/torrent/whisper.py` | Whisper, the last subtitle tier of a torrent session: the tier, the ffmpeg audio cutter, the worker client and the faster-whisper worker |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
@@ -1191,9 +1485,16 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - The stream cache: `cache.sh RUN` on `verify.sh up --direct-stream` drives it against the fixture
   stream host's tokened HLS film (`mode` `hls_token`, `token_uses`, `fail_once`, `delay_ms`); the
   downloader's cases are `npx vitest run tests/unit/directStream/cache`.
+- Torrents: `npx vitest run tests/unit/directStream/torrent` (the engine test seeds a generated torrent over
+  loopback, DHT and trackers off) and `npm run test:int -- tests/integration/directStream.torrents.int.test.ts`;
+  on a throwaway daemon `verify.sh up --torrent`, then `scripts/torrent/torrent.sh RUN` (the feature map's
+  "Torrents" section). No throwaway daemon ever joins a real swarm.
 - An expired token, per engine: HLS in `scripts/stream/player.steps.mjs` (J3), DASH in
   `scripts/stream/dash-expiry.steps.mjs`, which plays an ffmpeg-made DASH film from the fixture
   stream host through the real pass-through and expires its token mid-film. Against a real
   provider it is `playcheck.mjs run --check expiry --provider <name>`, whose gate takes an HLS or
   a DASH source; that one brings the streaming Chrome to the front, muted, so it is run when you
   expect it.
+- The player page on a torrent: `torrent-player.steps.mjs` on `verify.sh up --web` (the session and
+  the torrent routes faked, a 300 s film made with ffmpeg) and `torrent-live.steps.mjs` on
+  `verify.sh up --web --direct-stream --torrent` (a real torrent session); see the feature map entry.

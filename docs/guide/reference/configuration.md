@@ -138,13 +138,47 @@ Films played straight from a provider's stream host through the daemon, describe
 | `NOTESD_DIRECT_STREAM_CLI` | `claude/streaming/direct/cli.mjs` in this checkout | Absolute path of the resolver the daemon runs as `node <path>`. `verify.sh up --direct-stream` points it at a fake; a relative path is rejected. |
 | `NOTESD_ANIME_MAP_URL` | `https://api.ani.zip` | The public index asked for a Japanese title's AniList id and episode numbers, which the anime embeds are keyed by. One plain request per title, kept for 6 hours. `off`: no lookup, and an anime resolves through the ordinary providers. See [streaming.md](../streaming.md#anime). |
 | `NOTESD_STREAM_PICTURE_MODEL` | `haiku` | The model that looks at two frames of a stream before a provider's first play of a title and says whether it is a proper copy, a cinema recording or carries a burned-in advert; a rejected stream is passed over for the next provider. One call per title and provider on the owner's login, kept in `<data dir>/movies/stream-pictures.json`. `off`: no stream is looked at. See [streaming.md](../streaming.md#the-picture-check). |
-| `NOTESD_FFMPEG_BIN` | `ffmpeg` | The `ffmpeg` that reads those frames from the stream. Without it every picture is `unsure`, which plays. |
+| `NOTESD_FFMPEG_BIN` | `ffmpeg` | The one `ffmpeg`. It reads those frames from the stream (without it every picture is `unsure`, which plays), and the torrent source runs it for the remux, the subtitle extraction and Whisper's audio cuts. A bare name is looked up on `PATH`. (`ffprobe` is the existing `NOTESD_FFPROBE_BIN`.) |
 | `NOTESD_STREAM_PROBER` | off | `on` lets the background prober fill the Stream side of `/movies` by itself: while Windows is idle and nothing plays, it resolves TMDB candidates in a tab of the streaming Chrome, out of sight and without sound, and re-checks verified titles before they go stale. Needs direct streaming, movies, a TMDB credential and WSL with `powershell.exe`. See [streaming.md](../streaming.md#the-prober). |
 | `NOTESD_STREAM_CATALOG_SIZE` | 300 | How many titles with a fresh verified source the prober keeps on this machine. At this count it stops probing new candidates; re-checks go on. |
 | `NOTESD_STREAM_PROBE_BUDGET` | 14 | Resolves per prober pass, re-checks and new candidates together. The default is the titles that fit in a pass's seconds (half of `NOTESD_STREAM_PROBE_MS`) at 41.5 s a title, from the resolve campaign's timings; it follows `NOTESD_STREAM_PROBE_MS` when that is set. |
 | `NOTESD_STREAM_IDLE_SECONDS` | 600 | How long Windows must have had no keyboard or mouse input before the prober starts a resolve. It is read again before every resolve, and the pass stops as soon as it is shorter. |
 | `NOTESD_STREAM_PROBE_MS` | 1200000 | Pause between prober passes. A pass spends at most half of it. |
 | `NOTESD_STREAM_CACHE_DIR` | `<NOTES_DATA_DIR>/movies/stream-cache` | Absolute path of the folder where this machine keeps its stream caches, one folder per cache id. The other machine keeps its own; a relative path is rejected. See [streaming.md](../streaming.md#caching-a-film-or-an-episode). |
+
+## Torrents
+
+A torrent is a source direct streaming downloads from a swarm, described in
+[streaming.md](../streaming.md#torrents). It needs direct streaming on.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOTESD_TORRENT` | on | `off` turns torrents off on this machine: nothing is built, no swarm is joined, and every `/api/stream/torrent` route answers 503 `torrent_off`. |
+| `NOTESD_TORRENT_DIR` | `<NOTES_DATA_DIR>/movies/torrents` | Absolute path of the folder where this machine keeps its torrent downloads, one folder per info hash. The other machine keeps its own; a relative path is rejected. |
+| `NOTESD_TORRENT_UPLOAD_KBPS` | 100 | The upload cap in kB/s (1 kB = 1000 bytes), all torrents together. A torrent client uploads to its peers while it downloads; this keeps that small. |
+| `NOTESD_TORRENT_KEEP_DAYS` | 7 | A download not played for this many days is deleted with its files. |
+| `NOTESD_TORRENT_DISCOVERY` | on | `off`: no DHT and no trackers, so peers come only from `NOTESD_TORRENT_PEERS`. `verify.sh up --torrent` sets it with a loopback seeder. |
+| `NOTESD_TORRENT_PEERS` | unset | `host:port` addresses, separated by `,`, added as a peer to every torrent. For the verify harness's loopback seeder; empty in normal use. |
+| `NOTESD_TORRENT_MIN_SEEDS` | the finder's own | A torrent with fewer seeds than this is never picked. See [streaming.md](../streaming.md#playing-from-a-torrent). |
+| `NOTESD_TORRENT_MAX_GB` | the finder's own | A release bigger than this many GiB is left out. |
+| `NOTESD_TORRENT_INDEX_TIMEOUT_MS` | the finder's own | How long one torrent index may take to answer before it counts as `error` and the others go on. |
+| `NOTESD_TORRENT_TORRENTIO_URL` | the finder's own (Torrentio) | Address of the Torrentio index; `off` never asks it. `verify.sh up --torrent` points it at a fake. |
+| `NOTESD_TORRENT_APIBAY_URL` | the finder's own (apibay) | Address of the apibay index; `off` never asks it. |
+| `NOTESD_TORRENT_EZTV_URL` | the finder's own (EZTV) | Address of the EZTV index (series only); `off` never asks it. |
+| `NOTESD_TORRENT_YTS_URL` | the finder's own (YTS) | Address of the YTS index (films only); `off` never asks it. |
+| `NOTESD_TORRENT_1337X_ORIGIN` | `https://1337x.la` | The address of 1337x, which the torrent finder asks through the streaming Chrome when the JSON indexes have nothing usable. Scheme and host only. `off`: 1337x is never asked. See [streaming.md](../streaming.md). |
+| `NOTESD_TORRENT_EXT_ORIGIN` | `https://ext.to` | The address of ext.to, asked the same way and at the same time. Scheme and host only. `off`: ext.to is never asked. |
+| `NOTESD_TORRENT_SITES_CLI` | `claude/streaming/torrent/cli.mjs` in this checkout | Absolute path of the torrent sites script the daemon runs as `node <path>`. `verify.sh up --direct-stream` points it at a fake; a relative path is rejected. |
+| `NOTESD_TORRENT_REMUX` | on | `off`: a torrent file Chrome cannot play as is (an MKV, AC3/E-AC3/DTS sound, HEVC) is `unplayable` and the next torrent is tried, instead of playing an ffmpeg remux of it. See [streaming.md](../streaming.md#the-remux-for-files-chrome-cannot-play). |
+| `NOTESD_TORRENT_SUBTITLE_URL` | `https://opensubtitles-v3.strem.io` | The subtitle service asked for an English subtitle when a torrent holds no subtitle file (Stremio's OpenSubtitles add-on; no key). One plain request by the file's OpenSubtitles hash, then one by the IMDb id, each saying it is notesd. `off`: never asked; a cloud provider's subtitle is tried next. See [streaming.md](../streaming.md#subtitles-for-a-torrent). |
+| `WYZIE_API_KEY` | unset | A Wyzie Subs key (a secret, kept in `.env.local`). Set: Wyzie is asked for the English subtitle before the add-on above, for at most 12 s. Unset or blank: Wyzie is never asked. The key is never logged or written into a play's attempts or a kept file. |
+| `NOTESD_TORRENT_WYZIE_URL` | `https://sub.wyzie.io` | Where Wyzie Subs is asked when `WYZIE_API_KEY` is set. `off`: never asked, key or not. |
+| `NOTESD_TORRENT_WHISPER` | on | `off`: no Whisper tier. A torrent session whose other subtitle tiers find nothing plays without an English subtitle, and no Whisper worker ever starts. `scripts/install.sh` then skips installing it. See [streaming.md](../streaming.md#whisper-the-last-resort). |
+| `NOTESD_TORRENT_WHISPER_DIR` | `<NOTES_DATA_DIR>/whisper` | Absolute path of the folder holding Whisper's virtual environment (`venv/`), its models (`models/`) and Hugging Face's cache (`hf/`). `scripts/install.sh` installs into the same folder. A relative path is rejected. |
+| `NOTESD_TORRENT_WHISPER_PYTHON` | `<NOTESD_TORRENT_WHISPER_DIR>/venv/bin/python` | Absolute path of the Python that runs `claude/streaming/torrent/whisper.py`. When it is not there at start, the tier is off and the daemon log says so. |
+| `NOTESD_TORRENT_WHISPER_MODEL` | `small` | The faster-whisper model: `tiny`, `base`, `small`, `medium`, `large-v3`, an `.en` variant, or a Hugging Face repo id. Downloaded once into the models folder (`small`: about 460 MB). |
+| `NOTESD_TORRENT_WHISPER_THREADS` | `8` | CPU threads of the Whisper worker, which runs at a lower priority than the daemon. |
+| `NOTESD_TORRENT_WHISPER_STRETCH_S` | `300` | Seconds of audio transcribed at a time, at least 5. A stretch's cues arrive together. |
 
 ## Install script and hooks
 

@@ -66,6 +66,14 @@
   idle, TMDB and resolver), `npm run test:int -- tests/integration/streamProber.int.test.ts` (the SQL),
   and `GET /api/stream/prober` on `verify.sh up --direct-stream --prober` (candidates listed from the
   fake TMDB, the pass stopped at `not_idle`, nothing probed).
+- The player page on a torrent (torrent-stream-source phase 4): beside the title a magnet with the
+  peers and the download speed (`GET /api/stream/torrent/<hash>` every 2 s while it downloads and the
+  tab shows; a drive once the file is on disk), the timeline's grey bar fed by
+  `GET /api/stream/torrent/<hash>/map`, a spinner and `Fetching this part from peers` for a seek past
+  what is on disk, no automatic move to another source (its stalls are only logged), the shuffle
+  button (`Another torrent (S)`) moving to the next torrent and naming it, no pause cache;
+  `window.notesdStream.torrent`. Logic proven by `npx vitest run web/src/stream`; in a real browser by
+  `torrent-player.steps.mjs` and `torrent-live.steps.mjs` (below).
 
 ## How to get to it (user POV)
 Play on a stream (phase 9) or `/direct-stream <title>` (phase 7) opens the player page full screen in
@@ -114,6 +122,22 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   disk, the cache mark shows) and `CACHE PLAY PASS` (play goes on from disk, no pass-through request),
   with screenshots `streaming-bar` and `cached-bar`. The queue order, the map and the three-day clearing
   are in `tests/integration/directStream.cache.int.test.ts`.
+- The player on a torrent, with the session and the torrent routes faked by Playwright (the real page
+  build; a 300 s H.264/AAC MP4 made once with ffmpeg under `~/.local/state/notesd-verify/.torrent-film`,
+  40% of it "on disk" until the steps release the rest): `$V up --web`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-player.steps.mjs` (about 90 s). The
+  transcript has `TORRENT STATUS PASS` (7 peers and 2.0 MB/s beside the title, the grey bar at 40%),
+  `HIDDEN PASS` (a hidden tab asks nothing and asks again when it shows), `TORRENT WAIT PASS` (a seek to
+  200 s shows `Fetching this part from peers`), `NO AUTO MOVE PASS` (three stalls logged, no
+  `POST .../source`), `TORRENT READY PASS` (released: it plays on past 200 s, the bar reaches 100%, the
+  drive mark shows, no more asks) and `SHUFFLE PASS` (S moves to the next torrent and the line names it),
+  with screenshots `torrent-status`, `torrent-fetching` and `torrent-ready`.
+- The player on a real torrent session (phase 1's loopback fixture torrent, phase 3's fake index):
+  `$V up --web --direct-stream --torrent`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-live.steps.mjs`. The transcript has
+  `TORRENT LIVE PASS` (the page read the daemon's peers and speed into the mark and
+  `window.notesdStream.torrent`) and `TORRENT DISK PASS` (the download completes, the bar covers the
+  film, the page stops asking).
 - A film that keeps stalling moves to another provider (same fixture and `up --web --direct-stream` as the
   DASH expiry below, on its own run: it counts the resolves in `calls.jsonl`):
   `DIRECT=<that path> DASH_FIXTURE="$FIX" $V ui RUN .claude/skills/verify-notesd/scripts/stream/source-switch.steps.mjs`
@@ -321,6 +345,158 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   The script makes a cache of TMDB movie 550 through `POST /api/stream/cache` (fake resolver,
   fixture host), sets the fake resolver to `no_source` to prove nothing resolves, and edits the
   run's `stream_caches` row with `verify.sh exec` for the downloading and other-host cases.
+
+## Torrents: the engine and its file route (torrent phase 1)
+- `POST /api/stream/torrent` (same-origin) opens a torrent by info hash for a title and answers its file list
+  from the swarm; with `files` (video and subtitle indexes only; anything else is 400 `not_media`) it
+  downloads them in order under `<NOTES_DATA_DIR>/movies/torrents/<hash>/` and holds the torrent until
+  `POST /api/stream/torrent/:hash/release`. `GET /api/stream/torrent/:hash/f/:index` answers a byte range with
+  exactly those bytes, fetching that range first; `.../map` the stretches on disk; `GET /api/stream/torrent`
+  the engine (`port`, `swarm`, `upload_cap_bytes_per_s`) and every download. Upload is capped at
+  `NOTESD_TORRENT_UPLOAD_KBPS`; a torrent leaves the swarm once nothing holds it (at once when finished, three
+  minutes after the last request otherwise) and only its chosen files stay; a finished download opens and plays
+  from disk with no swarm; downloads are cleared after `NOTESD_TORRENT_KEEP_DAYS` without a play.
+  `NOTESD_TORRENT=off`: 503 `torrent_off`, nothing is built, no socket is opened.
+- Logic: `npx vitest run tests/unit/directStream/torrent tests/unit/config.torrent.test.ts` (`engine.test.ts`
+  seeds a generated torrent over loopback with DHT and trackers off); the table, both machines and replay from
+  disk: `npm run test:int -- tests/integration/directStream.torrents.int.test.ts`.
+- Throwaway daemon: `$V up --torrent` (implies `--direct-stream`; prints `TORRENT=<run>/torrent`). It starts a
+  loopback seeder (`scripts/torrent/seed.mjs`, 200 kB/s) of the generated film and season pack
+  (`scripts/torrent/make-fixture.sh`: a 120 s H.264/AAC MP4 with English audio, its `.en.srt`, a README, a
+  sample and an inert `setup.exe`; two 20 s episodes), writes `fixture.json` and `pack.json`
+  (`{info_hash, name, trackers: [], port, piece_length, files}`) and `seeder.jsonl` there, and gives the daemon
+  `NOTESD_TORRENT_DISCOVERY=off`, `NOTESD_TORRENT_PEERS=127.0.0.1:<seeder>` and a 64 kB/s cap.
+  `TORRENT_FIXTURE_FILE=<path>` seeds that one file as the film instead; a folder moved into
+  `<run>/torrent/seed/<name>/` is seeded too and described in `<run>/torrent/seeded/<name>.json`. Then
+  `.claude/skills/verify-notesd/scripts/torrent/torrent.sh RUN` (stages `idle files refuse range cap leave only
+  disk`, in order, once per run, on the generated film) prints `REFUSE PASS`, `RANGE PASS`, `CAP PASS`,
+  `LEAVE PASS`, `ONLY PASS`, `DISK PASS` and `torrent: PASS (...)`. On a run without `--torrent`,
+  `torrent.sh RUN off` prints `OFF PASS`.
+- Every other run pins `NOTESD_TORRENT=off` and `NOTESD_TORRENT_DIR` under the run: no throwaway daemon joins a
+  real swarm or writes into the owner's torrent folder.
+
+## Playing from a torrent
+- A play with `provider: "torrent"` (any case; `direct_stream_play`, `POST /api/stream/play`) asks only the torrent
+  source; without a provider the order is the stream cache, a finished torrent download on this machine (no index, no
+  swarm, no `Index:`/`Torrent:` attempt), the cloud providers, then on `no_source` or `resolve_failed` the torrent source. A torrent
+  session: `provider: "Torrent"`, `manifest_kind: "mp4"`, `manifest_url` `/api/stream/torrent/<hash>/f/<index>`,
+  `session.torrent` `{info_hash, file_index, name, index, state, seeds}`. Attempts after the cloud's:
+  `Index: <name>` per index, `Torrent: <release>` per torrent (`resolved`, `no_stream`, `dubbed`, `unplayable`,
+  `error`). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
+  end release the torrent; reading the session again takes it back. `NOTESD_TORRENT=off`: 503 `torrent_off` for a
+  named torrent play, everything else as before.
+- Logic: `npx vitest run tests/unit/directStream/torrentProbe.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/config.torrentFinder.test.ts tests/unit/mcp.directStreamTools.test.ts`.
+- Finding a torrent (phase 2's finder, no route of its own): `npx vitest run tests/unit/directStream/torrent/find` over
+  recorded index answers (dubs, cinema recordings and 3D left out, the seed floor, direct releases first, an episode or
+  a pack that holds it, `bot_check`/`error` per index, every request sent as notesd).
+- Throwaway daemon, a torrent run (`$V up --web --torrent`, note RUN): in this order,
+  `.claude/skills/verify-notesd/scripts/direct-stream/torrent.sh RUN fallback named`, then
+  `SID=$(cat ~/.local/state/notesd-verify/RUN/torrent-journey/sid) $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs`
+  (`TORRENT PAGE PASS`, screenshot `torrent-page`), then `torrent.sh RUN replay dubbed pack`. The fake index
+  (`scripts/torrent/fake-index.mjs`, Torrentio-shaped, the finder's only index on a `--torrent` run) lists phase 1's
+  loopback fixture(s) under a release name made of the asked title and year (from the fake TMDB's `tmdb.json`);
+  `<run>/torrent/index-mode` switches it to `empty` or `error`, `<run>/torrent/candidates.json`
+  (`[{info_hash, name, seeds?, size_bytes?}]`, `name` the release's tail after `<Title>.<Year>.`) replaces its answer
+  for every query, and its requests are kept as `torrent-index-requests.jsonl` in the evidence.
+- Torrents off (`$V up --direct-stream`): `torrent.sh RUN off`. It runs a resolve, so on a run shared with
+  `journey.sh RUN seed ...` (whose `seed` stage expects the run's first resolve) run `journey.sh` first.
+- The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
+  after about 40 s, longer than the 20 s a play waits for a torrent's file list.
+
+## Torrent remux (a file Chrome cannot play as is)
+- A torrent file the probe marks not `direct` (MKV, AC3/E-AC3/DTS, HEVC) with H.264, HEVC, AV1 or VP9 video plays as
+  an ffmpeg remux: `manifest_kind: "hls"`, `manifest_url`
+  `/api/stream/torrent/<hash>/hls/<index>/index.m3u8?remux=1&total_s=<film s>`. Video copied, the original-language
+  audio as AAC stereo, fMP4 segments in `<torrent dir>/<hash>/notesd-remux/<index>/`; the playlist is EVENT, grows
+  with the download and is served with `EXT-X-ENDLIST` only after `done.json` (a clean ffmpeg exit). The page starts
+  at the resume position or 0, shows the whole film, and holds a seek past the remuxed part until it is there; the map
+  answers the remuxed stretch. Other video (MPEG-2, VC-1) is `unplayable`; `NOTESD_TORRENT_REMUX=off` makes every such
+  file `unplayable`. A finished remux replays from disk with no ffmpeg.
+- Logic: `npx vitest run tests/unit/directStream/torrentRemux.test.ts tests/unit/directStream/torrentRemux.ffmpeg.test.ts tests/unit/directStream/torrentRemuxRoute.test.ts tests/unit/directStream/torrentRemuxSource.test.ts web/src/stream/hlsEngine.test.tsx`
+  (the ffmpeg file runs the real ffmpeg on a generated H.264 + AC3 MKV served at a trickle).
+- Throwaway daemon: `FIX=$(bash .claude/skills/verify-notesd/scripts/stream/make-mkv-fixture.sh "$HOME/.local/state/notesd-verify/.stream-fixture-mkv")`,
+  `$V up --web --torrent` (note RUN), then
+  `RUN_DIR=$HOME/.local/state/notesd-verify/RUN $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-remux.steps.mjs`:
+  `REMUX PLAY PASS`, `REMUX TRACKS PASS`, `REMUX SEEK PASS`, `REMUX REPLAY PASS`, `REMUX GROWING PASS`, screenshots
+  `remux-playing` and `remux-growing`. Run `.claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN` before
+  the steps: it seeds the MKV through phase 1's `<run>/torrent/seed/remux/` and makes it the fake index's answer
+  (`<run>/torrent/candidates.json`).
+- Remux off: `NOTESD_TORRENT_REMUX=off $V up --torrent`, `.claude/skills/verify-notesd/scripts/torrent/offer-remux.sh RUN`, then
+  `$V api RUN POST /api/stream/play '{"kind":"movie","tmdb_id":467905,"provider":"torrent"}'` answers 502 `no_source`
+  with a `Torrent: ...AC3-NOTESD` attempt `unplayable`.
+
+## Torrent subtitles
+- A torrent session (`provider: "torrent"`, or the fall-through after a cloud `no_source`) carries an
+  English subtitle from the first tier that has one: `kept` (an earlier play of the same torrent),
+  `files` (an English `.srt`/`.vtt`/`.ass` inside the torrent, or its one subtitle file that names no
+  language), `service` (Wyzie Subs first when `WYZIE_API_KEY` is set, then the OpenSubtitles add-on at
+  `NOTESD_TORRENT_SUBTITLE_URL`, by file hash then by IMDb id), `borrow` (a cloud provider's English
+  subtitle, resolved out of sight; skipped after a cloud `no_source`). The play answer's `attempts`
+  hold one `Subtitles: <tier>` line per tier asked. Files are WebVTT under
+  `<data dir>/movies/torrents/<hash>/.notesd-subs/`, served by
+  `GET /api/stream/torrent/:hash/sub/:name`; the page shows the English one (or the lone unnamed one)
+  by default. Of the best three candidates, one whose files hold an English subtitle is tried first.
+- Logic: `npx vitest run tests/unit/directStream/torrent/subtitles tests/unit/directStream/torrent/subtitleRoute.test.ts`.
+- Throwaway daemon: `$V up --web --direct-stream --torrent` (note RUN, `TORRENT=`, `SUBS=`), then
+  `.claude/skills/verify-notesd/scripts/torrent/subtitles.sh RUN` (all stages, about four minutes;
+  `files` before `replay`, `quiet` before `wyzie`). `up --torrent` starts a fake subtitle service
+  (`scripts/torrent/fake-subs.mjs`; `$SUBS/mode` is `ok`, `id_only`, `empty`, `error` or `wyzie`;
+  `$SUBS/requests.jsonl` records each add-on request's path and user-agent) and points
+  `NOTESD_TORRENT_SUBTITLE_URL` at it; never the real service. The same fake answers as Wyzie Subs
+  (`/search`, a fake `WYZIE_API_KEY`, requests in `$SUBS/wyzie-requests.jsonl` without the key): it
+  lists a file only in mode `wyzie`, and every other `up` turns both services off, so the owner's real
+  key in `.env.local` is never used. Fixture torrents come from
+  `scripts/torrent/make-subtitle-fixtures.sh` (cached in `$VERIFY_HOME/.torrent-subtitle-fixtures`).
+  The transcript ends with `subtitles: PASS (...)`; `down` copies the request logs into the evidence.
+- The subtitle track inside a torrent's file (torrent-stream-source phase 7): with no subtitle
+  file in the torrent, the file's English text track (SubRip, ASS, mov_text, WebVTT) is extracted
+  with ffmpeg into a growing cue feed, `GET /api/stream/torrent/<hash>/cues/embedded-<file>-<stream>?after=<i>`
+  (`{cues, next, complete}`), and the page reads it every 4 s until complete; picture tracks (PGS,
+  VobSub) are skipped and the next tier is asked. Fixtures (MP4 that Chrome plays as is):
+  `FX=$(bash .claude/skills/verify-notesd/scripts/stream/make-torrent-sub-fixtures.sh "$HOME/.local/state/notesd-verify/.torrent-sub-fixture")`
+  gives `$FX/sub-text.mp4` (English mov_text, cue N "Line N" from 3N-2 s to 3N s) and
+  `$FX/sub-picture.mp4` (English VobSub only). Page journey:
+  `TORRENT_FIXTURE_FILE="$FX/sub-text.mp4" $V up --web --direct-stream --torrent`, then
+  `$V ui RUN .claude/skills/verify-notesd/scripts/stream/embedded-subtitle.steps.mjs`: the transcript
+  has `EMBEDDED SESSION PASS`, `EMBEDDED FEED PASS`, `EMBEDDED CAPTION PASS`, `EMBEDDED SEEK PASS`.
+  Picture only: `TORRENT_FIXTURE_FILE="$FX/sub-picture.mp4" $V up --direct-stream --torrent`, play
+  `{"kind":"movie","tmdb_id":467905,"provider":"torrent"}`: no subtitle has `growing`, the log says
+  `no English text subtitle track`, and no `notesd-cues` folder exists. Logic:
+  `npx vitest run tests/unit/directStream/torrent web/src/stream/subtitles.test.tsx web/src/stream/controller.test.tsx`
+  (the real ffmpeg is in `embedded.ffmpeg.test.ts`).
+
+## Torrent fallback sites: 1337x and ext.to (torrent phase 9)
+- Torrent fallback sites: when the JSON torrent indexes answer nothing usable, 1337x and ext.to are
+  asked through the streaming Chrome (`claude/streaming/torrent/cli.mjs`, a background tab), side by
+  side within about 40 s. Their rows pass the same release filter and ranking, and each site is an
+  `Index: 1337x` / `Index: ext` attempt (`bot_check`, `error` naming `no_chrome`, `empty`, or
+  candidates). Not asked at all when an index had a usable candidate. Under `up --direct-stream` the
+  script is a fake (`<run>/torrent-sites/mode`: `rows`, `empty`, `bot_check`, `no_chrome`; calls in
+  `evidence/torrent-sites-calls.jsonl`). Proven by
+  `npx vitest run tests/unit/scripts/torrentSites.test.ts tests/unit/directStream/torrent/findSites.test.ts tests/unit/config.torrentSites.test.ts`,
+  by a `provider: "torrent"` play with the fake index set to `empty` and the fake sites set to `rows`
+  (the session's torrent comes from `1337x`) and to `bot_check` (both sites `bot_check`, no
+  `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
+  seeds and 40-hex `info_hash`).
+
+## Torrent subtitles: Whisper, the last resort
+
+- When the torrent's subtitle file, the subtitle service, the cloud borrow and the embedded text track
+  all give no English subtitle, the session answers at once with a subtitle `{label: "English (Whisper)",
+  lang: "en", growing: true}` whose cues arrive stretch by stretch in phase 7's cue feed and show in the
+  player as they come; once the file is transcribed to the end the feed says `complete` (the subtitle stays
+  `growing: true`: it is a cue feed). English titles are
+  transcribed, others translated (`task` in each worker request).
+- Off: `NOTESD_TORRENT_WHISPER=off`, or no Python at `NOTESD_TORRENT_WHISPER_PYTHON`: no Whisper track,
+  one daemon log line (`torrent whisper: off` / `no Python at ...`).
+- Proof: `npx vitest run tests/unit/directStream/torrent/whisper.test.ts tests/unit/directStream/torrent/whisperConfig.test.ts tests/unit/scripts/installWhisper.test.ts`;
+  on a run, journeys J1 and J2 of `.workflows/plan/torrent-stream-source/phase-8.md` with the fake worker
+  `tests/fixtures/torrent/fake-whisper.mjs` (`NOTESD_TORRENT_WHISPER_PYTHON=<it>`,
+  `NOTESD_TORRENT_WHISPER_STRETCH_S=5`; `FAKE_WHISPER_DELAY_MS`, `FAKE_WHISPER_LOG`, `FAKE_WHISPER_MODE`);
+  the real model by J3 (`npx tsx scripts/whisper-sample.ts`, scratch install, never the live data dir).
+- Gotcha: a run's Whisper folder is `<run>/data/whisper`, which has no venv, so the tier is off on a
+  throwaway daemon unless `NOTESD_TORRENT_WHISPER_PYTHON` is set in the caller's shell (verify.sh passes
+  it through). Never point it at `~/mcp-notes-data/whisper`.
 
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.

@@ -9,12 +9,17 @@ import { isEnglish, refLabel, type ManifestKind, type ResolvedSource, type Sourc
 
 export type CacheState = 'downloading' | 'ready' | 'failed';
 
-/** One subtitle file of a cache (WebVTT), served by the cache's file route. */
+/** One subtitle file of a cache (WebVTT), served by the cache's file route; a torrent session's subtitles have the same shape. */
 export interface CacheSubtitleView {
-  /** Relative to the daemon's origin: `/api/stream/cache/<id>/f/<file>`. */
+  /** Relative to the daemon's origin: `/api/stream/cache/<id>/f/<file>`, a torrent's `/sub/` route, or a cue feed. */
   url: string;
   lang: string | null;
   label: string;
+  /**
+   * A cue feed (`GET /api/stream/torrent/:hash/cues/:track`): `url` answers JSON cues after an
+   * index, and the player reads it again until it is complete. Absent: `url` is a WebVTT file.
+   */
+  growing?: true;
 }
 
 /** One stream cache as a play reads it (phase 5's StreamCache answers it). */

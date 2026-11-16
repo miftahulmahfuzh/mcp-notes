@@ -11,6 +11,10 @@ import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
 import type { StreamCache } from './directStream/cache/service.js';
+import type { TorrentStreams } from './directStream/torrent/service.js';
+import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
+import type { TorrentRemux } from './directStream/torrent/remux.js';
+import type { WhisperTier } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -67,6 +71,24 @@ export interface AppDeps {
    */
   streamCache?: StreamCache | null;
   /**
+   * Torrents (torrent-stream-source phase 1): this host's torrent downloads, the engine and the
+   * /api/stream/torrent routes. Built next to `directStream`; null or absent with direct streaming off or
+   * NOTESD_TORRENT=off. startBackground starts its tick and closes it.
+   */
+  torrents?: TorrentStreams | null;
+  /**
+   * The growing cue feeds of torrent sessions (torrent-stream-source phase 7: the subtitle track inside
+   * a torrent's file; phase 8: Whisper). Built next to `torrents`; null or absent with torrents off,
+   * and GET /api/stream/torrent/:hash/cues/:track then answers 503 torrent_off.
+   */
+  torrentCues?: CueFeeds | null;
+  /**
+   * The remux of torrent files Chrome cannot play as is (torrent phase 5, src/directStream/torrent/remux.ts): its
+   * file route is /api/stream/torrent/:hash/hls/:index/:name. Null or absent with torrents or NOTESD_TORRENT_REMUX
+   * off. startBackground's close stops its ffmpeg runs.
+   */
+  torrentRemux?: TorrentRemux | null;
+  /**
    * The stories of films and episodes (src/movies/story.ts): read from the store, written by
    * Claude on the owner's click. The daemon builds it next to `movies`; null or absent, the story
    * routes answer 503.
@@ -92,6 +114,11 @@ export interface AppDeps {
    * evidence log are on; null or absent, POST /api/stream/sessions/:id/report answers 503 report_off.
    */
   streamReporter?: StreamReporter | null;
+  /**
+   * Whisper, the last subtitle tier of a torrent session (torrent phase 8). Null or absent with
+   * Whisper off or not installed; startBackground's stop closes it, which ends its worker.
+   */
+  torrentWhisper?: WhisperTier | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

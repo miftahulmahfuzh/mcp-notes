@@ -27,6 +27,7 @@ $V up --movies        # Movies ON against a generated video library, a fake TMDB
 $V up --direct-stream # Direct streaming ON (implies --movies) against a fake resolver and a fixture stream host
 $V up --discovery     # --direct-stream plus the fake TMDB's discovery titles, people, studios and services
 $V up --direct-stream --prober  # the stream prober on (a pass every 5 s) over the fake resolver; --prober=off: setting unset
+$V up --torrent       # --direct-stream plus torrents ON against a loopback seeder of a generated film and pack (scripts/torrent/)
 ```
 
 Each run gets its own database in the Docker container `mcp-notes-pg-verify` (127.0.0.1:55436,
@@ -57,6 +58,13 @@ next answer (`hls`, `dash`, `dash_film`, `hls_film`, `hls_token`, `no_source`, `
 `upstream.jsonl` every request the host got. `scripts/direct-stream/journey.sh RUN` drives it; see
 `features/direct-streaming.md`. A `NOTESD_DIRECT_STREAM_CLI` in the caller's environment replaces the
 fake under `--direct-stream` (phase 6's `playcheck.mjs` wrapper uses this).
+
+Every run also pins `NOTESD_TORRENT=off` and `NOTESD_TORRENT_DIR` under the run, so a throwaway daemon never
+joins a real swarm. `--torrent` (implies `--direct-stream`) turns torrents on with discovery off (no DHT, no
+tracker) against a loopback seeder (`scripts/torrent/seed.mjs`) of a film and a season pack generated once with
+ffmpeg (`scripts/torrent/make-fixture.sh`, cached in `$VERIFY_HOME/.torrent-fixture`); `up` prints
+`TORRENT=<run>/torrent`, where `fixture.json`, `pack.json` and `seeder.jsonl` are. `TORRENT_FIXTURE_FILE=<path>`
+seeds that file as the film. `scripts/torrent/torrent.sh RUN` drives it; see `features/direct-streaming.md`.
 
 ## Doctor
 
@@ -167,3 +175,7 @@ not implementation.
   `not_idle` before any resolve. Raising it lets the prober resolve through the run's resolver, which under
   `--direct-stream` is the fake; never combine `--prober` with a real `NOTESD_DIRECT_STREAM_CLI`.
   Probing is proven by `tests/unit/directStream/prober.test.ts`.
+- Never give a throwaway daemon the real `claude/streaming/torrent/cli.mjs` (1337x and ext.to): it opens a
+  tab in the owner's streaming Chrome. `up --direct-stream` points `NOTESD_TORRENT_SITES_CLI` at
+  `tests/fixtures/direct-stream/fake-torrent-sites.mjs`; `<run>/torrent-sites/mode` picks its answer (`rows`,
+  `empty`, `bot_check`, `no_chrome`) and its calls are kept as `evidence/torrent-sites-calls.jsonl`.
