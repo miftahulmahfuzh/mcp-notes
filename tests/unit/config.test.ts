@@ -456,7 +456,7 @@ describe('movies config', () => {
     const ds = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).directStream
     expect(DEFAULT_DIRECT_STREAM_CONFIG.enabled).toBe(false)
     expect(DEFAULT_DIRECT_STREAM_CLI.endsWith(path.join('claude', 'streaming', 'direct', 'cli.mjs'))).toBe(true)
-    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', prober: DEFAULT_STREAM_PROBER_CONFIG })
+    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, prober: DEFAULT_STREAM_PROBER_CONFIG })
     expect(ds({ NOTESD_ANIME_MAP_URL: 'off' })?.animeMapUrl).toBeNull()
     expect(ds({ NOTESD_ANIME_MAP_URL: ' http://127.0.0.1:9000/ ' })?.animeMapUrl).toBe('http://127.0.0.1:9000')
     expect(() => ds({ NOTESD_ANIME_MAP_URL: 'ani.zip' })).toThrow(/NOTESD_ANIME_MAP_URL/)

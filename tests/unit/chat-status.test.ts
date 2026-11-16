@@ -7,6 +7,7 @@ import {
   DWORD_TOOL_NAMES,
   MOVIE_TOOL_NAMES,
   STREAMING_TOOL_NAMES,
+  STREAM_CACHE_TOOL_NAMES,
   NOTES_TOOL_NAMES,
   SESSION_TOOL_NAMES,
   allowedChatTools,
@@ -52,6 +53,11 @@ describe('allowedChatTools', () => {
     expect(CLAUDE_CODE_ONLY_TOOL_NAMES).toEqual(['direct_stream_update_source']);
     expect(tools).toContain(n('direct_stream_sources'));
     expect(tools).not.toContain(n('direct_stream_update_source'));
+  });
+
+  it('keeps direct_stream_cache out of the chat bar', () => {
+    expect(STREAM_CACHE_TOOL_NAMES).toEqual(['direct_stream_cache']);
+    expect(allowedChatTools()).not.toContain(n('direct_stream_cache'));
   });
 
   it('captions the provider tools', () => {

@@ -185,6 +185,17 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     prober.start();
   }
 
+  // Stream cache (stream-cache phase 5): this host's unfinished downloads carry on; closed on stop.
+  const streamCache = deps.streamCache ?? null;
+  if (streamCache !== null) {
+    void streamCache.start().then(
+      (n) => {
+        if (n > 0) console.log(`[notesd] stream cache: carrying on ${n} unfinished download(s) on ${streamCache.host}`);
+      },
+      (err: unknown) => console.error(`[notesd] stream cache: could not carry on downloads: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
+
   // Hourly egress line: which query shapes pulled the most rows/bytes from the database.
   const meter = dbInstruments(deps.db)?.meter;
   const egressTimer = meter ? setInterval(() => console.log(meter.summaryLine()), 60 * 60_000) : null;
@@ -207,6 +218,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.adversary?.close(),
       deps.movies?.close(),
       prober?.close(),
+      streamCache?.close(),
     ]);
   };
 }

@@ -21,6 +21,7 @@ import {
   timestamp,
   unique,
   uniqueIndex,
+  uuid,
   vector,
 } from 'drizzle-orm/pg-core'
 
@@ -63,6 +64,9 @@ import {
  * machines, loaded from claude/streaming/direct/providers.seed.json at every start) and
  * `stream_provider_health` (one row per provider and host). src/directStream/repo.ts
  * (`DirectStreamRepo`) is their only writer.
+ * Migration 0029 (stream cache) adds `stream_caches`: one film or episode downloaded to one host's
+ * disk (src/directStream/cache/). `DirectStreamRepo` is its only writer too; its files live only on
+ * the host the row names.
  * Change a table here, then `npm run db:generate`; never edit an applied migration. drizzle-kit
  * does not emit `CREATE EXTENSION`, so 0001 carries a hand-prepended `CREATE EXTENSION IF NOT EXISTS vector`.
  */
@@ -1466,6 +1470,75 @@ export const streamProbeTitles = pgTable(
   ],
 )
 
+/** What a stream cache is doing (src/directStream/cache/). The CHECK below keeps the same list. */
+export const STREAM_CACHE_STATES = ['downloading', 'ready', 'failed'] as const
+export type StreamCacheState = (typeof STREAM_CACHE_STATES)[number]
+/** What a cache holds: one HLS rendition, or one plain file. DASH is never cached (cache_unsupported). */
+export const STREAM_CACHE_KINDS = ['hls', 'mp4'] as const
+export type StreamCacheKind = (typeof STREAM_CACHE_KINDS)[number]
+
+/**
+ * One film or episode downloaded to one host's disk for playing without the stream host (migration
+ * 0029). Written only by DirectStreamRepo (src/directStream/repo.ts). The files live in that host's
+ * cache folder (`<dataDir>/movies/stream-cache/<id>/`), so the other machine lists the row with
+ * `available: false`. One row per title slot and host; a film is season 0, episode 0, as in
+ * movie_stream_sources. A row is deleted with its files (DELETE /api/stream/cache/:id) and by
+ * nothing else. `error` is set exactly when the cache failed; `completed_at` exactly when it is ready.
+ */
+export const streamCaches = pgTable(
+  'stream_caches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    host: text('host').notNull(),
+    kind: text('kind').$type<MovieTitleKind>().notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    season: integer('season').notNull().default(0),
+    episode: integer('episode').notNull().default(0),
+    /** The tallest rendition asked for; null: the tallest there is. */
+    maxHeight: integer('max_height'),
+    provider: text('provider'),
+    manifestKind: text('manifest_kind').$type<StreamCacheKind>(),
+    /** The cached rendition's height (its RESOLUTION, else the resolver's best_height); null when unknown. */
+    height: integer('height'),
+    /** The cached audio's language: the audio rendition's LANGUAGE, else the title's original language. */
+    audioLang: text('audio_lang'),
+    subtitle: boolean('subtitle').notNull().default(false),
+    state: text('state').$type<StreamCacheState>().notNull().default('downloading'),
+    segmentsTotal: integer('segments_total').notNull().default(0),
+    segmentsDone: integer('segments_done').notNull().default(0),
+    bytes: bigint('bytes', { mode: 'number' }).notNull().default(0),
+    durationS: real('duration_s'),
+    /** Resolves this cache made: the first, and one more each time the host refused a token. */
+    resolves: integer('resolves').notNull().default(0),
+    error: text('error'),
+    errorDetail: text('error_detail'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [
+    uniqueIndex('stream_caches_slot_host_idx').on(t.kind, t.tmdbId, t.season, t.episode, t.host),
+    index('stream_caches_host_state_idx').on(t.host, t.state),
+    check('stream_caches_kind_check', sql`${t.kind} in ('movie', 'tv')`),
+    check(
+      'stream_caches_slot_check',
+      sql`${t.tmdbId} > 0 and ((${t.kind} = 'movie' and ${t.season} = 0 and ${t.episode} = 0) or (${t.kind} = 'tv' and ${t.season} >= 0 and ${t.episode} > 0))`,
+    ),
+    check('stream_caches_state_check', sql`${t.state} in ('downloading', 'ready', 'failed')`),
+    check('stream_caches_manifest_kind_check', sql`${t.manifestKind} is null or ${t.manifestKind} in ('hls', 'mp4')`),
+    check(
+      'stream_caches_counts_check',
+      sql`${t.segmentsDone} >= 0 and ${t.segmentsDone} <= ${t.segmentsTotal} and ${t.bytes} >= 0 and ${t.resolves} >= 0`,
+    ),
+    check('stream_caches_max_height_check', sql`${t.maxHeight} is null or ${t.maxHeight} > 0`),
+    check('stream_caches_failed_check', sql`(${t.state} = 'failed') = (${t.error} is not null)`),
+    check(
+      'stream_caches_ready_check',
+      sql`(${t.state} = 'ready') = (${t.completedAt} is not null) and (${t.state} <> 'ready' or (${t.provider} is not null and ${t.manifestKind} is not null and ${t.segmentsDone} = ${t.segmentsTotal}))`,
+    ),
+  ],
+)
+
 export type NoteRow = typeof notes.$inferSelect
 export type NewNoteRow = typeof notes.$inferInsert
 export type NoteImageRow = typeof noteImages.$inferSelect
@@ -1507,3 +1580,4 @@ export type MovieDialogueRow = typeof movieDialogues.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
 export type StreamProbeTitleRow = typeof streamProbeTitles.$inferSelect
+export type StreamCacheRow = typeof streamCaches.$inferSelect

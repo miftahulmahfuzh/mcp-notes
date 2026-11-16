@@ -290,11 +290,11 @@ async function respond(fn: () => Promise<CallToolResult>): Promise<CallToolResul
   }
 }
 
-function label(c: TitleCandidate): string {
+export function label(c: TitleCandidate): string {
   return c.year === null ? c.title : `${c.title} (${c.year})`;
 }
 
-function candidateView(c: TitleCandidate, wall: string) {
+export function candidateView(c: TitleCandidate, wall: string) {
   return {
     title: c.title,
     ...(c.originalTitle !== c.title ? { original_title: c.originalTitle } : {}),
@@ -309,7 +309,7 @@ function candidateView(c: TitleCandidate, wall: string) {
 }
 
 /** The film, the episode a movie id named, or the season and episode passed; null for a series with no episode. */
-function targetFor(c: TitleCandidate, named: EpisodePick | null, season: number | undefined, episode: number | undefined): StreamTarget | null {
+export function targetFor(c: TitleCandidate, named: EpisodePick | null, season: number | undefined, episode: number | undefined): StreamTarget | null {
   if (c.kind === 'movie') {
     if (season !== undefined || episode !== undefined) {
       throw new LookupError('invalid_input', `${label(c)} is a film: it takes no season or episode.`);
@@ -352,7 +352,7 @@ async function listedEpisodes(c: TitleCandidate, d: DirectStreamToolDeps): Promi
  * TMDB's list is read when the series is not stored, or when the stored list has no episode left
  * (a series still airing has newer ones).
  */
-async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promise<EpisodeChoice> {
+export async function chooseEpisode(c: TitleCandidate, d: DirectStreamToolDeps): Promise<EpisodeChoice> {
   const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
   const stored = await d.progress(c.tmdbId);
   const choice = pickEpisode(stored, today);
@@ -371,7 +371,7 @@ function airDateOf(list: readonly { season: number; episode: number; airDate: st
  * read from. The stored episodes decide; TMDB's list is read when the series is not stored, or
  * when the stored list is too short for the number (a series still airing).
  */
-async function chooseAbsolute(
+export async function chooseAbsolute(
   c: TitleCandidate,
   n: number,
   d: DirectStreamToolDeps,

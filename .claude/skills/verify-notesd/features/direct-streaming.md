@@ -228,6 +228,28 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
 - Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
 
+## Stream cache
+- `POST /api/stream/cache` (same-origin) and `direct_stream_cache` (Claude Code only; not in the chat
+  bar) download one film or episode to this machine: one HLS rendition (the tallest, or the tallest
+  not above `max_height`), the original-language audio rendition, segments, init sections, AES-128
+  keys and the English subtitle as WebVTT, or a plain file by ranges; DASH, DRM and live answer
+  `cache_unsupported`. Retries with backoff, a fresh resolve on a refused token that keeps the
+  files by index, resume after a restart. `GET /api/stream/cache[/:id]` lists both machines'
+  caches (`available: false` for the other's); `DELETE /api/stream/cache/:id` stops, deletes the
+  folder and the row; `GET /api/stream/cache/:id/f/:name` serves files with Range and fetches a
+  missing one at once. Files: `<NOTES_DATA_DIR>/movies/stream-cache/<id>/`.
+- Proven by `npx vitest run tests/unit/directStream/cache tests/unit/mcp.streamCacheTools.test.ts tests/unit/config.streamCache.test.ts tests/unit/chat-status.test.ts`
+  (parsers, the downloader against an in-memory stream host, the tool) and
+  `npm run test:int -- tests/integration/directStream.cache.int.test.ts` (table, routes, both
+  machines, delete during a download, restart).
+- Throwaway daemon: `$V up --direct-stream`, then
+  `.claude/skills/verify-notesd/scripts/direct-stream/cache.sh RUN` (stages `start tool refused other clear`;
+  `clear` needs `start`; each stage once per fresh run, since a title has one cache per machine and
+  `fail_once` fails a file once per host process). It ends with `cache: PASS (...)`. The `refused` stage sets `<run>/direct/mode`
+  to `hls_token`, `token_uses` to 10 and `fail_once` to `seg3.ts`: the fixture host's tokened film
+  (`/tok/t<N>/`) refuses a token after ten media answers and fails `seg3.ts` once.
+- Playing from a cache is phase 6's entry.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

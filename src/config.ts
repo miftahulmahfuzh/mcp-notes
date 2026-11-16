@@ -210,6 +210,11 @@ export interface DirectStreamConfig {
    * `off`: null, no lookup, and an anime is resolved like any other series.
    */
   animeMapUrl?: string | null
+  /**
+   * `NOTESD_STREAM_CACHE_DIR`, absolute: the folder holding this host's stream caches, one folder per
+   * cache id (src/directStream/cache/). Null or unset: `<dataDir>/movies/stream-cache`.
+   */
+  cacheDir?: string | null
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
 }
@@ -219,6 +224,7 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
   enabled: false,
   freshDays: DEFAULT_STREAM_FRESH_DAYS,
   cli: DEFAULT_DIRECT_STREAM_CLI,
+  cacheDir: null,
   prober: DEFAULT_STREAM_PROBER_CONFIG,
 }
 
@@ -688,6 +694,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     freshDays: parsePositiveInt('NOTESD_STREAM_FRESH_DAYS', env.NOTESD_STREAM_FRESH_DAYS, DEFAULT_STREAM_FRESH_DAYS),
     cli: parseOptionalAbsolutePath('NOTESD_DIRECT_STREAM_CLI', env.NOTESD_DIRECT_STREAM_CLI) ?? DEFAULT_DIRECT_STREAM_CLI,
     animeMapUrl: parseAnimeMapUrl(env.NOTESD_ANIME_MAP_URL),
+    cacheDir: parseOptionalAbsolutePath('NOTESD_STREAM_CACHE_DIR', env.NOTESD_STREAM_CACHE_DIR),
     prober: parseStreamProber(env),
   }
 }
@@ -735,8 +742,8 @@ export function parseStreamProber(env: Record<string, string | undefined>): Stre
  * NOTESD_CURL_EXE, NOTESD_VLC_HEALTH_MS, NOTESD_VLC_EXTRA_ARGS, NOTESD_MOVIES_FALLBACK_MODEL
  * (relative roots or ini, a path as a Done folder name, a non-http TMDB base, a port above 65535,
  * a health interval of 1-4999 ms or an extra VLC arg that sets the HTTP interface throw ConfigError).
- * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI, NOTESD_ANIME_MAP_URL
- * (a freshness window below 1 or a relative resolver path throw ConfigError).
+ * Direct streaming keys: NOTESD_DIRECT_STREAM, NOTESD_STREAM_FRESH_DAYS, NOTESD_DIRECT_STREAM_CLI, NOTESD_ANIME_MAP_URL,
+ * NOTESD_STREAM_CACHE_DIR (a freshness window below 1, a relative resolver path or a relative cache folder throw ConfigError).
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,

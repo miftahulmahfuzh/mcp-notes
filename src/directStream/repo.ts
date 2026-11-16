@@ -1,14 +1,17 @@
 import { readFile } from 'node:fs/promises';
-import { and, asc, eq, gte, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
   STREAM_ID_KINDS,
   moviePlays,
   movieTitles,
+  streamCaches,
   streamProbeTitles,
   streamProviderHealth,
   streamProviders,
+  type StreamCacheKind,
+  type StreamCacheRow,
   type StreamHealthOutcome,
   type StreamIdKind,
   type StreamManifestKind,
@@ -19,7 +22,7 @@ import { freshStreamSourceSql } from '../movies/repo.js';
 import type { TitleKind } from '../movies/tmdb.js';
 import type { ListedCandidate } from './candidates.js';
 import type { ProbeRecord, ProbeStore, ProbeTarget } from './prober.js';
-import type { ResolvedSource } from './types.js';
+import type { ResolvedSource, StreamRef } from './types.js';
 
 /** How many of a provider's latest times to a stream are kept per host. */
 export const RECENT_TIMINGS = 10;
@@ -170,6 +173,35 @@ export function providerView(row: StreamProviderRow, health: StreamProviderHealt
   };
 }
 
+/** A cache's title slot: a film is season 0, episode 0, as in movie_stream_sources. */
+export function cacheSlot(ref: StreamRef): { kind: 'movie' | 'tv'; tmdbId: number; season: number; episode: number } {
+  return ref.kind === 'movie'
+    ? { kind: 'movie', tmdbId: ref.tmdbId, season: 0, episode: 0 }
+    : { kind: 'tv', tmdbId: ref.tmdbId, season: ref.season, episode: ref.episode };
+}
+
+/** The title a cache row holds. */
+export function cacheRef(row: StreamCacheRow): StreamRef {
+  return row.kind === 'movie' ? { kind: 'movie', tmdbId: row.tmdbId } : { kind: 'tv', tmdbId: row.tmdbId, season: row.season, episode: row.episode };
+}
+
+/** What a cache learned from its source, written once the download is planned. */
+export interface CachePlanned {
+  provider: string;
+  manifestKind: StreamCacheKind;
+  height: number | null;
+  audioLang: string | null;
+  segmentsTotal: number;
+  segmentsDone: number;
+  bytes: number;
+  durationS: number | null;
+}
+
+function slotWhere(ref: StreamRef) {
+  const s = cacheSlot(ref);
+  return and(eq(streamCaches.kind, s.kind), eq(streamCaches.tmdbId, s.tmdbId), eq(streamCaches.season, s.season), eq(streamCaches.episode, s.episode));
+}
+
 /** One provider's try in one resolve, to record. `source` is set on the try that resolved. */
 export interface HealthAttempt {
   provider: string;
@@ -179,7 +211,7 @@ export interface HealthAttempt {
   source: ResolvedSource | null;
 }
 
-/** The only writer of `stream_providers` and `stream_provider_health`. */
+/** The only writer of `stream_providers`, `stream_provider_health` and `stream_caches`. */
 export class DirectStreamRepo {
   constructor(private readonly db: Db) {}
 
@@ -334,6 +366,122 @@ export class DirectStreamRepo {
       .onConflictDoNothing({ target: streamProviders.name })
       .returning({ name: streamProviders.name });
     return inserted.map((row) => row.name);
+  }
+
+  /**
+   * This host's cache of a title slot, made now (state downloading) when there is none.
+   * `created` is false when the row was already there; its `max_height` is then left as it was.
+   */
+  async createCache(host: string, ref: StreamRef, maxHeight: number | null, now: Date = new Date()): Promise<{ row: StreamCacheRow; created: boolean }> {
+    const slot = cacheSlot(ref);
+    const [inserted] = await this.db
+      .insert(streamCaches)
+      .values({ host, ...slot, maxHeight, state: 'downloading', createdAt: now, updatedAt: now })
+      .onConflictDoNothing({ target: [streamCaches.kind, streamCaches.tmdbId, streamCaches.season, streamCaches.episode, streamCaches.host] })
+      .returning();
+    if (inserted !== undefined) return { row: inserted, created: true };
+    const existing = await this.cacheFor(host, ref);
+    if (existing === null) throw new Error(`the stream cache of ${slot.kind} ${slot.tmdbId} on ${host} vanished while it was made`);
+    return { row: existing, created: false };
+  }
+
+  async cacheById(id: string): Promise<StreamCacheRow | null> {
+    const [row] = await this.db.select().from(streamCaches).where(eq(streamCaches.id, id));
+    return row ?? null;
+  }
+
+  /** One host's cache of a title slot, or null. */
+  async cacheFor(host: string, ref: StreamRef): Promise<StreamCacheRow | null> {
+    const [row] = await this.db.select().from(streamCaches).where(and(slotWhere(ref), eq(streamCaches.host, host)));
+    return row ?? null;
+  }
+
+  /** Every host's cache of a title slot. */
+  async cachesOf(ref: StreamRef): Promise<StreamCacheRow[]> {
+    return this.db.select().from(streamCaches).where(slotWhere(ref)).orderBy(asc(streamCaches.host));
+  }
+
+  /** Every cache of both hosts, newest first. */
+  async caches(): Promise<StreamCacheRow[]> {
+    return this.db.select().from(streamCaches).orderBy(desc(streamCaches.createdAt), asc(streamCaches.id));
+  }
+
+  /** This host's caches still downloading, oldest first: what a daemon start carries on. */
+  async unfinishedCaches(host: string): Promise<StreamCacheRow[]> {
+    return this.db
+      .select()
+      .from(streamCaches)
+      .where(and(eq(streamCaches.host, host), eq(streamCaches.state, 'downloading')))
+      .orderBy(asc(streamCaches.createdAt));
+  }
+
+  async cacheResolved(id: string, now: Date = new Date()): Promise<void> {
+    await this.db.update(streamCaches).set({ resolves: sql`${streamCaches.resolves} + 1`, updatedAt: now }).where(eq(streamCaches.id, id));
+  }
+
+  async cachePlanned(id: string, p: CachePlanned, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(streamCaches)
+      .set({
+        provider: p.provider,
+        manifestKind: p.manifestKind,
+        height: p.height,
+        audioLang: p.audioLang,
+        segmentsTotal: p.segmentsTotal,
+        segmentsDone: p.segmentsDone,
+        bytes: p.bytes,
+        durationS: p.durationS,
+        updatedAt: now,
+      })
+      .where(eq(streamCaches.id, id));
+  }
+
+  async cacheProgress(id: string, segmentsDone: number, bytes: number, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(streamCaches)
+      .set({ segmentsDone, bytes, updatedAt: now })
+      .where(and(eq(streamCaches.id, id), eq(streamCaches.state, 'downloading')));
+  }
+
+  async cacheSubtitle(id: string, subtitle: boolean, now: Date = new Date()): Promise<void> {
+    await this.db.update(streamCaches).set({ subtitle, updatedAt: now }).where(eq(streamCaches.id, id));
+  }
+
+  async cacheReady(id: string, done: { segments: number; bytes: number; subtitle: boolean }, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(streamCaches)
+      .set({
+        state: 'ready',
+        segmentsTotal: done.segments,
+        segmentsDone: done.segments,
+        bytes: done.bytes,
+        subtitle: done.subtitle,
+        error: null,
+        errorDetail: null,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(streamCaches.id, id));
+  }
+
+  async cacheFailed(id: string, error: string, detail: string, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(streamCaches)
+      .set({ state: 'failed', error, errorDetail: detail.slice(0, MAX_DETAIL), completedAt: null, updatedAt: now })
+      .where(eq(streamCaches.id, id));
+  }
+
+  /** A failed cache asked for again: downloading, its error cleared; the files on disk stay for the resume. */
+  async cacheRestarted(id: string, now: Date = new Date()): Promise<void> {
+    await this.db
+      .update(streamCaches)
+      .set({ state: 'downloading', error: null, errorDetail: null, completedAt: null, updatedAt: now })
+      .where(eq(streamCaches.id, id));
+  }
+
+  async deleteCache(id: string): Promise<boolean> {
+    const rows = await this.db.delete(streamCaches).where(eq(streamCaches.id, id)).returning({ id: streamCaches.id });
+    return rows.length > 0;
   }
 }
 
