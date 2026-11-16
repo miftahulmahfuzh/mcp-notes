@@ -64,6 +64,7 @@ change behaviour:
 | Title | `movie_titles` | Shared by both machines | One per TMDB film (`movie-<tmdb id>`) or series (`tv-<tmdb id>`). Never deleted, even when every file is gone. Holds the poster path, release date, synopsis, runtime, genres, the trailers (see [Trailers](#trailers)), and your watched flag, rating and review link. |
 | Studios, people, credits | `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits` | Shared | Stored with the title on its first match: up to 40 cast with character names, and up to 20 each of directors, writers, producers and creators. |
 | Episode | `movie_episodes` | Shared | Every episode TMDB lists for a series, with name, air date, runtime and synopsis, whether or not you have its file. |
+| Episode mark | `movie_episode_marks` | Shared | Your "finished" mark on one episode, with or without a file: an episode seen somewhere else. Kept apart from `movie_episodes`, which is replaced on every metadata fetch. |
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
 | Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
 | Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
@@ -252,6 +253,12 @@ terminal.
 
 State is derived at read time by `src/movies/state.ts` and nowhere else. It is never stored.
 
+An episode you marked finished by hand (`movie_episode_marks`) is finished, whatever its files or
+plays say. On a series' page each season has one button that marks all of its episodes, and an
+episode without a file has its own check icon. The notice after a season click offers an undo
+that takes back exactly the marks that click made. Clearing a mark never un-finishes an episode a
+play or a file flag finished.
+
 A file's state comes from the file row and its last play. "Last play" is the newest play whose
 position is known; when no play has a position, the newest play.
 
@@ -406,6 +413,17 @@ Titles get onto it by being streamed: `/direct-stream <title>` from Claude Code 
 [streaming.md](streaming.md)), a play from this page, or the background prober when
 `NOTESD_STREAM_PROBER=on`. An empty Stream side says so, and with direct streaming off it says how
 to turn it on.
+
+**Refresh.** The refresh icon at the right of the controls asks the prober for one pass now: it
+rebuilds its candidates and tries them out of sight, without waiting for the laptop to be idle
+(see [streaming.md](streaming.md)). The icon turns while the pass runs, and a notice says how many
+titles it found.
+
+**Not interested.** On a title opened from Stream, the crossed-eye icon marks it "not interested".
+The title leaves the grid and shows only under the `not interested` filter, where the same icon
+puts it back; the notice offers an undo. Its place in the prober's catalog goes to another title.
+A title you finish by hand (the check icon) stays on the grid under `finished` and frees its place
+in the catalog too.
 
 A poster opens the title's page at `/movies/<id>?side=stream`, the same page as from the library
 (poster, facts, people, trailer, review), with one more line under the facts naming the stream

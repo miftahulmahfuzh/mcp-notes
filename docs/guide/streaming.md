@@ -577,6 +577,17 @@ resolve. Each resolve is given the seconds left in the pass, so one title that n
 cannot overrun it; a resolve cut short, or one that cannot reach Chrome, ends the pass without
 blaming the title.
 
+**A pass you ask for.** The refresh button on the Stream side (`POST /api/stream/prober/pass`)
+starts one pass at once. It rebuilds the candidate list whatever its age and does not wait for the
+laptop to be idle, because you are at it and asked. The rest holds: the same budget, tabs out of
+sight and without sound, and nothing is probed while something plays. With the prober off the
+button says how to turn it on.
+
+**What counts toward the catalog.** A title you marked "not interested", or finished by hand, no
+longer counts toward `NOTESD_STREAM_CATALOG_SIZE`, so its place goes to another title. A "not
+interested" title is also never re-checked and never proposed again; taking the mark back makes it
+due for a re-check.
+
 Every verified or stale mark is the one a play would write (see [movies.md](movies.md)); the
 prober's own state is `stream_probe_titles`: per host, the listing, each title's last outcome and
 its backoff. Each pass logs one line (`[notesd] stream prober: pass ...`); a pass that did nothing

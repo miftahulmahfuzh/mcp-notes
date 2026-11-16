@@ -53,6 +53,12 @@ export type MoviesStatusResponse = Awaited<ReturnType<MoviesService['status']>> 
 export interface TmdbSearchResponse {
   results: TmdbHitView[];
 }
+/** POST /api/movies/:id/episodes/watched: `changed` is what an undo sends back with `watched` flipped. */
+export interface EpisodesWatchedResponse {
+  watched: boolean;
+  changed: { season: number; episode: number }[];
+  title: TitleDetailResponse | null;
+}
 export interface FileChangeResponse {
   file_id: number;
   title: TitleDetailResponse | null;
@@ -126,6 +132,7 @@ const TITLE_PATH = '/api/movies/:id{[a-z]+-[0-9]+}';
 /** A movie id (`M-23T4`, any case): the title it names, or the series of the episode it names. */
 const MOVIE_ID_PATH = '/api/movies/:movieId{[Mm]-[0-9A-Za-z]+}';
 const USER_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/user';
+const EPISODES_WATCHED_PATH = '/api/movies/:id{[a-z]+-[0-9]+}/episodes/watched';
 const FILE_WATCHED_PATH = '/api/movies/files/:fileId{[0-9]+}/watched';
 const FILE_ASSIGN_PATH = '/api/movies/files/:fileId{[0-9]+}/assign';
 
@@ -155,13 +162,25 @@ const searchQuery = z.object({
 const userBody = z
   .object({
     watched: z.boolean().optional(),
+    not_interested: z.boolean().optional(),
     rating: z.number().int().min(0).max(5).nullable().optional(),
     review: z.string().max(MAX_REVIEW_CHARS).optional(),
   })
   .strict()
-  .refine((b) => b.watched !== undefined || b.rating !== undefined || b.review !== undefined, {
-    message: 'set at least one of watched, rating, review',
+  .refine((b) => b.watched !== undefined || b.not_interested !== undefined || b.rating !== undefined || b.review !== undefined, {
+    message: 'set at least one of watched, not_interested, rating, review',
   });
+
+const episodeRefSchema = z.object({ season: z.number().int().min(0).max(1000), episode: z.number().int().min(1).max(100_000) }).strict();
+/** A whole season, or a list of episodes (what an undo sends back); exactly one of the two. */
+const episodesWatchedBody = z
+  .object({
+    watched: z.boolean(),
+    season: z.number().int().min(0).max(1000).optional(),
+    episodes: z.array(episodeRefSchema).min(1).max(2000).optional(),
+  })
+  .strict()
+  .refine((b) => (b.season === undefined) !== (b.episodes === undefined), { message: 'give season or episodes, not both' });
 
 const watchedBody = z.object({ watched: z.boolean() }).strict();
 
@@ -385,16 +404,40 @@ export function moviesApiRoutes(
       const parsed = userBody.safeParse(json.value);
       if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
       if ((await movies.repo.titleById(id.data)) === null) return c.json({ error: 'not_found' }, 404);
-      const { watched, rating, review } = parsed.data;
-      if (watched !== undefined || rating !== undefined) {
+      const { watched, not_interested: notInterested, rating, review } = parsed.data;
+      if (watched !== undefined || notInterested !== undefined || rating !== undefined) {
         await movies.repo.setTitleUser(id.data, {
           ...(watched !== undefined ? { watched } : {}),
+          ...(notInterested !== undefined ? { notInterested } : {}),
           ...(rating !== undefined ? { rating } : {}),
         });
       }
       if (review !== undefined) await saveReview(movies, deps.service, id.data, review);
       movies.events.changed('user', { titleIds: [id.data] });
       return detailResponse(c, id.data, ctx);
+    }),
+  );
+
+  api.post(
+    EPISODES_WATCHED_PATH,
+    sameOriginOnly,
+    withMovies(async (c, movies, ctx) => {
+      const id = titleIdSchema.safeParse(c.req.param('id'));
+      if (!id.success) return c.json({ error: 'invalid_id' }, 400);
+      const json = await readJson(c);
+      if (!json.ok) return c.json({ error: 'invalid_json' }, 400);
+      const parsed = episodesWatchedBody.safeParse(json.value);
+      if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
+      const title = await movies.repo.titleById(id.data);
+      if (title === null) return c.json({ error: 'not_found' }, 404);
+      if (title.kind !== 'tv') return c.json({ error: 'not_a_series' }, 400);
+      const { watched, season, episodes } = parsed.data;
+      const targets = episodes ?? (await movies.repo.seasonEpisodes(id.data, season ?? 0));
+      if (targets.length === 0) return c.json({ error: 'no_episodes' }, 404);
+      const changed = await movies.repo.setEpisodesWatched(id.data, targets, watched);
+      if (changed.length > 0) movies.events.changed('user', { titleIds: [id.data] });
+      const body: EpisodesWatchedResponse = { watched, changed, title: await titleResponse(id.data, ctx) };
+      return c.json(body);
     }),
   );
 

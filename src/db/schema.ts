@@ -1021,6 +1021,11 @@ export const movieTitles = pgTable(
     episodeCount: integer('episode_count'),
     /** The owner's manual "watched" flag for the whole title. */
     watchedAt: timestamp('watched_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * The owner's "not interested" mark: the title leaves the Stream side's grid (it shows only
+     * under that side's "not interested" filter) and no longer counts toward the prober's catalog.
+     */
+    notInterestedAt: timestamp('not_interested_at', { withTimezone: true, mode: 'date' }),
     /** 0..5 stars. */
     rating: smallint('rating'),
     /** The review, a normal note (written through NotesService). Purging the note clears the link. */
@@ -1119,6 +1124,24 @@ export const movieEpisodes = pgTable(
     runtimeMin: integer('runtime_min'),
     overview: text('overview'),
     stillPath: text('still_path'),
+  },
+  (t) => [primaryKey({ columns: [t.titleId, t.season, t.episode] })],
+)
+
+/**
+ * The owner's manual "finished" mark on one episode of a series, with or without a file: an
+ * episode seen somewhere else. Kept apart from `movie_episodes`, which is replaced on every
+ * metadata fetch. Written only by `MoviesRepo.setEpisodesWatched`.
+ */
+export const movieEpisodeMarks = pgTable(
+  'movie_episode_marks',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    watchedAt: timestamp('watched_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.titleId, t.season, t.episode] })],
 )

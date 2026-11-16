@@ -3,6 +3,7 @@ import type { Db } from '../db/client.js';
 import {
   movieCompanies,
   movieCredits,
+  movieEpisodeMarks,
   movieEpisodes,
   movieFiles,
   movieIds,
@@ -113,6 +114,8 @@ export interface EpisodeView {
   overview: string | null;
   still_url: string | null;
   state: WatchState;
+  /** The owner's manual "finished" mark on this episode (it makes the state finished). */
+  watched: boolean;
   has_file: boolean;
   present_here: boolean;
   deleted: boolean;
@@ -142,6 +145,8 @@ export interface TitleListItem {
   state: WatchState;
   watched: boolean;
   watched_at: string | null;
+  /** The owner's "not interested" mark: on the Stream side the title shows only under that filter. */
+  not_interested: boolean;
   rating: number | null;
   progress: TitleProgress;
   last_played_at: string | null;
@@ -506,10 +511,12 @@ interface TitleParts {
   ids: TitleMovieIds;
   /** By streamKey: the film's stream, or each streamed episode's. */
   streams: Map<string, StreamSlotView>;
+  /** By streamKey: when the owner marked the episode finished. */
+  marks: Map<string, Date>;
 }
 
 function emptyParts(): TitleParts {
-  return { files: [], episodes: [], ids: emptyTitleMovieIds(), streams: new Map() };
+  return { files: [], episodes: [], ids: emptyTitleMovieIds(), streams: new Map(), marks: new Map() };
 }
 
 async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext): Promise<Map<string, TitleParts>> {
@@ -549,6 +556,8 @@ async function loadParts(db: Db, titles: readonly TitleRow[], ctx: ReadContext):
     parts.get(row.titleId)?.files.push(fileView(row, last.get(Number(row.id)) ?? null, ctx));
   }
   for (const row of episodeRows) parts.get(row.titleId)?.episodes.push(row);
+  const markRows = tvIds.length === 0 ? [] : await db.select().from(movieEpisodeMarks).where(inArray(movieEpisodeMarks.titleId, tvIds));
+  for (const row of markRows) parts.get(row.titleId)?.marks.set(streamKey(row.season, row.episode), row.watchedAt);
   for (const row of streamRows) {
     if (row.titleId === null) continue;
     parts.get(row.titleId)?.streams.set(streamKey(row.season, row.episode), streamSlotView(row));
@@ -566,6 +575,8 @@ interface EpisodeSlot {
   episode: number;
   files: FileView[];
   stream: StreamSlotView | null;
+  /** The owner's manual mark; null when the episode has none. */
+  markedAt: Date | null;
 }
 
 function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): EpisodeView {
@@ -580,13 +591,14 @@ function episodeView(slot: EpisodeSlot, ids: TitleMovieIds, ctx: ReadContext): E
     runtime_min: slot.row?.runtimeMin ?? null,
     overview: slot.row?.overview ?? null,
     still_url: imageUrl(ctx, slot.row?.stillPath ?? null, IMAGE_SIZES.still),
-    state: slotState(slot.files, slot.stream),
+    state: slot.markedAt !== null ? 'finished' : slotState(slot.files, slot.stream),
+    watched: slot.markedAt !== null,
     has_file: slot.files.length > 0,
     present_here: slot.files.some((f) => f.available),
     deleted: slot.files.length > 0 && slot.files.every((f) => f.deleted),
     progress: lead?.progress ?? primary?.progress ?? NO_PROGRESS,
     last_played_at: latest([...slot.files.map((f) => f.last_played_at), slot.stream?.last_played_at]),
-    finished_at: latest([...slot.files.map((f) => f.finished_at), slot.stream?.finished_at]),
+    finished_at: latest([slot.markedAt, ...slot.files.map((f) => f.finished_at), slot.stream?.finished_at]),
     file_id: primary?.id ?? null,
     files: slot.files,
   };
@@ -600,12 +612,12 @@ function buildSeasons(parts: TitleParts, ctx: ReadContext, trailers: Readonly<Re
     const k = key(season, episode);
     let slot = slots.get(k);
     if (slot === undefined) {
-      slot = { row: null, season, episode, files: [], stream: null };
+      slot = { row: null, season, episode, files: [], stream: null, markedAt: null };
       slots.set(k, slot);
     }
     return slot;
   };
-  for (const row of parts.episodes) slots.set(key(row.season, row.episode), { row, season: row.season, episode: row.episode, files: [], stream: null });
+  for (const row of parts.episodes) slots.set(key(row.season, row.episode), { row, season: row.season, episode: row.episode, files: [], stream: null, markedAt: null });
   const unplaced: FileView[] = [];
   for (const f of parts.files) {
     if (f.season === null || f.episode === null) {
@@ -617,6 +629,11 @@ function buildSeasons(parts: TitleParts, ctx: ReadContext, trailers: Readonly<Re
   for (const stream of parts.streams.values()) {
     if (stream.season === null || stream.episode === null) continue;
     slotAt(stream.season, stream.episode).stream = stream;
+  }
+  for (const [k, at] of parts.marks) {
+    const [season, episode] = k.split('x').map(Number);
+    if (season === undefined || episode === undefined || !Number.isInteger(season) || !Number.isInteger(episode)) continue;
+    slotAt(season, episode).markedAt = at;
   }
   const episodes = [...slots.values()]
     .filter((s) => s.season >= 1 || s.files.length > 0 || s.stream !== null)
@@ -679,10 +696,11 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
     state,
     watched: t.watchedAt !== null,
     watched_at: isoOrNull(t.watchedAt),
+    not_interested: t.notInterestedAt !== null,
     rating: t.rating,
     progress,
     last_played_at: latest([...files.map((f) => f.last_played_at), ...streams.map((s) => s.last_played_at)]),
-    finished_at: latest([t.watchedAt, ...files.map((f) => f.finished_at), ...streams.map((s) => s.finished_at)]),
+    finished_at: latest([t.watchedAt, ...parts.marks.values(), ...files.map((f) => f.finished_at), ...streams.map((s) => s.finished_at)]),
     present_here: files.some((f) => f.available),
     file_count: files.filter((f) => !f.deleted).length,
     deleted_file_count: files.filter((f) => f.deleted).length,
@@ -779,7 +797,11 @@ export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext):
  * `streamFreshSince(now, config.directStream.freshDays)`.
  */
 export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadContext, freshSince: Date): Promise<TitleListItem[]> {
-  return selectTitles(db, filter, ctx, freshStreamSourceSql(ctx.host, freshSince));
+  // A title marked "not interested" is no longer re-checked, so it stays listed (under its own
+  // filter) for as long as this host ever verified it: the mark can always be taken back here.
+  const kept = sql`(movie_titles.not_interested_at is not null and exists (
+    select 1 from movie_stream_sources s where s.title_id = movie_titles.id and s.host = ${ctx.host} and s.verified_at is not null))`;
+  return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept})`);
 }
 
 async function titleCompanies(db: Db, id: string, ctx: ReadContext): Promise<CompanyView[]> {

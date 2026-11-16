@@ -136,7 +136,7 @@ export function tileProgress(t: TitleListItem): number | null {
   return total > 0 ? Math.min(1, p.episodes_finished / total) : null;
 }
 
-export type StateFilter = 'all' | 'unwatched' | 'in_progress' | 'finished' | 'gone';
+export type StateFilter = 'all' | 'unwatched' | 'in_progress' | 'finished' | 'gone' | 'not_interested';
 export type KindFilter = 'all' | TitleKind;
 
 export interface MoviesFilter {
@@ -153,11 +153,12 @@ export const STATE_FILTERS: readonly { key: StateFilter; label: string }[] = [
   { key: 'in_progress', label: 'in progress' },
   { key: 'finished', label: 'finished' },
   { key: 'gone', label: 'gone' },
+  { key: 'not_interested', label: 'not interested' },
 ];
 
 /** The state pills a side shows: `gone` is about files, so the Stream side has none. */
 export function stateFilters(side: MoviesSide): readonly { key: StateFilter; label: string }[] {
-  return side === 'stream' ? STATE_FILTERS.filter((s) => s.key !== 'gone') : STATE_FILTERS;
+  return STATE_FILTERS.filter((s) => (side === 'stream' ? s.key !== 'gone' : s.key !== 'not_interested'));
 }
 
 export const KIND_FILTERS: readonly { key: KindFilter; label: string }[] = [
@@ -171,6 +172,9 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
   if (f.kind !== 'all' && t.kind !== f.kind) return false;
   const q = f.text.trim().toLowerCase();
   if (q !== '' && !`${t.title} ${t.year ?? ''}`.toLowerCase().includes(q)) return false;
+  // Stream side: a title marked "not interested" shows under that filter only, so its place in
+  // the grid goes to another title. The library ignores the mark.
+  if (side === 'stream' && (f.state === 'not_interested') !== t.not_interested) return false;
   switch (f.state) {
     case 'all':
       return true;
@@ -182,12 +186,14 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
       return t.state === 'finished' || t.state === 'seen';
     case 'gone':
       return isGone(t, side);
+    case 'not_interested':
+      return side === 'stream';
   }
 }
 
 /** How many titles each state pill would show under the current kind and text filter. */
 export function stateCounts(titles: TitleListItem[], f: MoviesFilter, side: MoviesSide = 'library'): Record<StateFilter, number> {
-  const out: Record<StateFilter, number> = { all: 0, unwatched: 0, in_progress: 0, finished: 0, gone: 0 };
+  const out: Record<StateFilter, number> = { all: 0, unwatched: 0, in_progress: 0, finished: 0, gone: 0, not_interested: 0 };
   for (const t of titles) {
     for (const s of STATE_FILTERS) if (matchesFilter(t, { ...f, state: s.key }, side)) out[s.key] += 1;
   }

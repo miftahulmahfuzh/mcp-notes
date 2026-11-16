@@ -4,6 +4,7 @@ import type { Db } from '../db/client.js';
 import {
   movieCompanies,
   movieCredits,
+  movieEpisodeMarks,
   movieEpisodes,
   movieFiles,
   moviePeople,
@@ -18,6 +19,7 @@ import {
 } from '../db/schema.js';
 import { FINISHED_RATIO } from './state.js';
 import {
+  type EpisodeRef,
   classifyReason,
   titleId,
   type FileClassification,
@@ -110,7 +112,7 @@ function samePosition(a: number | null, b: number | null): boolean {
 
 /**
  * Every moment a title or one of its files became finished, as (title_id, at): the title's manual
- * flag, a file's manual flag, a file's done signal, every file play that reached FINISHED_RATIO of
+ * flag, a file's manual flag, a file's done signal, an episode's manual mark, every file play that reached FINISHED_RATIO of
  * its duration (the play's reading, else the file's; state.ts `reachedEnd` is the same rule), and
  * every stream play that reached it of the player's reading (state.ts `streamState`: a stream has
  * no duration of its own). A play still open counts at its last update. Comparisons run in double
@@ -123,6 +125,8 @@ function finishEventsSql(): SQL {
     select f.title_id, f.watched_at from movie_files f where f.title_id is not null and f.watched_at is not null
     union all
     select f.title_id, f.done_at from movie_files f where f.title_id is not null and f.done_at is not null
+    union all
+    select m.title_id, m.watched_at from movie_episode_marks m
     union all
     select f.title_id, coalesce(p.ended_at, p.updated_at)
     from movie_plays p join movie_files f on f.id = p.file_id
@@ -261,10 +265,52 @@ export class MoviesRepo {
   async setTitleUser(id: string, patch: TitleUserPatch, now: Date = new Date()): Promise<MovieTitleRow | null> {
     const set: PgUpdateSetSource<typeof movieTitles> = { updatedAt: now };
     if (patch.watched !== undefined) set.watchedAt = patch.watched ? sql`coalesce(${movieTitles.watchedAt}, ${now})` : null;
+    if (patch.notInterested !== undefined) set.notInterestedAt = patch.notInterested ? sql`coalesce(${movieTitles.notInterestedAt}, ${now})` : null;
     if (patch.rating !== undefined) set.rating = patch.rating;
     if (patch.reviewNoteId !== undefined) set.reviewNoteId = patch.reviewNoteId;
     const rows = await this.db.update(movieTitles).set(set).where(eq(movieTitles.id, id)).returning();
     return rows[0] ?? null;
+  }
+
+  /**
+   * The episodes of one season the owner can mark: the ones TMDB lists, plus any a file of the
+   * title names (deleted files included), in episode order.
+   */
+  async seasonEpisodes(titleIdValue: string, season: number): Promise<EpisodeRef[]> {
+    const res = await this.db.execute<{ episode: number }>(sql`
+      select episode from movie_episodes where title_id = ${titleIdValue} and season = ${season}
+      union
+      select episode from movie_files where title_id = ${titleIdValue} and season = ${season} and episode is not null
+      order by episode`);
+    return res.rows.map((r) => ({ season, episode: Number(r.episode) }));
+  }
+
+  /**
+   * Sets or clears the owner's "finished" mark on episodes of one title. Returns the episodes whose
+   * mark changed (already marked, or already unmarked, ones are left out), so the caller can undo
+   * exactly this call. A mark is independent of files and plays: clearing it never un-finishes an
+   * episode a play or a file flag finished.
+   */
+  async setEpisodesWatched(titleIdValue: string, episodes: readonly EpisodeRef[], watched: boolean, now: Date = new Date()): Promise<EpisodeRef[]> {
+    if (episodes.length === 0) return [];
+    const changed: EpisodeRef[] = [];
+    await this.db.transaction(async (tx) => {
+      for (const e of episodes) {
+        const rows = watched
+          ? await tx
+              .insert(movieEpisodeMarks)
+              .values({ titleId: titleIdValue, season: e.season, episode: e.episode, watchedAt: now })
+              .onConflictDoNothing()
+              .returning({ season: movieEpisodeMarks.season })
+          : await tx
+              .delete(movieEpisodeMarks)
+              .where(and(eq(movieEpisodeMarks.titleId, titleIdValue), eq(movieEpisodeMarks.season, e.season), eq(movieEpisodeMarks.episode, e.episode)))
+              .returning({ season: movieEpisodeMarks.season });
+        if (rows.length > 0) changed.push({ season: e.season, episode: e.episode });
+      }
+      if (changed.length > 0) await tx.update(movieTitles).set({ updatedAt: now }).where(eq(movieTitles.id, titleIdValue));
+    });
+    return changed;
   }
 
   async titleById(id: string): Promise<MovieTitleRow | null> {

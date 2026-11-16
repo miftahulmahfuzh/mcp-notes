@@ -189,6 +189,8 @@ export interface RecentsObservation {
 /** The owner's state on a title. Absent keys are left as they are. */
 export interface TitleUserPatch {
   watched?: boolean;
+  /** The "not interested" mark (the Stream side hides the title and the prober's catalog stops counting it). */
+  notInterested?: boolean;
   /** 0..5; null clears it. */
   rating?: number | null;
   reviewNoteId?: string | null;
@@ -296,3 +298,9 @@ export interface StreamSourceKey {
 export type StreamSourceOutcome =
   | (StreamSourceKey & { outcome: 'verified'; provider: string; manifestKind: string; bestHeight: number | null; enSubtitle: boolean })
   | (StreamSourceKey & { outcome: 'stale'; failure: string });
+
+/** One episode of a series, by season and number. */
+export interface EpisodeRef {
+  season: number;
+  episode: number;
+}

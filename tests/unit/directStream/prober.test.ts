@@ -8,6 +8,7 @@ import {
   BACKOFF_BASE_MS,
   buildStreamProber,
   classifyResolve,
+  DisabledProber,
   interleave,
   StreamProber,
   type ProbeOutcome,
@@ -258,6 +259,27 @@ describe('R6.3: no probe while the laptop is in use', () => {
     t.store.playOpen = true;
     expect(await t.prober.passNow()).toMatchObject({ stopped: 'busy', busy: 'play' });
     expect(t.calls).toEqual([]);
+  });
+
+  it('an asked pass does not wait for idle, still stops for a play, and rebuilds the listing whatever its age', async () => {
+    const t = setup({ films: [1, 2] });
+    t.idle.seconds = 0;
+    await t.prober.passNow();
+    expect(t.calls).toEqual([]);
+    const listed = t.tmdb.calls.length;
+    // Asked: the owner is at the laptop and pressed refresh.
+    const asked = await t.prober.passNow(true);
+    expect(asked).toMatchObject({ asked: true, probed: 2, probe_verified: 2, idle_s: null });
+    expect(asked.listed).toBe(2);
+    expect(t.tmdb.calls.length).toBeGreaterThan(listed);
+    t.vlc.playing = true;
+    expect(await t.prober.passNow(true)).toMatchObject({ asked: true, stopped: 'busy', busy: 'vlc' });
+    // askPass starts one and answers at once; a prober that is off refuses.
+    t.vlc.playing = false;
+    expect(t.prober.askPass()).toBe(true);
+    expect((await t.prober.status()).running).toBe(true);
+    await t.prober.passNow();
+    expect(new DisabledProber('setting_off').askPass()).toBe(false);
   });
 
   it('stops between probes as soon as the laptop is no longer idle', async () => {

@@ -41,6 +41,8 @@ export interface TitleListItem {
   state: WatchState;
   watched: boolean;
   watched_at: string | null;
+  /** The owner's "not interested" mark: on the Stream side the title shows only under that filter. */
+  not_interested: boolean;
   rating: number | null;
   progress: TitleProgress;
   /** Newest play start over all its files, any host. */
@@ -122,6 +124,8 @@ export interface EpisodeView {
   still_url: string | null;
   /** 'finished' if any of its files is; else its primary file's; 'unwatched' with no file. */
   state: WatchState;
+  /** The owner's manual "finished" mark on this episode. */
+  watched: boolean;
   has_file: boolean;
   present_here: boolean;
   /** It has files and every one is deleted. */
@@ -385,7 +389,7 @@ export type ContinueResult =
   | { action: 'no_match'; query: string | null };
 
 /** One key per call (phase 4 accepts any subset; the page sends one change at a time). */
-export type TitleUserPatch = { watched: boolean } | { rating: number } | { review: string };
+export type TitleUserPatch = { watched: boolean } | { not_interested: boolean } | { rating: number } | { review: string };
 
 export type AssignBody = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season?: number; episode?: number };
 
@@ -502,6 +506,37 @@ export async function searchTmdb(q: string, kind: TitleKind, signal?: AbortSigna
 
 export async function saveTitleUser(id: string, patch: TitleUserPatch): Promise<void> {
   await postJson<TitleDetail>(`/api/movies/${enc(id)}/user`, patch);
+}
+
+export interface EpisodeRef {
+  season: number;
+  episode: number;
+}
+
+/**
+ * Marks a whole season, or the listed episodes, finished or not. Resolves to the episodes whose
+ * mark changed: sending them back with `watched` flipped undoes exactly this call.
+ */
+export async function setEpisodesWatched(titleId: string, target: { season: number } | { episodes: EpisodeRef[] }, watched: boolean): Promise<EpisodeRef[]> {
+  const j = await postJson<{ changed?: EpisodeRef[] }>(`/api/movies/${enc(titleId)}/episodes/watched`, { ...target, watched });
+  return list(j?.changed);
+}
+
+/** `GET /api/stream/prober`, the part the Stream side reads. */
+export interface ProberState {
+  enabled: boolean;
+  running: boolean;
+  last_pass: { probed: number; probe_verified: number; rechecked: number; stopped: string; busy: string | null } | null;
+  settings: { probe_budget: number; pass_seconds: number } | null;
+}
+
+export async function fetchProber(signal?: AbortSignal): Promise<ProberState> {
+  return getJson<ProberState>('/api/stream/prober', signal);
+}
+
+/** Asks the prober for one pass now (the Stream side's refresh). Throws `prober_off` when the prober is off. */
+export async function askProberPass(): Promise<ProberState | null> {
+  return postJson<ProberState>('/api/stream/prober/pass', {});
 }
 
 export async function setFileWatched(fileId: number, watched: boolean): Promise<void> {

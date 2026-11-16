@@ -1,4 +1,4 @@
-import { isValidElement, useState, type ReactNode } from 'react';
+import { isValidElement, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, Question, Warning } from '@phosphor-icons/react';
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
@@ -6,7 +6,7 @@ import { MoviesPill } from '../components/movies/MoviesPill';
 import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
-import { errorCode, startSync } from '../moviesApi';
+import { askProberPass, errorCode, fetchProber, startSync, type ProberState } from '../moviesApi';
 import {
   detailIsFor,
   emptyLibraryText,
@@ -55,6 +55,9 @@ function MoviesEmpty({ text }: { text: string }) {
   );
 }
 
+/** How often the Stream side re-reads the prober while a pass runs. */
+const PROBER_POLL_MS = 5000;
+
 /**
  * The movies view's main area:
  *   controls    icon-only: the Library / Stream switch, then Back (on a title or the unmatched
@@ -68,7 +71,7 @@ function MoviesEmpty({ text }: { text: string }) {
  * The Stream side has no entry in the rail or sidebar: it is this switch only (D3).
  */
 export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: MoviesPageProps) {
-  const { notice, show } = useNotice(6000);
+  const { notice, action, show } = useNotice(6000);
   const [filter, setFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
   const [streamFilter, setStreamFilter] = useState<MoviesFilter>(NO_MOVIES_FILTER);
   const [busy, setBusy] = useState(false);
@@ -78,6 +81,49 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   const waiting = unmatchedCount(store.status);
   const unmatchedTip = waiting === null || waiting === 0 ? 'Unmatched files' : `Unmatched files (${waiting})`;
   const backLabel = side === 'stream' ? 'Back to Stream' : 'Back to the library';
+
+  // The Stream side's refresh: one prober pass now. While it runs the page asks again every few
+  // seconds, and reloads the grid when it ends.
+  const [prober, setProber] = useState<ProberState | null>(null);
+  const wasRunning = useRef(false);
+  const refreshStore = store.refresh;
+  const readProber = useCallback(async () => {
+    try {
+      const p = await fetchProber();
+      setProber(p);
+      if (wasRunning.current && !p.running) {
+        const found = p.last_pass?.probe_verified ?? 0;
+        const tried = (p.last_pass?.probed ?? 0) + (p.last_pass?.rechecked ?? 0);
+        show(p.last_pass?.stopped === 'busy' ? 'nothing probed: something is playing' : `${found} new ${found === 1 ? 'title' : 'titles'} from ${tried} tried`);
+        refreshStore();
+      }
+      wasRunning.current = p.running;
+    } catch {
+      setProber(null);
+    }
+  }, [show, refreshStore]);
+  useEffect(() => {
+    if (side !== 'stream' || off) return;
+    void readProber();
+  }, [side, off, readProber]);
+  const probing = prober?.running === true;
+  useEffect(() => {
+    if (!probing) return;
+    const t = window.setInterval(() => void readProber(), PROBER_POLL_MS);
+    return () => window.clearInterval(t);
+  }, [probing, readProber]);
+  const findMore = async () => {
+    try {
+      const p = await askProberPass();
+      wasRunning.current = true;
+      setProber(p ?? { enabled: true, running: true, last_pass: null, settings: null });
+      const budget = p?.settings?.probe_budget;
+      show(budget === undefined ? 'looking for more titles' : `looking for more titles: up to ${budget}, out of sight`);
+    } catch (e) {
+      show(errorCode(e) === 'prober_off' ? 'the prober is off: set NOTESD_STREAM_PROBER=on and restart notesd' : `refresh refused: ${errorCode(e)}`);
+    }
+  };
+  const findMoreTip = probing ? 'Looking for more titles to stream' : 'Find more titles to stream';
 
   const rescan = async () => {
     setBusy(true);
@@ -128,11 +174,30 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
     {notice && (
       <span className="mv-note" role="status">
         {notice}
+        {action !== null && (
+          <button type="button" className="mv-undo" onClick={action.run}>
+            {action.label}
+          </button>
+        )}
       </span>
     )}
     {(route.title !== null || route.unmatched) && (
       <button type="button" className="ibtn hov" data-tip={backLabel} data-tip-side="below" aria-label={backLabel} onClick={() => onRoute(side === 'stream' ? STREAM_ROUTE : NO_MOVIES_ROUTE)}>
         <ArrowLeft weight="duotone" />
+      </button>
+    )}
+    {side === 'stream' && route.title === null && (
+      <button
+        type="button"
+        className={probing ? 'ibtn on mv-spin' : 'ibtn hov'}
+        data-tip={findMoreTip}
+        data-tip-side="below"
+        aria-label={findMoreTip}
+        aria-busy={probing}
+        disabled={off || probing || store.stream?.enabled === false}
+        onClick={() => void findMore()}
+      >
+        <ArrowsClockwise weight="duotone" />
       </button>
     )}
     {side === 'library' && (

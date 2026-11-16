@@ -13,6 +13,14 @@
   (direct streaming on, phase 3's fake resolver), seed `movie_stream_sources` with `$V exec` (the
   daemon writes it only after a resolve) and stub `POST /api/stream/play` with Playwright
   `page.route` to choose its answer. Never give a throwaway run the real resolver.
+- Stream grid upkeep: the refresh icon asks the prober for one pass now (`POST
+  /api/stream/prober/pass`: the listing is rebuilt, idle is not waited for, a play still stops it);
+  a title page's "not interested" icon takes a title off the grid (it shows only under that
+  filter, and the prober's catalog stops counting and re-checking it); each season has one button
+  that marks all its episodes finished (`POST /api/movies/:id/episodes/watched`), an episode
+  without a file has its own, and the notice offers an undo of exactly what changed. Proof:
+  `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`,
+  `tests/unit/directStream/prober.test.ts` ("an asked pass").
 - VLC health (phase 9). Every `NOTESD_VLC_HEALTH_MS` (default 30 s; off at 0 or with no roots) each
   `vlc.exe` on this host is sampled through `tasklist.exe` / `powershell.exe` into
   `<dataDir>/movies/vlc-health-<host>.jsonl` (fsync'd lines: start, sample, idle, hang, clean_stop,

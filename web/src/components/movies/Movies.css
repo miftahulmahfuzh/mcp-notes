@@ -7,6 +7,11 @@
 .mv-tools .ibtn:not(:hover):not(.on) { background: var(--bg); }
 .mv-tools .ibtn:disabled { opacity: .35; cursor: default; }
 .mv-note { font-family: var(--mono); font-size: 10.5px; color: var(--dim); letter-spacing: .03em; margin-right: 8px; }
+.mv-undo { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line-25); border-radius: 999px; background: transparent; color: var(--fg); font: inherit; letter-spacing: inherit; cursor: pointer; }
+.mv-undo:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.mv-spin svg { animation: mv-spin 1.4s linear infinite; }
+@keyframes mv-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mv-spin svg { animation: none; } }
 .mv-count { position: absolute; top: 2px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 999px; background: var(--fg); color: var(--bg); font-family: var(--mono); font-size: 9px; line-height: 14px; text-align: center; }
 .mv-tools .ibtn.on .mv-count { background: var(--bg); color: var(--fg); }
 /* The Library / Stream switch: one segmented pill, pushed to the toolbar's left edge. */

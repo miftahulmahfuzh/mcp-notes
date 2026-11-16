@@ -109,6 +109,8 @@ export interface PassSummary {
   /** The last idle time read this pass; null when none was read. */
   idle_s: number | null;
   busy: 'vlc' | 'play' | null;
+  /** The owner asked for this pass (askPass): it rebuilt the listing and did not wait for idle. */
+  asked: boolean;
   stopped: PassStop;
   error: string | null;
 }
@@ -140,6 +142,13 @@ export interface StreamProberHandle {
   startLine(): string;
   start(): void;
   status(): Promise<ProberStatus>;
+  /**
+   * The owner asked for a pass (the Stream side's refresh button): the candidate listing is rebuilt
+   * whatever its age and the pass does not wait for the laptop to be idle, since somebody is at it
+   * and asked. Everything else holds: the budget, and nothing is probed while something plays.
+   * Returns false when the prober is off; true when a pass was started or one was already running.
+   */
+  askPass(): boolean;
   close(): Promise<void>;
 }
 
@@ -164,6 +173,10 @@ export class DisabledProber implements StreamProberHandle {
   }
 
   start(): void {}
+
+  askPass(): boolean {
+    return false;
+  }
 
   async status(): Promise<ProberStatus> {
     return {
@@ -266,6 +279,7 @@ function emptyPass(startedAt: Date, catalogSize: number): PassSummary {
     catalog_size: catalogSize,
     idle_s: null,
     busy: null,
+    asked: false,
     stopped: 'no_candidates',
     error: null,
   };
@@ -334,10 +348,16 @@ export class StreamProber implements StreamProberHandle {
     this.schedule(Math.min(INITIAL_DELAY_MS, this.deps.config.probeMs));
   }
 
-  /** One pass now, or the one in flight. Never rejects. */
-  passNow(): Promise<PassSummary> {
+  askPass(): boolean {
+    if (this.closed) return false;
+    void this.passNow(true);
+    return true;
+  }
+
+  /** One pass now, or the one in flight. Never rejects. `asked`: see StreamProberHandle.askPass. */
+  passNow(asked = false): Promise<PassSummary> {
     if (this.current !== null) return this.current;
-    const pass = this.runPass();
+    const pass = this.runPass(asked);
     this.current = pass;
     void pass.then(() => {
       if (this.current === pass) this.current = null;
@@ -399,15 +419,16 @@ export class StreamProber implements StreamProberHandle {
     this.timer.unref();
   }
 
-  private async runPass(): Promise<PassSummary> {
+  private async runPass(asked = false): Promise<PassSummary> {
     const startedAt = this.now();
     const s = emptyPass(startedAt, this.deps.config.catalogSize);
+    s.asked = asked;
     if (this.closed) {
       s.stopped = 'closed';
       return this.finish(s, startedAt);
     }
     try {
-      await this.refreshCandidates(s, startedAt);
+      await this.refreshCandidates(s, startedAt, asked);
       if (!(await this.halted(s, startedAt))) await this.probeAll(s, startedAt);
     } catch (err) {
       s.stopped = 'error';
@@ -421,11 +442,13 @@ export class StreamProber implements StreamProberHandle {
     return this.finish(s, startedAt);
   }
 
-  /** Rebuilds the listing when it is a day old. TMDB only: it opens no tab, so it does not wait for idle. */
-  private async refreshCandidates(s: PassSummary, now: Date): Promise<void> {
-    if (this.refreshFailedAt !== null && now.getTime() - this.refreshFailedAt < REFRESH_RETRY_MS) return;
-    const last = await this.deps.store.listedAt(this.deps.host);
-    if (last !== null && now.getTime() - last.getTime() < CANDIDATE_REFRESH_MS) return;
+  /** Rebuilds the listing when it is a day old, or at once for an asked pass. TMDB only: it opens no tab, so it does not wait for idle. */
+  private async refreshCandidates(s: PassSummary, now: Date, asked: boolean): Promise<void> {
+    if (!asked) {
+      if (this.refreshFailedAt !== null && now.getTime() - this.refreshFailedAt < REFRESH_RETRY_MS) return;
+      const last = await this.deps.store.listedAt(this.deps.host);
+      if (last !== null && now.getTime() - last.getTime() < CANDIDATE_REFRESH_MS) return;
+    }
     const seeds = pickSeeds(await this.deps.seeds());
     const gathered = await gatherCandidates(this.deps.tmdb, seeds, now.toISOString().slice(0, 10));
     if (gathered.errors.length > 0) {
@@ -461,6 +484,8 @@ export class StreamProber implements StreamProberHandle {
       s.busy = 'play';
       return 'busy';
     }
+    // An asked pass does not wait for idle: the owner is at the laptop and asked for it.
+    if (s.asked) return null;
     const idle = await this.deps.idle();
     if (idle.kind === 'error') {
       // Fail closed: an idle time that cannot be read is never "idle".

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
-import { CaretUp, CheckCircle, DotsThree, Play } from '@phosphor-icons/react';
-import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setFileWatched, streamPlay, type CastCredit, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
+import { CaretUp, CheckCircle, DotsThree, EyeSlash, Play } from '@phosphor-icons/react';
+import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setEpisodesWatched, setFileWatched, streamPlay, type CastCredit, type EpisodeView, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
+import type { NoticeAction } from '../../hooks/useNotice';
 import {
   CAST_LIMIT,
   continueNotice,
@@ -42,7 +43,8 @@ export interface MovieDetailProps {
   focus?: string | null;
   /** Re-read the store after a write (the server's state wins). */
   onChanged: () => void;
-  onNotice: (text: string) => void;
+  /** A quiet notice; with an action it offers that beside the text (Undo). */
+  onNotice: (text: string, action?: NoticeAction) => void;
   /** Asks about a person, studio, character or genre through the page's pill. Absent: the names are plain text. */
   onEntity?: (e: MovieEntity) => void;
   /** An answer is streaming: entity links wait. */
@@ -155,7 +157,52 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
     }
   };
 
+  /** A season or one episode: the notice offers an undo of exactly what this click changed. */
+  const markEpisodes = async (target: { season: number } | { episodes: { season: number; episode: number }[] }, next: boolean, what: string) => {
+    try {
+      const changed = await setEpisodesWatched(d.id, target, next);
+      if (changed.length === 0) {
+        onNotice(next ? `${what}: nothing left to mark` : `${what}: no marks to clear (a play or a file finished it)`);
+        return;
+      }
+      const count = changed.length === 1 ? '1 episode' : `${changed.length} episodes`;
+      onNotice(next ? `${what} marked finished (${count})` : `${what}: marks cleared (${count})`, {
+        label: 'undo',
+        run: () => {
+          void setEpisodesWatched(d.id, { episodes: changed }, !next)
+            .then(() => onNotice(`${what}: undone`))
+            .catch((e: unknown) => onNotice(`could not undo (${errorCode(e)})`))
+            .finally(onChanged);
+        },
+      });
+    } catch (e) {
+      onNotice(`could not save (${errorCode(e)})`);
+    } finally {
+      onChanged();
+    }
+  };
+
+  const toggleNotInterested = async () => {
+    const next = !d.not_interested;
+    try {
+      await saveTitleUser(d.id, { not_interested: next });
+      onNotice(next ? 'not interested: off the Stream grid' : 'back on the Stream grid', {
+        label: 'undo',
+        run: () => {
+          void saveTitleUser(d.id, { not_interested: !next })
+            .catch((e: unknown) => onNotice(`could not undo (${errorCode(e)})`))
+            .finally(onChanged);
+        },
+      });
+    } catch (e) {
+      onNotice(`could not save (${errorCode(e)})`);
+    } finally {
+      onChanged();
+    }
+  };
+
   const watchedLabel = watched ? 'Watched (click to unmark)' : 'Mark as watched';
+  const notInterestedLabel = d.not_interested ? 'Not interested (click to put it back on the Stream grid)' : 'Not interested: take it off the Stream grid';
   const facts = [
     d.release_date !== null ? `Released ${releaseText(d.release_date)}` : d.year !== null ? String(d.year) : '',
     d.kind === 'tv' ? seasonsText(d.season_count) : runtimeText(d.runtime_min),
@@ -220,6 +267,19 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             >
               <CheckCircle weight="duotone" />
             </button>
+            {(side === 'stream' || d.not_interested) && (
+              <button
+                type="button"
+                className={d.not_interested ? 'ibtn on' : 'ibtn hov'}
+                data-tip={notInterestedLabel}
+                data-tip-side="below"
+                aria-label={notInterestedLabel}
+                aria-pressed={d.not_interested}
+                onClick={() => void toggleNotInterested()}
+              >
+                <EyeSlash weight="duotone" />
+              </button>
+            )}
             <Stars value={rating} onRate={(v) => void rate(v)} />
             {live !== null && <LiveStatus live={live} now={now} />}
             {streaming !== null && <LiveStatus live={streaming} now={streaming.state} place="the stream player" what={episodeCode(streaming.season, streaming.episode) || null} />}
@@ -258,6 +318,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           onPlay={playOne}
           onStream={streamOne}
           onWatched={(f) => void toggleFileWatched(f)}
+          onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
+          onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
           onTrailer={setTrailer}
         />
       ) : (

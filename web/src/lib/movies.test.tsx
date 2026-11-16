@@ -26,6 +26,7 @@ import {
   seasonsShown,
   sortTitles,
   stateCounts,
+  stateFilters,
   type MoviesFilter,
   type MoviesView,
   streamLabel,
@@ -105,14 +106,25 @@ describe('grid order and filter', () => {
     expect(sortTitles(list, 'stream').map((t) => t.id)).toEqual(['just-finished', 'old-in-progress', 'probed-newer', 'probed-older']);
   });
 
+  it('on the Stream side shows a not-interested title only under that filter, and the library ignores the mark', () => {
+    const list = [{ ...TITLES[0]!, id: 'kept', not_interested: false }, { ...TITLES[0]!, id: 'dropped', not_interested: true }];
+    const shown = (f: MoviesFilter, side: 'stream' | 'library') => list.filter((t) => matchesFilter(t, f, side)).map((t) => t.id);
+    expect(shown(NO_MOVIES_FILTER, 'stream')).toEqual(['kept']);
+    expect(shown({ ...NO_MOVIES_FILTER, state: 'not_interested' }, 'stream')).toEqual(['dropped']);
+    expect(shown(NO_MOVIES_FILTER, 'library')).toEqual(['kept', 'dropped']);
+    expect(stateCounts(list, NO_MOVIES_FILTER, 'stream')).toMatchObject({ all: 1, not_interested: 1 });
+    expect(stateFilters('stream').map((s) => s.key)).toEqual(['all', 'unwatched', 'in_progress', 'finished', 'not_interested']);
+    expect(stateFilters('library').map((s) => s.key)).toEqual(['all', 'unwatched', 'in_progress', 'finished', 'gone']);
+  });
+
   it('filters by state, kind and text, and counts each state under the other filters', () => {
     expect(ids({ ...NO_MOVIES_FILTER, state: 'gone' })).toEqual(['movie-9001']);
     expect(ids({ ...NO_MOVIES_FILTER, state: 'in_progress' })).toEqual(['tv-247718', 'movie-467905']);
     expect(ids({ ...NO_MOVIES_FILTER, state: 'unwatched' })).toEqual([]);
     expect(ids({ ...NO_MOVIES_FILTER, kind: 'tv' })).toEqual(['tv-247718']);
     expect(ids({ ...NO_MOVIES_FILTER, text: 'KILL' })).toEqual(['movie-467905']);
-    expect(stateCounts(TITLES, NO_MOVIES_FILTER)).toEqual({ all: 3, unwatched: 0, in_progress: 2, finished: 0, gone: 1 });
-    expect(stateCounts(TITLES, { ...NO_MOVIES_FILTER, kind: 'movie' })).toEqual({ all: 2, unwatched: 0, in_progress: 1, finished: 0, gone: 1 });
+    expect(stateCounts(TITLES, NO_MOVIES_FILTER)).toEqual({ all: 3, unwatched: 0, in_progress: 2, finished: 0, gone: 1, not_interested: 0 });
+    expect(stateCounts(TITLES, { ...NO_MOVIES_FILTER, kind: 'movie' })).toEqual({ all: 2, unwatched: 0, in_progress: 1, finished: 0, gone: 1, not_interested: 0 });
   });
 });
 

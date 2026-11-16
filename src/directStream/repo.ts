@@ -358,15 +358,20 @@ function toTarget(kind: unknown, tmdbId: unknown, season: unknown, episode: unkn
 export class ProbeRepo implements ProbeStore {
   constructor(private readonly db: Db) {}
 
-  /** Titles with a fresh source on `host` as of `since` (phase 5's freshStreamSourceSql), each counted once. */
+  /**
+   * Titles with a fresh source on `host` as of `since` (phase 5's freshStreamSourceSql), each
+   * counted once. A title the owner marked "not interested" or finished by hand is not counted:
+   * its place in the catalog goes to another title.
+   */
   async freshCount(host: string, since: Date): Promise<number> {
     const res = await this.db.execute<{ n: number | string }>(
-      sql`select count(*) as n from movie_titles where ${freshStreamSourceSql(host, since)}`,
+      sql`select count(*) as n from movie_titles
+          where ${freshStreamSourceSql(host, since)} and movie_titles.not_interested_at is null and movie_titles.watched_at is null`,
     );
     return Number(res.rows[0]?.n ?? 0);
   }
 
-  /** Verified, not stale sources on `host` verified at or before `dueBefore`, oldest first: what a pass re-checks. */
+  /** Verified, not stale sources on `host` verified at or before `dueBefore`, oldest first: what a pass re-checks. A "not interested" title is not. */
   async dueRechecks(host: string, dueBefore: Date, limit: number): Promise<ProbeTarget[]> {
     const res = await this.db.execute<{ kind: string; tmdb_id: number; season: number; episode: number }>(sql`
       select t.kind, t.tmdb_id, s.season, s.episode
@@ -376,6 +381,7 @@ export class ProbeRepo implements ProbeStore {
         and s.verified_at is not null
         and s.verified_at <= ${dueBefore}
         and s.stale_at is null
+        and t.not_interested_at is null
       order by s.verified_at asc, s.title_id asc, s.season asc, s.episode asc
       limit ${limit}`);
     return res.rows.map((r) => toTarget(r.kind, r.tmdb_id, r.season, r.episode));
@@ -420,7 +426,8 @@ export class ProbeRepo implements ProbeStore {
 
   /**
    * Listed titles of `kind` the prober may probe now, best rank first: out of backoff, and with no
-   * source on `host` that is fresh as of `freshSince` (never a title already verified fresh).
+   * source on `host` that is fresh as of `freshSince` (never a title already verified fresh), and
+   * never a title the owner marked "not interested".
    */
   async eligible(host: string, kind: TitleKind, now: Date, freshSince: Date, limit: number): Promise<ProbeTarget[]> {
     const res = await this.db.execute<{ tmdb_id: number }>(sql`
@@ -432,7 +439,8 @@ export class ProbeRepo implements ProbeStore {
         and (c.retry_after is null or c.retry_after <= ${now})
         and not exists (
           select 1 from movie_titles
-          where movie_titles.id = c.kind || '-' || c.tmdb_id::text and ${freshStreamSourceSql(host, freshSince)}
+          where movie_titles.id = c.kind || '-' || c.tmdb_id::text
+            and (${freshStreamSourceSql(host, freshSince)} or movie_titles.not_interested_at is not null)
         )
       order by c.list_rank asc
       limit ${limit}`);
