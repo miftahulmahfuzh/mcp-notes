@@ -214,7 +214,9 @@ describe('buildChatSystemPrompt', () => {
   });
 
   it('picks and plays from direct_stream_discover when asked to choose, lists when asked what there is, and knows absolute episodes and season marks', () => {
-    expect(prompt).toMatch(/through three tools: direct_stream_find, direct_stream_play and direct_stream_discover/);
+    expect(prompt).toMatch(/through four tools: direct_stream_find, direct_stream_play, direct_stream_discover and direct_stream_dialogue/);
+    expect(prompt).toMatch(/direct_stream_dialogue reads what is said in a film or in one episode/);
+    expect(prompt).toMatch(/The spoiler limit above still holds/);
     expect(prompt).toMatch(/that is a request to play: call direct_stream_discover with what they said/);
     expect(prompt).toMatch(/choose one title they have not seen and did not mark not_interested, call direct_stream_play with its title_key as title, and say which one you chose and why/);
     expect(prompt).toMatch(/When they only ask what there is .* list the titles with their years and start nothing/);

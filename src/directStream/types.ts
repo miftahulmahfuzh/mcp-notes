@@ -99,7 +99,7 @@ export type ResolveOutput =
 
 export type ResolvedOutput = Extract<ResolveOutput, { ok: true }>;
 
-export type DirectStreamErrorCode = 'no_source' | 'resolve_failed' | 'open_failed' | 'unknown_session' | 'no_episode';
+export type DirectStreamErrorCode = 'no_source' | 'resolve_failed' | 'open_failed' | 'unknown_session' | 'no_episode' | 'no_subtitle';
 
 /** One episode of a series, by TMDB's season and episode. */
 export interface EpisodeNumber {

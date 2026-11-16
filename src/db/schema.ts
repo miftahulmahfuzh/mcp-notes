@@ -1147,6 +1147,35 @@ export const movieEpisodeMarks = pgTable(
 )
 
 /**
+ * The dialogue of a film (season 0, episode 0) or of one episode: the text of its English
+ * subtitle as a stream source carried it (src/directStream/dialogue.ts), one line per cue,
+ * `mm:ss<TAB>text`. Read once and kept, so both machines answer "what is this episode about"
+ * without resolving again. Written only by `MoviesRepo.saveDialogue`.
+ */
+export const movieDialogues = pgTable(
+  'movie_dialogues',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    lang: text('lang').notNull().default('en'),
+    /** The stream provider whose subtitle this is. */
+    provider: text('provider').notNull(),
+    cues: integer('cues').notNull(),
+    /** The second the last line is said at. */
+    lastCueS: integer('last_cue_s').notNull(),
+    body: text('body').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.season, t.episode] }),
+    check('movie_dialogues_slot_check', sql`${t.season} >= 0 and ${t.episode} >= 0 and (${t.episode} > 0 or ${t.season} = 0)`),
+  ],
+)
+
+/**
  * The movie id registry (migration 0018): the id the owner types and reads, `M-23T4` (`M-` and four
  * of [0-9A-Z]; a note id has three, so the two never look alike). One row per title (season and
  * episode null) and one per episode of a series (from `movie_episodes`, or named only by a file).
@@ -1470,6 +1499,7 @@ export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
 export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
 export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
+export type MovieDialogueRow = typeof movieDialogues.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect
 export type StreamProbeTitleRow = typeof streamProbeTitles.$inferSelect

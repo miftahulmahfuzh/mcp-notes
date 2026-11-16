@@ -227,6 +227,38 @@ describe('POST /api/stream/play', () => {
   });
 });
 
+describe('the dialogue', () => {
+  it("reads the resolved stream's English subtitle as WebVTT through the pass-through, and opens no player", async () => {
+    const { svc } = await ready();
+    const read = await svc.subtitleText({ kind: 'movie', tmdbId: 550 });
+    expect(read.provider).not.toBe('');
+    // The fixture's .srt, converted: one cue.
+    expect(read.vtt.startsWith('WEBVTT')).toBe(true);
+    expect(read.vtt).toContain('00:00:01.000 --> 00:00:03.000');
+    expect(read.vtt).toContain('Hello.');
+    expect((await calls()).filter((c) => c[0] === 'open')).toEqual([]);
+    // The file was asked for with the headers the resolve captured.
+    expect(up.requests.find((r) => r.path === '/subs/en.srt')).toMatchObject({ status: 200, referer: 'https://embed.fixture/' });
+  });
+
+  it('joins the segments of a subtitle playlist inside the manifest', async () => {
+    const { svc } = await ready();
+    const session = await svc.resolve({ kind: 'movie', tmdbId: 550 });
+    const read = (svc as unknown as { readSubtitle(s: unknown, url: string, format: string): Promise<string | null> }).readSubtitle.bind(svc);
+    const vtt = await read(session, `${up.origin}/hls/subs/en.m3u8`, 'hls');
+    expect(vtt).toContain('WEBVTT');
+    expect(vtt).toContain('Hello.');
+    // An address outside the session's hosts is refused, as the player's would be.
+    expect(await read(session, 'https://elsewhere.example/en.vtt', 'vtt')).toBeNull();
+  });
+
+  it('answers no_source when nothing resolves', async () => {
+    const { svc } = await ready();
+    await mode('no_source');
+    await expect(svc.subtitleText({ kind: 'movie', tmdbId: 550 })).rejects.toMatchObject({ code: 'no_source' });
+  });
+});
+
 describe('the previous and next episode', () => {
   const EPISODE = { kind: 'tv', tmdb_id: 1396, season: 2, episode: 3 };
   const neighbors = async () => ({ prev: { season: 2, episode: 2 }, next: { season: 2, episode: 4 } });

@@ -15,6 +15,7 @@ import {
   releaseWindow,
   shortOverview,
 } from '../directStream/discover.js';
+import { dialogueBody, dialoguePage, parseCues } from '../directStream/dialogue.js';
 import { pickAbsoluteEpisode, pickEpisode, withListedEpisodes, type AbsoluteChoice, type EpisodeChoice, type EpisodeProgress } from '../directStream/episodePick.js';
 import {
   dbTitleLibrary,
@@ -44,7 +45,7 @@ import { libraryMarks, markedTitle, mergeCredits, movieErrorResult, type Library
 import { jsonResult, type ToolDeps } from './tools.js';
 
 const [FIND, PLAY] = DIRECT_STREAM_TOOL_NAMES;
-const [, , SOURCES, UPDATE_SOURCE, DISCOVER] = DIRECT_STREAM_TOOL_NAMES;
+const [, , SOURCES, UPDATE_SOURCE, DISCOVER, DIALOGUE] = DIRECT_STREAM_TOOL_NAMES;
 
 export const DIRECT_STREAM_OFF =
   'direct_stream_off: direct streaming is not running on this server (NOTESD_DIRECT_STREAM=off, NOTESD_MOVIES=off, or the daemon was started without it), so nothing can be streamed here.';
@@ -56,6 +57,19 @@ export interface FreshSource {
   bestHeight: number | null;
   enSubtitle: boolean | null;
   verifiedAt: Date;
+}
+
+/** A title's dialogue as the tool reads it. */
+export interface StoredDialogue {
+  provider: string;
+  cues: number;
+  /** The second the last line is said at. */
+  lastCueS: number;
+  /** One line per cue, `mm:ss<TAB>text` (dialogueBody). */
+  body: string;
+  fetchedAt: Date;
+  /** True when it came from the store and nothing was resolved. */
+  cached: boolean;
 }
 
 /** What the direct-streaming tools need, bound once per daemon by directStreamToolDeps (tests build their own). */
@@ -77,6 +91,12 @@ export interface DirectStreamToolDeps {
   marks(ids: readonly string[]): Promise<Map<string, LibraryMark>>;
   /** The title keys with a source verified on this host inside the freshness window (a series: any episode). */
   freshTitles(): Promise<Set<string>>;
+  /**
+   * The dialogue of a film or an episode (src/directStream/dialogue.ts): the stored one, else read
+   * from the English subtitle of a stream source resolved out of sight (no player opens) and then
+   * stored. `refresh` reads it again. Throws DirectStreamError: `no_source`, `no_subtitle`, `resolve_failed`.
+   */
+  dialogue(target: StreamTarget, options: { refresh: boolean }): Promise<StoredDialogue>;
   /** DirectStreamService.providers(): the registry with this host's health (direct_stream_sources). */
   providers(): Promise<ProviderView[]>;
   /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
@@ -118,6 +138,31 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     },
     marks: (ids) => libraryMarks(deps.db, { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
     freshTitles: async () => new Set(await movies.repo.freshStreamTitleIds(movies.host, streamFreshSince(new Date(), config.freshDays))),
+    dialogue: async (target, { refresh }) => {
+      const key = targetKey(target);
+      const season = target.kind === 'tv' ? target.season : 0;
+      const episode = target.kind === 'tv' ? target.episode : 0;
+      if (!refresh) {
+        const stored = await movies.repo.dialogue(key, season, episode);
+        if (stored !== null) return { provider: stored.provider, cues: stored.cues, lastCueS: stored.lastCueS, body: stored.body, fetchedAt: stored.fetchedAt, cached: true };
+      }
+      const read = await service.subtitleText(target);
+      const cues = parseCues(read.vtt);
+      const row = {
+        titleId: key,
+        season,
+        episode,
+        lang: 'en',
+        provider: read.provider,
+        cues: cues.length,
+        lastCueS: Math.round(cues[cues.length - 1]?.startS ?? 0),
+        body: dialogueBody(cues),
+        fetchedAt: new Date(),
+      };
+      // The resolve stored the title; without a TMDB credential it could not, and the dialogue is answered unstored.
+      if ((await movies.repo.titleById(key)) !== null) await movies.repo.saveDialogue(row);
+      return { provider: row.provider, cues: row.cues, lastCueS: row.lastCueS, body: row.body, fetchedAt: row.fetchedAt, cached: false };
+    },
     providers: () => service.providers(),
     updateSource: (site, pages) => service.updateSource(site, pages),
   };
@@ -236,6 +281,19 @@ const DISCOVER_DESCRIPTION =
   'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
   'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one"), choose one yourself, play it and say which and why; when they only asked what there is, list the titles and start nothing. ' +
   'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
+
+const DIALOGUE_DESCRIPTION =
+  'What is said in a film or in one episode of a series: the whole English dialogue, read from the subtitle of a stream source, line by line with the minute each line is said. ' +
+  'Use it whenever the owner asks what a film or an episode is about, what happened in it, who said or did what, how it ends, or anything else about its story ("what is One Piece episode 760 about?", "why did Jack leave Zou?", "remind me what happened in the last episode I watched"): ' +
+  'a synopsis is two sentences, this is the title itself. Read all of it before answering, and answer from it; movies_get gives the episode\'s name, air date and synopsis around it, and a web search the wider context. ' +
+  'Pass title (words without the year, a movie id, or a title key) with year and kind when known; for a series the episode is required: season and episode, or absolute_episode for an episode named by one number ("One Piece episode 760"), or an episode\'s movie id as title. ' +
+  '"The last episode I watched" is movies_get first (last_play.season and episode). ' +
+  'The first call for a title resolves a stream source out of sight in the streaming Chrome (5 to 40 seconds; no window, no sound, nothing plays) and stores the dialogue; later calls answer from the store at once, on both machines. ' +
+  'Returns { title, season, episode, dialogue: { language, provider, cues, minutes, fetched_at, cached, from_minute, next_from_minute, lines, text } }: text is one line per subtitle cue, "[mm:ss] what is said" (minutes run on past the hour). ' +
+  'A long film comes in pages: when next_from_minute is not null, call again with from_minute set to it for the rest. refresh true reads the subtitle again. ' +
+  'It is dialogue only: it does not describe silent action, and it does not say who speaks; say so when the answer depends on either. It holds the whole story, the ending included. ' +
+  'started nothing: skipped says why when there is no dialogue (several_matches, no_match, needs_episode, episode_unclear, no_such_episode). ' +
+  'Errors: no_subtitle (the source that resolved has no English subtitle), no_source (no provider could stream the title), resolve_failed (the streaming Chrome could not be used), direct_stream_off.';
 
 const titleField = z.string().trim().min(1).max(200);
 const yearField = z.number().int().min(1880).max(2100);
@@ -603,6 +661,105 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
             attempts: failure.attempts,
             message: failure.message,
             next: 'Nothing is playing. Say in one line why (reason: no_chrome means Chrome is not installed on Windows, chrome_not_reachable that the streaming Chrome did not answer), and offer /idlix or /lk21.',
+          });
+        }
+      });
+    },
+  );
+
+  server.registerTool(
+    DIALOGUE,
+    {
+      title: 'Read what is said in a film or an episode',
+      description: DIALOGUE_DESCRIPTION,
+      inputSchema: {
+        title: titleField.describe('The film or series title without the year, a movie id (M-23T4; an episode\'s id names its season and episode), or a title key (movie-550).'),
+        year: yearField.optional().describe('The release year, when known.'),
+        kind: kindField.optional().describe('"movie" or "tv" (a series), when the owner said which.'),
+        season: seasonField.optional().describe('A series only: the season of the episode.'),
+        episode: episodeField.optional().describe('A series only: the episode number within that season.'),
+        absolute_episode: z.number().int().min(1).max(100000).optional().describe('A series only, instead of season and episode: an episode named by one number without a season ("One Piece episode 760").'),
+        from_minute: z.number().int().min(0).max(100000).optional().describe('Start at this minute: next_from_minute of the page before. Default 0.'),
+        refresh: z.boolean().optional().describe('true: read the subtitle from a stream source again, even when the dialogue is stored.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ title, year, kind, season, episode, absolute_episode, from_minute, refresh }) => {
+      const d = deps.directStream;
+      if (!d) return off();
+      return respond(async () => {
+        const result = await lookupTitle(parseTitleRequest(title, year ?? null, kind ?? null), d);
+        if (result.status === 'none') {
+          return ok({ skipped: 'no_match', did_you_mean: result.nearMisses.map((c) => candidateView(c, wall)), next: 'No title has that name (or that name and year). Show did_you_mean with years and ask which is meant; then call again with its title_key.' });
+        }
+        if (result.status === 'several') {
+          return ok({ skipped: 'several_matches', candidates: result.candidates.map((c) => candidateView(c, wall)), next: 'List the candidates with their years and ask which one; then call again with its movie_id or title_key.' });
+        }
+        const c = result.candidate;
+        let target = targetFor(c, result.episode, season, episode);
+        if (absolute_episode !== undefined) {
+          if (c.kind !== 'tv') throw new LookupError('invalid_input', `${label(c)} is a film: it takes no episode.`);
+          if (target !== null || season !== undefined || episode !== undefined) throw new LookupError('invalid_input', 'pass absolute_episode alone, or season and episode: not both.');
+          const { choice, list } = await chooseAbsolute(c, absolute_episode, d);
+          if (choice.pick === 'unknown') {
+            return ok({ skipped: 'no_such_episode', title: candidateView(c, wall), absolute_episode, episodes: choice.episodes, next: `${label(c)} has ${choice.episodes} episodes listed, so there is no episode ${absolute_episode}. Say so.` });
+          }
+          if (choice.pick === 'unclear') {
+            return ok({
+              skipped: 'episode_unclear',
+              title: candidateView(c, wall),
+              absolute_episode,
+              candidates: choice.candidates.map((e) => ({ season: e.season, episode: e.episode, reading: e.reading, air_date: airDateOf(list, e.season, e.episode) })),
+              next: `Episode ${absolute_episode} can be read two ways (count: the ${absolute_episode}th episode in order; number: the episode numbered ${absolute_episode} in its season). List the candidates and ask which; then call again with that season and episode.`,
+            });
+          }
+          target = { kind: 'tv', tmdbId: c.tmdbId, season: choice.season, episode: choice.episode };
+        }
+        if (target === null) {
+          return ok({
+            skipped: 'needs_episode',
+            title: candidateView(c, wall),
+            seasons: await seasonsOf(c, d),
+            next: 'A series has a dialogue per episode: call again with season and episode (or absolute_episode). For "the last episode I watched", movies_get gives last_play.season and last_play.episode.',
+          });
+        }
+        try {
+          const stored = await d.dialogue(target, { refresh: refresh ?? false });
+          const page = dialoguePage(stored.body, from_minute ?? 0);
+          return ok({
+            title: candidateView(await d.library.byKey(c.kind, c.tmdbId).then((s) => s ?? c), wall),
+            ...(target.kind === 'tv' ? { season: target.season, episode: target.episode } : { season: null, episode: null }),
+            ...(absolute_episode === undefined ? {} : { absolute_episode }),
+            dialogue: {
+              language: 'en',
+              provider: stored.provider,
+              cues: stored.cues,
+              minutes: Math.ceil(stored.lastCueS / 60),
+              fetched_at: stored.fetchedAt.toISOString(),
+              cached: stored.cached,
+              ...page,
+            },
+            next:
+              page.next_from_minute === null
+                ? 'This is every line said, the ending included. Answer from it; it does not describe silent action or say who speaks.'
+                : `This page ends before minute ${page.next_from_minute}: call again with from_minute ${page.next_from_minute} for the rest before answering about the whole title.`,
+          });
+        } catch (err) {
+          const failure = playFailure(err);
+          if (failure === null) throw err;
+          return failJson({
+            error: failure.error,
+            reason: failure.reason,
+            title: candidateView(c, wall),
+            ...(target.kind === 'tv' ? { season: target.season, episode: target.episode } : {}),
+            attempts: failure.attempts,
+            message: failure.message,
+            next:
+              failure.error === 'no_subtitle'
+                ? 'A stream was found, but it carries no English subtitle, so there is no dialogue to read. Say so, and answer from movies_get (the synopsis) and a web search instead.'
+                : failure.error === 'no_source'
+                  ? 'No provider could stream the title, so its subtitle could not be read. Say so, and answer from movies_get (the synopsis) and a web search instead.'
+                  : 'The streaming Chrome could not be used (reason). Say so, and answer from movies_get and a web search instead.',
           });
         }
       });

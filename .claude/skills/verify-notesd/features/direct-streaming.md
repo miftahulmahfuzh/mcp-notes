@@ -159,6 +159,23 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   resolves out of sight through "VidNest Anime" in about 6 s (hls 1080p, one English subtitle).
   `resume one piece from episode 730` in Claude Code plays it: the owner's to run.
 
+## The dialogue of a film or an episode
+- `direct_stream_dialogue` (MCP, chat bar): the English subtitle of a stream source as lines with
+  their minute, resolved out of sight (no player opens), stored in `movie_dialogues` and answered
+  from there afterwards; a series needs its episode (`needs_episode`), a long film comes in pages
+  (`next_from_minute`), and `no_subtitle` / `no_source` say why there is none. Proven by
+  `npx vitest run tests/unit/directStream/dialogue.test.ts tests/unit/mcp.directStreamTools.test.ts`
+  and `npm run test:int -- tests/integration/directStream.api.int.test.ts tests/integration/movies.streams.int.test.ts`
+  ("the dialogue": the fixture's `.srt` through the pass-through, a subtitle playlist's segments,
+  the stored row).
+- Throwaway daemon: `$V up --direct-stream`, then
+  `$V mcp RUN direct_stream_dialogue '{"title":"movie-990004"}'` answers the fixture's one line
+  (`[00:01] Hello.`) with `cached: false`, and the same call again with `cached: true`; the fake
+  resolver's `calls.jsonl` holds one resolve and no `open`.
+- Live (owner's machine, out of sight, plays nothing):
+  `direct_stream_dialogue {"title":"one piece","absolute_episode":760}` reads about 290 lines
+  through "VidNest Anime".
+
 ## Previous and next episode in the player
 - A series' session carries `prev_episode` and `next_episode`; the player shows a button for each
   (Shift+P, Shift+N), and `POST /api/stream/sessions/:id/episode` resolves the neighbour into a new

@@ -58,7 +58,8 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
     case 'unknown_session':
       return c.json(UNKNOWN_SESSION, 403);
     case 'no_episode':
-      return c.json({ error: 'no_episode', message: err.message }, 404);
+    case 'no_subtitle':
+      return c.json({ error: err.code, message: err.message }, 404);
   }
 }
 

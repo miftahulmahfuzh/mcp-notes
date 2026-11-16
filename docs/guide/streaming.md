@@ -20,6 +20,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [The streaming Chrome](#the-streaming-chrome) · [In the chat bar](#in-the-chat-bar) ·
 [Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
 [Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
+[What a title says](#what-a-title-says-its-dialogue) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -612,6 +613,38 @@ more. After a season is marked finished with `movies_mark`, a series named witho
 starts at the first episode that is not finished, so "continue House of the Dragon" also starts
 season 2.
 
+### What a title says: its dialogue
+
+`direct_stream_dialogue` answers "what is this episode about?" from the title itself. It reads
+the English subtitle of a stream source: every line said, with the minute it is said. A TMDB
+synopsis is two sentences; an episode's dialogue is about 300 lines.
+
+```text
+what is One Piece episode 760 about?
+why did Jack leave Zou?
+remind me what happened in the last episode I watched
+how does Saltburn end?
+```
+
+- **The first read resolves a source**, as a play does but out of sight: a background tab, no
+  window, no sound, no player page (5 to 40 seconds). The first English track that holds lines is
+  read through the pass-through's rules (the session's hosts, the captured headers): a separate
+  `.vtt` or `.srt` file first, then a track inside an HLS manifest, whose segments are joined.
+- **It is kept**, in `movie_dialogues` (one row per film or episode, written only by
+  `MoviesRepo.saveDialogue`), so the next question is answered at once, on both machines.
+  `refresh: true` reads it again.
+- **The episode is named** by season and episode, by one number (`absolute_episode`, as for a
+  play), or by an episode's movie id. A series without an episode answers `needs_episode`; "the
+  last episode I watched" is `movies_get` first (`last_play`).
+- **The text** is one line per subtitle cue, `[mm:ss] what is said`, minutes running on past the
+  hour. A long film comes in pages of about 40,000 characters that end on a whole minute:
+  `next_from_minute` says where the next page starts.
+- **What it is not.** Dialogue only: silent action is not described and the speaker is not named.
+  It holds the whole story, so in the chat bar the spoiler limit for a title you have not
+  finished still applies.
+- **When there is none:** `no_subtitle` (the source that resolved has no English subtitle) or
+  `no_source`. Claude then answers from the synopsis and a web search, and says so.
+
 ### `/update-cloud-source`: providers from another site
 
 ```text
@@ -756,11 +789,12 @@ and the last pass.
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
+| `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |
 | `src/http/directStreamApi.ts` | The `/api/stream/*` routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
-| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover` |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |

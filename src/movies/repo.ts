@@ -1,9 +1,11 @@
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client.js';
+import type { MovieDialogueRow } from '../db/schema.js';
 import {
   movieCompanies,
   movieCredits,
+  movieDialogues,
   movieEpisodeMarks,
   movieEpisodes,
   movieFiles,
@@ -902,6 +904,29 @@ export class MoviesRepo {
       .from(movieStreamSources)
       .where(and(eq(movieStreamSources.titleId, titleIdValue), eq(movieStreamSources.host, host)))
       .orderBy(asc(movieStreamSources.season), asc(movieStreamSources.episode));
+  }
+
+  // ---------- dialogue (src/directStream/dialogue.ts) ----------
+
+  /** The stored dialogue of a film (season 0, episode 0) or an episode, or null. */
+  async dialogue(titleIdValue: string, season: number, episode: number): Promise<MovieDialogueRow | null> {
+    const rows = await this.db
+      .select()
+      .from(movieDialogues)
+      .where(and(eq(movieDialogues.titleId, titleIdValue), eq(movieDialogues.season, season), eq(movieDialogues.episode, episode)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /** Stores (or replaces) one dialogue. The title row must exist. */
+  async saveDialogue(row: MovieDialogueRow): Promise<void> {
+    await this.db
+      .insert(movieDialogues)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [movieDialogues.titleId, movieDialogues.season, movieDialogues.episode],
+        set: { lang: row.lang, provider: row.provider, cues: row.cues, lastCueS: row.lastCueS, body: row.body, fetchedAt: row.fetchedAt },
+      });
   }
 
   // ---------- history (R3.8) ----------

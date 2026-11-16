@@ -5,6 +5,7 @@ import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
 import type { AnimeRef } from './anime.js';
+import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
 import { proxiedUrl } from './rewrite.js';
@@ -27,6 +28,12 @@ import {
   type EpisodeNumber,
   type StreamRefInput,
 } from './types.js';
+
+/** One subtitle file or segment must answer within this. */
+const SUBTITLE_TIMEOUT_MS = 30_000;
+/** A subtitle playlist is read up to this many segments (a film in 6 s segments has about 1,200). */
+const SUBTITLE_MAX_SEGMENTS = 1_500;
+const SUBTITLE_PARALLEL = 8;
 
 /** The checked-in provider seed (direct streaming phase 1), loaded into stream_providers at every start. */
 export const DEFAULT_SEED_FILE = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'providers.seed.json');
@@ -252,6 +259,51 @@ export class DirectStreamService {
     const next = await this.resolve({ kind: 'tv', tmdbId: session.ref.tmdbId, season: target.season, episode: target.episode });
     this.log(`[notesd] direct stream: ${refLabel(session.ref)} -> ${refLabel(next.ref)} (${to} episode) from ${next.source.provider}`);
     return this.sessionInfo(next);
+  }
+
+  /**
+   * The text of the title's English subtitle, for its dialogue (dialogue.ts). Resolves the title
+   * like a play does, out of sight, and opens no player: then reads the first English track that
+   * holds cues, through the same pass-through rules as the player (the session's hosts, the
+   * captured headers). A separate file is tried before a track inside the manifest. Throws what
+   * `resolve` throws, or `no_subtitle` when the source that resolved has no English track that
+   * can be read.
+   */
+  async subtitleText(input: StreamRefInput): Promise<{ provider: string; label: string; vtt: string; attempts: ResolveAttempt[] }> {
+    const session = await this.resolve(input);
+    const english = session.source.subtitles.filter((t) => isEnglish(t));
+    const tracks = [...english.filter((t) => t.source === 'request'), ...english.filter((t) => t.source !== 'request')];
+    for (const track of tracks) {
+      const vtt = await this.readSubtitle(session, track.url, track.format).catch(() => null);
+      if (vtt !== null && parseCues(vtt).length >= DIALOGUE_MIN_CUES) {
+        return { provider: session.source.provider, label: track.label, vtt, attempts: session.attempts };
+      }
+    }
+    throw new DirectStreamError(
+      'no_subtitle',
+      tracks.length === 0
+        ? `${session.source.provider} streams ${refLabel(session.ref)} without an English subtitle.`
+        : `${session.source.provider} names an English subtitle for ${refLabel(session.ref)}, but it could not be read.`,
+      { attempts: session.attempts },
+    );
+  }
+
+  /** One subtitle track as WebVTT text: a file, or the segments of an HLS subtitle playlist joined. Null when the host refuses it. */
+  private async readSubtitle(session: StreamSession, url: string, format: string): Promise<string | null> {
+    const get = async (target: string, vtt: boolean): Promise<string | null> => {
+      const res = await forward(session, { target, range: null, vtt, signal: AbortSignal.timeout(SUBTITLE_TIMEOUT_MS) }, this.fetchImpl);
+      return res.ok ? res.text() : null;
+    };
+    if (format !== 'hls') return get(url, true);
+    // The pass-through answers a playlist with every address pointing back at itself.
+    const playlist = await get(url, false);
+    if (playlist === null) return null;
+    const targets = playlist.split('\n').flatMap((line) => playlistTarget(line) ?? []).slice(0, SUBTITLE_MAX_SEGMENTS);
+    const parts: string[] = [];
+    for (let i = 0; i < targets.length; i += SUBTITLE_PARALLEL) {
+      parts.push(...(await Promise.all(targets.slice(i, i + SUBTITLE_PARALLEL).map((target) => get(target, true).catch(() => null)))).flatMap((text) => text ?? []));
+    }
+    return parts.length === 0 ? null : parts.join('\n\n');
   }
 
   /** GET /api/stream/sessions/:id/p: 403 `unknown_session` before anything else, then forward(). */

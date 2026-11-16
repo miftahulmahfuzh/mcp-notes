@@ -881,6 +881,9 @@ at all.
 - **History filters:** by machine, or by one file.
 - **Edits:** delete a title, a file row or a play; change a title's metadata or refresh it from
   TMDB; rate or review one episode.
+- **What a title is about:** `movies_get` has TMDB's synopsis of a title and of each episode.
+  The whole story, line by line, is `direct_stream_dialogue`
+  ([streaming.md](streaming.md#what-a-title-says-its-dialogue)).
 - **Titles you do not have:** there is no wish list. `movies_person` lists a person's films
   outside the library, `direct_stream_discover` finds titles by year, language, person, studio or
   streaming service ([streaming.md](streaming.md#finding-something-to-stream)), and "films like
