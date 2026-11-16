@@ -352,6 +352,17 @@ from fmovies. `--deadline-s <n>` stops trying providers once `n` seconds have pa
 `deadline`, which says nothing about the title). `cli.mjs open <url> --fullscreen` puts a daemon page
 full screen in the streaming Chrome and starts the player with sound, as a click would.
 
+**A title that is not in English looks for a subtitle.** When the first stream that resolves has
+no English track, it is held and up to four more providers are asked: the first with an English
+track wins; otherwise the held stream plays, one with a single unnamed subtitle file before one
+with none (the player shows such a file by default). Its attempt reads `held: no English
+subtitle`. An English title, `--only` and a title whose language is not known take the first
+stream.
+
+**The order** (`order.mjs`): a provider that never gave a stream on this machine and failed five
+times in a row goes last of all (it is still tried); then English subtitle (the seed's "has one"
+stands even when the last title it resolved had none), delivery, health, quality, speed.
+
 **What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
 error page, a bare list of addresses) is not a stream, and the next provider is tried.
 

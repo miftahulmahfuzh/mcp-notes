@@ -10,6 +10,19 @@ export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'er
 
 /** Failures that would hit every provider the same way: stop instead of trying the rest. */
 const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
+/** After a stream without a subtitle was found for a title that is not in English, this many more providers are asked for one with it. */
+export const SUBTITLE_EXTRA_TRIES = 4;
+
+/**
+ * How well a stream's subtitles serve a viewer who reads English: 0 an English track (its own or
+ * one borrowed from a dub), 1 exactly one track that names no language (the player shows it by
+ * default: a provider that hands out one unnamed file means it for the viewer), 2 nothing to show.
+ */
+export function subtitleRank(subtitles) {
+  if (subtitles.some(isEnglish)) return 0;
+  const [only] = subtitles;
+  return subtitles.length === 1 && (only.lang ?? null) === null && (only.label ?? '') === '' ? 1 : 2;
+}
 const NO_OPTIONS = Object.freeze({});
 const SUBTITLE_EXT = /\.(vtt|srt)$/i;
 
@@ -274,6 +287,12 @@ function describe(found) {
  * A dub's separate English subtitle files are not thrown away: when the stream that is kept has
  * no English subtitle of its own, they are added to its tracks with `borrowed_from` naming the
  * provider (the same episode, so the timing fits), and `en_subtitle` stays the provider's own.
+ *
+ * A title that is not in English is not worth much without a subtitle. When its first stream has
+ * no English track, the stream is held and up to SUBTITLE_EXTRA_TRIES more providers are asked:
+ * the first with an English track wins, else the held stream with the best subtitleRank (a single
+ * unnamed track before none; the earlier provider on a tie). Its attempt says `held`. `--only`
+ * and an English or unknown original language take the first stream, as before.
  */
 export async function resolveTitle(
   ref,
@@ -295,6 +314,10 @@ export async function resolveTitle(
   const attempts = [];
   /** English subtitle files seen at providers skipped as dubs. */
   const spare = [];
+  /** The best stream found so far that has no English subtitle, while a few more providers are asked. */
+  let held = null;
+  let extraTries = 0;
+  const wantsSubtitle = only === null && audioLang !== null && normalizeLang(audioLang) !== 'en';
   const begun = clock();
   for (const [index, provider] of candidates.entries()) {
     if (provider.browser_only) {
@@ -306,17 +329,23 @@ export async function resolveTitle(
       attempts.push(attempt(provider, 'skipped_no_template', 0, provider.id_kind === 'anilist' ? 'an anime embed, and this title has no AniList id' : `no ${ref.kind} template`));
       continue;
     }
+    if (held !== null && extraTries >= SUBTITLE_EXTRA_TRIES) break;
     if (deadlineS !== null && clock() - begun >= deadlineS * 1000) {
+      if (held !== null) break;
       const left = candidates.length - index;
       return { ok: false, ...base, source: null, error: 'deadline', detail: `stopped after ${seconds(clock() - begun)} s; ${left} provider(s) not tried`, attempts };
     }
     const started = clock();
+    if (held !== null) extraTries += 1;
     let sniffed;
     try {
       sniffed = await sniff(url, sniffOptions);
     } catch (err) {
       attempts.push(attempt(provider, 'error', seconds(clock() - started), String(err?.message ?? err)));
-      if (err instanceof ChromeError && ABORTS.has(err.code)) return { ok: false, ...base, source: null, error: err.code, attempts };
+      if (err instanceof ChromeError && ABORTS.has(err.code)) {
+        if (held !== null) break;
+        return { ok: false, ...base, source: null, error: err.code, attempts };
+      }
       continue;
     }
     const tookS = seconds(clock() - started);
@@ -349,9 +378,15 @@ export async function resolveTitle(
       const heardAs = audio === null || audio.languages.length === 0 ? '' : `, audio ${audio.languages.join('/')}`;
       const borrowed = found.en_subtitle ? [] : spare;
       const lent = borrowed.length === 0 ? '' : `, English subtitle from ${[...new Set(borrowed.map((t) => t.borrowed_from))].join(', ')}`;
-      attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
       const source = { provider: provider.name, embed_url: url, ...found, subtitles: [...found.subtitles, ...borrowed], audio, took_s: tookS };
-      return { ok: true, ...base, source, attempts };
+      const rank = subtitleRank(source.subtitles);
+      if (!wantsSubtitle || rank === 0) {
+        attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
+        return { ok: true, ...base, source, attempts };
+      }
+      attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}, held: no English subtitle`));
+      if (held === null || rank < held.rank) held = { source, rank };
+      continue;
     }
     if (sniffed.bot_check) {
       attempts.push(attempt(provider, 'bot_check', tookS, sniffed.bot_check_reason ?? 'bot check'));
@@ -360,5 +395,6 @@ export async function resolveTitle(
     const detail = `${sniffed.requests ?? 0} requests, ${sniffed.hits?.length ?? 0} media hits, ${sniffed.clicks ?? 0} clicks, ${sniffed.popups_closed ?? 0} advert tabs closed`;
     attempts.push(attempt(provider, 'no_stream', tookS, detail));
   }
+  if (held !== null) return { ok: true, ...base, source: held.source, attempts };
   return { ok: false, ...base, source: null, error: 'no_source', attempts };
 }

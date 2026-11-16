@@ -165,6 +165,21 @@ describe('the order providers are tried in (R1.2)', () => {
     expect(readHealth('{"A":{"delivery":"bad"},"B":{"delivery":"slow"},"C":{}}')).toMatchObject({ A: { delivery: 'bad' }, B: { delivery: null }, C: { delivery: null } });
   });
 
+  it('tries a provider that never gave a stream here after every other, and keeps a seed\'s English subtitle over one title without', () => {
+    const list = [provider('Dead', { en_subtitle: true }), provider('Failing', { en_subtitle: true }), provider('NoSub', { en_subtitle: false }), provider('Seeded', { en_subtitle: true })];
+    const health = readHealth(
+      JSON.stringify({
+        Dead: { consecutive_failures: 5 },
+        // It failed five times too, but it has worked here: not dead.
+        Failing: { consecutive_failures: 5, last_success_at: '2026-11-10T10:00:00Z' },
+        NoSub: { last_success_at: '2026-11-15T10:00:00Z' },
+        // The last title it resolved had no subtitle; the seed still says it offers them.
+        Seeded: { last_success_at: '2026-11-15T10:00:00Z', en_subtitle: false },
+      }),
+    );
+    expect(names(orderProviders(list, health))).toEqual(['Seeded', 'Failing', 'NoSub', 'Dead']);
+  });
+
   it('lets what this host measured override the seed', () => {
     const health = readHealth('{"Late":{"en_subtitle":true}}');
     expect(names(orderProviders([provider('Early'), provider('Late', { en_subtitle: false })], health))).toEqual(['Late', 'Early']);

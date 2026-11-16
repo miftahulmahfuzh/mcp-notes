@@ -1,12 +1,28 @@
-// The order providers are tried in, the one place it lives (decision D1): a provider known to
+// The order providers are tried in, the one place it lives (decision D1): a provider that never
+// gave a stream on this machine in DEAD_AFTER tries or more goes last of all; then a provider known to
 // offer an English subtitle first, unknown next, known without one last; then delivery (a provider
 // whose last play on this machine kept stalling goes last); then health; then the best quality;
 // then the quickest; then the order of the list.
 
-/** 0: has an English subtitle, 1: not known, 2: has none. A measured value beats the seed's. */
+/** A provider with this many failures in a row and no success ever on this machine is tried after every other. */
+export const DEAD_AFTER = 5;
+
+/**
+ * 1: the provider never gave a stream here and failed DEAD_AFTER times in a row or more. It is
+ * still tried, last: fifteen such providers ahead of a working one cost a play four minutes.
+ */
+export function deadRank(health) {
+  return health && !health.last_success_at && (health.consecutive_failures ?? 0) >= DEAD_AFTER ? 1 : 0;
+}
+
+/**
+ * 0: has an English subtitle, 1: not known, 2: has none. What this machine measured beats the
+ * seed's, except that a seed's "has one" stands: the measure is the last title's, and one title
+ * without a subtitle does not make a provider one without subtitles.
+ */
 export function englishTier(provider, health) {
   const measured = health?.en_subtitle;
-  const known = measured === true || measured === false ? measured : provider.en_subtitle;
+  const known = provider.en_subtitle === true || measured === true ? true : measured === false ? false : provider.en_subtitle;
   if (known === true) return 0;
   if (known === false) return 2;
   return 1;
@@ -36,7 +52,7 @@ export function orderProviders(providers, health = {}) {
     const h = Object.hasOwn(health, provider.name) ? health[provider.name] : null;
     return {
       provider,
-      key: [englishTier(provider, h), deliveryRank(h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
+      key: [deadRank(h), englishTier(provider, h), deliveryRank(h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
     };
   });
   keyed.sort((a, b) => {

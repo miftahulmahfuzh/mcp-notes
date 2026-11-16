@@ -193,8 +193,65 @@ describe('resolving with the original language', () => {
     });
     expect(result.ok).toBe(true);
     expect(result.source).toMatchObject({ provider: 'Beta', audio: { languages: ['ko'], tracks: 0, original: true, track: null } });
-    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([['Alpha', 'dubbed'], ['Beta', 'resolved']]);
+    // Beta has no English subtitle, so Gamma is asked too; it has none either and the first one stays.
+    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([['Alpha', 'dubbed'], ['Beta', 'resolved'], ['Gamma', 'resolved']]);
     expect(result.attempts[0].detail).toBe('audio is en, the original is ko');
+    expect(result.attempts[1].detail).toMatch(/held: no English subtitle$/);
+  });
+
+  describe('a title that is not in English looks for a stream with a subtitle', () => {
+    const SUBBED = ['#EXTM3U', '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",LANGUAGE="en",URI="en.m3u8"', '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,SUBTITLES="s"', '720/index.m3u8'].join('\n');
+    const BARE = ['#EXTM3U', '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1920x1080', '1080/index.m3u8'].join('\n');
+    const unnamedFile = (host: string): Json => {
+      const s = streamOf(host, BARE);
+      s.hits.push({ url: `https://${host}/sub/abc.srt`, referer: 'https://embed.example/', origin: null, user_agent: 'UA/1', status: 200, mime: 'application/x-subrip' });
+      return s;
+    };
+    const names = (n: number) => Array.from({ length: n }, (_, i) => provider(`P${i + 1}`));
+    const run = (byProvider: Record<string, Json | null>, options: Json = {}) => {
+      const calls: string[] = [];
+      const sniffer = async (url: string): Promise<Json> => {
+        const name = new URL(url).hostname.split('.')[0] ?? '';
+        calls.push(name);
+        return byProvider[name] ?? { user_agent: 'UA/1', bot_check: false, requests: 3, hits: [] };
+      };
+      return resolveTitle(MOVIE, { providers: names(8), sniff: sniffer, audioLang: 'zh', probeAudio: async () => ({ languages: ['zh'], tracks: 0, named: [] }), ...options }).then((result: Json) => ({ result, calls }));
+    };
+
+    it('passes over a stream without one for the next provider that has an English track', async () => {
+      // The Shadow's Edge: VidRock 1080p with nothing, then a provider with an English subtitle.
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p2: null, p3: streamOf('c.example', SUBBED) });
+      expect(result.source).toMatchObject({ provider: 'P3', en_subtitle: true });
+      expect(result.attempts.map((a: Json) => a.outcome)).toEqual(['resolved', 'no_stream', 'resolved']);
+      expect(calls).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    it('asks at most four more providers, then plays the best it holds: a single unnamed track before none', async () => {
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p3: unnamedFile('c.example'), p4: unnamedFile('d.example'), p6: streamOf('f.example', SUBBED) });
+      expect(calls).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
+      expect(result.ok).toBe(true);
+      expect(result.source.provider).toBe('P3');
+      expect(result.source.subtitles).toHaveLength(1);
+    });
+
+    it('keeps the only stream there is, with or without a subtitle', async () => {
+      const { result, calls } = await run({ p2: streamOf('b.example', BARE) }, { providers: names(4) });
+      expect(result.source.provider).toBe('P2');
+      expect(calls).toEqual(['p1', 'p2', 'p3', 'p4']);
+    });
+
+    it('takes the first stream for an English title, an unknown language, or --only', async () => {
+      const streams = { p1: streamOf('a.example', BARE), p2: streamOf('b.example', SUBBED) };
+      expect((await run(streams, { audioLang: 'en', probeAudio: async () => ({ languages: ['en'], tracks: 0, named: [] }) })).calls).toEqual(['p1']);
+      expect((await run(streams, { audioLang: null })).calls).toEqual(['p1']);
+      expect((await run(streams, { only: 'P1' })).calls).toEqual(['p1']);
+    });
+
+    it('a deadline that passes while it looks answers the stream it holds, not deadline', async () => {
+      let now = 0;
+      const { result } = await run({ p1: streamOf('a.example', BARE) }, { deadlineS: 5, clock: () => (now += 3000) });
+      expect(result).toMatchObject({ ok: true, source: { provider: 'P1' } });
+    });
   });
 
   it('keeps a stream whose language nothing names, and answers no_source when every stream is a dub', async () => {
