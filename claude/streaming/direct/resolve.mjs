@@ -292,7 +292,9 @@ function describe(found) {
  * no English track, the stream is held and up to SUBTITLE_EXTRA_TRIES more providers are asked:
  * the first with an English track wins, else the held stream with the best subtitleRank (a single
  * unnamed track before none; the earlier provider on a tie). Its attempt says `held`. `--only`
- * and an English or unknown original language take the first stream, as before.
+ * and an English or unknown original language take the first stream, as before. When the provider
+ * with the English track has the shorter picture (a 960p cinema recording after a 1080p stream),
+ * the held stream plays and takes that provider's English subtitle file (`borrowed_from`).
  */
 export async function resolveTitle(
   ref,
@@ -380,9 +382,22 @@ export async function resolveTitle(
       const lent = borrowed.length === 0 ? '' : `, English subtitle from ${[...new Set(borrowed.map((t) => t.borrowed_from))].join(', ')}`;
       const source = { provider: provider.name, embed_url: url, ...found, subtitles: [...found.subtitles, ...borrowed], audio, took_s: tookS };
       const rank = subtitleRank(source.subtitles);
-      if (!wantsSubtitle || rank === 0) {
+      if (!wantsSubtitle || (rank === 0 && held === null)) {
         attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
         return { ok: true, ...base, source, attempts };
+      }
+      if (rank === 0 && held !== null) {
+        // A stream with an English subtitle, after one without. The better picture plays: this
+        // one when it is at least as tall, else the held one with this one's subtitle file (the
+        // same title, so the lines fit; the player's subtitle delay keys cover an offset).
+        const file = source.subtitles.find((t) => t.source === 'request' && isEnglish(t)) ?? null;
+        if (file === null || (source.best_height ?? 0) >= (held.source.best_height ?? 0)) {
+          attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}${lent}`));
+          return { ok: true, ...base, source, attempts };
+        }
+        attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}, shorter than ${held.source.provider}: its English subtitle is lent`));
+        const lentFile = { ...file, lang: file.lang ?? 'en', borrowed_from: provider.name };
+        return { ok: true, ...base, source: { ...held.source, subtitles: [...held.source.subtitles, lentFile] }, attempts };
       }
       attempts.push(attempt(provider, 'resolved', tookS, `${describe(found)}${heardAs}, held: no English subtitle`));
       if (held === null || rank < held.rank) held = { source, rank };

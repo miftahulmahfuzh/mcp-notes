@@ -226,6 +226,17 @@ describe('resolving with the original language', () => {
       expect(calls).toEqual(['p1', 'p2', 'p3']);
     });
 
+    it('keeps the taller picture and lends it the English subtitle file of a shorter stream', async () => {
+      const short = streamOf('c.example', ['#EXTM3U', '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1706x960', '960/index.m3u8'].join('\n'));
+      short.hits.push({ url: 'https://subs.example/movie/english.vtt', referer: 'https://embed.example/', origin: null, user_agent: 'UA/1', status: 200, mime: 'text/vtt' });
+      const { result, calls } = await run({ p1: streamOf('a.example', BARE), p2: short, p3: streamOf('d.example', SUBBED) });
+      expect(calls).toEqual(['p1', 'p2']);
+      expect(result.source).toMatchObject({ provider: 'P1', best_height: 1080, en_subtitle: false });
+      expect(result.source.subtitles).toEqual([expect.objectContaining({ url: 'https://subs.example/movie/english.vtt', lang: 'en', borrowed_from: 'P2' })]);
+      expect(result.attempts[1].detail).toMatch(/shorter than P1: its English subtitle is lent$/);
+      // A subtitle inside the manifest cannot be lent: the stream that has it plays (the first test above).
+    });
+
     it('asks at most four more providers, then plays the best it holds: a single unnamed track before none', async () => {
       const { result, calls } = await run({ p1: streamOf('a.example', BARE), p3: unnamedFile('c.example'), p4: unnamedFile('d.example'), p6: streamOf('f.example', SUBBED) });
       expect(calls).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);

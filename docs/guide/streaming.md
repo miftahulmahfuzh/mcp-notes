@@ -357,7 +357,9 @@ no English track, it is held and up to four more providers are asked: the first 
 track wins; otherwise the held stream plays, one with a single unnamed subtitle file before one
 with none (the player shows such a file by default). Its attempt reads `held: no English
 subtitle`. An English title, `--only` and a title whose language is not known take the first
-stream.
+stream. When the provider with the English track has the shorter picture (a 960p cinema
+recording found after a 1080p stream), the taller stream plays and takes that provider's English
+subtitle file (`borrowed_from`); only a separate file can be lent, not a track inside a manifest.
 
 **The order** (`order.mjs`): a provider that never gave a stream on this machine and failed five
 times in a row goes last of all (it is still tried); then English subtitle (the seed's "has one"
@@ -555,6 +557,11 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   out. With no English track, a source's only subtitle is shown when it names no language (no
   tag, and a label that is empty or just "Subtitle"); otherwise subtitles start off and the
   others can still be picked.
+- **Subtitle delay.** G shows the subtitles 50 ms earlier and H 50 ms later, as in VLC (hold the
+  key to go on); the line over the picture reads `Subtitle delay +250 ms`. It is for a subtitle
+  that came from another provider than the picture. The delay is kept per title in the page's
+  storage, so the next play of it starts with it, and `window.notesdStream.subtitleDelayMs`
+  holds it.
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Audio.** When the manifest names several audio tracks, the page selects the one in the
   title's original language (the session's `audio.track`), never the manifest's default.

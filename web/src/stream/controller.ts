@@ -45,6 +45,9 @@ export const SEEK_GRACE_MS = 5_000;
 export const MAX_SOURCE_SWITCHES = 2;
 export const SOURCE_SWITCH_COOLDOWN_MS = 120_000;
 /** A pause this long starts the download of the title to this machine; a quick pause and play does not. */
+/** One press of G or H moves the subtitles this far, as in VLC. */
+export const SUBTITLE_DELAY_STEP_MS = 50;
+export const SUBTITLE_DELAY_MAX_MS = 60_000;
 export const PAUSE_CACHE_DELAY_MS = 2_000;
 /** How often the page asks where the download stands, and what is on disk. */
 export const CACHE_POLL_MS = 4_000;
@@ -85,6 +88,8 @@ export interface StreamState {
   switchError: { to: 'prev' | 'next'; code: string } | null;
   /** Played from this machine's stream cache (phase 6): the page marks it beside the title. Null: through the pass-through. */
   cached: CachedInfo | null;
+  /** How much later (positive) or earlier (negative) the subtitles show than their file says, in ms (G and H). */
+  subtitleDelayMs: number;
   /** The stretches of the title on this machine's disk (a cached play), in seconds: the timeline's thick grey bar. */
   cachedRanges: TimeRange[];
   /** The player's error messages, oldest first (phase 6's playcheck reads them). */
@@ -112,6 +117,7 @@ export const INITIAL_STATE: StreamState = {
   switching: null,
   switchError: null,
   cached: null,
+  subtitleDelayMs: 0,
   cachedRanges: [],
   errors: [],
   log: [],
@@ -128,6 +134,8 @@ export interface ControllerDeps {
   muted?: boolean;
   /** The page now plays another session (the next or previous episode): the address bar follows. */
   onSession?: (sessionId: string) => void;
+  /** Where the subtitle delay of a title is kept between plays (localStorage in the browser). Without it nothing is kept. */
+  storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 }
 
 interface FileTrack {
@@ -168,6 +176,8 @@ export class StreamController {
   private cacheAskedFor: string | null = null;
   /** The move onto the cache loads the film again: it stays paused when it was. */
   private holdPaused = false;
+  /** Each cue's times as its file gave them, so a delay is always counted from there. */
+  private readonly cueTimes = new WeakMap<object, { start: number; end: number; applied: number }>();
   /** Log lines waiting for this tick's post to the daemon, each under the session it was written in. */
   private unsent: { sessionId: string; line: PlayerLogLine }[] = [];
   private readonly mutedMode: boolean;
@@ -245,6 +255,7 @@ export class StreamController {
     this.session = session;
     this.set({ title: session.title, kind: session.manifestKind, prevEpisode: session.prevEpisode, nextEpisode: session.nextEpisode, cached: session.cached });
     if (session.cached !== null) this.note(`from cache ${session.cached.id.slice(0, 8)} (${session.cached.state})`);
+    this.restoreSubtitleDelay();
     await this.loadFileSubtitles(session);
     if (this.disposed || this.session !== session) return;
     if (session.cached !== null) this.followCache(session.cached.id);
@@ -332,6 +343,70 @@ export class StreamController {
     this.subtitleChosen = true;
     this.showSubtitle(this.state.subtitles, id);
     this.set({ subtitle: id });
+  }
+
+  /**
+   * G and H: the subtitles show `deltaMs` later (positive) or earlier, on top of what was set
+   * before. For a subtitle that came from another source than the picture and runs ahead of or
+   * behind the voices. Kept per title, so the next play of it starts with the same delay.
+   */
+  shiftSubtitles(deltaMs: number): void {
+    const next = Math.max(-SUBTITLE_DELAY_MAX_MS, Math.min(SUBTITLE_DELAY_MAX_MS, this.state.subtitleDelayMs + deltaMs));
+    if (next === this.state.subtitleDelayMs) return;
+    this.set({ subtitleDelayMs: next });
+    this.applySubtitleDelay();
+    const key = this.delayKey();
+    if (key === null) return;
+    try {
+      if (next === 0) this.deps.storage?.removeItem(key);
+      else this.deps.storage?.setItem(key, String(next));
+    } catch {
+      // A full or closed storage only means the delay is not remembered.
+    }
+  }
+
+  private delayKey(): string | null {
+    return this.session === null ? null : `notesd-subtitle-delay:${this.session.title}`;
+  }
+
+  private restoreSubtitleDelay(): void {
+    const key = this.delayKey();
+    let kept = 0;
+    try {
+      kept = Number(key === null ? 0 : (this.deps.storage?.getItem(key) ?? 0));
+    } catch {
+      kept = 0;
+    }
+    this.set({ subtitleDelayMs: Number.isFinite(kept) && Math.abs(kept) <= SUBTITLE_DELAY_MAX_MS ? Math.round(kept) : 0 });
+  }
+
+  /** Moves every cue of every text track to its own time plus the delay. Cues arrive late (a file loads, hls.js adds a part), so this runs again as the film plays. */
+  private applySubtitleDelay(): void {
+    const delay = this.state.subtitleDelayMs;
+    // jsdom has no text tracks; a browser always does.
+    const tracks = this.video.textTracks as TextTrackList | undefined;
+    if (tracks === undefined) return;
+    for (let i = 0; i < tracks.length; i++) {
+      const cues = tracks[i]?.cues;
+      if (!cues) continue;
+      for (let j = 0; j < cues.length; j++) {
+        const cue = cues[j];
+        if (cue === undefined) continue;
+        let times = this.cueTimes.get(cue);
+        if (times === undefined) {
+          if (delay === 0) continue;
+          times = { start: cue.startTime, end: cue.endTime, applied: 0 };
+          this.cueTimes.set(cue, times);
+        }
+        if (times.applied === delay) continue;
+        const start = Math.max(0, times.start + delay / 1000);
+        // Lengthening first keeps start before end whichever way the cue moves.
+        cue.endTime = Math.max(cue.endTime, start + 0.001);
+        cue.startTime = start;
+        cue.endTime = Math.max(start + 0.001, times.end + delay / 1000);
+        times.applied = delay;
+      }
+    }
   }
 
   selectQuality(index: number): void {
@@ -792,6 +867,7 @@ export class StreamController {
   }
 
   private readonly onTime = (): void => {
+    if (this.state.subtitleDelayMs !== 0) this.applySubtitleDelay();
     if (this.onFilm() && this.video.currentTime > 0) this.lastPositionS = this.video.currentTime;
   };
 

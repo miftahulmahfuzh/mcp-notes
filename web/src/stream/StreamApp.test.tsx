@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { StreamApp, cachedLabel, episodeLabel, formatClock, loadedGradient, reportLabel, reportText, switchErrorText } from './StreamApp';
+import { StreamApp, delayText, cachedLabel, episodeLabel, formatClock, loadedGradient, reportLabel, reportText, switchErrorText } from './StreamApp';
 import { fakeEngines, jsonResponse, routeFetch, streamSessionJson } from '../testing/streamFakes';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -349,5 +349,13 @@ describe("the timeline's loaded bar", () => {
   it('draws nothing without a duration or a stretch', () => {
     expect(loadedGradient([[0, 10]], 0)).toBe('none');
     expect(loadedGradient([], 1000)).toBe('none');
+  });
+});
+
+describe('the subtitle delay line', () => {
+  it('says how far and which way', () => {
+    expect(delayText(250)).toBe('Subtitle delay +250 ms');
+    expect(delayText(-50)).toBe('Subtitle delay −50 ms');
+    expect(delayText(0)).toBe('Subtitle delay 0 ms');
   });
 });

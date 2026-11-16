@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
+import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -988,5 +988,64 @@ describe('a pause caches the film on this machine', () => {
     muted.pause();
     await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS * 2);
     expect(muted.asks()).toEqual([]);
+  });
+});
+
+describe('the subtitle delay (G and H)', () => {
+  /** A <video> with one text track of the given cues, as a browser has them. */
+  function withCues(times: [number, number][]) {
+    const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) });
+    const cues = times.map(([startTime, endTime]) => ({ startTime, endTime }));
+    Object.defineProperty(t.video, 'textTracks', { configurable: true, value: Object.assign([{ cues }], {}) });
+    return { ...t, cues };
+  }
+  const store = () => {
+    const kept = new Map<string, string>();
+    return { kept, getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) };
+  };
+
+  it('moves every cue later or earlier from its own time, never before zero, and back exactly', async () => {
+    const t = withCues([[0.02, 1], [95.791, 96.375]]);
+    await t.controller.start();
+    t.controller.shiftSubtitles(250);
+    expect(t.cues).toEqual([{ startTime: 0.27, endTime: 1.25 }, { startTime: 96.041, endTime: 96.625 }]);
+    t.controller.shiftSubtitles(-350);
+    expect(t.controller.getState().subtitleDelayMs).toBe(-100);
+    expect(t.cues[0].startTime).toBe(0);
+    expect(t.cues[0].endTime).toBeCloseTo(0.9);
+    expect(t.cues[1].startTime).toBeCloseTo(95.691);
+    t.controller.shiftSubtitles(100);
+    expect(t.cues.map((c) => [c.startTime, c.endTime])).toEqual([[0.02, 1], [95.791, 96.375]]);
+    t.controller.shiftSubtitles(10 * SUBTITLE_DELAY_MAX_MS);
+    expect(t.controller.getState().subtitleDelayMs).toBe(SUBTITLE_DELAY_MAX_MS);
+  });
+
+  it('applies the delay to cues that arrive later, as the film plays', async () => {
+    const t = withCues([[10, 11]]);
+    await t.controller.start();
+    t.controller.shiftSubtitles(500);
+    t.cues.push({ startTime: 20, endTime: 21 });
+    t.fire('timeupdate');
+    expect(t.cues).toEqual([{ startTime: 10.5, endTime: 11.5 }, { startTime: 20.5, endTime: 21.5 }]);
+  });
+
+  it('keeps the delay per title and starts the next play of it with it', async () => {
+    const storage = store();
+    const routes = { [`GET ${S1}`]: () => jsonResponse(streamSessionJson()) };
+    const make = () => {
+      const { fetchImpl } = routeFetch(routes);
+      const c = new StreamController('S1', fakeVideo().video, { fetch: fetchImpl, createEngine: fakeEngines().createEngine, textUrl: () => 'blob:x', revokeTextUrl: () => {}, storage });
+      controllers.push(c);
+      return c;
+    };
+    const first = make();
+    await first.start();
+    first.shiftSubtitles(-150);
+    expect([...storage.kept]).toEqual([['notesd-subtitle-delay:Fight Club (1999)', '-150']]);
+    const second = make();
+    await second.start();
+    expect(second.getState().subtitleDelayMs).toBe(-150);
+    second.shiftSubtitles(150);
+    expect(storage.kept.size).toBe(0);
   });
 });

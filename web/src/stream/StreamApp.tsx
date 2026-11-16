@@ -20,7 +20,7 @@ import {
   SpeakerSlash,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { INITIAL_STATE, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
+import { INITIAL_STATE, SUBTITLE_DELAY_STEP_MS, StreamController, type BugReportState, type ControllerDeps, type StreamState } from './controller';
 import { createEngine } from './createEngine';
 import type { Quality } from './engine';
 import type { CachedInfo, EpisodeNumber, TimeRange } from './session';
@@ -113,6 +113,20 @@ export function qualityLabel(q: Quality): string {
   return `Level ${q.index + 1}`;
 }
 
+/** localStorage, or nothing where the browser refuses it. */
+function safeStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** "Subtitle delay +250 ms", as the player says it after G or H. */
+export function delayText(ms: number): string {
+  return `Subtitle delay ${ms > 0 ? '+' : ms < 0 ? '−' : ''}${Math.abs(ms)} ms`;
+}
+
 function browserDeps(): ControllerDeps {
   return {
     fetch: (input, init) => fetch(input, init),
@@ -121,6 +135,7 @@ function browserDeps(): ControllerDeps {
     onSession: (id) => window.history.replaceState(null, '', `/stream/${encodeURIComponent(id)}`),
     textUrl: (vtt) => URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' })),
     revokeTextUrl: (url) => URL.revokeObjectURL(url),
+    storage: safeStorage(),
   };
 }
 
@@ -421,6 +436,26 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     controller.selectSubtitle(s.subtitle !== null ? null : (pickDefaultSubtitle(s.subtitles) ?? s.subtitles[0]?.id ?? null));
   }, [controller]);
 
+  // The delay is shown for a moment after a press, not all the time.
+  const [delayShown, setDelayShown] = useState(false);
+  const delayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shiftSubtitles = useCallback(
+    (deltaMs: number) => {
+      if (controller === null) return;
+      controller.shiftSubtitles(deltaMs);
+      setDelayShown(true);
+      if (delayTimer.current !== null) clearTimeout(delayTimer.current);
+      delayTimer.current = setTimeout(() => setDelayShown(false), 2500);
+    },
+    [controller],
+  );
+  useEffect(
+    () => () => {
+      if (delayTimer.current !== null) clearTimeout(delayTimer.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -429,6 +464,8 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
       else if (key === 'arrowright') seekBy(SEEK_STEP_S);
       else if (key === 'm') toggleMute();
       else if (key === 'c') toggleSubtitles();
+      // G and H, as VLC has them: the subtitles 50 ms earlier, 50 ms later.
+      else if (key === 'g' || key === 'h') shiftSubtitles(key === 'h' ? SUBTITLE_DELAY_STEP_MS : -SUBTITLE_DELAY_STEP_MS);
       else if (key === 'f') fullscreenToggle();
       // Shift+N and Shift+P, as other players have them: the next and the previous episode.
       else if (key === 'n' && e.shiftKey) goToEpisode('next');
@@ -440,7 +477,7 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, fullscreenToggle, goToEpisode, wake]);
+  }, [togglePlay, seekBy, toggleMute, toggleSubtitles, shiftSubtitles, fullscreenToggle, goToEpisode, wake]);
 
   const choose = (action: () => void) => {
     action();
@@ -458,6 +495,11 @@ export function StreamApp({ sessionId, muted = false, deps }: { sessionId: strin
         <div className="st-top">
           <span className="st-title">{state.title}</span>
           {state.cached !== null && <CachedMark cached={state.cached} />}
+          {delayShown && (
+            <span className="st-notice" role="status">
+              {delayText(state.subtitleDelayMs)}
+            </span>
+          )}
           {state.switchError !== null && (
             <span className="st-notice" role="status">
               {switchErrorText(state.switchError.to === 'prev' ? 'previous' : 'next', state.switchError.code)}
