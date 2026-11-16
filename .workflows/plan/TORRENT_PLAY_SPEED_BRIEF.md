@@ -113,7 +113,9 @@ When it is proven: commit on `feature/torrent-play-speed` (this brief included),
 ### Seen and left
 - `web/src/App.movies.test.tsx` ("reaching for the page folds the answer panel") is flaky: it failed here and on
   an untouched `origin/main` at 04:25, and passed in the full run at 04:46. Not touched here.
-- While proving, the throwaway daemon's event loop stalled for about 3 s in roughly one run of five, around the
-  moment a torrent is added (`/health` answered after 2953 ms once). A CPU profile of five more runs did not catch
-  it. It moves a step's time by 3 s wherever it lands; it is not from this change's logic, and it is worth a look
-  with `/report-stream-bug` evidence from a real play.
+- While proving, a step's time sometimes came out 2.93 s too long (a `Subtitles: pending` after 4.4 s instead of
+  1.5 s, `/health` "answered" after 2953 ms). A lag monitor inside the daemon showed the daemon and its `tsx`
+  parent both "stalling" by the same 2930 ms at the same instant, several times a minute apart: this WSL's wall
+  clock is stepped forward by about 2.93 s now and then (time sync), and every duration here is measured with
+  `Date.now()`. Nothing stalls; a `took_s` that lands on a step reads 2.9 s too high. `speed.sh` therefore does
+  not assert on single durations under 3 s.
