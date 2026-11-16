@@ -255,6 +255,11 @@ function route(url) {
     const season = byId(tvs, m[1])?.seasons_detail?.[String(Number(m[2]))]
     return season ? [200, season] : notFound()
   }
+  // Torrent phase 3: the IMDb id the torrent indexes are asked by. A title may name its own imdb_id; else tt + the TMDB id.
+  if ((m = p.match(/^\/(movie|tv)\/(\d+)\/external_ids$/))) {
+    const x = byId(m[1] === 'movie' ? movies : tvs, m[2])
+    return x ? [200, { id: x.id, imdb_id: x.imdb_id ?? `tt${String(x.id).padStart(7, '0')}` }] : notFound()
+  }
   // Trailers: How to Make a Killing has one, MobLand none of its own and one for season 1.
   if ((m = p.match(/^\/(movie|tv)\/(\d+)\/videos$/))) {
     const x = byId(m[1] === 'movie' ? movies : tvs, m[2])

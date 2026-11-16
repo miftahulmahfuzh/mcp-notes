@@ -524,7 +524,8 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | Answer | Meaning |
 | --- | --- |
 | `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
-| `no_source` | No provider resolved the title; `attempts` lists each provider's outcome |
+| `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried |
+| `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
 | `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
 | `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
@@ -1149,6 +1150,58 @@ answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#tor
 | `not_in_swarm` | The download is unfinished and nothing holds it now: play it again to carry on |
 | `not_on_this_machine` | The download is on the other laptop |
 | `torrent_off` | `NOTESD_TORRENT=off` on this machine |
+
+### Playing from a torrent
+
+A torrent is a source inside `/direct-stream`, not a command of its own.
+
+- **When it is asked.** `direct_stream_play` with `provider: "torrent"` (any case; "stream it from a torrent") asks
+  the torrent source alone, and passes over the stream cache. Without a provider a play looks, in order, at this
+  machine's stream cache, at a finished torrent download of the title on this machine, at the cloud providers, and
+  only when they answer `no_source` (or the resolve cannot run because the streaming Chrome is down: a torrent needs
+  no Chrome) at the torrent source. The Movies page's Play and the player's previous and next buttons go the same way.
+- **How a torrent is chosen.** The title's IMDb id comes from TMDB (`external_ids`; a series is asked by its own id
+  with the season and episode). The finder asks the torrent indexes and ranks what they list. The daemon then tries at
+  most five torrents in that order, within 90 seconds: the file list from the swarm (20 s at most), the film's file
+  (an episode's file inside a season pack), and ffprobe reading its header through the daemon's file route. A file
+  whose audio names only languages other than the title's original is `dubbed` and skipped, as a dubbed cloud stream
+  is; a file Chrome cannot play as is (MKV, HEVC, AC3, DTS) is `unplayable` and skipped; a torrent with no file list
+  or too little data in time is `no_stream`. The first that passes plays.
+- **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index asked
+  (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`), then
+  `Torrent: <release>` for each torrent tried. When none plays the answer is `no_source` with all of them; after a
+  resolve that could not run it stays `resolve_failed` with the torrent attempts added.
+- **The session.** `provider` is `Torrent`, `manifest_kind` `mp4`, `manifest_url` the torrent's file route
+  (`/api/stream/torrent/<hash>/f/<index>`), and `session.torrent` names the info hash, the file, the release, the
+  index, the seed count and whether the file is whole on disk (`ready`) or still downloading. The pass-through refuses
+  every address for it. The play is recorded with the provider `Torrent`; a torrent play does not mark the title's
+  Stream side verified (a cloud `no_source` before it still marks it stale).
+- **The shuffle button** moves to the next torrent the indexes listed, without asking them again, and lets go of the
+  old one. A torrent session is never moved into the stream cache: its download is already on this machine.
+- **Leaving the swarm.** A session lets go of its torrent when the page closes or the film ends, when it moves to
+  another torrent, after two minutes without a word from the page, and when the session ends; with no other session
+  on it the daemon leaves the swarm. Reopening the page takes the torrent again.
+- **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
+  no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
+  that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.
+- **Subtitles** come from the subtitle tiers, asked in order (the sections below add them: kept, files, embedded,
+  service, borrow, whisper) until one answers anything; every tier answers only English tracks, or the torrent's one
+  subtitle file that names no language. Each tier asked is an attempt `Subtitles: <tier>` (`resolved`, `no_stream`,
+  `error`, or `skipped` with the reason). The tiers that hold up a play share one budget of 40 seconds from the moment
+  the chain starts: one that would start after it is spent is `skipped`, and one still running when it runs out is an
+  `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the background, so
+  they are never counted.
+- **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (YTS timed out
+  from this network once, so it can be turned off). Every request says it is notesd; a bot check is the outcome
+  `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
+  out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
+  fewer seeds than `NOTESD_TORRENT_MIN_SEEDS` or more than `NOTESD_TORRENT_MAX_GB`. A release Chrome plays as is
+  (H.264, AAC, MP4, one audio track) comes before one that needs a remux, and among equals more seeds come first. For an
+  episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
+  (never a sample).
+- **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
+  without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
 ## Where the code is
 

@@ -80,6 +80,21 @@ describe('TmdbTitleNames', () => {
     expect(f.urls.map((u) => u.pathname)).toEqual(['/tv/293610', '/movie/1', '/movie/404']);
   });
 
+  it("reads a title's IMDb id from its external ids, null when TMDB has none, a malformed one or does not know it", async () => {
+    const f = routedFetch({
+      '/movie/550/external_ids': { id: 550, imdb_id: 'tt0137523' },
+      '/tv/1399/external_ids': { id: 1399, imdb_id: 'tt0944947', tvdb_id: 121361 },
+      '/movie/1/external_ids': { id: 1, imdb_id: null },
+      '/movie/2/external_ids': { id: 2, imdb_id: 'nm0000093' },
+    });
+    const client = createTmdbClient(CONFIG, f.fetch);
+    expect(await client.imdbId('movie', 550)).toBe('tt0137523');
+    expect(await client.imdbId('tv', 1399)).toBe('tt0944947');
+    expect(await client.imdbId('movie', 1)).toBeNull();
+    expect(await client.imdbId('movie', 2)).toBeNull();
+    expect(await client.imdbId('movie', 404)).toBeNull();
+  });
+
   it('answers no names for a title TMDB does not know', async () => {
     expect(await createTmdbClient(CONFIG, routedFetch({}).fetch).alternativeTitles('tv', 1)).toEqual([]);
   });

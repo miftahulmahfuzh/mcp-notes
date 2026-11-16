@@ -256,6 +256,21 @@ describe('direct-stream MCP tools', () => {
     await c.close();
   });
 
+  it('passes provider "torrent" through to the service, and answers torrent_off when torrents are off', async () => {
+    const f = fakeDeps();
+    const c = await connect(f.deps);
+    await c.call('direct_stream_play', { title: 'saltburn', provider: 'torrent' });
+    expect(f.play.mock.calls).toEqual([[{ kind: 'movie', tmdbId: 930564 }, 'torrent']]);
+    await c.close();
+    const off = fakeDeps({ play: vi.fn(async () => { throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).'); }) });
+    const o = await connect(off.deps);
+    const r = await o.call('direct_stream_play', { title: 'saltburn', provider: 'torrent' });
+    expect(r.isError).toBe(true);
+    expect(json(r)).toMatchObject({ error: 'torrent_off', started: false, title: { title: 'Saltburn' } });
+    expect(json(r).next).toContain('without provider');
+    await o.close();
+  });
+
   it('refuses a season or episode for a film', async () => {
     const f = fakeDeps();
     const c = await connect(f.deps);

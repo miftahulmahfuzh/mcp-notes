@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import type { SessionCache } from './cachePlay.js';
+import type { CacheSubtitleView, SessionCache } from './cachePlay.js';
 import { absoluteHttp } from './rewrite.js';
-import type { ResolveAttempt, ResolvedSource, StreamRef } from './types.js';
+import type { TorrentCandidate, TorrentQuery } from './torrent/find/index.js';
+import type { ManifestKind, ResolveAttempt, ResolvedSource, StreamRef } from './types.js';
 
 /** A session ends this long after its last request (the player fetches every few seconds while it plays). */
 export const SESSION_IDLE_MS = 4 * 60 * 60 * 1000;
@@ -11,6 +12,50 @@ export const SESSION_MAX_MS = 24 * 60 * 60 * 1000;
 export const MAX_SESSIONS = 32;
 /** 24 random bytes, base64url: 32 characters, 192 bits. */
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+
+/**
+ * The torrent a stream session plays from (torrent phase 3). Made by TorrentSource; the session's `source` is
+ * then its stand-in (provider `Torrent`, the local manifest), `cache` is null and `allowedHosts` is empty.
+ */
+export interface SessionTorrent {
+  /** Lower-case hex. */
+  infoHash: string;
+  /** The chosen video file's index in the torrent. */
+  fileIndex: number;
+  /** Every file this session selected (the video first, then its subtitle files): what a hold selects again. */
+  selected: number[];
+  /** The release name. */
+  name: string;
+  /** The index that listed the torrent (`Torrentio`, ...); null for a replay from disk. */
+  index: string | null;
+  /** The seed count the index listed; null for a replay from disk. */
+  seeds: number | null;
+  /** `ready`: the file is whole on disk; `downloading`: the file route fetches what is missing. Read again by every sessionInfo. */
+  state: 'downloading' | 'ready';
+  height: number | null;
+  /** The local file route, relative to the daemon's origin: `/api/stream/torrent/<hash>/f/<index>`. */
+  manifestUrl: string;
+  /** `mp4` (the file as is); phase 5 adds `hls` for its remux. */
+  manifestKind: Extract<ManifestKind, 'mp4' | 'hls'>;
+  subtitles: CacheSubtitleView[];
+  /** The candidates after this one, in the finder's order, for the shuffle button (switchSource). */
+  candidates: TorrentCandidate[];
+  durationS: number | null;
+  /** The candidate this session opened, to open it again after a release; null: a replay from disk, which joins no swarm. */
+  candidate: TorrentCandidate | null;
+  /** True while this session holds a `use` of the torrent in the swarm; a release sets it false, a hold true again. */
+  held: boolean;
+  /** The title's IMDb id the torrent was found by; null for a replay from disk. */
+  imdbId: string | null;
+  /** The finder's query (IMDb id, names, year, episode) the shuffle button tries the rest with; null for a replay. */
+  query: TorrentQuery | null;
+  /**
+   * Aborted when the session lets go of the torrent (TorrentSource.release): the growing subtitle tiers (phase 7's
+   * extraction, phase 8's Whisper) stop their work. A torrent taken back gets a fresh one; a stopped growing track
+   * starts over on the next play.
+   */
+  stop: AbortController;
+}
 
 /** One resolved title the player may stream. In memory only: a daemon restart ends every session. */
 export interface StreamSession {
@@ -31,6 +76,8 @@ export interface StreamSession {
    * `attempts` and `allowedHosts` are empty.
    */
   cache: SessionCache | null;
+  /** The torrent the session plays from (torrent phase 3); null: not a torrent. Never set together with `cache`. */
+  torrent: SessionTorrent | null;
   readonly createdAt: Date;
   refreshedAt: Date;
   /** Times a refresh replaced the source (a token expired); 0 for a fresh session. */
@@ -69,8 +116,14 @@ export function learn(session: StreamSession, url: string): void {
 
 export class SessionStore {
   private readonly sessions = new Map<string, StreamSession>();
+  private readonly endListeners: Array<(session: StreamSession) => void> = [];
 
   constructor(private readonly now: () => Date = () => new Date()) {}
+
+  /** Called with every session the store drops (it expired, or more than MAX_SESSIONS live). A listener that throws is ignored. */
+  onEnd(listener: (session: StreamSession) => void): void {
+    this.endListeners.push(listener);
+  }
 
   create(
     ref: StreamRef,
@@ -91,6 +144,7 @@ export class SessionStore {
       resumeS,
       audioLang,
       cache,
+      torrent: null,
       createdAt: at,
       refreshedAt: at,
       refreshes: 0,
@@ -102,8 +156,15 @@ export class SessionStore {
       let oldest: StreamSession | null = null;
       for (const s of this.sessions.values()) if (oldest === null || s.lastUsedAt < oldest.lastUsedAt) oldest = s;
       if (oldest === null) break;
-      this.sessions.delete(oldest.id);
+      this.drop(oldest);
     }
+    return session;
+  }
+
+  /** A session on a torrent (torrent phase 3): `source` is TorrentSource's stand-in (a local manifest: no host is allowed), and no cache. */
+  createTorrent(ref: StreamRef, source: ResolvedSource, attempts: ResolveAttempt[], resumeS: number | null, audioLang: string | null, torrent: SessionTorrent): StreamSession {
+    const session = this.create(ref, source, attempts, resumeS, audioLang, null);
+    session.torrent = torrent;
     return session;
   }
 
@@ -114,7 +175,7 @@ export class SessionStore {
     if (session === undefined) return null;
     const now = this.now();
     if (now.getTime() >= this.expiresAt(session).getTime()) {
-      this.sessions.delete(id);
+      this.drop(session);
       return null;
     }
     session.lastUsedAt = now;
@@ -139,6 +200,15 @@ export class SessionStore {
     session.refreshes += 1;
   }
 
+  /** The shuffle button on a torrent session: the next torrent and its stand-in source. The caller released the old torrent. */
+  replaceTorrent(session: StreamSession, source: ResolvedSource, torrent: SessionTorrent, attempts: ResolveAttempt[]): void {
+    session.source = source;
+    session.attempts = attempts;
+    session.torrent = torrent;
+    session.refreshedAt = this.now();
+    session.refreshes += 1;
+  }
+
   /** A refresh of a session whose cache can still be played: the cache as it is now (a download may have finished). Not counted in `refreshes` (no token was replaced). */
   useCache(session: StreamSession, cache: SessionCache): void {
     session.cache = cache;
@@ -154,8 +224,26 @@ export class SessionStore {
     return this.sessions.size;
   }
 
-  private sweep(): void {
+  /** Every live session, the ended ones dropped first. */
+  live(): StreamSession[] {
+    this.sweep();
+    return [...this.sessions.values()];
+  }
+
+  /** Drops every session that has ended. */
+  sweep(): void {
     const now = this.now().getTime();
-    for (const [id, session] of this.sessions) if (now >= this.expiresAt(session).getTime()) this.sessions.delete(id);
+    for (const session of [...this.sessions.values()]) if (now >= this.expiresAt(session).getTime()) this.drop(session);
+  }
+
+  private drop(session: StreamSession): void {
+    this.sessions.delete(session.id);
+    for (const listener of this.endListeners) {
+      try {
+        listener(session);
+      } catch {
+        // A listener never stops a session from ending.
+      }
+    }
   }
 }

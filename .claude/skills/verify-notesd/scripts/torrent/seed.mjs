@@ -56,7 +56,9 @@ async function seed(opts) {
   const state = path.resolve(need(opts, 'state'))
   mkdirSync(state, { recursive: true })
   const kbps = opts['upload-kbps'] === undefined ? 0 : Number(opts['upload-kbps'])
-  const client = new WebTorrent({ ...QUIET, uploadLimit: kbps > 0 ? Math.round(kbps * 1000) : -1 })
+  // uTP on for the seeder (torrent phase 3): the daemon's engine tries uTP first and falls back to TCP only after
+  // about 40 s of retries, longer than a play waits for a torrent's file list (20 s).
+  const client = new WebTorrent({ ...QUIET, utp: true, uploadLimit: kbps > 0 ? Math.round(kbps * 1000) : -1 })
   client.on('error', (err) => {
     console.error(`seed: ${err.message}`)
     process.exit(1)

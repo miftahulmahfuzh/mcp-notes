@@ -351,6 +351,34 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Every other run pins `NOTESD_TORRENT=off` and `NOTESD_TORRENT_DIR` under the run: no throwaway daemon joins a
   real swarm or writes into the owner's torrent folder.
 
+## Playing from a torrent
+- A play with `provider: "torrent"` (any case; `direct_stream_play`, `POST /api/stream/play`) asks only the torrent
+  source; without a provider the order is the stream cache, a finished torrent download on this machine (no index, no
+  swarm, no `Index:`/`Torrent:` attempt), the cloud providers, then on `no_source` or `resolve_failed` the torrent source. A torrent
+  session: `provider: "Torrent"`, `manifest_kind: "mp4"`, `manifest_url` `/api/stream/torrent/<hash>/f/<index>`,
+  `session.torrent` `{info_hash, file_index, name, index, state, seeds}`. Attempts after the cloud's:
+  `Index: <name>` per index, `Torrent: <release>` per torrent (`resolved`, `no_stream`, `dubbed`, `unplayable`,
+  `error`). The shuffle button moves to the next torrent; a `closed`/`ended` report, two idle minutes or the session's
+  end release the torrent; reading the session again takes it back. `NOTESD_TORRENT=off`: 503 `torrent_off` for a
+  named torrent play, everything else as before.
+- Logic: `npx vitest run tests/unit/directStream/torrentProbe.test.ts tests/unit/directStream/torrentSource.test.ts tests/unit/directStream/torrentPlay.test.ts tests/unit/config.torrentFinder.test.ts tests/unit/mcp.directStreamTools.test.ts`.
+- Finding a torrent (phase 2's finder, no route of its own): `npx vitest run tests/unit/directStream/torrent/find` over
+  recorded index answers (dubs, cinema recordings and 3D left out, the seed floor, direct releases first, an episode or
+  a pack that holds it, `bot_check`/`error` per index, every request sent as notesd).
+- Throwaway daemon, a torrent run (`$V up --web --torrent`, note RUN): in this order,
+  `.claude/skills/verify-notesd/scripts/direct-stream/torrent.sh RUN fallback named`, then
+  `SID=$(cat ~/.local/state/notesd-verify/RUN/torrent-journey/sid) $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs`
+  (`TORRENT PAGE PASS`, screenshot `torrent-page`), then `torrent.sh RUN replay dubbed pack`. The fake index
+  (`scripts/torrent/fake-index.mjs`, Torrentio-shaped, the finder's only index on a `--torrent` run) lists phase 1's
+  loopback fixture(s) under a release name made of the asked title and year (from the fake TMDB's `tmdb.json`);
+  `<run>/torrent/index-mode` switches it to `empty` or `error`, `<run>/torrent/candidates.json`
+  (`[{info_hash, name, seeds?, size_bytes?}]`, `name` the release's tail after `<Title>.<Year>.`) replaces its answer
+  for every query, and its requests are kept as `torrent-index-requests.jsonl` in the evidence.
+- Torrents off (`$V up --direct-stream`): `torrent.sh RUN off`. It runs a resolve, so on a run shared with
+  `journey.sh RUN seed ...` (whose `seed` stage expects the run's first resolve) run `journey.sh` first.
+- The loopback seeder speaks uTP as well as TCP: the daemon's engine tries uTP first and falls back to TCP only
+  after about 40 s, longer than the 20 s a play waits for a torrent's file list.
+
 ## Gotchas
 - Never point a throwaway daemon at the real resolver: it opens tabs in the owner's streaming Chrome.
   The live resolve is phase 1's check, run when the owner expects it; the live playback probe is

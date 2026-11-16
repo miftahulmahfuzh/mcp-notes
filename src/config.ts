@@ -230,6 +230,64 @@ export const DEFAULT_DIRECT_STREAM_CONFIG: DirectStreamConfig = {
 
 export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
+/** `NOTESD_FFMPEG_BIN`: the ffmpeg the torrent source runs (remux, subtitle extraction, Whisper's audio cuts). Declared here, before DEFAULT_TORRENT_CONFIG reads it. */
+export const DEFAULT_FFMPEG_BIN = 'ffmpeg'
+
+/** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
+export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts'] as const
+export type TorrentIndexName = (typeof TORRENT_INDEX_NAMES)[number]
+
+/**
+ * What the torrent finder is told (torrent phase 3). A field left unset keeps the finder's own default, so
+ * the defaults live in one place (phase 2's find/ module).
+ */
+export interface TorrentFinderConfig {
+  /** `NOTESD_TORRENT_MIN_SEEDS`: a candidate with fewer seeds is never picked. */
+  minSeeds?: number
+  /** `NOTESD_TORRENT_MAX_GB`, as bytes: a bigger release is left out. */
+  maxSizeBytes?: number
+  /** `NOTESD_TORRENT_INDEX_TIMEOUT_MS`: how long one index may take to answer. */
+  indexTimeoutMs?: number
+  /** `NOTESD_TORRENT_<NAME>_URL` per index: an address replaces the finder's, `off` (null) never asks that index. */
+  indexes: Partial<Record<TorrentIndexName, string | null>>
+}
+
+export const DEFAULT_TORRENT_FINDER_CONFIG: TorrentFinderConfig = { indexes: {} }
+
+/** Each index's address setting, spelled out (not built from the name) so `npm run docs:check` finds the names in the code. */
+const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
+  torrentio: 'NOTESD_TORRENT_TORRENTIO_URL',
+  apibay: 'NOTESD_TORRENT_APIBAY_URL',
+  eztv: 'NOTESD_TORRENT_EZTV_URL',
+  yts: 'NOTESD_TORRENT_YTS_URL',
+}
+
+/** The finder's settings; a bad number or a non-http address throws ConfigError. */
+export function parseTorrentFinder(env: Record<string, string | undefined>): TorrentFinderConfig {
+  const indexes: Partial<Record<TorrentIndexName, string | null>> = {}
+  for (const name of TORRENT_INDEX_NAMES) {
+    const key = TORRENT_INDEX_URL_KEYS[name]
+    const value = (env[key] ?? '').trim()
+    if (value === '') continue
+    if (value.toLowerCase() === 'off') {
+      indexes[name] = null
+      continue
+    }
+    if (!/^https?:\/\/[^\s]+$/.test(value)) throw new ConfigError(`${key} must be an http(s) address or off (got ${value})`)
+    indexes[name] = value.replace(/\/+$/, '')
+  }
+  const optional = (name: string): number | undefined => {
+    const raw = env[name]
+    return raw === undefined || raw.trim() === '' ? undefined : parsePositiveInt(name, raw, 1)
+  }
+  const maxGb = optional('NOTESD_TORRENT_MAX_GB')
+  return {
+    minSeeds: optional('NOTESD_TORRENT_MIN_SEEDS'),
+    maxSizeBytes: maxGb === undefined ? undefined : maxGb * 1024 ** 3,
+    indexTimeoutMs: optional('NOTESD_TORRENT_INDEX_TIMEOUT_MS'),
+    indexes,
+  }
+}
 
 /** Torrents as a direct-streaming source (src/directStream/torrent/*). They also need direct streaming on. */
 export interface TorrentConfig {
@@ -248,6 +306,10 @@ export interface TorrentConfig {
   discovery: boolean
   /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
   peers: string[]
+  /** The finder's settings (torrent phase 3); unset: the finder's defaults. */
+  finder?: TorrentFinderConfig
+  /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
+  ffmpegBin: string
 }
 
 /**
@@ -262,6 +324,8 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
   keepDays: DEFAULT_TORRENT_KEEP_DAYS,
   discovery: true,
   peers: [],
+  finder: DEFAULT_TORRENT_FINDER_CONFIG,
+  ffmpegBin: DEFAULT_FFMPEG_BIN,
 }
 
 /** Seer Adversarial reviewer (src/adversary/*). */
@@ -786,6 +850,8 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
     keepDays: parsePositiveInt('NOTESD_TORRENT_KEEP_DAYS', env.NOTESD_TORRENT_KEEP_DAYS, DEFAULT_TORRENT_KEEP_DAYS),
     discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
+    finder: parseTorrentFinder(env),
+    ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
   }
 }
 
@@ -812,7 +878,10 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
  * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS,
- * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError).
+ * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
+ * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
+ * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL (a number below 1 or a non-http address throw ConfigError),
+ * NOTESD_FFMPEG_BIN.
  * Other keys are ignored. Throws `ConfigError` when neither DATABASE_URL nor DATABASE_URL_UNPOOLED is set,
  * on a bad port, on a non-loopback host, on a bad chat key, on CHAT_BRAIN=glm without LLM_*,
  * or on a NOTESD_SESSIONS value other than on/off.

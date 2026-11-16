@@ -63,20 +63,38 @@
     - Step 3 in a per-phase-worktree swarm (phase 1 booting concurrently, same todos counter) → created only phase 2's task, with the non-counter id P1-NOTES-TS02 (tie-break: narrower blast radius)
     - Bookkeeping: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent (P1-NOTES-A123), to avoid conflicts with peer phases; the coordinator's integrator reconciles them.
   - **Integrated**: wave 0 integration folded the phase 2 session's id P1-NOTES-TS02 into this entry (phase 1 minted A127-A135); P1-NOTES-TS02.md deleted as a duplicate of P1-NOTES-A128.md
-- [ ] **P1-NOTES-A129** Phase 3: A torrent session in direct streaming
+- [x] **P1-NOTES-A129** Phase 3: A torrent session in direct streaming
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `src/directStream/torrent/source.ts`, `probe.ts`, `subtitles/chain.ts` (the context, the runner with its non-empty stop rule and 40 s budget, `buildSubtitleTiers` with no tier); `StreamSession.torrent` and `SessionInfo.torrent`; the torrent branches of `play`, `refresh`, `switchSource`, `cacheSession`, `switchEpisode`, `info` and `sessionInfo`; the outcomes `unplayable` and `skipped`; the `imdbId` and `titleNames` hooks and TMDB `external_ids`; the finder's settings and `NOTESD_FFMPEG_BIN`; wiring in `src/daemon.ts`; `direct_stream_play`'s `provider: "torrent"`, the MCP instructions, the chat prompt and the `/direct-stream` skill; replay from disk (R2.9); the evidence snapshot's view; the guide's "Playing from a torrent" with "Finding a torrent"; the fake index (with `index-mode` and `candidates.json`) and the fake TMDB's `external_ids`. Exit criteria: `npm run typecheck`, `npm test` and `npm run docs:check` pass; J1-J6 pass on the throwaway daemons (the torrent fall-through after `no_source`, a named torrent play in the real page, replay from disk with no index or torrent attempt, a dub skipped, a pack's episode, `torrent_off`) and the neighbor check passes.
-  - **Status**: blocked
+  - **Status**: completed
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 3 of 9)
   - **Satisfies**: R1 — "1. finding the relevant torrent file" — "so from mcp-notes, agent will access these sites and search for relevant movies/series.. then agent will download the top torrent file with a high seeds number" — "we can choose a torrent that has high seeds?" · R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R1.4, R1.6, R2.4, R2.5, R2.6, R2.9
   - **Depends on**: P1-NOTES-A127, P1-NOTES-A128
   - **Plan**: `.workflows/plan/P1-NOTES-A129.md`
+  - **Completed**: 2026-11-16 22:57
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/probe.ts, src/directStream/torrent/source.ts, src/directStream/torrent/subtitles/chain.ts, src/directStream/sessions.ts, src/directStream/service.ts, src/directStream/types.ts, src/directStream/evidence.ts, src/http/directStreamApi.ts, src/mcp/directStreamTools.ts, src/mcp/instructions.ts, src/chat/prompt.ts, src/movies/tmdb.ts, src/movies/streams.ts, src/config.ts, src/daemon.ts, claude/skills/direct-stream/SKILL.md, scripts/docs/httpRoutes.ts, docs/guide/reference/http-api.md, docs/guide/reference/mcp-tools.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/scripts/movies/fake-tmdb.mjs, .claude/skills/verify-notesd/scripts/torrent/fake-index.mjs, .claude/skills/verify-notesd/scripts/torrent/seed.mjs, .claude/skills/verify-notesd/scripts/direct-stream/torrent.sh, .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs, tests/unit/directStream/torrentProbe.test.ts, tests/unit/directStream/torrentSource.test.ts, tests/unit/directStream/torrentPlay.test.ts, tests/unit/config.torrentFinder.test.ts, tests/unit/config.torrent.test.ts, tests/unit/mcp.directStreamTools.test.ts, tests/unit/movies/tmdb.lists.test.ts, .workflows/todos.md
+  - **Proof**: verified-after-fix — 6 journeys, evidence /tmp/claude-1000/-home-miftah--worktrees-mcp-notes-torrent-stream-source-p3/9f9d0bbd-9e8c-4eb4-8cc3-704e83073db4/scratchpad/p3-evidence
+  - **Drift**:
+    - Phase 1's harness seeder (.claude/skills/verify-notesd/scripts/torrent/seed.mjs) now has utp: true for the `seed` command (one line + comment). Phase 1's own torrent.sh journey re-run and passes.
+    - DEFAULT_FFMPEG_BIN is declared above phase 1's torrent block in src/config.ts (not beside DEFAULT_FFPROBE_BIN, which comes after DEFAULT_TORRENT_CONFIG reads it).
+    - The whole-object torrent config expectations live in tests/unit/config.torrent.test.ts (the plan named tests/unit/config.test.ts, which spreads DEFAULT_TORRENT_CONFIG and needed no change).
+    - claude/skills/direct-stream/SKILL.md Step 2 had no sentence about `provider`; the plan's sentence was added after the first paragraph of Step 2.
+    - Engine note for the coordinator (not changed, phase 1's internals): against a TCP-only peer a cold open takes ~44 s (uTP retried four times first), longer than the 20 s TORRENT_OPEN_TIMEOUT_MS; real swarms mostly speak uTP.
+    - Journey order: torrent.sh RUN off runs a resolve, so journey.sh RUN seed must run before it on a shared run (noted in the feature map).
+  - **Decided**:
+    - Index names worktree torrent-stream-source / feature/torrent-stream-source, session launched in torrent-stream-source-p3 / phase-3-torrent-stream-source → proceeded here (rung 6: the swarm cuts one worktree per phase)
+    - parseTorrentFinder's four NOTESD_TORRENT_<NAME>_URL keys built by a template string are invisible to docs:check → spelled out in a literal map TORRENT_INDEX_URL_KEYS, behaviour unchanged (rung 2: exit criterion docs:check passes, over rung 3 the code block)
+    - torrentProbe.test.ts imports lang.mjs without types → `// @ts-expect-error -- plain .mjs scripts without type declarations` (rung 6: the convention in tests/unit/scripts/directResolve.test.ts)
+    - 20 s open timeout vs TCP-only fixture seeder → seeder speaks uTP, plan's 20 s kept (rung 2: J1-J6 must pass; pre-warming inside this phase's journey would leave phases 4-9 to hit the same wall)
+    - DEFAULT_FFMPEG_BIN placement → above the torrent block (rung 1: invariant 1, the tree builds)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching phases 1 and 2 in this set; the coordinator's integrator reconciles them.
 - [ ] **P1-NOTES-A130** Phase 4: The player page on a torrent
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: `web/src/stream/session.ts` (parsing `torrent`), `StreamApp.tsx`, `controller.ts`, `stream.css`: the torrent mark and status line (peers, speed), the loaded bar fed by `/map`, the wait for a part not on disk, the automatic stall move off for a torrent session, the shuffle button's messages, `window.notesdStream.torrent`; `scripts/stream/torrent-player.steps.mjs` and `torrent-live.steps.mjs`. Exit criteria: `npm run typecheck` and `npm test` pass; J2's transcript holds all six PASS lines; J1's holds `TORRENT LIVE PASS` and `TORRENT DISK PASS` on a `--torrent` run; the neighbor journeys still pass.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `/home/miftah/mcp-notes/.workflows/orchestration/torrent-stream-source/PLAN.md` (phase 4 of 9)
   - **Satisfies**: R2 — "2. streaming video using that torrent file" — "we use torrent as a source to live streaming" — "our main objective tonight is to see a streaming movie FROM TORRENT" — (a new source inside /direct-stream) "let's do it as you say" — "just accept the exposure for this first iteration" · criteria: R2.7
   - **Depends on**: P1-NOTES-A129

@@ -190,6 +190,8 @@ export interface SessionSource {
   refreshes: number;
   /** The stream cache on this host the session plays from (phase 6); null: through the pass-through. */
   cache: { id: string; state: 'downloading' | 'ready' } | null;
+  /** The torrent the session plays from (torrent phase 3); null: not a torrent. */
+  torrent: { info_hash: string; name: string; file_index: number; index: string | null; state: 'downloading' | 'ready' } | null;
   created_at: string;
   refreshed_at: string;
   last_used_at: string;
@@ -227,6 +229,10 @@ export function sessionSource(session: StreamSession, expiresAt: Date): SessionS
     hosts: [...session.allowedHosts].sort(),
     refreshes: session.refreshes,
     cache: session.cache === null ? null : { id: session.cache.id, state: session.cache.state },
+    torrent:
+      session.torrent === null
+        ? null
+        : { info_hash: session.torrent.infoHash, name: session.torrent.name, file_index: session.torrent.fileIndex, index: session.torrent.index, state: session.torrent.state },
     created_at: session.createdAt.toISOString(),
     refreshed_at: session.refreshedAt.toISOString(),
     last_used_at: session.lastUsedAt.toISOString(),

@@ -220,6 +220,14 @@ EOF
     [ -s "$dir/torrent/pack.json" ] || die "--torrent: the loopback seeder did not start (log: $dir/torrent/seeder.out; verify.sh down $run)"
     seed_port="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).port)' "$dir/torrent/fixture.json")"
   fi
+  # --torrent (torrent phase 3): a fake Torrentio that lists the seeded fixture(s). Never a real index.
+  if [ "$torrent" = 1 ]; then
+    setsid node "$HERE/torrent/fake-index.mjs" --fixtures "$dir/torrent" --titles "$HERE/movies/tmdb.json" \
+      --port-file "$dir/torrent/index.port" --log "$dir/torrent/index.jsonl" </dev/null >"$dir/torrent/index.out" 2>&1 &
+    echo $! >"$dir/torrent-index.pid"
+    for _ in $(seq 1 40); do [ -s "$dir/torrent/index.port" ] && break; sleep 0.25; done
+    [ -s "$dir/torrent/index.port" ] || die "--torrent: the fake index did not start (log: $dir/torrent/index.out; verify.sh down $run)"
+  fi
 
   # Real env wins over .env.local, so these pin the instance to the run's own state.
   # OPENROUTER_API_KEY='' turns embeddings off (search reports fallback) unless --embed.
@@ -299,6 +307,15 @@ EOF
     env+=(NOTESD_TORRENT=on NOTESD_TORRENT_DISCOVERY=off "NOTESD_TORRENT_PEERS=127.0.0.1:$seed_port" NOTESD_TORRENT_UPLOAD_KBPS=64 NOTESD_TORRENT_KEEP_DAYS=7)
   else
     env+=(NOTESD_TORRENT=off)
+  fi
+  # Torrent phase 3: the finder asks only the fake index on a --torrent run, and no index at all otherwise.
+  if [ "$torrent" = 1 ]; then
+    env+=(
+      "NOTESD_TORRENT_TORRENTIO_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")"
+      NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off NOTESD_TORRENT_MIN_SEEDS=1
+    )
+  else
+    env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
   fi
   # NOTESD_STREAM_PROBER=off unless --prober: a throwaway daemon never probes on its own. --prober=off
   # leaves the setting blank, which is how "unset" reaches the daemon (the real environment wins over
@@ -511,6 +528,12 @@ stop_run() {
     kill -TERM -- "-$(cat "$dir/seeder.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/seeder.pid")" 2>/dev/null || true
   fi
   if [ -f "$dir/torrent/seeder.jsonl" ]; then cp "$dir/torrent/seeder.jsonl" "$dir/evidence/torrent-seeder.jsonl"; fi
+  # --torrent: the fake index was started by `up`; keep its request log.
+  if [ -f "$dir/torrent-index.pid" ]; then
+    kill -TERM -- "-$(cat "$dir/torrent-index.pid")" 2>/dev/null || kill -TERM "$(cat "$dir/torrent-index.pid")" 2>/dev/null || true
+    rm -f "$dir/torrent-index.pid"
+  fi
+  if [ -f "$dir/torrent/index.jsonl" ]; then cp "$dir/torrent/index.jsonl" "$dir/evidence/torrent-index-requests.jsonl"; fi
   if [ -f "$dir/db" ] && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
     psql_run -c "drop database if exists $(cat "$dir/db") with (force)" >/dev/null || true
   fi
