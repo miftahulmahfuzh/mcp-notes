@@ -89,6 +89,16 @@ describe('install.sh: never restart under a play', () => {
     expect(never.stderr).toContain('still busy after 2s');
   });
 
+  it('--wait under a daemon from before `starting` goes on only after several idle readings in a row', async () => {
+    const OLD_IDLE = { available: true, reason: null, current: null, stream: null };
+    const OLD_STREAM = { ...OLD_IDLE, stream: { session_id: 's', title_id: 'movie-818647', provider: 'Torrent', state: 'paused' } };
+    // Idle once, then a stream again (a play was being resolved unseen), then idle for good.
+    const out = await guard(await daemon([OLD_STREAM, OLD_IDLE, OLD_IDLE, OLD_STREAM, OLD_IDLE]), 'WAIT_IDLE=1; OLD_DAEMON_QUIET_CHECKS=3; guard_idle');
+    expect(out.code).toBe(0);
+    // busy, idle (1), busy again (back to 0), then three idle readings: at least five waits of 1 s.
+    expect(Number(/notesd is idle after (\d+)s/.exec(out.stdout)?.[1])).toBeGreaterThanOrEqual(5);
+  }, 20_000);
+
   it('--check-idle asks and changes nothing: 0 when idle, 75 when busy, whatever --force says', async () => {
     const idle = await guard(await daemon([IDLE]), 'check_idle');
     expect(idle.code).toBe(0);

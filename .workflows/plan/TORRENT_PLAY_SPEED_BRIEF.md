@@ -45,7 +45,9 @@ When it is proven: commit on `feature/torrent-play-speed` (this brief included),
   right before the restart. Busy: nothing is changed, it says what plays or starts, exit **75**. `--force`
   (`NOTES_INSTALL_FORCE=1`) restarts anyway; `--wait` asks every 20 s for up to 6 hours
   (`NOTES_INSTALL_WAIT_SECONDS`) and then installs: that is the one for unattended callers; `--check-idle` only
-  asks. No daemon, or an older one without `busy`, counts as idle, so the first install after this lands works.
+  asks. No daemon counts as idle. A daemon from before this change lists no `starting`: a plain run trusts its
+  `stream` and `current`, and `--wait` goes on only after nine idle readings in a row (three minutes, longer than a
+  play takes to resolve), so the first install after this lands does not repeat the incident.
 - The Landing wording to copy is in `CLAUDE.md` ("Restarting the live daemon") and `docs/guide/install.md`
   ("It never restarts under a film"): run `scripts/install.sh` (or `--wait`), never a reading of `stream`.
 - The owner's `p` rule (commit, push, rebuild, restart) now gets exit 75 while a film plays. That is meant: say so
