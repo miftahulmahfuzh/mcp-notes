@@ -516,8 +516,9 @@ writes no download record and leaves the swarm at once, so it leaves nothing on 
 the downloads. A torrent already open for a play, or finished on this machine, answers from what it
 holds. Nothing is probed while a VLC play, a stream on screen or a stream being started exists; the
 pass stops and the rest wait for the next one. 200 swarms take a few minutes when most are alive and at
-most about 20 minutes when most are dead. Probes of the last 12 hours are carried over when a refresh
-lists the same torrent again. This is a daily snapshot, not a promise for tonight: a swarm that was
+most about 20 minutes when most are dead. A confirmation of the last 12 hours is carried over when a refresh
+lists the same torrent again; a failure never is, because it may be this machine's network (an office
+firewall hid every peer once), so it is tried again. This is a daily snapshot, not a promise for tonight: a swarm that was
 alive at 06:00 can be dead at 22:00, which is why the line says when.
 
 **Playing one.** A poster opens the title's page, like any Stream poster. On a film a play icon beside

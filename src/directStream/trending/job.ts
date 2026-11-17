@@ -29,7 +29,7 @@ export const TRENDING_EVERY_MS = 24 * 60 * 60_000;
 /** A swarm that sent no file list within this is a dead one (several real plays hit one on 2026-11-16). */
 export const TRENDING_PEEK_TIMEOUT_MS = 20_000;
 export const TRENDING_PEEK_CONCURRENCY = 3;
-/** A probe younger than this is kept when a build lists the same torrent again (a refresh asked by hand). */
+/** A confirmation younger than this is kept when a build lists the same torrent again (a refresh asked by hand). */
 export const TRENDING_PROBE_REUSE_MS = 12 * 60 * 60_000;
 /** How many candidates per wanted title are looked up in TMDB before the list is given up as short. */
 const CANDIDATE_FACTOR = 3;
@@ -394,9 +394,10 @@ export class TrendingJob implements TrendingHandle {
   }
 }
 
-/** The last build's probe of this torrent when it is recent enough to stand for today's. */
+/** The last build's confirmation of this torrent when it is recent enough to stand for today's. */
 function carriedProbe(old: StreamTrendingRow | undefined, infoHash: string, now: Date, probeCap: number): TrendingEntry['probe'] {
-  if (old === undefined || probeCap === 0 || old.infoHash !== infoHash || old.probeOutcome === null || old.probedAt === null) return null;
+  // Only a confirmation is carried: a failure may be this machine's network (an office firewall), so it is tried again.
+  if (old === undefined || probeCap === 0 || old.infoHash !== infoHash || old.probeOutcome !== 'confirmed' || old.probedAt === null) return null;
   if (now.getTime() - old.probedAt.getTime() > TRENDING_PROBE_REUSE_MS) return null;
   return { outcome: old.probeOutcome, detail: old.probeDetail, at: old.probedAt };
 }
