@@ -227,6 +227,7 @@ Stream one film, or one episode of a series, directly: the daemon finds a cloud 
 | `season` | integer |  | A series only: the season to stream from. Alone, without episode, it starts the first unfinished episode of that season. |
 | `episode` | integer |  | A series only: the episode number within that season. |
 | `provider` | string |  | Only when the owner names a provider ("stream it from VidLink") or a codename, or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked. "torrent" asks the torrent source only ("stream it from a torrent", TM, TS); "cloud" asks the cloud providers only, never a torrent (NTM, NTS). |
+| `magnet` | string |  | A magnet link ("magnet:?xt=urn:btih:...") or a bare 40-character info hash the owner pasted to play that exact torrent, skipping every index. Still pass title (and year/kind) so the play has a title, poster, resume and the original-language check: the magnet only replaces which torrent. A torrent play, so provider need not be set; the file is played only when its audio is the title's original language and it holds a video Chrome can play. |
 | `absolute_episode` | integer |  | A series only, instead of season and episode: an episode named by one number without a season ("One Piece episode 730"). |
 | `asked_as` | string |  | Only after the owner picked a title from did_you_mean: the name they first used for it, word for word. It is remembered as another name of this title. |
 

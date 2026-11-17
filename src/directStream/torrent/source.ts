@@ -1,7 +1,7 @@
 import { DEFAULT_TORRENT_FINDER_CONFIG, TORRENT_INDEX_NAMES, type Config, type TorrentIndexName } from '../../config.js';
 import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
-import { defaultIndexes, findCandidates, IndexHealth, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { candidateFromMagnet, defaultIndexes, findCandidates, IndexHealth, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { canRemux, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
@@ -349,6 +349,24 @@ export class TorrentSource {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * One torrent the owner pasted (a magnet link or a bare 40-hex info hash), played without asking any index:
+   * the swarm is opened, the title's file picked and probed, and the original-language check still applies (a
+   * dub, or a torrent with no video file, is refused). `attempts` holds the one `Torrent: <name>`. Never throws.
+   */
+  async playMagnet(ref: StreamRef, options: TorrentResolveOptions & { magnet: string }): Promise<TorrentResolve> {
+    const query = queryOf(ref, options.imdbId ?? '', options.names ?? null, options.audioLang);
+    const candidate = candidateFromMagnet(options.magnet, query);
+    if (candidate === null) {
+      return { ok: false, error: 'no_source', attempts: [{ provider: 'Torrent: magnet', outcome: 'error', took_s: 0, detail: 'not a magnet link or a 40-character info hash' }] };
+    }
+    const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId ?? '', resumeS: options.resumeS ?? null, cloudTried: false };
+    options.progress?.({ stage: `opening the torrent ${candidate.name}`, attempts: [] });
+    const out = await this.tryCandidates(ref, query, [candidate], play, this.now() + TORRENT_DEADLINE_MS, options.progress);
+    this.log(`[notesd] torrent: ${refLabel(ref)} from a pasted magnet (${candidate.infoHash.slice(0, 8)}): ${out.ok ? `playing ${out.torrent.name}` : 'did not play'}`);
+    return out;
   }
 
   /** The shuffle button: the session's remaining candidates, in their order, without asking the indexes again. */

@@ -203,6 +203,24 @@ A question ("can I stream it directly?", "is Saltburn streamable?") is a lookup:
 The rule for a film in the library: `/direct-stream` or "stream" means stream it, even when the
 file is here. Without those words a library film plays in VLC (`movies_continue`), not here.
 
+### A magnet the user pasted
+
+When the user pastes a magnet link (`magnet:?xt=urn:btih:...`), or a bare 40-character info hash,
+play that exact torrent with `direct_stream_play`'s `magnet` argument, skipping every index. This is
+for a torrent the user found themselves (e.g. on ext.to) when the indexes have nothing.
+
+- **Still name the title.** The magnet only says which torrent; `title` (with `year`/`kind` when
+  known) gives the play its title, poster, resume position and the original-language check. When the
+  user pasted only a magnet in this session, take the title from what was just discussed (the film
+  they were trying to watch). When no title is anywhere to be found, the magnet's `dn` names it, so
+  pass that as `title`; say you took the name from the magnet.
+- It is a torrent play, so you need not set `provider`. The file plays only when its audio is the
+  title's original language and it holds a video Chrome can play; a magnet that is a dub, or one with
+  no video file (a soundtrack/OST, a sample, a subtitle pack), answers `no_source` with a single
+  `Torrent: <name>` attempt saying why. Say that plainly; do not retry.
+- Never build or guess a magnet yourself, and never pass one the user did not give: this is only for
+  a link the user pasted.
+
 ## Step 3: answer
 
 - **`started: false` with `pending: true`:** the play is still being started in the daemon (a

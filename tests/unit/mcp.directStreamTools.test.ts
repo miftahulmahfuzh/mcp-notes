@@ -309,6 +309,17 @@ describe('direct-stream MCP tools', () => {
     await o.close();
   });
 
+  it('passes a pasted magnet through to the service, for the title the owner also named', async () => {
+    const f = fakeDeps();
+    const c = await connect(f.deps);
+    const magnet = 'magnet:?xt=urn:btih:f5ab15bfb22915770a14eca1a15e1d1dc375f83a&dn=Saltburn 2023 1080p&tr=udp://tracker.example:1337/announce';
+    const out = json(await c.call('direct_stream_play', { title: 'saltburn', magnet }));
+    expect(out).toMatchObject({ started: true, title: { title: 'Saltburn', movie_id: 'M-5A1T' } });
+    // The target (from the named title) and the magnet reach the service; the provider slot is left empty.
+    expect(f.play.mock.calls).toEqual([[{ kind: 'movie', tmdbId: 930564 }, undefined, magnet]]);
+    await c.close();
+  });
+
   it('passes provider "cloud" through (NTM, NTS: never a torrent), and its no_source says no torrent was tried', async () => {
     const f = fakeDeps();
     const c = await connect(f.deps);

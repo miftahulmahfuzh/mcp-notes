@@ -435,7 +435,7 @@ export class DirectStreamService {
    * cache of the title (phase 5), when it can be played (`playable`), makes the session with no
    * resolve; otherwise the title is resolved first, as before.
    */
-  async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null } = {}): Promise<PlayResult> {
+  async play(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null } = {}): Promise<PlayResult> {
     return this.begin(toStreamRef(input), options).promise;
   }
 
@@ -444,7 +444,7 @@ export class DirectStreamService {
    * 60 s) gets `pending` with the stage and the attempts so far instead of nothing. The play goes on in the daemon
    * and opens the player by itself; the same call again joins it, or reads its outcome once it has one.
    */
-  async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
+  async playWithin(input: StreamRefInput, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, waitMs: number): Promise<{ pending: false; result: PlayResult } | PendingPlay> {
     const ref = toStreamRef(input);
     const key = playKey(ref, options.provider ?? null);
     const kept = this.outcomes.get(key);
@@ -516,7 +516,7 @@ export class DirectStreamService {
   }
 
   /** The play of `ref` in flight, or a new one. Its promise is the play's answer; a rejection nobody waits for is logged, not thrown away. */
-  private begin(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null }): PlayInFlight {
+  private begin(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }): PlayInFlight {
     const provider = options.provider ?? null;
     const key = playKey(ref, provider);
     const running = this.inFlight.get(key);
@@ -572,15 +572,18 @@ export class DirectStreamService {
     }
   }
 
-  private async playNow(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null }, track: PlayTrack): Promise<PlayResult> {
+  private async playNow(ref: StreamRef, options: { resumeS?: number | null; provider?: string | null; magnet?: string | null }, track: PlayTrack): Promise<PlayResult> {
     const resumeS = options.resumeS ?? null;
     // The owner named a provider ("stream it from VidLink"): only that one is asked, and a cache is passed over.
     // "torrent" asks the torrent source alone: a finished download on this machine first, else the swarm.
     // "cloud" asks the cloud providers alone: this host's stream cache first, and never a torrent, on disk or in the swarm.
     const only = options.provider ?? null;
+    const magnet = options.magnet ?? null;
     track.stage = "looking at this machine's cache and downloads";
     let session: StreamSession;
-    if (only === null) session = await this.sessionFor(ref, resumeS, track);
+    // The owner pasted a magnet: only that torrent is opened, for the title they named. No index, no cache.
+    if (magnet !== null) session = await this.magnetSession(ref, resumeS, magnet, track);
+    else if (only === null) session = await this.sessionFor(ref, resumeS, track);
     else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null, track));
     else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudSession(ref, { resumeS, vet: true }, track));
     else session = await this.cloudSession(ref, { resumeS, only }, track);
@@ -657,6 +660,36 @@ export class DirectStreamService {
       throw new DirectStreamError('no_source', `No provider or torrent could stream ${refLabel(ref)}.`, { attempts });
     }
     const session = this.sessions.createTorrent(ref, out.source, attempts, startS, audioLang, out.torrent);
+    this.followSubtitles(session);
+    this.watchTorrents();
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
+  }
+
+  /**
+   * A session on a torrent the owner pasted (a magnet link or a bare info hash), for a title they also named:
+   * no index is asked, only that torrent is opened, and the original-language check still applies. Throws
+   * `torrent_off`; `no_source` with the one `Torrent: <name>` attempt when it does not play (a dub, no video
+   * file in it, or the swarm sent nothing in time).
+   */
+  private async magnetSession(ref: StreamRef, resumeS: number | null, magnet: string, track: PlayTrack | null = null): Promise<StreamSession> {
+    const source = this.torrentSource();
+    if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
+    const audioLang = await this.audioLang(ref);
+    const imdbId = await this.imdbIdOf(ref);
+    const namesHook = this.opts.hooks?.titleNames;
+    const names = namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref));
+    const startS = await this.startAt(ref, resumeS);
+    const out = await source.playMagnet(ref, {
+      magnet,
+      audioLang,
+      imdbId,
+      names,
+      resumeS: startS,
+      ...(track === null ? {} : { progress: (p) => { track.stage = p.stage; track.attempts = [...p.attempts]; } }),
+    });
+    if (!out.ok) throw new DirectStreamError('no_source', `The pasted torrent could not stream ${refLabel(ref)}.`, { attempts: out.attempts });
+    const session = this.sessions.createTorrent(ref, out.source, out.attempts, startS, audioLang, out.torrent);
     this.followSubtitles(session);
     this.watchTorrents();
     safeRecord(this.evidence, sessionRecord(session, 'created', null));

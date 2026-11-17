@@ -1729,6 +1729,24 @@ To see what a site lists, by hand:
     node claude/streaming/torrent/cli.mjs ext sintel 2010 --imdb tt1727587
     node claude/streaming/torrent/cli.mjs ext gate          # solve ext's Cloudflare challenge by hand, once
 
+### A magnet the owner pasted
+
+When no index has a title, the owner can paste a magnet link (or a bare 40-character info hash) they
+found themselves, and `direct_stream_play`'s `magnet` argument plays that exact torrent with no index
+asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's `magnetSession`).
+
+- The owner still names the title: the magnet only says which torrent. The title gives the play its
+  name, poster, resume position and the original-language check; the magnet's info hash and `tr=`
+  trackers (plus the default trackers) build one `TorrentCandidate` (`candidateFromMagnet`), named
+  from the magnet's `dn`, which goes through the same open, file-pick, probe, subtitle and remux path
+  as an index's release.
+- **The original-language rule still holds.** The file plays only when its audio is the title's
+  original language and it holds a video Chrome can play. A magnet that is a dub is skipped
+  (`dubbed`), and one with no video file — a soundtrack (OST), a sample, a subtitle pack — answers
+  `no_source` with a single `Torrent: <name>` attempt saying so.
+- Nothing is built or guessed: only a magnet the owner pasted is played, and `/direct-stream`'s skill
+  never invents one.
+
 ## Where the code is
 
 | Path | What |

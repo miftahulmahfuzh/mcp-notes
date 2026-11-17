@@ -82,7 +82,7 @@ export interface DirectStreamToolDeps {
    * where the last stream stopped. Answers the play, or `{ pending: true, since, waited_s, stage, attempts }` when
    * it outlasted PLAY_ANSWER_MS: the play goes on in the daemon, and the same call again joins it.
    */
-  play(target: StreamTarget, provider?: string): Promise<unknown>;
+  play(target: StreamTarget, provider?: string, magnet?: string): Promise<unknown>;
   /** This host's source verified inside the freshness window, or null. */
   freshSource(target: StreamTarget): Promise<FreshSource | null>;
   /** What the library knows of each of these title keys (movieTools.ts libraryMarks); a key it does not hold is absent. */
@@ -141,8 +141,8 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
       const id = await new MovieStreams(movies).ensureTitle({ kind: candidate.kind, tmdbId: candidate.tmdbId });
       return id === null ? false : movies.repo.addTitleAlias(id, normalizeName(name));
     },
-    play: async (target, provider) => {
-      const out = await service.playWithin(target, provider === undefined ? {} : { provider }, PLAY_ANSWER_MS);
+    play: async (target, provider, magnet) => {
+      const out = await service.playWithin(target, { ...(provider === undefined ? {} : { provider }), ...(magnet === undefined ? {} : { magnet }) }, PLAY_ANSWER_MS);
       return out.pending ? out : out.result;
     },
     freshSource: async (target) => {
@@ -548,6 +548,13 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         season: seasonField.optional().describe('A series only: the season to stream from. Alone, without episode, it starts the first unfinished episode of that season.'),
         episode: episodeField.optional().describe('A series only: the episode number within that season.'),
         provider: z.string().trim().min(1).max(60).optional().describe('Only when the owner names a provider ("stream it from VidLink") or a codename, or to leave a bad stream for a known good one: a name from direct_stream_sources. Only that provider is asked. "torrent" asks the torrent source only ("stream it from a torrent", TM, TS); "cloud" asks the cloud providers only, never a torrent (NTM, NTS).'),
+        magnet: z
+          .string()
+          .trim()
+          .min(1)
+          .max(4000)
+          .optional()
+          .describe('A magnet link ("magnet:?xt=urn:btih:...") or a bare 40-character info hash the owner pasted to play that exact torrent, skipping every index. Still pass title (and year/kind) so the play has a title, poster, resume and the original-language check: the magnet only replaces which torrent. A torrent play, so provider need not be set; the file is played only when its audio is the title\'s original language and it holds a video Chrome can play.'),
         absolute_episode: z
           .number()
           .int()
@@ -561,7 +568,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode, absolute_episode, asked_as, provider }) => {
+    async ({ title, year, kind, season, episode, absolute_episode, asked_as, provider, magnet }) => {
       const d = deps.directStream;
       if (!d) return off();
       return respond(async () => {
@@ -688,7 +695,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
         // name until the resolve stores it: read it again, so the answer names what plays.
         const stored = async (): Promise<TitleCandidate> => (c.movieId === null ? ((await d.library.byKey(c.kind, c.tmdbId)) ?? c) : c);
         try {
-          const play = provider === undefined ? await d.play(target) : await d.play(target, provider);
+          const play = magnet !== undefined ? await d.play(target, provider, magnet) : provider === undefined ? await d.play(target) : await d.play(target, provider);
           const pending = pendingPlay(play);
           if (pending !== null) {
             return ok({

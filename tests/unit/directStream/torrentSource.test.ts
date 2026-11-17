@@ -123,6 +123,42 @@ function setup(o: Fakes = {}) {
   return { source, calls, settled, probed, durations, logged, finds: () => finds };
 }
 
+describe('TorrentSource.playMagnet', () => {
+  const magnetOf = (hash: string, dn = 'Film.2026.1080p.WEB-DL.x264-GRP') => `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(dn)}&tr=udp://tracker.example:1337/announce`;
+
+  it('opens the pasted magnet, probes it and builds the session torrent, asking no index', async () => {
+    const t = setup({ files: { [h(1)]: [file(0, 'Film.2026.1080p.mp4')] } });
+    const out = await t.source.playMagnet(FILM, { magnet: magnetOf(h(1)), audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.torrent).toMatchObject({ infoHash: h(1), fileIndex: 0, index: 'magnet', held: true, manifestKind: 'mp4' });
+    expect(out.attempts.map((a) => a.provider)).toEqual(['Torrent: Film.2026.1080p.WEB-DL.x264-GRP']);
+    // No index was asked.
+    expect(t.finds()).toBe(0);
+    expect(await t.settled()).toEqual([`open ${h(1)}`, `use ${h(1)} 0`]);
+  });
+
+  it('refuses a magnet whose audio is a dub, keeping the original-language rule', async () => {
+    const t = setup({ files: { [h(2)]: [file(0, 'Film.2026.1080p.mp4')] }, probes: { [h(2)]: MP4_DE } });
+    const out = await t.source.playMagnet(FILM, { magnet: magnetOf(h(2)), audioLang: 'en', imdbId: null });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.attempts[0]).toMatchObject({ outcome: 'dubbed' });
+  });
+
+  it('is no_source for a magnet with no video file, and for a string that is not a magnet', async () => {
+    const noVideo = setup({ files: { [h(3)]: [file(0, 'Film.2026.OST.flac'), file(1, 'cover.jpg')] } });
+    const out = await noVideo.source.playMagnet(FILM, { magnet: magnetOf(h(3), 'Curious Tales OST [FLAC]'), audioLang: 'zh', imdbId: null });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.attempts[0]).toMatchObject({ outcome: 'no_stream' });
+
+    const bad = setup();
+    const garbage = await bad.source.playMagnet(FILM, { magnet: 'not a magnet', audioLang: 'en', imdbId: null });
+    expect(garbage.ok).toBe(false);
+    if (!garbage.ok) expect(garbage.attempts[0]).toMatchObject({ provider: 'Torrent: magnet', outcome: 'error' });
+  });
+});
+
 describe('TorrentSource.fetchAhead', () => {
   it('takes the torrent like a play, stops what only a page needs, and lets it go once', async () => {
     const sync: SyncRequest[] = [];
