@@ -37,7 +37,7 @@ const handle = (over: Partial<TrendingHandle> = {}): TrendingHandle => ({
 
 function appFor(trending: TrendingHandle | null): Hono {
   const app = new Hono();
-  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG, directStream: { ...(h.deps.config.directStream ?? DEFAULT_DIRECT_STREAM_CONFIG), trending: { enabled: true, size: 100, probe: 200, skipLanguages: ['hi'] } } }, movies: here, directStream: {} as never, trending }));
+  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG, directStream: { ...(h.deps.config.directStream ?? DEFAULT_DIRECT_STREAM_CONFIG), trending: { enabled: true, size: 100, probe: 200, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] } } }, movies: here, directStream: {} as never, trending }));
   return app;
 }
 
@@ -148,6 +148,11 @@ describe('GET /api/movies/trending', () => {
   it('leaves out a title whose original language is skipped, at read time, whatever the list says', async () => {
     await repo.replace(HOST_HERE, [entry(1), entry(2)], AT);
     await h.deps.db.execute(sql`update movie_titles set original_language = 'hi' where id = 'movie-1'`);
+    expect((await read(appFor(handle()))).titles.map((t) => t.id)).toEqual(['movie-2']);
+  });
+
+  it('leaves out a title of unknown language whose release names only a skipped one (Telugu)', async () => {
+    await repo.replace(HOST_HERE, [entry(1, { releaseName: 'Scene (2026) 1080p Telugu DVDScr x264 AAC' }), entry(2, { releaseName: 'Film 2 2026 English Hindi DUAL' })], AT);
     expect((await read(appFor(handle()))).titles.map((t) => t.id)).toEqual(['movie-2']);
   });
 

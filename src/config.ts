@@ -198,14 +198,15 @@ export interface TrendingConfig {
   /** `NOTESD_TRENDING_PROBE`, default 200: swarms opened a day, most seeded first, films and series alternating. `0`: none. */
   probe: number
   /**
-   * `NOTESD_TRENDING_SKIP_LANGUAGES`, default `hi`: TMDB original-language codes (comma separated) whose titles never
+   * `NOTESD_TRENDING_SKIP_LANGUAGES`, default `hi,ta,te,ml,kn,bn,mr,pa` (Indian cinema): TMDB original-language codes (comma separated) whose titles never
    * make the list, and leave it at once when one is already there. `none`: nothing is skipped.
    */
   skipLanguages: string[]
 }
 
 export const DEFAULT_TRENDING_SIZE = 100
-export const DEFAULT_TRENDING_SKIP_LANGUAGES = ['hi']
+/** Hindi and the other languages of Indian cinema the owner does not want recommended. */
+export const DEFAULT_TRENDING_SKIP_LANGUAGES = ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa']
 export const DEFAULT_TRENDING_PROBE = 200
 
 /** Trending off. Tests build `Config` literals with it (or leave `trending` out, which is the same). */

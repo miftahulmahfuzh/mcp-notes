@@ -5,9 +5,10 @@ import type { StreamTrendingRow, TrendingProbeOutcome } from '../../db/schema.js
 import { listTitlesByIds, titleLanguages, type ReadContext, type TitleListItem } from '../../movies/read.js';
 import type { MoviesService } from '../../movies/service.js';
 import { MovieStreams } from '../../movies/streams.js';
-import { createTmdbClient, type TmdbImdbLookup } from '../../movies/tmdb.js';
+import { createTmdbClient, type TmdbImdbLookup, type TmdbTitleNames } from '../../movies/tmdb.js';
 import type { StreamTarget } from '../../movies/types.js';
 import type { TorrentStreams } from '../torrent/service.js';
+import { parseRelease } from '../torrent/find/release.js';
 import { TorrentError } from '../torrent/types.js';
 import { TRENDING_TRACKERS, fetchTrends, selectTrends, type FetchedTrends, type TrendSourceAttempt, type TrendTitle } from './sources.js';
 import { TrendingRepo, type TrendingEntry, type TrendingStore } from './repo.js';
@@ -35,6 +36,18 @@ export const TRENDING_PROBE_REUSE_MS = 12 * 60 * 60_000;
 const CANDIDATE_FACTOR = 3;
 const RESOLVE_CONCURRENCY = 6;
 const CLOSE_GRACE_MS = 5_000;
+
+/**
+ * True when a title is one the skip list names: its TMDB original language is in it, or, with no language known, the
+ * release names only skipped languages ("Scene 2026 1080p Telugu DVDScr"). A release that also names another language
+ * ("English Hindi" dual audio) is not skipped by its name: its film may be a dubbed Hollywood one.
+ */
+export function isSkippedLanguage(language: string | null | undefined, releaseName: string, skip: ReadonlySet<string>): boolean {
+  if (skip.size === 0) return false;
+  if (language !== null && language !== undefined && language !== '') return skip.has(language);
+  const named = parseRelease(releaseName, {}).languages;
+  return named.length > 0 && named.every((l) => skip.has(l));
+}
 
 /** States the owner has not "asked to play yet": every other state (seen, finished, started, dropped) leaves the list. */
 export function isFreshForTrending(item: Pick<TitleListItem, 'state' | 'watched' | 'not_interested'>): boolean {
@@ -132,7 +145,9 @@ export interface TrendingJobOptions {
   config: Pick<TrendingConfig, 'size' | 'probe'> & { skipLanguages?: readonly string[] };
   host: string;
   store: TrendingStore;
-  tmdb: TmdbImdbLookup;
+  tmdb: TmdbImdbLookup & Partial<Pick<TmdbTitleNames, 'originalLanguage'>>;
+  /** Stores a title's original language when TMDB gave one for a title that had none (MoviesRepo.setOriginalLanguage). */
+  saveLanguage?: (id: string, language: string) => Promise<void>;
   /** MovieStreams.ensureTitle: stores the title's row (TMDB details); null when it cannot. */
   ensureTitle: (target: StreamTarget) => Promise<string | null>;
   /** TMDB's original language of the listed titles, by title id (titleLanguages); a title not in it, or with null, is not skipped. */
@@ -317,8 +332,9 @@ export class TrendingJob implements TrendingHandle {
       const unique: { id: string; t: TrendTitle }[] = [];
       for (const r of resolved) if (!unique.some((u) => u.id === r.id)) unique.push(r);
       const skip = new Set(this.o.config.skipLanguages ?? []);
-      const languages = skip.size === 0 || this.o.languages === undefined ? new Map<string, string | null>() : await this.o.languages(unique.map((u) => u.id));
-      const wanted = unique.filter((u) => !skip.has(languages.get(u.id) ?? ''));
+      const languages = new Map<string, string | null>(skip.size === 0 || this.o.languages === undefined ? [] : await this.o.languages(unique.map((u) => u.id)));
+      await this.learnLanguages(unique, languages);
+      const wanted = unique.filter((u) => !isSkippedLanguage(languages.get(u.id), u.t.name, skip));
       const fresh = new Map((await this.o.titles(wanted.map((u) => u.id))).filter(isFreshForTrending).map((i) => [i.id, i]));
       const kept = wanted.filter((u) => fresh.has(u.id)).slice(0, size);
       kept.forEach(({ id, t }, i) => {
@@ -356,6 +372,25 @@ export class TrendingJob implements TrendingHandle {
       this.log(`[notesd] trending: ${t.imdbId} (${t.name}) could not be matched: ${messageOf(err)}`);
       return null;
     }
+  }
+
+  /** A stored title that has no original language is asked of TMDB, and the answer is kept, so every later read can tell. */
+  private async learnLanguages(unique: readonly { id: string; t: TrendTitle }[], languages: Map<string, string | null>): Promise<void> {
+    const ask = this.o.tmdb.originalLanguage?.bind(this.o.tmdb);
+    if (ask === undefined || (this.o.config.skipLanguages ?? []).length === 0) return;
+    const unknown = unique.filter((u) => (languages.get(u.id) ?? null) === null);
+    await mapLimit(unknown, RESOLVE_CONCURRENCY, async (u) => {
+      const m = /^(movie|tv)-(\d+)$/.exec(u.id);
+      if (m === null) return;
+      try {
+        const language = await ask(m[1] as 'movie' | 'tv', Number(m[2]));
+        if (language === null) return;
+        languages.set(u.id, language);
+        await this.o.saveLanguage?.(u.id, language);
+      } catch (err) {
+        this.log(`[notesd] trending: the language of ${u.id} is unknown: ${messageOf(err)}`);
+      }
+    });
   }
 
   private async probe(summary: TrendingPass): Promise<void> {
@@ -476,6 +511,9 @@ export function buildTrending(input: BuildTrendingInput, overrides: BuildTrendin
     tmdb,
     ensureTitle: (target) => streams.ensureTitle(target),
     languages: (ids) => titleLanguages(input.db, ids),
+    saveLanguage: async (id, language) => {
+      await movies.repo.setOriginalLanguage(id, language);
+    },
     titles: (ids) => listTitlesByIds(input.db, ids, ctx),
     peek: (hash, trackers, options) => torrents.peek(hash, trackers, options),
     busy: input.busy,

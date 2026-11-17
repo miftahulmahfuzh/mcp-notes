@@ -483,9 +483,10 @@ answers only a title search. A listing becomes a title when it names an IMDb id,
 film or series (an episode's id answers its series); a listing with no IMDb id is left out, and so is a
 cinema recording, a dub, a 3D release, a swarm under 5 seeds and a film over 25 GB. A series is its
 best-seeded episode or pack. The first `NOTESD_TRENDING_SIZE` (100) of each kind that you have not seen
-make the list, so the list is still full when the top is mostly watched. Titles whose TMDB original language is in `NOTESD_TRENDING_SKIP_LANGUAGES` (default `hi`: every Hindi film and
-series) are left out of the build and of every read, so one already on the list goes at once; the other
-languages stay. The list skews to what the
+make the list, so the list is still full when the top is mostly watched. Titles whose TMDB original language is in `NOTESD_TRENDING_SKIP_LANGUAGES` (default: Hindi and the other
+languages of Indian cinema) are left out of the build and of every read, so one already on the list goes at
+once. A title with no stored language is asked of TMDB at the build and the answer kept; until it is known, a release
+name that says only a skipped language ("Telugu DVDScr") skips it. The list skews to what the
 indexes' users download (mostly Western, mainstream, English); nothing is done to widen it.
 
 **Watched and not interested.** The list holds no copy of your marks. Every read of

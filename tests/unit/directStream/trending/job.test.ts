@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../../src/config.js';
 import type { StreamTrendingRow, TrendingProbeOutcome } from '../../../../src/db/schema.js';
-import { buildTrending, DisabledTrending, isFreshForTrending, TrendingJob, type PeekResult, type TrendingJobOptions } from '../../../../src/directStream/trending/job.js';
+import { buildTrending, DisabledTrending, isFreshForTrending, isSkippedLanguage, TrendingJob, type PeekResult, type TrendingJobOptions } from '../../../../src/directStream/trending/job.js';
 import type { TrendingEntry, TrendingStore } from '../../../../src/directStream/trending/repo.js';
 import type { TrendRow } from '../../../../src/directStream/trending/sources.js';
 import { TorrentError } from '../../../../src/directStream/torrent/types.js';
@@ -117,11 +117,33 @@ describe('TrendingJob', () => {
   it('never lists a title whose original language is skipped (Hindi), and fills the place from further down', async () => {
     const lang: Record<string, string | null> = { 'movie-1': 'hi', 'movie-2': null, 'movie-3': 'en' };
     const { job, store } = make([listing(1, 'movie', 900), listing(2, 'movie', 800), listing(3, 'movie', 700)], {
-      config: { size: 2, probe: 0, skipLanguages: ['hi'] },
+      config: { size: 2, probe: 0, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] },
       languages: async (ids) => new Map(ids.map((id) => [id, lang[id] ?? null])),
     });
     await job.pass(false);
     expect(store.data.map((r) => r.titleId)).toEqual(['movie-2', 'movie-3']);
+  });
+
+  it('asks TMDB for a title with no language, keeps the answer, and skips it when it is Hindi', async () => {
+    const saved: [string, string][] = [];
+    const { job, store } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], {
+      config: { size: 5, probe: 0, skipLanguages: ['hi'] },
+      languages: async () => new Map(),
+      tmdb: { findByImdb: async (imdb) => ({ kind: 'movie', tmdbId: Number(imdb.slice(2)) - 1000000 }), originalLanguage: async (_k, id) => (id === 1 ? 'hi' : 'en') },
+      saveLanguage: async (id, language) => {
+        saved.push([id, language]);
+      },
+    });
+    await job.pass(false);
+    expect(saved).toEqual([['movie-1', 'hi'], ['movie-2', 'en']]);
+    expect(store.data.map((r) => r.titleId)).toEqual(['movie-2']);
+  });
+
+  it('skips a title with no known language whose release names only a skipped one', async () => {
+    const rows = [{ ...listing(1, 'movie', 900), name: 'Scene (2026) 1080p Telugu DVDScr x264 AAC' }, listing(2, 'movie', 800)];
+    const { job, store } = make(rows, { config: { size: 5, probe: 0, skipLanguages: ['te'] }, languages: async () => new Map() });
+    await job.pass(false);
+    expect(store.data.map((r) => r.titleId)).toEqual(['movie-2']);
   });
 
   it('keeps the old list and probes nothing when the indexes list nothing', async () => {
@@ -266,6 +288,23 @@ describe('TrendingJob', () => {
   });
 });
 
+describe('isSkippedLanguage', () => {
+  const skip = new Set(['hi', 'te']);
+  it('goes by TMDB\'s original language when it is known', () => {
+    expect(isSkippedLanguage('hi', 'Film 2026 1080p', skip)).toBe(true);
+    expect(isSkippedLanguage('en', 'Film 2026 Hindi 1080p', skip)).toBe(false);
+  });
+  it('goes by a release that names only skipped languages when the language is unknown', () => {
+    expect(isSkippedLanguage(null, 'Scene (2026) 1080p Telugu DVDScr x264 AAC', skip)).toBe(true);
+    expect(isSkippedLanguage(undefined, 'Film 2026 1080p Hindi WEB-DL', skip)).toBe(true);
+  });
+  it('does not skip a dual-audio release, a release naming no language, or an empty skip list', () => {
+    expect(isSkippedLanguage(null, 'Film 2026 1080p English Hindi DUAL', skip)).toBe(false);
+    expect(isSkippedLanguage(null, 'Film 2026 1080p WEB-DL', skip)).toBe(false);
+    expect(isSkippedLanguage('hi', 'Film 2026', new Set())).toBe(false);
+  });
+});
+
 describe('isFreshForTrending', () => {
   it.each([
     [{ state: 'unwatched', watched: false, not_interested: false }, true],
@@ -305,8 +344,8 @@ describe('buildTrending', () => {
   });
 
   it('reads its settings', () => {
-    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, probe: 200, skipLanguages: ['hi'] });
-    expect(config({ NOTESD_TRENDING_SIZE: '40', NOTESD_TRENDING_PROBE: '0' }).directStream?.trending).toEqual({ enabled: true, size: 40, probe: 0, skipLanguages: ['hi'] });
+    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, probe: 200, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
+    expect(config({ NOTESD_TRENDING_SIZE: '40', NOTESD_TRENDING_PROBE: '0' }).directStream?.trending).toEqual({ enabled: true, size: 40, probe: 0, skipLanguages: ['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'mr', 'pa'] });
     expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'HI, ta,hi' }).directStream?.trending?.skipLanguages).toEqual(['hi', 'ta']);
     expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'none' }).directStream?.trending?.skipLanguages).toEqual([]);
     expect(() => config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'hindi' })).toThrow(/NOTESD_TRENDING_SKIP_LANGUAGES/);

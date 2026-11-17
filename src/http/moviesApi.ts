@@ -34,7 +34,7 @@ import { parseDateBound } from '../notes/dates.js';
 import { NoteError } from '../notes/types.js';
 import { describeIssues, readJson, SSE_HEARTBEAT_MS } from './api.js';
 import { sameOriginOnly } from './sameOrigin.js';
-import { isFreshForTrending, type TrendingOffReason, type TrendingStatus } from '../directStream/trending/job.js';
+import { isFreshForTrending, isSkippedLanguage, type TrendingOffReason, type TrendingStatus } from '../directStream/trending/job.js';
 import { TrendingRepo } from '../directStream/trending/repo.js';
 import type { TrendingProbeOutcome } from '../db/schema.js';
 
@@ -368,9 +368,10 @@ export function moviesApiRoutes(
       const rows = await new TrendingRepo(db).rows(ctx.host);
       const skip = new Set(deps.config.directStream?.trending?.skipLanguages ?? []);
       const languages = skip.size === 0 ? new Map<string, string | null>() : await titleLanguages(db, rows.map((r) => r.titleId));
-      const items = new Map((await listTitlesByIds(db, rows.map((r) => r.titleId).filter((id) => !skip.has(languages.get(id) ?? '')), ctx)).map((i) => [i.id, i]));
+      const kept = rows.filter((r) => !isSkippedLanguage(languages.get(r.titleId), r.releaseName, skip));
+      const items = new Map((await listTitlesByIds(db, kept.map((r) => r.titleId), ctx)).map((i) => [i.id, i]));
       const titles: TrendingTitle[] = [];
-      for (const row of rows) {
+      for (const row of kept) {
         const item = items.get(row.titleId);
         if (item === undefined || !isFreshForTrending(item)) continue;
         titles.push({
