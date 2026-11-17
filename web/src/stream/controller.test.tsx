@@ -992,6 +992,26 @@ describe('a pause caches the film on this machine', () => {
     expect(t.controller.getState().log).toEqual(expect.arrayContaining(['paused: caching on this machine (cb36a1ba)', 'from cache cb36a1ba (downloading) at 300 s']));
   });
 
+  it('a stray session_over from the outgoing engine, raised while the move to the cache is still answering, does not stop the move', async () => {
+    const t = await paused({
+      [CACHE]: () => {
+        // The daemon's answer confirms the move, but notesd's own refusal for a segment the old
+        // engine was still buffering arrives (and is handled) before this POST's promise resolves -
+        // the exact race that used to end the session instead of moving it onto the cache.
+        t.made[0].req.handlers.onSessionOver(403);
+        return jsonResponse({ ...onCache('downloading'), moved: true, cache: standing({ progress: 0.4 }) });
+      },
+      [`GET /api/stream/cache/${CID}/map`]: () => jsonResponse({ duration_s: 1440, ranges: [[0, 300]] }),
+    });
+    t.pause();
+    await vi.advanceTimersByTimeAsync(PAUSE_CACHE_DELAY_MS);
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.made[1].req).toMatchObject({ src: `/api/stream/cache/${CID}/f/master.m3u8`, startAt: 300 });
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', cached: { id: CID, state: 'downloading' } });
+  });
+
   it('marks the cache complete when the download ends, and then stops asking', async () => {
     let ready = false;
     const t = await paused(

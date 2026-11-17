@@ -981,7 +981,13 @@ export class StreamController {
       if (!this.disposed && this.sessionId === asked) this.note(`cache: ${err instanceof SessionError ? err.code : messageOf(err)}`);
       return;
     }
-    if (this.disposed || this.sessionId !== asked || this.state.stage === 'error') return;
+    if (this.disposed || this.sessionId !== asked) return;
+    const moving = answer.moved && answer.session.cached !== null;
+    // The daemon clears the old pass-through's allowed hosts the moment it answers `moved`, which can
+    // race a segment the outgoing engine was still buffering into a stray `session_over`. The move
+    // itself is authoritative (the daemon confirmed it), so it goes ahead and a stale error does not
+    // stop it; an unrelated error with no move still does.
+    if (this.state.stage === 'error' && !moving) return;
     if (start && answer.cache !== null) this.note(`paused: caching on this machine (${answer.cache.id.slice(0, 8)})`);
     if (answer.cache === null || answer.cache.state === 'failed') {
       this.note(`cache: ${answer.cache === null ? 'not available' : (answer.cache.error ?? 'failed')}`);
