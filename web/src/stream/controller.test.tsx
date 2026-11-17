@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
+import { CACHE_POLL_MS, SUBTITLE_DELAY_MAX_MS, cueText, MAX_REFRESHES, MAX_SOURCE_SWITCHES, PAUSE_CACHE_DELAY_MS, POSITION_INTERVAL_MS, SEEK_GRACE_MS, SOURCE_SWITCH_COOLDOWN_MS, STALLS_TO_SWITCH, SUBTITLE_HOLD_MS, STALL_MIN_MS, STALL_REPEAT_MS, StreamController, TORRENT_POLL_MS, onDisk, scaleRanges } from './controller';
 import { audioTrackIndex, BUFFER_AHEAD_S, CACHED_BUFFER_AHEAD_S, classifyRefusal, MUTED_BUFFER_AHEAD_S, NETWORK_RETRY_LIMIT } from './engine';
 import { SessionError, mutedFromLocation, parseSession, sessionIdFromLocation } from './session';
 import { fakeEngines, fakeVideo, jsonResponse, routeFetch, sessionTrack, streamSessionJson, type FetchCall } from '../testing/streamFakes';
@@ -242,6 +242,41 @@ describe('StreamController: subtitles and quality (R2.3)', () => {
     expect(s.subtitles.map((o) => o.label)).toEqual(['English']);
     expect(s.subtitle).toBe('file-1');
     expect(s.log).toEqual(['subtitle French: http_502']);
+  });
+
+  it('holds the film for its subtitle files a few seconds only: a file that stalls joins the menu when it arrives', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const AR = `${S1}/p?u=ar.vtt`;
+    const EN = `${S1}/p?u=en.vtt`;
+    const { made, createEngine } = fakeEngines();
+    const { fetchImpl, calls } = routeFetch({
+      [`GET ${S1}`]: () => jsonResponse(streamSessionJson({ subtitles: [sessionTrack(AR, 'ar', 'Arabic'), sessionTrack(EN, 'en', 'English')] })),
+      [`GET ${EN}`]: () => new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n'),
+    });
+    // The subtitle host holds the first file (Fake Profile S02E01: 18 s, then a 522).
+    let answerArabic: (res: Response) => void = () => undefined;
+    const slowFetch: typeof fetch = (input, init) => (String(input) === AR ? new Promise<Response>((resolve) => (answerArabic = resolve)) : fetchImpl(input, init));
+    const { video } = fakeVideo();
+    const controller = new StreamController('S1', video, { fetch: slowFetch, createEngine, textUrl: (vtt) => `blob:${vtt.length}`, revokeTextUrl: () => {} });
+    controllers.push(controller);
+    void controller.start();
+    // Both files were asked for at once, and the film waits for the slow one no longer than the hold.
+    await vi.advanceTimersByTimeAsync(SUBTITLE_HOLD_MS - 1);
+    expect(calls.map((c) => c.url)).toContain(EN);
+    expect(made).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(made).toHaveLength(1);
+    made[0].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(controller.getState().subtitles.map((o) => o.label)).toEqual(['English']);
+    expect(controller.getState().subtitle).toBe('file-1');
+    expect(controller.getState().log).toContain('subtitles: 1 of 2 file(s) in after 3 s, the rest join as they arrive');
+
+    answerArabic(new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nMarhaba\n'));
+    await vi.advanceTimersByTimeAsync(0);
+    // In the session's order, and the subtitle on screen stays the English one.
+    expect(controller.getState().subtitles.map((o) => o.label)).toEqual(['Arabic', 'English']);
+    expect([...video.querySelectorAll('track')].map((el) => el.label)).toEqual(['Arabic', 'English']);
+    expect(controller.getState().subtitle).toBe('file-1');
   });
 
   it('shows no subtitle when none is English, and a pick reaches the engine', async () => {

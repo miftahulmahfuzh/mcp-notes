@@ -234,6 +234,9 @@ interface FileTrack {
   follower: CueFeedFollower | null;
 }
 
+/** How long the film waits for its subtitle files. */
+export const SUBTITLE_HOLD_MS = 3_000;
+
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -253,6 +256,8 @@ export class StreamController {
   private readingSubtitles = false;
   private lastPositionS = 0;
   private fileTracks: FileTrack[] = [];
+  /** Counts every clearing of the file tracks: a file read for an earlier set is dropped when it arrives. */
+  private subtitleLoad = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   /** When the film stalled lately (ms), for the move to another source. */
@@ -663,31 +668,70 @@ export class StreamController {
     }
   }
 
-  private async loadFileSubtitles(session: StreamSession): Promise<void> {
-    for (const [index, sub] of session.subtitles.entries()) {
-      try {
-        // A growing subtitle (a cue feed) starts as an empty file; its cues are added as they come.
-        // One more try for a file: a stream host that fails once would leave the whole film without the track.
-        const vtt = sub.growing === true ? 'WEBVTT\n\n' : toWebVtt(await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch)));
-        const url = this.deps.textUrl(vtt);
-        const element = this.video.ownerDocument.createElement('track');
-        element.kind = 'subtitles';
-        element.label = sub.label;
-        if (sub.lang !== null) element.srclang = sub.lang;
-        element.src = url;
-        this.video.appendChild(element);
-        const fileTrack: FileTrack = {
-          option: { id: `file-${index}`, source: 'file', index, label: sub.label, lang: sub.lang, english: sub.english },
-          element,
-          url,
-          follower: null,
-        };
-        if (sub.growing === true) this.followGrowing(fileTrack, sub);
-        this.fileTracks.push(fileTrack);
-      } catch (err) {
-        this.note(`subtitle ${sub.label}: ${messageOf(err)}`);
-      }
+  /**
+   * Reads the session's subtitle files, all at once, and holds the film for them at most `holdMs`:
+   * a subtitle host that stalls on one file (Fake Profile S02E01: three of 31 took 18 to 20 s each,
+   * read one after another) must not keep the picture back. A file that arrives after the hold
+   * joins the menu then. `holdMs` null waits for every file and leaves the menu to the caller.
+   */
+  private async loadFileSubtitles(session: StreamSession, holdMs: number | null = SUBTITLE_HOLD_MS): Promise<void> {
+    const load = this.subtitleLoad;
+    let held = true;
+    const all = Promise.all(
+      [...session.subtitles.entries()].map(async ([index, sub]) => {
+        try {
+          // A growing subtitle (a cue feed) starts as an empty file; its cues are added as they come.
+          // One more try for a file: a stream host that fails once would leave the whole film without the track.
+          const vtt = sub.growing === true ? 'WEBVTT\n\n' : toWebVtt(await fetchText(sub.url, this.deps.fetch).catch(() => fetchText(sub.url, this.deps.fetch)));
+          // The tracks were cleared meanwhile (another source, a subtitle read anew): this file is of the old set.
+          if (this.disposed || load !== this.subtitleLoad) return;
+          const url = this.deps.textUrl(vtt);
+          const element = this.video.ownerDocument.createElement('track');
+          element.kind = 'subtitles';
+          element.label = sub.label;
+          if (sub.lang !== null) element.srclang = sub.lang;
+          element.src = url;
+          const fileTrack: FileTrack = {
+            option: { id: `file-${index}`, source: 'file', index, label: sub.label, lang: sub.lang, english: sub.english },
+            element,
+            url,
+            follower: null,
+          };
+          // In the session's order, whichever file answered first.
+          const after = this.fileTracks.findIndex((t) => t.option.index > index);
+          if (after === -1) {
+            this.video.appendChild(element);
+            this.fileTracks.push(fileTrack);
+          } else {
+            this.video.insertBefore(element, this.fileTracks[after].element);
+            this.fileTracks.splice(after, 0, fileTrack);
+          }
+          if (sub.growing === true) this.followGrowing(fileTrack, sub);
+          if (!held) this.addLateFileTracks();
+        } catch (err) {
+          if (!this.disposed && load === this.subtitleLoad) this.note(`subtitle ${sub.label}: ${messageOf(err)}`);
+        }
+      }),
+    );
+    if (holdMs === null) {
+      await all;
+      return;
     }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const inTime = await Promise.race([all.then(() => true), new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), holdMs)))]);
+    clearTimeout(timer);
+    held = false;
+    if (!inTime && !this.disposed && load === this.subtitleLoad) this.note(`subtitles: ${this.fileTracks.length} of ${session.subtitles.length} file(s) in after ${holdMs / 1000} s, the rest join as they arrive`);
+  }
+
+  /** A subtitle file that arrived after the hold: it joins the menu, and is shown only where the default would have shown it. */
+  private addLateFileTracks(): void {
+    if (this.ready === null || !this.onFilm()) return;
+    const subtitles = [...this.state.subtitles.filter((o) => o.source === 'manifest'), ...this.fileTracks.map((t) => t.option)];
+    const was = this.state.subtitle;
+    const subtitle = was !== null || this.subtitleChosen ? was : pickDefaultSubtitle(subtitles);
+    this.showSubtitle(subtitles, subtitle);
+    this.set({ subtitles, subtitle });
   }
 
   /**
@@ -1059,6 +1103,7 @@ export class StreamController {
       this.deps.revokeTextUrl(track.url);
     }
     this.fileTracks = [];
+    this.subtitleLoad += 1;
     if (this.state.caption !== '') this.set({ caption: '' });
   }
 
@@ -1209,7 +1254,7 @@ export class StreamController {
       session.subtitles = fresh.subtitles;
       session.subtitleRev = fresh.subtitleRev;
       this.clearFileTracks();
-      await this.loadFileSubtitles(session);
+      await this.loadFileSubtitles(session, null);
       if (this.disposed || this.session !== session) return;
       const subtitles = [...this.state.subtitles.filter((o) => o.source === 'manifest'), ...this.fileTracks.map((t) => t.option)];
       const was = this.state.subtitle;

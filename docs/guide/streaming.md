@@ -475,7 +475,10 @@ of a title plays for the first time, the daemon looks at it (`src/directStream/p
   provider. A rejected one is looked at again after 14 days (a proper copy may have replaced it),
   a clean one after 60. `unsure` is never kept, and nothing here fails a play: a model that does
   not answer, or cannot tell, is `unsure`, which plays.
-- **A stream no frame can be read from** is passed over like a rejected one while another
+- **A stream no frame can be read from** is asked for the first bytes of one segment (10 s at
+  most). When its host hands them out, the stream is only one `ffmpeg` cannot decode here
+  (fragmented MP4 in HEVC, an encrypted one): it is `unsure` and plays at once. When it does not,
+  the stream is passed over like a rejected one while another
   provider answers, and is remembered for six hours in memory only: such a stream seldom plays either (HyperLink's segments sat
   on a host this network could not reach). `ffmpeg` reads the manifest first; for an HLS stream
   it cannot open, the daemon fetches the segment itself and hands ffmpeg the transport stream
@@ -651,7 +654,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **English subtitles are on by default.** An English track inside the manifest comes first, then
   a separate English `.vtt` or `.srt` from the resolve (an `.srt` is converted to WebVTT in the
   page). A subtitle file whose first answer fails is asked for once more before the track is left
-  out. With no English track, a source's only subtitle is shown when it names no language (no
+  out. The files are read side by side and the film waits for them 3 s at most: a file a slow
+  subtitle host still holds joins the menu when it arrives, and is shown then only where a
+  subtitle would have been on by default. With no English track, a source's only subtitle is shown when it names no language (no
   tag, and a label that is empty or just "Subtitle"); otherwise subtitles start off and the
   others can still be picked.
 - **The page draws the subtitles itself.** Every text track is kept `hidden`, so its cues run and

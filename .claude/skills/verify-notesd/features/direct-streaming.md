@@ -28,7 +28,9 @@
   `/api/stream/*` route, and nothing is built that could start Chrome
   (`npx vitest run tests/unit/directStream/build.test.ts`).
 - The player page `/stream/<session id>`: plays HLS (hls.js), DASH (dash.js) or a plain file, the
-  English subtitle shown by default (inside the manifest first, then a separate `.vtt`/`.srt`), a
+  English subtitle shown by default (inside the manifest first, then a separate `.vtt`/`.srt`);
+  subtitle files are read side by side and hold the film 3 s at most, a late one joins the menu
+  (`npx vitest run web/src/stream/controller.test.tsx -t "holds the film"`), a
   quality menu, start at `resume_s`, positions every 5 s and on pause/end, refresh-and-continue on
   401/403/410. After a fatal network error the page stays on the film (`stage: "recovering"`, a
   spinner, positions still reported) and loads again from where it is after 2, 4, 8, 16 and 16 s;

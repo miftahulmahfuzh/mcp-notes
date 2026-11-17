@@ -32,6 +32,8 @@ export const PICTURE_CLEAN_TTL_MS = 60 * 24 * 3_600_000;
 export const PICTURE_VERDICTS_FILE = 'stream-pictures.json';
 /** A stream no frame could be read from is not tried again for this long (remembered in memory only: a restart forgets it). */
 export const PICTURE_UNREADABLE_MS = 6 * 3_600_000;
+/** How long a stream no frame could be read from has to hand out the first bytes of a segment. */
+export const PICTURE_REACH_TIMEOUT_MS = 10_000;
 
 /** `recording`: filmed off a cinema screen. `watermark`: a logo or advert burned into the picture by whoever copied it. */
 export type PictureVerdict = 'clean' | 'recording' | 'watermark' | 'unsure';
@@ -146,6 +148,51 @@ export function firstVariant(playlist: string, base: string): string | null {
   return uri === undefined ? null : new URL(uri, base).href;
 }
 
+/** The segment that holds second `atS` of an HLS stream's first rendition, with the headers the resolve captured; null for a playlist without segments. Throws when a playlist does not answer. */
+async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<{ segment: string; headers: Record<string, string>; encrypted: boolean } | null> {
+  const { referer, origin, user_agent: userAgent } = source.headers;
+  const headers: Record<string, string> = { ...(referer === null ? {} : { referer }), ...(origin === null ? {} : { origin }), ...(userAgent === null ? {} : { 'user-agent': userAgent }) };
+  const text = async (url: string): Promise<{ body: string; url: string }> => {
+    const res = await fetchImpl(url, { headers, signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { body: await res.text(), url: res.url || url };
+  };
+  let playlist = await text(source.manifest_url);
+  const variant = firstVariant(playlist.body, playlist.url);
+  if (variant !== null) playlist = await text(variant);
+  const segment = segmentAt(playlist.body, playlist.url, atS);
+  return segment === null ? null : { segment, headers, encrypted: /#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body) };
+}
+
+/** Whether a stream's host hands out the film: true when a segment of it answers with bytes. Never throws. */
+export type StreamReach = (source: ResolvedSource, atS: number) => Promise<boolean>;
+
+/**
+ * The reach of an HLS stream: its playlists and the segment that holds the second are asked as the
+ * frame grabber asks them, and the first bytes of the segment are enough. A stream ffmpeg cannot
+ * decode here (fragmented MP4 in HEVC, an encrypted one) still reaches; one whose segments sit on a
+ * host this network cannot get to does not. Anything but HLS is not asked and does not reach.
+ */
+export function hlsStreamReach(options: { fetch?: typeof fetch; timeoutMs?: number } = {}): StreamReach {
+  const fetchImpl = options.fetch ?? fetch;
+  return async (source, atS) => {
+    if (source.manifest_kind !== 'hls') return false;
+    const signal = AbortSignal.timeout(options.timeoutMs ?? PICTURE_REACH_TIMEOUT_MS);
+    try {
+      const found = await hlsSegment(source, atS, fetchImpl, signal);
+      if (found === null) return false;
+      const res = await fetchImpl(found.segment, { headers: found.headers, signal });
+      if (!res.ok || res.body === null) return false;
+      const reader = res.body.getReader();
+      const first = await reader.read();
+      await reader.cancel().catch(() => undefined);
+      return first.value !== undefined && first.value.length > 0;
+    } catch {
+      return false;
+    }
+  };
+}
+
 /**
  * Frames of an HLS stream ffmpeg cannot open by itself: the segment that holds the second is
  * fetched here and its transport stream handed to ffmpeg on stdin. Some hosts wrap every segment
@@ -157,22 +204,11 @@ export function hlsSegmentFrameGrabber(options: { ffmpegBin: string; fetch?: typ
   const timeoutMs = options.timeoutMs ?? PICTURE_FRAME_TIMEOUT_MS;
   return async (source, atS) => {
     if (source.manifest_kind !== 'hls') return null;
-    const { referer, origin, user_agent: userAgent } = source.headers;
-    const headers: Record<string, string> = { ...(referer === null ? {} : { referer }), ...(origin === null ? {} : { origin }), ...(userAgent === null ? {} : { 'user-agent': userAgent }) };
     const signal = AbortSignal.timeout(timeoutMs);
-    const text = async (url: string): Promise<{ body: string; url: string }> => {
-      const res = await fetchImpl(url, { headers, signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return { body: await res.text(), url: res.url || url };
-    };
     try {
-      let playlist = await text(source.manifest_url);
-      const variant = firstVariant(playlist.body, playlist.url);
-      if (variant !== null) playlist = await text(variant);
-      if (/#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body)) return null;
-      const segment = segmentAt(playlist.body, playlist.url, atS);
-      if (segment === null) return null;
-      const res = await fetchImpl(segment, { headers, signal });
+      const found = await hlsSegment(source, atS, fetchImpl, signal);
+      if (found === null || found.encrypted) return null;
+      const res = await fetchImpl(found.segment, { headers: found.headers, signal });
       if (!res.ok) return null;
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (bytes.length > SEGMENT_MAX_BYTES) return null;
@@ -364,9 +400,10 @@ export interface PictureLook extends PictureFinding {
   /** The verdict was kept from an earlier look: no frame was read and no model asked. */
   kept: boolean;
   /**
-   * Not one frame could be read from the stream (`unsure`). A stream ffmpeg and a plain fetch of
-   * its segment cannot read seldom plays either (HyperLink's segments on a host this network cannot
-   * reach), so a play passes it over while another provider answers. Remembered for six hours in memory only.
+   * Not one frame could be read from the stream (`unsure`) and its host did not hand out a segment
+   * either. Such a stream seldom plays (HyperLink's segments on a host this network cannot reach),
+   * so a play passes it over while another provider answers. Remembered for six hours in memory only.
+   * A stream whose segment does answer is only one ffmpeg cannot decode: it is not unreadable, and plays.
    */
   unreadable: boolean;
 }
@@ -377,6 +414,8 @@ export const passesOver = (look: PictureLook): boolean => isBadPicture(look.verd
 export interface PictureCheckOptions {
   verdicts: PictureVerdicts;
   grab: FrameGrabber;
+  /** Asked when no frame could be read: whether the stream's host hands out a segment. Without it every such stream is unreadable. */
+  reach?: StreamReach;
   judge: PictureJudge;
   frameAtS?: readonly number[];
   now?: () => Date;
@@ -414,6 +453,13 @@ export class PictureCheck {
       if (kept !== null) return { verdict: kept.verdict, reason: kept.reason, kept: true, unreadable: false };
       const frames = (await Promise.all((this.opts.frameAtS ?? PICTURE_FRAME_AT_S).map((at) => this.opts.grab(source, at)))).filter((f): f is Buffer => f !== null);
       if (frames.length === 0) {
+        const at = (this.opts.frameAtS ?? PICTURE_FRAME_AT_S)[0];
+        if (this.opts.reach !== undefined && at !== undefined && (await this.opts.reach(source, at))) {
+          // The 129 s detour of Fake Profile S02E01: VidNest's stream played well, and four other providers were asked first.
+          this.unreadable.delete(pictureKey(ref, source.provider));
+          this.log(`[notesd] direct stream: no frame of ${refLabel(ref)} could be decoded from ${source.provider}, whose host delivers it: it plays`);
+          return { verdict: 'unsure', reason: 'no frame could be decoded, and the stream host delivers', kept: false, unreadable: false };
+        }
         this.unreadable.set(pictureKey(ref, source.provider), { provider: source.provider, until: this.now().getTime() + PICTURE_UNREADABLE_MS });
         this.log(`[notesd] direct stream: no frame of ${refLabel(ref)} could be read from ${source.provider}`);
         return { verdict: 'unsure', reason: 'no frame could be read from the stream', kept: false, unreadable: true };

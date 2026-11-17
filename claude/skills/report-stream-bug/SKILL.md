@@ -94,6 +94,7 @@ its test, in the same change.
 | The last failed answer is 404 or 5xx, or the player names a parsing, decrypting, key or append error | **The provider's stream is broken** (`provider_broken`) | `evidence.jsonl` status and path; the player line | Another provider: play it again (the resolver tries them in order) |
 | The reference download failed, or gave under 5 Mbps | **This connection is slow** (`connection_slow`) | `network.json` `reference` | A lower quality in the player's menu; another network; or cache it first (`direct_stream_cache`, "cache it first" in `/direct-stream`) and play it from this laptop's disk |
 | The reference gave 5 Mbps or more, and the stream host gave under 3 Mbps during the play (median of media answers of 256 KB or more) or under a quarter of the reference, or through the session now under 3 Mbps, or its first byte took over 1.5 s (median), or its root answers in over 1.5 s now | **The stream host is slow or far** (`host_slow`) | `evidence.jsonl` rates and first-byte times; `network.json` `stream` and `host_probe` | A lower quality; another provider for this title; or cache it first (`direct_stream_cache`), which retries and refreshes the token while it downloads |
+| Nothing above, and the page first asked for the film 30 s or more after its session was made (the subtitle files it fetched one at a time before that are listed), or the resolve spent 30 s or more asking other providers after a stream no frame could be read from | **The play started slowly** (`slow_start`): the stream itself is fine | `evidence.jsonl`: the subtitle answers before the first playlist, and their seconds; `created_at` in `session.json`; `no frame of`, `no provider has a proper picture` and `started nothing after` in `notesd.log` | Nothing for this play: it runs. Both waits are bounded since 2026-11-17 (the page holds the film 3 s for its subtitle files, `SUBTITLE_HOLD_MS`; a stream no frame is decoded from plays when its host hands out a segment, `hlsStreamReach`), so a new one is a new wait: name the step from the signals |
 | None of the above | **New** (`new`) | | Step 4 |
 
 ## 3. What is known
@@ -112,6 +113,13 @@ its test, in the same change.
   for the torrent's file list and header, 22 s for subtitles) and then stalled: 3 peers delivering
   1.7 Mbps for a 2.6 Mbps film, on a 120 Mbps connection. The collector then knew nothing of
   torrents; `torrent.jsonl`, the `torrent:` lines and this cause exist because of it.
+- 2026-11-17: Fake Profile S02E01 took 5 min 6 s from the ask to the first picture, and then played
+  well (VidNest, 18 Mbps median). 37 s to resolve; 45 s for a picture check that could read no frame;
+  129 s asking four other providers for a clean picture, none of which had a stream, before VidNest
+  played anyway; and 87 s in the page, which fetched 31 subtitle files one at a time before asking
+  for the film, three of them held 18 to 20 s by the subtitle host (a 522, a slow answer, a time-out).
+  A play of it five minutes earlier had started nothing after 241 s. `slow_start`, the page's 3 s
+  hold for subtitle files and the picture check's reach probe exist because of it.
 - A torrent session: the index's seed count is not the swarm (16 listed, 3 connected). The daemon
   opens at most five torrents in 90 s, and a torrent's header must arrive within 30 s. The download
   goes on while the film is paused; there is no pause cache, since the file is already on disk.
@@ -122,7 +130,7 @@ its test, in the same change.
 - A 403 that carries `X-Notesd-Upstream` is the stream host's; one without it is notesd's
   (`unknown_session`, `forbidden_host`).
 - The thresholds (5 Mbps reference, 3 Mbps host, 1.5 s first byte, 1.5 times the bitrate and 5
-  peers for a swarm, 5 s for a slow step) are `THRESHOLDS` in `diagnose.mjs`. A 1080p HLS rendition needs about 5 Mbps.
+  peers for a swarm, 5 s for a slow step, 30 s for a slow start) are `THRESHOLDS` in `diagnose.mjs`. A 1080p HLS rendition needs about 5 Mbps.
 
 ## 4. A cause that is not in the table
 

@@ -31,6 +31,7 @@ export const FIELDS = {
     session: 'session',
     host: 'stream_host',
     path: 'path',
+    kind: 'kind',
     status: 'status',
     answer: 'answer',
     ttfbMs: 'ttfb_ms',
@@ -54,7 +55,7 @@ export const FIELDS = {
   /** session.json: `{session_id, host, taken_at, live, source, sessions}`; `source` is null once the session ended. */
   snapshot: { id: 'session_id', live: 'live', source: 'source', sessions: 'sessions' },
   /** session.json's `source` (phase 1's SessionSource; `cache` {id, state} is added by phase 6 for a play from the cache). */
-  source: { ref: 'ref', provider: 'provider', attempts: 'attempts', hosts: 'hosts', refreshes: 'refreshes', cache: 'cache', torrent: 'torrent' },
+  source: { ref: 'ref', provider: 'provider', attempts: 'attempts', hosts: 'hosts', refreshes: 'refreshes', cache: 'cache', torrent: 'torrent', createdAt: 'created_at' },
   /** GET /api/stream/torrent/<info hash>: the fields a sample keeps (never `file_url`). */
   torrent: ['state', 'progress', 'bytes_done', 'file_length', 'duration_s', 'peers', 'down_kbps', 'in_swarm', 'error'],
   /** player.json: `{session_id, lines: [player records]}`. */
@@ -84,6 +85,7 @@ export const CAUSES = {
   provider_broken: "The provider's stream is broken",
   session_ended: 'The session ended',
   torrent_swarm_slow: 'The torrent swarm is slow or thin',
+  slow_start: 'The play started slowly',
   new: 'New: not in the known causes',
 };
 
@@ -106,6 +108,8 @@ export const THRESHOLDS = {
   fewPeers: 5,
   /** A step of a play (an index, a torrent's file list and header, a subtitle tier) that took this long is named in the summary. */
   slowStepS: 5,
+  /** A play whose page asks for the film this long after its session was made, or whose resolve spent this long on other providers' pictures, started slowly. */
+  slowStartS: 30,
 };
 
 const R = FIELDS.record;
@@ -228,6 +232,8 @@ export function readFolder(dir) {
       ? null
       : {
           title: str(page?.[FIELDS.report.title]) ?? str(source?.[SRC.ref]) ?? str(last?.[R.ref]),
+          ref: str(source?.[SRC.ref]) ?? str(last?.[R.ref]),
+          createdAt: str(source?.[SRC.createdAt]) ?? str(sessionRecords[0]?.[R.at]),
           provider: str(source?.[SRC.provider]) ?? str(last?.[R.provider]),
           attempts: Array.isArray(source?.[SRC.attempts]) ? source[SRC.attempts].length : num(last?.[R.attempts]),
           hosts: strings(source?.[SRC.hosts]),
@@ -308,6 +314,58 @@ export function daemonFacts(ev) {
     if (m !== null) plays.push({ at: clockOf(line), ref: m[1], candidates: Number(m[2]), played: m[4] ?? null });
   }
   return { starts, plays };
+}
+
+/** A daemon line's clock as seconds of its day, or null. */
+const clockS = (line) => {
+  const m = /(\d\d):(\d\d):(\d\d)/.exec(clockOf(line));
+  return m === null ? null : Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+};
+const MANIFEST_KINDS = new Set(['hls', 'dash']);
+const isSubtitleFile = (r) => r[R.kind] === 'vtt' || /\.(vtt|srt|ass)$/i.test(str(r[R.path]) ?? '');
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * How the play started: how long after the session was made the page first asked for the film, the
+ * subtitle files it fetched before that, and what the daemon's lines say of the resolve (earlier plays
+ * of the title that started nothing, and the time spent asking other providers after a stream whose
+ * picture could not be read).
+ */
+export function startFacts(ev) {
+  const created = Date.parse(ev.session?.createdAt ?? '');
+  // A record's `at` is when its answer ended.
+  const startOf = (r) => (tsOf(r) ?? 0) - (num(r[R.durationMs]) ?? 0);
+  const at = ev.passes.findIndex((r) => MANIFEST_KINDS.has(r[R.kind]));
+  const pageWaitS = Number.isNaN(created) || at < 0 ? null : round((startOf(ev.passes[at]) - created) / 1000, 1);
+  const files = at < 0 ? [] : ev.passes.slice(0, at).filter(isSubtitleFile);
+  const slow = files.filter((r) => (num(r[R.durationMs]) ?? 0) >= THRESHOLDS.slowStepS * 1000);
+  const subtitles = {
+    files: files.length,
+    seconds: round(files.reduce((sum, r) => sum + (num(r[R.durationMs]) ?? 0), 0) / 1000, 1),
+    slow: slow.map((r) => ({ path: where(r), seconds: round((num(r[R.durationMs]) ?? 0) / 1000, 1), answer: num(r[R.answer]) })),
+    hosts: [...new Set(files.map((r) => str(r[R.host])).filter((h) => h !== null))],
+  };
+  const ref = ev.session?.ref ?? null;
+  const failedPlays = [];
+  let unreadable = null;
+  let detour = null;
+  if (ref !== null) {
+    const name = escapeRe(ref);
+    const nothing = new RegExp(`direct stream: play of ${name}(?: \\(.+?\\))? started nothing after ([\\d.]+) s: (\\w+), (\\d+) attempt`);
+    const noFrame = new RegExp(`direct stream: no frame of ${name} could be read from (.+)$`);
+    const anyway = new RegExp(`direct stream: no provider has a proper picture of ${name}; playing (.+)$`);
+    for (const line of ev.daemonLines) {
+      const n = nothing.exec(line);
+      if (n !== null) failedPlays.push({ at: clockOf(line), tookS: Number(n[1]), code: n[2], attempts: Number(n[3]) });
+      const u = noFrame.exec(line);
+      if (u !== null) unreadable = { provider: u[1], s: clockS(line) };
+      const a = anyway.exec(line);
+      if (a !== null && unreadable !== null && unreadable.s !== null && clockS(line) !== null) {
+        detour = { provider: a[1], seconds: (clockS(line) - unreadable.s + 86_400) % 86_400 };
+      }
+    }
+  }
+  return { pageWaitS, subtitles, failedPlays, detour };
 }
 
 /** The session's torrent as its samples show it: the film's bitrate, what the swarm delivers, and how many peers. */
@@ -466,6 +524,31 @@ export const RULES = [
       if (f.probeMs !== null && f.probeMs > THRESHOLDS.farMs) out.push(`its root answered in ${f.probeMs} ms now`);
       if (out.length === 0) return null;
       return [...out, `the reference host gave ${f.referenceMbps} Mbps`];
+    },
+  },
+  {
+    // Nothing failed and nothing is slow now: the time went before the first picture.
+    cause: 'slow_start',
+    test(ev) {
+      const st = startFacts(ev);
+      const waited = st.pageWaitS !== null && st.pageWaitS >= THRESHOLDS.slowStartS;
+      const detoured = st.detour !== null && st.detour.seconds >= THRESHOLDS.slowStartS;
+      if (!waited && !detoured) return null;
+      const out = [];
+      for (const p of st.failedPlays) out.push(`an earlier play of it started nothing after ${p.tookS} s (${p.code}, ${p.attempts} attempt(s)) at ${p.at}`);
+      for (const a of ev.session?.steps ?? []) {
+        if (a.outcome === 'resolved' && (num(a.took_s) ?? 0) >= THRESHOLDS.slowStepS) out.push(`${a.provider} resolved after ${a.took_s} s`);
+      }
+      if (detoured) out.push(`no frame could be read from ${st.detour.provider}'s stream, and asking the other providers for a picture took ${st.detour.seconds} s before ${st.detour.provider} played anyway`);
+      if (waited) {
+        out.push(`the page asked for the film ${st.pageWaitS} s after its session was made (${THRESHOLDS.slowStartS} or more is slow)`);
+        const sub = st.subtitles;
+        if (sub.files > 0) {
+          out.push(`before that it fetched ${sub.files} subtitle file(s) one at a time from ${sub.hosts.join(', ')}: ${sub.seconds} s in all`);
+          for (const s of sub.slow.slice(0, 5)) out.push(`  ${s.path}: ${s.seconds} s, answer ${s.answer ?? '-'}`);
+        }
+      }
+      return out;
     },
   },
 ];

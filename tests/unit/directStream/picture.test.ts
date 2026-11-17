@@ -11,6 +11,7 @@ import {
   PictureVerdicts,
   createPictureJudge,
   firstFrameOf,
+  hlsStreamReach,
   firstVariant,
   isBadPicture,
   parsePictureAnswer,
@@ -130,6 +131,37 @@ describe('the picture check', () => {
     expect(passesOver({ verdict: 'unsure', reason: 'black frame', kept: false, unreadable: false })).toBe(false);
     expect(passesOver({ verdict: 'recording', reason: '', kept: true, unreadable: false })).toBe(true);
     expect(judge.calls).toHaveLength(1);
+  });
+
+  it('plays a stream no frame could be decoded from when its host hands out a segment, and passes over one it does not', async () => {
+    const judge = judgeOf(() => ({ verdict: 'clean', reason: '' }));
+    const reach = vi.fn(async (s: ResolvedSource, _atS: number) => s.provider === 'VidNest');
+    const check = new PictureCheck({ verdicts: verdicts(), grab: async () => null, reach, judge, log: () => undefined });
+    // Fake Profile S02E01: VidNest's stream played well, and four other providers were asked first for 129 s.
+    const decoded = await check.check(EPISODE, source('VidNest'), 't');
+    expect(decoded).toEqual({ verdict: 'unsure', reason: 'no frame could be decoded, and the stream host delivers', kept: false, unreadable: false });
+    expect(passesOver(decoded)).toBe(false);
+    expect(passesOver(await check.check(EPISODE, source('HyperLink'), 't'))).toBe(true);
+    expect(reach.mock.calls.map((c) => c[1])).toEqual([240, 240]);
+    expect(await check.badFor(EPISODE)).toEqual(['HyperLink']);
+    expect(judge.calls).toHaveLength(0);
+  });
+
+  it('reaches an HLS stream by the first bytes of a segment, with the captured headers', async () => {
+    const asked: [string, unknown][] = [];
+    const host = (segment: () => Response): typeof fetch => async (input, init) => {
+      const url = String(input);
+      asked.push([url, (init?.headers as Record<string, string>).referer]);
+      if (url.endsWith('master.m3u8')) return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n1080/index.m3u8\n');
+      if (url.endsWith('index.m3u8')) return new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k"\n#EXTINF:300,\nseg0.m4s\n#EXTINF:300,\nseg1.m4s\n');
+      return segment();
+    };
+    // Fragmented MP4, encrypted: nothing ffmpeg reads here, and the host delivers it all the same.
+    expect(await hlsStreamReach({ fetch: host(() => new Response(new Uint8Array(64))) })(source('A'), 400)).toBe(true);
+    expect(asked.at(-1)).toEqual(['https://cdn-a.example/1080/seg1.m4s', 'https://embed.example/']);
+    expect(await hlsStreamReach({ fetch: host(() => new Response('', { status: 403 })) })(source('A'), 400)).toBe(false);
+    expect(await hlsStreamReach({ fetch: async () => { throw new Error('ENOTFOUND'); } })(source('A'), 400)).toBe(false);
+    expect(await hlsStreamReach({ fetch: host(() => new Response(new Uint8Array(64))) })({ ...source('A'), manifest_kind: 'dash' }, 400)).toBe(false);
   });
 
   it('never keeps unsure and never throws: a model that fails is unsure, and the next play asks again', async () => {

@@ -1,0 +1,67 @@
+{
+  "session_id": "fixture0session0id0for0reports01",
+  "host": "laptop",
+  "taken_at": "2026-11-16T23:58:11.000Z",
+  "live": true,
+  "source": {
+    "session_id": "fixture0session0id0for0reports01",
+    "ref": "TMDB tv 227371 S02E01",
+    "kind": "tv",
+    "tmdb_id": 227371,
+    "season": 2,
+    "episode": 1,
+    "provider": "VidNest",
+    "embed": null,
+    "manifest_kind": "hls",
+    "manifest": {
+      "host": "cdn.fixture.example",
+      "path": "/hls/master.m3u8"
+    },
+    "subtitles": [],
+    "best_height": 1080,
+    "en_subtitle": true,
+    "audio_lang": "es",
+    "audio": null,
+    "captured_headers": [
+      "referer"
+    ],
+    "attempts": [
+      {
+        "provider": "VidNest Anime",
+        "outcome": "skipped_no_template",
+        "took_s": 0,
+        "detail": "an anime embed, and this title has no AniList id"
+      },
+      {
+        "provider": "VidNest",
+        "outcome": "resolved",
+        "took_s": 33.9,
+        "detail": "hls 1080p, 31 subtitle track(s), English, audio es; picture: unsure (no frame could be read from the stream)"
+      }
+    ],
+    "hosts": [
+      "cdn.fixture.example",
+      "subs.fixture.example"
+    ],
+    "refreshes": 0,
+    "created_at": "2026-11-16T23:56:24.000Z",
+    "refreshed_at": "2026-11-16T23:56:24.000Z",
+    "last_used_at": "2026-11-16T23:57:14.000Z",
+    "expires_at": "2026-11-17T03:57:14.000Z"
+  },
+  "sessions": [
+    {
+      "type": "session",
+      "at": "2026-11-16T23:56:24.000Z",
+      "session": "fixture0session0id0for0reports01",
+      "ref": "TMDB tv 227371 S02E01",
+      "event": "created",
+      "provider": "VidNest",
+      "manifest_kind": "hls",
+      "stream_host": "cdn.fixture.example",
+      "attempts": 2,
+      "refreshes": 0,
+      "error": null
+    }
+  ]
+}

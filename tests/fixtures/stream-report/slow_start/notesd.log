@@ -1,0 +1,8 @@
+Nov 17 06:50:40 pc node[1]: [notesd] torrent: TMDB tv 227371 S02E01: 4 candidate(s), none played
+Nov 17 06:50:40 pc node[1]: [notesd] direct stream: play of TMDB tv 227371 S02E01 started nothing after 241.2 s: no_source, 33 attempt(s)
+Nov 17 06:50:40 pc node[1]: [notesd] direct stream:   attempt VidNest: no_stream after 32.9 s (8 requests, 0 media hits, 4 clicks, 1 advert tabs closed)
+Nov 17 06:53:29 pc node[1]: [notesd] direct stream: TMDB tv 227371 S02E01 resolved by VidNest (hls, 1080p) after 2 tries
+Nov 17 06:54:14 pc node[1]: [notesd] direct stream: no frame of TMDB tv 227371 S02E01 could be read from VidNest
+Nov 17 06:56:23 pc node[1]: [notesd] direct stream: TMDB tv 227371 S02E01 did not resolve: no_source
+Nov 17 06:56:23 pc node[1]: [notesd] direct stream: no provider has a proper picture of TMDB tv 227371 S02E01; playing VidNest
+Nov 17 06:57:09 pc node[1]: [notesd] direct stream: playing TMDB tv 227371 S02E01 from VidNest

@@ -26,7 +26,7 @@ import { MOVIES_SUBDIR, buildMoviesService } from './movies/service.js';
 import { MovieStreams } from './movies/streams.js';
 import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
-import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudge, ffmpegFrameGrabber, firstFrameOf, hlsSegmentFrameGrabber } from './directStream/picture.js';
+import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudge, ffmpegFrameGrabber, firstFrameOf, hlsSegmentFrameGrabber, hlsStreamReach } from './directStream/picture.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
@@ -215,6 +215,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             ffmpegFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
             hlsSegmentFrameGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
           ),
+          // No frame: a stream whose host still hands out a segment plays; only one it does not is passed over.
+          reach: hlsStreamReach(),
           judge: pictureJudge,
         });
   // Torrent phase 3: the torrent source, built on first use from phase 1's TorrentStreams (deps.torrents, null

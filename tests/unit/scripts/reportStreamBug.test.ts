@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { bestVariant, download, measureStream, netcheck, parseArgs, probeHost, targetHost } from '../../../claude/skills/report-stream-bug/netcheck.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { CAUSES, classify, daemonFacts, noteBody, readFolder, summarize, torrentFacts } from '../../../claude/skills/report-stream-bug/diagnose.mjs';
+import { CAUSES, classify, daemonFacts, noteBody, readFolder, startFacts, summarize, torrentFacts } from '../../../claude/skills/report-stream-bug/diagnose.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const SKILL = path.join(REPO, 'claude', 'skills', 'report-stream-bug');
@@ -227,6 +227,29 @@ describe('diagnose.mjs', () => {
     expect(classify({ ...ev, network: { ...ev.network, reference: { ok: true, mbps: 2 } } }).cause).toBe('connection_slow');
     const fast = ev.torrentSamples.map((x: Record<string, unknown>, i: number) => ({ ...x, peers: 40, bytes_done: 91_980_620 + i * 20_000_000 }));
     expect(classify({ ...ev, torrentSamples: fast }).cause).toBe('new');
+  });
+
+  it('reads a slow start: the subtitle files the page fetched before the film, the picture detour and the play that started nothing', () => {
+    const ev = readFolder(path.join(FIXTURES, 'slow_start'));
+    expect(startFacts(ev)).toEqual({
+      pageWaitS: 45,
+      subtitles: {
+        files: 4,
+        seconds: 40.5,
+        slow: [
+          { path: 'subs.fixture.example/tv/1/Arabic.vtt', seconds: 18, answer: 522 },
+          { path: 'subs.fixture.example/tv/1/Turkish.vtt', seconds: 20, answer: 502 },
+        ],
+        hosts: ['subs.fixture.example'],
+      },
+      failedPlays: [{ at: 'Nov 17 06:50:40', tookS: 241.2, code: 'no_source', attempts: 33 }],
+      detour: { provider: 'VidNest', seconds: 129 },
+    });
+    const signals: string = classify(ev).signals.join('\n');
+    expect(signals).toContain('the page asked for the film 45 s after its session was made');
+    expect(signals).toContain('asking the other providers for a picture took 129 s before VidNest played anyway');
+    // A page that asks for the film at once, after a quick resolve, is not a slow start.
+    expect(classify({ ...ev, daemonLines: [], session: { ...ev.session, createdAt: '2026-11-16T23:57:50.000Z' } }).cause).toBe('new');
   });
 
   it('writes a plain-text note that names the cause and ends with #stream-bug', () => {
