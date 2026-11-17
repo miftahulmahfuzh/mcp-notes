@@ -187,6 +187,13 @@ minutes), so with `MOVIES_DATABASE_URL` set they live in a Postgres on the machi
 
 ## Neon
 
+Nothing asks Neon on a timer shorter than 30 minutes while the machine is idle, so its compute can
+suspend. The embedding workers (notes, pictures, session replies) and the summary worker are
+woken by what this daemon writes: a note event, a session read (replies drain at most once a
+minute; summaries are checked once a session has been quiet for the idle time) and the summarize
+route. Their 30-minute sweeps only catch the other machine's writes and what no event announced.
+The session ingest's own 60-second sweep reads files, not the database.
+
 The database is Neon Postgres with pgvector.
 
 - **Two URLs.** `.env.local` holds a pooled host (`-pooler` in the name) and a direct one. The

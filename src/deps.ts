@@ -102,6 +102,11 @@ export interface AppDeps {
    * routes answer 503.
    */
   movieStories?: MovieStories | null;
+  /**
+   * Wakes the session summary worker now (a summary was requested). Set by startBackground while the
+   * worker runs; absent, the request waits for the worker's sweep.
+   */
+  kickSummaries?: () => void;
   /** The stream on screen in the player page (src/movies/streamLive.ts); null or absent with the movie library off. */
   streamLive?: StreamLive | null;
   /**

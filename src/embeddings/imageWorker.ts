@@ -8,7 +8,7 @@ import {
   type ImageEmbeddingStore,
 } from './imageBackfill.js';
 import type { ImageEmbedder } from './imageEmbedder.js';
-import { DEFAULT_CLOSE_GRACE_MS, DEFAULT_DEBOUNCE_MS, DEFAULT_SWEEP_MS, type EmbeddingWorker } from './worker.js';
+import { DEFAULT_CLOSE_GRACE_MS, DEFAULT_DEBOUNCE_MS, DEFAULT_SWEEP_MS, RETRY_DRAIN_MS, type EmbeddingWorker } from './worker.js';
 
 /** Error text in a log line is cut here; the full (<= 500 char) text is in note_image_embeddings.last_error. */
 const LOG_ERROR_CHARS = 200;
@@ -59,6 +59,15 @@ export function startImageEmbeddingWorker(opts: ImageEmbeddingWorkerOptions): Em
   let debounce: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<void> | null = null;
   let again = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  const retrySoon = (): void => {
+    if (closed || retry !== null) return;
+    retry = setTimeout(() => {
+      retry = null;
+      drain();
+    }, RETRY_DRAIN_MS);
+    retry.unref();
+  };
 
   const drainOnce = async (): Promise<void> => {
     const started = clock.now();
@@ -75,6 +84,7 @@ export function startImageEmbeddingWorker(opts: ImageEmbeddingWorkerOptions): Em
           if (r.outcome === 'failed') failures.push({ id: r.imageId, error: r.error ?? '' });
         },
       });
+      if (result.failed > 0) retrySoon();
       if (result.calls > 0 || result.failed > 0) {
         log(formatImageDrain({ ...result, ms: clock.now() - started, firstFailure: failures[0] ?? null }));
       }
@@ -134,6 +144,7 @@ export function startImageEmbeddingWorker(opts: ImageEmbeddingWorkerOptions): Em
         closed = true;
         unsubscribe();
         clearInterval(sweep);
+        if (retry !== null) clearTimeout(retry);
         if (debounce !== null) {
           clearTimeout(debounce);
           debounce = null;

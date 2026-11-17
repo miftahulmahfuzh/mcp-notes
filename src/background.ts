@@ -16,7 +16,7 @@ import { readLiveSessions } from './sessions/registry.js';
 import { dbReplyEmbeddingStore, startReplyEmbeddingWorker } from './sessions/replyEmbeddings.js';
 import { SessionsRepo } from './sessions/repo.js';
 import type { Summarizer } from './sessions/summarize.js';
-import { dbSummaryStore, startSummaryWorker, type SummaryWorker } from './sessions/summaryWorker.js';
+import { DEFAULT_SUMMARY_IDLE_MS, dbSummaryStore, startSummaryWorker, type SummaryWorker } from './sessions/summaryWorker.js';
 
 export type StopBackground = () => Promise<void>;
 
@@ -28,6 +28,11 @@ export interface BackgroundOptions {
    */
   sessionSummarizer?: Summarizer | null;
 }
+
+/** A busy session's replies are embedded at most this often (the reply worker's kick debounce). */
+export const REPLY_EMBED_KICK_MS = 60_000;
+/** How long after a session's idle time the summary worker is woken, so the idle test has passed. */
+export const SUMMARY_DUE_MARGIN_MS = 30_000;
 
 /**
  * Long-running work beside the HTTP server: the inbox watcher (iteration 2) and, when
@@ -117,11 +122,14 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       const worker = startReplyEmbeddingWorker({
         store: dbReplyEmbeddingStore(deps.db, sessionsRepo, sessionsHost),
         embedder: deps.embedder,
+        debounceMs: REPLY_EMBED_KICK_MS,
       });
       replyEmbeddings = worker;
-      // Only a kick: never awaited, never blocks or fails a sweep. Watcher reads and the one-time
-      // replies backfill are caught by the worker's own 60 s sweep.
+      // Only a kick: never awaited, never blocks or fails a read. Every committed read kicks, and the
+      // worker's long debounce turns a busy session into one drain a minute; nothing is asked while
+      // no session writes.
       sessionIngest.addObserver({
+        onBatch: () => worker.kick(),
         onPassComplete: (pass) => {
           if (pass.sessionIds.length > 0) worker.kick();
         },
@@ -131,6 +139,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
   }
 
   let sessionSummaries: SummaryWorker | null = null;
+  let summaryDue: ReturnType<typeof setTimeout> | null = null;
   if (deps.config.sessions.enabled) {
     const summarizer = options.sessionSummarizer ?? null;
     if (summarizer === null && deps.embedder === null) {
@@ -142,6 +151,20 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
         summarizer,
         embedder: deps.embedder,
         liveSessionIds: async () => new Set((await readLiveSessions(claudeHome)).map((s) => s.sessionId)),
+      });
+      // A session is due once it has been quiet for the idle time: each read of this host re-arms one
+      // timer for that moment, so the worker asks the database when something can be due, not every minute.
+      const summaries = sessionSummaries;
+      deps.kickSummaries = () => summaries.kick();
+      sessionIngest?.addObserver({
+        onBatch: () => {
+          if (summaryDue !== null) clearTimeout(summaryDue);
+          summaryDue = setTimeout(() => {
+            summaryDue = null;
+            summaries.kick();
+          }, DEFAULT_SUMMARY_IDLE_MS + SUMMARY_DUE_MARGIN_MS);
+          summaryDue.unref();
+        },
       });
       console.log(
         `[notesd] session summaries: ${summarizer === null ? 'off' : summarizer.model}, session embeddings: ${deps.embedder === null ? 'off' : deps.embedder.model}`,
@@ -223,6 +246,8 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
 
   return async () => {
     if (egressTimer) clearInterval(egressTimer);
+    if (summaryDue !== null) clearTimeout(summaryDue);
+    delete deps.kickSummaries;
     await inbox.close();
     // In parallel: each close is bounded by its grace (5 s), well under main.ts's 10 s exit.
     await Promise.all([

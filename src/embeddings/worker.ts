@@ -12,8 +12,14 @@ import {
 } from './backfill.js';
 import type { Embedder } from './embedder.js';
 
-/** Sweep period: the other machine's writes and due retries are picked up within this. */
-export const DEFAULT_SWEEP_MS = 60_000;
+/**
+ * Sweep period: the other machine's writes and due retries are picked up within this. A write on
+ * this machine kicks the worker, so the sweep is rare on purpose: every sweep is a query, and a
+ * query every minute never lets Neon suspend.
+ */
+export const DEFAULT_SWEEP_MS = 30 * 60_000;
+/** After a drain in which an item failed, one more drain runs this much later: a failure's first retry is due by then. */
+export const RETRY_DRAIN_MS = 60_000;
 /** Coalesces a burst of writes (an import, a quick edit loop) into one drain. */
 export const DEFAULT_DEBOUNCE_MS = 500;
 /**
@@ -39,6 +45,8 @@ export interface EmbeddingWorkerOptions {
   batchSize?: number;
   minIntervalMs?: number;
   sweepMs?: number;
+  /** Default RETRY_DRAIN_MS. */
+  retryDrainMs?: number;
   debounceMs?: number;
   /** How long close() waits for an in-flight batch. Default DEFAULT_CLOSE_GRACE_MS. */
   closeGraceMs?: number;
@@ -84,10 +92,19 @@ export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWor
   let debounce: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<void> | null = null;
   let again = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  const retrySoon = (): void => {
+    if (closed || retry !== null) return;
+    retry = setTimeout(() => {
+      retry = null;
+      drain();
+    }, opts.retryDrainMs ?? RETRY_DRAIN_MS);
+    retry.unref();
+  };
 
   const drainOnce = async (): Promise<void> => {
     try {
-      await runBackfill({
+      const totals = await runBackfill({
         store: opts.store,
         embedder: opts.embedder,
         batchSize,
@@ -96,6 +113,7 @@ export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWor
         signal: abort.signal,
         onBatch: (report) => log(formatBatch(report, label, itemNoun)),
       });
+      if (totals.failed > 0) retrySoon();
     } catch (err) {
       log(`[notesd] ${label}: drain failed: ${errorMessage(err).slice(0, LOG_ERROR_CHARS)}`);
     }
@@ -152,6 +170,7 @@ export function startEmbeddingWorker(opts: EmbeddingWorkerOptions): EmbeddingWor
         closed = true;
         unsubscribe();
         clearInterval(sweep);
+        if (retry !== null) clearTimeout(retry);
         if (debounce !== null) {
           clearTimeout(debounce);
           debounce = null;

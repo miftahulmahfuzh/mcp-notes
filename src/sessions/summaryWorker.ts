@@ -19,8 +19,13 @@ import {
 
 /** A session must be quiet this long (and not live) before it is summarized. */
 export const DEFAULT_SUMMARY_IDLE_MS = 15 * 60_000;
-/** Sweep period: new idle sessions are picked up within this. */
-export const DEFAULT_SUMMARY_SWEEP_MS = 60_000;
+/**
+ * Sweep period. Rare on purpose (every sweep queries Neon): background.ts kicks the worker when a
+ * session this host ingested has been quiet for the idle time, and the summarize route kicks it for
+ * a request, so the sweep only catches what neither saw (a session that went from live to closed
+ * without a write, a due retry).
+ */
+export const DEFAULT_SUMMARY_SWEEP_MS = 30 * 60_000;
 /** Minimum spacing between two summarizer calls (backlog rate limit). */
 export const DEFAULT_SUMMARY_MIN_INTERVAL_MS = 5_000;
 /** Minimum spacing between two embedder calls. */

@@ -235,7 +235,10 @@ export function sessionsApiRoutes(deps: AppDeps, options: SessionsApiOptions = {
     const nodeId = normalizeNodeId(c.req.param('nodeId'));
     if (nodeId === null) return c.json({ error: 'invalid_node_id' }, 400);
     const out = await requestSummaryFor(rd, nodeId);
-    if (out.ok) return c.json(out.payload);
+    if (out.ok) {
+      deps.kickSummaries?.();
+      return c.json(out.payload);
+    }
     if (out.error === 'empty_session') return c.json({ error: out.error, node_id: out.node_id }, 409);
     return c.json({ error: out.error, node_id: out.node_id }, 404);
   });

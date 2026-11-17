@@ -118,6 +118,22 @@ describe('startEmbeddingWorker', () => {
     expect(logs[0]).toContain('per-note fallback');
   });
 
+  it('drains once more shortly after a failure, without waiting for the sweep', async () => {
+    const store = new MemoryEmbeddingStore();
+    store.setBody('P-OIS', 'poison');
+    const embedder = new ScriptedEmbedder();
+    embedder.failIf = (s) => s === 'poison';
+    const logs: string[] = [];
+    worker = startEmbeddingWorker({ store, embedder, minIntervalMs: 0, debounceMs: 0, sweepMs: 3_600_000, retryDrainMs: 10, log: (l) => logs.push(l) });
+    await worker.idle();
+    const after = store.listCalls;
+    await sleep(60);
+    await worker.idle();
+    // The retry drain asked the store again; the note is still backing off, so it ended there.
+    expect(store.listCalls).toBeGreaterThan(after);
+    expect(store.listCalls).toBeLessThan(after + 4);
+  });
+
   it('a store error is logged and the worker keeps going', async () => {
     const store = new MemoryEmbeddingStore();
     store.failList = new Error('db down');
