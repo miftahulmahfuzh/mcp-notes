@@ -290,6 +290,14 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Live (owner's machine, out of sight, plays nothing):
   `node claude/streaming/direct/cli.mjs resolve tv 293610 1 1 --audio-lang ko` answers HyperLink
   `dubbed` ("audio is en, the original is ko") and another provider `resolved`.
+- The cloud audio-language check: a cloud `.mp4` often has no audio-language tags, so the resolver's
+  check above cannot see a dub. Before a cloud provider's first play of a foreign-language title,
+  ~30 s of its audio goes through Whisper's `detect` task and a provider heard dubbing is passed over
+  in the `vetted` loop for one serving the original (cloud-only; only when the original language is
+  known and is not English; verdict kept per title+provider in `movies/stream-audio.json`; `unsure`
+  plays; a dub still plays when nothing else does). Proven by
+  `npx vitest run tests/unit/directStream/audioLang.test.ts tests/unit/directStream/audioVet.test.ts tests/unit/directStream/torrent/whisper.test.ts`.
+  `NOTESD_STREAM_AUDIO_CHECK=off` turns it off.
 - The stream on screen: the player page's reports (`paused`, `beat`, `closed`) feed
   `GET /api/movies/player` `stream`, and the Movies page marks the poster, the title page and the
   episode row "playing" (pulsing) or "paused". Proven by `tests/integration/movies.streams.int.test.ts`

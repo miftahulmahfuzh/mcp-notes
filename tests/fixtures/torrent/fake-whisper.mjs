@@ -6,12 +6,16 @@
 //   FAKE_WHISPER_MODE      ok (default) | not_ready (fails to load) | error (every request fails)
 //   FAKE_WHISPER_DELAY_MS  wait this long before each answer (default 0)
 //   FAKE_WHISPER_LOG       append each request, as JSON with its time, to this file
+//   FAKE_WHISPER_DETECT_LANG  language a "detect" request answers (default "en")
+//   FAKE_WHISPER_DETECT_PROB  probability a "detect" request answers (default "0.98")
 import { appendFileSync, closeSync, openSync, readSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const mode = process.env.FAKE_WHISPER_MODE ?? 'ok';
 const delayMs = Number(process.env.FAKE_WHISPER_DELAY_MS ?? '0');
 const logFile = process.env.FAKE_WHISPER_LOG ?? '';
+const detectLang = process.env.FAKE_WHISPER_DETECT_LANG ?? 'en';
+const detectProb = Number(process.env.FAKE_WHISPER_DETECT_PROB ?? '0.98');
 
 const out = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
 
@@ -45,6 +49,10 @@ function main() {
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       if (mode === 'error') {
         out({ id: req.id, error: 'fake worker told to fail' });
+        return;
+      }
+      if (req.task === 'detect') {
+        out({ id: req.id, language: detectLang, probability: detectProb, took_s: delayMs / 1000 });
         return;
       }
       try {

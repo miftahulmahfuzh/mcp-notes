@@ -234,6 +234,14 @@ export interface DirectStreamConfig {
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH: reads the frames the picture check looks at. */
   ffmpegBin?: string
   /**
+   * `NOTESD_STREAM_AUDIO_CHECK`, default on: before a cloud provider's first play of a foreign-language
+   * title, ~30 s of its audio is passed through Whisper to hear which language is actually spoken, and a
+   * provider serving a dub is passed over for one that serves the original (src/directStream/audioLang.ts).
+   * Runs only when Whisper is installed and the title's original language is known and is not English.
+   * `off` or unset in a literal: no cloud stream's audio is heard.
+   */
+  audioCheck?: boolean
+  /**
    * `NOTESD_STREAM_AHEAD`, default on: while an episode of a series is watched, the next one is
    * downloaded to this machine (src/directStream/ahead.ts). `off` or unset in a literal: never.
    */
@@ -927,6 +935,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
         : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
+    audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     prober: parseStreamProber(env),
   }
 }

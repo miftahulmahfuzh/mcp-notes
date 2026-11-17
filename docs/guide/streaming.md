@@ -492,6 +492,37 @@ of a title plays for the first time, the daemon looks at it (`src/directStream/p
 - It adds 10 to 40 seconds to a provider's first play of a title, and the same again for each
   stream it rejects. `NOTESD_STREAM_PICTURE_MODEL=off` turns it off.
 
+### The audio-language check
+
+The resolver's **"A dub is never a source"** check above reads a stream's audio-track tags. A cloud
+`.mp4` often has none at all — `ffprobe` reports zero tracks — so a film dubbed into English passes it
+undetected. Whisper hears the language actually spoken whatever the tags say, so before a cloud
+provider's stream of a foreign-language title plays for the first time, the daemon listens to it
+(`src/directStream/audioLang.ts`), in the same vet loop as the picture check (`vetted` in
+`service.ts`):
+
+1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
+   `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
+2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the worker
+   it shares with the torrent subtitle tier; `src/directStream/torrent/subtitles/whisper.ts`, with
+   a dedicated worker for the daemon's cloud check).
+3. The heard language and the title's original are normalized to two-letter codes. The original
+   (or a reading under 0.6 confidence, or nothing heard) is `original`/`unsure` and plays; a
+   confident other language is `dubbed`, and the provider is passed over for the next, exactly as a
+   rejected picture is. The provider's attempt reads `audio: dubbed (the audio is spoken en, not the
+   original zh)`.
+
+- It runs **only for a cloud play** (torrents enforce the language on their real tracks instead), and
+  **only when the title's original language is known and is not English** — there is no dub into
+  English of an English film to hear.
+- The verdict is kept per title (per episode) and provider in
+  `<data dir>/movies/stream-audio.json` on this machine, heard again after 60 days. `unsure` is never
+  kept, and nothing here fails a play: audio that cannot be read or a language not heard clearly is
+  `unsure`, which plays. When every provider is a dub, the first stream found plays as a fallback,
+  labelled `audio: dubbed` — a dub is better than nothing.
+- It needs Whisper installed (the same Python as the torrent tier); without it the check is off and
+  cloud plays are unchanged. `NOTESD_STREAM_AUDIO_CHECK=off` turns it off.
+
 ### Sessions and the pass-through
 
 A resolve makes a session, kept in the daemon's memory: a 32-character random id, the source, and
@@ -1801,6 +1832,7 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 
 - Matching, result building and the tools are unit-tested with no network:
+| `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
   `npx vitest run tests/unit/scripts tests/unit/streaming.test.ts tests/unit/mcp.streamingTools.test.ts`.
 - A lookup on the live site is free: `node claude/streaming/cli.mjs lk21 ready or not 2019`.
   The idlix one opens the streaming Chrome, minimized.

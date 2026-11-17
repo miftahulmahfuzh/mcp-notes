@@ -64,8 +64,23 @@ export interface WhisperRequest {
   language: string | null;
 }
 
+/** What Whisper heard the clip spoken in: a 2-letter code and how sure it is. */
+export interface DetectedLanguage {
+  language: string;
+  probability: number;
+}
+
+/**
+ * The seam the cloud audio-language check depends on (audioLang.ts): just language detection, so it
+ * does not pull in the whole transcriber. WorkerTranscriber satisfies it.
+ */
+export interface WhisperDetector {
+  /** The language spoken in the clip, or null when the worker failed or answered nothing. Never rejects. */
+  detect(wav: string, signal: AbortSignal): Promise<DetectedLanguage | null>;
+}
+
 /** The seam to the model. Production: WorkerTranscriber. Tests: a plain object. */
-export interface Transcriber {
+export interface Transcriber extends WhisperDetector {
   /** The cues of one stretch, in seconds into the stretch. Rejects when the worker fails or `signal` aborts. */
   transcribe(request: WhisperRequest, signal: AbortSignal): Promise<WhisperCue[]>;
   /** Ends the worker if one runs; the next transcribe starts a new one. */
@@ -219,11 +234,14 @@ interface WorkerLine {
   load_s?: number;
   id?: string | number | null;
   cues?: unknown;
+  language?: unknown;
+  probability?: unknown;
   error?: string;
 }
 
 interface Waiting {
-  resolve: (cues: WhisperCue[]) => void;
+  /** Hands one answer line to the ask that is waiting on it; the ask interprets it. */
+  handle: (message: WorkerLine) => void;
   reject: (err: Error) => void;
 }
 
@@ -246,9 +264,31 @@ export class WorkerTranscriber implements Transcriber {
 
   transcribe(request: WhisperRequest, signal: AbortSignal): Promise<WhisperCue[]> {
     // One stretch at a time, so each one's timeout counts only its own run.
-    const run = this.turn.then(() => this.ask(request, signal));
+    const run = this.turn.then(() =>
+      this.ask({ wav: request.wav, task: request.task, language: request.language }, signal, (message) => {
+        if (Array.isArray(message.cues)) return parseCues(message.cues);
+        throw new Error(message.error ?? 'the Whisper worker answered nothing');
+      }),
+    );
     this.turn = run.catch(() => undefined);
     return run;
+  }
+
+  /** The clip's spoken language, through the same shared worker as transcribe. Null on any failure: it never fails a play. */
+  detect(wav: string, signal: AbortSignal): Promise<DetectedLanguage | null> {
+    const run = this.turn.then(() =>
+      this.ask({ wav, task: 'detect' }, signal, (message) => {
+        const language = typeof message.language === 'string' && message.language.trim() !== '' ? message.language.trim() : null;
+        const probability = typeof message.probability === 'number' && Number.isFinite(message.probability) ? message.probability : null;
+        if (language === null || probability === null) throw new Error(message.error ?? 'the Whisper worker detected no language');
+        return { language, probability };
+      }),
+    );
+    this.turn = run.catch(() => undefined);
+    return run.then(
+      (value) => value,
+      () => null,
+    );
   }
 
   async stop(): Promise<void> {
@@ -262,7 +302,8 @@ export class WorkerTranscriber implements Transcriber {
     });
   }
 
-  private async ask(request: WhisperRequest, signal: AbortSignal): Promise<WhisperCue[]> {
+  /** One request to the worker, one answer line interpreted by `read`. Shared by transcribe (cues) and detect (a language). */
+  private async ask<T>(payload: Record<string, unknown>, signal: AbortSignal, read: (message: WorkerLine) => T): Promise<T> {
     signal.throwIfAborted();
     await this.start();
     signal.throwIfAborted();
@@ -270,7 +311,7 @@ export class WorkerTranscriber implements Transcriber {
     if (child === null || child.stdin === null) throw new Error('the Whisper worker is not running');
     const id = String(this.nextId++);
     const timeoutMs = this.opts.stretchTimeoutMs ?? WHISPER_STRETCH_TIMEOUT_MS;
-    return await new Promise<WhisperCue[]>((resolve, reject) => {
+    return await new Promise<T>((resolve, reject) => {
       const done = (): void => {
         clearTimeout(timer);
         signal.removeEventListener('abort', onAbort);
@@ -282,23 +323,27 @@ export class WorkerTranscriber implements Transcriber {
         void this.stop();
       }, timeoutMs);
       timer.unref();
-      // The worker finishes the stretch anyway; its answer then finds no one waiting and is dropped.
+      // The worker finishes the request anyway; its answer then finds no one waiting and is dropped.
       const onAbort = (): void => {
         done();
-        reject(signal.reason instanceof Error ? signal.reason : new Error('the stretch was dropped'));
+        reject(signal.reason instanceof Error ? signal.reason : new Error('the request was dropped'));
       };
       signal.addEventListener('abort', onAbort, { once: true });
       this.waiting.set(id, {
-        resolve: (cues) => {
+        handle: (message) => {
           done();
-          resolve(cues);
+          try {
+            resolve(read(message));
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
         },
         reject: (err) => {
           done();
           reject(err);
         },
       });
-      child.stdin?.write(`${JSON.stringify({ id, wav: request.wav, task: request.task, language: request.language })}\n`);
+      child.stdin?.write(`${JSON.stringify({ id, ...payload })}\n`);
     });
   }
 
@@ -346,8 +391,7 @@ export class WorkerTranscriber implements Transcriber {
         const key = message.id === undefined || message.id === null ? null : String(message.id);
         const waiting = key === null ? undefined : this.waiting.get(key);
         if (waiting === undefined) return;
-        if (Array.isArray(message.cues)) waiting.resolve(parseCues(message.cues));
-        else waiting.reject(new Error(message.error ?? 'the Whisper worker answered nothing'));
+        waiting.handle(message);
       });
       child.on('error', (err) => {
         clearTimeout(timer);

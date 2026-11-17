@@ -54,7 +54,7 @@ describe('loadConfig', () => {
       dword: DEFAULT_DWORD_CONFIG,
       movies: { ...DEFAULT_MOVIES_CONFIG, enabled: true },
       streaming: { enabled: true },
-      directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true, animeMapUrl: 'https://api.ani.zip', pictureModel: 'haiku', ffmpegBin: 'ffmpeg', ahead: true },
+      directStream: { ...DEFAULT_DIRECT_STREAM_CONFIG, enabled: true, animeMapUrl: 'https://api.ani.zip', pictureModel: 'haiku', ffmpegBin: 'ffmpeg', ahead: true, audioCheck: true },
       torrent: { ...DEFAULT_TORRENT_CONFIG, enabled: true, dir: path.join(homedir(), 'mcp-notes-data', 'movies', 'torrents'), remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieUrl: 'https://sub.wyzie.io', whisper: { enabled: true, dir: path.join(homedir(), 'mcp-notes-data', 'whisper'), python: path.join(homedir(), 'mcp-notes-data', 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } },
     })
     expect(cfg.chat).toEqual({ brain: 'claude', maxTurns: 24, timeoutMs: 180_000, claudeBin: 'claude', glm: null })
@@ -458,8 +458,12 @@ describe('movies config', () => {
     const ds = (env: Record<string, string>) => loadConfig({ env: { DATABASE_URL: URL_A, ...env }, envFile: false }).directStream
     expect(DEFAULT_DIRECT_STREAM_CONFIG.enabled).toBe(false)
     expect(DEFAULT_DIRECT_STREAM_CLI.endsWith(path.join('claude', 'streaming', 'direct', 'cli.mjs'))).toBe(true)
-    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, pictureModel: 'haiku', ffmpegBin: 'ffmpeg', ahead: true, prober: DEFAULT_STREAM_PROBER_CONFIG })
+    expect(ds({})).toEqual({ enabled: true, freshDays: 7, cli: DEFAULT_DIRECT_STREAM_CLI, animeMapUrl: 'https://api.ani.zip', cacheDir: null, pictureModel: 'haiku', ffmpegBin: 'ffmpeg', ahead: true, audioCheck: true, prober: DEFAULT_STREAM_PROBER_CONFIG })
     expect(ds({ NOTESD_STREAM_AHEAD: 'off' })?.ahead).toBe(false)
+    // The cloud audio-language check: on by default, a boolean switch.
+    expect(ds({ NOTESD_STREAM_AUDIO_CHECK: 'off' })?.audioCheck).toBe(false)
+    expect(ds({ NOTESD_STREAM_AUDIO_CHECK: 'on' })?.audioCheck).toBe(true)
+    expect(() => ds({ NOTESD_STREAM_AUDIO_CHECK: 'maybe' })).toThrow(ConfigError)
     // The picture check: its model, or off; a bad name is refused.
     expect(ds({ NOTESD_STREAM_PICTURE_MODEL: 'off' })?.pictureModel).toBeNull()
     expect(ds({ NOTESD_STREAM_PICTURE_MODEL: 'sonnet', NOTESD_FFMPEG_BIN: '/opt/ffmpeg/bin/ffmpeg' })).toMatchObject({ pictureModel: 'sonnet', ffmpegBin: '/opt/ffmpeg/bin/ffmpeg' })

@@ -10,6 +10,8 @@ import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playa
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
 import { deliveryByProvider, type Delivery } from './delivery.js';
 import { passesOver, type PictureCheck } from './picture.js';
+import { passesOverAudio, type AudioLangCheck } from './audioLang.js';
+import { normalizeAudioLang } from './torrent/probe.js';
 import { forward, jsonError, type FetchLike, type ForwardRequest } from './passThrough.js';
 import { observeForward, refusedRecord, safeRecord, sessionRecord, sessionSource, type EvidenceSink, type SessionSource } from './evidence.js';
 import { DirectStreamRepo, healthMap, providerSeedJson, providerView, readSeedFile, type HealthAttempt, type ProviderView } from './repo.js';
@@ -239,6 +241,12 @@ export interface DirectStreamServiceOptions {
   evidence?: EvidenceSink | null;
   /** Looks at a stream's picture before a play or a cache keeps it (picture.ts). Null or unset: nothing is looked at. */
   picture?: PictureCheck | null;
+  /**
+   * Hears a cloud stream's audio before a play, for a dub of a foreign film (audioLang.ts). Named
+   * `audioCheck`, not `audioLang`, so it does not clash with the private `audioLang(ref)` method. Null
+   * or unset: no cloud stream's audio is heard, and cloud plays are exactly as without it.
+   */
+  audioCheck?: AudioLangCheck | null;
   /**
    * This host's stream cache (phase 5's StreamCache, AppDeps.streamCache), read at play time
    * because it is built after this service. Unset or null: no cache, every play resolves.
@@ -925,8 +933,8 @@ export class DirectStreamService {
     }
     let out: ResolvedOutput;
     try {
-      // A token refresh looks at nothing new, but keeps away from the providers whose picture was rejected.
-      out = await this.resolveSource(session.ref, undefined, [...session.avoid, ...(await this.rejectedPictures(session.ref, session.avoid))]);
+      // A token refresh looks at nothing new, but keeps away from the providers whose picture was rejected or whose audio was a dub.
+      out = await this.resolveSource(session.ref, undefined, [...session.avoid, ...(await this.rejectedProviders(session.ref, session.avoid))]);
     } catch (err) {
       safeRecord(this.evidence, sessionRecord(session, 'refresh_failed', err instanceof DirectStreamError ? `${err.code}: ${err.message}` : messageOf(err)));
       throw err;
@@ -1241,26 +1249,42 @@ export class DirectStreamService {
     }
   }
 
-  /** The providers whose picture of `ref` this machine rejected, without the ones `skip` already names. Empty without a picture check. */
-  private async rejectedPictures(ref: StreamRef, skip: readonly string[]): Promise<string[]> {
+  /**
+   * The providers a play of `ref` leaves out from the start: those whose picture this machine rejected
+   * and those it heard as a dub (audioLang.ts), without the ones `skip` already names. Empty without
+   * either check.
+   */
+  private async rejectedProviders(ref: StreamRef, skip: readonly string[]): Promise<string[]> {
     const picture = this.opts.picture ?? null;
-    if (picture === null) return [];
+    const audio = this.opts.audioCheck ?? null;
     const left = new Set(skip.map((name) => name.toLowerCase()));
-    return (await picture.badFor(ref)).filter((name) => !left.has(name.toLowerCase()));
+    const [badPicture, badAudio] = await Promise.all([picture === null ? [] : picture.badFor(ref), audio === null ? [] : audio.badFor(ref)]);
+    const out: string[] = [];
+    for (const name of [...badPicture, ...badAudio]) {
+      if (!left.has(name.toLowerCase()) && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+    }
+    return out;
   }
 
   /**
-   * Resolves until a stream's picture passes (picture.ts). `one(skip, later)` runs one resolve
-   * without the providers in `skip` and throws when it finds none; `later` is true from the second
-   * round on. Providers rejected before are left out from the start. A rejected stream's provider
-   * is skipped and the next round asks again, at most PICTURE_MAX_REJECTIONS times. When nothing
-   * passes, the first stream found plays: a poor picture is better than none. Each round's
-   * attempts are kept, and the looked-at provider's says `picture: <verdict>`.
+   * Resolves until a cloud stream passes both checks (picture.ts and audioLang.ts). `one(skip, later)`
+   * runs one resolve without the providers in `skip` and throws when it finds none; `later` is true from
+   * the second round on. Providers rejected before (a bad picture or a dub) are left out from the start.
+   * A rejected stream's provider is skipped and the next round asks again, at most PICTURE_MAX_REJECTIONS
+   * times. When nothing passes, the first stream found plays: a poor picture, or a dub, is better than
+   * none. Each round's attempts are kept, and the looked-at provider's says `picture: <verdict>` and, when
+   * the audio was heard, `audio: <verdict>`.
+   *
+   * The audio check is only run on this cloud path, and only when the title's original language is known
+   * and is not English (there is no dub into English of an English film to hear).
    */
   private async vetted(ref: StreamRef, skip: readonly string[], one: (skip: readonly string[], later: boolean) => Promise<ResolvedOutput>): Promise<ResolvedOutput> {
     const picture = this.opts.picture ?? null;
-    if (picture === null) return one(skip, false);
-    const rejected = await this.rejectedPictures(ref, skip);
+    const audio = this.opts.audioCheck ?? null;
+    const original = audio === null ? null : await this.audioLang(ref);
+    const hearAudio = audio !== null && original !== null && normalizeAudioLang(original) !== 'en';
+    if (picture === null && !hearAudio) return one(skip, false);
+    const rejected = await this.rejectedProviders(ref, skip);
     const titleHook = this.opts.hooks?.titleLabel;
     const title = (titleHook === undefined ? null : await this.hookValue('titleLabel', () => titleHook(ref))) ?? refLabel(ref);
     let first: ResolvedOutput | null = null;
@@ -1273,22 +1297,34 @@ export class DirectStreamService {
         if (first !== null) break;
         if (rejected.length === 0 || !(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
         // Only providers rejected on an earlier play are left: one of them plays.
-        this.log(`[notesd] direct stream: ${refLabel(ref)} has no provider left but ${rejected.join(', ')}, whose picture was rejected before`);
+        this.log(`[notesd] direct stream: ${refLabel(ref)} has no provider left but ${rejected.join(', ')}, rejected before (a poor picture or a dub)`);
         return one(skip, true);
       }
-      const finding = await picture.check(ref, out.source, title);
-      const said = `picture: ${finding.verdict}${finding.reason === '' ? '' : ` (${finding.reason})`}`;
+      // Both checks run so the attempt detail says both, but a bad picture or a dub either one passes the provider over.
+      const findings: string[] = [];
+      let bad = false;
+      if (picture !== null) {
+        const finding = await picture.check(ref, out.source, title);
+        findings.push(`picture: ${finding.verdict}${finding.reason === '' ? '' : ` (${finding.reason})`}`);
+        if (passesOver(finding)) bad = true;
+      }
+      if (hearAudio && original !== null) {
+        const look = await audio!.check(ref, out.source, original);
+        findings.push(`audio: ${look.verdict}${look.reason === '' ? '' : ` (${look.reason})`}`);
+        if (passesOverAudio(look)) bad = true;
+      }
+      const said = findings.join('; ');
       const attempts = out.attempts
         .filter((a) => round === 0 || !a.outcome.startsWith('skipped_'))
         .map((a) => (a.provider === out.source.provider && a.outcome === 'resolved' ? { ...a, detail: a.detail === '' ? said : `${a.detail}; ${said}` } : a));
       seen = [...seen, ...attempts];
       out = { ...out, attempts: seen };
-      if (!passesOver(finding)) return out;
+      if (!bad) return out;
       first ??= out;
       rejected.push(out.source.provider);
     }
     if (first === null) throw new DirectStreamError('no_source', `No provider could stream ${refLabel(ref)}.`, { attempts: seen });
-    this.log(`[notesd] direct stream: no provider has a proper picture of ${refLabel(ref)}; playing ${first.source.provider}`);
+    this.log(`[notesd] direct stream: no provider passed the stream checks for ${refLabel(ref)}; playing ${first.source.provider}`);
     return { ...first, attempts: seen };
   }
 
@@ -1471,6 +1507,8 @@ export interface DirectStreamWiring {
   caches?: () => PlayableCaches | null;
   /** Looks at a stream's picture before it plays (picture.ts); null or unset: nothing is looked at. */
   picture?: PictureCheck | null;
+  /** Hears a cloud stream's audio before it plays, for a dub of a foreign film (audioLang.ts); null or unset: nothing is heard. */
+  audioCheck?: AudioLangCheck | null;
   /** Torrent phase 3: the torrent source, read at play time (built from phase 1's TorrentStreams after this service). */
   torrent?: () => TorrentSource | null;
   /** An English subtitle from outside the stream for a cloud session that has none, read at play time. */
@@ -1510,6 +1548,7 @@ export function buildDirectStreamService(
     evidence: wiring.evidence ?? null,
     caches: wiring.caches,
     picture: wiring.picture ?? null,
+    audioCheck: wiring.audioCheck ?? null,
     torrent: wiring.torrent,
     outside: wiring.outside,
     ahead: ds.ahead === true,

@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { access, mkdir } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { join } from 'node:path';
 import { hostname } from 'node:os';
 import type { AddressInfo } from 'node:net';
@@ -9,7 +10,7 @@ import { createAgentChatBackend, type AgentChatBackend } from './chat/agent.js';
 import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
-import { DEFAULT_FFMPEG_BIN, DEFAULT_TORRENT_SITES_CONFIG, REPO_ROOT, type Config } from './config.js';
+import { DEFAULT_FFMPEG_BIN, DEFAULT_TORRENT_SITES_CONFIG, DEFAULT_TORRENT_WHISPER_SCRIPT, REPO_ROOT, type Config } from './config.js';
 import { closeDb, createDb } from './db/client.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
@@ -41,7 +42,8 @@ import { OutsideSubtitles } from './directStream/outsideSubtitles.js';
 import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
 import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
-import { buildWhisperTier } from './directStream/torrent/subtitles/whisper.js';
+import { buildWhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
+import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
@@ -219,6 +221,38 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
           reach: hlsStreamReach(),
           judge: pictureJudge,
         });
+  // Hears a cloud stream's audio before its first play of a foreign-language title: ~30 s through
+  // Whisper tells a dub from the original (audioLang.ts). It reuses the Whisper worker; a dedicated
+  // one, since the subtitle tier's is built later (below) and may be off while this is on. Null with
+  // NOTESD_STREAM_AUDIO_CHECK=off, without the picture check, without direct streaming, or before
+  // install.sh has made Whisper's Python (the log then says cloud plays are unchanged).
+  const whisperCfg = config.torrent?.whisper;
+  const audioCheckOn = movies !== null && config.directStream?.enabled === true && config.directStream.audioCheck !== false && picture !== null;
+  let audioDetector: WorkerTranscriber | null = null;
+  if (audioCheckOn && whisperCfg?.enabled === true) {
+    try {
+      await access(whisperCfg.python, fsConstants.X_OK);
+      audioDetector = new WorkerTranscriber({
+        python: whisperCfg.python,
+        script: DEFAULT_TORRENT_WHISPER_SCRIPT,
+        model: whisperCfg.model,
+        threads: whisperCfg.threads,
+        modelsDir: join(whisperCfg.dir, 'models'),
+        hfHome: join(whisperCfg.dir, 'hf'),
+        log: (line) => console.log(line),
+      });
+    } catch {
+      console.log(`[notesd] direct stream: no Whisper Python at ${whisperCfg.python}; cloud audio-language check off. No change to cloud plays until scripts/install.sh installs it.`);
+    }
+  }
+  const audioCheck =
+    audioDetector === null
+      ? null
+      : new AudioLangCheck({
+          verdicts: new AudioVerdicts(join(config.dataDir, MOVIES_SUBDIR, AUDIO_VERDICTS_FILE)),
+          grab: ffmpegAudioGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+          detector: audioDetector,
+        });
   // Torrent phase 3: the torrent source, built on first use from phase 1's TorrentStreams (deps.torrents, null
   // with NOTESD_TORRENT=off). ffprobe reads a torrent's file through this daemon's own route on loopback.
   // 1337x and ext.to through the streaming Chrome (torrent phase 9): asked only when the JSON indexes
@@ -288,6 +322,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const directStream = buildDirectStreamService(config, db, {
     movies,
     picture,
+    audioCheck,
     pageBase: () => `http://localhost:${boundPort ?? config.port}`,
     evidence: streamEvidence,
     // Phase 6: a play reads this host's stream cache first. Phase 5 builds it after this service, so
@@ -395,6 +430,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
   deps.torrentWhisper = whisperTier;
+  // The cloud audio-language check's Whisper worker (audioLang.ts): closed by startBackground's stop. Null when the check is off.
+  deps.audioDetector = audioDetector;
   // Wyzie Synced and the per-title subtitle shelf: closed by startBackground's stop; read by the `/api/stream/subs` route.
   deps.torrentSync = subtitleSync;
   deps.titleSubtitles = titleSubtitles;

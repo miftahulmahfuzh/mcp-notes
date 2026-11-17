@@ -57,6 +57,11 @@ class FakeFeed implements WhisperFeed {
 
 class FakeTranscriber implements Transcriber {
   readonly requests: WhisperRequest[] = [];
+  readonly detected: string[] = [];
+  detect(wav: string): Promise<{ language: string; probability: number } | null> {
+    this.detected.push(wav);
+    return Promise.resolve({ language: 'en', probability: 0.99 });
+  }
   stops = 0;
   /** Called with the request's number (from 1) before it answers. */
   onRequest: (n: number) => void = () => undefined;
@@ -319,6 +324,27 @@ describe('WorkerTranscriber (against the fake worker)', () => {
       const two = await transcriber.transcribe({ wav: await wav(3), task: 'translate', language: 'ko' }, signal);
       expect(one).toEqual([{ start_s: 0.5, end_s: 2.5, text: 'Whisper line 1 (transcribe, 5.0 s of audio)' }]);
       expect(two).toEqual([{ start_s: 0.5, end_s: 2.5, text: 'Whisper line 2 (translate, 3.0 s of audio)' }]);
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('detect: answers the language the worker heard, through the same shared worker, and null on failure', async () => {
+    const transcriber = worker({ FAKE_WHISPER_DETECT_LANG: 'zh', FAKE_WHISPER_DETECT_PROB: '0.97' });
+    try {
+      const signal = new AbortController().signal;
+      // Detection and transcription share one worker: a transcribe then a detect, no second load.
+      await transcriber.transcribe({ wav: await wav(5), task: 'transcribe', language: 'en' }, signal);
+      expect(await transcriber.detect(await wav(30), signal)).toEqual({ language: 'zh', probability: 0.97 });
+    } finally {
+      await transcriber.stop();
+    }
+  });
+
+  it('detect: null, never a rejection, when the worker fails', async () => {
+    const transcriber = worker({ FAKE_WHISPER_MODE: 'error' });
+    try {
+      expect(await transcriber.detect(await wav(30), new AbortController().signal)).toBeNull();
     } finally {
       await transcriber.stop();
     }

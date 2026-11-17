@@ -16,7 +16,7 @@ import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
 import type { TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
-import type { WhisperTier } from './directStream/torrent/subtitles/whisper.js';
+import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { StreamEvidence } from './directStream/evidence.js';
@@ -121,6 +121,12 @@ export interface AppDeps {
    * Whisper off or not installed; startBackground's stop closes it, which ends its worker.
    */
   torrentWhisper?: WhisperTier | null;
+  /**
+   * The Whisper worker of the cloud audio-language check (audioLang.ts): a dedicated worker it starts on
+   * the first foreign-language cloud play. Null or absent with the check off or Whisper not installed;
+   * startBackground's stop ends its worker.
+   */
+  audioDetector?: WorkerTranscriber | null;
   /**
    * Wyzie Synced: the background re-timing of a stream session's subtitle that came from outside the
    * stream (a torrent's service or borrowed file, a cloud session's outside file). Null or absent when

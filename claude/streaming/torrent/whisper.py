@@ -4,11 +4,16 @@
 A long-lived process, so the model loads once. It reads one JSON request per line on stdin:
 
     {"id": "3", "wav": "/abs/stretch.wav", "task": "transcribe" | "translate", "language": "es" | null}
+    {"id": "4", "wav": "/abs/clip.wav", "task": "detect"}
 
 and writes one JSON line per request on stdout:
 
     {"id": "3", "cues": [{"start_s": 1.2, "end_s": 3.4, "text": "..."}], "took_s": 41.0}
+    {"id": "4", "language": "zh", "probability": 0.98, "took_s": 1.1}
     {"id": "3", "error": "..."}
+
+A "detect" request answers the language actually spoken in the clip (the daemon's cloud audio check,
+src/directStream/audioLang.ts): no cues, the segments generator is never iterated.
 
 Cue times are seconds into the stretch; the daemon adds the stretch's start. The first line it
 writes is {"ready": true, "model": "small", ...} once the model is loaded (downloaded into
@@ -85,9 +90,16 @@ def main():
         try:
             req = json.loads(line)
             req_id = str(req.get("id"))
-            task = req.get("task") if req.get("task") in ("transcribe", "translate") else "transcribe"
-            language = req.get("language") or None
+            raw_task = req.get("task")
             t0 = time.monotonic()
+            if raw_task == "detect":
+                # Which language is actually spoken, from the first ~30 s: faster-whisper computes
+                # info.language eagerly, so the segments generator is never iterated.
+                _segments, info = model.transcribe(read_wav(req["wav"]), language=None, vad_filter=True)
+                emit({"id": req_id, "language": info.language, "probability": round(float(info.language_probability), 4), "took_s": round(time.monotonic() - t0, 2)})
+                continue
+            task = raw_task if raw_task in ("transcribe", "translate") else "transcribe"
+            language = req.get("language") or None
             segments, _info = model.transcribe(
                 read_wav(req["wav"]),
                 task=task,
