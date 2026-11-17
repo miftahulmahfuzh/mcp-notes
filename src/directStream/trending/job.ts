@@ -2,7 +2,7 @@ import { hostname } from 'node:os';
 import type { Config, TrendingConfig } from '../../config.js';
 import type { Db } from '../../db/client.js';
 import type { StreamTrendingRow, TrendingProbeOutcome } from '../../db/schema.js';
-import { listTitlesByIds, type ReadContext, type TitleListItem } from '../../movies/read.js';
+import { listTitlesByIds, titleLanguages, type ReadContext, type TitleListItem } from '../../movies/read.js';
 import type { MoviesService } from '../../movies/service.js';
 import { MovieStreams } from '../../movies/streams.js';
 import { createTmdbClient, type TmdbImdbLookup } from '../../movies/tmdb.js';
@@ -129,12 +129,14 @@ export interface PeekResult {
 }
 
 export interface TrendingJobOptions {
-  config: Pick<TrendingConfig, 'size' | 'probe'>;
+  config: Pick<TrendingConfig, 'size' | 'probe'> & { skipLanguages?: readonly string[] };
   host: string;
   store: TrendingStore;
   tmdb: TmdbImdbLookup;
   /** MovieStreams.ensureTitle: stores the title's row (TMDB details); null when it cannot. */
   ensureTitle: (target: StreamTarget) => Promise<string | null>;
+  /** TMDB's original language of the listed titles, by title id (titleLanguages); a title not in it, or with null, is not skipped. */
+  languages?: (ids: readonly string[]) => Promise<ReadonlyMap<string, string | null>>;
   /** The listed titles' states, by title id (listTitlesByIds). */
   titles: (ids: readonly string[]) => Promise<TitleListItem[]>;
   peek: (infoHash: string, trackers: readonly string[], options: { timeoutMs: number }) => Promise<PeekResult>;
@@ -314,8 +316,11 @@ export class TrendingJob implements TrendingHandle {
       const resolved = (await mapLimit(candidates, RESOLVE_CONCURRENCY, (t) => this.resolve(t, known))).filter((r): r is { id: string; t: TrendTitle } => r !== null);
       const unique: { id: string; t: TrendTitle }[] = [];
       for (const r of resolved) if (!unique.some((u) => u.id === r.id)) unique.push(r);
-      const fresh = new Map((await this.o.titles(unique.map((u) => u.id))).filter(isFreshForTrending).map((i) => [i.id, i]));
-      const kept = unique.filter((u) => fresh.has(u.id)).slice(0, size);
+      const skip = new Set(this.o.config.skipLanguages ?? []);
+      const languages = skip.size === 0 || this.o.languages === undefined ? new Map<string, string | null>() : await this.o.languages(unique.map((u) => u.id));
+      const wanted = unique.filter((u) => !skip.has(languages.get(u.id) ?? ''));
+      const fresh = new Map((await this.o.titles(wanted.map((u) => u.id))).filter(isFreshForTrending).map((i) => [i.id, i]));
+      const kept = wanted.filter((u) => fresh.has(u.id)).slice(0, size);
       kept.forEach(({ id, t }, i) => {
         const old = before.find((r) => r.titleId === id);
         entries.push({
@@ -470,6 +475,7 @@ export function buildTrending(input: BuildTrendingInput, overrides: BuildTrendin
     store: overrides.store ?? new TrendingRepo(input.db),
     tmdb,
     ensureTitle: (target) => streams.ensureTitle(target),
+    languages: (ids) => titleLanguages(input.db, ids),
     titles: (ids) => listTitlesByIds(input.db, ids, ctx),
     peek: (hash, trackers, options) => torrents.peek(hash, trackers, options),
     busy: input.busy,

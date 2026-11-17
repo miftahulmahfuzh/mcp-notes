@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { DEFAULT_DIRECT_STREAM_CONFIG } from '../../src/config.js';
 import { streamTrending } from '../../src/db/schema.js';
 import { DisabledTrending, type TrendingHandle, type TrendingStatus } from '../../src/directStream/trending/job.js';
 import { TrendingRepo, type TrendingEntry } from '../../src/directStream/trending/repo.js';
@@ -36,7 +37,7 @@ const handle = (over: Partial<TrendingHandle> = {}): TrendingHandle => ({
 
 function appFor(trending: TrendingHandle | null): Hono {
   const app = new Hono();
-  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG }, movies: here, directStream: {} as never, trending }));
+  app.route('/', moviesApiRoutes({ ...h.deps, config: { ...h.deps.config, movies: MOVIES_TEST_CONFIG, directStream: { ...(h.deps.config.directStream ?? DEFAULT_DIRECT_STREAM_CONFIG), trending: { enabled: true, size: 100, probe: 200, skipLanguages: ['hi'] } } }, movies: here, directStream: {} as never, trending }));
   return app;
 }
 
@@ -142,6 +143,12 @@ describe('GET /api/movies/trending', () => {
     // Undoing the mark puts it back: nothing was deleted from the list.
     expect((await user('movie-2', { not_interested: false })).status).toBe(200);
     expect((await read(appFor(handle()))).titles.map((t) => t.id)).toEqual(['movie-2', 'movie-5']);
+  });
+
+  it('leaves out a title whose original language is skipped, at read time, whatever the list says', async () => {
+    await repo.replace(HOST_HERE, [entry(1), entry(2)], AT);
+    await h.deps.db.execute(sql`update movie_titles set original_language = 'hi' where id = 'movie-1'`);
+    expect((await read(appFor(handle()))).titles.map((t) => t.id)).toEqual(['movie-2']);
   });
 
   it('shows this machine\'s list only', async () => {

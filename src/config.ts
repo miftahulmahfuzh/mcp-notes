@@ -197,13 +197,19 @@ export interface TrendingConfig {
   size: number
   /** `NOTESD_TRENDING_PROBE`, default 200: swarms opened a day, most seeded first, films and series alternating. `0`: none. */
   probe: number
+  /**
+   * `NOTESD_TRENDING_SKIP_LANGUAGES`, default `hi`: TMDB original-language codes (comma separated) whose titles never
+   * make the list, and leave it at once when one is already there. `none`: nothing is skipped.
+   */
+  skipLanguages: string[]
 }
 
 export const DEFAULT_TRENDING_SIZE = 100
+export const DEFAULT_TRENDING_SKIP_LANGUAGES = ['hi']
 export const DEFAULT_TRENDING_PROBE = 200
 
 /** Trending off. Tests build `Config` literals with it (or leave `trending` out, which is the same). */
-export const DEFAULT_TRENDING_CONFIG: TrendingConfig = { enabled: false, size: DEFAULT_TRENDING_SIZE, probe: DEFAULT_TRENDING_PROBE }
+export const DEFAULT_TRENDING_CONFIG: TrendingConfig = { enabled: false, size: DEFAULT_TRENDING_SIZE, probe: DEFAULT_TRENDING_PROBE, skipLanguages: DEFAULT_TRENDING_SKIP_LANGUAGES }
 
 export const DEFAULT_STREAM_FRESH_DAYS = 7
 /** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
@@ -970,7 +976,17 @@ export function parseTrending(env: Record<string, string | undefined>): Trending
     enabled: parseSwitch('NOTESD_TRENDING', env.NOTESD_TRENDING),
     size: parsePositiveInt('NOTESD_TRENDING_SIZE', env.NOTESD_TRENDING_SIZE, DEFAULT_TRENDING_SIZE),
     probe,
+    skipLanguages: parseSkipLanguages(env.NOTESD_TRENDING_SKIP_LANGUAGES),
   }
+}
+
+function parseSkipLanguages(raw: string | undefined): string[] {
+  const value = (raw ?? '').trim().toLowerCase()
+  if (value === '') return [...DEFAULT_TRENDING_SKIP_LANGUAGES]
+  if (value === 'none' || value === 'off') return []
+  const codes = value.split(',').map((c) => c.trim()).filter((c) => c !== '')
+  for (const c of codes) if (!/^[a-z]{2,3}$/.test(c)) throw new ConfigError(`NOTESD_TRENDING_SKIP_LANGUAGES takes language codes like "hi,ta" or none, got "${c}"`)
+  return [...new Set(codes)]
 }
 
 /** An address setting: unset or blank is `fallback`, `off` is null, anything else must be an http(s) address (trailing slashes dropped). */

@@ -841,6 +841,13 @@ export async function listTitlesByIds(db: Db, ids: readonly string[], ctx: ReadC
   return [...full, ...light];
 }
 
+/** TMDB's original language of these stored titles ("hi"), by title id; null when it is not known. Unknown ids are absent. */
+export async function titleLanguages(db: Db, ids: readonly string[]): Promise<Map<string, string | null>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.select({ id: movieTitles.id, language: movieTitles.originalLanguage }).from(movieTitles).where(inArray(movieTitles.id, [...ids]));
+  return new Map(rows.map((r) => [r.id, r.language]));
+}
+
 async function titleCompanies(db: Db, id: string, ctx: ReadContext): Promise<CompanyView[]> {
   const rows = await db
     .select({

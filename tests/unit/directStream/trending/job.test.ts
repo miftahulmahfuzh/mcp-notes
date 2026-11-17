@@ -114,6 +114,16 @@ describe('TrendingJob', () => {
     expect(store.data.map((r) => r.titleId)).toEqual(['movie-4']);
   });
 
+  it('never lists a title whose original language is skipped (Hindi), and fills the place from further down', async () => {
+    const lang: Record<string, string | null> = { 'movie-1': 'hi', 'movie-2': null, 'movie-3': 'en' };
+    const { job, store } = make([listing(1, 'movie', 900), listing(2, 'movie', 800), listing(3, 'movie', 700)], {
+      config: { size: 2, probe: 0, skipLanguages: ['hi'] },
+      languages: async (ids) => new Map(ids.map((id) => [id, lang[id] ?? null])),
+    });
+    await job.pass(false);
+    expect(store.data.map((r) => r.titleId)).toEqual(['movie-2', 'movie-3']);
+  });
+
   it('keeps the old list and probes nothing when the indexes list nothing', async () => {
     const { job, store, peeked } = make([listing(1, 'movie', 100)]);
     await job.pass(false);
@@ -295,8 +305,11 @@ describe('buildTrending', () => {
   });
 
   it('reads its settings', () => {
-    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, probe: 200 });
-    expect(config({ NOTESD_TRENDING_SIZE: '40', NOTESD_TRENDING_PROBE: '0' }).directStream?.trending).toEqual({ enabled: true, size: 40, probe: 0 });
+    expect(config({}).directStream?.trending).toEqual({ enabled: true, size: 100, probe: 200, skipLanguages: ['hi'] });
+    expect(config({ NOTESD_TRENDING_SIZE: '40', NOTESD_TRENDING_PROBE: '0' }).directStream?.trending).toEqual({ enabled: true, size: 40, probe: 0, skipLanguages: ['hi'] });
+    expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'HI, ta,hi' }).directStream?.trending?.skipLanguages).toEqual(['hi', 'ta']);
+    expect(config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'none' }).directStream?.trending?.skipLanguages).toEqual([]);
+    expect(() => config({ NOTESD_TRENDING_SKIP_LANGUAGES: 'hindi' })).toThrow(/NOTESD_TRENDING_SKIP_LANGUAGES/);
     expect(() => config({ NOTESD_TRENDING_PROBE: '-1' })).toThrow(/NOTESD_TRENDING_PROBE/);
     expect(() => config({ NOTESD_TRENDING_SIZE: '0' })).toThrow(/NOTESD_TRENDING_SIZE/);
   });

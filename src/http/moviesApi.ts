@@ -8,6 +8,7 @@ import {
   getTitle,
   listStreamTitles,
   listTitlesByIds,
+  titleLanguages,
   listTitles,
   listUnmatched,
   MAX_LIST_LIMIT,
@@ -365,7 +366,9 @@ export function moviesApiRoutes(
         return c.json(off);
       }
       const rows = await new TrendingRepo(db).rows(ctx.host);
-      const items = new Map((await listTitlesByIds(db, rows.map((r) => r.titleId), ctx)).map((i) => [i.id, i]));
+      const skip = new Set(deps.config.directStream?.trending?.skipLanguages ?? []);
+      const languages = skip.size === 0 ? new Map<string, string | null>() : await titleLanguages(db, rows.map((r) => r.titleId));
+      const items = new Map((await listTitlesByIds(db, rows.map((r) => r.titleId).filter((id) => !skip.has(languages.get(id) ?? '')), ctx)).map((i) => [i.id, i]));
       const titles: TrendingTitle[] = [];
       for (const row of rows) {
         const item = items.get(row.titleId);
