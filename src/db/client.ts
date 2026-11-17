@@ -68,19 +68,37 @@ function instrument(pool: pg.Pool | NeonPool, meter: EgressMeter, breaker: Quota
   const connect = (pool as any).connect.bind(pool)
   ;(pool as any).connect = (...a: any[]) => {
     if (typeof a[0] === 'function') return connect(...a)
-    return connect().then((client: any) => {
-      if (!client.__metered) {
-        client.__metered = true
-        wrap(client)
-      }
-      return client
-    })
+    // While tripped, no connection is opened either: a transaction starts with connect(), not query().
+    try {
+      breaker.check()
+    } catch (e) {
+      return Promise.reject(e)
+    }
+    return connect().then(
+      (client: any) => {
+        if (!client.__metered) {
+          client.__metered = true
+          wrap(client)
+          // A client the pool has let go of (its query failed, then the server hung up) still emits
+          // 'error'; with no listener that is an uncaught exception and the daemon dies. MEASURED
+          // 2026-11-17: Neon over quota, `begin` rejected, then "Connection terminated unexpectedly".
+          if (typeof client.on === 'function') client.on('error', () => {})
+        }
+        return client
+      },
+      (err: unknown) => {
+        if (isQuotaError(err)) breaker.trip()
+        throw err
+      },
+    )
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** Instruments `pool` unless `NOTESD_EGRESS_METER=off`; the pool must be wrapped before drizzle takes it. */
 function meterPool(pool: pg.Pool | NeonPool): DbInstruments | undefined {
+  // An idle client's error (the server hung up) is the pool's to drop, never the process's to die of.
+  ;(pool as pg.Pool).on('error', () => {})
   if (process.env.NOTESD_EGRESS_METER === 'off') return undefined
   const ins = { meter: new EgressMeter(), breaker: new QuotaBreaker() }
   instrument(pool, ins.meter, ins.breaker)

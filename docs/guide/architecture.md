@@ -210,6 +210,9 @@ The database is Neon Postgres with pgvector.
   `[notesd] Neon quota exceeded; pausing database queries for 30 min` once, instead of retrying
   from every background loop on both machines. The first query after the pause is the probe.
   Nothing is lost; the wall and the tools report the database error meanwhile.
+  While it is tripped no connection is opened either (a transaction starts with one), and a
+  connection Neon hangs up on after refusing it is dropped quietly: it used to end the daemon,
+  and with it every stream session, on each chat message sent while over quota.
 - `NOTESD_EGRESS_METER=off` disables both. The `ETag` / 304 answers stay on.
 
 Keeping transfer low is why the wall polls slowly and only while visible, and why list routes

@@ -71,6 +71,41 @@ describe('createDb instrumentation', () => {
     }
   })
 
+  it('a client that errors after the pool let it go does not take the process down', async () => {
+    const { EventEmitter } = await import('node:events')
+    const client = Object.assign(new EventEmitter(), { query: () => Promise.resolve({ rows: [] }) })
+    const origConnect = pg.Pool.prototype.connect
+    ;(pg.Pool.prototype as any).connect = () => Promise.resolve(client)
+    try {
+      const db = createDb(url)
+      await db.$client.connect()
+      expect(() => client.emit('error', new Error('Connection terminated unexpectedly'))).not.toThrow()
+      await closeDb(db)
+    } finally {
+      ;(pg.Pool.prototype as any).connect = origConnect
+    }
+  })
+
+  it('opens no connection while the breaker is tripped, and trips on a quota answer to connect', async () => {
+    let connects = 0
+    const quota = Object.assign(new Error('Your account or project has exceeded the quota'), { code: '53000' })
+    const origConnect = pg.Pool.prototype.connect
+    ;(pg.Pool.prototype as any).connect = () => {
+      connects += 1
+      return Promise.reject(quota)
+    }
+    try {
+      const db = createDb(url)
+      await expect(db.$client.connect()).rejects.toBe(quota)
+      expect(dbInstruments(db)!.breaker.tripped).toBe(true)
+      await expect(db.$client.connect()).rejects.toThrow(/not querying/)
+      expect(connects).toBe(1)
+      await closeDb(db)
+    } finally {
+      ;(pg.Pool.prototype as any).connect = origConnect
+    }
+  })
+
   it('instruments a checked-out client once', async () => {
     let queries = 0
     const stubClient = {
