@@ -89,7 +89,11 @@ export async function seed(ctx) {
 async function postersLoaded(page) {
   await page.locator('img[src*="/t/p/"]').first().waitFor();
   await page.waitForFunction(() => {
-    const imgs = [...document.querySelectorAll('img[src*="/t/p/"]')];
+    // Posters are lazy: one below the fold never loads, and a long list (the Stream side) has many.
+    const imgs = [...document.querySelectorAll('img[src*="/t/p/"]')].filter((img) => {
+      const box = img.getBoundingClientRect();
+      return box.bottom > 0 && box.top < window.innerHeight;
+    });
     return imgs.length > 0 && imgs.every((img) => img.complete && img.naturalWidth > 0);
   });
 }

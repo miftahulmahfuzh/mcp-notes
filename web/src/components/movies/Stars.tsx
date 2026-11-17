@@ -6,7 +6,7 @@ export interface StarsProps {
   onRate: (value: number) => void;
 }
 
-/** Five duotone stars, lit up to the rating. Clicking the lit top star sets 0 (a real "0 of 5", not "unrated"). */
+/** Five stars, filled solid up to the rating and outlined after it. Clicking the lit top star sets 0 (a real "0 of 5", not "unrated"). */
 export function Stars({ value, onRate }: StarsProps) {
   return (
     <div className="mv-stars" role="group" aria-label={value === null ? 'Rating: not rated' : `Rating: ${value} of 5`}>
@@ -24,7 +24,7 @@ export function Stars({ value, onRate }: StarsProps) {
             aria-pressed={lit}
             onClick={() => onRate(value === n ? 0 : n)}
           >
-            <Star weight="duotone" />
+            <Star weight={lit ? 'fill' : 'regular'} />
           </button>
         );
       })}
