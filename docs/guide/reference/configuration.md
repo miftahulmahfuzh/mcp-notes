@@ -118,13 +118,14 @@ The library and playback are described in [movies.md](../movies.md).
 
 ## Streaming sites
 
-The `/pahe`, `/idlix` and `/lk21` skills and the streaming tools are described in [streaming.md](../streaming.md).
+The `/pahe`, `/idlix`, `/lk21` and `/flicksy` skills and the streaming tools are described in [streaming.md](../streaming.md).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NOTESD_STREAMING` | on | `off` turns the `streaming_find` and `streaming_play` tools off on this machine: both answer `streaming_off` and no script is run. The skills are not affected. |
 | `IDLIX_ORIGIN` | `https://z2.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). |
 | `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
+| `FLICKSY_ORIGIN` | `https://flicksy.pro` | The same for flicksy, read by `claude/streaming/sites/flicksy.mjs`. |
 
 ## Direct streaming
 

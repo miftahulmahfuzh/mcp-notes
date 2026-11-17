@@ -994,7 +994,7 @@ at all.
   outside the library, `direct_stream_discover` finds titles by year, language, person, studio or
   streaming service ([streaming.md](streaming.md#finding-something-to-stream)), and "films like
   this" is a web search checked against `movies_list`. Finding such a film on pahe.ink, or finding
-  and playing it on idlix or lk21, is in [streaming.md](streaming.md).
+  and playing it on idlix, lk21 or flicksy, is in [streaming.md](streaming.md).
 
 ## Off switches and failure answers
 

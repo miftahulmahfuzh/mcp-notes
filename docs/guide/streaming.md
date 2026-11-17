@@ -1,13 +1,14 @@
 # Streaming and download sites
 
-Films the library does not have are found on three outside sites, each with its own skill, and a
-fourth skill adds a site:
+Films the library does not have are found on four outside sites, each with its own skill, and
+another skill adds a site:
 
 | Site | Skill | What it does | Chat bar |
 | --- | --- | --- | --- |
 | pahe.ink (downloads) | `/pahe <title> [year]` | Finds the title's page and links each release, BluRay first | Yes, through `WebFetch` |
 | idlix (streaming) | `/idlix <title> [year]` | Finds the title, starts the film, shows it full screen | Yes, through `streaming_play` |
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
+| flicksy (streaming) | `/flicksy <title> [year]` | The same | Yes, through `streaming_play` |
 | A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
 | An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
 | A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
@@ -47,22 +48,28 @@ and the lookup stops at the title's page: the download buttons behind it are not
 
 ## The streaming sites
 
-Both streaming skills run one command, `claude/streaming/cli.mjs`, with a module per site in
+The streaming skills run one command, `claude/streaming/cli.mjs`, with a module per site in
 `claude/streaming/sites/`:
 
-| | idlix | lk21 |
-| --- | --- | --- |
-| Address | `https://z2.idlixku.com` (`IDLIX_ORIGIN`) | `https://tv12.lk21official.cc` (`LK21_ORIGIN`) |
-| A plain request | Refused: Cloudflare answers 403 to `curl`, `WebFetch` and a headless browser | Answered |
-| Search | The site's own `/api/search`, asked from inside the streaming Chrome | The search host named on the home page (`data-search_url`), asked directly |
-| A film's page | `/movie/<slug>` | `/<slug>` |
-| A series | `/series/<slug>`: a link; one episode starts when asked for (`/series/<slug>/season/<n>/episode/<n>`) | Forwards to another site: a link, not started |
-| Before the film | A 7-second countdown, then an advert with "Skip Ad" after about 10 seconds | Nothing |
-| The player | In the page itself | In a frame from another host, inside a second one |
-| Time to a playing film | About 25 seconds | 6 to 20 seconds |
+| | idlix | lk21 | flicksy |
+| --- | --- | --- | --- |
+| Address | `https://z2.idlixku.com` (`IDLIX_ORIGIN`) | `https://tv12.lk21official.cc` (`LK21_ORIGIN`) | `https://flicksy.pro` (`FLICKSY_ORIGIN`) |
+| A plain request | Refused: Cloudflare answers 403 to `curl`, `WebFetch` and a headless browser | Answered | Answered |
+| Search | The site's own `/api/search`, asked from inside the streaming Chrome | The search host named on the home page (`data-search_url`), asked directly | The site's own TMDB pass-through (`/api/tmdb/search/multi`), asked directly |
+| A film's page | `/movie/<slug>` | `/<slug>` | `/watch/movie/<TMDB id>`, the player page |
+| A series | `/series/<slug>`: a link; one episode starts when asked for (`/series/<slug>/season/<n>/episode/<n>`) | Forwards to another site: a link, not started | `/series/<TMDB id>`: a link, not started |
+| Before the film | A 7-second countdown, then an advert with "Skip Ad" after about 10 seconds | Nothing | Nothing |
+| The player | In the page itself | In a frame from another host, inside a second one | In a frame from another host (FrameXTV, the first of the site's servers) |
+| Time to a playing film | About 25 seconds | 6 to 20 seconds | About 6 seconds |
 
-Both sites move between hosts (`z1`, `z2`; `tv11`, `tv12`). Set the `*_ORIGIN` variable when one
+idlix and lk21 move between hosts (`z1`, `z2`; `tv11`, `tv12`). Set the `*_ORIGIN` variable when one
 has moved: see [configuration](reference/configuration.md#streaming-sites).
+
+flicksy has no catalogue of its own: its search is TMDB's, so every title TMDB lists is found, and
+whether a film plays is up to the server its page embeds. That server is one of the providers
+`/direct-stream` asks too, and it serves the copy it has: a film not in English may be a dub,
+which `/direct-stream` would pass over and flicksy plays as is. Only the site's first server is
+played; its "Switch server" menu is left alone.
 
 A result matches when its English or original-language name is the asked title, and its year is
 the asked year when one was given. A link is never built by hand: it counts only when the site's
@@ -109,6 +116,7 @@ put that one on lk21
 | --- | --- |
 | `/idlix no other choice` | One film matches: it starts, full screen, in the streaming Chrome (about 25 seconds) |
 | `/lk21 love of your life` | The same on lk21 (6 to 20 seconds) |
+| `/flicksy impetigore` | The same on flicksy (about 6 seconds) |
 | `/lk21 ready or not 2019` | The 2019 film starts. The year is what tells a remake from its original when both carry the same name |
 | A title two films share, with no year | Several films match: the answer lists them with their years and asks which one |
 | `the 2019 one`, after that | That film starts, played by the link from the list |
@@ -143,11 +151,12 @@ what did this director make? find the newest one on lk21
 
 The rules behind those answers:
 
-- **`/idlix <title>` or `/lk21 <title>` puts the film on** when exactly one film matches.
+- **`/idlix <title>`, `/lk21 <title>` or `/flicksy <title>` puts the film on** when exactly one film matches.
 - **A question is a lookup.** "Is it on idlix?" answers with the link and starts nothing.
 - **Several matches start nothing.** The answer lists them; say which one and it is played by
   its link.
-- **A series without an episode is a link only**, and on lk21 it lives on another site.
+- **A series without an episode is a link only**, and on lk21 it lives on another site. On
+  flicksy a series is always a link.
 - **An episode on idlix** (`cli.mjs idlix --play <title> --episode <n> [--season <n>]`,
   `streaming_play` with `episode`). The series comes from the site's search, as always. Then the
   site's own episode API (`/api/series/<slug>/season/<s>/episode/<n>`, asked inside the streaming
@@ -222,7 +231,8 @@ behaves save it a step. What it does is in [Adding a site](#adding-a-site).
 2. The site's play button is pressed. On idlix the advertising tab that press opens is closed,
    the countdown is waited out and the site's own "Skip Ad" is pressed when the advert offers it.
    On lk21 the press goes to the player inside its frame, and the player's own play is pressed
-   again when the first press only set it up.
+   again when the first press only set it up. On flicksy the press goes to the player inside
+   its frame, once the frame is the asked film's.
 3. Once the film is running, the window goes full screen and the player is stretched over it.
 
 Things that are not obvious:
@@ -306,9 +316,9 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 | `no_chrome` | Chrome is not installed on the Windows side |
 | `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time |
 | `the site answered HTTP 403` | Cloudflare is now refusing the real Chrome too |
-| `no_frame` | lk21's player frame did not appear: the player changed, or the page is not a film |
+| `no_frame` | lk21's or flicksy's player frame did not appear: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
 | `the page has no play button` | idlix's page changed, or it is a series page |
-| `playing: false` with `stage` | Where the flow stopped: `countdown`, `advert`, `play_button`, `loading`, `film` (the player is there and did not start) |
+| `playing: false` with `stage` | Where the flow stopped: `countdown`, `advert`, `play_button`, `loading`, `film` (the player is there and did not start), `no_player`, `other_frame` (flicksy's frame still held another film) |
 | A host that does not resolve | The site moved: set its `*_ORIGIN` |
 
 A failure never falls back to a guessed link.
@@ -1817,7 +1827,7 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 | `claude/streaming/sites/*.mjs`, `sites/index.mjs` | One module per site, and the list of them |
 | `claude/streaming/match.mjs`, `play.mjs`, `chrome.mjs` | Title matching; the shared play flow and the fill-screen style; running `cdp.ps1` |
 | `claude/streaming/cdp.ps1` | The Windows half: Chrome, tabs, frames, one expression |
-| `claude/skills/pahe/`, `idlix/`, `lk21/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
+| `claude/skills/pahe/`, `idlix/`, `lk21/`, `flicksy/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |

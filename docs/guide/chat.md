@@ -190,7 +190,7 @@ These rules come from the system prompt, so they shape every answer:
   search page with `WebFetch` and answers with a link per matching release, BluRay first, as the
   `/pahe` skill does. It never builds a pahe.ink link itself and does not open the download
   buttons.
-- Asked to watch a film on idlix or lk21 ("/idlix no other choice", "put it on lk21"), it calls
+- Asked to watch a film on idlix, lk21 or flicksy ("/idlix no other choice", "put it on lk21"), it calls
   `streaming_play`, which starts the film full screen in the streaming Chrome window. Asked only
   where a film can be watched, it calls `streaming_find` and answers with links. It never starts
   a film it was not asked to start. All three sites are described in

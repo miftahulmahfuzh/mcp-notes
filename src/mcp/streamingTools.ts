@@ -34,7 +34,7 @@ const PLAY_DESCRIPTION =
   'series (a series has episodes to choose: give the link, or call again with episode), or no_match. To start a result you already have, pass its url and no title. ' +
   'One episode of a series ("/idlix one piece 787", "play La Brea season 2 episode 3 on idlix") is title with episode, and season only when the owner named one: the episode starts when exactly one matching series has it, and episode says which season it is in. ' +
   'Then skipped_play can also be no_episode (no matching series has that episode), several_episodes (list episode_candidates with their series and season and ask which, then call again with that one\'s url), ' +
-  'no_video (the site lists the episode without a video) or no_episodes (this site does not play episodes: lk21). ' +
+  'no_video (the site lists the episode without a video) or no_episodes (this site does not play episodes: lk21, flicksy). ' +
   'play.playing true means the film is on screen; with false, stage or error says where it stopped (a hidden or minimized window stops a countdown; calling again starts over). ' +
   'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
@@ -77,7 +77,7 @@ async function findOnSite(runner: StreamingRunner, site: StreamingSite, title: s
 
 /**
  * The streaming tools: find a title on the streaming sites, and start a film full screen. Both
- * run claude/streaming/cli.mjs through `deps.streaming`, the same command the /idlix and /lk21
+ * run claude/streaming/cli.mjs through `deps.streaming`, the same command the /idlix, /lk21 and /flicksy
  * skills run. Without it both answer streaming_off.
  */
 export function registerStreamingTools(server: McpServer, deps: Pick<ToolDeps, 'streaming'>): void {

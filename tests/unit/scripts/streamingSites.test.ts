@@ -10,6 +10,8 @@ import { findEpisode, readEpisodeFlags } from '../../../claude/streaming/cli.mjs
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import lk21, { START_PLAYER_EXPRESSION, searchHost, splitTitle, toResult as lk21Result } from '../../../claude/streaming/sites/lk21.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
+import flicksy, { startPlayerExpression, toResult as flicksyResult } from '../../../claude/streaming/sites/flicksy.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
 import { SITES } from '../../../claude/streaming/sites/index.mjs';
 
 const parses = (expression: string): void => {
@@ -237,5 +239,57 @@ describe('lk21', () => {
     parses(START_PLAYER_EXPRESSION);
     expect(START_PLAYER_EXPRESSION.match(/\w+\.click\(\)/g)).toEqual(['button.click()']);
     expect(START_PLAYER_EXPRESSION).toContain('.custom-play-btn');
+  });
+});
+
+describe('flicksy', () => {
+  const ORIGIN = 'https://flicksy.pro';
+  // The shape /api/tmdb/search/multi answered with on 2026-11-17.
+  const DATA = [
+    { id: 572468, title: 'Impetigore', original_title: 'Perempuan Tanah Jahanam', original_language: 'id', release_date: '2019-10-17', media_type: 'movie' },
+    { id: 128839, name: 'La Brea', original_name: 'La Brea', first_air_date: '2021-09-28', media_type: 'tv', origin_country: ['US'] },
+    { id: 1234387, title: 'La Bréa', original_title: 'La Bréa', release_date: '', media_type: 'movie' },
+    { id: 121798, name: 'Joko Anwar', media_type: 'person', known_for_department: 'Directing' },
+    { title: 'No Id', release_date: '2020-01-01', media_type: 'movie' },
+  ];
+  const results = DATA.map((item) => flicksyResult(item, ORIGIN)).filter(Boolean);
+
+  it("builds results with the page named by the title's TMDB id, and leaves people out", () => {
+    expect(results).toHaveLength(3);
+    expect(results[0]).toEqual({
+      title: 'Impetigore (2019)',
+      name: 'Impetigore',
+      original_name: 'Perempuan Tanah Jahanam',
+      year: 2019,
+      kind: 'movie',
+      quality: null,
+      seasons: null,
+      url: 'https://flicksy.pro/watch/movie/572468',
+    });
+    expect(results[1]).toMatchObject({ title: 'La Brea (2021)', original_name: null, kind: 'series', url: 'https://flicksy.pro/series/128839' });
+    expect(results[2]).toMatchObject({ title: 'La Bréa', year: null, kind: 'movie' });
+  });
+
+  it('matches on either name of a title', () => {
+    expect(pickMatches(results, { name: 'perempuan tanah jahanam', year: null }).matches.map((r: { name: string }) => r.name)).toEqual(['Impetigore']);
+    expect(pickMatches(results, { name: 'impetigore', year: 2019 }).matches).toHaveLength(1);
+    expect(pickMatches(results, { name: 'impetigore', year: 2020 }).matches).toHaveLength(0);
+  });
+
+  it("plays only a film's player page on the site itself", () => {
+    expect(flicksy.titlePath(`${flicksy.origin}/watch/movie/572468`)).toBe('/watch/movie/572468');
+    expect(flicksy.titlePath(`${flicksy.origin}/watch/movie/572468?server=vidlink`)).toBe('/watch/movie/572468');
+    expect(flicksy.titlePath(`${flicksy.origin}/series/128839`)).toBeNull();
+    expect(flicksy.titlePath(`${flicksy.origin}/watch/series/128839`)).toBeNull();
+    expect(flicksy.titlePath(`${flicksy.origin}/movie/572468`)).toBeNull();
+    expect(flicksy.episodes).toBeUndefined();
+  });
+
+  it("ships a player expression that parses, checks the film's id and presses only the player's own play", () => {
+    const expression = startPlayerExpression('572468');
+    parses(expression);
+    expect(expression.match(/\w+\.click\(\)/g)).toEqual(['button.click()']);
+    expect(expression).toContain('button[aria-label="Play Stream"]');
+    expect(expression).toContain('"/embed/572468"');
   });
 });

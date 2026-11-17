@@ -31,7 +31,7 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerAdversaryTools(server, deps);
   // Movies (MOVIES_LIBRARY_PLAN phase 7). Answer movies_off when deps.movies is unset.
   registerMovieTools(server, deps);
-  // Streaming sites (idlix, lk21). Answer streaming_off when deps.streaming is unset.
+  // Streaming sites (idlix, lk21, flicksy). Answer streaming_off when deps.streaming is unset.
   registerStreamingTools(server, deps);
   // Direct streaming (DIRECT_STREAMING_PLAN phase 7). Answer direct_stream_off when deps.directStream is unset.
   registerDirectStreamTools(server, deps);

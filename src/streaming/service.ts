@@ -7,10 +7,10 @@ const run = promisify(execFile);
 
 /**
  * The streaming sites the tools know. The sites themselves live in claude/streaming/sites/*.mjs
- * (one module each, shared with the /idlix and /lk21 skills); tests/unit/streaming.test.ts checks
+ * (one module each, shared with the /idlix, /lk21 and /flicksy skills); tests/unit/streaming.test.ts checks
  * this list against that folder's registry.
  */
-export const STREAMING_SITES = ['idlix', 'lk21'] as const;
+export const STREAMING_SITES = ['idlix', 'lk21', 'flicksy'] as const;
 
 export type StreamingSite = (typeof STREAMING_SITES)[number];
 
