@@ -66,6 +66,7 @@ function setup(o: Setup = {}) {
       { index: 'yts', outcome: 'error', detail: 'timed out after 6 s', took_s: 6, listed: 0 },
     ],
     excluded: [],
+    lastResort: [],
   };
   const torrent = new TorrentSource({ swarm, find: async () => answer, probe: async () => MP4, tiers: o.tiers ?? [], subtitleHeadMs: 5, localBase: () => 'http://127.0.0.1:4321', log: () => undefined });
   const svc = new DirectStreamService({

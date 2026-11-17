@@ -3,7 +3,7 @@ import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
 import { candidateFromMagnet, defaultIndexes, findCandidates, IndexHealth, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
-import { canRemux, type TorrentRemux } from './remux.js';
+import { canRemux, pickAudioStream, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
 import { hasEnglishSubtitleFile } from './subtitles/files.js';
 import type { TorrentSyncRequest } from './subtitles/synced.js';
@@ -239,13 +239,30 @@ function queryOf(ref: StreamRef, imdbId: string, names: TitleNames | null, audio
  * Why a probed file is not played, or null when it plays: a dub first (original language only), then a file Chrome
  * cannot play that the remux cannot help either (the remux off, or video Chrome cannot decode).
  */
+/**
+ * A file Chrome plays as is AND whose default audio is the original: a dual-audio file whose original track is not
+ * the first needs the remux to force it, or Chrome would play the dub. Single-audio, or the original at index 0, is fine.
+ */
+function playsOriginalDirect(probe: MediaProbe, audioLang: string | null): boolean {
+  if (!probe.direct) return false;
+  if (audioLang === null || probe.audio.length <= 1) return true;
+  return pickAudioStream(probe.audio, audioLang) === 0;
+}
+
 function refusalOf(probe: MediaProbe, audioLang: string | null, remux: TorrentRemux | null): { outcome: ResolveOutcome; detail: string } | null {
   const languages = audioLanguages(probe);
   if (audioLang !== null && languages.length > 0 && !languages.includes(audioLang)) {
     return { outcome: 'dubbed', detail: `its audio is ${languages.join(', ')}, not the original ${audioLang}` };
   }
-  if (probe.direct) return null;
-  if (remux === null) return { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is` };
+  // Direct, and the original track is the one Chrome would play: nothing to do.
+  if (playsOriginalDirect(probe, audioLang)) return null;
+  // A dual-audio file whose original is not the default: the remux maps the original track, so a dub never plays.
+  // Without a remux it would, so it is refused rather than played in the wrong language.
+  if (remux === null) {
+    return probe.direct
+      ? { outcome: 'dubbed', detail: `${describeProbe(probe)}: ${probe.audio.length} audio tracks and the original ${audioLang} is not the default; a remux is needed to force it, and the remux is off` }
+      : { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is` };
+  }
   if (!canRemux(probe)) return { outcome: 'unplayable', detail: `${describeProbe(probe)}: Chrome does not play it as is, and a remux cannot make its video playable` };
   return null;
 }
@@ -317,8 +334,22 @@ export class TorrentSource {
     const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: options.resumeS ?? null, cloudTried: options.cloudTried === true };
     const progress = options.progress;
     const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }));
-    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), ${out.ok ? `playing ${out.torrent.name}` : 'none played'}`);
-    return out.ok ? { ...out, attempts: [...indexes, ...out.attempts] } : { ok: false, error: 'no_source', attempts: [...indexes, ...out.attempts] };
+    if (out.ok) {
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}`);
+      return { ...out, attempts: [...indexes, ...out.attempts] };
+    }
+    // Nothing proper played. Releases the name read as a dub are tried now, in their own round: many are
+    // dual-audio and still carry the original track, and the file probe (refusalOf) keeps only those that do.
+    const dubs = (found.lastResort ?? []).filter((c) => !skip.has(c.infoHash.toLowerCase()) && !candidates.some((k) => k.infoHash === c.infoHash));
+    const firstAttempts = [...indexes, ...out.attempts];
+    if (dubs.length === 0 || started + TORRENT_DEADLINE_MS - this.now() < PROBE_MIN_MS) {
+      this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), none played`);
+      return { ok: false, error: 'no_source', attempts: firstAttempts };
+    }
+    options.progress?.({ stage: 'trying releases whose name reads as a dub (the file may still carry the original)', attempts: firstAttempts });
+    const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }));
+    this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
+    return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts] };
   }
 
   /**
@@ -504,7 +535,9 @@ export class TorrentSource {
   ): Promise<{ manifestUrl: string; manifestKind: 'mp4' | 'hls' }> {
     const fileUrl = this.opts.swarm.localUrl(infoHash, fileIndex);
     const remux = this.opts.remux ?? null;
-    if (probe.direct || remux === null) return { manifestUrl: fileUrl, manifestKind: 'mp4' };
+    // playsOriginalDirect, not probe.direct: a dual-audio file whose original is not the default is remuxed, so the
+    // original track plays. With no remux, refusalOf already refused such a file, so this only serves truly direct ones.
+    if (playsOriginalDirect(probe, audioLang) || remux === null) return { manifestUrl: fileUrl, manifestKind: 'mp4' };
     const input = (await this.opts.swarm.filePath(infoHash, fileIndex)) ?? `${this.opts.localBase()}${fileUrl}`;
     const play = await remux.start({ infoHash, fileIndex, input, probe, audioLang }, timeoutMs === undefined ? {} : { timeoutMs });
     return { manifestUrl: play.manifestUrl, manifestKind: 'hls' };

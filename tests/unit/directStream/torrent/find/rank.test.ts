@@ -61,6 +61,18 @@ describe('rankCandidates', () => {
     expect(ranked.excluded.map((e) => e.reason)).toEqual(['too_big']);
   });
 
+  it('offers a dub-named release that otherwise fits as a last resort, but not one left out for another reason', () => {
+    const proper = candidateFrom(row('Sintel.2010.1080p.WEB-DL.x264', 40), 'torrentio', FILM);
+    const dub = candidateFrom(row('Sintel.2010.1080p.Hindi.Dubbed.WEB-DL', 30), 'torrentio', FILM);
+    const dubFewSeeds = candidateFrom(row('Sintel.2010.720p.Hindi.Dubbed.WEB-DL', 0), 'torrentio', FILM);
+    const otherTitle = candidateFrom(row('Tangled.2010.1080p.Hindi.Dubbed', 50), 'torrentio', FILM);
+    const ranked = rankCandidates([proper, dub, dubFewSeeds, otherTitle], FILM);
+    expect(ranked.kept.map((c) => c.name)).toEqual(['Sintel.2010.1080p.WEB-DL.x264']);
+    // Only the dub that otherwise passes (right title, enough seeds) is a last resort; the thin one and the wrong title are not.
+    expect(ranked.lastResort.map((c) => c.name)).toEqual(['Sintel.2010.1080p.Hindi.Dubbed.WEB-DL']);
+    expect(ranked.excluded.map((e) => e.reason).sort()).toEqual(['dubbed', 'dubbed', 'other_title']);
+  });
+
   it('leaves out a malformed or all-zero info hash and a release of another title', () => {
     const zero = candidateFrom(row('Sintel.2010.1080p.WEB', 50, { infoHash: '0'.repeat(40) }), 'apibay', FILM);
     const short = candidateFrom(row('Sintel.2010.720p.WEB', 50, { infoHash: 'abc123' }), 'apibay', FILM);

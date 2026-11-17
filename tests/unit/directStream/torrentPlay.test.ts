@@ -54,7 +54,7 @@ function setup(o: Setup = {}) {
     localUrl: (infoHash, index) => `/api/stream/torrent/${infoHash}/f/${index}`,
     setDuration: () => undefined,
   };
-  const answer: FindAnswer = { candidates: o.candidates ?? [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: 1 }], excluded: [] };
+  const answer: FindAnswer = { candidates: o.candidates ?? [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-A')], indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: 1 }], excluded: [], lastResort: [] };
   const finds = vi.fn(async () => answer);
   const torrent = new TorrentSource({ swarm, find: finds, probe: async () => MP4_EN, tiers: [], localBase: () => 'http://127.0.0.1:4321', log: () => undefined });
   const sessions = new SessionStore(o.now);

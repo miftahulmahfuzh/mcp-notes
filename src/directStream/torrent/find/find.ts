@@ -213,5 +213,6 @@ export async function findCandidates(query: TorrentQuery, options: FindOptions =
     found = [...found, ...second.candidates];
     ranked = rankCandidates(found, asked, settings);
   }
-  return { candidates: ranked.kept.slice(0, options.maxCandidates ?? DEFAULT_MAX_CANDIDATES), indexes: attempts, excluded: ranked.excluded };
+  const max = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
+  return { candidates: ranked.kept.slice(0, max), indexes: attempts, excluded: ranked.excluded, lastResort: ranked.lastResort.slice(0, max) };
 }

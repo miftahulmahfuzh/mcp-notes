@@ -38,6 +38,7 @@ const MKV: MediaProbe = { container: 'matroska,webm', video: { codec: 'hevc', he
 
 interface Fakes {
   candidates?: TorrentCandidate[];
+  lastResort?: TorrentCandidate[];
   files?: Record<string, TorrentFileInfo[]>;
   failOpen?: string[];
   probes?: Record<string, MediaProbe | 'timeout'>;
@@ -92,7 +93,7 @@ function setup(o: Fakes = {}) {
         }),
   };
   let finds = 0;
-  const answer: FindAnswer = { candidates: o.candidates ?? [], indexes: [{ index: 'torrentio', outcome: 'ok', detail: `${(o.candidates ?? []).length} candidates`, took_s: 0.3, listed: (o.candidates ?? []).length }], excluded: [] };
+  const answer: FindAnswer = { candidates: o.candidates ?? [], indexes: [{ index: 'torrentio', outcome: 'ok', detail: `${(o.candidates ?? []).length} candidates`, took_s: 0.3, listed: (o.candidates ?? []).length }], excluded: [], lastResort: o.lastResort ?? [] };
   const source = new TorrentSource({
     swarm,
     find: async (query) => {
@@ -122,6 +123,60 @@ function setup(o: Fakes = {}) {
   };
   return { source, calls, settled, probed, durations, logged, finds: () => finds };
 }
+
+describe('a dub-named release as a last resort', () => {
+  // A dual-audio file: the dub first, then the original (eng). Directly playable.
+  const MP4_DUAL_ORIG_FIRST: MediaProbe = { ...MP4_EN, audio: [{ codec: 'aac', lang: 'eng' }, { codec: 'aac', lang: 'ger' }] };
+  const MP4_DUAL_DUB_FIRST: MediaProbe = { ...MP4_EN, audio: [{ codec: 'aac', lang: 'ger' }, { codec: 'aac', lang: 'eng' }] };
+
+  it('tries the dub-named releases only after the proper ones fail, and plays one whose file carries the original', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      files: { [h(1)]: [] }, // no video file: the proper one fails
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      probes: { [h(2)]: MP4_DUAL_ORIG_FIRST },
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.torrent.infoHash).toBe(h(2));
+    const order = out.attempts.map((a) => a.provider);
+    // The proper one is tried (and fails) before the dub-named one.
+    expect(order).toEqual(['Index: torrentio', 'Torrent: Film.2026.1080p.WEB-DL.x264-PROPER', 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL']);
+    expect(out.attempts[1]?.outcome).toBe('no_stream');
+    expect(out.attempts[2]?.outcome).toBe('resolved');
+  });
+
+  it('refuses a dub-named release whose file really is only the dub, so the original-language rule holds', async () => {
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      files: { [h(1)]: [] },
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      probes: { [h(2)]: MP4_DE }, // German only: a true dub
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.attempts.at(-1)).toMatchObject({ provider: 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL', outcome: 'dubbed' });
+  });
+
+  it('refuses a dual-audio file whose original is not the default when no remux can force it', async () => {
+    // No remux in this setup: a directly-playable file with the dub as its first (default) track cannot be forced.
+    const t = setup({
+      candidates: [candidate(h(1), 'Film.2026.1080p.WEB-DL.x264-PROPER')],
+      files: { [h(1)]: [] },
+      lastResort: [candidate(h(2), 'Film.2026.1080p.Hindi.Dubbed.WEB-DL')],
+      probes: { [h(2)]: MP4_DUAL_DUB_FIRST },
+    });
+    const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.attempts.at(-1)).toMatchObject({ outcome: 'dubbed' });
+    // ...but the same file with the original first plays directly, no remux needed.
+    const ok = setup({ candidates: [candidate(h(3), 'Film.2026.1080p.WEB-DL.x264')], probes: { [h(3)]: MP4_DUAL_ORIG_FIRST } });
+    expect((await ok.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' })).ok).toBe(true);
+  });
+});
 
 describe('TorrentSource.playMagnet', () => {
   const magnetOf = (hash: string, dn = 'Film.2026.1080p.WEB-DL.x264-GRP') => `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(dn)}&tr=udp://tracker.example:1337/announce`;

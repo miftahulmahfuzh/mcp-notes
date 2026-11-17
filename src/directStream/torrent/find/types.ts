@@ -175,6 +175,8 @@ export interface FoundCandidates {
   candidates: TorrentCandidate[];
   indexes: IndexAttempt[];
   excluded: ExcludedCandidate[];
+  /** Releases left out only for a dub in the name but otherwise this title and playable: tried after `candidates` fail, the probe deciding by the real audio. At most `maxCandidates`. */
+  lastResort: TorrentCandidate[];
 }
 
 /** A file inside a torrent; phase 1's TorrentFileInfo fits. `path` is relative to the torrent, `/` or `\` separated. */

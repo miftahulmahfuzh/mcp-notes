@@ -59,7 +59,7 @@ function setup(o: { candidates: TorrentCandidate[]; probes: Record<string, Media
     localUrl: (infoHash, index) => `/api/stream/torrent/${infoHash}/f/${index}`,
     setDuration: () => undefined,
   };
-  const answer: FindAnswer = { candidates: o.candidates, indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: o.candidates.length }], excluded: [] };
+  const answer: FindAnswer = { candidates: o.candidates, indexes: [{ index: 'torrentio', outcome: 'ok', detail: '', took_s: 0.1, listed: o.candidates.length }], excluded: [], lastResort: [] };
   const source = new TorrentSource({
     swarm,
     find: async () => answer,

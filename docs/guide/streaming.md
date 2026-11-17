@@ -1422,6 +1422,13 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
   one listed, up to six torrents and 90 seconds in all.
+- **A dub-named release is a last resort, decided by the file, not the name.** A release the index name reads as a
+  dub (often an Asian film on a Russian tracker) is left out of the normal ranking, but when every proper release
+  fails to play the daemon tries these in their own round. Many are dual-audio and still carry the original track, so
+  the header probe decides: a file whose audio includes the original language plays (the remux maps that track, so a
+  dub never plays over it), and one that really is only the dub is still `dubbed`. A directly-playable dual-audio file
+  whose original track is not the default is remuxed so the original plays; with the remux off and the dub as the
+  default, it is refused rather than played in the wrong language.
 - **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds. Of those
   whose headers arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected,
   or a download rate at or above the film's own bitrate) before one that does not; one whose files hold an English

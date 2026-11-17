@@ -27,6 +27,12 @@ export const DEFAULT_RANK_SETTINGS: Readonly<RankSettings> = {
 export interface Ranked {
   kept: TorrentCandidate[];
   excluded: ExcludedCandidate[];
+  /**
+   * Releases left out only because the name reads as a dub, but otherwise this title and playable (right
+   * episode, enough seeds, not a cam/3D, not too big). The torrent source tries these after the kept ones all
+   * fail, and the file probe decides: many such releases are dual-audio and still carry the original track.
+   */
+  lastResort: TorrentCandidate[];
 }
 
 const FIT_ORDER: Record<EpisodeFit, number> = { match: 0, pack: 1, unknown: 2, other: 3 };
@@ -105,12 +111,18 @@ export function rankCandidates(all: readonly TorrentCandidate[], query: TorrentQ
   }
   const kept: TorrentCandidate[] = [];
   const excluded: ExcludedCandidate[] = [];
+  const lastResort: TorrentCandidate[] = [];
   for (const group of groups.values()) {
     const joined = joinListings(group, query);
     const reason = exclusionOf(joined, query, settings);
     if (reason === null) kept.push(joined);
-    else excluded.push({ infoHash: joined.infoHash, name: joined.name, index: joined.index, seeds: joined.seeds, reason });
+    else {
+      excluded.push({ infoHash: joined.infoHash, name: joined.name, index: joined.index, seeds: joined.seeds, reason });
+      // Left out only for the dub in its name, but otherwise this title and playable: a last resort the probe decides on.
+      if (reason === 'dubbed' && exclusionOf({ ...joined, release: { ...joined.release, dubbed: false } }, query, settings) === null) lastResort.push(joined);
+    }
   }
   kept.sort((a, b) => compareCandidates(a, b, settings));
-  return { kept, excluded };
+  lastResort.sort((a, b) => compareCandidates(a, b, settings));
+  return { kept, excluded, lastResort };
 }
