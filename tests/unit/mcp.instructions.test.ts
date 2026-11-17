@@ -321,6 +321,7 @@ describe('buildInstructions: Direct streaming', () => {
     const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Direct streaming.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
+    expect(text).toMatch(/pass unseen_only true with it, which leaves out every title the user has seen or marked not interested \(never for a rewatch/);
     for (const word of ['direct_stream_find', 'direct_stream_play', '/direct-stream saltburn', 'movies_continue unless the user says stream', 'a recommendation is not a request', 'The Lord of the Rings: The Fellowship of the Ring, 2001', 'no_source', 'attempts', 'F11', 'direct_stream_off', 'direct_stream_discover', 'absolute_episode', 'episode_unclear', 'title_key as title', 'season 1 and watched true', 'direct_stream_dialogue', 'absolute_episode 760', 'no_subtitle']) {
       expect(p).toContain(word);
     }

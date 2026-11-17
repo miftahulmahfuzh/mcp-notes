@@ -489,6 +489,25 @@ describe('direct-stream MCP tools', () => {
       expect(out.next).toMatch(/Nothing was started/);
       const unseen = json(await c.call('direct_stream_discover', { kind: 'tv', language: 'es', unseen_only: true, sort: 'newest' }));
       expect(unseen.titles.map((x: any) => x.title_key)).toEqual(['tv-2']);
+      // Choosing for the owner: what they have seen is not in the list at all, and is counted.
+      expect(unseen.left_out).toEqual({ seen: out.titles.filter((x: any) => x.seen).length, not_interested: 0 });
+      expect(unseen.left_out.seen).toBeGreaterThan(0);
+      expect(unseen.next).toMatch(/title\(s\) the owner has seen or marked not interested were left out/);
+      // A rewatch, or a question: the same call without unseen_only still lists the seen ones, marked, and says how to choose.
+      expect(out.left_out).toBeUndefined();
+      expect(out.titles.some((x: any) => x.seen)).toBe(true);
+      expect(out.next).toMatch(/call again with unseen_only true and choose from that list/);
+      // Everything that fits was seen: nothing to choose, and the answer says a rewatch is the call without unseen_only.
+      const allSeen = fakeDeps({
+        tmdb: t.tmdb,
+        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false }], ['tv-2', { movieId: null, state: null, notInterested: true }]]),
+      });
+      const c2 = await connect(allSeen.deps);
+      const none = json(await c2.call('direct_stream_discover', { kind: 'tv', language: 'es', unseen_only: true }));
+      expect(none).toMatchObject({ count: 0, titles: [], left_out: { seen: 1, not_interested: 1 } });
+      expect(none.next).toMatch(/Every title that fits \(2\) is one the owner has seen or marked not interested.*a rewatch is this call without unseen_only/);
+      expect(json(await c2.call('direct_stream_discover', { kind: 'tv', language: 'es' })).titles).toHaveLength(2);
+      await c2.close();
       expect(f.play).not.toHaveBeenCalled();
       await c.close();
     });

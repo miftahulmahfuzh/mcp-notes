@@ -225,6 +225,8 @@ describe('buildChatSystemPrompt', () => {
     expect(prompt).toMatch(/direct_stream_dialogue reads what is said in a film or in one episode/);
     expect(prompt).toMatch(/The spoiler limit above still holds/);
     expect(prompt).toMatch(/that is a request to play: call direct_stream_discover with what they said/);
+    // A title it chooses is never one the owner watched; a rewatch and a named title are not filtered.
+    expect(prompt).toMatch(/pass unseen_only true with it, which leaves out every title they have seen or marked not interested \(never for a rewatch: "rewatch one of Nolan's movies" is the same call without unseen_only, and a title they name plays whether seen or not\)/);
     expect(prompt).toMatch(/choose one title they have not seen and did not mark not_interested, call direct_stream_play with its title_key as title, and say which one you chose and why/);
     expect(prompt).toMatch(/When they only ask what there is .* list the titles with their years and start nothing/);
     expect(prompt).toMatch(/pass absolute_episode alone and say which season and episode the daemon chose/);

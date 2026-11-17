@@ -112,9 +112,17 @@ companies or service the name was read as; `other_people`, `other_companies` and
 list what else it fits. When the wrong one was used, call again with `person_id`, `company_id`
 or `service_id`.
 
-- **"pick one for me", "play one", "stream a ... movie" are asking.** Choose one title yourself:
-  not one marked `seen` or `not_interested` (unless the user wants a rewatch), the newest when
-  they asked for recent, otherwise one you can give a reason for. Play it with
+- **"pick one for me", "play one", "stream a ... movie" are asking.** Pass `unseen_only: true` to
+  `direct_stream_discover`: the titles the user has seen or marked not interested are then not in
+  the list at all (`left_out` counts them), so the one you choose is never one they watched.
+  Choose one title yourself: the newest when they asked for recent, otherwise one you can give a
+  reason for.
+- **A rewatch is never filtered.** "Rewatch one of Nolan's movies", "let's watch that Madelyn Cline
+  film again" is the same call without `unseen_only`, choosing among the ones marked `seen`. A
+  title the user names ("play The Map That Leads to You") goes straight to `direct_stream_play`,
+  seen or not: `unseen_only` is only for a title you choose.
+- **Everything was seen** (`titles` empty, `left_out` set): say so, name what they have seen, and
+  ask whether to watch one again. Do not pick one unasked. Play it with
   `direct_stream_play`, passing its `title_key` as `title`, and say which one you chose and why.
   When it answers `no_source`, choose another from the list, at most twice more, and say so.
 - **"what are ...?", "which ...?" alone are questions.** List the titles with their years and
@@ -126,30 +134,30 @@ Worked examples (the year is this year's):
 
 | The user said | Calls |
 | --- | --- |
-| let's watch some spanish series. pick one for me. find the one that was released this year | `direct_stream_discover {kind: "tv", language: "Spanish", year}`, then `direct_stream_play {title: <title_key>}` |
-| stream a johnny depp movie. the more recent the better | `direct_stream_discover {person: "Johnny Depp", role: "cast", kind: "movie", sort: "newest"}`, then play the first |
+| let's watch some spanish series. pick one for me. find the one that was released this year | `direct_stream_discover {kind: "tv", language: "Spanish", year, unseen_only: true}`, then `direct_stream_play {title: <title_key>}` |
+| stream a johnny depp movie. the more recent the better | `direct_stream_discover {person: "Johnny Depp", role: "cast", kind: "movie", sort: "newest", unseen_only: true}`, then play the first |
 | let's start resume one piece from episode 730 | `direct_stream_play {title: "one piece", absolute_episode: 730}` |
 | i wanna rewatch penguin. let's stream it | `direct_stream_play {title: "the penguin", kind: "tv", season: 1, episode: 1}` |
-| let's stream the most recent Shudder movie | `direct_stream_discover {kind: "movie", service: "Shudder", sort: "newest"}`, then play the first |
-| what are Blumhouse's movie that was released this year? play one | `direct_stream_discover {company: "Blumhouse", kind: "movie", year}`; list them, then play one |
-| play one of Nolan's movie | `direct_stream_discover {person: "Christopher Nolan", role: "director", kind: "movie"}`, then play one |
+| let's stream the most recent Shudder movie | `direct_stream_discover {kind: "movie", service: "Shudder", sort: "newest", unseen_only: true}`, then play the first |
+| what are Blumhouse's movie that was released this year? play one | `direct_stream_discover {company: "Blumhouse", kind: "movie", year}` (no `unseen_only`: they asked what there is); list them, then play one that is not marked `seen` or `not_interested` |
+| play one of Nolan's movie | `direct_stream_discover {person: "Christopher Nolan", role: "director", kind: "movie", unseen_only: true}`, then play one |
 | i watched House of The Dragon season 1 last year. start season 2 | `direct_stream_find {title: "house of the dragon"}`, `movies_mark {title: <title_key>, season: 1, watched: true}`, `direct_stream_play {title: <title_key>, season: 2, episode: 1}` |
-| i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
+| i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie", unseen_only: true}`, then play one |
 | let's watch James Gunn's superman | `direct_stream_discover {person: "James Gunn", role: "director", kind: "movie"}`, then `direct_stream_play {title: <the title_key of Superman>}` |
 
 The ten requests the codenames were written for:
 
 | The user said | Calls |
 | --- | --- |
-| play some chinese action movie TM | `direct_stream_discover {kind: "movie", language: "Chinese", genre: "action"}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| play some chinese action movie TM | `direct_stream_discover {kind: "movie", language: "Chinese", genre: "action", unseen_only: true}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
 | TM shadow edge is smooth af. let's play jackie chan's movie before this one now | The first sentence is a remark (The Shadow's Edge, 2025, played from a torrent) and its codename carries to the request. `direct_stream_discover {person: "Jackie Chan", role: "cast", kind: "movie", sort: "newest"}`; take the first film with a `release_date` before The Shadow's Edge's, leaving out galas and voice roles; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
 | continue OP TS | `direct_stream_play {title: "OP", provider: "torrent"}` (OP is a name the library holds for One Piece; no episode, so it carries on) |
 | there is a spanish movie called smth like looking through your window . TM | Work the title out first (Through My Window, 2022), then `direct_stream_play {title: "Through My Window", year: 2022, provider: "torrent"}` |
-| play one of indonesian horror movie released this year TM | `direct_stream_discover {kind: "movie", language: "Indonesian", genre: "horror", year}`, then play one with `provider: "torrent"` |
-| play one of thai comedy movie released on 2025 TM | `direct_stream_discover {kind: "movie", language: "Thai", genre: "comedy", year: 2025}`, then play one with `provider: "torrent"` |
-| play one of Kdrama with bloody action genre TS | `direct_stream_discover {kind: "tv", language: "Korean", genre: "action", keyword: ["gore", "bloody", "violence", "revenge"]}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
+| play one of indonesian horror movie released this year TM | `direct_stream_discover {kind: "movie", language: "Indonesian", genre: "horror", year, unseen_only: true}`, then play one with `provider: "torrent"` |
+| play one of thai comedy movie released on 2025 TM | `direct_stream_discover {kind: "movie", language: "Thai", genre: "comedy", year: 2025, unseen_only: true}`, then play one with `provider: "torrent"` |
+| play one of Kdrama with bloody action genre TS | `direct_stream_discover {kind: "tv", language: "Korean", genre: "action", keyword: ["gore", "bloody", "violence", "revenge"], unseen_only: true}`, then `direct_stream_play {title: <title_key>, provider: "torrent"}` |
 | what is the most recent park bo yeung project? let's watch it TS | `direct_stream_discover {person: "Park Bo-young", sort: "newest"}` (no `kind`: films and series together); the first entry where she is not Self; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
-| i miss korean mafia movies. play one released this year TM | `direct_stream_discover {kind: "movie", language: "Korean", genre: "crime", keyword: ["mafia", "gangster", "organized crime"], year}`, then play one with `provider: "torrent"` |
+| i miss korean mafia movies. play one released this year TM | `direct_stream_discover {kind: "movie", language: "Korean", genre: "crime", keyword: ["mafia", "gangster", "organized crime"], year, unseen_only: true}`, then play one with `provider: "torrent"` |
 | play House of Dragon season 2 TS | `direct_stream_play {title: "House of the Dragon", season: 2, provider: "torrent"}` |
 
 `movies_mark` with `season` marks that season's episodes finished, not the series, and it stores

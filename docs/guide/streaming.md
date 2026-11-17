@@ -196,7 +196,9 @@ Requests that name no title are in [Finding something to stream](#finding-someth
 - **`/direct-stream` streams even a film you have.** Without it, a library film plays in VLC.
 - **A question is a lookup**, and **a recommendation is not a request**.
 - **"Pick one for me" and "play one" are requests.** Claude chooses from the list it found, plays
-  that title and says which one and why.
+  that title and says which one and why. The list it chooses from never holds a title you have
+  seen or marked not interested. "Rewatch one of Nolan's movies" does choose among the ones you
+  have seen, and a title you name plays whether you have seen it or not.
 - **It continues where the last stream stopped.**
 
 ### `/create-streaming-skill`: another site
@@ -886,6 +888,11 @@ by its `title_key`.
 - **Every title is marked against the library**, in the shape `movies_person` uses: `in_library`,
   `state`, `seen`, `started`, plus `not_interested` and `stream.verified` (this machine has a
   source verified inside the freshness window; a series counts when any episode has one).
+- **`unseen_only` leaves out what you have seen or marked not interested**, and `left_out` counts
+  them (`{seen, not_interested}`). Claude passes it whenever it chooses a title for you, so a
+  watched film cannot be the pick; it leaves it out for a rewatch and for a question about what
+  there is. A list asked without it that still holds seen titles says so in `next`. When every
+  title that fits was seen, the list is empty and Claude says so and picks nothing.
 - **Only released titles.** The window never reaches past today, and a person's undated credits
   are left out: a title that is not out cannot be streamed.
 - **A person's titles come from their filmography**, filtered here by kind, role, year and
@@ -912,7 +919,8 @@ The ten requests the tool was built for, each run against the fake TMDB of
 | i want to watch Joko Anwar's movie. play one | `direct_stream_discover {person: "Joko Anwar", role: "director", kind: "movie"}`, then play one |
 | let's watch James Gunn's superman | `direct_stream_discover {person: "James Gunn", role: "director", kind: "movie"}`, then `direct_stream_play {title: <the title_key of Superman>}` |
 
-When the title Claude picked answers `no_source`, it picks another from the list, at most twice
+Where Claude chooses the title, the lookup also carries `unseen_only: true`. When the title Claude
+picked answers `no_source`, it picks another from the list, at most twice
 more. After a season is marked finished with `movies_mark`, a series named without an episode
 starts at the first episode that is not finished, so "continue House of the Dragon" also starts
 season 2.

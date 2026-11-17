@@ -300,7 +300,7 @@ const DISCOVER_DESCRIPTION =
   'A studio\'s name stands for every company that starts with it ("Blumhouse" is Blumhouse Productions, Blumhouse Television and the others, listed in filters.companies), unless one company has exactly that name; company_id narrows to one. person cannot be combined with company or service. ' +
   'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
   'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
-  'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one"), choose one yourself, play it and say which and why; when they only asked what there is, list the titles and start nothing. ' +
+  'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one", "let\'s watch a Madelyn Cline movie"), pass unseen_only true: the titles they have seen or marked not interested are then left out of the list (left_out counts them), so the one you choose is never one they watched; choose one yourself, play it and say which and why. Leave unseen_only out only when they ask to rewatch ("rewatch one of Nolan\'s") or only ask what there is: then list the titles and start nothing. A title the owner names is played with direct_stream_play whether they have seen it or not. ' +
   'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
 
 const DIALOGUE_DESCRIPTION =
@@ -884,7 +884,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
           .optional()
           .describe(`With service: the two-letter country whose catalogue is read. Default ${DISCOVER_DEFAULT_REGION}.`),
         sort: z.enum(['popular', 'newest']).optional().describe('"popular" (default) or "newest" (release date, newest first).'),
-        unseen_only: z.boolean().optional().describe('true: leave out the titles the owner has seen or marked not interested.'),
+        unseen_only: z.boolean().optional().describe('true: leave out the titles the owner has seen or marked not interested. Pass it whenever you choose a title for the owner; leave it out for a rewatch and for a question about what there is.'),
         limit: z
           .number()
           .int()
@@ -1161,19 +1161,33 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
       tmdb_url,
     };
   });
-  const kept = all.filter((t) => !(args.unseen_only ?? false) || (!t.seen && !t.not_interested));
+  const unseenOnly = args.unseen_only ?? false;
+  // What the owner has seen or does not want: left out of a list the caller chooses from, counted either way.
+  const known = { seen: all.filter((t) => t.seen).length, not_interested: all.filter((t) => t.not_interested && !t.seen).length };
+  const knownCount = known.seen + known.not_interested;
+  const kept = all.filter((t) => !unseenOnly || (!t.seen && !t.not_interested));
   const titles = kept.slice(0, limit);
   return {
     filters,
     ...others,
     count: titles.length,
     ...(kept.length > titles.length ? { more: kept.length - titles.length } : {}),
+    ...(unseenOnly && knownCount > 0 ? { left_out: known } : {}),
     titles,
     next:
-      titles.length === 0
+      titles.length === 0 && unseenOnly && knownCount > 0
+        ? `Nothing was started. Every title that fits (${knownCount}) is one the owner has seen or marked not interested, so there is none to choose. Say so and start nothing; when they want to watch one again, a rewatch is this call without unseen_only, or direct_stream_play with the title they name.`
+        : titles.length === 0
         ? 'No title passes these filters (titles not released yet are left out). Say so; try fewer filters, another year, or one of the other_ entries.'
         : filters.keywords_dropped === true
           ? 'Nothing was started. No title carries the keyword with these filters (TMDB tags few titles), so this list is NOT filtered by it: choose from it by overview and by what you know of the titles (check with a web search when unsure), say that you did, and play your choice with direct_stream_play and its title_key. If nothing listed fits what the owner described, find a title that does yourself and play it by name and year.'
-          : 'Nothing was started. To stream one, call direct_stream_play with its title_key as title. If the owner asked you to choose ("pick one for me", "play one"), choose one they have not seen and did not mark not_interested, play it, and say which one and why. If they only asked what there is, list the titles with their years and start nothing.',
+          : 'Nothing was started. To stream one, call direct_stream_play with its title_key as title. If the owner asked you to choose ("pick one for me", "play one"), choose one they have not seen and did not mark not_interested, play it, and say which one and why. If they only asked what there is, list the titles with their years and start nothing.' +
+            (unseenOnly
+              ? knownCount > 0
+                ? ` ${knownCount} title(s) the owner has seen or marked not interested were left out (left_out).`
+                : ''
+              : knownCount > 0
+                ? ` This list still holds ${knownCount} title(s) the owner has seen or marked not interested (seen, not_interested): when you are choosing for them and they did not ask to rewatch, call again with unseen_only true and choose from that list.`
+                : ''),
   };
 }
