@@ -254,6 +254,13 @@ file is here. Without those words a library film plays in VLC (`movies_continue`
   `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
   With `provider: "cloud"` (NTM, NTS) no torrent was tried, and with `provider: "torrent"` (TM, TS)
   no cloud provider: say which, and offer the other source.
+  - **When an attempt is `Index: ext: bot_check`** (a torrent play, TM/TS), ext.to's Cloudflare gate
+    stopped the search, and it only clears when the owner solves it by hand in the streaming Chrome.
+    Offer to open it: run `node claude/streaming/torrent/cli.mjs ext gate` from the mcp-notes
+    checkout (it brings ext's tab to the front; wait for its `{ cleared }` answer), tell the owner
+    to solve the "Just a moment" / Turnstile check in that window, and once it answers `cleared: true`
+    retry the same `direct_stream_play` — the daemon's ext search then rides the cookie the Chrome
+    kept. Do this only when the owner agrees; never forge or click the challenge for them.
 - **Error `torrent_off`:** torrents are off on this machine (`NOTESD_TORRENT=off`); say so and offer
   to stream it from a cloud provider (call again without `provider`).
 - **`direct_stream_off`:** direct streaming is off on this daemon (or this is the machine

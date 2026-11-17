@@ -6,6 +6,7 @@
 // Usage: cli.mjs --sites
 //        cli.mjs <site> search --title <words> [--year <n>] [--season <n> --episode <n>] [--imdb <tt...>] [--origin <url>] [--deadline-s <n>]
 //        cli.mjs <site> magnets [--origin <url>] [--deadline-s <n>] <release page url>...
+//        cli.mjs <site> gate [--origin <url>] [--deadline-s <n>]   # foreground the site so the owner solves its Cloudflare challenge
 //        cli.mjs <site> <title words> [year] [--season <n> --episode <n>] [--imdb <tt...>] [--origin <url>]
 // A failure is { ok: false, site, origin, error, detail }: error is bot_check, no_chrome,
 // chrome_not_reachable, cdp_failed, no_title, usage or site_error.
@@ -13,8 +14,9 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { ChromeError } from '../chrome.mjs';
 import { parseQuery } from '../match.mjs';
-import { BotCheckError } from './browser.mjs';
+import { askInTab, BotCheckError, foregroundTab, secondsLeft } from './browser.mjs';
 import { parseMagnet, sameTitle } from './match.mjs';
+import { isBotCheckPage } from './page.mjs';
 import { TORRENT_SITE_MODULES } from './sites/index.mjs';
 
 /** Both steps of one site together, when the caller gives no --deadline-s. */
@@ -95,7 +97,38 @@ async function readMagnets(site, origin, paths, deadline) {
   });
 }
 
-export async function main(argv, { sites = TORRENT_SITE_MODULES } = {}) {
+/** The expression evaluated in the tab: whether it still shows a bot-check page, with its title. */
+export function gateExpression() {
+  return `(() => {
+  const isBotCheckPage = ${isBotCheckPage.toString()};
+  return { bot_check: isBotCheckPage(document), title: document.title, url: location.href };
+})()`;
+}
+
+/**
+ * The `gate` command: brings the site's tab to the front of the streaming Chrome so the owner can
+ * solve a Cloudflare challenge by hand, then watches the tab until it is no longer a bot-check page
+ * or the deadline passes. The cf_clearance cookie the profile keeps then lets the daemon's later
+ * background searches through. Returns { cleared, title }. Throws ChromeError.
+ */
+export async function clearGate(site, origin, deadline, { foreground = foregroundTab, ask = askInTab, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  await foreground(origin, { timeoutS: secondsLeft(deadline) });
+  let last = { bot_check: true, title: '' };
+  while (Date.now() < deadline) {
+    try {
+      last = await ask(origin, gateExpression(), { timeoutS: secondsLeft(deadline) });
+    } catch (err) {
+      // While a challenge holds the only tab, cdp.ps1 answers no_tab (a BotCheckError here): keep waiting.
+      if (!(err instanceof BotCheckError)) throw err;
+      last = { bot_check: true, title: last.title };
+    }
+    if (last && last.bot_check === false) return { cleared: true, title: last.title ?? '' };
+    await sleep(2000);
+  }
+  return { cleared: false, title: last?.title ?? '' };
+}
+
+export async function main(argv, { sites = TORRENT_SITE_MODULES, gate = clearGate } = {}) {
   const [siteName, ...rest] = argv;
   if (siteName === '--sites') {
     print(Object.values(sites).map((site) => ({ name: site.name, label: site.label, origin: site.defaultOrigin })));
@@ -106,7 +139,7 @@ export async function main(argv, { sites = TORRENT_SITE_MODULES } = {}) {
     print({ ok: false, error: 'usage', detail: `unknown site "${siteName ?? ''}"; known: ${Object.keys(sites).join(', ')}` });
     return 2;
   }
-  const command = rest[0] === 'search' || rest[0] === 'magnets' ? rest[0] : 'find';
+  const command = rest[0] === 'search' || rest[0] === 'magnets' || rest[0] === 'gate' ? rest[0] : 'find';
   const options = readOptions(command === 'find' ? rest : rest.slice(1));
   const origin = options.origin ?? site.defaultOrigin;
   const fail = (error, detail, code) => {
@@ -116,6 +149,11 @@ export async function main(argv, { sites = TORRENT_SITE_MODULES } = {}) {
   if (options.bad !== null) return fail('usage', options.bad, 2);
   const deadline = Date.now() + (options.deadlineS ?? DEFAULT_DEADLINE_S) * 1000;
   try {
+    if (command === 'gate') {
+      const { cleared, title } = await gate(site, origin, deadline);
+      print({ ok: true, site: site.name, origin, cleared, title });
+      return 0;
+    }
     if (command === 'magnets') {
       if (options.words.length === 0 || options.words.length > MAX_PAGES_ASKED) return fail('usage', `magnets takes 1 to ${MAX_PAGES_ASKED} release page addresses`, 2);
       const paths = [];

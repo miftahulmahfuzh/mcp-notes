@@ -1701,6 +1701,20 @@ fails never fails the play.
 - **ext.to** is asked by the title's IMDb id, most seeds first, with `S02E03` for an episode.
   Cloudflare answers a script's request with a check, so the tab goes to the search page itself, as
   a person would.
+- **ext.to's Cloudflare gate, and clearing it by hand.** ext serves a Turnstile managed challenge
+  (`cf-mitigated: challenge`), which cannot complete in a background, minimized tab: its JS is
+  throttled and the widget never renders, so an automated search stays on "Just a moment" and the
+  attempt is `bot_check`. The gate is cleared once, by the owner, in the streaming Chrome:
+
+      node claude/streaming/torrent/cli.mjs ext gate
+
+  brings ext's tab to the front and restores the window (`tab.ps1 -Activate`), the owner solves the
+  Turnstile, and the `cf_clearance` cookie the Chrome profile (`notesd-stream-chrome`) keeps lets
+  the daemon's later background searches of ext through until it expires. The command answers
+  `{ cleared, title }` once the page is no longer a challenge, or at its deadline. A bot check never
+  counts toward the index skip, so the next play asks ext again right after. Nothing is clicked for
+  the owner and no challenge token is forged: the browser is the owner's own, and the human solves
+  the widget.
 - **Magnet links** come from the release pages of the five best-seeded rows that are seeded and
   are not a dub, a cinema copy or 3D. On 1337x the page carries the link. On ext.to the page
   gives it through its own "Copy magnet link" request.
@@ -1713,6 +1727,7 @@ To see what a site lists, by hand:
 
     node claude/streaming/torrent/cli.mjs 1337x sintel 2010
     node claude/streaming/torrent/cli.mjs ext sintel 2010 --imdb tt1727587
+    node claude/streaming/torrent/cli.mjs ext gate          # solve ext's Cloudflare challenge by hand, once
 
 ## Where the code is
 
@@ -1726,7 +1741,7 @@ To see what a site lists, by hand:
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
-| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs`, one module per site, `tab.ps1` (a tab in the background); the finder's index per site |
+| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |

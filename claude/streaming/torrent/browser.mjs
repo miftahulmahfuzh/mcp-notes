@@ -59,6 +59,34 @@ export async function ensureBackgroundTab(origin, { timeoutS = 20 } = {}) {
 }
 
 /**
+ * Brings the site's tab to the front of the streaming Chrome and restores its window, so the owner
+ * can solve a Cloudflare challenge by hand (tab.ps1 -Activate). Starts that Chrome on the site when
+ * it is not running. Throws ChromeError like ensureBackgroundTab. { created, activated }.
+ */
+export async function foregroundTab(origin, { timeoutS = 20 } = {}) {
+  let stdout;
+  try {
+    const { stdout: winScript } = await run('wslpath', ['-w', TAB_SCRIPT]);
+    ({ stdout } = await run(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', winScript.trim(), '-Origin', origin, '-TimeoutS', String(timeoutS), '-Activate'], {
+      cwd: existsSync('/mnt/c') ? '/mnt/c' : undefined,
+      timeout: (timeoutS + 15) * 1000,
+    }));
+  } catch (err) {
+    stdout = err?.stdout;
+    if (!stdout) throw new ChromeError('no_chrome', `cannot run PowerShell: ${String(err?.message ?? err).split('\n')[0]}`);
+  }
+  const line = String(stdout).trim().split(/\r?\n/).pop() ?? '';
+  let reply;
+  try {
+    reply = JSON.parse(line);
+  } catch {
+    throw new Error(`unreadable reply from tab.ps1: ${line.slice(0, 200)}`);
+  }
+  if (reply.cdp_error) throw new ChromeError(reply.cdp_error, reply.detail ?? '');
+  return { created: reply.created === true, activated: reply.activated === true };
+}
+
+/**
  * Evaluates one expression in the site's tab. cdp.ps1 answers no_tab when the only page on the site
  * is still "Just a moment...", which is a bot check.
  */

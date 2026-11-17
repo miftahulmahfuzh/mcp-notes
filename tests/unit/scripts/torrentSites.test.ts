@@ -7,7 +7,7 @@ import { ChromeError } from '../../../claude/streaming/chrome.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { BotCheckError } from '../../../claude/streaming/torrent/browser.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { main, readOptions } from '../../../claude/streaming/torrent/cli.mjs';
+import { clearGate, gateExpression, main, readOptions } from '../../../claude/streaming/torrent/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { parseMagnet, parseSize, releaseNames, sameTitle, searchWords, toRow } from '../../../claude/streaming/torrent/match.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -151,6 +151,20 @@ describe('bot checks', () => {
     expect(isBotCheckPage(page('ext-challenge.html'))).toBe(true);
     for (const name of ['1337x-search-sintel.html', '1337x-release.html', 'ext-search-sintel.html', 'ext-release-sintel.html']) expect(isBotCheckPage(page(name))).toBe(false);
   });
+
+  it('the gate expression compiles', () => {
+    parses(gateExpression());
+  });
+
+  it('knows a Turnstile managed challenge by its inline options script, without the title', () => {
+    const turnstile = (html: string): any => new (globalThis as any).DOMParser().parseFromString(html, 'text/html');
+    // ext's current gate: no "Just a moment" title, only the inline window._cf_chl_opt script and the widget.
+    expect(isBotCheckPage(turnstile('<html><head><title>ext.to</title></head><body><div id="cf-chl-widget"></div></body></html>'))).toBe(true);
+    expect(isBotCheckPage(turnstile('<html><body><script>window._cf_chl_opt = { cvId: "3" };</script></body></html>'))).toBe(true);
+    expect(isBotCheckPage(turnstile('<html><body><div class="cf-turnstile"></div></body></html>'))).toBe(true);
+    // A real result page that merely mentions the words in text is not a challenge.
+    expect(isBotCheckPage(turnstile('<html><head><title>Search</title></head><body><p>No cf_chl_opt here.</p></body></html>'))).toBe(false);
+  });
 });
 
 describe('matching a release name to the title', () => {
@@ -288,6 +302,51 @@ describe('cli.mjs', () => {
     expect(out.query).toEqual({ title: 'sintel', year: 2010, season: null, episode: null, imdb: null });
     expect(out.releases).toEqual([{ ...SINTEL, info_hash: HASH, trackers: ['udp://tracker.example:1337'], magnet: expect.any(String), error: null }]);
     expect(site.magnets).toHaveBeenCalledWith(ORIGIN, ['/torrent/1/sintel-720p/'], { deadline: expect.any(Number) });
+  });
+
+  it('gate foregrounds the site and reports it cleared once the challenge is gone', async () => {
+    const site = fakeSite();
+    const gate = vi.fn(async () => ({ cleared: true, title: 'ext.to' }));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const code = await main(['1337x', 'gate', '--origin', ORIGIN, '--deadline-s', '30'], { sites: { '1337x': site }, gate });
+      const out = JSON.parse(String(log.mock.calls.at(-1)?.[0]));
+      expect(code).toBe(0);
+      expect(out).toMatchObject({ ok: true, site: '1337x', origin: ORIGIN, cleared: true, title: 'ext.to' });
+      expect(gate).toHaveBeenCalledWith(site, ORIGIN, expect.any(Number));
+      // The site's own search/magnets are not touched: the gate only clears the challenge.
+      expect(site.search).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('clearGate foregrounds the tab, waits out the challenge, and reports whether it cleared', async () => {
+    const foreground = vi.fn(async () => ({ created: false, activated: true }));
+    const answers = [
+      { bot_check: true, title: 'Just a moment...' },
+      { bot_check: true, title: 'Just a moment...' },
+      { bot_check: false, title: 'ext.to - search' },
+    ];
+    let i = 0;
+    const ask = vi.fn(async () => answers[Math.min(i++, answers.length - 1)]);
+    const sleep = vi.fn(async () => {});
+    const cleared = await clearGate(fakeSite(), ORIGIN, Date.now() + 60_000, { foreground, ask, sleep });
+    expect(cleared).toEqual({ cleared: true, title: 'ext.to - search' });
+    expect(foreground).toHaveBeenCalledOnce();
+    expect(ask).toHaveBeenCalledTimes(3);
+
+    // A challenge that holds the only tab answers no_tab (a BotCheckError): clearGate waits, it is not fatal.
+    let n = 0;
+    const askBot = vi.fn(async () => {
+      if (n++ === 0) throw new BotCheckError('no page got past its check');
+      return { bot_check: false, title: 'through' };
+    });
+    expect(await clearGate(fakeSite(), ORIGIN, Date.now() + 60_000, { foreground, ask: askBot, sleep })).toEqual({ cleared: true, title: 'through' });
+
+    // Still a challenge at the deadline: not cleared, and the last title is reported.
+    const stuck = await clearGate(fakeSite(), ORIGIN, Date.now() + 10, { foreground, ask: vi.fn(async () => ({ bot_check: true, title: 'Just a moment...' })), sleep });
+    expect(stuck).toEqual({ cleared: false, title: 'Just a moment...' });
   });
 
   it('--sites lists the real modules', async () => {
