@@ -192,7 +192,11 @@ function onSite(url, page) {
 export function isBotCheck(answer) {
   if (answer.headers?.get?.('cf-mitigated') === 'challenge') return true;
   const head = answer.text.slice(0, 20_000);
-  return /<title>\s*(?:Just a moment|Attention Required|Checking your browser)/i.test(head) || /_cf_chl_opt|challenge-platform/.test(head);
+  // Not a bare "challenge-platform": plenty of ordinary pages load Cloudflare's passive JS
+  // Detection beacon (/cdn-cgi/challenge-platform/scripts/jsd/main.js) for bot scoring without
+  // ever blocking anything. _cf_chl_opt is the actual challenge's own config object, which only
+  // appears on a page Cloudflare really replaced with a challenge.
+  return /<title>\s*(?:Just a moment|Attention Required|Checking your browser)/i.test(head) || /_cf_chl_opt\s*=/.test(head);
 }
 
 async function readCapped(res, max) {
