@@ -180,10 +180,15 @@ describe('outside subtitles for a cloud stream', () => {
 
 describe('a cloud session and its outside subtitle (the service and the routes)', () => {
   let dir = '';
+  // The background Wyzie Synced write outlives the play; await it before clearing the files, or its
+  // write races the rmdir (ENOTEMPTY).
+  let outsideForCleanup: OutsideSubtitles | null = null;
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'notesd-outside-svc-'));
+    outsideForCleanup = null;
   });
   afterEach(async () => {
+    await outsideForCleanup?.idle();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -221,6 +226,7 @@ describe('a cloud session and its outside subtitle (the service and the routes)'
       log: () => undefined,
     });
     const outside = new OutsideSubtitles({ shelf, services: { baseUrl: null, wyzie: { baseUrl: WYZIE, key: KEY }, fetch: fetchImpl }, sync, imdbId: async () => 'tt31416062', log: () => undefined });
+    outsideForCleanup = outside;
     const svc = new DirectStreamService({
       repo: { providers: async () => [], healthFor: async () => [], recordAttempts: async () => undefined } as unknown as DirectStreamRepo,
       runner: async (args: string[]) => (args[0] === 'open' ? { ok: true } : source(o.subtitles ?? [])),

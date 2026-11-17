@@ -68,6 +68,8 @@ export class OutsideSubtitles {
   private readonly waiting = new WeakSet<OutsideSession>();
   /** Sessions whose sync was started (or found done). */
   private readonly synced = new WeakSet<OutsideSession>();
+  /** The background syncs still running, so a shutdown (or a test) can wait for their last write. */
+  private readonly syncing = new Set<Promise<unknown>>();
   private readonly now: () => number;
   private readonly log: (line: string) => void;
 
@@ -167,7 +169,7 @@ export class OutsideSubtitles {
     this.synced.add(session);
     const key = titleKey(session.ref);
     const dir = this.opts.shelf.dir(key);
-    void this.opts
+    const running = this.opts
       .imdbId(session.ref)
       .catch(() => null)
       .then((imdbId) =>
@@ -185,6 +187,14 @@ export class OutsideSubtitles {
             save: (vtt) => this.opts.shelf.save(session.ref, TITLE_SYNCED_NAME, vtt, SYNCED_LABEL),
           },
         }),
-      );
+      )
+      .catch(() => undefined)
+      .finally(() => this.syncing.delete(running));
+    this.syncing.add(running);
+  }
+
+  /** Waits for every background sync to finish its last write. For a clean shutdown, and so a test can settle before it clears its files. */
+  async idle(): Promise<void> {
+    await Promise.allSettled([...this.syncing]);
   }
 }
