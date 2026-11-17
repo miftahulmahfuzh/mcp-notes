@@ -43,7 +43,7 @@ export function playErrorResponse(c: Context, err: unknown): Response {
   }
 }
 
-export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'> & Partial<Pick<AppDeps, 'streamLive' | 'directStream' | 'moviesDb'>>): Hono {
+export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'moviesHealth'> & Partial<Pick<AppDeps, 'streamLive' | 'directStream'>>): Hono {
   const r = new Hono();
 
   r.get('/api/movies/player', async (c) => {
@@ -86,7 +86,7 @@ export function moviesPlayRoutes(deps: Pick<AppDeps, 'db' | 'moviesPlayer' | 'mo
     const player = deps.moviesPlayer ?? null;
     if (player === null) return c.json(MOVIES_OFF, 503);
     try {
-      return c.json(await continueTitle({ db: deps.moviesDb ?? deps.db, player }, body.data.title ?? null));
+      return c.json(await continueTitle({ db: deps.db, player }, body.data.title ?? null));
     } catch (err) {
       return playErrorResponse(c, err);
     }

@@ -55,11 +55,14 @@ DATA_DIR="${NOTES_DATA_DIR:-$HOME/mcp-notes-data}"
 PORT=7317
 HEALTH_URL="http://127.0.0.1:$PORT/health"
 PLAYER_URL="http://127.0.0.1:$PORT/api/movies/player"
-MOVIES_DB_CONTAINER=mcp-notes-pg-movies
-MOVIES_DB_IMAGE=pgvector/pgvector:pg16
-MOVIES_DB_PORT=55437
-MOVIES_DB_NAME=mcp_notes_movies
-MOVIES_DB_PASSWORD=mcpnotes
+LOCAL_DB_CONTAINER=mcp-notes-pg
+LOCAL_DB_IMAGE=pgvector/pgvector:pg16
+LOCAL_DB_PORT=55437
+LOCAL_DB_NAME=mcp_notes
+LOCAL_DB_PASSWORD=mcpnotes
+# What an earlier version called them, when the container held the movie tables only.
+LOCAL_DB_OLD_CONTAINER=mcp-notes-pg-movies
+LOCAL_DB_OLD_NAME=mcp_notes_movies
 # EX_TEMPFAIL: the daemon is busy (something plays or is being started); try again later.
 BUSY_EXIT=75
 FORCE="${NOTES_INSTALL_FORCE:-0}"
@@ -214,48 +217,96 @@ make_data_dir() {
   mkdir -p "$DATA_DIR"
 }
 
-# This machine's own Postgres for the movie_* and stream_* tables (MOVIES_DATABASE_URL): a Docker
-# container with a named volume that Docker starts again after a reboot. The daemon migrates it at
-# start and copies the shared database's movie tables into it once. Idempotent; any failure warns and
-# returns, and the movie tables then stay in the shared database. A MOVIES_DATABASE_URL already in
-# .env.local that names another database is the owner's and is left alone.
-install_movies_db() {
-  local url="postgres://postgres:$MOVIES_DB_PASSWORD@127.0.0.1:$MOVIES_DB_PORT/$MOVIES_DB_NAME" current state i
+# True when the database named DB exists in the local database container.
+local_db_has() {
+  docker exec "$LOCAL_DB_CONTAINER" psql -U postgres -Atc "select 1 from pg_database where datname = '$1'" 2>/dev/null | grep -q '^1$'
+}
+
+# notesd runs on a Postgres on this machine: a Docker container with a named volume that Docker
+# starts again after a reboot. The daemon migrates it at every start. This step creates the
+# container (or takes over the one an earlier version made for the movie tables only), points
+# DATABASE_URL in .env.local at it, and keeps the old shared (Neon) address as IMPORT_DATABASE_URL:
+# the daemon copies that database in once, as soon as it answers, and never asks it again. The file
+# is copied to the data dir first. Idempotent; any failure warns and returns with .env.local as it
+# was. A DATABASE_URL that already names some other Postgres that is not Neon is the owner's and is
+# left alone.
+install_local_db() {
+  local url="postgres://postgres:$LOCAL_DB_PASSWORD@127.0.0.1:$LOCAL_DB_PORT/$LOCAL_DB_NAME" current other old state i tmp backup
   [[ -f "$ENV_LOCAL" ]] || return 0
-  if is_off "$(env_local_value NOTESD_MOVIES)"; then
-    return 0
-  fi
-  current="$(env_local_value MOVIES_DATABASE_URL)"
-  if [[ -n "$current" && "$current" != "$url" ]]; then
-    log "movies database: .env.local names its own MOVIES_DATABASE_URL, leaving it alone"
+  current="$(env_local_value DATABASE_URL)"
+  other="$(env_local_value DATABASE_URL_UNPOOLED)"
+  if [[ -n "$current" && "$current" != "$url" && "$current" != *neon.tech* ]]; then
+    log "local database: .env.local names its own DATABASE_URL, leaving it alone"
     return 0
   fi
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-    warn "movies database: docker is not usable here, so the movie tables stay in the shared database. Install Docker and re-run, or set MOVIES_DATABASE_URL in $ENV_LOCAL to a Postgres on this machine."
+    warn "local database: docker is not usable here, so notesd stays on the database $ENV_LOCAL names. Install Docker and re-run, or set DATABASE_URL to a Postgres on this machine."
     return 0
   fi
-  if ! state="$(docker inspect -f '{{.State.Running}}' "$MOVIES_DB_CONTAINER" 2>/dev/null)"; then
-    log "movies database: creating container $MOVIES_DB_CONTAINER (127.0.0.1:$MOVIES_DB_PORT)"
-    docker run -d --name "$MOVIES_DB_CONTAINER" --restart unless-stopped \
-      -e POSTGRES_PASSWORD="$MOVIES_DB_PASSWORD" -e POSTGRES_DB="$MOVIES_DB_NAME" \
-      -p "127.0.0.1:$MOVIES_DB_PORT:5432" -v "$MOVIES_DB_CONTAINER:/var/lib/postgresql/data" \
-      "$MOVIES_DB_IMAGE" >/dev/null || { warn "movies database: could not create $MOVIES_DB_CONTAINER; the movie tables stay in the shared database."; return 0; }
-  elif [[ "$state" != "true" ]]; then
-    log "movies database: starting container $MOVIES_DB_CONTAINER"
-    docker start "$MOVIES_DB_CONTAINER" >/dev/null || { warn "movies database: could not start $MOVIES_DB_CONTAINER."; return 0; }
+  if ! docker inspect "$LOCAL_DB_CONTAINER" >/dev/null 2>&1 && docker inspect "$LOCAL_DB_OLD_CONTAINER" >/dev/null 2>&1; then
+    log "local database: renaming container $LOCAL_DB_OLD_CONTAINER to $LOCAL_DB_CONTAINER"
+    docker rename "$LOCAL_DB_OLD_CONTAINER" "$LOCAL_DB_CONTAINER" || { warn "local database: could not rename $LOCAL_DB_OLD_CONTAINER."; return 0; }
   fi
+  if ! state="$(docker inspect -f '{{.State.Running}}' "$LOCAL_DB_CONTAINER" 2>/dev/null)"; then
+    log "local database: creating container $LOCAL_DB_CONTAINER (127.0.0.1:$LOCAL_DB_PORT)"
+    docker run -d --name "$LOCAL_DB_CONTAINER" --restart unless-stopped \
+      -e POSTGRES_PASSWORD="$LOCAL_DB_PASSWORD" -e POSTGRES_DB="$LOCAL_DB_NAME" \
+      -p "127.0.0.1:$LOCAL_DB_PORT:5432" -v "$LOCAL_DB_CONTAINER:/var/lib/postgresql/data" \
+      "$LOCAL_DB_IMAGE" >/dev/null || { warn "local database: could not create $LOCAL_DB_CONTAINER; notesd stays on the database $ENV_LOCAL names."; return 0; }
+  elif [[ "$state" != "true" ]]; then
+    log "local database: starting container $LOCAL_DB_CONTAINER"
+    docker start "$LOCAL_DB_CONTAINER" >/dev/null || { warn "local database: could not start $LOCAL_DB_CONTAINER."; return 0; }
+  fi
+  state=""
   for i in $(seq 1 60); do
-    if docker exec "$MOVIES_DB_CONTAINER" pg_isready -U postgres -d "$MOVIES_DB_NAME" >/dev/null 2>&1; then
-      if [[ -z "$current" ]]; then
-        log "movies database: adding MOVIES_DATABASE_URL to $ENV_LOCAL"
-        printf '\n# The movie and stream tables live in a database on this machine (scripts/install.sh).\nMOVIES_DATABASE_URL=%s\n' "$url" >> "$ENV_LOCAL"
-      fi
-      log "movies database: $MOVIES_DB_CONTAINER is ready"
-      return 0
+    if docker exec "$LOCAL_DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+      state=ready
+      break
     fi
     sleep 1
   done
-  warn "movies database: $MOVIES_DB_CONTAINER did not become ready; the movie tables stay in the shared database until the next run."
+  if [[ "$state" != ready ]]; then
+    warn "local database: $LOCAL_DB_CONTAINER did not become ready; notesd stays on the database $ENV_LOCAL names until the next run."
+    return 0
+  fi
+  if ! local_db_has "$LOCAL_DB_NAME"; then
+    if local_db_has "$LOCAL_DB_OLD_NAME"; then
+      log "local database: renaming database $LOCAL_DB_OLD_NAME to $LOCAL_DB_NAME"
+      docker exec "$LOCAL_DB_CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 \
+        -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = '$LOCAL_DB_OLD_NAME' and pid <> pg_backend_pid()" \
+        -c "alter database $LOCAL_DB_OLD_NAME rename to $LOCAL_DB_NAME" >/dev/null \
+        || { warn "local database: could not rename database $LOCAL_DB_OLD_NAME."; return 0; }
+    else
+      docker exec "$LOCAL_DB_CONTAINER" psql -U postgres -q -v ON_ERROR_STOP=1 -c "create database $LOCAL_DB_NAME" >/dev/null \
+        || { warn "local database: could not create database $LOCAL_DB_NAME."; return 0; }
+    fi
+  fi
+  if [[ "$current" != "$url" ]]; then
+    # The direct host of the two, when there is one: the copy reads whole tables.
+    old="$(env_local_value IMPORT_DATABASE_URL)"
+    if [[ -z "$old" ]]; then
+      for i in "$other" "$current"; do
+        if [[ -n "$i" && "$i" != *-pooler* ]]; then old="$i"; break; fi
+      done
+      [[ -n "$old" ]] || old="${current:-$other}"
+    fi
+    mkdir -p "$DATA_DIR"
+    backup="$DATA_DIR/env.local.backup-$(date +%Y%m%d-%H%M%S)"
+    cp "$ENV_LOCAL" "$backup" && chmod 600 "$backup" || { warn "local database: could not copy $ENV_LOCAL to $backup; it is left as it was."; return 0; }
+    tmp="$(mktemp)"
+    grep -vE '^[[:space:]]*(DATABASE_URL|DATABASE_URL_UNPOOLED|MOVIES_DATABASE_URL|IMPORT_DATABASE_URL)=|^# (The movie and stream tables live in a database on this machine|notesd runs on a Postgres on this machine|The old shared database, copied in once)' "$ENV_LOCAL" > "$tmp" || true
+    {
+      printf '\n# notesd runs on a Postgres on this machine (scripts/install.sh).\nDATABASE_URL=%s\n' "$url"
+      if [[ -n "$old" ]]; then
+        printf '# The old shared database, copied in once when it answers and never asked again.\nIMPORT_DATABASE_URL=%s\n' "$old"
+      fi
+    } >> "$tmp"
+    # Written through, not moved over: in a worktree .env.local is a link to the main checkout's.
+    cat "$tmp" > "$ENV_LOCAL"
+    rm -f "$tmp"
+    log "local database: $ENV_LOCAL now names it (the file as it was: $backup)"
+  fi
+  log "local database: $LOCAL_DB_CONTAINER is ready"
 }
 
 # The last value of NAME in .env.local (quotes stripped), or nothing. The daemon reads the same file.
@@ -609,8 +660,9 @@ main() {
   install_deps
   build
   make_data_dir
-  install_movies_db
   install_whisper
+  # Last before the restart: renaming the database cuts the running daemon's connections.
+  install_local_db
   install_unit
   enable_linger
   wait_for_health

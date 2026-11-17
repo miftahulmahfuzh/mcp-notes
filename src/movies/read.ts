@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
-import { notesDbOf, type Db } from '../db/client.js';
+import type { Db } from '../db/client.js';
 import {
   movieCompanies,
   movieCredits,
@@ -931,7 +931,7 @@ function castOf(rows: readonly CreditRow[], ctx: ReadContext): CastCredit[] {
 /** The review text and note id, only while the linked note is live. */
 async function reviewOf(db: Db, noteId: string | null): Promise<{ review: string; noteId: string | null }> {
   if (noteId === null) return { review: '', noteId: null };
-  const [row] = await notesDbOf(db)
+  const [row] = await db
     .select({ body: notes.body })
     .from(notes)
     .where(and(eq(notes.id, noteId), isNull(notes.deletedAt)))

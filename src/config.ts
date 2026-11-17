@@ -626,13 +626,20 @@ export const DEFAULT_MOVIES_CONFIG: MoviesConfig = {
 }
 
 export interface Config {
-  /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
+  /** Runtime connection string: this machine's own Postgres in production (see `loadConfig`). */
   databaseUrl: string
   /**
-   * This machine's own database for the movie_* and stream_* tables (MOVIES_DATABASE_URL); null: they
-   * or absent: they live in `databaseUrl` with the notes.
+   * True when `databaseUrl` is this machine's own Postgres named in `.env.local` (what
+   * scripts/install.sh sets up): the daemon waits for it at start and applies the migrations. False
+   * or absent for a Neon host and for a URL the real environment handed in (tests, a throwaway
+   * daemon), whose caller looks after its own schema.
    */
-  moviesDatabaseUrl?: string | null
+  localDatabase?: boolean
+  /**
+   * The old shared database (IMPORT_DATABASE_URL), read once: what it holds is copied into
+   * `databaseUrl` as soon as it answers (src/db/sharedImport.ts). Null or absent: nothing to copy.
+   */
+  importDatabaseUrl?: string | null
   /** `NOTESD_PORT`, default 7317. 0 means "any free port" (tests). */
   port: number
   /** Always 127.0.0.1. The daemon has no auth, so it never listens anywhere else. */
@@ -727,16 +734,25 @@ function pickDatabaseUrl(
 }
 
 /**
- * The movies database URL, or null. With `DATABASE_URL` set in the real environment (tests, a
- * throwaway daemon) only the real environment counts, so such a run never reaches the live movies
- * database that `.env.local` names.
+ * The URL of the old shared database to copy from once, or null. With `DATABASE_URL` set in the
+ * real environment (tests, a throwaway daemon) only the real environment counts, so such a run
+ * never reads the database that `.env.local` names.
  */
-function pickMoviesDatabaseUrl(
+function pickImportDatabaseUrl(
   realEnv: Record<string, string | undefined>,
   merged: Record<string, string | undefined>,
 ): string | null {
   const env = realEnv.DATABASE_URL?.trim() ? realEnv : merged
-  return env.MOVIES_DATABASE_URL?.trim() || null
+  return env.IMPORT_DATABASE_URL?.trim() || null
+}
+
+function isNeonHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'neon.tech' || host.endsWith('.neon.tech')
+  } catch {
+    return false
+  }
 }
 
 function parseHost(raw: string | undefined): typeof LOOPBACK_HOST {
@@ -1185,7 +1201,8 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
 
   return {
     databaseUrl,
-    moviesDatabaseUrl: pickMoviesDatabaseUrl(realEnv, env),
+    localDatabase: !realEnv.DATABASE_URL?.trim() && !isNeonHost(databaseUrl),
+    importDatabaseUrl: pickImportDatabaseUrl(realEnv, env),
     port: parsePort(env.NOTESD_PORT),
     host: parseHost(env.NOTESD_HOST),
     dataDir,

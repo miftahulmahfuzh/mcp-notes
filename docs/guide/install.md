@@ -15,15 +15,15 @@ machine, running by hand, the test suites and the docs tooling. Settings are in
   `~/tools/node-v22.23.1-linux-x64/bin/node`, else `NODE_BIN=/abs/path/to/node`.
 - The `claude` CLI, logged in. The chat bar, session summaries and the other Claude runs use
   your Claude Code login (`~/.claude/.credentials.json`). No API key goes in this repo.
-- A Postgres database with pgvector. The project uses Neon; any Postgres URL that is not a Neon
-  host goes through `node-postgres`.
-- `.env.local` at the repo root with `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (the pooled and
-  the direct Neon host; they are told apart by host name, so the key names do not have to be
-  right). Optional: `OPENROUTER_API_KEY` for search by meaning, `LLM_*` for the chat bar's GLM
-  fallback, `TMDB_*` and `NOTESD_MOVIES_ROOTS` for Movies.
-- `curl`. Docker for the movies database (`scripts/install.sh` creates the
-  `mcp-notes-pg-movies` container; without Docker the movie tables stay in the notes database)
-  and for the integration tests. `tmux` for resume from the wall, `ffprobe`
+- A Postgres database with pgvector. The installer makes one on this machine, in Docker.
+- `.env.local` at the repo root. It may be empty of database settings: the installer writes
+  `DATABASE_URL` for the local Postgres. A file that still names Neon (`DATABASE_URL`,
+  `DATABASE_URL_UNPOOLED`) is switched over, with the Neon address kept as `IMPORT_DATABASE_URL`
+  so its contents are copied in once. Optional: `OPENROUTER_API_KEY` for search by meaning,
+  `LLM_*` for the chat bar's GLM fallback, `TMDB_*` and `NOTESD_MOVIES_ROOTS` for Movies.
+- `curl`. Docker for the database (`scripts/install.sh` creates the `mcp-notes-pg` container
+  and points `DATABASE_URL` at it; see [architecture.md](architecture.md#the-local-database)) and
+  for the integration tests. `tmux` for resume from the wall, `ffprobe`
   and Windows VLC for Movies, `gh` for the Seer nightly dispatch.
 - A Python 3.9 or later that can make a virtual environment, for the torrent source's Whisper
   subtitles. The installer finds one (miniconda's works; Ubuntu's own needs `python3-venv`, which it

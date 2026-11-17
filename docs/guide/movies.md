@@ -759,10 +759,9 @@ outputs lost the picture or crashed.
 
 ## Two machines
 
-With `MOVIES_DATABASE_URL` set (what `scripts/install.sh` does) each machine keeps the movie
-tables in [its own database](architecture.md#the-movies-database): after the one-time copy from
-the shared database nothing below is shared any more except the review, which is a note. The
-table and the list describe two machines that still keep the movie tables in the shared database.
+Each machine keeps everything in [its own database](architecture.md#the-local-database), so
+after the one-time copy of the old shared database nothing below is shared any more. The table
+and the list describe two daemons pointed at one Postgres by hand.
 
 | Shared | Per host |
 | --- | --- |

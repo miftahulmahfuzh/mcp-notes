@@ -20,7 +20,9 @@ Environment="PATH=@NODE_DIR@:/usr/local/bin:/usr/bin:/bin"
 # GLM fallback keys (LLM_*) come from the checkout's .env.local, never from this file.
 Environment="HOME=@HOME_DIR@"
 Environment="NOTESD_CLAUDE_BIN=@CLAUDE_BIN@"
-Restart=on-failure
+# always: the daemon exits cleanly to restart itself once (the merge of the old shared database
+# runs at a start); `systemctl --user stop` still stops it.
+Restart=always
 RestartSec=5
 TimeoutStopSec=15
 

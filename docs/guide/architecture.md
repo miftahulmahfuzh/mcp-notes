@@ -138,12 +138,13 @@ Outside the data dir:
 
 ## Two machines
 
-Two laptops run their own `notesd` against the same database. They share the database, not the
-disk.
+Each machine runs its own `notesd` on [its own database](#the-local-database), so two laptops
+share nothing: each got the old shared database once and has gone its own way since. What follows
+still holds for two daemons pointed at one Postgres (`DATABASE_URL` set by hand on both), which is
+how notesd ran on Neon. They then share the database, not the disk.
 
-- Everything in the shared Postgres is the same on both: notes, tags, revisions, the bin, vectors,
-  chat history, session rows, `app_settings`. The movie library and streaming are not in it: each
-  machine keeps them in [its own database](#the-movies-database).
+- Everything in a shared Postgres is the same on both: notes, tags, revisions, the bin, vectors,
+  chat history, session rows, movie titles, ratings and reviews, `app_settings`.
 - Every row that points at bytes records a `host`: photos, files, chat images, session
   transcripts, movie files and plays. On the other machine such a row reports `available: false`,
   and asking for the bytes answers 404 `not_on_this_machine` with the host. New photo, file or
@@ -159,42 +160,67 @@ disk.
 - Background work that both daemons may do (note embedding, the adversary's leases) is
   idempotent or claimed in the database.
 
-## The movies database
+## The local database
 
-The `movie_*` and `stream_*` tables hold nothing worth sharing and were most of what the daemon
-read from Neon (one episode list is megabytes, and the library scan re-reads the files every two
-minutes), so with `MOVIES_DATABASE_URL` set they live in a Postgres on the machine itself.
+notesd runs on a Postgres on the machine itself. Nothing it does while running depends on a
+hosted database.
 
-- **Where it is.** `scripts/install.sh` creates the Docker container `mcp-notes-pg-movies`
-  (pgvector/pgvector:pg16, 127.0.0.1:55437, a named volume, restarted by Docker after a reboot)
-  and adds `MOVIES_DATABASE_URL` to `.env.local`. Without Docker, or with the variable unset, the
-  tables stay in the notes database and nothing else changes.
-- **Schema.** The daemon applies the same `drizzle/` migrations to it at every start
-  (`src/db/moviesDb.ts`), so it holds the whole schema with the notes tables empty. A database
-  that is not up yet (the container at boot) is waited for, then retried behind the daemon.
-- **Wiring.** `AppDeps.moviesDb` is that database; `moviesDbOf(deps)` is what every movie and
-  stream repo, route and tool is built with. Only the review crosses over: it is a normal note,
-  so `movie_titles.review_note_id` has no foreign key and the read model looks the note up in the
-  notes database (`notesDbOf`).
-- **The one-time copy.** What Neon holds of these tables is merged in once per machine
-  (`src/movies/sharedImport.ts`), at start and then hourly until Neon can be read. The machine may
-  have run on its own database meanwhile, so it merges: the owner's marks, plays and the shared
-  movie ids (`M-23T4`) arrive, a file already scanned here keeps its row and takes the shared
-  plays, and a local movie id that collides is issued again. The marker is the
-  `movies_import_from_shared` row of the movies database's `app_settings`.
-- **Two machines.** Titles, marks, plays and movie ids made after the copy stay on the machine
-  that made them. A review still reaches both, as a note.
+- **Where it is.** `scripts/install.sh` creates the Docker container `mcp-notes-pg`
+  (pgvector/pgvector:pg16, 127.0.0.1:55437, database `mcp_notes`, a named volume, restarted by
+  Docker after a reboot) and points `DATABASE_URL` in `.env.local` at it. The file as it was is
+  copied to the data dir first (`env.local.backup-<time>`). A `DATABASE_URL` that already names
+  another Postgres that is not Neon is left alone, and without Docker nothing is changed.
+- **Schema.** The daemon applies `drizzle/` to it at every start (`src/db/localDb.ts`), after
+  waiting up to a minute for a container that is still coming up; when it does not answer the
+  daemon exits and systemd starts it again. `npm run db:migrate` goes to the same database.
+- **One database.** Notes, chat, sessions, movies and streaming all live in it. Only one link
+  crosses subsystems without a foreign key: `movie_titles.review_note_id`, the review note.
+- **Backups are yours.** The volume is the only copy. `docker exec mcp-notes-pg pg_dump -U
+  postgres mcp_notes` writes one.
+
+### The one-time copy
+
+Before this, notesd ran on Neon. `scripts/install.sh` keeps that address as `IMPORT_DATABASE_URL`,
+and what it holds is copied in once (`src/db/sharedImport.ts`), in two steps, because Neon may be
+unreadable for weeks (a used-up free plan) while the machine already works on its own database:
+
+1. **Staging**, behind the running daemon: at start and then hourly, each table is read page by
+   page into the `import_stage` schema of the local database. A table that is done is never read
+   again, so an interrupted run carries on.
+2. **Merging**, at the daemon's start, before anything else uses the database: one transaction
+   moves the staged rows into the real tables, drops the stage and writes the `shared_import` row
+   of `app_settings`. Once staging completes the daemon restarts itself for this, waiting while
+   something plays.
+
+What the merge does with rows written here meanwhile:
+
+- A note, chat thread or session written here stays. A local note or session whose random id the
+  shared side also uses gets a new id; the shared ids are the ones notes quote.
+- A session both sides know comes from the shared side with its prompts, replies, summary and
+  node id, and the ingester reads on from that row's offset.
+- Chat messages keep their order, the local ones numbered after the shared ones.
+- Movies: the owner's marks and plays arrive, a file already scanned here keeps its row and takes
+  the shared plays, the shared movie ids (`M-23T4`) win and a local one that collides is issued
+  again.
+- Session and reply vectors are not copied; the workers make them again.
+
+Until the merge has run, session summaries and reply vectors wait (the copy brings the old ones,
+and making them twice is paid for twice), and the session graph holds only what this machine
+re-read from its transcripts.
 
 ## Neon
 
-Nothing asks Neon on a timer shorter than 30 minutes while the machine is idle, so its compute can
-suspend. The embedding workers (notes, pictures, session replies) and the summary worker are
-woken by what this daemon writes: a note event, a session read (replies drain at most once a
-minute; summaries are checked once a session has been quiet for the idle time) and the summarize
-route. Their 30-minute sweeps only catch the other machine's writes and what no event announced.
-The session ingest's own 60-second sweep reads files, not the database.
+Neon is only the source of the one-time copy now. What follows describes a daemon whose
+`DATABASE_URL` still names a Neon host.
 
-The database is Neon Postgres with pgvector.
+Nothing asks the database on a timer shorter than 30 minutes while the machine is idle. The
+embedding workers (notes, pictures, session replies) and the summary worker are woken by what
+this daemon writes: a note event, a session read (replies drain at most once a minute; summaries
+are checked once a session has been quiet for the idle time) and the summarize route. Their
+30-minute sweeps only catch another machine's writes and what no event announced. The session
+ingest's own 60-second sweep reads files, not the database.
+
+On Neon the database is Postgres with pgvector.
 
 - **Two URLs.** `.env.local` holds a pooled host (`-pooler` in the name) and a direct one. The
   daemon uses the pooled host through `@neondatabase/serverless` over a websocket pool, which

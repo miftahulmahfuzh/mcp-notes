@@ -31,10 +31,10 @@ export interface AppDeps {
   config: Config;
   db: Db;
   /**
-   * The database of the movie_* and stream_* tables: this machine's own when MOVIES_DATABASE_URL is
-   * set. Absent (tests, no such URL): they live in `db`. Read it through `moviesDbOf`.
+   * True while the old shared database has not been copied in yet (src/db/sharedImport.ts): the
+   * billed work on sessions (summaries, reply vectors) waits, since the copy brings those along.
    */
-  moviesDb?: Db;
+  importPending?: boolean;
   events: NoteEvents;
   service: NotesService;
   /** Null without OPENROUTER_API_KEY (or when a test injects null): semantic features off. */
@@ -158,9 +158,4 @@ export interface AppDeps {
    * a context stream sends its first event and heartbeats only.
    */
   sessionEvents?: SessionEvents;
-}
-
-/** The database holding the movie and stream tables. */
-export function moviesDbOf(deps: { db: Db; moviesDb?: Db }): Db {
-  return deps.moviesDb ?? deps.db;
 }

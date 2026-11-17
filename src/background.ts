@@ -116,7 +116,9 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     });
     console.log(`[notesd] ingesting Claude Code sessions from ${deps.config.sessions.claudeHome}/projects as ${sessionsHost}`);
 
-    if (deps.embedder === null) {
+    if (deps.importPending === true) {
+      console.log('[notesd] session reply vectors wait: the old shared database is not copied in yet');
+    } else if (deps.embedder === null) {
       console.log('[notesd] session reply vectors off: OPENROUTER_API_KEY is not set, replies are searched by words only');
     } else {
       const worker = startReplyEmbeddingWorker({
@@ -140,7 +142,10 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
 
   let sessionSummaries: SummaryWorker | null = null;
   let summaryDue: ReturnType<typeof setTimeout> | null = null;
-  if (deps.config.sessions.enabled) {
+  if (deps.config.sessions.enabled && deps.importPending === true) {
+    // The copy brings the old sessions with their summaries; summarizing them here first would be paid for twice.
+    console.log('[notesd] session summaries wait: the old shared database is not copied in yet');
+  } else if (deps.config.sessions.enabled) {
     const summarizer = options.sessionSummarizer ?? null;
     if (summarizer === null && deps.embedder === null) {
       console.log('[notesd] session summaries and session embeddings off');

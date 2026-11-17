@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { DIRECT_STREAM_TOOL_NAMES } from '../chat/status.js';
-import { moviesDbOf, type AppDeps } from '../deps.js';
+import type { AppDeps } from '../deps.js';
 import {
   companiesNamed,
   DISCOVER_DEFAULT_LIMIT,
@@ -129,10 +129,10 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
   const config = deps.config.directStream;
   if (service === null || movies === null || config === undefined || !config.enabled) return null;
   return {
-    library: dbTitleLibrary(moviesDbOf(deps)),
+    library: dbTitleLibrary(deps.db),
     tmdb: movies.tmdb,
     progress: async (tmdbId) => {
-      const detail = await getTitle(moviesDbOf(deps), titleId('tv', tmdbId), { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase });
+      const detail = await getTitle(deps.db, titleId('tv', tmdbId), { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase });
       return (detail?.seasons ?? []).flatMap((s) =>
         s.episodes.map((e) => ({ season: e.season, episode: e.episode, state: e.state, lastPlayedAt: e.last_played_at, airDate: e.air_date })),
       );
@@ -158,7 +158,7 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
         ? null
         : { provider: row.provider ?? '', manifestKind: row.manifestKind ?? '', bestHeight: row.bestHeight, enSubtitle: row.enSubtitle, verifiedAt: row.verifiedAt };
     },
-    marks: (ids) => libraryMarks(moviesDbOf(deps), { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
+    marks: (ids) => libraryMarks(deps.db, { host: movies.host, imageBase: deps.config.movies.tmdb.imageBase }, ids),
     freshTitles: async () => new Set(await movies.repo.freshStreamTitleIds(movies.host, streamFreshSince(new Date(), config.freshDays))),
     dialogue: async (target, { refresh }) => {
       const read = await loadDialogue(movies.repo, service, target, { refresh });

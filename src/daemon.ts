@@ -11,9 +11,9 @@ import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
 import { DEFAULT_FFMPEG_BIN, DEFAULT_TORRENT_SITES_CONFIG, DEFAULT_TORRENT_WHISPER_SCRIPT, REPO_ROOT, type Config } from './config.js';
-import { closeDb, createDb, pairNotesDb, type Db } from './db/client.js';
-import { openMoviesDb } from './db/moviesDb.js';
-import { startMoviesImport } from './movies/sharedImport.js';
+import { closeDb, createDb } from './db/client.js';
+import { openLocalDb } from './db/localDb.js';
+import { mergeStagedImport, sharedImportState, startSharedImport } from './db/sharedImport.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
@@ -84,7 +84,16 @@ export interface StartDaemonOptions {
    * config.embeddings (same key; null without it). Tests inject the fake, or null.
    */
   imageEmbedder?: ImageEmbedder | null;
+  /**
+   * Called when the daemon needs a fresh start and nothing is playing: the old shared database is
+   * staged and its merge runs at start. src/main.ts stops the daemon and exits, and systemd starts
+   * it again. Omitted (tests): the stage waits for whoever starts the daemon next.
+   */
+  onRestartWanted?: () => void;
 }
+
+/** How often a daemon that wants a restart looks whether something still plays. */
+export const IMPORT_RESTART_CHECK_MS = 60_000;
 
 export async function ensureDataDirs(dataDir: string): Promise<void> {
   await mkdir(dataDir, { recursive: true });
@@ -120,26 +129,28 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const embedder = options.embedder !== undefined ? options.embedder : embedderFromConfig(config.embeddings);
   const imageEmbedder =
     options.imageEmbedder !== undefined ? options.imageEmbedder : imageEmbedderFromConfig(config.embeddings);
-  const db = createDb(config.databaseUrl);
-  // The movie and stream tables: this machine's own database with MOVIES_DATABASE_URL, else `db`.
-  let moviesDb: Db = db;
-  let stopMoviesDb = (): void => {};
-  if (config.moviesDatabaseUrl != null) {
+  // This machine's own database is waited for and migrated here; any other is its caller's to prepare.
+  const db = config.localDatabase === true ? await openLocalDb(config.databaseUrl) : createDb(config.databaseUrl);
+  // The old shared database is copied in once (src/db/sharedImport.ts). A stage that is complete is
+  // merged now, before anything else uses the database; until then the copy is pending.
+  let importPending = false;
+  let importStageable = false;
+  if (config.importDatabaseUrl != null) {
     try {
-      const opened = await openMoviesDb(config.moviesDatabaseUrl);
-      moviesDb = opened.db;
-      stopMoviesDb = opened.stop;
-      pairNotesDb(moviesDb, db);
+      let state = await sharedImportState(db);
+      if (state === 'staged') {
+        const rows = await mergeStagedImport(db);
+        console.log(`[notesd] shared import: merged ${Object.entries(rows).map(([t, n]) => `${t} ${n}`).join(', ')}`);
+        state = 'done';
+      }
+      importPending = state !== 'done';
+      importStageable = importPending;
     } catch (err) {
-      await closeDb(db);
-      throw err;
+      // Left staged: the next start tries the merge again. Nothing is staged twice and nothing restarts for it.
+      importPending = true;
+      console.error(`[notesd] shared import: the merge failed, nothing was changed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  const closeDbs = async (): Promise<void> => {
-    stopMoviesDb();
-    if (moviesDb !== db) await closeDb(moviesDb);
-    await closeDb(db);
-  };
   const events = new NoteEvents();
   const sessionEvents = new SessionEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
@@ -158,7 +169,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
   }
   // Movies library (phase 3): null with NOTESD_MOVIES=off; started and closed by startBackground.
-  const movies = buildMoviesService(config, moviesDb);
+  const movies = buildMoviesService(config, db);
   // Movies phase 9: the VLC health log. Built before the player, whose hang rule asks it whether a
   // silent VLC still exists; it reads the followed play back through the player. Started after listen.
   let moviesPlayer: MoviePlayer | null = null;
@@ -341,7 +352,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
     return torrentSource;
   };
-  const directStream = buildDirectStreamService(config, moviesDb, {
+  const directStream = buildDirectStreamService(config, db, {
     movies,
     picture,
     audioCheck,
@@ -376,10 +387,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   }
   // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
   // asked; startBackground carries unfinished ones on.
-  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(moviesDb));
+  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
-  const torrents = buildTorrentStreams(config, directStream, moviesDb);
+  const torrents = buildTorrentStreams(config, directStream, db);
   // Phase 7: the growing cue feeds (the subtitle track inside a torrent's file; phase 8's Whisper) and
   // the ffmpeg extraction that fills them. ffmpeg reads the file from disk once it is complete, else
   // through this daemon's own file route, which waits for the pieces as the torrent downloads.
@@ -427,7 +438,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const deps: AppDeps = {
     config,
     db,
-    ...(moviesDb !== db ? { moviesDb } : {}),
+    ...(importPending ? { importPending } : {}),
     events,
     service,
     embedder,
@@ -450,11 +461,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
-  deps.streamProber = await buildStreamProber({ config, db: moviesDb, movies, moviesPlayer, directStream: deps.directStream });
+  deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
   // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on; probes no swarm while a play exists.
   deps.trending = buildTrending({
     config,
-    db: moviesDb,
+    db,
     movies,
     torrents: deps.torrents ?? null,
     busy: () => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0,
@@ -503,7 +514,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   try {
     port = await listen(server);
   } catch (err) {
-    await closeDbs();
+    await closeDb(db);
     throw err;
   }
   boundPort = port;
@@ -526,9 +537,30 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
   }
   const stopBackground = await startBackground(deps, { sessionSummarizer });
-  // One time per machine: what the shared database holds of the movie tables is merged into this machine's own.
-  const stopMoviesImport =
-    moviesDb !== db ? startMoviesImport(db, moviesDb, { onDone: () => movies?.events.changed('user', {}) }) : (): void => {};
+  // The old shared database is staged behind the daemon as soon as it can be read. The merge needs a
+  // start with nothing running, so once the stage is complete the daemon asks to be restarted, and
+  // waits with that while something plays.
+  let restartTimer: ReturnType<typeof setInterval> | null = null;
+  const stopSharedImport =
+    importStageable && config.importDatabaseUrl != null
+      ? startSharedImport(config.importDatabaseUrl, db, {
+          onStaged: () => {
+            if (options.onRestartWanted === undefined) return;
+            const busy = (): boolean =>
+              moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0;
+            const ask = (): void => {
+              if (busy()) return;
+              if (restartTimer !== null) clearInterval(restartTimer);
+              restartTimer = null;
+              console.log('[notesd] shared import: restarting to merge the staged rows');
+              options.onRestartWanted?.();
+            };
+            restartTimer = setInterval(ask, IMPORT_RESTART_CHECK_MS);
+            restartTimer.unref();
+            ask();
+          },
+        })
+      : (): void => {};
 
   let stopping: Promise<void> | null = null;
   const stop = (): Promise<void> => {
@@ -540,9 +572,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       await moviesHealth?.close();
       await stopBackground();
       await closeServer(server);
-      stopMoviesImport();
+      stopSharedImport();
+      if (restartTimer !== null) clearInterval(restartTimer);
       await streamEvidence?.flushed();
-      await closeDbs();
+      await closeDb(db);
     })();
     return stopping;
   };

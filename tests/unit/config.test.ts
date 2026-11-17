@@ -44,7 +44,8 @@ describe('loadConfig', () => {
     const cfg = loadConfig({ env: { DATABASE_URL: URL_A }, envFile: false })
     expect(cfg).toEqual({
       databaseUrl: URL_A,
-      moviesDatabaseUrl: null,
+      localDatabase: false,
+      importDatabaseUrl: null,
       port: DEFAULT_PORT,
       host: '127.0.0.1',
       dataDir: path.join(homedir(), 'mcp-notes-data'),
@@ -73,11 +74,19 @@ describe('loadConfig', () => {
     expect(loadConfig({ env: { OPENROUTER_API_KEY: 'y' }, envFile: file }).embeddings.apiKey).toBe('y')
   })
 
-  it('reads the movies database from the file only when the file also names the notes database', () => {
-    const file = envFile(['DATABASE_URL=postgres://file/db', 'MOVIES_DATABASE_URL=postgres://local/movies'].join('\n'))
-    expect(loadConfig({ env: {}, envFile: file }).moviesDatabaseUrl).toBe('postgres://local/movies')
-    expect(loadConfig({ env: { DATABASE_URL: URL_A }, envFile: file }).moviesDatabaseUrl).toBeNull()
-    expect(loadConfig({ env: { DATABASE_URL: URL_A, MOVIES_DATABASE_URL: 'postgres://own/movies' }, envFile: file }).moviesDatabaseUrl).toBe('postgres://own/movies')
+  it('a local database named in the file is migrated at start; one from the environment or on Neon is not', () => {
+    const local = envFile('DATABASE_URL=postgres://postgres:pw@127.0.0.1:55437/mcp_notes')
+    expect(loadConfig({ env: {}, envFile: local }).localDatabase).toBe(true)
+    expect(loadConfig({ env: { DATABASE_URL: URL_A }, envFile: local }).localDatabase).toBe(false)
+    const neon = envFile('DATABASE_URL=postgresql://u:p@ep-x-123-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb')
+    expect(loadConfig({ env: {}, envFile: neon }).localDatabase).toBe(false)
+  })
+
+  it('reads the database to copy from only when the file also names the database to run on', () => {
+    const file = envFile(['DATABASE_URL=postgres://file/db', 'IMPORT_DATABASE_URL=postgres://old/shared'].join('\n'))
+    expect(loadConfig({ env: {}, envFile: file }).importDatabaseUrl).toBe('postgres://old/shared')
+    expect(loadConfig({ env: { DATABASE_URL: URL_A }, envFile: file }).importDatabaseUrl).toBeNull()
+    expect(loadConfig({ env: { DATABASE_URL: URL_A, IMPORT_DATABASE_URL: 'postgres://own/old' }, envFile: file }).importDatabaseUrl).toBe('postgres://own/old')
   })
 
   it('prefers the pooled host of the two file URLs, whatever their key names', () => {

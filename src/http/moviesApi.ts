@@ -250,11 +250,11 @@ function errorMessage(err: unknown): string {
 }
 
 export function moviesApiRoutes(
-  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'> & Partial<Pick<AppDeps, 'movieStories' | 'trending' | 'moviesDb'>>,
+  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'> & Partial<Pick<AppDeps, 'movieStories' | 'trending'>>,
   options: MoviesApiOptions = {},
 ): Hono {
   const api = new Hono();
-  const db = deps.moviesDb ?? deps.db;
+  const db = deps.db;
   const heartbeatMs = options.sseHeartbeatMs ?? SSE_HEARTBEAT_MS;
 
   /** The movies_off guard, per route: a `use('/api/movies/*')` middleware would also catch phase 5's play routes. */
