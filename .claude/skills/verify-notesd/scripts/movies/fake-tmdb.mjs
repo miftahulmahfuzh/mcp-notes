@@ -283,6 +283,13 @@ function route(url) {
     const x = byId(m[1] === 'movie' ? movies : tvs, m[2])
     return x ? [200, { id: x.id, imdb_id: x.imdb_id ?? `tt${String(x.id).padStart(7, '0')}` }] : notFound()
   }
+  // Trending: an IMDb id the torrent indexes' top lists name, to the title that owns it (the same id external_ids hands out).
+  if ((m = p.match(/^\/find\/(tt\d+)$/))) {
+    const own = (x) => (x.imdb_id ?? `tt${String(x.id).padStart(7, '0')}`) === m[1]
+    const film = movies.find(own)
+    const show = tvs.find(own)
+    return [200, { movie_results: film ? [{ id: film.id }] : [], tv_results: show ? [{ id: show.id }] : [], tv_episode_results: [] }]
+  }
   // Trailers: How to Make a Killing has one, MobLand none of its own and one for season 1.
   if ((m = p.match(/^\/(movie|tv)\/(\d+)\/videos$/))) {
     const x = byId(m[1] === 'movie' ? movies : tvs, m[2])

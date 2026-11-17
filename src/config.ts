@@ -186,6 +186,25 @@ export const DEFAULT_STREAM_PROBER_CONFIG: StreamProberConfig = {
   probeMs: DEFAULT_STREAM_PROBE_MS,
 }
 
+/** The Stream side's daily trending list (src/directStream/trending/). */
+export interface TrendingConfig {
+  /**
+   * `NOTESD_TRENDING`, default on: once a day the torrent indexes' most seeded films and series that the owner has
+   * not seen are listed on the Stream side, and their swarms probed. `off`, or unset in a literal: nothing is asked.
+   */
+  enabled: boolean
+  /** `NOTESD_TRENDING_SIZE`, default 100: titles of each kind (films, series) on the list. */
+  size: number
+  /** `NOTESD_TRENDING_PROBE`, default 200: swarms opened a day, most seeded first, films and series alternating. `0`: none. */
+  probe: number
+}
+
+export const DEFAULT_TRENDING_SIZE = 100
+export const DEFAULT_TRENDING_PROBE = 200
+
+/** Trending off. Tests build `Config` literals with it (or leave `trending` out, which is the same). */
+export const DEFAULT_TRENDING_CONFIG: TrendingConfig = { enabled: false, size: DEFAULT_TRENDING_SIZE, probe: DEFAULT_TRENDING_PROBE }
+
 export const DEFAULT_STREAM_FRESH_DAYS = 7
 /** `claude/streaming/direct/cli.mjs` in this checkout: the resolver the daemon runs (direct streaming phase 1). */
 export const DEFAULT_DIRECT_STREAM_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'direct', 'cli.mjs')
@@ -248,6 +267,8 @@ export interface DirectStreamConfig {
   ahead?: boolean
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
+  /** The daily trending list. Unset in a literal: off. */
+  trending?: TrendingConfig
 }
 
 /** Direct streaming off. Tests build `Config` literals with it (or leave `directStream` out, which is the same). */
@@ -937,6 +958,18 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
     ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     prober: parseStreamProber(env),
+    trending: parseTrending(env),
+  }
+}
+
+export function parseTrending(env: Record<string, string | undefined>): TrendingConfig {
+  const probeRaw = env.NOTESD_TRENDING_PROBE
+  const probe = probeRaw === undefined || probeRaw.trim() === '' ? DEFAULT_TRENDING_PROBE : Number(probeRaw.trim())
+  if (!Number.isInteger(probe) || probe < 0) throw new ConfigError(`NOTESD_TRENDING_PROBE must be a whole number of 0 or more (got ${probeRaw})`)
+  return {
+    enabled: parseSwitch('NOTESD_TRENDING', env.NOTESD_TRENDING),
+    size: parsePositiveInt('NOTESD_TRENDING_SIZE', env.NOTESD_TRENDING_SIZE, DEFAULT_TRENDING_SIZE),
+    probe,
   }
 }
 

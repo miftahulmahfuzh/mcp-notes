@@ -6,6 +6,7 @@ import {
   fetchPlayer,
   fetchStatus,
   fetchStreamTitles,
+  fetchTrending,
   fetchUnmatched,
   MOVIES_EVENTS_URL,
   type MoviesStatusResponse,
@@ -13,6 +14,7 @@ import {
   type StreamListResponse,
   type TitleDetail,
   type TitleListItem,
+  type TrendingListResponse,
   type UnmatchedFile,
 } from '../moviesApi';
 import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageActive';
@@ -37,6 +39,8 @@ export interface MoviesStore {
   /** The Stream side's list (`GET /api/movies/stream`), fetched only while the route is on the Stream side. */
   stream: StreamListResponse | null;
   streamError: string | null;
+  /** The Stream side's Trending section (`GET /api/movies/trending`), fetched with the Stream list. */
+  trending: TrendingListResponse | null;
   /** Re-read everything the page shows. Called after every write: the server's state wins. */
   refresh: () => void;
 }
@@ -64,6 +68,7 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   const [player, setPlayer] = useState<PlayerState | null>(null);
   const [stream, setStream] = useState<StreamListResponse | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [trending, setTrending] = useState<TrendingListResponse | null>(null);
   const [tick, setTick] = useState(0);
   const [playTick, setPlayTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
@@ -144,6 +149,21 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
   }, [enabled, wantStream, tick]);
 
   useEffect(() => {
+    if (!enabled || !wantStream) return;
+    const ac = new AbortController();
+    // A failure leaves the section as it was: the Stream grid above it has its own error text.
+    fetchTrending(ac.signal).then(
+      (t) => {
+        if (!ac.signal.aborted) setTrending(t);
+      },
+      (e: unknown) => {
+        if (!ac.signal.aborted) quiet('trending GET', e);
+      },
+    );
+    return () => ac.abort();
+  }, [enabled, wantStream, tick]);
+
+  useEffect(() => {
     if (!enabled) return;
     const ac = new AbortController();
     fetchPlayer(ac.signal).then(
@@ -209,5 +229,5 @@ export function useMovies(enabled: boolean, route: MoviesRoute): MoviesStore {
     return () => ac.abort();
   }, [enabled, wantUnmatched, tick]);
 
-  return { titles, listError, detail, detailError, unmatched, unmatchedError, status, player, stream, streamError, refresh };
+  return { titles, listError, detail, detailError, unmatched, unmatchedError, status, player, stream, streamError, trending, refresh };
 }

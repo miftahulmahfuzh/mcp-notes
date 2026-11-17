@@ -3,10 +3,11 @@ import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, Question, Warn
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
 import { MoviesPill } from '../components/movies/MoviesPill';
+import { TrendingSection } from '../components/movies/TrendingSection';
 import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
-import { askProberPass, errorCode, fetchProber, saveTitleUser, startSync, type ProberState, type TitleListItem } from '../moviesApi';
+import { askProberPass, askTrendingRefresh, errorCode, fetchProber, saveTitleUser, startSync, streamPlay, type ProberState, type TitleListItem, type TrendingTitle } from '../moviesApi';
 import {
   detailIsFor,
   emptyLibraryText,
@@ -128,6 +129,35 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   };
   const findMoreTip = probing ? 'Looking for more titles to stream' : 'Find more titles to stream';
 
+  // The Trending section's refresh: a new list and its swarm probes, now. The page asks again every few seconds while it runs.
+  const [trendBusy, setTrendBusy] = useState(false);
+  const trendRunning = trendBusy || store.trending?.enabled === true && store.trending.running;
+  useEffect(() => {
+    if (!trendRunning) return;
+    const t = window.setInterval(() => refreshStore(), PROBER_POLL_MS);
+    return () => window.clearInterval(t);
+  }, [trendRunning, refreshStore]);
+  const refreshTrending = async () => {
+    setTrendBusy(true);
+    try {
+      await askTrendingRefresh();
+      show('building the trending list');
+    } catch (e) {
+      show(errorCode(e) === 'trending_off' ? 'the trending list is off: set NOTESD_TRENDING=on and restart notesd' : `refresh refused: ${errorCode(e)}`);
+    } finally {
+      setTrendBusy(false);
+      refreshStore();
+    }
+  };
+  const playTorrent = async (t: TrendingTitle) => {
+    show(`${t.title}: opening from its torrent`);
+    try {
+      await streamPlay({ kind: 'movie', tmdb_id: t.tmdb_id, provider: 'torrent' });
+    } catch (e) {
+      show(`${t.title}: could not play from its torrent (${errorCode(e)})`);
+    }
+  };
+
   const rescan = async () => {
     setBusy(true);
     try {
@@ -152,12 +182,13 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       return next;
     });
   const streamTitles = store.stream?.titles ?? null;
+  const trendingTitles = store.trending?.titles ?? null;
   useEffect(() => {
     setMarks((prev) => {
-      const next = pendingMarks(prev, [store.titles, streamTitles]);
+      const next = pendingMarks(prev, [store.titles, streamTitles, trendingTitles]);
       return next.size === prev.size ? prev : next;
     });
-  }, [store.titles, streamTitles]);
+  }, [store.titles, streamTitles, trendingTitles]);
   /** Saved at once, no confirmation; the notice offers an undo. */
   const mark = async (t: TitleListItem, patch: TitleMark) => {
     const back: TitleMark = 'watched' in patch ? { watched: !patch.watched } : { not_interested: !patch.not_interested };
@@ -314,7 +345,8 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
     if (store.streamError !== null) content = <MoviesEmpty text={moviesErrorText(store.streamError)} />;
     else if (list === null) content = <p className="mv-empty mv-content">loading the Stream titles</p>;
     else if (!list.enabled) content = <MoviesEmpty text={STREAM_OFF_TEXT} />;
-    else if (list.titles.length === 0) content = <MoviesEmpty text={streamEmptyText(list.fresh_days)} />;
+    else if (list.titles.length === 0 && store.trending?.enabled !== true) content = <MoviesEmpty text={streamEmptyText(list.fresh_days)} />;
+    else if (list.titles.length === 0) content = <p className="mv-empty mv-content">{streamEmptyText(list.fresh_days)}</p>;
     else
       content = (
         <MoviesGrid side="stream" lead={sideSwitch} tail={tools} titles={withMarks(list.titles, marks)} player={store.player} filter={streamFilter} onFilter={setStreamFilter} onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })} onMark={(t, p) => void mark(t, p)} />
@@ -341,6 +373,16 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
         </p>
       )}
       {content}
+      {side === 'stream' && route.title === null && !route.unmatched && !off && store.streamError === null && (
+        <TrendingSection
+          trending={store.trending === null ? null : { ...store.trending, titles: withMarks(store.trending.titles, marks) }}
+          running={trendRunning}
+          onOpen={(id) => onRoute({ title: id, unmatched: false, stream: true })}
+          onMark={(t, p) => void mark(t, p)}
+          onRefresh={() => void refreshTrending()}
+          onPlayTorrent={(t) => void playTorrent(t)}
+        />
+      )}
       <MoviesPill onAsk={onAsk} placeholder={moviesPillPlaceholder(route, store.detail)} />
     </section>
   );

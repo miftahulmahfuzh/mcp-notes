@@ -225,6 +225,13 @@
       "when": 1794843086056,
       "tag": "0031_stream_torrents",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794895826512,
+      "tag": "0032_faulty_peter_parker",
+      "breakpoints": true
     }
   ]
 }

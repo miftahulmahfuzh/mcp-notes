@@ -49,6 +49,7 @@ import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
 import { StreamEvidence } from './directStream/evidence.js';
 import { buildStreamProber } from './directStream/prober.js';
+import { buildTrending } from './directStream/trending/job.js';
 import { StreamReporter } from './directStream/report.js';
 import { defaultClaudeWindowDeps } from './sessions/resume.js';
 import { scriptRunner } from './streaming/service.js';
@@ -428,6 +429,14 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
   deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
+  // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on; probes no swarm while a play exists.
+  deps.trending = buildTrending({
+    config,
+    db,
+    movies,
+    torrents: deps.torrents ?? null,
+    busy: () => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0,
+  });
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
   deps.torrentWhisper = whisperTier;
   // The cloud audio-language check's Whisper worker (audioLang.ts): closed by startBackground's stop. Null when the check is off.

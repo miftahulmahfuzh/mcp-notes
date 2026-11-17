@@ -233,6 +233,39 @@ describe('TorrentStreams', () => {
     await expect(readdir(folder.dirOf(OLD))).rejects.toThrow();
   });
 
+  it('peeks at a swarm without recording, selecting or keeping anything (the trending probe)', async () => {
+    const { streams, engine, records, folder } = build();
+    const seen = await streams.peek(HASH.toUpperCase(), PICK.trackers, OPEN);
+    expect(seen).toMatchObject({ files: 3, videos: 1, live: true });
+    expect(engine.added).toEqual([HASH]);
+    expect(engine.selected).toEqual([]);
+    expect(engine.removed).toEqual([HASH]);
+    expect(records.rows).toEqual([]);
+    expect(await onDisk(folder)).toEqual([]);
+  });
+
+  it('says a swarm nobody answers is no_metadata, and still leaves it', async () => {
+    const { streams, engine, records } = build({ engine: new FakeTorrentEngine([]) });
+    await expect(streams.peek(HASH, [], OPEN)).rejects.toMatchObject({ code: 'no_metadata' });
+    expect(engine.removed).toEqual([HASH]);
+    expect(records.rows).toEqual([]);
+  });
+
+  it('answers from a torrent already open for a play, and does not leave it', async () => {
+    const { streams, engine } = build();
+    await streams.open(PICK, OPEN);
+    expect(await streams.peek(HASH, [], OPEN)).toMatchObject({ files: 3, videos: 1 });
+    expect(engine.removed).toEqual([]);
+    expect(streams.stats(HASH)).not.toBeNull();
+  });
+
+  it('refuses a bad hash and a daemon that is stopping', async () => {
+    const { streams } = build();
+    await expect(streams.peek('xyz', [], OPEN)).rejects.toMatchObject({ code: 'invalid_hash' });
+    await streams.close();
+    await expect(streams.peek(HASH, [], OPEN)).rejects.toMatchObject({ code: 'closing' });
+  });
+
   it('is not built with torrents off or direct streaming off, and building it joins nothing (R2.6)', () => {
     const env = { DATABASE_URL: 'postgres://u@127.0.0.1:1/db', NOTES_DATA_DIR: root };
     const db = {} as Db;

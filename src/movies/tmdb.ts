@@ -128,6 +128,18 @@ export interface TmdbTitleNames {
   imdbId(kind: TitleKind, tmdbId: number): Promise<string | null>;
 }
 
+/**
+ * IMDb id to TMDB title, for the trending job (src/directStream/trending/job.ts), which gets IMDb ids from
+ * the torrent indexes. Kept apart from TmdbClient for the same reason as TmdbCatalog; createTmdbClient returns it too.
+ */
+export interface TmdbImdbLookup {
+  /**
+   * The film or series TMDB holds under an IMDb id (`tt0137523`). An id of one episode answers its series; null when
+   * TMDB knows nothing of it.
+   */
+  findByImdb(imdbId: string): Promise<{ kind: TitleKind; tmdbId: number } | null>;
+}
+
 /** A production company or a streaming service as TMDB names it. */
 export interface TmdbNamedHit {
   id: number;
@@ -349,6 +361,11 @@ const PersonSearchSchema = z.object({
 
 const OriginalLanguageSchema = z.object({ original_language: text });
 const ExternalIdsSchema = z.object({ imdb_id: text });
+const FindSchema = z.object({
+  movie_results: z.array(z.object({ id: intId })).nullish(),
+  tv_results: z.array(z.object({ id: intId })).nullish(),
+  tv_episode_results: z.array(z.object({ show_id: intId })).nullish(),
+});
 
 /** `/movie/{id}/alternative_titles` answers `titles`, `/tv/{id}/alternative_titles` answers `results`. */
 const AlternativeTitlesSchema = z.object({
@@ -659,7 +676,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery {
+): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery & TmdbImdbLookup {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -940,6 +957,19 @@ export function createTmdbClient(
       if (json === null) return null;
       const id = orNull(decode(ExternalIdsSchema, json, `${kind} ${tmdbId} external ids`).imdb_id);
       return id !== null && /^tt\d{5,10}$/.test(id) ? id : null;
+    },
+
+    async findByImdb(imdbId) {
+      if (!/^tt\d{5,10}$/.test(imdbId)) return null;
+      const json = await getOrNull(`/find/${imdbId}`, { external_source: 'imdb_id' });
+      if (json === null) return null;
+      const raw = decode(FindSchema, json, `imdb ${imdbId}`);
+      const movie = raw.movie_results?.[0];
+      if (movie !== undefined) return { kind: 'movie', tmdbId: movie.id };
+      const tv = raw.tv_results?.[0];
+      if (tv !== undefined) return { kind: 'tv', tmdbId: tv.id };
+      const episode = raw.tv_episode_results?.[0];
+      return episode === undefined ? null : { kind: 'tv', tmdbId: episode.show_id };
     },
 
     async discover(kind, filter) {

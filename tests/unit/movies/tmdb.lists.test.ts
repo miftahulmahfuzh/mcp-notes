@@ -170,3 +170,28 @@ describe('TmdbDiscovery', () => {
     expect(f.urls).toHaveLength(2);
   });
 });
+
+describe('TmdbImdbLookup', () => {
+  const find = (body: unknown) => createTmdbClient(CONFIG, routedFetch({ '/find/tt0137523': body }).fetch);
+
+  it('finds a film, a series, and the series of an episode id, by IMDb id', async () => {
+    expect(await find({ movie_results: [{ id: 550 }], tv_results: [], tv_episode_results: [] }).findByImdb('tt0137523')).toEqual({ kind: 'movie', tmdbId: 550 });
+    expect(await find({ movie_results: [], tv_results: [{ id: 1399 }] }).findByImdb('tt0137523')).toEqual({ kind: 'tv', tmdbId: 1399 });
+    expect(await find({ movie_results: [], tv_results: [], tv_episode_results: [{ show_id: 7 }] }).findByImdb('tt0137523')).toEqual({ kind: 'tv', tmdbId: 7 });
+  });
+
+  it('answers null for an id TMDB does not hold, a 404 and a malformed id (asked of nobody)', async () => {
+    expect(await find({ movie_results: [], tv_results: [], tv_episode_results: [] }).findByImdb('tt0137523')).toBeNull();
+    const f = routedFetch({});
+    const client = createTmdbClient(CONFIG, f.fetch);
+    expect(await client.findByImdb('tt0000001')).toBeNull();
+    expect(await client.findByImdb('not-an-id')).toBeNull();
+    expect(f.urls.map((u) => u.pathname)).toEqual(['/find/tt0000001']);
+  });
+
+  it('asks with external_source=imdb_id', async () => {
+    const f = routedFetch({ '/find/tt0137523': { movie_results: [] } });
+    await createTmdbClient(CONFIG, f.fetch).findByImdb('tt0137523');
+    expect(f.urls[0]?.searchParams.get('external_source')).toBe('imdb_id');
+  });
+});

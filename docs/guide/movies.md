@@ -468,6 +468,71 @@ English subtitle`).
 - **The other machine** verifies its own titles. A title verified only on the other laptop is not
   on this machine's Stream side, and its source is not offered here.
 
+### Trending on torrents
+
+Under the Stream grid there is a second, separately headed section, "Trending on torrents": the films
+and series with the most seeders on the torrent indexes that you have not seen. These titles were never
+asked to play, so nothing in this section is "verified to stream"; it is a shortlist to pick from, and
+the Stream grid above it stays what it was (titles that actually resolved on this machine).
+
+**Where the list comes from.** Once a day (the job looks every hour whether the list is a day old, and
+builds the first one two minutes after notesd starts) the daemon reads the torrent indexes' own top
+lists with plain requests, the way the finder reads them for a play: apibay's precompiled top 100 of
+each category (movies, HD movies, TV, HD TV) and the newest three pages of EZTV. YTS is not asked: it
+answers only a title search. A listing becomes a title when it names an IMDb id, which TMDB maps to the
+film or series (an episode's id answers its series); a listing with no IMDb id is left out, and so is a
+cinema recording, a dub, a 3D release, a swarm under 5 seeds and a film over 25 GB. A series is its
+best-seeded episode or pack. The first `NOTESD_TRENDING_SIZE` (100) of each kind that you have not seen
+make the list, so the list is still full when the top is mostly watched. The list skews to what the
+indexes' users download (mostly Western, mainstream, English); nothing is done to widen it.
+
+**Watched and not interested.** The list holds no copy of your marks. Every read of
+`GET /api/movies/trending` takes the state from the library at that moment and leaves out a title that
+is finished, seen, in progress or dropped, has its watched flag, or is marked "not interested". The
+poster's check and crossed-eye icons work here as on the Stream grid, take the poster off at the click,
+and the next build does not list the title. The notice offers an undo, which puts it back: nothing was
+deleted from the list.
+
+**Magnet quality.** Each poster has a line under it: the seeds the index lists, a dot and a short
+verdict. The seed count is the index's claim and a dead swarm shows one too (several were hit on
+2026-11-16: listed seeders, no peer within 20 s), so it is never the verdict:
+
+| Line | Meaning |
+| --- | --- |
+| filled dot, "confirmed 3 h ago" | The swarm was opened and a peer sent its file list, with at least one video file, at that time. |
+| dashed dot, "not confirmed" | Listed, swarm not opened yet (probes run after the list is built, or `NOTESD_TRENDING_PROBE` is lower than the list). |
+| dashed dot, struck through, "no peer answered 10 min ago" | The swarm was opened and no peer sent a file list within 20 s. The listing may be stale. |
+| dashed dot, struck through, "no video file" | A peer answered, but the torrent holds no video file. |
+| dashed dot, "could not check" | The check itself failed (the engine, not the swarm); not a verdict on the torrent. |
+
+Hover the line for the full text: seeds and the index that listed them, what the swarm showed, and
+when. "Confirmed" says a file list arrived, not that the film will play at speed: the real play still
+opens the swarm, probes the header and may remux.
+
+**The probe.** After a build, the daemon opens the swarms of the most seeded titles, films and series
+alternating, up to `NOTESD_TRENDING_PROBE` (200) a day, three at a time, each for at most 20 s. A probe
+(`TorrentStreams.peek`) joins the swarm only to see the file list, selects and downloads nothing,
+writes no download record and leaves the swarm at once, so it leaves nothing on disk and no row among
+the downloads. A torrent already open for a play, or finished on this machine, answers from what it
+holds. Nothing is probed while a VLC play, a stream on screen or a stream being started exists; the
+pass stops and the rest wait for the next one. 200 swarms take a few minutes when most are alive and at
+most about 20 minutes when most are dead. Probes of the last 12 hours are carried over when a refresh
+lists the same torrent again. This is a daily snapshot, not a promise for tonight: a swarm that was
+alive at 06:00 can be dead at 22:00, which is why the line says when.
+
+**Playing one.** A poster opens the title's page, like any Stream poster. On a film a play icon beside
+its line plays it from its torrent (`provider: "torrent"`, the same as the codename TM): the finder asks
+the indexes by IMDb id again and picks by swarm, so it need not be the torrent the line speaks of. A
+series is opened on its page, where you pick the episode.
+
+**Refresh.** The refresh icon beside the heading builds the list again now and probes it; it turns while
+the pass runs. `NOTESD_TRENDING=off` shows the section with one line saying it is off; with it off nothing
+is asked of an index or TMDB and no swarm is opened. The list is also off while torrents, direct
+streaming, the movie library or the TMDB credential are.
+
+**Two machines.** Each machine builds and probes its own list (a swarm answers differently from
+another network), so a title confirmed on one laptop is "not confirmed" on the other until its own pass.
+
 ## Playback
 
 ![A film's page while VLC has it paused: "paused" on the poster and the position beside the stars](img/movies/playing.png)
@@ -927,6 +992,7 @@ at all.
 | --- | --- |
 | `NOTESD_MOVIES=off` | Every `/api/movies*` route: 503 `movies_off` (`GET /api/movies/player` answers `{available: false, reason: "movies_off"}`). Every tool: `movies_off: the movie library is not running on this server ...`. The page says how to turn it on. |
 | `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
+| `NOTESD_TRENDING=off`, or torrents, direct streaming, movies or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
 | No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
 | No TMDB credentials | Files are registered, all unmatched `no_tmdb_credentials`. Assign answers 503 `tmdb_off` for a title not stored yet. `movies_person` answers `tmdb_unavailable`. |
@@ -992,6 +1058,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/ids.ts` | Movie id shape and lookup (ids are written by the database) |
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
+| `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the swarm probes, the off reasons) |
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
@@ -1004,6 +1071,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
+| `drizzle/0032_*.sql` | `stream_trending` |
 | `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql`, `drizzle/0021_stream_plays.sql` | The tables; the id sequence, function and triggers; the trailer columns; stream plays and stream sources |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
 

@@ -33,7 +33,10 @@ import {
   streamLine,
   streamTarget,
   titleAction,
+  agoText,
+  magnetQuality,
 } from './movies';
+import type { TrendingTitle } from '../moviesApi';
 
 const ids = (f: MoviesFilter) => TITLES.filter((t) => matchesFilter(t, f)).map((t) => t.id);
 
@@ -242,5 +245,46 @@ describe('stream decisions', () => {
     expect(streamLabel(target, true)).toEqual({ label: 'Stream (VidFast · 2160p · English subtitle)', disabled: false });
     expect(streamLabel(target, false)).toEqual({ label: 'Direct streaming is off on this machine', disabled: true });
     expect(streamLine({ ...FIGHT_CLUB, stream_sources: [makeSource(0, 0, { en_subtitle: false, best_height: null })] }, 'stream')).toBe('Stream: VidFast · no English subtitle');
+  });
+});
+
+describe('magnetQuality', () => {
+  const NOW = Date.parse('2026-11-17T12:00:00Z');
+  const title = (probe: TrendingTitle['trending']['probe']): TrendingTitle =>
+    ({ trending: { kind_rank: 1, seeds: 8401, index: 'apibay', release: 'x', size_bytes: null, listed_at: '2026-11-17T06:00:00Z', probe } }) as TrendingTitle;
+
+  it('is "not confirmed" until the swarm was opened: seeds alone are never the verdict', () => {
+    const q = magnetQuality(title(null), NOW);
+    expect(q.state).toBe('unconfirmed');
+    expect(q.label).toBe('not confirmed');
+    expect(q.tip).toContain('8,401 seeds listed by apibay');
+    expect(q.tip).toContain('has not been opened');
+  });
+
+  it('says confirmed, and when, only for a swarm a peer answered', () => {
+    const q = magnetQuality(title({ outcome: 'confirmed', detail: '1 video file of 2, 4 peers connected', at: '2026-11-17T09:00:00Z' }), NOW);
+    expect(q).toMatchObject({ state: 'confirmed', label: 'confirmed 3 h ago' });
+    expect(q.tip).toContain('4 peers connected');
+  });
+
+  it('marks a listed swarm nobody answered as dead, with the listing named as possibly stale', () => {
+    const q = magnetQuality(title({ outcome: 'no_peers', detail: 'no peer sent a file list within 20 s', at: '2026-11-17T11:50:00Z' }), NOW);
+    expect(q).toMatchObject({ state: 'dead', label: 'no peer answered 10 min ago' });
+    expect(q.tip).toContain('may be stale');
+  });
+
+  it('reads a failed check as unconfirmed, not dead', () => {
+    expect(magnetQuality(title({ outcome: 'error', detail: 'x', at: '2026-11-17T11:59:30Z' }), NOW).state).toBe('unconfirmed');
+    expect(magnetQuality(title({ outcome: 'no_video', detail: null, at: '2026-11-17T11:59:30Z' }), NOW).state).toBe('dead');
+  });
+});
+
+describe('agoText', () => {
+  it('rounds to the unit a person says', () => {
+    const now = Date.parse('2026-11-17T12:00:00Z');
+    expect(agoText('2026-11-17T11:59:00Z', now)).toBe('just now');
+    expect(agoText('2026-11-17T11:00:00Z', now)).toBe('60 min ago');
+    expect(agoText('2026-11-17T04:00:00Z', now)).toBe('8 h ago');
+    expect(agoText('2026-11-14T12:00:00Z', now)).toBe('3 days ago');
   });
 });

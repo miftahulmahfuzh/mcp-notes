@@ -15,6 +15,9 @@
 // DIR/index-mode picks the answer: ok (default) | empty ({"streams": []}) | error (HTTP 500) | hang (never answers:
 // the finder's timeout) | slow:<ms> (the ok answer, that many milliseconds late).
 // A candidates.json entry whose info_hash nobody seeds is a dead swarm: its file list never comes.
+// Trending (`verify.sh up --trending`): GET /precompiled/data_top100_<category>.json answers DIR/trending.json's
+// `apibay[<category>]` rows, and GET /api/get-torrents DIR/trending.json's `eztv` rows (apibay's and EZTV's own shapes), so
+// the daily list reads a listing the journey chose. No trending.json: both answer an empty list.
 // Every request is one JSON line in the log: {at, path, mode}.
 import http from 'node:http'
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -69,8 +72,10 @@ function stream(fixture, release, { fileIdx, fileName, seeds = 25 }) {
 }
 
 function answer(pathname) {
-  if (mode() === 'empty') return [200, { streams: [] }]
   let m
+  if ((m = pathname.match(/^\/precompiled\/data_top100_(\d+)\.json$/))) return [200, read('trending.json')?.apibay?.[m[1]] ?? []]
+  if (pathname === '/api/get-torrents') return [200, { torrents_count: 0, torrents: read('trending.json')?.eztv ?? [] }]
+  if (mode() === 'empty') return [200, { streams: [] }]
   const listed = read('candidates.json')
   if ((m = pathname.match(/^\/stream\/(?:movie|series)\/(tt\d+)(?::\d+:\d+)?\.json$/)) && Array.isArray(listed)) {
     const title = dotted(titleOf(m[1]))

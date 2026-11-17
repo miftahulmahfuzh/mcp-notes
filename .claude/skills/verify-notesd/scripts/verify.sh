@@ -5,7 +5,7 @@
 # CLAUDE_HOME. Nothing touches the live daemon on 7317, Neon, ~/mcp-notes-data or ~/.claude.
 # Evidence lives under $VERIFY_HOME/<run>/evidence and survives `down`.
 #
-#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--discovery] [--prober] [--torrent]
+#   verify.sh up [--web] [--embed] [--sessions] [--adversary] [--movies] [--direct-stream] [--discovery] [--prober] [--torrent] [--trending]
 #                                       start an instance from the current checkout; prints RUN= and URL=
 #                                       --sessions seeds CLAUDE_HOME from tests/fixtures/claude-home
 #                                       --adversary turns the Seer reviewer on against a throwaway Seer DB
@@ -26,6 +26,8 @@
 #                                       --torrent (implies --direct-stream) turns torrents on against a loopback
 #                                       seeder of a generated film and pack (scripts/torrent/; TORRENT_FIXTURE_FILE=
 #                                       <path> seeds that file as the film); without it NOTESD_TORRENT=off is pinned
+#                                       --trending (implies --torrent) lets the daily trending list read the fake index's apibay and EZTV top lists
+#                                       (scripts/trending/journey.sh); without it NOTESD_TRENDING=off is pinned
 #   verify.sh doctor RUN                is this instance worth driving? (read-only)
 #   verify.sh api RUN METHOD PATH [JSON]   HTTP call; request + response saved as evidence
 #   verify.sh upload RUN PATH FILE [body]  multipart POST (images, files); saved as evidence
@@ -88,7 +90,7 @@ ensure_pg() {
 psql_run() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -U postgres "$@"; }
 
 cmd_up() {
-  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 discovery=0 prober="" torrent=0
+  local web=0 embed=0 sessions=0 adversary=0 movies=0 direct=0 discovery=0 prober="" torrent=0 trending=0
   for a in "$@"; do
     case "$a" in
       --web) web=1 ;;
@@ -99,6 +101,7 @@ cmd_up() {
       --direct-stream) direct=1; movies=1 ;;
       --discovery) discovery=1; direct=1; movies=1 ;;
       --torrent) torrent=1; direct=1; movies=1 ;;
+      --trending) trending=1; torrent=1; direct=1; movies=1 ;;
       --prober) prober=on ;;
       --prober=on|--prober=off) prober="${a#--prober=}" ;;
       *) die "up: unknown flag $a" ;;
@@ -333,9 +336,15 @@ EOF
       "NOTESD_TORRENT_TORRENTIO_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")"
       NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off NOTESD_TORRENT_MIN_SEEDS=1
     )
+    # --trending: the daily list reads the fake index's top lists (apibay's and EZTV's own routes), never a real index.
+    if [ "$trending" = 1 ]; then
+      env+=("NOTESD_TORRENT_APIBAY_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")" "NOTESD_TORRENT_EZTV_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")")
+    fi
   else
     env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
   fi
+  # NOTESD_TRENDING=off unless --trending: a throwaway daemon never reads an index's top lists on its own.
+  if [ "$trending" = 1 ]; then env+=(NOTESD_TRENDING=on); else env+=(NOTESD_TRENDING=off); fi
   # Torrent phase 5: the remux runs with this machine's ffmpeg; NOTESD_TORRENT_REMUX=off from the caller passes through.
   if [ "$torrent" = 1 ]; then
     env+=(

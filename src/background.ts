@@ -38,7 +38,7 @@ export interface BackgroundOptions {
  * the reply embedding worker (one vector per Claude reply of this host's sessions). With
  * `deps.adversary`, the Seer Adversarial reviewer's poll loop. With deps.movies, the movies
  * library's poll loop over NOTESD_MOVIES_ROOTS. With deps.streamProber enabled
- * (NOTESD_STREAM_PROBER=on), the direct-streaming prober's loop.
+ * (NOTESD_STREAM_PROBER=on), the direct-streaming prober's loop. With deps.trending, the daily trending list's loop.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -185,6 +185,13 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     prober.start();
   }
 
+  // The Stream side's daily trending list: built by the daemon (on by default), started here, closed on stop.
+  const trending = deps.trending ?? null;
+  if (trending !== null) {
+    console.log(trending.startLine());
+    trending.start();
+  }
+
   // Stream cache (stream-cache phase 5): this host's unfinished downloads carry on; closed on stop.
   const streamCache = deps.streamCache ?? null;
   if (streamCache !== null) {
@@ -231,6 +238,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.adversary?.close(),
       deps.movies?.close(),
       prober?.close(),
+      trending?.close(),
       // Before the torrents: ffmpeg stops reading the file route first.
       deps.torrentRemux?.close(),
       streamCache?.close(),

@@ -810,6 +810,12 @@ export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadCon
   return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept})`);
 }
 
+/** These stored titles with their derived state and marks (the Trending section reads what the owner has seen through it). Unknown ids are absent. */
+export async function listTitlesByIds(db: Db, ids: readonly string[], ctx: ReadContext): Promise<TitleListItem[]> {
+  if (ids.length === 0) return [];
+  return selectTitles(db, { limit: MAX_LIST_LIMIT }, ctx, inArray(movieTitles.id, [...ids]));
+}
+
 async function titleCompanies(db: Db, id: string, ctx: ReadContext): Promise<CompanyView[]> {
   const rows = await db
     .select({

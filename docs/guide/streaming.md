@@ -1414,6 +1414,10 @@ A torrent is the third way direct streaming gets a film, beside a cloud provider
 daemon joins the torrent's swarm, downloads the one video file (and its subtitle files) in playing order,
 and serves it from its own disk to the player page. Each torrent phase adds its subsection here.
 
+The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes and
+probes their swarms: see [Trending on torrents](movies.md#trending-on-torrents). That job never plays or
+downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`.
+
 ### The torrent engine and its file route
 
 The engine is WebTorrent 3, inside the daemon (`src/directStream/torrent/`). It starts with the first

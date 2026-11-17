@@ -19,6 +19,7 @@ import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
 import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
+import type { TrendingHandle } from './directStream/trending/job.js';
 import type { StreamEvidence } from './directStream/evidence.js';
 import type { StreamReporter } from './directStream/report.js';
 import type { NoteEvents } from './notes/events.js';
@@ -104,6 +105,12 @@ export interface AppDeps {
    * reports it off. Started and closed by startBackground.
    */
   streamProber?: StreamProberHandle | null;
+  /**
+   * The Stream side's daily trending list (src/directStream/trending/job.ts). The daemon always sets it: a
+   * DisabledTrending unless NOTESD_TRENDING is on and movies, direct streaming, torrents and TMDB are there.
+   * Absent (tests), GET /api/movies/trending reports it off. Started and closed by startBackground.
+   */
+  trending?: TrendingHandle | null;
   /**
    * This host's stream evidence log (src/directStream/evidence.ts): every pass-through answer, the
    * player page's log lines, and snapshots under <dataDir>/movies/stream-reports/. The daemon builds

@@ -19,6 +19,7 @@ import type {
   TitleListItem,
   UnmatchedFile,
   WatchState,
+  TrendingTitle,
 } from '../moviesApi';
 import type { MoviesRoute } from './route';
 
@@ -199,7 +200,7 @@ export type TitleMark = { watched: boolean } | { not_interested: boolean };
  * The grid's titles with the marks just clicked laid over them, so a poster leaves the grid at
  * the click and not when the next read of the list arrives.
  */
-export function withMarks(titles: TitleListItem[], marks: ReadonlyMap<string, TitleMark>): TitleListItem[] {
+export function withMarks<T extends TitleListItem>(titles: T[], marks: ReadonlyMap<string, TitleMark>): T[] {
   if (marks.size === 0) return titles;
   return titles.map((t) => {
     const m = marks.get(t.id);
@@ -832,4 +833,59 @@ export function creditGroups(d: TitleDetail): CreditGroup[] {
   if (d.writers.length > 0) rows.push(crew('Written by', 'writer', d.writers));
   if (d.producers.length > 0) rows.push(crew('Produced by', 'producer', d.producers, PRODUCER_LIMIT));
   return rows;
+}
+
+/** The Trending section's heading text and its off / empty answers. */
+export const TRENDING_OFF_TEXT: Readonly<Record<string, string>> = {
+  setting_off: 'The trending list is off on this machine (NOTESD_TRENDING=off).',
+  movies_off: 'The trending list needs the movie library (NOTESD_MOVIES).',
+  direct_stream_off: 'The trending list needs direct streaming (NOTESD_DIRECT_STREAM).',
+  torrent_off: 'The trending list needs torrents (NOTESD_TORRENT).',
+  no_tmdb: 'The trending list needs a TMDB credential to name its titles.',
+};
+
+export function trendingOffText(reason: string): string {
+  return TRENDING_OFF_TEXT[reason] ?? 'The trending list is off on this machine.';
+}
+
+/** "3 h ago", "2 days ago": for a probe's age. */
+export function agoText(iso: string, now: number = Date.now()): string {
+  const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
+  if (minutes < 2) return 'just now';
+  if (minutes < 90) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+export type QualityState = 'confirmed' | 'dead' | 'unconfirmed';
+
+export interface MagnetQuality {
+  state: QualityState;
+  /** The short line under the poster. */
+  label: string;
+  /** What the mark means, in full, for the tooltip. */
+  tip: string;
+}
+
+/**
+ * The "magnet quality" line of a trending poster. Seeds are what an index lists, which a dead swarm also shows, so they are
+ * never the verdict: only a probe that saw a peer send the file list says "confirmed", and it says when.
+ */
+export function magnetQuality(t: TrendingTitle, now: number = Date.now()): MagnetQuality {
+  const seeds = `${t.trending.seeds.toLocaleString('en-US')} seeds listed by ${t.trending.index}`;
+  const probe = t.trending.probe;
+  if (probe === null) return { state: 'unconfirmed', label: 'not confirmed', tip: `${seeds}. The swarm has not been opened yet, so nobody has confirmed a peer answers.` };
+  const when = agoText(probe.at, now);
+  const detail = probe.detail === null ? '' : ` ${probe.detail}.`;
+  switch (probe.outcome) {
+    case 'confirmed':
+      return { state: 'confirmed', label: `confirmed ${when}`, tip: `${seeds}. A peer sent the file list ${when}.${detail}` };
+    case 'no_peers':
+      return { state: 'dead', label: `no peer answered ${when}`, tip: `${seeds}, but no peer sent a file list ${when}.${detail} The listing may be stale.` };
+    case 'no_video':
+      return { state: 'dead', label: `no video file ${when}`, tip: `${seeds}. The swarm answered ${when} but holds no video file.${detail}` };
+    default:
+      return { state: 'unconfirmed', label: `could not check ${when}`, tip: `${seeds}. The check failed ${when}.${detail}` };
+  }
 }

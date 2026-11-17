@@ -400,8 +400,29 @@ export type StreamListResponse =
   | { enabled: true; titles: TitleListItem[]; fresh_days: number }
   | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
 
-/** The body of phase 3's `POST /api/stream/play`. A series always names its episode. */
-export type StreamRef = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season: number; episode: number };
+/** The body of phase 3's `POST /api/stream/play`. A series always names its episode. `provider` asks that one provider only (`torrent`). */
+export type StreamRef = ({ kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season: number; episode: number }) & { provider?: string };
+
+/** What opening a trending torrent's swarm showed: `confirmed` (a peer sent a file list with a video), `no_peers`, `no_video`, `error`. */
+export type TrendingProbeOutcome = 'confirmed' | 'no_peers' | 'no_video' | 'error';
+
+/** One poster of the Trending section: the grid's shape plus what the indexes and the swarm probe said of its torrent. */
+export interface TrendingTitle extends TitleListItem {
+  trending: {
+    kind_rank: number;
+    seeds: number;
+    index: string;
+    release: string;
+    size_bytes: number | null;
+    listed_at: string;
+    probe: { outcome: TrendingProbeOutcome; detail: string | null; at: string } | null;
+  };
+}
+
+/** `GET /api/movies/trending`. Off is an answer, not an error. */
+export type TrendingListResponse =
+  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; running: boolean; probe: number }
+  | { enabled: false; reason: string; titles: TrendingTitle[]; listed_at: null };
 
 export const MOVIES_EVENTS_URL = '/api/movies/events';
 
@@ -596,6 +617,26 @@ export async function fetchStreamTitles(signal?: AbortSignal): Promise<StreamLis
   const j = await getJson<{ enabled?: unknown; titles?: TitleListItem[] | null; fresh_days?: unknown }>('/api/movies/stream', signal);
   if (j.enabled === true && typeof j.fresh_days === 'number') return { enabled: true, titles: list(j.titles), fresh_days: j.fresh_days };
   return { enabled: false, reason: 'direct_stream_off', titles: [] };
+}
+
+/** The Stream side's Trending section. Anything but a well-formed `enabled: true` reads as off. */
+export async function fetchTrending(signal?: AbortSignal): Promise<TrendingListResponse> {
+  const j = await getJson<{ enabled?: unknown; reason?: unknown; titles?: TrendingTitle[] | null; listed_at?: unknown; status?: { running?: unknown; settings?: { probe?: unknown } | null } | null }>('/api/movies/trending', signal);
+  if (j.enabled === true) {
+    return {
+      enabled: true,
+      titles: list(j.titles),
+      listed_at: typeof j.listed_at === 'string' ? j.listed_at : null,
+      running: j.status?.running === true,
+      probe: typeof j.status?.settings?.probe === 'number' ? j.status.settings.probe : 0,
+    };
+  }
+  return { enabled: false, reason: typeof j.reason === 'string' ? j.reason : 'setting_off', titles: [], listed_at: null };
+}
+
+/** Asks for a new trending list and its probes now (the section's refresh icon). Throws `trending_off` when the job is off. */
+export async function askTrendingRefresh(): Promise<void> {
+  await postJson<unknown>('/api/movies/trending/refresh', {});
 }
 
 /** Phase 3: resolve the title and open the player page full screen in the streaming Chrome. Throws ApiError `no_source`, `direct_stream_off`, ... */

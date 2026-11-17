@@ -7,6 +7,7 @@ import type { AppDeps } from '../deps.js';
 import {
   getTitle,
   listStreamTitles,
+  listTitlesByIds,
   listTitles,
   listUnmatched,
   MAX_LIST_LIMIT,
@@ -32,6 +33,9 @@ import { parseDateBound } from '../notes/dates.js';
 import { NoteError } from '../notes/types.js';
 import { describeIssues, readJson, SSE_HEARTBEAT_MS } from './api.js';
 import { sameOriginOnly } from './sameOrigin.js';
+import { isFreshForTrending, type TrendingOffReason, type TrendingStatus } from '../directStream/trending/job.js';
+import { TrendingRepo } from '../directStream/trending/repo.js';
+import type { TrendingProbeOutcome } from '../db/schema.js';
 
 /**
  * /api/movies/* (MOVIES_LIBRARY_PLAN phase 4): the read model, user state (watched, rating, review note), the
@@ -87,6 +91,25 @@ export type TitleDetailResponse = Omit<TitleDetail, 'stream_sources'> & { stream
 export type StreamListResponse =
   | { enabled: true; titles: TitleListItem[]; fresh_days: number }
   | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
+
+/** One title of the Trending section: the grid's shape plus what the indexes and the swarm probe said of its torrent. */
+export type TrendingTitle = TitleListItem & {
+  trending: {
+    kind_rank: number;
+    seeds: number;
+    index: string;
+    release: string;
+    size_bytes: number | null;
+    listed_at: string;
+    /** What opening the torrent's swarm showed; null while it has not been probed. */
+    probe: { outcome: TrendingProbeOutcome; detail: string | null; at: string } | null;
+  };
+};
+
+/** `GET /api/movies/trending`. Off is a normal answer, so the page can say how to turn it on. */
+export type TrendingListResponse =
+  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; status: TrendingStatus }
+  | { enabled: false; reason: TrendingOffReason | 'direct_stream_off'; titles: TrendingTitle[]; listed_at: null };
 
 const MOVIES_OFF = {
   error: 'movies_off',
@@ -226,7 +249,7 @@ function errorMessage(err: unknown): string {
 }
 
 export function moviesApiRoutes(
-  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'> & Partial<Pick<AppDeps, 'movieStories'>>,
+  deps: Pick<AppDeps, 'config' | 'db' | 'service' | 'movies' | 'directStream'> & Partial<Pick<AppDeps, 'movieStories' | 'trending'>>,
   options: MoviesApiOptions = {},
 ): Hono {
   const api = new Hono();
@@ -321,6 +344,60 @@ export function moviesApiRoutes(
         fresh_days: window.freshDays,
       };
       return c.json(body);
+    }),
+  );
+
+  /**
+   * The Trending section of the Stream side: this machine's list of the most seeded films and series, minus every
+   * title the owner has seen, started or marked not interested since the list was built (read from movie_titles
+   * now, never from the list), so a mark takes a title off at once.
+   */
+  api.get(
+    '/api/movies/trending',
+    withMovies(async (c, _movies, ctx) => {
+      const job = deps.trending ?? null;
+      if (deps.directStream === undefined || deps.directStream === null) {
+        const off: TrendingListResponse = { enabled: false, reason: 'direct_stream_off', titles: [], listed_at: null };
+        return c.json(off);
+      }
+      if (job === null || !job.enabled) {
+        const off: TrendingListResponse = { enabled: false, reason: job?.status().off_reason ?? 'setting_off', titles: [], listed_at: null };
+        return c.json(off);
+      }
+      const rows = await new TrendingRepo(db).rows(ctx.host);
+      const items = new Map((await listTitlesByIds(db, rows.map((r) => r.titleId), ctx)).map((i) => [i.id, i]));
+      const titles: TrendingTitle[] = [];
+      for (const row of rows) {
+        const item = items.get(row.titleId);
+        if (item === undefined || !isFreshForTrending(item)) continue;
+        titles.push({
+          ...item,
+          trending: {
+            kind_rank: row.rank,
+            seeds: row.seeds,
+            index: row.index,
+            release: row.releaseName,
+            size_bytes: row.sizeBytes,
+            listed_at: row.listedAt.toISOString(),
+            probe: row.probeOutcome === null || row.probedAt === null ? null : { outcome: row.probeOutcome, detail: row.probeDetail, at: row.probedAt.toISOString() },
+          },
+        });
+      }
+      const listedAt = rows.reduce<Date | null>((at, r) => (at === null || r.listedAt > at ? r.listedAt : at), null);
+      const body: TrendingListResponse = { enabled: true, titles, listed_at: listedAt === null ? null : listedAt.toISOString(), status: job.status() };
+      return c.json(body);
+    }),
+  );
+
+  /** The refresh icon: one trending pass now (a new list, then the probes). Answers at once; the pass runs on. */
+  api.post(
+    '/api/movies/trending/refresh',
+    sameOriginOnly,
+    withMovies(async (c) => {
+      const job = deps.trending ?? null;
+      if (job === null || !job.enabled) return c.json({ error: 'trending_off', message: 'The trending list is off on this machine.', ...(job === null ? {} : { status: job.status() }) }, 409);
+      const started = job.askPass();
+      return c.json({ started, status: job.status() }, 202);
     }),
   );
 

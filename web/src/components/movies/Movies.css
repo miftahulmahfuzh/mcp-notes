@@ -196,3 +196,21 @@
   .mv-unm-row > .mv-chip, .mv-unm-row > .mv-dim { display: none; }
   .mv-ftext { margin-left: 0; }
 }
+
+/* Trending on torrents: a second section under the Stream grid */
+.mv-trend { margin-top: 56px; }
+.main:has(.mv-pill) > .mv > .mv-content.mv-trend { flex: 0 0 auto; }
+.mv-trend-head { display: flex; align-items: center; gap: 8px; }
+.mv-trend-h { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: -.03em; color: var(--text); }
+.mv-trend-sub { margin: 8px 0 0; max-width: 720px; font-size: 13px; line-height: 1.45; color: var(--muted); text-wrap: pretty; }
+/* Magnet quality: the index's seed count, then what opening the swarm showed. Filled dot: a peer answered; dashed: nobody checked or nobody answered. */
+.mv-q { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--dim); min-width: 0; }
+.mv-q-dot { flex: none; width: 7px; height: 7px; border-radius: 999px; border: 1px dashed var(--line-45); box-sizing: border-box; }
+.mv-q[data-state="confirmed"] { color: var(--text); }
+.mv-q[data-state="confirmed"] .mv-q-dot { background: var(--fg); border: 1px solid var(--fg); }
+.mv-q[data-state="dead"] .mv-q-label { text-decoration: line-through; text-decoration-thickness: 1px; }
+.mv-q-seeds { flex: none; }
+.mv-q-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-qrow { display: flex; align-items: center; gap: 4px; margin-top: 6px; min-height: 26px; }
+.mv-qrow .mv-q { margin-top: 0; flex: 1 1 auto; }
+.mv-trend-play { flex: none; width: 26px; height: 26px; font-size: 15px; }
