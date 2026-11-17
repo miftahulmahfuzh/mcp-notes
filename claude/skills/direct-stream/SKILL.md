@@ -117,6 +117,15 @@ or `service_id`.
   the list at all (`left_out` counts them), so the one you choose is never one they watched.
   Choose one title yourself: the newest when they asked for recent, otherwise one you can give a
   reason for.
+- **A title you chose yourself is never a dead end.** When it answers `no_source`, do not ask the
+  user what to do next: choose another title from the same `direct_stream_discover` list and play
+  that instead, at most twice more (three tried in all), then say which ones failed and which one
+  played. This matters most for TM/TS ("play any comedy movie released on 2025 TM", "play
+  something from torrent"): a torrent's swarm can be dead for one title and alive for the next, so
+  working down the list is what makes an open-ended torrent request actually land, instead of
+  stopping at the first title's bad luck. It does not apply to a title the user named themselves
+  (`/direct-stream <title>`, "play The Shadow's Edge TM"): that one's failure is reported and the
+  user is asked, never swapped for another title without asking.
 - **A rewatch is never filtered.** "Rewatch one of Nolan's movies", "let's watch that Madelyn Cline
   film again" is the same call without `unseen_only`, choosing among the ones marked `seen`. A
   title the user names ("play The Map That Leads to You") goes straight to `direct_stream_play`,
@@ -159,6 +168,8 @@ The ten requests the codenames were written for:
 | what is the most recent park bo yeung project? let's watch it TS | `direct_stream_discover {person: "Park Bo-young", sort: "newest"}` (no `kind`: films and series together); the first entry where she is not Self; `direct_stream_play {title: <title_key>, provider: "torrent"}` |
 | i miss korean mafia movies. play one released this year TM | `direct_stream_discover {kind: "movie", language: "Korean", genre: "crime", keyword: ["mafia", "gangster", "organized crime"], year, unseen_only: true}`, then play one with `provider: "torrent"` |
 | play House of Dragon season 2 TS | `direct_stream_play {title: "House of the Dragon", season: 2, provider: "torrent"}` |
+| play something from torrent | `direct_stream_discover {unseen_only: true}` (no filters at all: any kind, any title), then `direct_stream_play {title: <title_key>, provider: "torrent"}`; on `no_source` try the next title on the list, at most twice more |
+| play any comedy movie released on 2025 TM | `direct_stream_discover {kind: "movie", genre: "comedy", year: 2025, unseen_only: true}`, then play down the list with `provider: "torrent"` until one starts, at most three titles tried |
 
 `movies_mark` with `season` marks that season's episodes finished, not the series, and it stores
 a series the library does not hold yet when `title` is its `title_key` (`tv-94997`).
@@ -265,9 +276,11 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
 - **`skipped_play: "no_match"` with an empty `did_you_mean`:** say no title has that name (and
   year). One retry is worth it when the title has an obvious other form (an original-language
   title); say which name found it.
-- **Error `no_source`:** nothing started. Say no source could stream it, then one short line per
-  attempt from `attempts` with its `outcome` (`no_stream`, `bot_check`, `error`, `dubbed`,
-  `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
+- **Error `no_source`:** nothing started. For a title you chose yourself from a
+  `direct_stream_discover` list (not one the user named), try the next title on that list instead
+  of reporting failure — see Step 1b. For a title the user named, say no source could stream it,
+  then one short line per attempt from `attempts` with its `outcome` (`no_stream`, `bot_check`,
+  `error`, `dubbed`, `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
   may end with `Index: <name>` (a torrent index asked) and `Torrent: <release>` (a torrent tried;
   `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
   With `provider: "cloud"` (NTM, NTS) no torrent was tried, and with `provider: "torrent"` (TM, TS)

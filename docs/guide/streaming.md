@@ -952,9 +952,14 @@ The ten requests the tool was built for, each run against the fake TMDB of
 
 Where Claude chooses the title, the lookup also carries `unseen_only: true`. When the title Claude
 picked answers `no_source`, it picks another from the list, at most twice
-more. After a season is marked finished with `movies_mark`, a series named without an episode
-starts at the first episode that is not finished, so "continue House of the Dragon" also starts
-season 2.
+more. This matters most with TM/TS ("play some chinese action movie TM", "play any comedy movie
+released on 2025 TM", "play something from torrent"): a torrent's swarm can be dead for one title
+and alive for the next, so trying the next title on the list is what makes an open-ended torrent
+request likely to land, rather than stopping at the first title's bad luck. A title you name
+yourself keeps the old behaviour: its `no_source` is reported and you are asked, never swapped for
+another title. After a season is marked finished with `movies_mark`, a series named without an
+episode starts at the first episode that is not finished, so "continue House of the Dragon" also
+starts season 2.
 
 ### Codenames
 
