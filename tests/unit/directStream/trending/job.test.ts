@@ -7,6 +7,7 @@ import type { TrendRow } from '../../../../src/directStream/trending/sources.js'
 import { TorrentError } from '../../../../src/directStream/torrent/types.js';
 import type { TitleListItem } from '../../../../src/movies/read.js';
 
+const CONTROL = '08ada5a7a6183aae1e09d831df6748d566095a10';
 const NOW = new Date('2026-11-17T06:00:00Z');
 const hash = (n: number): string => n.toString(16).padStart(40, 'b');
 
@@ -76,7 +77,7 @@ function make(rows: TrendRow[], over: Partial<TrendingJobOptions> & { states?: R
     ensureTitle: async (t) => `${t.kind}-${t.tmdbId}`,
     titles: async (ids) => ids.map((id) => item(id, states[id] ?? {})),
     peek: async (h): Promise<PeekResult> => {
-      peeked.push(h);
+      if (h !== CONTROL) peeked.push(h);
       return { files: 2, videos: 1, peers: 4, live: true };
     },
     busy: () => false,
@@ -161,6 +162,33 @@ describe('TrendingJob', () => {
     await job.pass(false);
     expect(peeked).toEqual([hash(1), hash(50), hash(2)]);
     expect(store.data.filter((r) => r.probeOutcome === null).map((r) => r.titleId)).toEqual(['tv-51']);
+  });
+
+  it('judges no swarm when the control torrent finds no peer either, records nothing, and says so', async () => {
+    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], {
+      peek: async (h) => {
+        peeked.push(h);
+        throw new TorrentError('no_metadata', 'no peers');
+      },
+    });
+    await job.pass(false);
+    expect(peeked).toEqual([CONTROL]);
+    expect(store.data.every((r) => r.probeOutcome === null)).toBe(true);
+    expect(job.status().last_pass).toMatchObject({ stopped: 'no_peers_here', probed: 0 });
+  });
+
+  it('judges the swarms once the control answers, and an engine error on the control is not a verdict on the network', async () => {
+    const hashes: string[] = [];
+    const { job, store } = make([listing(1, 'movie', 900)], {
+      peek: async (h) => {
+        hashes.push(h);
+        if (h === CONTROL) throw new Error('engine exploded');
+        return { files: 1, videos: 1, peers: 2, live: true };
+      },
+    });
+    await job.pass(false);
+    expect(hashes).toHaveLength(2);
+    expect(store.data[0]?.probeOutcome).toBe('confirmed');
   });
 
   it('opens none with probe 0', async () => {

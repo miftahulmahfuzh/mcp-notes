@@ -41,7 +41,16 @@ export function isFreshForTrending(item: Pick<TitleListItem, 'state' | 'watched'
   return !item.watched && !item.not_interested && (item.state === 'unwatched' || item.state === 'removed_unwatched');
 }
 
-export type TrendingStop = 'done' | 'no_listing' | 'busy' | 'closed' | 'error';
+/** `no_peers_here`: the control torrent found no peer either, so this machine's network cannot judge any swarm (nothing was recorded). */
+export type TrendingStop = 'done' | 'no_listing' | 'busy' | 'no_peers_here' | 'closed' | 'error';
+
+/**
+ * A torrent that is alive wherever peers can be reached: Blender's open-licensed Sintel, the WebTorrent demo. A pass opens it
+ * first; when no peer sends its file list either, the network is what failed (an office firewall hid every peer once), so no
+ * listed swarm is blamed.
+ */
+export const TRENDING_CONTROL_HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
+export const TRENDING_CONTROL_TIMEOUT_MS = 30_000;
 
 export interface TrendingPass {
   started_at: string;
@@ -140,6 +149,9 @@ export interface TrendingJobOptions {
   checkMs?: number;
   everyMs?: number;
   peekTimeoutMs?: number;
+  /** The control torrent (default TRENDING_CONTROL_HASH) and how long it is given. */
+  controlHash?: string;
+  controlTimeoutMs?: number;
 }
 
 function messageOf(err: unknown): string {
@@ -354,6 +366,12 @@ export class TrendingJob implements TrendingHandle {
       if (s !== undefined) order.push(s);
     }
     const wanted = order.slice(0, Math.max(0, this.o.config.probe - (await this.alreadyProbed())));
+    if (wanted.length > 0 && !(await this.networkReaches())) {
+      summary.stopped = 'no_peers_here';
+      this.log('[notesd] trending: the control torrent found no peer either: this network cannot reach torrent peers, so no swarm is judged (the probes are tried again at the next hourly check)');
+      this.o.changed();
+      return;
+    }
     let cut: TrendingStop | null = null;
     await mapLimit(wanted, TRENDING_PEEK_CONCURRENCY, async (row) => {
       if (cut !== null) return;
@@ -372,6 +390,16 @@ export class TrendingJob implements TrendingHandle {
     });
     if (cut !== null) summary.stopped = cut;
     this.o.changed();
+  }
+
+  /** True when the control torrent's file list arrives; false when no peer answers (an error of the engine is not a verdict on the network). */
+  private async networkReaches(): Promise<boolean> {
+    try {
+      await this.o.peek(this.o.controlHash ?? TRENDING_CONTROL_HASH, TRENDING_TRACKERS, { timeoutMs: this.o.controlTimeoutMs ?? TRENDING_CONTROL_TIMEOUT_MS });
+      return true;
+    } catch (err) {
+      return !(err instanceof TorrentError && err.code === 'no_metadata');
+    }
   }
 
   private async alreadyProbed(): Promise<number> {

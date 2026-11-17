@@ -45,6 +45,11 @@ export function TrendingSection({ trending, running, onOpen, onMark, onRefresh, 
         Most seeded on the torrent indexes, not seen or marked not interested by you. Seeds are the index&apos;s claim; &ldquo;confirmed&rdquo; means a peer answered when the swarm was opened.
         {trending.listed_at !== null && ` Listed ${agoText(trending.listed_at)}; ${confirmed} of ${titles.length} confirmed.`}
       </p>
+      {trending.network_blocked && (
+        <p className="mv-trend-warn" role="status">
+          This network cannot reach torrent peers: a known-healthy torrent found none either, so no swarm was judged and every title reads &ldquo;not confirmed&rdquo;. Try another network; the swarms are probed again at the next hourly check.
+        </p>
+      )}
       {titles.length === 0 ? (
         <p className="mv-empty">{running ? 'Building the list.' : 'Nothing listed yet: the first list is built a couple of minutes after notesd starts, then once a day.'}</p>
       ) : (

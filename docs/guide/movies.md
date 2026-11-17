@@ -521,6 +521,12 @@ lists the same torrent again; a failure never is, because it may be this machine
 firewall hid every peer once), so it is tried again. This is a daily snapshot, not a promise for tonight: a swarm that was
 alive at 06:00 can be dead at 22:00, which is why the line says when.
 
+**A network that cannot reach peers.** Before judging any swarm a pass opens a control torrent that is
+alive everywhere (Blender's open-licensed Sintel, 30 s). When it finds no peer either, the network is
+what failed (an office firewall hid every peer once), so the pass records nothing, stops with
+`no_peers_here`, the section says the network cannot reach torrent peers, and the probes run again at
+the next hourly check. A failed control caused by the engine, not by silence, is not a verdict on the network.
+
 **Playing one.** A poster opens the title's page, like any Stream poster. On a film a play icon beside
 its line plays it from its torrent (`provider: "torrent"`, the same as the codename TM): the finder asks
 the indexes by IMDb id again and picks by swarm, so it need not be the torrent the line speaks of. A

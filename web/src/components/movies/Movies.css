@@ -214,3 +214,4 @@
 .mv-qrow { display: flex; align-items: center; gap: 4px; margin-top: 6px; min-height: 26px; }
 .mv-qrow .mv-q { margin-top: 0; flex: 1 1 auto; }
 .mv-trend-play { flex: none; width: 26px; height: 26px; font-size: 15px; }
+.mv-trend-warn { margin: 10px 0 0; max-width: 720px; padding: 8px 12px; border: 1px dashed var(--line-45); border-radius: 8px; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; color: var(--soft); }

@@ -421,7 +421,7 @@ export interface TrendingTitle extends TitleListItem {
 
 /** `GET /api/movies/trending`. Off is an answer, not an error. */
 export type TrendingListResponse =
-  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; running: boolean; probe: number }
+  | { enabled: true; titles: TrendingTitle[]; listed_at: string | null; running: boolean; probe: number; /** The last pass found no torrent peer even for its control torrent: this network cannot judge a swarm. */ network_blocked: boolean }
   | { enabled: false; reason: string; titles: TrendingTitle[]; listed_at: null };
 
 export const MOVIES_EVENTS_URL = '/api/movies/events';
@@ -621,7 +621,7 @@ export async function fetchStreamTitles(signal?: AbortSignal): Promise<StreamLis
 
 /** The Stream side's Trending section. Anything but a well-formed `enabled: true` reads as off. */
 export async function fetchTrending(signal?: AbortSignal): Promise<TrendingListResponse> {
-  const j = await getJson<{ enabled?: unknown; reason?: unknown; titles?: TrendingTitle[] | null; listed_at?: unknown; status?: { running?: unknown; settings?: { probe?: unknown } | null } | null }>('/api/movies/trending', signal);
+  const j = await getJson<{ enabled?: unknown; reason?: unknown; titles?: TrendingTitle[] | null; listed_at?: unknown; status?: { running?: unknown; settings?: { probe?: unknown } | null; last_pass?: { stopped?: unknown } | null } | null }>('/api/movies/trending', signal);
   if (j.enabled === true) {
     return {
       enabled: true,
@@ -629,6 +629,7 @@ export async function fetchTrending(signal?: AbortSignal): Promise<TrendingListR
       listed_at: typeof j.listed_at === 'string' ? j.listed_at : null,
       running: j.status?.running === true,
       probe: typeof j.status?.settings?.probe === 'number' ? j.status.settings.probe : 0,
+      network_blocked: j.status?.last_pass?.stopped === 'no_peers_here',
     };
   }
   return { enabled: false, reason: typeof j.reason === 'string' ? j.reason : 'setting_off', titles: [], listed_at: null };
