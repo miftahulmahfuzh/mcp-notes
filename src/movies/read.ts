@@ -810,10 +810,35 @@ export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadCon
   return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept})`);
 }
 
-/** These stored titles with their derived state and marks (the Trending section reads what the owner has seen through it). Unknown ids are absent. */
+/**
+ * These stored titles with their derived state and marks (the Trending section reads what the owner has seen through it).
+ * Unknown ids are absent. A title nothing was ever done to (no flag, mark, file or play) is `unwatched` by definition, so it is
+ * built from its row and its own movie id alone: a series' every episode row and episode id (thousands over the remote database)
+ * are read only for the titles that were touched.
+ */
 export async function listTitlesByIds(db: Db, ids: readonly string[], ctx: ReadContext): Promise<TitleListItem[]> {
   if (ids.length === 0) return [];
-  return selectTitles(db, { limit: MAX_LIST_LIMIT }, ctx, inArray(movieTitles.id, [...ids]));
+  const list = [...ids];
+  const touchedRows = await db.execute<{ id: string }>(sql`
+    select t.id from movie_titles t
+    where t.id in (${sql.join(list.map((id) => sql`${id}`), sql`, `)})
+      and (t.watched_at is not null or t.not_interested_at is not null
+        or exists (select 1 from movie_files f where f.title_id = t.id)
+        or exists (select 1 from movie_plays p where p.title_id = t.id)
+        or exists (select 1 from movie_episode_marks m where m.title_id = t.id))`);
+  const touched = touchedRows.rows.map((r) => r.id);
+  const pristine = list.filter((id) => !touched.includes(id));
+  const full = touched.length === 0 ? [] : await selectTitles(db, { limit: MAX_LIST_LIMIT }, ctx, inArray(movieTitles.id, touched));
+  if (pristine.length === 0) return full;
+  const rows = await db.select().from(movieTitles).where(inArray(movieTitles.id, pristine));
+  const own = await db.select().from(movieIds).where(and(inArray(movieIds.titleId, pristine), isNull(movieIds.season)));
+  const movieIdOf = new Map(own.map((r) => [r.titleId, r.id]));
+  const light = rows.map((t) => {
+    const parts = emptyParts();
+    parts.ids = { title: movieIdOf.get(t.id) ?? null, episodes: new Map() };
+    return buildTitle(t, parts, ctx, IMAGE_SIZES.grid).item;
+  });
+  return [...full, ...light];
 }
 
 async function titleCompanies(db: Db, id: string, ctx: ReadContext): Promise<CompanyView[]> {

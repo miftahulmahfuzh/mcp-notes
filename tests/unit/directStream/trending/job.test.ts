@@ -186,6 +186,22 @@ describe('TrendingJob', () => {
     expect(store.data.every((r) => r.probeOutcome === 'confirmed')).toBe(true);
   });
 
+  it('probes a fresh list again at the next check when a play cut the probes short, without listing again', async () => {
+    let busy = true;
+    let clock = NOW.getTime();
+    const { job, store, peeked } = make([listing(1, 'movie', 900), listing(2, 'movie', 800)], { busy: () => busy, now: () => new Date(clock), initialDelayMs: 1, checkMs: 5 });
+    job.start();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(store.replaced).toBe(1);
+    expect(peeked).toEqual([]);
+    busy = false;
+    await new Promise((r) => setTimeout(r, 40));
+    expect(store.replaced).toBe(1);
+    expect(peeked).toHaveLength(2);
+    expect(store.data.every((r) => r.probeOutcome === 'confirmed')).toBe(true);
+    await job.close();
+  });
+
   it('a pass never throws: a store failure is the pass\'s error', async () => {
     const { job } = make([listing(1, 'movie', 900)], {
       titles: async () => {

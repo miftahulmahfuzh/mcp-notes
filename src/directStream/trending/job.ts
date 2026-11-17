@@ -226,8 +226,11 @@ export class TrendingJob implements TrendingHandle {
     try {
       if (this.running === null) {
         const at = await this.o.store.listedAt(this.o.host);
-        if (at === null || this.now().getTime() - at.getTime() >= (this.o.everyMs ?? TRENDING_EVERY_MS)) {
-          this.running = this.pass(false).finally(() => {
+        const stale = at === null || this.now().getTime() - at.getTime() >= (this.o.everyMs ?? TRENDING_EVERY_MS);
+        // A fresh list whose probes were cut short (a play was on) is probed again now, not tomorrow.
+        const unprobed = !stale && this.o.config.probe > 0 && (await this.o.store.rows(this.o.host)).some((r) => r.probeOutcome === null) && (await this.alreadyProbed()) < this.o.config.probe;
+        if (stale || unprobed) {
+          this.running = this.pass(false, !stale).finally(() => {
             this.running = null;
           });
         }
@@ -241,7 +244,7 @@ export class TrendingJob implements TrendingHandle {
   }
 
   /** One pass: build the list, then probe. Never throws. */
-  async pass(asked: boolean): Promise<void> {
+  async pass(asked: boolean, probeOnly = false): Promise<void> {
     const started = this.now();
     const summary: TrendingPass = {
       started_at: started.toISOString(),
@@ -258,7 +261,13 @@ export class TrendingJob implements TrendingHandle {
     };
     this.last = summary;
     try {
-      await this.build(summary);
+      if (probeOnly) {
+        const rows = await this.o.store.rows(this.o.host);
+        summary.movies = rows.filter((r) => r.kind === 'movie').length;
+        summary.series = rows.length - summary.movies;
+      } else {
+        await this.build(summary);
+      }
       if (summary.stopped === 'done') await this.probe(summary);
     } catch (err) {
       summary.stopped = 'error';
