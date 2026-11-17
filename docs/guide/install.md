@@ -21,7 +21,9 @@ machine, running by hand, the test suites and the docs tooling. Settings are in
   the direct Neon host; they are told apart by host name, so the key names do not have to be
   right). Optional: `OPENROUTER_API_KEY` for search by meaning, `LLM_*` for the chat bar's GLM
   fallback, `TMDB_*` and `NOTESD_MOVIES_ROOTS` for Movies.
-- `curl`. Docker only for the integration tests. `tmux` for resume from the wall, `ffprobe`
+- `curl`. Docker for the movies database (`scripts/install.sh` creates the
+  `mcp-notes-pg-movies` container; without Docker the movie tables stay in the notes database)
+  and for the integration tests. `tmux` for resume from the wall, `ffprobe`
   and Windows VLC for Movies, `gh` for the Seer nightly dispatch.
 - A Python 3.9 or later that can make a virtual environment, for the torrent source's Whisper
   subtitles. The installer finds one (miniconda's works; Ubuntu's own needs `python3-venv`, which it

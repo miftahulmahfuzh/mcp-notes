@@ -55,6 +55,11 @@ DATA_DIR="${NOTES_DATA_DIR:-$HOME/mcp-notes-data}"
 PORT=7317
 HEALTH_URL="http://127.0.0.1:$PORT/health"
 PLAYER_URL="http://127.0.0.1:$PORT/api/movies/player"
+MOVIES_DB_CONTAINER=mcp-notes-pg-movies
+MOVIES_DB_IMAGE=pgvector/pgvector:pg16
+MOVIES_DB_PORT=55437
+MOVIES_DB_NAME=mcp_notes_movies
+MOVIES_DB_PASSWORD=mcpnotes
 # EX_TEMPFAIL: the daemon is busy (something plays or is being started); try again later.
 BUSY_EXIT=75
 FORCE="${NOTES_INSTALL_FORCE:-0}"
@@ -207,6 +212,50 @@ build() {
 make_data_dir() {
   log "data dir $DATA_DIR"
   mkdir -p "$DATA_DIR"
+}
+
+# This machine's own Postgres for the movie_* and stream_* tables (MOVIES_DATABASE_URL): a Docker
+# container with a named volume that Docker starts again after a reboot. The daemon migrates it at
+# start and copies the shared database's movie tables into it once. Idempotent; any failure warns and
+# returns, and the movie tables then stay in the shared database. A MOVIES_DATABASE_URL already in
+# .env.local that names another database is the owner's and is left alone.
+install_movies_db() {
+  local url="postgres://postgres:$MOVIES_DB_PASSWORD@127.0.0.1:$MOVIES_DB_PORT/$MOVIES_DB_NAME" current state i
+  [[ -f "$ENV_LOCAL" ]] || return 0
+  if is_off "$(env_local_value NOTESD_MOVIES)"; then
+    return 0
+  fi
+  current="$(env_local_value MOVIES_DATABASE_URL)"
+  if [[ -n "$current" && "$current" != "$url" ]]; then
+    log "movies database: .env.local names its own MOVIES_DATABASE_URL, leaving it alone"
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    warn "movies database: docker is not usable here, so the movie tables stay in the shared database. Install Docker and re-run, or set MOVIES_DATABASE_URL in $ENV_LOCAL to a Postgres on this machine."
+    return 0
+  fi
+  if ! state="$(docker inspect -f '{{.State.Running}}' "$MOVIES_DB_CONTAINER" 2>/dev/null)"; then
+    log "movies database: creating container $MOVIES_DB_CONTAINER (127.0.0.1:$MOVIES_DB_PORT)"
+    docker run -d --name "$MOVIES_DB_CONTAINER" --restart unless-stopped \
+      -e POSTGRES_PASSWORD="$MOVIES_DB_PASSWORD" -e POSTGRES_DB="$MOVIES_DB_NAME" \
+      -p "127.0.0.1:$MOVIES_DB_PORT:5432" -v "$MOVIES_DB_CONTAINER:/var/lib/postgresql/data" \
+      "$MOVIES_DB_IMAGE" >/dev/null || { warn "movies database: could not create $MOVIES_DB_CONTAINER; the movie tables stay in the shared database."; return 0; }
+  elif [[ "$state" != "true" ]]; then
+    log "movies database: starting container $MOVIES_DB_CONTAINER"
+    docker start "$MOVIES_DB_CONTAINER" >/dev/null || { warn "movies database: could not start $MOVIES_DB_CONTAINER."; return 0; }
+  fi
+  for i in $(seq 1 60); do
+    if docker exec "$MOVIES_DB_CONTAINER" pg_isready -U postgres -d "$MOVIES_DB_NAME" >/dev/null 2>&1; then
+      if [[ -z "$current" ]]; then
+        log "movies database: adding MOVIES_DATABASE_URL to $ENV_LOCAL"
+        printf '\n# The movie and stream tables live in a database on this machine (scripts/install.sh).\nMOVIES_DATABASE_URL=%s\n' "$url" >> "$ENV_LOCAL"
+      fi
+      log "movies database: $MOVIES_DB_CONTAINER is ready"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "movies database: $MOVIES_DB_CONTAINER did not become ready; the movie tables stay in the shared database until the next run."
 }
 
 # The last value of NAME in .env.local (quotes stripped), or nothing. The daemon reads the same file.
@@ -560,6 +609,7 @@ main() {
   install_deps
   build
   make_data_dir
+  install_movies_db
   install_whisper
   install_unit
   enable_linger

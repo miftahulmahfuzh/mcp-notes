@@ -628,6 +628,11 @@ export const DEFAULT_MOVIES_CONFIG: MoviesConfig = {
 export interface Config {
   /** Runtime connection string: the pooled Neon host in production (see `loadConfig`). */
   databaseUrl: string
+  /**
+   * This machine's own database for the movie_* and stream_* tables (MOVIES_DATABASE_URL); null: they
+   * or absent: they live in `databaseUrl` with the notes.
+   */
+  moviesDatabaseUrl?: string | null
   /** `NOTESD_PORT`, default 7317. 0 means "any free port" (tests). */
   port: number
   /** Always 127.0.0.1. The daemon has no auth, so it never listens anywhere else. */
@@ -719,6 +724,19 @@ function pickDatabaseUrl(
     .map((v) => v?.trim())
     .filter((v): v is string => !!v)
   return candidates.find(isPooledUrl) ?? candidates[0]
+}
+
+/**
+ * The movies database URL, or null. With `DATABASE_URL` set in the real environment (tests, a
+ * throwaway daemon) only the real environment counts, so such a run never reaches the live movies
+ * database that `.env.local` names.
+ */
+function pickMoviesDatabaseUrl(
+  realEnv: Record<string, string | undefined>,
+  merged: Record<string, string | undefined>,
+): string | null {
+  const env = realEnv.DATABASE_URL?.trim() ? realEnv : merged
+  return env.MOVIES_DATABASE_URL?.trim() || null
 }
 
 function parseHost(raw: string | undefined): typeof LOOPBACK_HOST {
@@ -1167,6 +1185,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
 
   return {
     databaseUrl,
+    moviesDatabaseUrl: pickMoviesDatabaseUrl(realEnv, env),
     port: parsePort(env.NOTESD_PORT),
     host: parseHost(env.NOTESD_HOST),
     dataDir,

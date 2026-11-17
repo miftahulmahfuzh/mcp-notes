@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { MOVIE_TOOL_NAMES } from '../chat/status.js';
 import type { Db } from '../db/client.js';
 import { movieFiles, movieTitles } from '../db/schema.js';
-import type { AppDeps } from '../deps.js';
+import { moviesDbOf, type AppDeps } from '../deps.js';
 import { continueTitle, playSomething, type ContinueResult, type SomethingResult } from '../movies/continue.js';
 import { movieIdFor, normalizeMovieId, resolveMovieId, type MovieIdTarget } from '../movies/ids.js';
 import { getTitle, history, listTitles, type HistoryFilter, type ReadContext, type TitleDetail, type TitleFilter, type TitleListItem } from '../movies/read.js';
@@ -131,12 +131,12 @@ export function movieToolDeps(deps: AppDeps): MovieToolDeps | null {
     continueTitle: async (title) => {
       const player = deps.moviesPlayer ?? null;
       if (player === null) throw new MovieToolError('movies_off', 'playback is not running on this server.');
-      return continueTitle({ db: deps.db, player }, title);
+      return continueTitle({ db: moviesDbOf(deps), player }, title);
     },
     playSomething: async () => {
       const player = deps.moviesPlayer ?? null;
       if (player === null) throw new MovieToolError('movies_off', 'playback is not running on this server.');
-      return playSomething({ db: deps.db, player });
+      return playSomething({ db: moviesDbOf(deps), player });
     },
     fetchPicture: tmdbPictureFetcher(deps.config.movies.tmdb.imageBase),
   };
@@ -547,7 +547,8 @@ const MARK_DESCRIPTION =
   'Returns { title_id, title, state, watched_at, not_interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
 
 /** The six movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
-export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'movies' | 'wallUrl'>): void {
+export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'moviesDb' | 'movies' | 'wallUrl'>): void {
+  const db = deps.moviesDb ?? deps.db;
   const wall = (deps.wallUrl ?? DEFAULT_WALL_URL).replace(/\/+$/, '');
   const titleUrl = (id: string): string => `${wall}/movies/${encodeURIComponent(id)}`;
   const off = (): CallToolResult => fail(MOVIES_OFF);
@@ -588,7 +589,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (args.state !== undefined) filter.state = args.state;
         if (args.finished_from !== undefined) filter.finishedFrom = parseDateBound(args.finished_from, 'from');
         if (args.finished_to !== undefined) filter.finishedTo = parseDateBound(args.finished_to, 'to');
-        const titles = await listTitles(deps.db, filter, ctxOf(m));
+        const titles = await listTitles(db, filter, ctxOf(m));
         return {
           count: titles.length,
           titles: titles.map((t) => ({ ...t, url: titleUrl(t.movie_id ?? t.id) })),
@@ -623,8 +624,8 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
       const m = deps.movies;
       if (!m) return off();
       return answer(async () => {
-        const { titleId: id, target } = await resolveTitle(deps.db, ctxOf(m), title);
-        const detail = await getTitle(deps.db, id, ctxOf(m));
+        const { titleId: id, target } = await resolveTitle(db, ctxOf(m), title);
+        const detail = await getTitle(db, id, ctxOf(m));
         if (detail === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
         const last_play = detail.plays[0] ?? null;
         const all = detail.seasons.flatMap((s) => s.episodes);
@@ -714,8 +715,8 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         const filter: HistoryFilter = { limit: args.limit ?? MOVIES_HISTORY_DEFAULT_LIMIT };
         if (args.from !== undefined) filter.from = parseDateBound(args.from, 'from');
         if (args.to !== undefined) filter.to = parseDateBound(args.to, 'to');
-        if (args.title !== undefined) filter.titleId = await resolveTitleId(deps.db, ctxOf(m), args.title);
-        const plays = await history(deps.db, filter);
+        if (args.title !== undefined) filter.titleId = await resolveTitleId(db, ctxOf(m), args.title);
+        const plays = await history(db, filter);
         return { count: plays.length, plays: plays.map((p) => ({ ...p, url: p.title_id === null ? null : titleUrl(p.movie_id ?? p.title_id) })) };
       });
     },
@@ -748,10 +749,10 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             result.action === 'no_match'
               ? 'Nothing was played: no film or series with a file on this machine is left to watch.'
               : `Picked at random among ${candidates} playable title${candidates === 1 ? '' : 's'}. ${continueMessage(result)}`;
-          return { ...result, picked_from: candidates, message, ...(await continueLinks(deps.db, result, titleUrl)) };
+          return { ...result, picked_from: candidates, message, ...(await continueLinks(db, result, titleUrl)) };
         }
         const result = await m.continueTitle(title ?? null);
-        return { ...result, message: continueMessage(result), ...(await continueLinks(deps.db, result, titleUrl)) };
+        return { ...result, message: continueMessage(result), ...(await continueLinks(db, result, titleUrl)) };
       });
     },
   );
@@ -800,7 +801,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (person === undefined) throw new MovieToolError('not_found', `TMDB knows no person named "${args.name}".`);
 
         const merged = mergeCredits(await tmdb.personCredits(person.personId));
-        const marks = await libraryMarks(deps.db, ctxOf(m), merged.map((c) => titleId(c.kind, c.tmdbId)));
+        const marks = await libraryMarks(db, ctxOf(m), merged.map((c) => titleId(c.kind, c.tmdbId)));
 
         const all = merged.map((c) => {
           const { kind, tmdb_id, title_id, movie_id, ...library } = markedTitle(c.kind, c.tmdbId, marks, titleUrl);
@@ -841,8 +842,8 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
       if (!m) return off();
       try {
         const ctx = ctxOf(m);
-        const resolved = await resolveTitle(deps.db, ctx, title);
-        const detail = await getTitle(deps.db, resolved.titleId, ctx);
+        const resolved = await resolveTitle(db, ctx, title);
+        const detail = await getTitle(db, resolved.titleId, ctx);
         if (detail === null) throw new MovieToolError('not_found', `no title ${resolved.titleId} is stored.`);
         const name = `${detail.title}${detail.year === null ? '' : ` (${detail.year})`}${detail.movie_id === null ? '' : ` ${detail.movie_id}`}`;
         const wanted: { what: string; url: string | null }[] = [];
@@ -908,7 +909,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
       return answer(async () => {
         const req = markRequest(args);
         if (req.target === 'file') {
-          const rows = await deps.db
+          const rows = await db
             .select({ titleId: movieFiles.titleId })
             .from(movieFiles)
             .where(eq(movieFiles.id, req.fileId))
@@ -919,7 +920,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             throw new MovieToolError('unmatched_file', `file ${req.fileId} is not matched to a title yet; the owner can assign it from the unmatched list on the wall's Movies page.`);
           }
           await m.setFileWatched(req.fileId, req.watched);
-          const detail = await getTitle(deps.db, row.titleId, ctxOf(m));
+          const detail = await getTitle(db, row.titleId, ctxOf(m));
           if (detail === null) throw new MovieToolError('not_found', `no title ${row.titleId} in the library.`);
           return {
             title_id: detail.id,
@@ -929,17 +930,17 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
             file: detail.files.find((f) => f.id === req.fileId) ?? null,
           };
         }
-        const { titleId: id, target } = await resolveOrStoreTitle(deps.db, m, ctxOf(m), req.title);
+        const { titleId: id, target } = await resolveOrStoreTitle(db, m, ctxOf(m), req.title);
         if (target !== null && target.season !== null) {
           // An episode's movie id: watched goes on that episode's files, never on the whole series.
           if (req.rating !== undefined || req.review !== undefined || req.notInterested !== undefined || req.season !== undefined || req.watched === undefined) {
             throw new MovieToolError('invalid_input', `${target.movieId} is one episode: it takes watched only. Rating and review belong to the series; pass its movie id or name.`);
           }
-          const before = await getTitle(deps.db, id, ctxOf(m));
+          const before = await getTitle(db, id, ctxOf(m));
           const files = (before?.files ?? []).filter((f) => f.season === target.season && f.episode === target.episode);
           if (files.length === 0) throw new MovieToolError('not_found', `${target.movieId} has no file in the library, so there is nothing to mark.`);
           for (const f of files) await m.setFileWatched(f.id, req.watched);
-          const after = await getTitle(deps.db, id, ctxOf(m));
+          const after = await getTitle(db, id, ctxOf(m));
           if (after === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
           return {
             title_id: after.id,
@@ -953,7 +954,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         let seasonMark: SeasonMarkResult | null = null;
         if (req.season !== undefined && req.watched !== undefined) {
           // One season: the marks go on its episodes, never on the series, so the next season still plays next.
-          const before = await getTitle(deps.db, id, ctxOf(m));
+          const before = await getTitle(db, id, ctxOf(m));
           if (before === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
           if (before.kind !== 'tv') throw new MovieToolError('invalid_input', `${before.title} is a film: it has no seasons. Leave season out to mark the film.`);
           seasonMark = await m.setSeasonWatched(id, req.season, req.watched);
@@ -968,7 +969,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         if (req.rating !== undefined) patch.rating = req.rating;
         if (Object.keys(patch).length > 0) await m.setTitleUser(id, patch);
         if (req.review !== undefined) await m.saveReview(id, req.review);
-        const detail = await getTitle(deps.db, id, ctxOf(m));
+        const detail = await getTitle(db, id, ctxOf(m));
         if (detail === null) throw new MovieToolError('not_found', `no title ${id} in the library.`);
         const marked = detail.seasons.find((s) => s.season === req.season);
         return {

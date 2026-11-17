@@ -141,8 +141,9 @@ Outside the data dir:
 Two laptops run their own `notesd` against the same database. They share the database, not the
 disk.
 
-- Everything in Postgres is the same on both: notes, tags, revisions, the bin, vectors, chat
-  history, session rows, movie titles, ratings and reviews, `app_settings`.
+- Everything in the shared Postgres is the same on both: notes, tags, revisions, the bin, vectors,
+  chat history, session rows, `app_settings`. The movie library and streaming are not in it: each
+  machine keeps them in [its own database](#the-movies-database).
 - Every row that points at bytes records a `host`: photos, files, chat images, session
   transcripts, movie files and plays. On the other machine such a row reports `available: false`,
   and asking for the bytes answers 404 `not_on_this_machine` with the host. New photo, file or
@@ -157,6 +158,32 @@ disk.
   304 that costs one aggregate query.
 - Background work that both daemons may do (note embedding, the adversary's leases) is
   idempotent or claimed in the database.
+
+## The movies database
+
+The `movie_*` and `stream_*` tables hold nothing worth sharing and were most of what the daemon
+read from Neon (one episode list is megabytes, and the library scan re-reads the files every two
+minutes), so with `MOVIES_DATABASE_URL` set they live in a Postgres on the machine itself.
+
+- **Where it is.** `scripts/install.sh` creates the Docker container `mcp-notes-pg-movies`
+  (pgvector/pgvector:pg16, 127.0.0.1:55437, a named volume, restarted by Docker after a reboot)
+  and adds `MOVIES_DATABASE_URL` to `.env.local`. Without Docker, or with the variable unset, the
+  tables stay in the notes database and nothing else changes.
+- **Schema.** The daemon applies the same `drizzle/` migrations to it at every start
+  (`src/db/moviesDb.ts`), so it holds the whole schema with the notes tables empty. A database
+  that is not up yet (the container at boot) is waited for, then retried behind the daemon.
+- **Wiring.** `AppDeps.moviesDb` is that database; `moviesDbOf(deps)` is what every movie and
+  stream repo, route and tool is built with. Only the review crosses over: it is a normal note,
+  so `movie_titles.review_note_id` has no foreign key and the read model looks the note up in the
+  notes database (`notesDbOf`).
+- **The one-time copy.** What Neon holds of these tables is merged in once per machine
+  (`src/movies/sharedImport.ts`), at start and then hourly until Neon can be read. The machine may
+  have run on its own database meanwhile, so it merges: the owner's marks, plays and the shared
+  movie ids (`M-23T4`) arrive, a file already scanned here keeps its row and takes the shared
+  plays, and a local movie id that collides is issued again. The marker is the
+  `movies_import_from_shared` row of the movies database's `app_settings`.
+- **Two machines.** Titles, marks, plays and movie ids made after the copy stay on the machine
+  that made them. A review still reaches both, as a note.
 
 ## Neon
 

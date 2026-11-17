@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Db } from '../../src/db/client.js'
-import { movieFiles, movieTitles, notes } from '../../src/db/schema.js'
+import { movieFiles, movieTitles } from '../../src/db/schema.js'
 import { closeTestDb, openTestDb, truncateAll } from './setup.js'
 
 /** The Postgres error code and constraint name behind a failed statement (drizzle wraps it in `cause`). */
@@ -119,12 +119,10 @@ describe('migration 0017 (movies)', () => {
     expect(await pgFailure(db.delete(movieTitles).where(eq(movieTitles.id, 'movie-1')))).toMatchObject({ code: '23503' })
   })
 
-  it('clears the review link when its note is purged', async () => {
-    await db.insert(notes).values({ id: 'R-V01', body: 'loved it #movie' })
+  it('holds the review link without a foreign key: the notes may live in another database', async () => {
     await db.insert(movieTitles).values({ ...title('movie-1', 'movie', 1), reviewNoteId: 'R-V01' })
-    await db.delete(notes).where(eq(notes.id, 'R-V01'))
     const [row] = await db.select({ reviewNoteId: movieTitles.reviewNoteId }).from(movieTitles)
-    expect(row?.reviewNoteId).toBeNull()
+    expect(row?.reviewNoteId).toBe('R-V01')
   })
 
   it('indexes title, original title and synopsis for full text', async () => {

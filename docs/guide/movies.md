@@ -759,7 +759,10 @@ outputs lost the picture or crashed.
 
 ## Two machines
 
-Both machines use the same database and different disks.
+With `MOVIES_DATABASE_URL` set (what `scripts/install.sh` does) each machine keeps the movie
+tables in [its own database](architecture.md#the-movies-database): after the one-time copy from
+the shared database nothing below is shared any more except the review, which is a note. The
+table and the list describe two machines that still keep the movie tables in the shared database.
 
 | Shared | Per host |
 | --- | --- |

@@ -21,6 +21,8 @@ export interface ToolDeps {
   dataDir: string;
   /** Read-only use by phase 5's image tools (raw image records); writes still go through `service`. */
   db: Db;
+  /** The database of the movie tables when it is not `db` (AppDeps.moviesDb). */
+  moviesDb?: Db;
   /** Connectors for the connector tools. Omitted: defaultConnectors() (sibling repos, read per call). Tests inject their own. */
   connectors?: Connectors;
   /**

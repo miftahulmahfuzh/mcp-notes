@@ -30,6 +30,11 @@ import type { SessionEvents } from './sessions/events.js';
 export interface AppDeps {
   config: Config;
   db: Db;
+  /**
+   * The database of the movie_* and stream_* tables: this machine's own when MOVIES_DATABASE_URL is
+   * set. Absent (tests, no such URL): they live in `db`. Read it through `moviesDbOf`.
+   */
+  moviesDb?: Db;
   events: NoteEvents;
   service: NotesService;
   /** Null without OPENROUTER_API_KEY (or when a test injects null): semantic features off. */
@@ -148,4 +153,9 @@ export interface AppDeps {
    * a context stream sends its first event and heartbeats only.
    */
   sessionEvents?: SessionEvents;
+}
+
+/** The database holding the movie and stream tables. */
+export function moviesDbOf(deps: { db: Db; moviesDb?: Db }): Db {
+  return deps.moviesDb ?? deps.db;
 }

@@ -11,7 +11,9 @@ import type { ChatBackend } from './chat/backend.js';
 import { CHAT_IMAGES_SUBDIR } from './chat/images.js';
 import { ChatService } from './chat/service.js';
 import { DEFAULT_FFMPEG_BIN, DEFAULT_TORRENT_SITES_CONFIG, DEFAULT_TORRENT_WHISPER_SCRIPT, REPO_ROOT, type Config } from './config.js';
-import { closeDb, createDb } from './db/client.js';
+import { closeDb, createDb, pairNotesDb, type Db } from './db/client.js';
+import { openMoviesDb } from './db/moviesDb.js';
+import { startMoviesImport } from './movies/sharedImport.js';
 import type { AppDeps } from './deps.js';
 import type { Embedder } from './embeddings/embedder.js';
 import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
@@ -119,6 +121,25 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const imageEmbedder =
     options.imageEmbedder !== undefined ? options.imageEmbedder : imageEmbedderFromConfig(config.embeddings);
   const db = createDb(config.databaseUrl);
+  // The movie and stream tables: this machine's own database with MOVIES_DATABASE_URL, else `db`.
+  let moviesDb: Db = db;
+  let stopMoviesDb = (): void => {};
+  if (config.moviesDatabaseUrl != null) {
+    try {
+      const opened = await openMoviesDb(config.moviesDatabaseUrl);
+      moviesDb = opened.db;
+      stopMoviesDb = opened.stop;
+      pairNotesDb(moviesDb, db);
+    } catch (err) {
+      await closeDb(db);
+      throw err;
+    }
+  }
+  const closeDbs = async (): Promise<void> => {
+    stopMoviesDb();
+    if (moviesDb !== db) await closeDb(moviesDb);
+    await closeDb(db);
+  };
   const events = new NoteEvents();
   const sessionEvents = new SessionEvents();
   const service = new NotesService({ db, dataDir: config.dataDir, events, embedder });
@@ -137,7 +158,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
   }
   // Movies library (phase 3): null with NOTESD_MOVIES=off; started and closed by startBackground.
-  const movies = buildMoviesService(config, db);
+  const movies = buildMoviesService(config, moviesDb);
   // Movies phase 9: the VLC health log. Built before the player, whose hang rule asks it whether a
   // silent VLC still exists; it reads the followed play back through the player. Started after listen.
   let moviesPlayer: MoviePlayer | null = null;
@@ -320,7 +341,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
     return torrentSource;
   };
-  const directStream = buildDirectStreamService(config, db, {
+  const directStream = buildDirectStreamService(config, moviesDb, {
     movies,
     picture,
     audioCheck,
@@ -355,10 +376,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   }
   // Stream cache (stream-cache phase 5): null with direct streaming off. Downloads start only when
   // asked; startBackground carries unfinished ones on.
-  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(db));
+  const streamCache = buildStreamCache(config, directStream, new DirectStreamRepo(moviesDb));
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
-  const torrents = buildTorrentStreams(config, directStream, db);
+  const torrents = buildTorrentStreams(config, directStream, moviesDb);
   // Phase 7: the growing cue feeds (the subtitle track inside a torrent's file; phase 8's Whisper) and
   // the ffmpeg extraction that fills them. ffmpeg reads the file from disk once it is complete, else
   // through this daemon's own file route, which waits for the pieces as the torrent downloads.
@@ -406,6 +427,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   const deps: AppDeps = {
     config,
     db,
+    ...(moviesDb !== db ? { moviesDb } : {}),
     events,
     service,
     embedder,
@@ -428,11 +450,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   };
   // Direct streaming phase 10: the background prober. A DisabledProber unless NOTESD_STREAM_PROBER=on;
   // started and closed by startBackground. Built after `deps` so it reads deps.directStream.
-  deps.streamProber = await buildStreamProber({ config, db, movies, moviesPlayer, directStream: deps.directStream });
+  deps.streamProber = await buildStreamProber({ config, db: moviesDb, movies, moviesPlayer, directStream: deps.directStream });
   // The daily trending list of the Stream side: a DisabledTrending unless NOTESD_TRENDING is on; probes no swarm while a play exists.
   deps.trending = buildTrending({
     config,
-    db,
+    db: moviesDb,
     movies,
     torrents: deps.torrents ?? null,
     busy: () => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0,
@@ -481,7 +503,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   try {
     port = await listen(server);
   } catch (err) {
-    await closeDb(db);
+    await closeDbs();
     throw err;
   }
   boundPort = port;
@@ -504,6 +526,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     }
   }
   const stopBackground = await startBackground(deps, { sessionSummarizer });
+  // One time per machine: what the shared database holds of the movie tables is merged into this machine's own.
+  const stopMoviesImport =
+    moviesDb !== db ? startMoviesImport(db, moviesDb, { onDone: () => movies?.events.changed('user', {}) }) : (): void => {};
 
   let stopping: Promise<void> | null = null;
   const stop = (): Promise<void> => {
@@ -515,8 +540,9 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       await moviesHealth?.close();
       await stopBackground();
       await closeServer(server);
+      stopMoviesImport();
       await streamEvidence?.flushed();
-      await closeDb(db);
+      await closeDbs();
     })();
     return stopping;
   };

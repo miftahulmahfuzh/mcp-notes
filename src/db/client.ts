@@ -92,6 +92,16 @@ function register(db: Db, ins: DbInstruments | undefined): Db {
   return db
 }
 
+const notesSides = new WeakMap<object, Db>()
+/** Records that `moviesDb` holds the movie tables only and the notes live in `notesDb`. */
+export function pairNotesDb(moviesDb: Db, notesDb: Db): void {
+  if (moviesDb !== notesDb) notesSides.set(moviesDb, notesDb)
+}
+/** The database holding the notes for a reader that was handed the movies database; `db` itself when they are one. */
+export function notesDbOf(db: Db): Db {
+  return notesSides.get(db) ?? db
+}
+
 /** Postgres on a Neon host (`*.neon.tech`, pooled or direct). */
 export function isNeonUrl(url: string): boolean {
   const host = new URL(url).hostname.toLowerCase()

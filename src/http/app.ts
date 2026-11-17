@@ -88,6 +88,7 @@ export function mcpToolDeps(
     service: deps.service,
     dataDir: deps.config.dataDir,
     db: deps.db,
+    ...(deps.moviesDb !== undefined ? { moviesDb: deps.moviesDb } : {}),
     imageEmbedder: deps.imageEmbedder ?? null,
     chatUploads: dbChatUploadSource(deps.db, deps.config.dataDir),
     sessions: sessionsReadDeps(deps, sessionOverrides),

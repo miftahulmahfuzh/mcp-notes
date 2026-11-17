@@ -44,6 +44,7 @@ describe('loadConfig', () => {
     const cfg = loadConfig({ env: { DATABASE_URL: URL_A }, envFile: false })
     expect(cfg).toEqual({
       databaseUrl: URL_A,
+      moviesDatabaseUrl: null,
       port: DEFAULT_PORT,
       host: '127.0.0.1',
       dataDir: path.join(homedir(), 'mcp-notes-data'),
@@ -70,6 +71,13 @@ describe('loadConfig', () => {
     expect(loadConfig({ env: {}, envFile: file }).embeddings).toEqual({ apiKey: 'x' })
     expect(loadConfig({ env: { NOTESD_PORT: '7401' }, envFile: file }).port).toBe(7401)
     expect(loadConfig({ env: { OPENROUTER_API_KEY: 'y' }, envFile: file }).embeddings.apiKey).toBe('y')
+  })
+
+  it('reads the movies database from the file only when the file also names the notes database', () => {
+    const file = envFile(['DATABASE_URL=postgres://file/db', 'MOVIES_DATABASE_URL=postgres://local/movies'].join('\n'))
+    expect(loadConfig({ env: {}, envFile: file }).moviesDatabaseUrl).toBe('postgres://local/movies')
+    expect(loadConfig({ env: { DATABASE_URL: URL_A }, envFile: file }).moviesDatabaseUrl).toBeNull()
+    expect(loadConfig({ env: { DATABASE_URL: URL_A, MOVIES_DATABASE_URL: 'postgres://own/movies' }, envFile: file }).moviesDatabaseUrl).toBe('postgres://own/movies')
   })
 
   it('prefers the pooled host of the two file URLs, whatever their key names', () => {

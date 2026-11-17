@@ -1032,8 +1032,11 @@ export const movieTitles = pgTable(
     notInterestedAt: timestamp('not_interested_at', { withTimezone: true, mode: 'date' }),
     /** 0..5 stars. */
     rating: smallint('rating'),
-    /** The review, a normal note (written through NotesService). Purging the note clears the link. */
-    reviewNoteId: text('review_note_id').references(() => notes.id, { onDelete: 'set null' }),
+    /**
+     * The review, a normal note (written through NotesService). No foreign key: the movie tables may
+     * live in another database than the notes (MOVIES_DATABASE_URL); a purged note reads as no review.
+     */
+    reviewNoteId: text('review_note_id'),
     /**
      * Other names the owner calls this title, normalized (src/directStream/match.ts normalizeName).
      * The direct-stream lookup matches them like the title's own name. Never rewritten from TMDB.
