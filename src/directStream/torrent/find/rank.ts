@@ -5,6 +5,8 @@ import type { ExcludedCandidate, ExcludeReason, ReleaseHeight, TorrentCandidate,
 
 /** Fewer seeds than this and a torrent is never picked. */
 export const DEFAULT_MIN_SEEDS = 5;
+/** The seed floor for the last-resort (dub-named) tier: a thin swarm is tried when nothing else exists, a dead one is not. */
+export const LAST_RESORT_MIN_SEEDS = 1;
 /** This many seeds or more streams without waiting; such a torrent comes before a better picture with fewer. */
 export const DEFAULT_GOOD_SEEDS = 20;
 /** A single file larger than this is left out (a pack is not: only the episode file is downloaded). */
@@ -119,7 +121,10 @@ export function rankCandidates(all: readonly TorrentCandidate[], query: TorrentQ
     else {
       excluded.push({ infoHash: joined.infoHash, name: joined.name, index: joined.index, seeds: joined.seeds, reason });
       // Left out only for the dub in its name, but otherwise this title and playable: a last resort the probe decides on.
-      if (reason === 'dubbed' && exclusionOf({ ...joined, release: { ...joined.release, dubbed: false } }, query, settings) === null) lastResort.push(joined);
+      // The normal seed floor does not apply here — in this tier there is nothing better — but a dead (0-seed) swarm is
+      // still skipped, so the dub flag and the seed floor are both lowered to LAST_RESORT_MIN_SEEDS for this check.
+      const withoutDub = { ...joined, release: { ...joined.release, dubbed: false } };
+      if (reason === 'dubbed' && joined.seeds >= LAST_RESORT_MIN_SEEDS && exclusionOf(withoutDub, query, { ...settings, minSeeds: LAST_RESORT_MIN_SEEDS }) === null) lastResort.push(joined);
     }
   }
   kept.sort((a, b) => compareCandidates(a, b, settings));

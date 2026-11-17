@@ -61,16 +61,19 @@ describe('rankCandidates', () => {
     expect(ranked.excluded.map((e) => e.reason)).toEqual(['too_big']);
   });
 
-  it('offers a dub-named release that otherwise fits as a last resort, but not one left out for another reason', () => {
+  it('offers a dub-named release that otherwise fits as a last resort, down to a thin swarm but not a dead one', () => {
     const proper = candidateFrom(row('Sintel.2010.1080p.WEB-DL.x264', 40), 'torrentio', FILM);
     const dub = candidateFrom(row('Sintel.2010.1080p.Hindi.Dubbed.WEB-DL', 30), 'torrentio', FILM);
-    const dubFewSeeds = candidateFrom(row('Sintel.2010.720p.Hindi.Dubbed.WEB-DL', 0), 'torrentio', FILM);
+    // Below the normal seed floor (5) but alive: a last resort, since in that tier there is nothing better.
+    const dubThin = candidateFrom(row('Sintel.2010.720p.Hindi.Dubbed.WEB-DL', 3), 'torrentio', FILM);
+    // A dead swarm (0 seeds) is never a last resort.
+    const dubDead = candidateFrom(row('Sintel.2010.480p.Hindi.Dubbed.WEB-DL', 0), 'torrentio', FILM);
     const otherTitle = candidateFrom(row('Tangled.2010.1080p.Hindi.Dubbed', 50), 'torrentio', FILM);
-    const ranked = rankCandidates([proper, dub, dubFewSeeds, otherTitle], FILM);
+    const ranked = rankCandidates([proper, dub, dubThin, dubDead, otherTitle], FILM);
     expect(ranked.kept.map((c) => c.name)).toEqual(['Sintel.2010.1080p.WEB-DL.x264']);
-    // Only the dub that otherwise passes (right title, enough seeds) is a last resort; the thin one and the wrong title are not.
-    expect(ranked.lastResort.map((c) => c.name)).toEqual(['Sintel.2010.1080p.Hindi.Dubbed.WEB-DL']);
-    expect(ranked.excluded.map((e) => e.reason).sort()).toEqual(['dubbed', 'dubbed', 'other_title']);
+    // Both the well- and thin-seeded dubs are last resorts (best first); the dead one and the wrong title are not.
+    expect(ranked.lastResort.map((c) => c.name)).toEqual(['Sintel.2010.1080p.Hindi.Dubbed.WEB-DL', 'Sintel.2010.720p.Hindi.Dubbed.WEB-DL']);
+    expect(ranked.excluded.map((e) => e.reason).sort()).toEqual(['dubbed', 'dubbed', 'dubbed', 'other_title']);
   });
 
   it('leaves out a malformed or all-zero info hash and a release of another title', () => {
