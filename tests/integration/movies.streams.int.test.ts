@@ -55,6 +55,8 @@ describe('direct streaming in the movies store', () => {
   let clock: Date
   let tmdbCalls: number
   const sessions = new Map<string, StreamSessionRef & { torrent?: { subtitleRev: number } }>()
+  /** What the position route told the service of each report (the next episode is fetched from these, src/directStream/ahead.ts). */
+  const watchedReports: [string, boolean, boolean][] = []
 
   beforeAll(() => {
     db = openTestDb()
@@ -97,7 +99,7 @@ describe('direct streaming in the movies store', () => {
 
   function app(movies: MovieStreamsSource | null = moviesOf(), withService = true, live: StreamLive | null = null): Hono {
     const a = new Hono()
-    const directStream = withService ? { session: (id: string) => sessions.get(id) ?? null } : null
+    const directStream = withService ? { session: (id: string) => sessions.get(id) ?? null, watched: (id: string, r: { paused: boolean; over: boolean }) => void watchedReports.push([id, r.paused, r.over]) } : null
     a.route('/', streamPositionRoutes({ movies, directStream, live }, { now: () => clock }))
     a.route('/', moviesPlayRoutes({ db, moviesPlayer: null, streamLive: live }))
     return a
@@ -283,6 +285,10 @@ describe('direct streaming in the movies store', () => {
       sessions.set('sess-2', { id: 'sess-2', ref: MOBLAND_S1E2, source: { provider: 'HyperLink' } })
       await report(a, 'sess-2', { position_s: 5, duration_s: 3000 })
       expect(await onScreen(a)).toMatchObject({ session_id: 'sess-2', title_id: 'tv-247718', season: 1, episode: 2, provider: 'HyperLink', state: 'playing' })
+
+      // Every report reaches the service as playing or paused, and a closing one as over.
+      await report(a, 'sess-2', { position_s: 9, duration_s: 3000, closed: true })
+      expect(watchedReports.slice(-4)).toEqual([['sess-1', false, false], ['sess-1', true, false], ['sess-2', false, false], ['sess-2', false, true]])
     })
 
     it("a paused page's beat keeps it on screen and writes nothing", async () => {

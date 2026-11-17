@@ -59,6 +59,13 @@ export interface PlayableCaches {
   start?(ref: StreamRef): Promise<CacheStanding>;
   /** Where this host's cache of `ref` stands, without starting anything; null: there is none. */
   standing?(ref: StreamRef): Promise<CacheStanding | null>;
+  /**
+   * Starts this host's cache of an episode nobody watches yet (the next one, ahead.ts; `auto`). It
+   * gives way to every other download; `gentle` fetches one file at a time. Without it nothing is fetched ahead.
+   */
+  ahead?(ref: StreamRef, options: { gentle: boolean }): Promise<{ started: boolean; state: string }>;
+  /** Stops this host's download of `ref` and keeps what is on disk. */
+  pause?(ref: StreamRef): Promise<boolean>;
 }
 
 /** A cache as a paused play follows it, before it can be played too (its source is not known yet). */

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { REPO_ROOT, type Config } from '../config.js';
 import { STREAM_HEALTH_OUTCOMES, type StreamHealthOutcome } from '../db/schema.js';
 import type { Db } from '../db/client.js';
+import { EpisodeAhead } from './ahead.js';
 import type { AnimeRef } from './anime.js';
 import { CACHE_ID_PATTERN, CachePlayError, cacheRefusalError, cacheSource, playable, type CachePlayView, type CacheStanding, type CacheSubtitleView, type PlayableCaches, type SessionCache } from './cachePlay.js';
 import { DIALOGUE_MIN_CUES, parseCues, playlistTarget } from './dialogue.js';
@@ -253,6 +254,8 @@ export interface DirectStreamServiceOptions {
    * play time. Unset or null: such a session plays without one, as before.
    */
   outside?: () => OutsideSubtitles | null;
+  /** True: the next episode of a series being watched is fetched to this machine while this one plays (ahead.ts). Unset: never. */
+  ahead?: boolean;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -328,6 +331,8 @@ export class DirectStreamService {
   private readonly inFlight = new Map<string, PlayInFlight>();
   /** The outcomes of plays that were answered `pending`, for the next ask of the same play. */
   private readonly outcomes = new Map<string, { at: number; result: PlayResult | null; error: unknown }>();
+  /** The next episode, fetched while this one plays; null when the daemon does not (ahead.ts). */
+  private readonly ahead: EpisodeAhead | null;
 
   constructor(private readonly opts: DirectStreamServiceOptions) {
     this.repo = opts.repo;
@@ -339,6 +344,58 @@ export class DirectStreamService {
     this.evidence = opts.evidence ?? null;
     // A session the store drops (expired, or past MAX_SESSIONS) lets go of its torrent.
     this.sessions.onEnd((session) => this.letGoTorrent(session));
+    this.ahead = opts.ahead === true ? this.buildAhead() : null;
+  }
+
+  private buildAhead(): EpisodeAhead {
+    return new EpisodeAhead({
+      next: async (ref) => {
+        const next = (await this.neighborsOf(ref)).next;
+        return next === null ? null : { kind: 'tv', tmdbId: ref.tmdbId, season: next.season, episode: next.episode };
+      },
+      onDisk: async (watched) => {
+        const session = this.sessions.peek(watched.id);
+        if (session === null) return false;
+        if (session.torrent !== null) return (await this.torrentSource()?.state(session.torrent)) === 'ready';
+        if (session.cache === null) return false;
+        return (await this.opts.caches?.()?.standing?.(session.ref))?.state === 'ready';
+      },
+      cloud: () => {
+        const caches = this.opts.caches?.() ?? null;
+        if (caches === null || caches.ahead === undefined || caches.pause === undefined) return null;
+        return { start: caches.ahead.bind(caches), pause: caches.pause.bind(caches) };
+      },
+      torrent: () => {
+        const source = this.torrentSource();
+        if (source === null) return null;
+        return {
+          has: (ref) => source.onDisk(ref),
+          fetch: async (ref) => {
+            const namesHook = this.opts.hooks?.titleNames;
+            const out = await source.fetchAhead(ref, {
+              audioLang: await this.audioLang(ref),
+              imdbId: await this.imdbIdOf(ref),
+              names: namesHook === undefined ? null : await this.hookValue('titleNames', () => namesHook(ref)),
+              resumeS: null,
+            });
+            if (!out.ok) return null;
+            const torrent = out.torrent;
+            return { name: torrent.name, ready: async () => (await source.state(torrent)) === 'ready', release: () => source.releaseAhead(torrent) };
+          },
+        };
+      },
+      now: () => this.now().getTime(),
+      log: this.log,
+    });
+  }
+
+  /**
+   * A position report of the session's page (the position route): an episode that is really being watched has
+   * its next one fetched to this machine (ahead.ts). Nothing without `ahead`, for a film, or for an unknown id.
+   */
+  watched(id: string, report: { paused: boolean; over: boolean }): void {
+    const session = this.ahead === null ? null : this.sessions.peek(id);
+    if (session !== null) this.ahead?.watched({ id: session.id, ref: session.ref, via: session.torrent !== null ? 'torrent' : 'cloud' }, report);
   }
 
   get host(): string {
@@ -898,6 +955,8 @@ export class DirectStreamService {
   async switchSource(id: string): Promise<SwitchSourceAnswer> {
     const session = this.sessions.get(id);
     if (session === null) throw new DirectStreamError('unknown_session', 'That stream session is unknown or has ended.');
+    // The stream on screen cannot keep up: a next episode being cached beside it stops.
+    this.ahead?.stalled(session.id);
     if (session.cache !== null) return { switched: false, reason: 'cached', from: session.source.provider, session: await this.sessionInfo(session) };
     if (session.torrent !== null) return this.nextTorrent(session, session.torrent);
     const from = session.source.provider;
@@ -1420,6 +1479,7 @@ export function buildDirectStreamService(
     picture: wiring.picture ?? null,
     torrent: wiring.torrent,
     outside: wiring.outside,
+    ahead: ds.ahead === true,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

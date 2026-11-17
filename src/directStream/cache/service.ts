@@ -59,6 +59,10 @@ interface Waiting {
   id: string;
   ref: StreamRef;
   maxHeight: number | null;
+  /** Fetched for later (the next episode, ahead.ts): it gives way to a download the owner or a pause asks for. */
+  ahead?: boolean;
+  /** One file at a time: the episode on screen still streams from its host. */
+  gentle?: boolean;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -98,6 +102,9 @@ export class StreamCache {
   private readonly jobsAtOnce: number;
   private waiting: Waiting[] = [];
   private readonly running = new Map<string, CacheJob>();
+  /** The running downloads that were fetched ahead, and those among them told to give way (they queue again once stopped). */
+  private readonly aheadRunning = new Map<string, Waiting>();
+  private readonly yielded = new Set<string>();
   private readonly settling = new Map<string, Promise<void>>();
   private closed = false;
 
@@ -153,9 +160,11 @@ export class StreamCache {
   /**
    * Caches `ref` on this host: a new row starts downloading; a failed one starts again from what
    * is on disk; a ready or running one is answered as it is (`started: false`). A different
-   * `maxHeight` than the existing cache's throws `cache_exists` (clear it first).
+   * `maxHeight` than the existing cache's throws `cache_exists` (clear it first). `ahead` marks a
+   * download nobody waits for (the next episode): it gives way to any other; `gentle` fetches one
+   * file at a time.
    */
-  async request(ref: StreamRef, options: { maxHeight: number | null; auto?: boolean }): Promise<{ cache: StreamCacheView; started: boolean }> {
+  async request(ref: StreamRef, options: { maxHeight: number | null; auto?: boolean; ahead?: boolean; gentle?: boolean }): Promise<{ cache: StreamCacheView; started: boolean }> {
     if (this.closed) throw new Error('the stream cache is closing');
     const auto = options.auto === true;
     const { row, created } = await this.repo.createCache(this.host, ref, options.maxHeight, this.now(), auto);
@@ -175,8 +184,25 @@ export class StreamCache {
     }
     if (row.state === 'ready') return { cache: this.view(row), started: false };
     if (row.state === 'failed') await this.repo.cacheRestarted(row.id, this.now());
-    const started = this.enqueue({ id: row.id, ref, maxHeight: row.maxHeight });
+    const started = this.enqueue({ id: row.id, ref, maxHeight: row.maxHeight, ...(options.ahead === true ? { ahead: true } : {}), ...(options.gentle === true ? { gentle: true } : {}) });
     return { cache: this.view((await this.repo.cacheById(row.id)) ?? row), started };
+  }
+
+  /**
+   * Stops this host's download of `ref`, running or waiting, and keeps what is on disk: the row stays
+   * `downloading`, so a play of it, another request or a daemon start carries it on. True when one was stopped.
+   */
+  async pause(ref: StreamRef): Promise<boolean> {
+    const row = await this.repo.cacheFor(this.host, ref);
+    if (row === null) return false;
+    const queued = this.waiting.some((w) => w.id === row.id);
+    this.waiting = this.waiting.filter((w) => w.id !== row.id);
+    this.yielded.delete(row.id);
+    const job = this.running.get(row.id);
+    if (job === undefined) return queued;
+    job.cancel();
+    await this.settling.get(row.id);
+    return true;
   }
 
   /**
@@ -276,10 +302,17 @@ export class StreamCache {
     get(id: string): Promise<CachePlayData | null>;
     start(ref: StreamRef): Promise<CacheStanding>;
     standing(ref: StreamRef): Promise<CacheStanding | null>;
+    ahead(ref: StreamRef, options: { gentle: boolean }): Promise<{ started: boolean; state: string }>;
+    pause(ref: StreamRef): Promise<boolean>;
   } {
     const standing = (view: StreamCacheView): CacheStanding => ({ id: view.id, state: view.state, error: view.error, progress: view.progress });
     return {
       start: async (ref) => standing((await this.request(ref, { maxHeight: null, auto: true })).cache),
+      ahead: async (ref, options) => {
+        const answer = await this.request(ref, { maxHeight: null, auto: true, ahead: true, gentle: options.gentle });
+        return { started: answer.started, state: answer.cache.state };
+      },
+      pause: (ref) => this.pause(ref),
       standing: async (ref) => {
         const view = await this.find(ref);
         return view === null ? null : standing(view);
@@ -349,6 +382,14 @@ export class StreamCache {
   private enqueue(w: Waiting): boolean {
     if (this.closed || this.running.has(w.id) || this.waiting.some((x) => x.id === w.id)) return false;
     this.waiting.push(w);
+    // A download somebody waits for comes before one fetched ahead: that one stops and queues again behind it.
+    if (w.ahead !== true && this.running.size >= this.jobsAtOnce) {
+      for (const id of this.aheadRunning.keys()) {
+        if (this.yielded.has(id)) continue;
+        this.yielded.add(id);
+        this.running.get(id)?.cancel();
+      }
+    }
     this.pump();
     return true;
   }
@@ -368,8 +409,9 @@ export class StreamCache {
   }
 
   private launch(w: Waiting): CacheJob {
-    const job = new CacheJob(w.id, w.ref, w.maxHeight, this.jobDeps);
+    const job = new CacheJob(w.id, w.ref, w.maxHeight, w.gentle === true ? { ...this.jobDeps, parallel: 1 } : this.jobDeps);
     this.running.set(w.id, job);
+    if (w.ahead === true) this.aheadRunning.set(w.id, w);
     const settled = job
       .run()
       .then((outcome) => this.settle(w, outcome))
@@ -377,6 +419,8 @@ export class StreamCache {
       .finally(() => {
         this.running.delete(w.id);
         this.settling.delete(w.id);
+        this.aheadRunning.delete(w.id);
+        if (this.yielded.delete(w.id) && !this.closed) this.waiting.push(w);
         this.pump();
       });
     this.settling.set(w.id, settled);

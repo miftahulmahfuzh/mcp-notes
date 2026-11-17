@@ -11,6 +11,7 @@ import type { StreamCacheView } from '../../src/directStream/cache/types.js';
 import { DirectStreamRepo } from '../../src/directStream/repo.js';
 import { directStreamScriptRunner } from '../../src/directStream/runner.js';
 import { DirectStreamService } from '../../src/directStream/service.js';
+import type { StreamRef } from '../../src/directStream/types.js';
 import { directStreamRoutes } from '../../src/http/directStreamApi.js';
 import { streamCacheRoutes } from '../../src/http/streamCacheApi.js';
 // @ts-expect-error -- plain .mjs fixture without type declarations
@@ -413,6 +414,89 @@ describe('/api/stream/cache', () => {
     expect(((await asked.json()) as Posted).cache).toMatchObject({ id, auto: false, state: 'ready' });
     expect(await cache.prune()).toBe(0);
     expect(await cache.get(id)).not.toBeNull();
+  });
+
+  it('a download fetched ahead gives way to one that is asked for, and carries on after it', async () => {
+    await fake('mode', 'hls_token');
+    await fake('delay_ms', 60);
+    const { app, cache } = await ready();
+    const next: StreamRef = { kind: 'tv', tmdbId: 990010, season: 1, episode: 2 };
+    const ahead = await cache.player().ahead(next, { gentle: true });
+    expect(ahead).toEqual({ started: true, state: 'downloading' });
+    const aheadId = (await cache.find(next))?.id ?? '';
+    expect((await cache.get(aheadId))?.auto).toBe(true);
+    await until(async () => ((await cache.get(aheadId))?.segments_done ?? 0) >= 2);
+    // The owner asks for a film: it does not wait behind the episode nobody watches yet.
+    const asked = (await posted(app, { kind: 'movie', tmdb_id: 990004 })).cache.id;
+    await waitFor(app, asked, 'ready');
+    const then = await cache.get(aheadId);
+    expect(then?.state).toBe('downloading');
+    expect(then?.segments_done ?? 0).toBeLessThan(24);
+    // Its turn comes back by itself, from the files already on disk.
+    expect((await waitFor(app, aheadId, 'ready')).segments_done).toBe(24);
+    // Asked again for an episode that is there: nothing starts.
+    expect(await cache.player().ahead(next, { gentle: false })).toEqual({ started: false, state: 'ready' });
+  });
+
+  it('pause stops a download and keeps its files; the next request carries it on', async () => {
+    await fake('mode', 'hls_token');
+    await fake('delay_ms', 60);
+    const { app, cache } = await ready();
+    const next: StreamRef = { kind: 'tv', tmdbId: 990010, season: 1, episode: 2 };
+    await cache.player().ahead(next, { gentle: false });
+    const id = (await cache.find(next))?.id ?? '';
+    await until(async () => ((await cache.get(id))?.segments_done ?? 0) >= 2);
+    expect(await cache.pause(next)).toBe(true);
+    expect(await cache.pause(next)).toBe(false);
+    const [row] = await db.select().from(streamCaches);
+    expect(row?.state).toBe('downloading');
+    const kept = (await readdir(path.join(root, id))).filter((f) => /^[va]-\d{5}\.ts$/.test(f)).length;
+    expect(kept).toBeGreaterThanOrEqual(2);
+    await sleep(300);
+    up.requests.length = 0;
+    await sleep(300);
+    expect(up.requests).toHaveLength(0);
+    expect(await cache.player().ahead(next, { gentle: false })).toEqual({ started: true, state: 'downloading' });
+    expect((await waitFor(app, id, 'ready')).segments_done).toBe(24);
+    expect(up.requests.filter((r) => r.status === 200 && /\/tok\/.*seg\d+\.ts$/.test(r.path))).toHaveLength(24 - kept);
+  });
+
+  it('the next episode is cached while this one is watched, through the service and its position reports', async () => {
+    await fake('mode', 'hls_token');
+    const repo = new DirectStreamRepo(db);
+    let clock = new Date('2026-11-17T01:00:00Z');
+    const logged: string[] = [];
+    let wired: StreamCache | null = null;
+    const svc = new DirectStreamService({
+      repo,
+      runner: directStreamScriptRunner({ cliPath: FAKE_CLI }),
+      host: 'host-a',
+      seedFile: path.join(fakeDir, 'seed.json'),
+      pageBase: () => 'http://localhost:4321',
+      now: () => clock,
+      log: (line) => void logged.push(line),
+      caches: () => wired?.player() ?? null,
+      ahead: true,
+      hooks: { neighbors: async (ref) => (ref.kind === 'tv' && ref.episode === 1 ? { prev: null, next: { season: 1, episode: 2 } } : { prev: null, next: null }) },
+    });
+    const cache = new StreamCache({ repo, host: 'host-a', root, resolve: (ref) => svc.resolve(ref, { resumeS: 0 }), sleep: async () => undefined, log: () => undefined });
+    wired = cache;
+    open.push(cache);
+    await svc.syncSeed();
+    const session = await svc.resolve({ kind: 'tv', tmdbId: 990010, season: 1, episode: 1 }, { resumeS: 0 });
+    const next: StreamRef = { kind: 'tv', tmdbId: 990010, season: 1, episode: 2 };
+    // Two minutes of playing, reported every 5 s.
+    for (let i = 0; i <= 24; i++) {
+      svc.watched(session.id, { paused: false, over: false });
+      clock = new Date(clock.getTime() + 5_000);
+    }
+    await until(async () => (await cache.find(next))?.state === 'ready');
+    expect((await cache.find(next))?.auto).toBe(true);
+    expect(logged.filter((l) => l.includes('stream ahead'))).toEqual([
+      '[notesd] stream ahead: caching TMDB tv 990010 S01E02 while TMDB tv 990010 S01E01 plays (one file at a time: the episode on screen still streams)',
+    ]);
+    // A film, and a service built without `ahead`, fetch nothing.
+    expect(await cache.list()).toHaveLength(1);
   });
 
   it('clears a cache a pause started once nothing has written it for three days, and no other', async () => {

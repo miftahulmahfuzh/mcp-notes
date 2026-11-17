@@ -233,6 +233,11 @@ export interface DirectStreamConfig {
   pictureModel?: string | null
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH: reads the frames the picture check looks at. */
   ffmpegBin?: string
+  /**
+   * `NOTESD_STREAM_AHEAD`, default on: while an episode of a series is watched, the next one is
+   * downloaded to this machine (src/directStream/ahead.ts). `off` or unset in a literal: never.
+   */
+  ahead?: boolean
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
 }
@@ -921,6 +926,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
         ? null
         : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
+    ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
     prober: parseStreamProber(env),
   }
 }

@@ -321,6 +321,36 @@ export class TorrentSource {
     return out.ok ? { ...out, attempts: [...indexes, ...out.attempts] } : { ok: false, error: 'no_source', attempts: [...indexes, ...out.attempts] };
   }
 
+  /**
+   * The next episode, fetched while another plays (ahead.ts): `resolve`, and then everything a page would
+   * need is stopped (the subtitle tiers still running, the sync, a remux), so only the download goes on. The
+   * torrent stays in the swarm until `releaseAhead`. A later play finds the file with `fromDisk`.
+   */
+  async fetchAhead(ref: StreamRef, options: TorrentResolveOptions): Promise<TorrentResolve> {
+    const out = await this.resolve(ref, options);
+    if (!out.ok) return out;
+    out.torrent.stop.abort();
+    if (out.torrent.manifestKind === 'hls') this.opts.remux?.release(out.torrent.infoHash, out.torrent.fileIndex);
+    return out;
+  }
+
+  /** Lets go of a torrent `fetchAhead` took (once): with no other user the daemon leaves its swarm. */
+  releaseAhead(torrent: SessionTorrent): void {
+    if (!torrent.held) return;
+    torrent.held = false;
+    this.letGo(torrent.infoHash);
+  }
+
+  /** True when this host holds a finished download of `ref`. */
+  async onDisk(ref: StreamRef): Promise<boolean> {
+    try {
+      const download = await this.opts.swarm.find(ref);
+      return download !== null && download.state === 'ready';
+    } catch {
+      return false;
+    }
+  }
+
   /** The shuffle button: the session's remaining candidates, in their order, without asking the indexes again. */
   async next(ref: StreamRef, torrent: SessionTorrent, audioLang: string | null): Promise<TorrentResolve> {
     if (torrent.query === null || torrent.imdbId === null || torrent.candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };

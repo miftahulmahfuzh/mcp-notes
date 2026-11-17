@@ -123,6 +123,32 @@ function setup(o: Fakes = {}) {
   return { source, calls, settled, probed, durations, logged, finds: () => finds };
 }
 
+describe('TorrentSource.fetchAhead', () => {
+  it('takes the torrent like a play, stops what only a page needs, and lets it go once', async () => {
+    const sync: SyncRequest[] = [];
+    const t = setup({ candidates: [candidate(h(1), 'Show.S01E03.720p.WEB-DL.x264.AAC-GRP')], sync });
+    const next: StreamRef = { kind: 'tv', tmdbId: 247718, season: 1, episode: 3 };
+    expect(await t.source.onDisk(next)).toBe(false);
+    const out = await t.source.fetchAhead(next, { audioLang: 'en', imdbId: 'tt0247718' });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.torrent).toMatchObject({ infoHash: h(1), held: true });
+    // The subtitle tiers and the sync of a page are stopped; the download goes on.
+    expect(out.torrent.stop.signal.aborted).toBe(true);
+    expect(await t.settled()).toEqual([`open ${h(1)}`, `use ${h(1)} 0`]);
+    t.source.releaseAhead(out.torrent);
+    t.source.releaseAhead(out.torrent);
+    expect(await t.settled()).toEqual([`open ${h(1)}`, `use ${h(1)} 0`, `release ${h(1)}`]);
+  });
+
+  it('says a finished download of the episode is on disk, and one still downloading is not', async () => {
+    const whole = setup({ disk: { infoHash: h(1), name: 'Show.S01E03', fileIndex: 0, state: 'ready' } });
+    expect(await whole.source.onDisk(EPISODE)).toBe(true);
+    const partial = setup({ disk: { infoHash: h(1), name: 'Show.S01E03', fileIndex: 0, state: 'downloading' } });
+    expect(await partial.source.onDisk(EPISODE)).toBe(false);
+  });
+});
+
 describe('TorrentSource.resolve', () => {
   it('plays the first torrent that opens: the local file route, the Torrent stand-in, the index then the torrent in attempts', async () => {
     const t = setup({ candidates: [candidate(h(1), 'Film.2026.720p.WEB-DL.x264.AAC-GRP')] });

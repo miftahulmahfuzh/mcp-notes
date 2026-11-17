@@ -1207,6 +1207,42 @@ the session plays the local copy:
   attempts or hosts; the page's log says `from cache <id> (<state>)`, and `/report-stream-bug`'s
   summary says the play came from the cache.
 
+### The next episode, fetched ahead
+
+Someone watching an episode of a series most likely watches the next one after it, and an episode
+that is whole on this machine starts at once and never stutters. So while an episode plays in the
+player, the daemon downloads the one after it (`src/directStream/ahead.ts`).
+
+- **When.** Once the page has reported two minutes of playing for the episode (its position
+  reports, every 5 s; a pause, a closed lid and a seek count for nothing). Once per play, one
+  episode ahead, never an episode that has not aired, and never for a film.
+- **A cloud play** (NTS, or no codename; from a provider or from the cache) starts a stream cache
+  of the next episode, as [a pause does](#a-pause-caches-the-film): marked `auto`, so it clears
+  itself three days after it was last written unless it is asked for. A source that cannot be
+  cached (DASH, DRM) fetches nothing.
+- **A torrent play** (TS) fetches the next episode from a torrent: the indexes are asked and the
+  torrents opened as for a play, with no page, no remux and no subtitle search. The torrent stays in
+  the swarm until its file is whole, three hours at most, and is cleared with the other downloads
+  after `NOTESD_TORRENT_KEEP_DAYS`.
+- **The episode on screen comes first.**
+  - A torrent play fetches nothing until its own file is whole on disk (asked again every 30 s).
+  - A cloud play that still streams from its host gets a download of one file at a time, where
+    a cache fetches four. One that plays from a ready cache gets the full four.
+  - When the player says the stream keeps stalling (it asks for another source), the download
+    stops, its files are kept, and nothing is fetched again for that play.
+  - A download fetched ahead gives way to any other: a pause's cache or `direct_stream_cache`
+    stops it, runs, and it carries on afterwards from the files on disk.
+- **The next play finds it by itself.** A play looks at this machine's cache and finished torrent
+  downloads before any provider, so the next button, `/direct-stream` and "resume" start the
+  episode from disk; one still downloading plays what is there and fetches the rest as it is reached.
+- **A season pack** holds the next episode in the torrent already on this machine. Its file is
+  downloaded, but the pack is recorded under one episode, so the next play still asks the index and
+  joins the swarm for the file list before it plays the whole file from disk.
+- **A daemon restart** stops what is being fetched. A cache carries on at the next start; a torrent
+  keeps what it has and is opened again when the episode is played.
+- `NOTESD_STREAM_AHEAD=off` fetches nothing ahead. The daemon's log says what it does:
+  `stream ahead: caching TMDB tv 37854 S18E789 while TMDB tv 37854 S18E788 plays`.
+
 ### The prober
 
 The Stream side of `/movies` shows only titles verified on this machine within the freshness
@@ -1700,6 +1736,7 @@ To see what a site lists, by hand:
 | `src/directStream/outsideSubtitles.ts`, `titleSubtitles.ts` | A cloud stream with no English subtitle: asking the subtitle services, the per-title folder and its files |
 | `src/directStream/torrent/subtitles/whisper.ts`, `claude/streaming/torrent/whisper.py` | Whisper, the last subtitle tier of a torrent session: the tier, the ffmpeg audio cutter, the worker client and the faster-whisper worker |
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
+| `src/directStream/ahead.ts` | The next episode, fetched while one plays: when, from where, and how it gives way to the episode on screen |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |

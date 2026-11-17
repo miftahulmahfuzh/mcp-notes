@@ -306,6 +306,19 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   and `npm run test:int -- tests/integration/movies.streams.int.test.ts tests/integration/movies.mcp.int.test.ts`.
 - Live (owner's to run): `/direct-stream <title>`, then a double click on the picture leaves full screen.
 
+## The next episode, fetched ahead
+- While an episode plays, the daemon caches the next one (cloud) or fetches it from a torrent
+  (`src/directStream/ahead.ts`): after two minutes of playing reports, one episode ahead, nothing
+  for a film; it gives way to every other download and stops when the stream stalls.
+  `verify.sh up --direct-stream`, then
+  `.claude/skills/verify-notesd/scripts/direct-stream/ahead.sh RUN` (a little over two minutes:
+  it reports as the page does). It checks that nothing is fetched after one minute, that the next
+  episode's `auto` cache is ready, that the film fetched nothing, the daemon's `stream ahead:` line,
+  and that the next button plays the cached episode. The torrent path is unit-tested
+  (`tests/unit/directStream/ahead.test.ts`, `torrentSource.test.ts` "fetchAhead") and can be seen on
+  `up --torrent` by playing S01E01 of series 247718 with `provider: "torrent"` and reporting positions.
+  The queue's give-way and `pause` are in `tests/integration/directStream.cache.int.test.ts`.
+
 ## /report-stream-bug (a stream's evidence, the cause, a note)
 - `claude/skills/report-stream-bug/collect.sh [SNAPSHOT_DIR]` gathers the snapshot (the folder it
   is handed, else a new one from `POST /api/stream/evidence/snapshot`), the session's records
