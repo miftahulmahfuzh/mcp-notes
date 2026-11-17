@@ -11,7 +11,10 @@
 export function isBotCheckPage(doc) {
   const title = String(doc.title || '').trim();
   if (/^just a moment/i.test(title) || /^attention required/i.test(title)) return true;
-  if (doc.querySelector('#challenge-form, #challenge-error-text, #cf-challenge-running, #cf-chl-widget, .cf-turnstile, script[src*="challenges.cloudflare.com"]') !== null) return true;
+  // Not script[src*="challenges.cloudflare.com"]: that is Turnstile's own loader, which plenty of
+  // sites embed passively (an invisible widget, bot scoring) on a page that never blocks anything.
+  // These markers are the challenge page itself, never a passive embed.
+  if (doc.querySelector('#challenge-form, #challenge-error-text, #cf-challenge-running, #cf-chl-widget, .cf-turnstile') !== null) return true;
   // The managed challenge carries its options in an inline `window._cf_chl_opt = {...}` script.
   for (const script of doc.querySelectorAll('script:not([src])')) {
     if (/_cf_chl_opt\s*=/.test(script.textContent || '')) return true;

@@ -193,7 +193,10 @@ $segmentMime = 'video/mp2t|video/iso\.segment'
 # its language, so the list is the only place the English track shows.
 $subtitleIndex = '^https?://(sub|subs|subtitles?)[.-][^/]+/|[/.](subtitles?|captions?)[/?.]'
 $botTitle = '^(Just a moment|Attention Required|Checking your browser|One more step|DDoS-Guard)'
-$botUrl = 'challenges\.cloudflare\.com|/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)'
+# Not a bare challenges.cloudflare.com request: that also fires for Turnstile's own loader, which
+# plenty of sites embed passively (an invisible widget, bot scoring) on a page that never blocks
+# anything. /cdn-cgi/challenge-platform/ is Cloudflare's own path for serving the challenge itself.
+$botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)'
 $events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
 
 $hits = New-Object System.Collections.ArrayList
