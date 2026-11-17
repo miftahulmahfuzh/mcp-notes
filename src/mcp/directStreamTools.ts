@@ -228,8 +228,11 @@ const UPDATE_SOURCE_DESCRIPTION =
   'of sight, plays nothing and makes no sound; a provider that finds nothing takes about 35 seconds per title, so the call can take ' +
   'minutes. Answers ok: true with added (per provider: resolves, and per title the outcome, seconds, manifest kind, best height, ' +
   'English subtitle), known (found but already in the registry) and skipped; or ok: false with error bot_check, no_templates, ' +
-  'chrome_unavailable (the streaming Chrome could not open the watch page), unreachable, bad_url, reader_failed or busy, and the registry unchanged. ' +
-  'Only the frames a page loads by itself are read: its other server buttons are not pressed.';
+  'chrome_unavailable (the streaming Chrome could not open the watch page), no_tab, unreachable, bad_url, reader_failed or busy, and the registry unchanged. ' +
+  'Only the frames a page loads by itself are read: its other server buttons are not pressed. ' +
+  'A site whose Cloudflare challenge keeps answering bot_check can instead be read from a tab the owner already solved the challenge in by hand ' +
+  '(the owner runs `node claude/streaming/direct/cli.mjs gate <site>`, solves it, then this is called again with from_tab: true): that reads the SAME tab\'s current frames with no new navigation, so the challenge never shows again. ' +
+  'no_tab means no such gated tab answered; gate it again and retry promptly.';
 
 const siteField = z
   .string()
@@ -274,13 +277,17 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
           .optional()
           .describe('Only when the owner gave one: a film\'s watch page on the site, for the frame reader (a page of a known title works best: Fight Club, TMDB 550).'),
         episode_page: siteField.optional().describe('Only when the owner gave one: an episode\'s watch page on the site, for the episode template.'),
+        from_tab: z
+          .boolean()
+          .optional()
+          .describe('Only after the owner solved this site\'s Cloudflare challenge by hand (node claude/streaming/direct/cli.mjs gate <site>): read that gated tab\'s current frames instead of opening a fresh one.'),
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ site, watch_page, episode_page }) => {
+    async ({ site, watch_page, episode_page, from_tab }) => {
       const d = deps.directStream;
       if (!d) return off();
-      return respond(async () => ok(await d.updateSource(site, { watchPage: watch_page, episodePage: episode_page })));
+      return respond(async () => ok(await d.updateSource(site, { watchPage: watch_page, episodePage: episode_page, fromTab: from_tab })));
     },
   );
 }

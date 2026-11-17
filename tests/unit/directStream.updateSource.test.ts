@@ -124,10 +124,19 @@ describe('updateSource with the frame reader', () => {
     const known = deps({ ...framesAnswer, providers: [{ ...framesAnswer.providers[0], name: 'vidfast.pro', movie: 'https://www.vidfast.pro/movie/{id}?autoPlay=true' }] });
     expect(await updateSource('https://site.example/', known.deps)).toMatchObject({ ok: true, added: [], known: [{ name: 'vidfast.pro', registry_name: 'VidFast' }] });
     expect(known.asked).toEqual([['templates', 'https://site.example/']]);
-    for (const error of ['bot_check', 'chrome_unavailable', 'no_templates']) {
+    for (const error of ['bot_check', 'chrome_unavailable', 'no_templates', 'no_tab']) {
       const failed = deps({ ok: false, site: 'https://site.example/', error, detail: 'x', scripts_read: 1 });
       expect(await updateSource('https://site.example/', failed.deps)).toEqual({ ok: false, site: 'https://site.example/', error, detail: 'x', registry_changed: false });
       expect(failed.inserted).toEqual([]);
     }
+  });
+
+  it('passes --from-tab when the owner already gated the site by hand, and surfaces no_tab unchanged', async () => {
+    const t = deps(framesAnswer);
+    await updateSource('https://site.example/', t.deps, { fromTab: true });
+    expect(t.asked).toEqual([['templates', 'https://site.example/', '--from-tab']]);
+
+    const noTab = deps({ ok: false, site: 'https://site.example/', error: 'no_tab', detail: 'gate it first', scripts_read: 0 });
+    expect(await updateSource('https://site.example/', noTab.deps, { fromTab: true })).toEqual({ ok: false, site: 'https://site.example/', error: 'no_tab', detail: 'gate it first', registry_changed: false });
   });
 });

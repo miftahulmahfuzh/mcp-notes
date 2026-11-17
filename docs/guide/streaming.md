@@ -1087,6 +1087,20 @@ provider list both machines share and probes for minutes.
      through it and the client is never disguised.
    - Only the frames a page loads by itself (and after the sniffer's own play click) are read.
      The site's other server buttons are not pressed, so one page usually gives one provider.
+   - **A site whose plain request answers `bot_check` and whose frames never read either,
+     because the sniffer's fresh navigation shows the same Cloudflare challenge again every
+     time:** the owner clears it by hand first, the same way as ext.to's torrent index (see
+     "ext.to's Cloudflare gate" in `CLAUDE.md`). `node claude/streaming/direct/cli.mjs gate
+     <site>` brings the site's tab to the front of the streaming Chrome (`torrent/tab.ps1
+     -Activate`, the same shared `notesd-stream-chrome` profile) so the owner can solve the
+     challenge; it answers once the challenge is gone, or the deadline passes. Calling
+     `direct_stream_update_source` again with `from_tab: true` (or `cli.mjs templates <site>
+     --from-tab`) then reads that SAME tab's current frames with a JS expression
+     (`readFrameTemplatesFromTab`, `claude/streaming/direct/frames.mjs`) — no new navigation, so
+     the challenge never shows again. It sees only the top page's own `<iframe>` elements (their
+     `src` attribute, readable cross-origin without touching the frame's content); a frame nested
+     inside another cross-origin frame is not seen this way, unlike the sniffer's. `no_tab`: no
+     gated tab answered (none is open, or it is still on the challenge) — gate it again.
 3. **Keep the new ones.** A provider is already known when the registry has a template with the
    same host (without `www.`), path and id parameter; `?autoPlay=true` and colours do not count.
    A new provider whose name is taken by another host is stored as `VidSrc (vidsrc.xyz)`.
@@ -1104,6 +1118,7 @@ provider list both machines share and probes for minutes.
 | `bot_check` | The site answers a plain request with a bot check, or shows one in the streaming Chrome. It is not got past |
 | `no_templates` | Neither the scripts nor the frames of the page opened hold a provider template; `detail` says what each reader read |
 | `chrome_unavailable` | The streaming Chrome could not open the watch page (`no_chrome`, `chrome_not_reachable`) |
+| `no_tab` | `from_tab` was asked, and no gated tab answered on the site (none is open, or it is still on the challenge) |
 | `unreachable` | The address does not answer, or answers an error |
 | `busy` | Another update is still probing |
 | `direct_stream_off` | Direct streaming is off, or the daemon runs without it |
@@ -1817,6 +1832,7 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 | `src/directStream/evidence.ts` | The stream evidence log, the pass-through's observer, snapshots |
 | `src/directStream/ahead.ts` | The next episode, fetched while one plays: when, from where, and how it gives way to the episode on screen |
 | `src/directStream/picture.ts` | The picture check: frames through ffmpeg, the model's verdict, the kept verdicts; `vetted` in `service.ts` resolves until one passes |
+| `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
@@ -1832,7 +1848,6 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 
 - Matching, result building and the tools are unit-tested with no network:
-| `src/directStream/audioLang.ts` | The cloud audio-language check: ~30 s of audio through ffmpeg and Whisper's `detect`, a dub told from the original, the kept verdicts; run in the same `vetted` loop |
   `npx vitest run tests/unit/scripts tests/unit/streaming.test.ts tests/unit/mcp.streamingTools.test.ts`.
 - A lookup on the live site is free: `node claude/streaming/cli.mjs lk21 ready or not 2019`.
   The idlix one opens the streaming Chrome, minimized.

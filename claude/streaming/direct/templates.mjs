@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFrameTemplates } from './frames.mjs';
+import { readFrameTemplates, readFrameTemplatesFromTab } from './frames.mjs';
 
 /** Sent as is: this is a plain request, not a browser, and it does not pretend to be one. */
 export const USER_AGENT = 'notesd-update-cloud-source (plain request; reads public scripts)';
@@ -315,50 +315,8 @@ function pageAddress(text) {
   }
 }
 
-/**
- * `cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]`:
- * the answer to print and the exit code (0 found, 1 not, 2 usage).
- *
- * The scripts are read first, with plain requests. The frames are read (frames.mjs, the streaming
- * Chrome) only when the scripts gave nothing: on `no_templates`, from --watch or else the site
- * address itself; on a plain request's `bot_check`, only from a --watch page that was asked for.
- * --no-chrome never opens the browser. Every provider says which reader found it (`reader`:
- * `scripts` or `frames`), and so does the answer.
- * options: { fetch, limits, now } for the script reader; { sniff, known } for the frame reader.
- * `sniff` is sniff.mjs's sniffEmbed, handed in by cli.mjs: without it no browser is opened, so
- * nothing that calls this by itself (a test) can reach the streaming Chrome.
- */
-export async function templatesCommand(argv, options = {}) {
-  const usage = (detail) => ({ code: 2, answer: { ok: false, site: null, error: 'usage', detail, scripts_read: 0 } });
-  const positional = [];
-  const flags = { watch: null, episode: null, chrome: true };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === '--no-chrome') flags.chrome = false;
-    else if (arg === '--watch' || arg === '--episode') {
-      const value = pageAddress(argv[i + 1] ?? '');
-      if (value === null) return usage(`${arg} needs an http or https address`);
-      flags[arg.slice(2)] = value;
-      i++;
-    } else if (arg.startsWith('--')) return usage(`unknown flag ${arg}`);
-    else positional.push(arg);
-  }
-  const site = positional[0];
-  if (site === undefined || site.trim() === '' || positional.length > 1) {
-    return usage('usage: templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]');
-  }
-  const scripts = await readSiteTemplates(site.trim(), options);
-  if (scripts.ok) {
-    return { code: 0, answer: { ...scripts, reader: 'scripts', providers: scripts.providers.map((p) => ({ ...p, reader: 'scripts' })) } };
-  }
-  const sniff = options.sniff ?? null;
-  const readFrames = flags.chrome && sniff !== null && (scripts.error === 'no_templates' || (scripts.error === 'bot_check' && flags.watch !== null));
-  if (!readFrames) return { code: 1, answer: scripts };
-
-  const frames = await readFrameTemplates(
-    { watch: flags.watch ?? scripts.site, episode: flags.episode },
-    { sniff, known: options.known ?? knownTitles() },
-  );
+/** Either frame reader's answer, folded against the scripts' failure into templatesCommand's shape. */
+function fromFrames(scripts, frames) {
   if (!frames.ok) {
     return {
       code: 1,
@@ -385,4 +343,63 @@ export async function templatesCommand(argv, options = {}) {
       skipped,
     },
   };
+}
+
+/**
+ * `cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome] [--from-tab]`:
+ * the answer to print and the exit code (0 found, 1 not, 2 usage).
+ *
+ * The scripts are read first, with plain requests. The frames are read only when the scripts gave
+ * nothing: on `no_templates`, from --watch or else the site address itself; on a plain request's
+ * `bot_check`, only from a --watch page that was asked for. --no-chrome never opens the browser.
+ * Every provider says which reader found it (`reader`: `scripts` or `frames`), and so does the
+ * answer.
+ *
+ * Two ways to read the frames: by default, frames.mjs's sniffer opens a fresh background tab
+ * (`sniff`, sniff.mjs's sniffEmbed), which re-navigates and so re-triggers a site's Cloudflare
+ * challenge every time. `--from-tab` instead reads the CURRENT frames of a tab the owner already
+ * solved that challenge in by hand (`cli.mjs gate <origin>`), through `ask` (torrent/browser.mjs's
+ * askInTab) — no navigation, so the challenge never shows again.
+ * options: { fetch, limits, now } for the script reader; { sniff, ask, known } for the frame
+ * readers. Without `sniff` or `ask`, nothing that calls this by itself (a test) can reach the
+ * streaming Chrome.
+ */
+export async function templatesCommand(argv, options = {}) {
+  const usage = (detail) => ({ code: 2, answer: { ok: false, site: null, error: 'usage', detail, scripts_read: 0 } });
+  const positional = [];
+  const flags = { watch: null, episode: null, chrome: true, fromTab: false };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--no-chrome') flags.chrome = false;
+    else if (arg === '--from-tab') flags.fromTab = true;
+    else if (arg === '--watch' || arg === '--episode') {
+      const value = pageAddress(argv[i + 1] ?? '');
+      if (value === null) return usage(`${arg} needs an http or https address`);
+      flags[arg.slice(2)] = value;
+      i++;
+    } else if (arg.startsWith('--')) return usage(`unknown flag ${arg}`);
+    else positional.push(arg);
+  }
+  const site = positional[0];
+  if (site === undefined || site.trim() === '' || positional.length > 1) {
+    return usage('usage: templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome] [--from-tab]');
+  }
+  const scripts = await readSiteTemplates(site.trim(), options);
+  if (scripts.ok) {
+    return { code: 0, answer: { ...scripts, reader: 'scripts', providers: scripts.providers.map((p) => ({ ...p, reader: 'scripts' })) } };
+  }
+  const wantsFrames = flags.chrome && (scripts.error === 'no_templates' || (scripts.error === 'bot_check' && flags.watch !== null));
+  if (!wantsFrames) return { code: 1, answer: scripts };
+
+  if (flags.fromTab) {
+    if (options.ask == null) return { code: 1, answer: scripts };
+    const frames = await readFrameTemplatesFromTab(flags.watch ?? scripts.site, { ask: options.ask, known: options.known ?? knownTitles() });
+    return fromFrames(scripts, frames);
+  }
+  if (options.sniff == null) return { code: 1, answer: scripts };
+  const frames = await readFrameTemplates(
+    { watch: flags.watch ?? scripts.site, episode: flags.episode },
+    { sniff: options.sniff, known: options.known ?? knownTitles() },
+  );
+  return fromFrames(scripts, frames);
 }

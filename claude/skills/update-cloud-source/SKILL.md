@@ -61,15 +61,39 @@ instead: it lists the registry with this machine's health and changes nothing.
 - **`ok: false`:** the registry is unchanged; say why in one line:
   - `bot_check`: the site answers a plain request with a bot check, or shows one in the streaming
     Chrome. It is not got past. For the plain request's, a watch page the user gives is read
-    through its frames instead.
+    through its frames instead. If the SAME `bot_check` (or `no_templates` with a watch page
+    given) keeps coming back try after try, the site's challenge never completes in the
+    background tab the frame reader opens fresh each time — offer step 2b below instead of
+    retrying the same way again.
   - `no_templates`: neither the site's scripts nor the frames of the page that was opened hold a
     provider template; `detail` says what each reader read. Only the frames a page loads by
     itself are seen: its other server buttons are not pressed.
   - `chrome_unavailable`: the streaming Chrome could not open the watch page (`detail` has the
     reason: `no_chrome`, `chrome_not_reachable`).
+  - `no_tab`: `from_tab` was asked and no gated tab answered — the owner has not gated the site
+    yet, gated it too long ago, or has not solved the challenge yet. Offer step 2b again.
   - `unreachable`: the address does not answer; check it.
   - `busy`: another `/update-cloud-source` is still probing; ask again after it answers.
   - `reader_failed`, `bad_url`: report the detail.
+
+## Step 2b: a site whose challenge keeps coming back
+
+A plain request's `bot_check`, or `no_templates` right after one, usually clears on the next try.
+When it keeps answering `bot_check` (or `no_tab`) across several calls, the site's Cloudflare
+challenge cannot complete in the background tab the frame reader opens on its own — same wall as
+ext.to's torrent index. Tell the user to run, in a terminal:
+
+```sh
+node ~/mcp-notes/claude/streaming/direct/cli.mjs gate <site url>
+```
+
+This brings the site's tab to the front of the streaming Chrome so they can solve the challenge by
+hand; it answers `{ ok: true, cleared: true }` once it is gone (or `cleared: false` after about
+40 seconds with none). Only once they say it is solved, call `direct_stream_update_source` again
+with the same arguments plus `from_tab: true`: this reads that SAME tab's current frames with no
+new navigation, so the challenge never shows again. Never run the gate command yourself or click
+through the challenge for them — the owner solves it in their own browser, the same rule as every
+other bot check in this project.
 - **`direct_stream_off`:** direct streaming is off on this daemon (`NOTESD_DIRECT_STREAM=off`,
   `NOTESD_MOVIES=off`) or the daemon runs without it.
 

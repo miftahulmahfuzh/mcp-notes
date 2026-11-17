@@ -201,6 +201,10 @@ $byRequest = @{}
 $extra = @{}
 $hosts = @{}
 $frames = New-Object System.Collections.ArrayList
+# A frame target's url at Target.attachedToTarget is often still about:blank (the attach fires at
+# creation, before its first navigation commits); this maps targetId -> its index in $frames so a
+# later Target.targetInfoChanged can fill in the address it navigated to.
+$frameIndexByTarget = @{}
 $popups = 0
 $strays = 0
 $requests = 0
@@ -306,6 +310,7 @@ while ((Get-Date) -lt $deadline) {
     'Target.attachedToTarget' {
       $info = $m.params.targetInfo
       $ourTargets[$info.targetId] = 1
+      $frameIndexByTarget[$info.targetId] = $frames.Count
       [void]$frames.Add("$($info.type) $($info.url)")
       if ($info.url -match $botUrl) { Set-BotCheck "frame $($info.url)" }
       Watch-Session $m.params.sessionId ($info.type -eq 'iframe' -or $info.type -eq 'page')
@@ -325,6 +330,10 @@ while ((Get-Date) -lt $deadline) {
       $info = $m.params.targetInfo
       if ($info.targetId -eq $targetId -and ($info.title -match $botTitle -or $info.url -match $botUrl)) {
         Set-BotCheck "title $($info.title)"
+      }
+      if ($frameIndexByTarget.ContainsKey($info.targetId)) {
+        $frames[$frameIndexByTarget[$info.targetId]] = "$($info.type) $($info.url)"
+        if ($info.url -match $botUrl) { Set-BotCheck "frame $($info.url)" }
       }
     }
     { $_ -eq 'Page.domContentEventFired' -or $_ -eq 'Page.loadEventFired' } {

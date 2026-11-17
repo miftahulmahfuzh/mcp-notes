@@ -77,7 +77,7 @@ export const TemplatesAnswerSchema = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(false),
     site: z.string().nullable(),
-    error: z.enum(['bad_url', 'unreachable', 'bot_check', 'no_templates', 'chrome_unavailable', 'usage']),
+    error: z.enum(['bad_url', 'unreachable', 'bot_check', 'no_templates', 'chrome_unavailable', 'no_tab', 'usage']),
     detail: z.string(),
     scripts_read: z.number().int().nonnegative(),
   }),
@@ -110,7 +110,7 @@ export interface AddedProvider {
   probes: ProbeResult[];
 }
 
-export type UpdateSourceError = 'bad_url' | 'unreachable' | 'bot_check' | 'no_templates' | 'chrome_unavailable' | 'usage' | 'reader_failed' | 'busy';
+export type UpdateSourceError = 'bad_url' | 'unreachable' | 'bot_check' | 'no_templates' | 'chrome_unavailable' | 'no_tab' | 'usage' | 'reader_failed' | 'busy';
 
 export type UpdateSourceAnswer =
   | {
@@ -264,6 +264,12 @@ function failed(site: string, error: UpdateSourceError, detail: string): UpdateS
 export interface WatchPages {
   watchPage?: string | undefined;
   episodePage?: string | undefined;
+  /**
+   * Read the frames of a tab the owner already solved a Cloudflare challenge in by hand
+   * (`cli.mjs gate <origin>`), instead of the sniffer's fresh navigation, which would show the
+   * challenge again. The owner gates the tab themselves; nothing here solves anything.
+   */
+  fromTab?: boolean | undefined;
 }
 
 /**
@@ -281,6 +287,7 @@ export async function updateSource(site: string, deps: UpdateSourceDeps, pages: 
       site,
       ...(pages.watchPage === undefined ? [] : ['--watch', pages.watchPage]),
       ...(pages.episodePage === undefined ? [] : ['--episode', pages.episodePage]),
+      ...(pages.fromTab === true ? ['--from-tab'] : []),
     ]);
   } catch (err) {
     return failed(site, 'reader_failed', err instanceof Error ? err.message : String(err));

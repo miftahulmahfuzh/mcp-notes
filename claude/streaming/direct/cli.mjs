@@ -5,14 +5,21 @@
 //   cli.mjs resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--skip <name,name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>]
 //   cli.mjs providers [--providers <file>] [--health <file>]
 //   cli.mjs open <http://localhost:<port>/...> [--fullscreen]
-//   cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]
+//   cli.mjs templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome] [--from-tab]
 //                                  read a site's provider templates: its scripts with plain requests,
 //                                  and when they hold none, the frames a watch page loads in the streaming Chrome
+//                                  (or, with --from-tab, the frames of a tab the owner already gated)
+//   cli.mjs gate <site url> [--deadline-s <n>]
+//                                  foreground the site so the owner can solve its Cloudflare challenge by hand;
+//                                  the cf_clearance cookie the profile keeps then lets later reads through
 // Prints one JSON object. Exit 0 when ok, 1 when not, 2 for a usage or input error.
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeError, evaluateInChrome, sleep } from '../chrome.mjs';
+import { isBotCheckPage } from '../torrent/page.mjs';
+// Origin-agnostic despite its home: the tab these drive is named by address, never a torrent site.
+import { askInTab, BotCheckError, foregroundTab, secondsLeft } from '../torrent/browser.mjs';
 import { orderProviders } from './order.mjs';
 import { probeAudio } from './audio.mjs';
 import { normalizeLang } from './lang.mjs';
@@ -20,11 +27,14 @@ import { resolveTitle } from './resolve.mjs';
 import { sniffEmbed } from './sniff.mjs';
 import { templatesCommand } from './templates.mjs';
 
+/** Both steps of `gate` together, when the caller gives no --deadline-s. */
+export const DEFAULT_DEADLINE_S = 40;
+
 export const SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'providers.seed.json');
 /** The anime embeds (keyed by AniList id), tried for a resolve that carries --anime. The daemon loads both files into its registry. */
 export const ANIME_SEED_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'anime.seed.json');
 export const USAGE =
-  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--skip <name,name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] [--anime <AniList id>:<episode>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome]';
+  'resolve <movie|tv> <tmdbId> [season episode] [--only <name>] [--skip <name,name>] [--providers <file>] [--health <file>] [--deadline-s <n>] [--audio-lang <code>] [--anime <AniList id>:<episode>] | providers [--providers <file>] [--health <file>] | open <http://localhost:<port>/...> [--fullscreen] | templates <site url> [--watch <film page>] [--episode <episode page>] [--no-chrome] [--from-tab] | gate <site url> [--deadline-s <n>]';
 
 /**
  * Evaluated in the player page after `open --fullscreen`: phase 4's page exposes
@@ -48,7 +58,7 @@ export class InputError extends Error {
 }
 
 const VALUE_FLAGS = new Set(['--only', '--skip', '--providers', '--health', '--deadline-s', '--audio-lang', '--anime', '--watch', '--episode']);
-const SWITCH_FLAGS = new Set(['--fullscreen', '--no-chrome']);
+const SWITCH_FLAGS = new Set(['--fullscreen', '--no-chrome', '--from-tab']);
 const WHOLE = /^\d+$/;
 const DAEMON_HOSTS = new Set(['localhost', '127.0.0.1']);
 
@@ -135,7 +145,7 @@ export function parseArgs(argv) {
       if (rest.length !== 1) throw new InputError('usage', 'open takes one address');
       return { command, url: parseDaemonUrl(rest[0]), fullscreen: flags.fullscreen === true };
     case 'templates':
-      allow(['watch', 'episode', 'no-chrome']);
+      allow(['watch', 'episode', 'no-chrome', 'from-tab']);
       // templatesCommand checks the addresses itself (usage, bad_url) and answers in its own shape.
       return {
         command,
@@ -144,8 +154,22 @@ export function parseArgs(argv) {
           ...(flags.watch === undefined ? [] : ['--watch', flags.watch]),
           ...(flags.episode === undefined ? [] : ['--episode', flags.episode]),
           ...(flags['no-chrome'] === true ? ['--no-chrome'] : []),
+          ...(flags['from-tab'] === true ? ['--from-tab'] : []),
         ],
       };
+    case 'gate': {
+      allow(['deadline-s']);
+      if (rest.length !== 1) throw new InputError('usage', 'gate takes one site address');
+      let origin;
+      try {
+        origin = new URL(rest[0]).origin;
+      } catch {
+        throw new InputError('usage', 'gate needs an http(s) address');
+      }
+      const deadlineS = flags['deadline-s'] === undefined ? null : wholeNumber(flags['deadline-s'], 1);
+      if (flags['deadline-s'] !== undefined && deadlineS === null) throw new InputError('usage', '--deadline-s is a whole number of seconds, 1 or more');
+      return { command, origin, deadlineS };
+    }
     default:
       throw new InputError('usage', command === undefined ? 'no command' : `unknown command "${command}"`);
   }
@@ -287,6 +311,37 @@ export async function openInChrome(url, { fullscreen }, { evaluate = evaluateInC
   return { ok: true, url, fullscreen, started };
 }
 
+/** Evaluated in the gated tab: whether the challenge is gone, read the same way torrent/cli.mjs's gate does. */
+export function gateExpression() {
+  return `(() => {
+  const isBotCheckPage = ${isBotCheckPage.toString()};
+  return { bot_check: isBotCheckPage(document), title: document.title, url: location.href };
+})()`;
+}
+
+/**
+ * The `gate` command: brings the site's tab to the front of the streaming Chrome so the owner can
+ * solve a Cloudflare challenge by hand, then watches the tab until it is no longer a bot-check
+ * page or the deadline passes. The cf_clearance cookie the profile keeps then lets later reads
+ * (`templates --from-tab`) through. Returns { cleared, title }. Throws ChromeError.
+ */
+export async function clearGate(origin, deadline, { foreground = foregroundTab, ask = askInTab, sleep: wait = sleep } = {}) {
+  await foreground(origin, { timeoutS: secondsLeft(deadline) });
+  let last = { bot_check: true, title: '' };
+  while (Date.now() < deadline) {
+    try {
+      last = await ask(origin, gateExpression(), { timeoutS: secondsLeft(deadline) });
+    } catch (err) {
+      // While a challenge holds the only tab, cdp.ps1 answers no_tab (a BotCheckError here): keep waiting.
+      if (!(err instanceof BotCheckError)) throw err;
+      last = { bot_check: true, title: last.title };
+    }
+    if (last && last.bot_check === false) return { cleared: true, title: last.title ?? '' };
+    await wait(2000);
+  }
+  return { cleared: false, title: last?.title ?? '' };
+}
+
 const printJson = (value) => console.log(JSON.stringify(value, null, 2));
 
 function readInput(readText, file, code) {
@@ -299,13 +354,13 @@ function readInput(readText, file, code) {
 
 /** Runs one command and prints one JSON object. Returns the exit code. Everything is injectable. */
 export async function main(argv, io = {}) {
-  const { sniff = sniffEmbed, open = openInChrome, readText = (file) => readFileSync(file, 'utf8'), print = printJson } = io;
+  const { sniff = sniffEmbed, ask = askInTab, gate = clearGate, open = openInChrome, readText = (file) => readFileSync(file, 'utf8'), print = printJson } = io;
   let args;
   let providers = [];
   let health = {};
   try {
     args = parseArgs(argv);
-    if (args.command !== 'open' && args.command !== 'templates') {
+    if (args.command !== 'open' && args.command !== 'templates' && args.command !== 'gate') {
       providers = readProviders(readInput(readText, args.providersFile ?? SEED_PATH, 'bad_providers'));
       // Run by hand without --providers: the anime embeds come from their own seed.
       if (args.providersFile === null && args.command === 'resolve' && args.ref.anime !== null) {
@@ -319,9 +374,20 @@ export async function main(argv, io = {}) {
     return 2;
   }
   if (args.command === 'templates') {
-    const { code, answer } = await templatesCommand(args.rest, { sniff });
+    const { code, answer } = await templatesCommand(args.rest, { sniff, ask });
     print(answer);
     return code;
+  }
+  if (args.command === 'gate') {
+    const deadline = Date.now() + (args.deadlineS ?? DEFAULT_DEADLINE_S) * 1000;
+    try {
+      const { cleared, title } = await gate(args.origin, deadline);
+      print({ ok: true, origin: args.origin, cleared, title });
+      return 0;
+    } catch (err) {
+      print({ ok: false, origin: args.origin, error: err instanceof ChromeError ? err.code : 'gate_failed', detail: String(err?.message ?? err) });
+      return 1;
+    }
   }
   if (args.command === 'providers') {
     print({ ok: true, providers: orderProviders(providers, health).map((p) => ({ ...p, health: Object.hasOwn(health, p.name) ? health[p.name] : null })) });

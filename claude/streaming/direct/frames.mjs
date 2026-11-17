@@ -14,9 +14,22 @@
 // Only the frames the page loads by itself (and after the sniffer's own play click) are seen: the
 // site's other server buttons are not pressed. A bot check is an outcome (bot_check): the sniffer
 // stops clicking once it sees one, and nothing here tries to get past it.
+//
+// A site whose Cloudflare challenge the sniffer's fresh navigation cannot clear (it never
+// completes in a background tab) is read a third way, by readFrameTemplatesFromTab below: the
+// owner solves the challenge by hand in a foregrounded tab (cli.mjs gate), and this reads that
+// SAME tab's current frames with a JS expression (never a new navigation, so the challenge never
+// shows again). It only sees the top page's own <iframe> elements (their `src` attribute, which
+// is readable cross-origin without touching the frame's content) — a frame nested inside another
+// cross-origin frame is invisible this way, unlike the sniffer's CDP-level capture. That is the
+// one thing this reader gives up for never re-navigating the already-solved tab.
+import { BotCheckError } from '../torrent/browser.mjs';
 
 /** Seconds one watch page is watched for its frames. */
 export const FRAME_SNIFF_SECONDS = 20;
+
+/** A season or episode number or word in a page's path: the tab is probably on an episode. */
+const EPISODE_PAGE_HINT = /season|episode|\bs\d{1,2}[-_]?e\d{1,3}\b/i;
 
 const ASSET = /\.(?:png|jpe?g|webp|gif|svg|avif|ico|css|js|json|woff2?)$/i;
 const SEASON_KEY = /^(?:s|season|ss|se)$/i;
@@ -148,6 +161,28 @@ export function frameAddresses(targets) {
 }
 
 /**
+ * The frame addresses a capture's network hits carry, off `pageHost`: `Target.attachedToTarget`
+ * fires at a frame's creation, before it navigates away from `about:blank`, so a frame that
+ * navigates fast can leave `frameAddresses` with a blank address even though its own requests
+ * (a manifest, a subtitle index) carry `documentURL` — the frame's address once it has navigated.
+ * A fallback, not a replacement: it only ever adds addresses `frameAddresses` missed.
+ */
+export function hitFrameAddresses(hits, pageHost) {
+  const out = [];
+  for (const hit of Array.isArray(hits) ? hits : []) {
+    const doc = hit?.document;
+    if (typeof doc !== 'string' || !doc.startsWith('https://') || out.includes(doc)) continue;
+    try {
+      if (new URL(doc).hostname.replace(/^www\./, '') === pageHost) continue;
+    } catch {
+      continue;
+    }
+    out.push(doc);
+  }
+  return out;
+}
+
+/**
  * Reads the frames of one or two watch pages. `pages`: { watch, episode } (addresses; episode may
  * be null). `sniff(url, options)` is sniff.mjs's sniffEmbed (tests pass a fake). Answers
  * `{ ok: true, entries, frames_read, pages }` or `{ ok: false, error, detail }` with error
@@ -169,7 +204,8 @@ export async function readFrameTemplates(pages, { sniff, known = [], seconds = F
     if (capture.bot_check === true) {
       return { ok: false, error: 'bot_check', detail: `${pageUrl} shows a bot check in the streaming Chrome${capture.bot_check_reason ? ` (${capture.bot_check_reason})` : ''}. It is not got past.` };
     }
-    const frames = frameAddresses(capture.frames);
+    const site = new URL(pageUrl).hostname.replace(/^www\./, '');
+    const frames = [...frameAddresses(capture.frames), ...hitFrameAddresses(capture.hits, site)];
     framesRead += frames.length;
     read.push(pageUrl);
     entries.push(...entriesFromFrames(pageUrl, frames, known, episodePage));
@@ -181,5 +217,63 @@ export async function readFrameTemplates(pages, { sniff, known = [], seconds = F
     detail:
       `opened ${read.length === 1 ? read[0] : `${read.length} pages`} in the streaming Chrome and read ${framesRead} frame addresses; none carries a film's TMDB id. ` +
       "Pass a film's watch page as watch_page (a page of a known title works best: Fight Club, TMDB 550). Only the frames the page loads by itself are read; its other server buttons are not pressed.",
+  };
+}
+
+/** Whether a page is probably on an episode, from its own address: no site is asked. */
+export function looksLikeEpisodePage(url) {
+  try {
+    return EPISODE_PAGE_HINT.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Evaluated (toString'd) in the gated tab by `ask` (torrent/browser.mjs's askInTab): the tab's own
+ * frame addresses, read without navigating it.
+ */
+export function tabFramesExpression() {
+  return `(() => {
+  const frames = Array.from(document.querySelectorAll('iframe'))
+    .map((f) => f.src)
+    .filter((s) => typeof s === 'string' && s.startsWith('https://'));
+  return { url: location.href, frames };
+})()`;
+}
+
+/**
+ * The alternate frame reader: reads the CURRENT frames of a tab the owner already solved a
+ * Cloudflare challenge in by hand (`cli.mjs gate <origin>`), instead of opening a fresh
+ * navigation that would show the challenge again. `ask`: torrent/browser.mjs's askInTab (origin,
+ * expression) -> Promise, a test seam otherwise. Answers the same shape as readFrameTemplates:
+ * `{ ok: true, entries, frames_read, pages }` or `{ ok: false, error, detail }`, with error
+ * `no_tab` (no gated tab answered, or it is still on the challenge), `chrome_unavailable` or
+ * `no_templates`.
+ */
+export async function readFrameTemplatesFromTab(origin, { ask, known = [] } = {}) {
+  let reply;
+  try {
+    reply = await ask(origin, tabFramesExpression());
+  } catch (err) {
+    if (err instanceof BotCheckError) {
+      return { ok: false, error: 'no_tab', detail: `no gated tab answered on ${new URL(origin).host} within the time given. Clear its challenge by hand first: cli.mjs gate ${origin}` };
+    }
+    const code = typeof err?.code === 'string' ? err.code : null;
+    if (code === 'no_chrome' || code === 'chrome_not_reachable' || code === 'cdp_failed') {
+      return { ok: false, error: 'chrome_unavailable', detail: `the streaming Chrome could not read the gated tab on ${new URL(origin).host}: ${code}${err?.message ? ` (${String(err.message).slice(0, 200)})` : ''}` };
+    }
+    return { ok: false, error: 'no_tab', detail: `could not read the gated tab on ${new URL(origin).host}: ${err?.message ?? err}` };
+  }
+  const pageUrl = typeof reply?.url === 'string' ? reply.url : origin;
+  const frames = Array.isArray(reply?.frames) ? reply.frames.filter((f) => typeof f === 'string') : [];
+  const entries = entriesFromFrames(pageUrl, frames, known, looksLikeEpisodePage(pageUrl));
+  if (entries.some((e) => e.kind === 'movie')) return { ok: true, entries, frames_read: frames.length, pages: [pageUrl] };
+  return {
+    ok: false,
+    error: 'no_templates',
+    detail:
+      `read the gated tab on ${pageUrl} and found ${frames.length} frame address${frames.length === 1 ? '' : 'es'}; none carries a film's TMDB id. ` +
+      'Only the top page\'s own frames are read this way; a frame nested inside another is not seen.',
   };
 }

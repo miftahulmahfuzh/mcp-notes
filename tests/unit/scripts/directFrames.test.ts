@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 // @ts-expect-error -- a plain .mjs script without type declarations
 import { ChromeError } from '../../../claude/streaming/chrome.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
-import { main } from '../../../claude/streaming/direct/cli.mjs';
+import { BotCheckError } from '../../../claude/streaming/torrent/browser.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
-import { entriesFromFrames, frameAddresses, numberTokens, pageNumbers, readFrameTemplates, templateFromFrame, wantedFor } from '../../../claude/streaming/direct/frames.mjs';
+import { clearGate, gateExpression, main } from '../../../claude/streaming/direct/cli.mjs';
+// @ts-expect-error -- a plain .mjs script without type declarations
+import { entriesFromFrames, frameAddresses, looksLikeEpisodePage, numberTokens, pageNumbers, readFrameTemplates, readFrameTemplatesFromTab, templateFromFrame, wantedFor } from '../../../claude/streaming/direct/frames.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
 import { templatesCommand } from '../../../claude/streaming/direct/templates.mjs';
 
@@ -113,6 +115,111 @@ describe('direct streaming: provider templates from embed frames', () => {
     const none = await readFrameTemplates({ watch: 'https://site.example/' }, { sniff: home.sniff, known: KNOWN });
     expect(none).toMatchObject({ ok: false, error: 'no_templates' });
     expect(none.detail).toContain('watch_page');
+  });
+});
+
+describe('direct streaming: the gated-tab frame reader (no fresh navigation)', () => {
+  /** A fake askInTab (origin, expression, options) -> reply, calls recorded. */
+  function fakeAsk(replies: Record<string, { url?: string; frames?: string[]; throws?: unknown }>) {
+    const calls: string[] = [];
+    const ask = vi.fn(async (origin: string) => {
+      calls.push(origin);
+      const r = replies[origin] ?? {};
+      if (r.throws !== undefined) throw r.throws;
+      return { url: r.url ?? origin, frames: r.frames ?? [] };
+    });
+    return { ask, calls };
+  }
+
+  it('guesses an episode page from its own address, never from the site', () => {
+    expect(looksLikeEpisodePage('https://site.example/naive-leader-season-1-episode-1-2026')).toBe(true);
+    expect(looksLikeEpisodePage('https://site.example/tv/breaking-bad/s2e3')).toBe(true);
+    expect(looksLikeEpisodePage('https://site.example/watch/m/1368337')).toBe(false);
+  });
+
+  it('reads the tab\'s current frames with no navigation, and derives templates from them', async () => {
+    const { ask, calls } = fakeAsk({
+      'https://site.example': { url: 'https://site.example/movie/550', frames: ['https://vidnew.example/embed/movie/550', 'https://ads.example/x/1'] },
+    });
+    const answer = await readFrameTemplatesFromTab('https://site.example', { ask, known: KNOWN });
+    expect(answer).toMatchObject({ ok: true, frames_read: 2, pages: ['https://site.example/movie/550'] });
+    expect(answer.entries).toEqual([{ name: 'vidnew.example', kind: 'movie', url: 'https://vidnew.example/embed/movie/{id}', found_in: 'https://vidnew.example/embed/movie/550' }]);
+    expect(calls).toEqual(['https://site.example']);
+  });
+
+  it('answers no_tab when the tab never got past its challenge, and chrome_unavailable when the browser could not be driven', async () => {
+    const gated = fakeAsk({ 'https://cf.example': { throws: new BotCheckError('no page got past its check') } });
+    const noTab = await readFrameTemplatesFromTab('https://cf.example', { ask: gated.ask, known: KNOWN });
+    expect(noTab).toMatchObject({ ok: false, error: 'no_tab' });
+    expect(noTab.detail).toContain('gate');
+
+    const down = fakeAsk({ 'https://cf.example': { throws: new ChromeError('no_chrome', 'chrome.exe was not found') } });
+    const unavailable = await readFrameTemplatesFromTab('https://cf.example', { ask: down.ask, known: KNOWN });
+    expect(unavailable).toMatchObject({ ok: false, error: 'chrome_unavailable' });
+  });
+
+  it('answers no_templates when no frame of the gated tab carries an id', async () => {
+    const { ask } = fakeAsk({ 'https://site.example': { frames: ['https://ads.example/x/1'] } });
+    const answer = await readFrameTemplatesFromTab('https://site.example', { ask, known: KNOWN });
+    expect(answer).toMatchObject({ ok: false, error: 'no_templates' });
+  });
+
+  it('templatesCommand reads from the gated tab with --from-tab instead of opening the sniffer', async () => {
+    const { sniff } = fakeSniff({});
+    const { ask, calls } = fakeAsk({
+      'https://site.example/movie/550': { frames: ['https://vidnew.example/embed/movie/550'] },
+    });
+    const out = await templatesCommand(['https://site.example/movie/550', '--from-tab'], { fetch: plainSite(), sniff, ask, known: KNOWN });
+    expect(out).toMatchObject({ code: 0, answer: { ok: true, reader: 'frames', providers: [{ name: 'vidnew.example', reader: 'frames' }] } });
+    expect(sniff).not.toHaveBeenCalled();
+    expect(calls).toEqual(['https://site.example/movie/550']);
+  });
+
+  it('templatesCommand\'s --from-tab answers the scripts\' failure without `ask`, and never calls the sniffer', async () => {
+    const { sniff } = fakeSniff({});
+    const out = await templatesCommand(['https://site.example/movie/550', '--from-tab'], { fetch: plainSite(), sniff, known: KNOWN });
+    expect(out).toMatchObject({ code: 1, answer: { error: 'no_templates' } });
+    expect(sniff).not.toHaveBeenCalled();
+  });
+
+  it('the gate expression compiles', () => {
+    expect(() => new Function(`return ${gateExpression()}`)).not.toThrow();
+  });
+
+  it('clearGate foregrounds the tab, waits out the challenge, and reports whether it cleared', async () => {
+    const foreground = vi.fn(async () => ({ created: false, activated: true }));
+    const sleepFn = vi.fn(async () => {});
+    const ORIGIN = 'https://site.example';
+
+    const ask = vi.fn().mockResolvedValueOnce({ bot_check: true, title: 'Just a moment...' }).mockResolvedValueOnce({ bot_check: false, title: 'site.example' });
+    expect(await clearGate(ORIGIN, Date.now() + 60_000, { foreground, ask, sleep: sleepFn })).toEqual({ cleared: true, title: 'site.example' });
+    expect(foreground).toHaveBeenCalledWith(ORIGIN, expect.anything());
+
+    // A challenge that holds the only tab answers no_tab (a BotCheckError here): clearGate waits, it is not fatal.
+    const askBot = vi.fn().mockRejectedValueOnce(new BotCheckError('x')).mockResolvedValueOnce({ bot_check: false, title: 'through' });
+    expect(await clearGate(ORIGIN, Date.now() + 60_000, { foreground, ask: askBot, sleep: sleepFn })).toEqual({ cleared: true, title: 'through' });
+
+    const stuck = await clearGate(ORIGIN, Date.now() + 10, { foreground, ask: vi.fn(async () => ({ bot_check: true, title: 'Just a moment...' })), sleep: sleepFn });
+    expect(stuck).toEqual({ cleared: false, title: 'Just a moment...' });
+  });
+
+  it('the gate command foregrounds the site and reports it cleared once the challenge is gone', async () => {
+    const gate = vi.fn(async () => ({ cleared: true, title: 'site.example' }));
+    const printed: any[] = [];
+    const code = await main(['gate', 'https://site.example/movie/550', '--deadline-s', '30'], { print: (v: unknown) => printed.push(v), gate });
+    expect(code).toBe(0);
+    expect(printed[0]).toEqual({ ok: true, origin: 'https://site.example', cleared: true, title: 'site.example' });
+    expect(gate).toHaveBeenCalledWith('https://site.example', expect.any(Number));
+  });
+
+  it('gate reports a named Chrome failure without crashing', async () => {
+    const gate = vi.fn(async () => {
+      throw new ChromeError('chrome_not_reachable', 'nothing answers on port 9333');
+    });
+    const printed: any[] = [];
+    const code = await main(['gate', 'https://site.example/'], { print: (v: unknown) => printed.push(v), gate });
+    expect(code).toBe(1);
+    expect(printed[0]).toMatchObject({ ok: false, origin: 'https://site.example', error: 'chrome_not_reachable' });
   });
 });
 
