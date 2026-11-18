@@ -17,6 +17,9 @@ const APIBAY_FILM = 'https://apibay.org/q.php?q=tt1727587';
 const APIBAY_SERIES = 'https://apibay.org/q.php?q=tt0903747';
 const EZTV_SERIES = 'https://eztvx.to/api/get-torrents?imdb_id=0903747&limit=100&page=1';
 const YTS_FILM = 'https://yts.mx/api/v2/list_movies.json?query_term=tt1727587';
+const TORRENTSDB_FILM = 'https://torrentsdb.com/stream/movie/tt1727587.json';
+const TORRENTSDB_EPISODE = 'https://torrentsdb.com/stream/series/tt0903747:1:1.json';
+const NO_STREAMS = '{"streams":[]}';
 
 type Route = () => Response | Promise<Response>;
 function fakeFetch(routes: Record<string, Route>): { fetch: FetchLike; calls: Array<{ url: string; userAgent: string | null }> } {
@@ -36,21 +39,29 @@ function torrentioAnswer(rows: Array<{ title: string; seeds: number; hash: strin
     streams: rows.map((r) => ({ name: 'Torrentio\n1080p', title: `${r.title}\n👤 ${r.seeds} 💾 1.2 GB ⚙️ ThePirateBay`, infoHash: r.hash, behaviorHints: {} })),
   });
 }
+function addonAnswer(addon: string, rows: Array<{ title: string; seeds: number; hash: string; site: string }>): string {
+  return JSON.stringify({
+    streams: rows.map((r) => ({ name: `${addon}\n1080p`, title: `${r.title}\n👤 ${r.seeds} 💾 1.2 GB ⚙️ ${r.site}`, infoHash: r.hash, behaviorHints: {} })),
+  });
+}
 const NO_YTS = '{"status":"ok","data":{"movie_count":0}}';
 
 describe('findCandidates', () => {
-  it('asks Torrentio, apibay and YTS for a film by its IMDb id and answers ranked candidates', async () => {
+  it('asks Torrentio, apibay, TorrentsDB and YTS for a film by its IMDb id and answers ranked candidates', async () => {
     const { fetch, calls } = fakeFetch({
       [TORRENTIO_FILM]: body(fixture('torrentio-movie-sintel.json')),
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
       [YTS_FILM]: body(fixture('yts-sintel.json')),
+      [TORRENTSDB_FILM]: body(NO_STREAMS),
     });
     const found = await findCandidates(SINTEL, { fetch });
-    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, YTS_FILM].sort());
+    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, TORRENTSDB_FILM, YTS_FILM].sort());
     expect(calls.every((c) => c.userAgent === TORRENT_INDEX_USER_AGENT)).toBe(true);
     expect(found.indexes.map((a) => [a.index, a.outcome, a.listed])).toEqual([
       ['torrentio', 'ok', 32],
       ['apibay', 'ok', 19],
+      ['torrentsdb', 'empty', 0],
+      ['peerflix', 'empty', 0],
       ['yts', 'ok', 3],
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
@@ -77,13 +88,17 @@ describe('findCandidates', () => {
       [TORRENTIO_EPISODE]: body(fixture('torrentio-series-bb-s01e01.json')),
       [APIBAY_SERIES]: body(fixture('apibay-empty.json')),
       [EZTV_SERIES]: body(fixture('eztv-page.json')),
+      [TORRENTSDB_EPISODE]: body(NO_STREAMS),
     });
     const found = await findCandidates(BREAKING_BAD, { fetch });
     expect(calls.some((c) => c.url.includes('yts'))).toBe(false);
+    expect(calls.some((c) => c.url.includes('peerflix'))).toBe(false);
     expect(found.indexes.map((a) => [a.index, a.outcome])).toEqual([
       ['torrentio', 'ok'],
       ['apibay', 'empty'],
       ['eztv', 'empty'],
+      ['torrentsdb', 'empty'],
+      ['peerflix', 'empty'],
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
       '6bbad06245a0d631b0a5e47c8cd6e5abc9a70211',
@@ -163,11 +178,14 @@ describe('findCandidates', () => {
       [TORRENTIO_FILM]: body(fixture('cloudflare-challenge.html'), 403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }),
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
       [YTS_FILM]: () => new Promise<Response>(() => {}),
+      [TORRENTSDB_FILM]: body(NO_STREAMS),
     });
     const found = await findCandidates(SINTEL, { fetch, timeoutMs: 50 });
     expect(found.indexes).toEqual([
       expect.objectContaining({ index: 'torrentio', outcome: 'bot_check', listed: 0 }),
       expect.objectContaining({ index: 'apibay', outcome: 'ok', listed: 19 }),
+      expect.objectContaining({ index: 'torrentsdb', outcome: 'empty', listed: 0 }),
+      expect.objectContaining({ index: 'peerflix', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'yts', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual(['43f4001de4ab25d521c63684e2b69804193ed9d9', '150922bce30a1091e347741ebbf96072593a69b4']);
@@ -183,6 +201,8 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'torrentio', outcome: 'error', detail: 'HTTP 500' }),
       expect.objectContaining({ index: 'apibay', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'eztv', outcome: 'bot_check' }),
+      expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
+      expect.objectContaining({ index: 'peerflix', outcome: 'empty' }),
     ]);
     expect(found.candidates).toEqual([]);
   });
@@ -255,5 +275,112 @@ describe('findCandidates', () => {
     };
     await findCandidates({ kind: 'movie', imdbId: '1727587' }, { indexes: [recorder] });
     expect(seen).toEqual(['tt1727587']);
+  });
+});
+
+const PAN: TorrentQuery = { kind: 'movie', imdbId: 'tt0457430', title: "Pan's Labyrinth", originalTitle: 'El laberinto del fauno', year: 2006, originalLanguage: 'es' };
+const PAN_URL = {
+  torrentio: 'https://torrentio.strem.fun/stream/movie/tt0457430.json',
+  apibay: 'https://apibay.org/q.php?q=tt0457430',
+  torrentsdb: 'https://torrentsdb.com/stream/movie/tt0457430.json',
+  peerflix: 'https://addon.peerflix.mov/stream/movie/tt0457430.json',
+  yts: 'https://yts.mx/api/v2/list_movies.json?query_term=tt0457430',
+};
+const PEERFLIX_PAN = JSON.stringify({
+  streams: [
+    {
+      name: 'Peerflix 1080p',
+      title: 'El.Laberinto.Del.Fauno.2006.1080p.BluRay.x264-GRP\nEl.Laberinto.Del.Fauno.2006.1080p.BluRay.x264-GRP.mkv\n🇪🇸\n  👤 30 💾 2.1 GB 🌐 Peerflix',
+      infoHash: hash(6),
+    },
+  ],
+});
+
+describe('findCandidates with the Stremio add-on providers', () => {
+  it("asks TorrentsDB and joins its listing of a torrent with the other indexes' by info hash", async () => {
+    const { fetch, calls } = fakeFetch({
+      [TORRENTIO_FILM]: body(fixture('torrentio-movie-sintel.json')),
+      [APIBAY_FILM]: body(fixture('apibay-empty.json')),
+      [YTS_FILM]: body(fixture('yts-sintel.json')),
+      [TORRENTSDB_FILM]: body(
+        addonAnswer('TorrentsDB', [
+          { title: 'Sintel 2010 720p BluRay', seeds: 45, hash: 'A779FA758F2229586EEBC2E5960EB32FE5659596', site: 'knaben' },
+          { title: 'Sintel.2010.1080p.WEB-DL.x264.AAC-TDB', seeds: 12, hash: hash(5), site: 'rargb' },
+        ]),
+      ),
+    });
+    const found = await findCandidates(SINTEL, { fetch });
+    expect(calls.map((c) => c.url)).toContain(TORRENTSDB_FILM);
+    expect(found.indexes.find((a) => a.index === 'torrentsdb')).toMatchObject({ outcome: 'ok', listed: 2 });
+    const shared = found.candidates.filter((c) => c.infoHash === 'a779fa758f2229586eebc2e5960eb32fe5659596');
+    expect(shared).toHaveLength(1);
+    expect(shared[0]?.listedBy).toEqual(['torrentio', 'torrentsdb', 'yts']);
+    expect(shared[0]?.seeds).toBeGreaterThanOrEqual(45);
+    expect(found.candidates.find((c) => c.infoHash === hash(5))).toMatchObject({ index: 'torrentsdb', listedBy: ['torrentsdb'], site: 'rargb' });
+  });
+
+  it('asks Peerflix for a title made in Spanish and keeps what it lists', async () => {
+    const { fetch, calls } = fakeFetch({
+      [PAN_URL.torrentio]: body(NO_STREAMS),
+      [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
+      [PAN_URL.torrentsdb]: body(NO_STREAMS),
+      [PAN_URL.peerflix]: body(PEERFLIX_PAN),
+      [PAN_URL.yts]: body(NO_YTS),
+    });
+    const found = await findCandidates(PAN, { fetch });
+    expect(calls.map((c) => c.url)).toContain(PAN_URL.peerflix);
+    expect(found.indexes.map((a) => [a.index, a.outcome])).toEqual([
+      ['torrentio', 'empty'],
+      ['apibay', 'empty'],
+      ['torrentsdb', 'empty'],
+      ['peerflix', 'ok'],
+      ['yts', 'empty'],
+    ]);
+    expect(found.candidates).toEqual([expect.objectContaining({ infoHash: hash(6), index: 'peerflix', listedBy: ['peerflix'], site: 'Peerflix' })]);
+  });
+
+  it('sends Peerflix no request for a title made in any other language', async () => {
+    for (const query of [SINTEL, { ...SINTEL, originalLanguage: null }]) {
+      const { fetch, calls } = fakeFetch({
+        [TORRENTIO_FILM]: body(NO_STREAMS),
+        [APIBAY_FILM]: body(fixture('apibay-empty.json')),
+        [TORRENTSDB_FILM]: body(NO_STREAMS),
+        [YTS_FILM]: body(NO_YTS),
+      });
+      const found = await findCandidates(query, { fetch });
+      expect(calls.some((c) => c.url.includes('peerflix'))).toBe(false);
+      expect(found.indexes.find((a) => a.index === 'peerflix')).toMatchObject({ outcome: 'empty', detail: expect.stringMatching(/^not asked: /), listed: 0 });
+    }
+  });
+
+  it("records an add-on provider's bot check, timeout or failure and still answers the other indexes' candidates", async () => {
+    const torrentio = body(torrentioAnswer([{ title: 'El.Laberinto.Del.Fauno.2006.1080p.BluRay.x264-GRP', seeds: 50, hash: hash(1) }]));
+    const blocked = fakeFetch({
+      [PAN_URL.torrentio]: torrentio,
+      [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
+      [PAN_URL.torrentsdb]: body(fixture('cloudflare-challenge.html'), 403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }),
+      [PAN_URL.peerflix]: () => new Promise<Response>(() => {}),
+      [PAN_URL.yts]: body(NO_YTS),
+    });
+    const found = await findCandidates(PAN, { fetch: blocked.fetch, timeoutMs: 50 });
+    expect(found.indexes).toEqual([
+      expect.objectContaining({ index: 'torrentio', outcome: 'ok', listed: 1 }),
+      expect.objectContaining({ index: 'apibay', outcome: 'empty' }),
+      expect.objectContaining({ index: 'torrentsdb', outcome: 'bot_check', listed: 0 }),
+      expect.objectContaining({ index: 'peerflix', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
+      expect.objectContaining({ index: 'yts', outcome: 'empty' }),
+    ]);
+    expect(found.candidates.map((c) => c.infoHash)).toEqual([hash(1)]);
+
+    const failing = fakeFetch({
+      [PAN_URL.torrentio]: torrentio,
+      [PAN_URL.apibay]: body(fixture('apibay-empty.json')),
+      [PAN_URL.torrentsdb]: body('', 500),
+      [PAN_URL.yts]: body(NO_YTS),
+    });
+    const again = await findCandidates(PAN, { fetch: failing.fetch });
+    expect(again.indexes.find((a) => a.index === 'torrentsdb')).toMatchObject({ outcome: 'error', detail: 'HTTP 500' });
+    expect(again.indexes.find((a) => a.index === 'peerflix')).toMatchObject({ outcome: 'error', detail: expect.stringContaining('fetch failed') });
+    expect(again.candidates.map((c) => c.infoHash)).toEqual([hash(1)]);
   });
 });

@@ -1051,8 +1051,8 @@ export class TorrentSource {
   }
 }
 
-/** The finder's index list from the settings: the default four at their addresses, minus the ones set `off`. */
-function indexesOf(finder: NonNullable<Config['torrent']>['finder']): TorrentIndex[] {
+/** The finder's index list from the settings: the default indexes at their addresses, minus the ones set `off`. */
+export function indexesOf(finder: NonNullable<Config['torrent']>['finder']): TorrentIndex[] {
   const set = finder?.indexes ?? {};
   const bases = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== null && v !== undefined)) as Partial<Record<TorrentIndexName, string>>;
   const off = new Set(TORRENT_INDEX_NAMES.filter((name) => set[name] === null));

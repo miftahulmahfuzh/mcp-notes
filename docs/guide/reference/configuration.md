@@ -178,6 +178,8 @@ A torrent is a source direct streaming downloads from a swarm, described in
 | `NOTESD_TORRENT_APIBAY_URL` | the finder's own (apibay) | Address of the apibay index; `off` never asks it. |
 | `NOTESD_TORRENT_EZTV_URL` | the finder's own (EZTV) | Address of the EZTV index (series only); `off` never asks it. |
 | `NOTESD_TORRENT_YTS_URL` | the finder's own (YTS) | Address of the YTS index (films only); `off` never asks it. |
+| `NOTESD_TORRENT_TORRENTSDB_URL` | the finder's own (TorrentsDB) | Address of the TorrentsDB Stremio add-on, asked by IMDb id for every film and episode beside Torrentio; it lists sites Torrentio does not. `off` never asks it. `verify.sh` sets it `off`. |
+| `NOTESD_TORRENT_PEERFLIX_URL` | the finder's own (Peerflix) | Address of the Peerflix Stremio add-on, asked only for a title whose original language is Spanish (it lists Spanish releases, nearly all dubs). `off` never asks it. `verify.sh` sets it `off`. |
 | `NOTESD_TORRENT_1337X_ORIGIN` | `https://1337x.la` | The address of 1337x, which the torrent finder asks through the streaming Chrome when the JSON indexes have nothing usable. Scheme and host only. `off`: 1337x is never asked. See [streaming.md](../streaming.md). |
 | `NOTESD_TORRENT_EXT_ORIGIN` | `https://ext.to` | The address of ext.to, asked the same way and at the same time. Scheme and host only. `off`: ext.to is never asked. |
 | `NOTESD_TORRENT_RUTRACKER_ORIGIN` | `https://rutracker.net` | The address of RuTracker, asked the same way and at the same time, once the owner has logged in there by hand (`cli.mjs rutracker gate`). The default is the mirror this network reaches. Scheme and host only. `off`: RuTracker is never asked. |

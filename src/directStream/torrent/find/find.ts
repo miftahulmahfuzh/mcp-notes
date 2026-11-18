@@ -1,8 +1,10 @@
 import { apibayIndex } from './apibay.js';
 import { normalizeImdbId } from './candidate.js';
 import { eztvIndex } from './eztv.js';
+import { peerflixIndex } from './peerflix.js';
 import { DEFAULT_RANK_SETTINGS, rankCandidates, type RankSettings } from './rank.js';
 import { torrentioIndex } from './torrentio.js';
+import { torrentsdbIndex } from './torrentsdb.js';
 import { ytsIndex } from './yts.js';
 import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContext, IndexOutcome, TorrentCandidate, TorrentIndex, TorrentQuery } from './types.js';
 
@@ -70,6 +72,10 @@ export interface IndexBases {
   eztv: string;
   /** Up to and including `/api/v2`. */
   yts: string;
+  /** A Stremio add-on, like Torrentio. */
+  torrentsdb: string;
+  /** A Stremio add-on of Spanish releases, asked only for a title made in Spanish. */
+  peerflix: string;
 }
 
 export const DEFAULT_INDEX_BASES: Readonly<IndexBases> = {
@@ -77,6 +83,8 @@ export const DEFAULT_INDEX_BASES: Readonly<IndexBases> = {
   apibay: 'https://apibay.org',
   eztv: 'https://eztvx.to',
   yts: 'https://yts.mx/api/v2',
+  torrentsdb: 'https://torrentsdb.com',
+  peerflix: 'https://addon.peerflix.mov',
 };
 
 export interface FindOptions extends Partial<RankSettings> {
@@ -107,13 +115,15 @@ export interface FindOptions extends Partial<RankSettings> {
   health?: IndexHealth;
 }
 
-/** Torrentio, apibay, EZTV, and YTS unless `yts` is false. */
+/** Torrentio, apibay, EZTV, TorrentsDB, Peerflix (it asks only for a title made in Spanish), and YTS unless `yts` is false. */
 export function defaultIndexes(options: Pick<FindOptions, 'bases' | 'yts'> = {}): TorrentIndex[] {
   const bases = options.bases ?? {};
   const indexes = [
     torrentioIndex(bases.torrentio ?? DEFAULT_INDEX_BASES.torrentio),
     apibayIndex(bases.apibay ?? DEFAULT_INDEX_BASES.apibay),
     eztvIndex(bases.eztv ?? DEFAULT_INDEX_BASES.eztv),
+    torrentsdbIndex(bases.torrentsdb ?? DEFAULT_INDEX_BASES.torrentsdb),
+    peerflixIndex(bases.peerflix ?? DEFAULT_INDEX_BASES.peerflix),
   ];
   if (options.yts !== false) indexes.push(ytsIndex(bases.yts ?? DEFAULT_INDEX_BASES.yts));
   return indexes;

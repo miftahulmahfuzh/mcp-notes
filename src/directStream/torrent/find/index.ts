@@ -6,6 +6,8 @@ export * from './http.js';
 export * from './rank.js';
 export * from './pickFile.js';
 export * from './torrentio.js';
+export * from './torrentsdb.js';
+export * from './peerflix.js';
 export * from './apibay.js';
 export * from './eztv.js';
 export * from './yts.js';

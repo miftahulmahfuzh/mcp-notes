@@ -333,7 +333,7 @@ export const DEFAULT_TORRENT_UPLOAD_KBPS = 100
 export const DEFAULT_TORRENT_KEEP_DAYS = 7
 
 /** The JSON torrent indexes the finder asks (src/directStream/torrent/find/). */
-export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts'] as const
+export const TORRENT_INDEX_NAMES = ['torrentio', 'apibay', 'eztv', 'yts', 'torrentsdb', 'peerflix'] as const
 export type TorrentIndexName = (typeof TORRENT_INDEX_NAMES)[number]
 
 /**
@@ -353,12 +353,18 @@ export interface TorrentFinderConfig {
 
 export const DEFAULT_TORRENT_FINDER_CONFIG: TorrentFinderConfig = { indexes: {} }
 
-/** Each index's address setting, spelled out (not built from the name) so `npm run docs:check` finds the names in the code. */
-const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
+/**
+ * Each index's address setting, spelled out (not built from the name) so `npm run docs:check` finds the names in the
+ * code. tests/unit/config.torrentFinder.test.ts checks that verify.sh names every one, so no throwaway daemon asks a
+ * real index.
+ */
+export const TORRENT_INDEX_URL_KEYS: Record<TorrentIndexName, string> = {
   torrentio: 'NOTESD_TORRENT_TORRENTIO_URL',
   apibay: 'NOTESD_TORRENT_APIBAY_URL',
   eztv: 'NOTESD_TORRENT_EZTV_URL',
   yts: 'NOTESD_TORRENT_YTS_URL',
+  torrentsdb: 'NOTESD_TORRENT_TORRENTSDB_URL',
+  peerflix: 'NOTESD_TORRENT_PEERFLIX_URL',
 }
 
 /** The finder's settings; a bad number or a non-http address throws ConfigError. */

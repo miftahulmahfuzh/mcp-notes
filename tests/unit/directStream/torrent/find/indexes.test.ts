@@ -6,7 +6,9 @@ import { apibayIndex } from '../../../../../src/directStream/torrent/find/apibay
 import { DEFAULT_TRACKERS } from '../../../../../src/directStream/torrent/find/candidate.js';
 import { eztvIndex } from '../../../../../src/directStream/torrent/find/eztv.js';
 import { getIndexJson } from '../../../../../src/directStream/torrent/find/http.js';
+import { peerflixIndex } from '../../../../../src/directStream/torrent/find/peerflix.js';
 import { torrentioIndex } from '../../../../../src/directStream/torrent/find/torrentio.js';
+import { torrentsdbIndex } from '../../../../../src/directStream/torrent/find/torrentsdb.js';
 import type { IndexContext, TorrentQuery } from '../../../../../src/directStream/torrent/find/types.js';
 import { ytsIndex } from '../../../../../src/directStream/torrent/find/yts.js';
 
@@ -135,5 +137,89 @@ describe('getIndexJson', () => {
       const { ctx } = ctxFor({ 'https://index.example/x': res });
       expect(await getIndexJson(ctx, 'https://index.example/x')).toEqual(expected);
     }
+  });
+});
+
+const SHAWSHANK: TorrentQuery = { kind: 'movie', imdbId: 'tt0111161', title: 'The Shawshank Redemption', year: 1994, originalLanguage: 'en' };
+
+describe('torrentsdb', () => {
+  it('reads a film answer in Torrentio\'s shape: release, file, seeds, size, site, trackers, any-case info hash', async () => {
+    const { ctx, urls } = ctxFor({ 'https://torrentsdb.example/stream/movie/tt0111161.json': fixture('torrentsdb-movie-shawshank.json') });
+    const answer = await torrentsdbIndex('https://torrentsdb.example/').find(SHAWSHANK, ctx);
+    expect(urls).toEqual(['https://torrentsdb.example/stream/movie/tt0111161.json']);
+    expect(answer.outcome).toBe('ok');
+    expect(answer.candidates).toHaveLength(4);
+    expect(answer.candidates.every((c) => c.index === 'torrentsdb' && c.listedBy.join() === 'torrentsdb' && !c.scoped)).toBe(true);
+    expect(answer.candidates[0]).toMatchObject({
+      infoHash: 'c3da9a3dc2ce14d0d4fc0e87d1b2023502f8dcd6',
+      name: 'The Shawshank Redemption 1994 2160p BluRay',
+      fileName: 'The.Shawshank.Redemption.1994.2160p.4K.BluRay.x265.10bit.HDR.AAC5.1-[YTS.MX].mkv',
+      fileIdx: 0,
+      seeds: 100,
+      sizeBytes: 7419556004,
+      site: 'YTS',
+    });
+    expect(answer.candidates[1]?.infoHash).toBe('c3da9a3dc2ce14d0d4fc0e87d1b2023502f8dcd6');
+    expect(answer.candidates[2]).toMatchObject({ infoHash: '32770c6dd35a4dd71deb80d5deff7a4e084eedab', site: 'rargb', seeds: 93, sizeBytes: 62255550956, fileIdx: 1 });
+    expect(answer.candidates[2]?.trackers).toEqual(expect.arrayContaining(['udp://9.rarbg.me:2860/announce', DEFAULT_TRACKERS[0]]));
+    expect(answer.candidates[2]?.trackers.some((t) => t.startsWith('dht:'))).toBe(false);
+  });
+
+  it('asks for an episode by season and episode and marks it scoped', async () => {
+    const query: TorrentQuery = { kind: 'tv', imdbId: 'tt0903747', season: 1, episode: 1, title: 'Breaking Bad', originalLanguage: 'en' };
+    const stream = { name: 'TorrentsDB\n1080p', title: 'Breaking.Bad.S01E01.1080p.BluRay.x264-GRP\n👤 40 💾 1.5 GB ⚙️ knaben', infoHash: 'ab'.repeat(20) };
+    const { ctx, urls } = ctxFor({ 'https://torrentsdb.example/stream/series/tt0903747:1:1.json': JSON.stringify({ streams: [stream] }) });
+    const answer = await torrentsdbIndex('https://torrentsdb.example').find(query, ctx);
+    expect(urls).toEqual(['https://torrentsdb.example/stream/series/tt0903747:1:1.json']);
+    expect(answer.candidates).toEqual([expect.objectContaining({ infoHash: 'ab'.repeat(20), scoped: true, site: 'knaben', seeds: 40 })]);
+  });
+});
+
+describe('peerflix', () => {
+  // The recorded answer is The Shawshank Redemption's; the query says Spanish only so that Peerflix is asked.
+  const SPANISH: TorrentQuery = { ...SHAWSHANK, originalLanguage: 'es' };
+
+  it('reads a stats line that ends in the globe and the flag line before it', async () => {
+    const { ctx, urls } = ctxFor({ 'https://peerflix.example/stream/movie/tt0111161.json': fixture('peerflix-movie-shawshank.json') });
+    const answer = await peerflixIndex('https://peerflix.example').find(SPANISH, ctx);
+    expect(urls).toEqual(['https://peerflix.example/stream/movie/tt0111161.json']);
+    expect(answer.outcome).toBe('ok');
+    expect(answer.candidates).toHaveLength(3);
+    expect(answer.candidates[0]).toMatchObject({
+      infoHash: '814978f980297cc7cd42be9d60b37b928a5e7cdc',
+      name: 'Cadena perpetua [4Kreescaldo][2160p][HDR10][AC3 5.1 Castellano-AC3 5.1-Ingles+Subs][ES-EN]',
+      fileName: 'Cadena perpetua 4Kreescalado2160.pctmix1.com.mkv',
+      fileIdx: 5,
+      seeds: 6,
+      sizeBytes: 64005750129,
+      site: 'Peerflix',
+      index: 'peerflix',
+    });
+    expect(answer.candidates[1]?.seeds).toBe(0);
+  });
+
+  it('reads a row with no size', async () => {
+    const stream = {
+      name: 'Peerflix 1080p',
+      title: 'El laberinto del fauno [1080p][Castellano]\nEl laberinto del fauno 1080p.mkv\n🇪🇸\n  👤 4 🌐 Peerflix',
+      infoHash: 'cd'.repeat(20),
+    };
+    const { ctx } = ctxFor({ 'https://peerflix.example/stream/movie/tt0111161.json': JSON.stringify({ streams: [stream] }) });
+    const answer = await peerflixIndex('https://peerflix.example').find(SPANISH, ctx);
+    expect(answer.candidates).toEqual([
+      expect.objectContaining({ name: 'El laberinto del fauno [1080p][Castellano]', fileName: 'El laberinto del fauno 1080p.mkv', seeds: 4, sizeBytes: null, site: 'Peerflix' }),
+    ]);
+  });
+
+  it('sends no request for a title made in another language, or in an unknown one, and asks for Spanish in any case', async () => {
+    for (const originalLanguage of ['en', 'pt', null]) {
+      const { ctx, urls } = ctxFor({});
+      const answer = await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage }, ctx);
+      expect(urls).toEqual([]);
+      expect(answer).toEqual({ outcome: 'empty', detail: expect.stringMatching(/^not asked: .*Spanish/), candidates: [] });
+    }
+    const { ctx, urls } = ctxFor({ 'https://peerflix.example/stream/movie/tt0111161.json': '{"streams":[]}' });
+    await peerflixIndex('https://peerflix.example').find({ ...SHAWSHANK, originalLanguage: 'ES' }, ctx);
+    expect(urls).toEqual(['https://peerflix.example/stream/movie/tt0111161.json']);
   });
 });

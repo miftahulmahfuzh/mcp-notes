@@ -1797,8 +1797,12 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
   background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
-  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (each can be turned off or
-  moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out from this network once, is given 6 s). Every request says it is notesd; a bot check is the outcome
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, Peerflix for a title made
+  in Spanish, and YTS for a film (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out
+  from this network once, is given 6 s). TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
+  TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
+  candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
+  gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
   out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
   fewer seeds than `NOTESD_TORRENT_MIN_SEEDS`, or a single release larger than `NOTESD_TORRENT_MAX_GB` (a season pack

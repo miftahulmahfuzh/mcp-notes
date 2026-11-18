@@ -331,10 +331,12 @@ EOF
     env+=(NOTESD_TORRENT=off)
   fi
   # Torrent phase 3: the finder asks only the fake index on a --torrent run, and no index at all otherwise.
+  # Every index's NOTESD_TORRENT_<NAME>_URL is named on both lines (tests/unit/config.torrentFinder.test.ts checks it).
   if [ "$torrent" = 1 ]; then
     env+=(
       "NOTESD_TORRENT_TORRENTIO_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")"
       NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off NOTESD_TORRENT_MIN_SEEDS=1
+      NOTESD_TORRENT_TORRENTSDB_URL=off NOTESD_TORRENT_PEERFLIX_URL=off
     )
     # --trending: the daily list reads the fake index's top lists (apibay's and EZTV's own routes), never a real index.
     if [ "$trending" = 1 ]; then
@@ -342,6 +344,7 @@ EOF
     fi
   else
     env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
+    env+=(NOTESD_TORRENT_TORRENTSDB_URL=off NOTESD_TORRENT_PEERFLIX_URL=off)
   fi
   # NOTESD_TRENDING=off unless --trending: a throwaway daemon never reads an index's top lists on its own.
   if [ "$trending" = 1 ]; then env+=(NOTESD_TRENDING=on); else env+=(NOTESD_TRENDING=off); fi

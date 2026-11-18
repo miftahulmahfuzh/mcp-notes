@@ -434,6 +434,13 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Finding a torrent (phase 2's finder, no route of its own): `npx vitest run tests/unit/directStream/torrent/find` over
   recorded index answers (dubs, cinema recordings and 3D left out, the seed floor, direct releases first, an episode or
   a pack that holds it, `bot_check`/`error` per index, every request sent as notesd).
+- The Stremio add-on providers beside Torrentio: TorrentsDB for every title, Peerflix only for a title made in Spanish.
+  `npx vitest run tests/unit/directStream/torrent/find/indexes.test.ts tests/unit/directStream/torrent/find/findCandidates.test.ts tests/unit/directStream/torrent/find/addonSwitches.test.ts tests/unit/config.torrentFinder.test.ts`
+  over their recorded answers (`tests/fixtures/torrent/{torrentsdb,peerflix}-movie-shawshank.json`): a torrent Torrentio
+  and TorrentsDB both list is one candidate with both in `listedBy`; Peerflix gets no request for any other language and
+  its attempt says `not asked`; a provider's bot check, timeout or failure is its own attempt and the others still answer;
+  `NOTESD_TORRENT_TORRENTSDB_URL=off` / `NOTESD_TORRENT_PEERFLIX_URL=off` send nothing. Every throwaway daemon sets both
+  `off`, so its attempt lists are unchanged.
 - Throwaway daemon, a torrent run (`$V up --web --torrent`, note RUN): in this order,
   `.claude/skills/verify-notesd/scripts/direct-stream/torrent.sh RUN fallback named`, then
   `SID=$(cat ~/.local/state/notesd-verify/RUN/torrent-journey/sid) $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs`

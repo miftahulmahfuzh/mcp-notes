@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-19
-**Total Active Tasks**: 20
+**Total Active Tasks**: 19
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 20
+- P1 High: 19
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 8
-- Completed: 120
+- Blocked: 7
+- Completed: 121
 
 ---
 
@@ -22,20 +22,11 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
-  - **Difficulty**: NORMAL
-  - **Type**: Feature
-  - **Context**: Owns: `find/torrentio.ts`: the stream reader generalized so one reader serves any Stremio torrent add-on (stats line with `⚙️` or `🌐` before the site, rows without 💾, flag lines), with Torrentio's behaviour and exports unchanged for its callers and fixtures. New provider indexes `torrentsdb` (default `https://torrentsdb.com`) and `peerflix` (default `https://addon.peerflix.mov`, asked only when `query.originalLanguage === 'es'`; otherwise answers `empty` with a detail saying so and sends no request). Registry: `IndexBases`, `DEFAULT_INDEX_BASES`, `defaultIndexes` (`find/find.ts`), the barrel, `TORRENT_INDEX_NAMES` + `TORRENT_INDEX_URL_KEYS` (`NOTESD_TORRENT_TORRENTSDB_URL`, `NOTESD_TORRENT_PEERFLIX_URL`), `indexesOf` in `source.ts`. `verify.sh` index block: both new names `off`, on a line of their own in each branch; a test in `tests/unit/config.torrentFinder.test.ts` that every `TORRENT_INDEX_URL_KEYS` value appears at least twice in `verify.sh` (both branches). `fake-index.mjs` is not changed. Docs: two rows after the YTS row in `configuration.md`; the index list in `docs/guide/streaming.md` "Playing from a torrent"; the feature map; a CLAUDE.md line under Direct streaming. Tests + fixtures for both providers (the trimmed real answers are in `.workflows/analyze/20261119-025431-K7QD-samples/`). Exit criteria: R2.1-R2.4 hold; with default settings `defaultIndexes()` returns torrentio, apibay, eztv, torrentsdb, peerflix and (films) yts; `npm run typecheck` and `npm test` pass.
-  - **Status**: in_progress
-  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 1 of 3)
-  - **Satisfies**: R2 — "more providers" · criteria: R2.1, R2.2, R2.3, R2.4
-  - **Depends on**: —
-  - **Plan**: `.workflows/plan/P1-NOTES-A136.md`
 - [ ] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `IndexFetch`/`FetchLike` and `askOne`'s fetch wrapper: an index may send `method` and `body` (Knaben is a POST), with notesd's User-Agent still forced last and the signal still bound; a JSON helper beside `getIndexJson` for it. A shared title-search helper under `find/`: the query text (film: title and year; episode: title and `SxxEyy`, using `alt` when set) and the fit a title-search row must pass before it becomes a candidate (names the title; a film row that names a year names the asked year, a row with no year is dropped when the query has one; an episode row fits the episode or is its season pack by `episodeFitOf`), reported so the finder's `excluded` list still shows why (R1.2). New indexes `knaben` (`https://api.knaben.org/v1`), `bitsearch` (`https://bitsearch.to/api/v1`), `torrentscsv` (`https://torrents-csv.com/service`), each with its own `timeoutMs`, skipped (`empty`, no request) when the query has no title. `find/rank.ts`: `exclusionOf` holds a candidate every listing of which came from a title search (`TorrentCandidate.titleSearch?: true`, `find/types.ts`) to `titleSearchExclusion` right after `bad_hash`; `joinListings` drops `titleSearch` when an IMDb-keyed index lists the same hash. `ExcludeReason` gains `'other_year'` (no exhaustive switch or record over it exists in the repo: grep of `src`, `web/src`, `claude`, `scripts`, `tests`). Registry lines as phase 1 left them, plus `NOTESD_TORRENT_KNABEN_URL`, `NOTESD_TORRENT_BITSEARCH_URL`, `NOTESD_TORRENT_TORRENTSCSV_URL`; the `defaultIndexes` doc comment; loadConfig's key-list comment line :1197 (naming phase 1's two keys and its own three); `verify.sh`: its three keys `off` on a line of their own in **both** index branches (phase 1's test); three more `configuration.md` rows after phase 1's; a short "Indexes asked by title" bullet before "**Off.**" in the guide; feature map; a CLAUDE.md bullet directly after phase 1's. Phase 1's tests that pin the default index list: `findCandidates.test.ts` (four edited and two new tests) and `addonSwitches.test.ts` gain the three title-search entries. Tests + fixtures (real samples in the analysis samples folder), including a wrong-year film and a wrong-episode row. Exit criteria: R1.1-R1.4 hold; existing index tests still pass unchanged in meaning; `npm run typecheck` and `npm test` pass.
-  - **Status**: blocked
+  - **Status**: open
   - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 2 of 3)
   - **Satisfies**: R1 — "improve our TM / TS in anyway shape or form (more indexes" · criteria: R1.1, R1.2, R1.3, R1.4
   - **Depends on**: P1-NOTES-A136
@@ -339,6 +330,21 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `find/torrentio.ts`: the stream reader generalized so one reader serves any Stremio torrent add-on (stats line with `⚙️` or `🌐` before the site, rows without 💾, flag lines), with Torrentio's behaviour and exports unchanged for its callers and fixtures. New provider indexes `torrentsdb` (default `https://torrentsdb.com`) and `peerflix` (default `https://addon.peerflix.mov`, asked only when `query.originalLanguage === 'es'`; otherwise answers `empty` with a detail saying so and sends no request). Registry: `IndexBases`, `DEFAULT_INDEX_BASES`, `defaultIndexes` (`find/find.ts`), the barrel, `TORRENT_INDEX_NAMES` + `TORRENT_INDEX_URL_KEYS` (`NOTESD_TORRENT_TORRENTSDB_URL`, `NOTESD_TORRENT_PEERFLIX_URL`), `indexesOf` in `source.ts`. `verify.sh` index block: both new names `off`, on a line of their own in each branch; a test in `tests/unit/config.torrentFinder.test.ts` that every `TORRENT_INDEX_URL_KEYS` value appears at least twice in `verify.sh` (both branches). `fake-index.mjs` is not changed. Docs: two rows after the YTS row in `configuration.md`; the index list in `docs/guide/streaming.md` "Playing from a torrent"; the feature map; a CLAUDE.md line under Direct streaming. Tests + fixtures for both providers (the trimmed real answers are in `.workflows/analyze/20261119-025431-K7QD-samples/`). Exit criteria: R2.1-R2.4 hold; with default settings `defaultIndexes()` returns torrentio, apibay, eztv, torrentsdb, peerflix and (films) yts; `npm run typecheck` and `npm test` pass.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 1 of 3)
+  - **Satisfies**: R2 — "more providers" · criteria: R2.1, R2.2, R2.3, R2.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A136.md`
+  - **Completed**: 2026-11-19 03:28
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, CLAUDE.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, src/config.ts, src/directStream/torrent/find/find.ts, src/directStream/torrent/find/index.ts, src/directStream/torrent/find/torrentio.ts, src/directStream/torrent/source.ts, tests/unit/config.torrentFinder.test.ts, tests/unit/directStream/torrent/find/findCandidates.test.ts, tests/unit/directStream/torrent/find/indexes.test.ts, src/directStream/torrent/find/peerflix.ts, src/directStream/torrent/find/torrentsdb.ts, tests/fixtures/torrent/peerflix-movie-shawshank.json, tests/fixtures/torrent/torrentsdb-movie-shawshank.json, tests/unit/directStream/torrent/find/addonSwitches.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1119-032642-2647977/evidence/p1
+  - **Drift**: The plan's commands name the set worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources; this swarm phase ran in its own worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p1 on branch phase-1-wider-torrent-sources (base 6a2905b), so the J5 drive's absolute paths were pointed at this worktree. No code drift: every Before block matched exactly.
+  - **Decided**: Plan index names worktree wider-torrent-sources / branch feature/wider-torrent-sources, session was launched by swarm.py in the per-phase worktree → applied here (the swarm ledger lists this session as phase 1; the coordinator integrates the phase branch)
 - [x] **P1-NOTES-A126** Phase 6: Play from the cache
   - **Difficulty**: HARD
   - **Type**: Feature

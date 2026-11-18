@@ -6,7 +6,7 @@
 **Worktree:** `/home/miftah/.worktrees/mcp-notes/wider-torrent-sources`
 **Branch:** `feature/wider-torrent-sources` (base: `origin/main` @ `24687f1`)
 **Phases:** 3
-**Status:** planned
+**Status:** phase 1/3 complete
 **Coordinator:** —
 
 ---
@@ -72,7 +72,7 @@ blocks a play), carried by R1.3, R2.3 and R3.3.
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Stremio add-on providers: TorrentsDB and Peerflix | R2 | `src/directStream/torrent/find` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-1.md` | P1-NOTES-A136 | — |
+| 1 | Stremio add-on providers: TorrentsDB and Peerflix (complete) | R2 | `src/directStream/torrent/find` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-1.md` | P1-NOTES-A136 | — |
 | 2 | Title-search JSON indexes: Knaben, Bitsearch, torrents-csv | R1 | `src/directStream/torrent/find` | 22 | 1 | HARD | `.workflows/plan/wider-torrent-sources/phase-2.md` | P1-NOTES-A137 | — |
 | 3 | Daily verified public tracker lists | R3 | `src/directStream/torrent` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-3.md` | P1-NOTES-A138 | — |
 
