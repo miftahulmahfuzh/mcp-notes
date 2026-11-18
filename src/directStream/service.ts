@@ -282,7 +282,7 @@ function playKey(ref: StreamRef, provider: string | null): string {
 }
 
 /** True when what is remembered was a play of this very film or episode: its torrent holds the file asked for. */
-function sameSlot(ref: StreamRef, known: RememberedChannel): boolean {
+function sameSlot(ref: StreamRef, known: Pick<RememberedChannel, 'season' | 'episode'>): boolean {
   return ref.kind === 'movie' ? known.season === null && known.episode === null : known.season === ref.season && known.episode === ref.episode;
 }
 
@@ -612,12 +612,40 @@ export class DirectStreamService {
     // The owner pasted a magnet: only that torrent is opened, for the title they named. No index, no cache.
     if (magnet !== null) session = await this.magnetSession(ref, resumeS, magnet, track);
     else if (only === null) session = await this.sessionFor(ref, resumeS, track);
-    else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null, track));
-    else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.everyCloud(ref, resumeS, track));
+    else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentAgain(ref, resumeS, track));
+    else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudAgain(ref, resumeS, track));
     else session = await this.cloudSession(ref, { resumeS, only }, track);
     track.stage = 'opening the player page';
     track.attempts = session.attempts;
     return this.openPage(session);
+  }
+
+  /**
+   * "torrent" named: the very torrent that last played this film or this episode is opened again, with no index
+   * asked, whatever played the title since. Only when none is remembered, or its swarm has nothing now, are the
+   * indexes searched.
+   */
+  private async torrentAgain(ref: StreamRef, resumeS: number | null, track: PlayTrack | null): Promise<StreamSession> {
+    const last = (await this.remembered(ref))?.methods?.torrent ?? null;
+    if (last === null || last.infoHash === null || !sameSlot(ref, last)) return this.torrentSession(ref, resumeS, null, track);
+    if (track !== null) track.stage = 'opening the torrent that played it last time';
+    try {
+      return await this.magnetSession(ref, resumeS, last.infoHash, track);
+    } catch (err) {
+      if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+      this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time does not play now; asking the indexes`);
+      return this.after(err.attempts, () => this.torrentSession(ref, resumeS, null, track));
+    }
+  }
+
+  /** "cloud" named: the cloud provider that last streamed the title is asked alone first, whatever played it since; then the others, without it. */
+  private async cloudAgain(ref: StreamRef, resumeS: number | null, track: PlayTrack | null): Promise<StreamSession> {
+    const provider = (await this.remembered(ref))?.methods?.cloud?.provider ?? null;
+    if (provider === null) return this.everyCloud(ref, resumeS, track);
+    const tried: ResolveAttempt[] = [];
+    const again = await this.rememberedCloud(ref, provider, resumeS, track, tried);
+    if (again !== null) return again;
+    return this.after(tried, () => this.everyCloud(ref, resumeS, track, [provider]));
   }
 
   /** `resolve`, with the play's stage said first: the cloud resolver answers its attempts only at its end. */

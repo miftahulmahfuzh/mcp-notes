@@ -299,6 +299,10 @@ function route(url) {
     const season = byId(tvs, m[1])?.seasons_detail?.[String(Number(m[2]))]
     return season ? [200, { id: season.id, results: season.videos?.results ?? [] }] : notFound()
   }
+  if ((m = p.match(/^\/company\/(\d+)$/))) {
+    const c = companies.get(Number(m[1]))
+    return c ? [200, { description: '', headquarters: null, homepage: null, parent_company: null, logo_path: null, origin_country: '', ...c }] : notFound()
+  }
   if ((m = p.match(/^\/person\/(\d+)$/))) {
     const x = byId(people, m[1])
     if (!x) return notFound()

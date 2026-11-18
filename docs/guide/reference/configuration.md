@@ -100,7 +100,7 @@ The library and playback are described in [movies.md](../movies.md).
 | `NOTESD_MOVIES_DONE_DIRS` | `Done` | Folder names (not paths) separated by `:`, any case. A file found in or moved into one, at any depth below a root, counts as finished. |
 | `NOTESD_MOVIES_SCAN_MS` | `120000` | Pause between library passes. The folders are polled, never watched: `/mnt/c` sends WSL no file events. |
 | `NOTESD_MOVIES_MIN_SECONDS` | `900` | Videos shorter than this go to the unmatched list as `too_short`, without a TMDB lookup. |
-| `NOTESD_MOVIES_STORY_MODEL` | `sonnet` | Claude model that writes the story of an episode from its dialogue when you press the episode's book icon: one call per story, and the story is kept. `off`: no story is written; stored ones still open. |
+| `NOTESD_MOVIES_STORY_MODEL` | `sonnet` | Claude model that writes the story of an episode from its dialogue when you press the episode's book icon: one call per story, and the story is kept. `off`: no story is written; stored ones still open. The same model, with WebSearch, collates what a genre means for a title when you click the genre on its page (once per title and genre); `off` stops that too. |
 | `NOTESD_MOVIES_FALLBACK_MODEL` | `haiku` | Claude model asked for a title and year when a file name has no confident TMDB match: one short call per such file. `off`: no fallback. |
 | `TMDB_API_READ_ACCESS_TOKEN` | unset | TMDB v4 read access token, sent as a Bearer header. Preferred. |
 | `TMDB_API_KEY` | unset | TMDB v3 API key, used only when there is no token. With neither, files are registered but all unmatched as `no_tmdb_credentials`. |
@@ -232,7 +232,8 @@ Read by the picture scripts under `scripts/docs/shots/` (`npm run docs:shots`).
 | --- | --- | --- |
 | `DOCS_CHAT_BILLED` | unset | `1` lets the chat guide's shots send real chat messages (a billed Claude agent). Unset: those pictures are kept as they are. |
 | `DOCS_CHAT_STEPS` | `answer,image,reply` | Which of the billed chat steps run when `DOCS_CHAT_BILLED=1`. |
-| `DOCS_SHOTS_CHAT` | unset | `1` lets the movies guide's live shots (`docs:shots -- --live movies`) retake the three pictures that need real chat answers. They are billed and stay in the chat history. |
+| `DOCS_SHOTS_CHAT` | unset | `1` lets the movies guide's live shots (`docs:shots -- --live movies`) retake the pictures that need a real chat answer. They are billed and stay in the chat history. |
+| `DOCS_SHOTS_NAMES` | unset | `1` makes `docs:shots -- --live movies` retake only `person.png` and `play-menu.png`: a person's pop-up and the play menu, which only look. |
 | `DOCS_SHOTS_PLAY` | unset | `1` makes `docs:shots -- --live movies` retake only `play.gif`, with one real play of a few seconds in VLC. The one live picture that writes; see [movies.md](../movies.md#proving-a-change). |
 | `DOCS_LIVE_URL` | `http://127.0.0.1:7317` | The running daemon that `docs:shots -- --live` looks at. Only the movies guide has live pictures. |
 | `VERIFY_HOME` | `~/.local/state/notesd-verify` | Where the verify-notesd skill keeps the state of its throwaway instances; the sessions shots find their instance's `CLAUDE_HOME` there. |

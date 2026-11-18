@@ -23,6 +23,8 @@ import {
   tileLive,
   titleAction,
   trailerTarget,
+  opensGuide,
+  type GuideEntityRef,
   type MovieEntity,
   type MoviesSide,
   type StreamTarget,
@@ -30,8 +32,10 @@ import {
   streamLive,
   episodeCode,
 } from '../../lib/movies';
+import { EntityModal } from './EntityModal';
 import { EpisodeList } from './EpisodeList';
 import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from './parts';
+import { PlayMenu } from './PlayMenu';
 import { Poster } from './Poster';
 import { ReviewField } from './ReviewField';
 import { Stars } from './Stars';
@@ -47,7 +51,7 @@ export interface MovieDetailProps {
   onChanged: () => void;
   /** A quiet notice; with an action it offers that beside the text (Undo). */
   onNotice: (text: string, action?: NoticeAction) => void;
-  /** Asks about a person, studio, character or genre through the page's pill. Absent: the names are plain text. */
+  /** Asks about a character through the page's pill, and about a person, studio or genre from the icon in its pop-up. Absent: a character is plain text. */
   onEntity?: (e: MovieEntity) => void;
   /** An answer is streaming: entity links wait. */
   asking?: boolean;
@@ -74,7 +78,17 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const [trailer, setTrailer] = useState<TrailerTarget | null>(null);
   /** The episode whose story is open in the pop-up. */
   const [story, setStory] = useState<EpisodeView | null>(null);
-  useEffect(() => setTrailer(null), [d.id]);
+  /** The person, studio or genre whose pop-up is open. */
+  const [guide, setGuide] = useState<GuideEntityRef | null>(null);
+  useEffect(() => {
+    setTrailer(null);
+    setGuide(null);
+  }, [d.id]);
+  /** A name clicked: a person, a studio or a genre opens its pop-up; a character asks the chat. */
+  const pick = (e: MovieEntity) => {
+    if (opensGuide(e)) setGuide(e);
+    else onEntity?.(e);
+  };
 
   const action = titleAction(d, side);
   const play = action.kind === 'stream' ? streamLabel(action.target, streamEnabled) : playLabel(action.plan, player);
@@ -240,7 +254,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
                 {d.genres.map((g, i) => (
                   <Fragment key={g}>
                     {i > 0 && ', '}
-                    <EntityLink entity={{ kind: 'genre', name: g }} onAsk={onEntity} busy={asking} />
+                    <EntityLink entity={{ kind: 'genre', name: g }} onAsk={pick} />
                   </Fragment>
                 ))}
               </span>
@@ -261,6 +275,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
               <Play weight="duotone" />
             </button>
+            <PlayMenu detail={d} episode={null} player={player} busy={busy} streamEnabled={streamEnabled} size="page" onRun={(act, failed) => void run(act, failed)} />
             {alt !== null && <StreamAltButton size="page" state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => streamOne(alt)} />}
             <TrailerButton target={trailerTarget(d)} onWatch={setTrailer} />
             <button
@@ -302,7 +317,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
                     {g.entities.map((e, i) => (
                       <Fragment key={`${e.name}-${i}`}>
                         {i > 0 && ', '}
-                        <EntityLink entity={e} onAsk={onEntity} busy={asking} />
+                        <EntityLink entity={e} onAsk={pick} />
                       </Fragment>
                     ))}
                     {g.more > 0 && ` and ${g.more} more`}
@@ -313,7 +328,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           )}
         </div>
       </div>
-      <CastList cast={d.cast} onEntity={onEntity} asking={asking} />
+      <CastList cast={d.cast} onPerson={pick} onCharacter={onEntity} asking={asking} />
       {d.kind === 'tv' ? (
         <EpisodeList
           detail={d}
@@ -324,6 +339,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           streamEnabled={streamEnabled}
           onPlay={playOne}
           onStream={streamOne}
+          onRun={(act, failed) => void run(act, failed)}
           onWatched={(f) => void toggleFileWatched(f)}
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
@@ -343,6 +359,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
         )
       )}
       {trailer !== null && trailer.key !== null && <TrailerModal videoKey={trailer.key} name={trailer.name} onClose={() => setTrailer(null)} />}
+      {guide !== null && <EntityModal entity={guide} detail={d} onClose={() => setGuide(null)} onAsk={onEntity === undefined || asking ? undefined : onEntity} />}
       {story !== null && (
         <StoryModal
           titleId={d.id}
@@ -358,7 +375,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
 }
 
 /** The cast with their character names; the first CAST_LIMIT, then an icon to show the rest. */
-function CastList({ cast, onEntity, asking }: { cast: CastCredit[]; onEntity: ((e: MovieEntity) => void) | undefined; asking: boolean }) {
+function CastList({ cast, onPerson, onCharacter, asking }: { cast: CastCredit[]; onPerson: (e: MovieEntity) => void; onCharacter: ((e: MovieEntity) => void) | undefined; asking: boolean }) {
   const [all, setAll] = useState(false);
   if (cast.length === 0) return null;
   const shown = all ? cast : cast.slice(0, CAST_LIMIT);
@@ -370,11 +387,11 @@ function CastList({ cast, onEntity, asking }: { cast: CastCredit[]; onEntity: ((
         {shown.map((c) => (
           <li key={c.person_id}>
             <span className="mv-cast-n">
-              <EntityLink entity={{ kind: 'person', name: c.name, personId: c.person_id, role: c.character === '' ? null : c.character, cast: true }} onAsk={onEntity} busy={asking} />
+              <EntityLink entity={{ kind: 'person', name: c.name, personId: c.person_id, role: c.character === '' ? null : c.character, cast: true }} onAsk={onPerson} />
             </span>
             {c.character !== null && c.character !== '' && (
               <span className="mv-cast-c">
-                <EntityLink entity={{ kind: 'character', name: c.character, actor: c.name, personId: c.person_id }} onAsk={onEntity} busy={asking} />
+                <EntityLink entity={{ kind: 'character', name: c.character, actor: c.name, personId: c.person_id }} onAsk={onCharacter} busy={asking} />
               </span>
             )}
           </li>

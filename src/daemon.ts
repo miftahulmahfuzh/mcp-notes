@@ -31,6 +31,7 @@ import { StreamLive } from './movies/streamLive.js';
 import { createAnimeMapper } from './directStream/anime.js';
 import { PICTURE_VERDICTS_FILE, PictureCheck, PictureVerdicts, createPictureJudge, ffmpegFrameGrabber, firstFrameOf, hlsSegmentFrameGrabber, hlsStreamReach } from './directStream/picture.js';
 import { loadDialogue } from './directStream/dialogueStore.js';
+import { createGuideWriter, GenreGuides } from './movies/guides.js';
 import { createStoryWriter, MovieStories } from './movies/story.js';
 import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
@@ -438,6 +439,19 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
               ? null
               : createStoryWriter({ claudeBin: config.chat.claudeBin, model: config.movies.storyModel, cwd: join(config.dataDir, 'movies-story') }),
         });
+  // What a genre means for one title, collated with web search when the owner clicks it (one model run, then kept).
+  const genreGuides =
+    movies === null
+      ? null
+      : new GenreGuides({
+          db,
+          repo: movies.repo,
+          tmdb: movies.tmdb,
+          writer:
+            config.movies.storyModel === null || config.movies.storyModel === undefined
+              ? null
+              : createGuideWriter({ claudeBin: config.chat.claudeBin, model: config.movies.storyModel, cwd: join(config.dataDir, 'movies-guide') }),
+        });
   const deps: AppDeps = {
     config,
     db,
@@ -459,6 +473,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     torrentCues,
     torrentRemux,
     movieStories,
+    genreGuides,
     streamLive,
     streamEvidence,
   };

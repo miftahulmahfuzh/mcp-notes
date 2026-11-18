@@ -12,6 +12,7 @@ import {
   moviePlays,
   movieStreamSources,
   movieTitleChannels,
+  movieTitleMethods,
   movieTitleCompanies,
   movieTitles,
   notes,
@@ -246,7 +247,18 @@ export interface TitleDetail extends TitleListItem {
   played_through: PlayedThrough | null;
   /** When each kind of stream last found nothing for the title on this host; null: it never failed, or played since. */
   stream_failed: { cloud_at: string | null; torrent_at: string | null };
+  /** What last played the title through each stream method on this host (`cloud`, `torrent`, a site's name): where a play that names the method goes first. */
+  played_methods: PlayedMethod[];
   metadata_fetched_at: string | null;
+}
+
+/** One stream method's last play of a title on this host. `provider` names the cloud provider; null for a torrent or a site. */
+export interface PlayedMethod {
+  method: string;
+  provider: string | null;
+  played_at: string;
+  season: number | null;
+  episode: number | null;
 }
 
 /**
@@ -986,7 +998,7 @@ async function streamSourceViews(db: Db, titleIdValue: string, host: string): Pr
  * How the title was last played on `host`: its last stream as movie_title_channels keeps it, or its
  * last file play (`plays`: the title's plays, newest first) when that is the later one.
  */
-async function playedThrough(db: Db, titleIdValue: string, host: string, plays: readonly PlayView[]): Promise<Pick<TitleDetail, 'played_through' | 'stream_failed'>> {
+async function playedThrough(db: Db, titleIdValue: string, host: string, plays: readonly PlayView[]): Promise<Pick<TitleDetail, 'played_through' | 'stream_failed' | 'played_methods'>> {
   const [row] = await db
     .select()
     .from(movieTitleChannels)
@@ -1010,7 +1022,13 @@ async function playedThrough(db: Db, titleIdValue: string, host: string, plays: 
   const file = plays.find((p) => p.file_id !== null && p.host === host);
   const onFile: PlayedThrough | null = file === undefined ? null : { channel: 'vlc', provider: null, played_at: file.started_at, season: file.season, episode: file.episode };
   const played_through = onFile !== null && (streamed === null || Date.parse(onFile.played_at) > Date.parse(streamed.played_at)) ? onFile : streamed;
-  return { played_through, stream_failed };
+  const methods = await db
+    .select()
+    .from(movieTitleMethods)
+    .where(and(eq(movieTitleMethods.titleId, titleIdValue), eq(movieTitleMethods.host, host)))
+    .orderBy(desc(movieTitleMethods.playedAt));
+  const played_methods = methods.map((m) => ({ method: m.method, provider: m.provider, played_at: m.playedAt.toISOString(), season: m.season, episode: m.episode }));
+  return { played_through, stream_failed, played_methods };
 }
 
 /** One title with every file (deleted and other hosts included), episodes, credits, review and recent plays. */

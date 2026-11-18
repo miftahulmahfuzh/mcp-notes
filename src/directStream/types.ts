@@ -36,6 +36,21 @@ export interface RememberedChannel {
   playedAt: Date | null;
   cloudFailedAt: Date | null;
   torrentFailedAt: Date | null;
+  /**
+   * What last played the title through each method, by its name (`cloud`, `torrent`, a streaming site's): a play
+   * that names its method goes there first, whatever played the title last. Absent or empty: nothing is known.
+   */
+  methods?: Readonly<Record<string, RememberedMethod>>;
+}
+
+/** What last played a title through one method: the cloud provider, the torrent, or the title's page on a site. */
+export interface RememberedMethod {
+  provider: string | null;
+  infoHash: string | null;
+  siteUrl: string | null;
+  season: number | null;
+  episode: number | null;
+  playedAt: Date;
 }
 
 /** The one place a loose target becomes a StreamRef. Callers validate first; a series without an episode is a programming error. */

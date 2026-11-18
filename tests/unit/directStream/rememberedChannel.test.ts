@@ -219,6 +219,47 @@ describe('a play with no provider named asks what streamed the title last time',
   });
 });
 
+describe('a named method goes to what last played the title through that method', () => {
+  const method = (over: Partial<NonNullable<RememberedChannel['methods']>[string]>) => ({ provider: null, infoHash: null, siteUrl: null, season: null, episode: null, playedAt: daysAgo(3), ...over });
+
+  it('"torrent" opens the torrent that played the film, though a cloud provider played it since; the indexes only when its swarm is gone', async () => {
+    const known = { channel: 'cloud' as const, provider: 'Beta', playedAt: daysAgo(1), methods: { torrent: method({ infoHash: h(9) }), cloud: method({ provider: 'Beta' }) } };
+    const same = setup({ known });
+    const { json } = await post(same.app, { ...PLAY_FILM, provider: 'torrent' });
+    expect(json.session.torrent.info_hash).toBe(h(9));
+    expect(same.finds).not.toHaveBeenCalled();
+    expect(same.asked()).toEqual([]);
+
+    const gone = setup({ known, deadHashes: [h(9)] });
+    expect((await post(gone.app, { ...PLAY_FILM, provider: 'torrent' })).json.session.torrent.info_hash).toBe(h(1));
+    expect(gone.opened[0]).toBe(h(9));
+    expect(gone.finds).toHaveBeenCalledTimes(1);
+
+    // The torrent of another episode does not hold this one: the indexes are asked.
+    const other = setup({ known: { ...known, methods: { torrent: method({ infoHash: h(9), season: 1, episode: 3 }) } } });
+    await post(other.app, { ...PLAY_EPISODE, provider: 'torrent' });
+    expect(other.opened).not.toContain(h(9));
+    expect(other.finds).toHaveBeenCalledTimes(1);
+  });
+
+  it('"cloud" asks the provider that streamed it first, though a torrent played it since; then the others, without it, and never a torrent', async () => {
+    const known = { channel: 'torrent' as const, infoHash: h(9), playedAt: daysAgo(1), methods: { cloud: method({ provider: 'Beta' }), torrent: method({ infoHash: h(9) }) } };
+    const again = setup({ known, resolve: { Beta: resolved('Beta'), all: resolved('Alpha') } });
+    expect((await post(again.app, { ...PLAY_FILM, provider: 'cloud' })).json.session.provider).toBe('Beta');
+    expect(again.asked()).toEqual([{ only: 'Beta', skip: null }]);
+
+    const moved = setup({ known, resolve: { Beta: noSource('Beta'), all: resolved('Alpha') } });
+    expect((await post(moved.app, { ...PLAY_FILM, provider: 'cloud' })).json.session.provider).toBe('Alpha');
+    expect(moved.asked()).toEqual([{ only: 'Beta', skip: null }, { only: null, skip: 'Beta' }]);
+    expect(moved.opened).toEqual([]);
+
+    const none = setup({ known, resolve: { Beta: noSource('Beta'), all: noSource('Alpha') } });
+    expect((await post(none.app, { ...PLAY_FILM, provider: 'cloud' })).status).toBe(502);
+    expect(none.finds).not.toHaveBeenCalled();
+    expect(none.failed).toEqual(['cloud']);
+  });
+});
+
 describe('a title last played on a streaming site', () => {
   const SITE = { channel: 'site' as const, provider: 'dramacool', siteUrl: 'https://dramacool9.com.ro/summer-vacation-2026', season: 1, episode: 3, playedAt: daysAgo(1) };
 

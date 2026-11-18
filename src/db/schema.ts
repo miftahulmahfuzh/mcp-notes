@@ -1404,6 +1404,68 @@ export const movieTitleChannels = pgTable(
 )
 
 /**
+ * What last played a title through each method on one host (migration 0036): `cloud`, `torrent`, or a
+ * streaming site by its name (`idlix`). One row per (title, host, method), so a torrent that played
+ * is still known after a cloud provider played the title later; `movie_title_channels` keeps only the
+ * last of them. Written by MoviesRepo.recordChannel only, in the same transaction as that row.
+ * `provider` is the cloud provider's name, `info_hash` the torrent, `site_url` the title's page on
+ * the site; `season` and `episode` are those of that play (null for a film).
+ */
+export const movieTitleMethods = pgTable(
+  'movie_title_methods',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    host: text('host').notNull(),
+    method: text('method').notNull(),
+    provider: text('provider'),
+    infoHash: text('info_hash'),
+    siteUrl: text('site_url'),
+    season: integer('season'),
+    episode: integer('episode'),
+    playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.host, t.method] }),
+    check('movie_title_methods_slot_check', sql`(${t.season} is null) = (${t.episode} is null)`),
+  ],
+)
+
+/** One title of a genre guide, as the model named it and TMDB resolved it. */
+export interface GenreGuideItem {
+  kind: 'movie' | 'tv'
+  tmdbId: number
+  title: string
+  year: number | null
+  releaseDate: string | null
+  posterPath: string | null
+  /** One line: what it shares with the title the guide was written for. */
+  why: string
+}
+
+/**
+ * What a genre means for one title (migration 0036): a short description and the titles of that
+ * genre closest to it in tone and premise, collated once by Claude with web search when the owner
+ * clicks the genre on the title's page, then read from here. One row per (title, genre, lower case).
+ * Written by MoviesRepo.saveGenreGuide only. Holds no watch state: marks are read at request time.
+ */
+export const movieGenreGuides = pgTable(
+  'movie_genre_guides',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    genre: text('genre').notNull(),
+    description: text('description').notNull(),
+    items: jsonb('items').$type<GenreGuideItem[]>().notNull(),
+    model: text('model'),
+    writtenAt: timestamp('written_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.titleId, t.genre] })],
+)
+
+/**
  * A title played on a streaming site that TMDB does not list (migration 0035), per host: it has no
  * `movie_titles` row, so it is kept here with what the site's own page says of it, and shown on the
  * Stream side from this row alone. One row per (host, site, the title's page on the site). `kind`
@@ -1779,6 +1841,8 @@ export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
 export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
 export type MovieTitleChannelRow = typeof movieTitleChannels.$inferSelect
+export type MovieTitleMethodRow = typeof movieTitleMethods.$inferSelect
+export type MovieGenreGuideRow = typeof movieGenreGuides.$inferSelect
 export type MovieSiteTitleRow = typeof movieSiteTitles.$inferSelect
 export type MovieDialogueRow = typeof movieDialogues.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect

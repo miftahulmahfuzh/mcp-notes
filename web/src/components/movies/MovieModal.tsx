@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowSquareOut, Play, X } from '@phosphor-icons/react';
-import { continueTitle, errorCode, errorDetail, fetchMovie, fetchPlayer, MOVIES_EVENTS_URL, playFile, type PlayerState, type TitleDetail } from '../../moviesApi';
+import { continueTitle, errorCode, errorDetail, fetchMovie, fetchPlayer, MOVIES_EVENTS_URL, playFile, streamPlay, type PlayerState, type TitleDetail } from '../../moviesApi';
 import {
   continueNotice,
+  episodeAction,
   episodeByMovieId,
   episodeCode,
   filePlayLabel,
@@ -11,15 +12,18 @@ import {
   moviesErrorText,
   playErrorText,
   playLabel,
-  playPlan,
   primaryFile,
   releaseText,
   runtimeText,
   seasonsText,
   startedNotice,
   STATE_LABEL,
+  STREAM_OPENING_NOTICE,
+  streamErrorText,
+  streamLabel,
   TILE_LIVE_LABEL,
   tileLive,
+  titleAction,
   type PlayButtonState,
   anyLive,
   streamLive,
@@ -30,6 +34,7 @@ import { isEditorOpen } from '../NoteEditor';
 import { PLAY_POLL_MS } from '../../hooks/useMovies';
 import { isPageVisible } from '../../lib/pageActive';
 import { LiveStatus } from './parts';
+import { isPlayMenuOpen, PlayMenu } from './PlayMenu';
 import { Poster } from './Poster';
 import './MovieModal.css';
 
@@ -100,7 +105,7 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || isEditorOpen() || isLightboxOpen() || isConfirmOpen()) return;
+      if (e.key !== 'Escape' || isEditorOpen() || isLightboxOpen() || isConfirmOpen() || isPlayMenuOpen()) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -112,32 +117,46 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   const episode = detail === null ? null : episodeByMovieId(detail, movieId);
   const code = episode === null ? null : episodeCode(episode.season, episode.episode);
   const file = episode === null ? null : primaryFile(episode);
-  const plan = detail === null ? null : playPlan(detail);
+  /** What Play does: the file on this machine in VLC; without one, the stream (a title the library does not hold plays this way). */
+  const action = detail === null ? null : episode !== null ? episodeAction(detail, episode, 'stream') : titleAction(detail, 'stream');
   let play: PlayButtonState = { label: 'Loading', disabled: true };
-  if (detail !== null && plan !== null) {
-    if (episode === null) play = playLabel(plan, player);
-    else play = file !== null ? filePlayLabel(file, player, code ?? 'this episode') : { label: `${code} has no file`, disabled: true };
+  if (detail !== null && action !== null) {
+    if (action.kind === 'stream') play = streamLabel(action.target, true);
+    else if (episode !== null) play = file !== null ? filePlayLabel(file, player, code ?? 'this episode') : { label: `${code} has no file`, disabled: true };
+    else if (action.kind === 'vlc' || action.kind === 'idle') play = playLabel('plan' in action ? action.plan : { kind: 'none' }, player);
   }
 
-  const start = async () => {
-    if (detail === null || plan === null) return;
+  /** One play: its notice beside the button, or why it did not start; the pop-up re-reads either way. */
+  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText) => {
     setBusy(true);
     try {
-      if (episode !== null) {
-        if (file === null) return;
-        await playFile(file.id);
-        setNotice(startedNotice(file));
-      } else if (plan.kind === 'continue') {
-        setNotice(continueNotice(await continueTitle(detail.id)));
-      } else if (plan.kind === 'file') {
-        await playFile(plan.file.id);
-        setNotice(startedNotice(plan.file));
-      }
+      setNotice(await act());
     } catch (e) {
-      setNotice(playErrorText(errorCode(e), errorDetail(e)));
+      setNotice(failed(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
       setTick((t) => t + 1);
+    }
+  };
+
+  const start = () => {
+    if (detail === null || action === null) return;
+    if (action.kind === 'stream') {
+      const target = action.target;
+      void run(
+        async () => {
+          const { site } = await streamPlay(target.ref);
+          return site === null ? STREAM_OPENING_NOTICE : `Playing on ${site} in the streaming Chrome window`;
+        },
+        (c, d) => streamErrorText(c, d, target, detail.title),
+      );
+    } else if (action.kind === 'vlc') {
+      if ('file' in action) void run(async () => startedNotice(action.file, await playFile(action.file.id)));
+      else if (action.plan.kind === 'continue') void run(async () => continueNotice(await continueTitle(detail.id)));
+      else {
+        const f = action.plan.file;
+        void run(async () => startedNotice(f, await playFile(f.id)));
+      }
     }
   };
 
@@ -215,9 +234,10 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
                 )}
               </p>
               <div className="mm-actions">
-                <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={() => void start()}>
+                <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
                   <Play weight="duotone" />
                 </button>
+                <PlayMenu detail={detail} episode={episode} player={player} busy={busy} streamEnabled size="page" onRun={(act, failed) => void run(act, failed)} />
                 {live !== null ? (
                   <LiveStatus live={live} now={now} what={liveEpisode !== null ? episodeCode(liveEpisode.season, liveEpisode.episode) : null} />
                 ) : streaming !== null ? (

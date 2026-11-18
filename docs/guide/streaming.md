@@ -1096,7 +1096,15 @@ first for episode 4.
 - **This machine's stream cache and a finished torrent download still come first**: they need no
   search at all.
 - **A named source always wins.** A codename (`play Summer Vacation TS`), `provider` in the tool or
-  a provider's name is asked whatever is remembered.
+  a provider's name is asked whatever played the title last.
+- **A named kind goes where that kind last played.** What played is also kept per method
+  (`movie_title_methods`: `cloud`, `torrent`, each site). So `TM`, `provider: "torrent"` or the
+  [play menu](movies.md#the-play-menu)'s Torrent stream opens the very torrent that last played
+  this film or this episode, with no index asked, even when a cloud provider played the title
+  since; the indexes are searched when none is remembered or its swarm has nothing now. `NTM`,
+  `provider: "cloud"` or Non Torrent stream asks the cloud provider that last streamed the title
+  alone first, then the others without it, and never a torrent. A provider named by its own name
+  (`VidLink`) is still asked alone.
 - **The last success wins.** What is remembered is what last really played: the player page's first
   position report for a cloud or torrent stream, a site's player running for a site. So a title
   played once with `TS` goes to the torrents from then on, until something else plays it.

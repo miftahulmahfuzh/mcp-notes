@@ -20,7 +20,11 @@ import {
   PLAYER_OFF_LABEL,
   playErrorText,
   playLabel,
+  playMenu,
   playPlan,
+  guideCountLine,
+  guideTitleLine,
+  opensGuide,
   reasonText,
   releaseText,
   seasonsShown,
@@ -83,7 +87,7 @@ describe('entity links', () => {
     expect(entityQuestion({ kind: 'genre', name: 'Drama' }, SERIES)).toMatch(/^Recommend other Drama series similar to /);
     expect(entityQuestion({ kind: 'person', name: 'X Y', personId: 9, role: null, cast: true }, MOVIE)).toBe('Tell me about X Y and list their other films and series. Mark the ones in my library.');
     expect(entitySearchQuery({ kind: 'genre', name: 'Crime' }, MOVIE)).toBe('Crime films like How to Make a Killing 2026');
-    expect(entitySearchQuery({ kind: 'company', name: 'StudioCanal' }, MOVIE)).toBe('StudioCanal films and series');
+    expect(entitySearchQuery({ kind: 'company', name: 'StudioCanal', companyId: 694 }, MOVIE)).toBe('StudioCanal films and series');
   });
 });
 
@@ -355,5 +359,76 @@ describe('agoText', () => {
     expect(agoText('2026-11-17T11:00:00Z', now)).toBe('60 min ago');
     expect(agoText('2026-11-17T04:00:00Z', now)).toBe('8 h ago');
     expect(agoText('2026-11-14T12:00:00Z', now)).toBe('3 days ago');
+  });
+});
+
+describe('playMenu', () => {
+  const keys = (m: ReturnType<typeof playMenu>) => m.items.map((i) => i.key);
+
+  it('a film with a file here: the file, the two kinds of stream, then every site', () => {
+    const m = playMenu(MOVIE, null, PLAYER_IDLE, true);
+    expect(m.code).toBe('');
+    expect(keys(m)).toEqual(['file', 'cloud', 'torrent', 'idlix', 'lk21', 'flicksy', 'dramacool']);
+    expect(m.items.every((i) => !i.disabled)).toBe(true);
+  });
+
+  it('without a file here the first row finds the download on pahe, and says where a file is', () => {
+    const m = playMenu(FIGHT_CLUB, null, PLAYER_IDLE, true);
+    expect(m.items[0]).toMatchObject({ key: 'pahe', label: 'Find the download on pahe.ink', disabled: false });
+    const far = playMenu({ ...MOVIE, files: MOVIE.files.map((f) => ({ ...f, available: false, host: 'host-b' })) }, null, PLAYER_IDLE, true);
+    expect(far.items[0]).toMatchObject({ key: 'pahe', hint: 'a file is on host-b, none here' });
+  });
+
+  it('each row says what it remembers: the provider, the same torrent, a site, a failure; and which played last', () => {
+    const d = {
+      ...FIGHT_CLUB,
+      played_through: { channel: 'cloud' as const, provider: 'VidRock', played_at: '2026-11-18T10:00:00.000Z', season: null, episode: null },
+      played_methods: [
+        { method: 'cloud', provider: 'VidRock', played_at: '2026-11-18T10:00:00.000Z', season: null, episode: null },
+        { method: 'torrent', provider: null, played_at: '2026-11-17T10:00:00.000Z', season: null, episode: null },
+        { method: 'lk21', provider: null, played_at: '2026-11-16T10:00:00.000Z', season: null, episode: null },
+      ],
+    };
+    const by = Object.fromEntries(playMenu(d, null, PLAYER_IDLE, true).items.map((i) => [i.key, i]));
+    expect(by.cloud).toMatchObject({ hint: 'VidRock first, as on Nov 18, 2026', last: true });
+    expect(by.torrent).toMatchObject({ hint: 'the same torrent as on Nov 17, 2026', last: false });
+    expect(by.lk21?.hint).toBe('played Nov 16, 2026');
+    expect(by.idlix?.hint).toBeNull();
+    const failed = playMenu({ ...FIGHT_CLUB, stream_failed: { cloud_at: '2026-11-15T10:00:00.000Z', torrent_at: null } }, null, PLAYER_IDLE, true);
+    expect(failed.items.find((i) => i.key === 'cloud')?.hint).toBe('found nothing on Nov 15, 2026');
+  });
+
+  it("an episode's menu names the episode, keeps only the sites that play episodes, and a torrent of another episode is not the same torrent", () => {
+    const e = SERIES.seasons[0]!.episodes[1]!;
+    const d = { ...SERIES, played_methods: [{ method: 'torrent', provider: null, played_at: '2026-11-17T10:00:00.000Z', season: e.season, episode: e.episode + 1 }] };
+    const m = playMenu(d, e, PLAYER_IDLE, true);
+    expect(m.code).toBe('S01E02');
+    expect(keys(m).slice(1)).toEqual(['cloud', 'torrent', 'idlix', 'dramacool']);
+    expect(m.items.find((i) => i.key === 'torrent')?.hint).toBe('last from a torrent on Nov 17, 2026');
+    expect(m.target?.ref).toEqual({ kind: 'tv', tmdb_id: SERIES.tmdb_id, season: 1, episode: 2 });
+  });
+
+  it('with direct streaming off the two stream rows say so; the sites still play', () => {
+    const by = Object.fromEntries(playMenu(MOVIE, null, PLAYER_IDLE, false).items.map((i) => [i.key, i]));
+    expect(by.cloud).toMatchObject({ disabled: true, hint: 'direct streaming is off on this machine' });
+    expect(by.torrent?.disabled).toBe(true);
+    expect(by.idlix?.disabled).toBe(false);
+  });
+});
+
+describe('the pop-up of a name', () => {
+  const t = (over: object) => ({ kind: 'movie' as const, tmdb_id: 1, title_id: 'movie-1', title: 'T', year: 2020, release_date: null, poster_url: null, note: null, movie_id: null, mark: null, has_file: false, ...over });
+
+  it('a person, a studio and a genre open it; a character does not', () => {
+    expect(opensGuide({ kind: 'genre', name: 'Crime' })).toBe(true);
+    expect(opensGuide({ kind: 'company', name: 'A24', companyId: 41077 })).toBe(true);
+    expect(opensGuide({ kind: 'character', name: 'Ruth', actor: 'X', personId: 1 })).toBe(false);
+  });
+
+  it('counts the marks and writes a title line', () => {
+    expect(guideCountLine([t({ mark: 'watched' }), t({ mark: 'watched' }), t({ mark: 'not_interested' }), t({})])).toBe('4 titles · 2 watched · 1 not interested');
+    expect(guideCountLine([t({})])).toBe('1 title');
+    expect(guideTitleLine(t({ kind: 'tv', note: 'as Ruth' }))).toBe('2020 · series · as Ruth');
+    expect(guideTitleLine(t({ year: null }))).toBe('undated');
   });
 });

@@ -7,6 +7,7 @@ import type { ImageEmbedder } from './embeddings/imageEmbedder.js';
 import type { MoviePlayer } from './movies/player.js';
 import type { HealthMonitor } from './movies/vlc/health.js';
 import type { MoviesService } from './movies/service.js';
+import type { GenreGuides } from './movies/guides.js';
 import type { MovieStories } from './movies/story.js';
 import type { StreamingRunner } from './streaming/service.js';
 import type { DirectStreamService } from './directStream/service.js';
@@ -102,6 +103,11 @@ export interface AppDeps {
    * routes answer 503.
    */
   movieStories?: MovieStories | null;
+  /**
+   * What a genre means for one title (src/movies/guides.ts): read from the store, collated by Claude
+   * with web search on the owner's click. Null or absent, the genre routes answer 503.
+   */
+  genreGuides?: GenreGuides | null;
   /**
    * Wakes the session summary worker now (a summary was requested). Set by startBackground while the
    * worker runs; absent, the request waits for the worker's sweep.

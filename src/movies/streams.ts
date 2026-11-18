@@ -52,6 +52,18 @@ export interface TitleChannel {
   playedAt: Date | null;
   cloudFailedAt: Date | null;
   torrentFailedAt: Date | null;
+  /** What last played the title through each method (`cloud`, `torrent`, a site's name), from `movie_title_methods`. */
+  methods?: Readonly<Record<string, TitleMethod>>;
+}
+
+/** What last played a title through one method on this host. */
+export interface TitleMethod {
+  provider: string | null;
+  infoHash: string | null;
+  siteUrl: string | null;
+  season: number | null;
+  episode: number | null;
+  playedAt: Date;
 }
 
 /** One position report of the player page, validated by the route. */
@@ -364,6 +376,10 @@ export class MovieStreams {
         const torrent = last.provider === TORRENT_PROVIDER_NAME;
         return { channel: torrent ? 'torrent' : 'cloud', provider: torrent ? null : last.provider, infoHash: null, siteUrl: null, season: last.season, episode: last.episode, playedAt: last.startedAt, cloudFailedAt: null, torrentFailedAt: null };
       }
+      const methods: Record<string, TitleMethod> = {};
+      for (const m of await this.movies.repo.methodsOf(id, this.movies.host)) {
+        methods[m.method] = { provider: m.provider, infoHash: m.infoHash, siteUrl: m.siteUrl, season: m.season, episode: m.episode, playedAt: m.playedAt };
+      }
       return {
         channel: row.channel,
         provider: row.provider,
@@ -374,6 +390,7 @@ export class MovieStreams {
         playedAt: row.playedAt,
         cloudFailedAt: row.cloudFailedAt,
         torrentFailedAt: row.torrentFailedAt,
+        methods,
       };
     } catch (err) {
       this.log(`[notesd] direct stream: could not read how ${describeTarget(target)} was last played: ${messageOf(err)}`);

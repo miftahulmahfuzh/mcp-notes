@@ -187,6 +187,41 @@ export interface TmdbDiscovery {
   searchKeyword(query: string): Promise<TmdbNamedHit[]>;
 }
 
+/** A person as TMDB describes them (`/person/{id}`). */
+export interface TmdbPersonProfile {
+  personId: number;
+  name: string;
+  biography: string;
+  knownFor: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string | null;
+  profilePath: string | null;
+}
+
+/** A production company as TMDB describes it (`/company/{id}`). `description` is often empty. */
+export interface TmdbCompanyProfile {
+  id: number;
+  name: string;
+  description: string;
+  headquarters: string | null;
+  country: string | null;
+  homepage: string | null;
+  logoPath: string | null;
+  parent: string | null;
+}
+
+/**
+ * Who a person or a company is, for the pop-up a name on a title's page opens (src/movies/people.ts).
+ * Kept apart from TmdbClient for the same reason as TmdbCatalog; createTmdbClient returns it too.
+ */
+export interface TmdbProfiles {
+  /** Null when TMDB does not know the person (404). */
+  personProfile(personId: number): Promise<TmdbPersonProfile | null>;
+  /** Null when TMDB does not know the company (404). */
+  companyProfile(companyId: number): Promise<TmdbCompanyProfile | null>;
+}
+
 /** The slice of `config.movies.tmdb` the client needs; the whole config object fits. */
 export interface TmdbClientConfig {
   token: string | null;
@@ -359,6 +394,26 @@ const PersonSearchSchema = z.object({
     .nullish(),
 });
 
+const PersonProfileSchema = z.object({
+  id: intId,
+  name: z.string(),
+  biography: text,
+  known_for_department: text,
+  birthday: text,
+  deathday: text,
+  place_of_birth: text,
+  profile_path: text,
+});
+const CompanyProfileSchema = z.object({
+  id: intId,
+  name: z.string(),
+  description: text,
+  headquarters: text,
+  origin_country: text,
+  homepage: text,
+  logo_path: text,
+  parent_company: z.object({ name: z.string() }).nullish(),
+});
 const OriginalLanguageSchema = z.object({ original_language: text });
 const ExternalIdsSchema = z.object({ imdb_id: text });
 const FindSchema = z.object({
@@ -676,7 +731,7 @@ export function createTmdbClient(
   config: TmdbClientConfig,
   fetchImpl: typeof fetch = fetch,
   options: TmdbClientOptions = {},
-): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery & TmdbImdbLookup {
+): TmdbClient & TmdbCatalog & TmdbTitleNames & TmdbDiscovery & TmdbImdbLookup & TmdbProfiles {
   const base = config.apiBase.replace(/\/+$/, '');
   const token = orNull(config.token);
   const apiKey = orNull(config.apiKey);
@@ -912,6 +967,38 @@ export function createTmdbClient(
         if (entry !== null) out.push(entry);
       }
       return out;
+    },
+
+    async personProfile(personId) {
+      const json = await getOrNull(`/person/${personId}`, {});
+      if (json === null) return null;
+      const r = decode(PersonProfileSchema, json, `person ${personId}`);
+      return {
+        personId: r.id,
+        name: r.name,
+        biography: (r.biography ?? '').trim(),
+        knownFor: orNull(r.known_for_department),
+        birthday: orNull(r.birthday),
+        deathday: orNull(r.deathday),
+        placeOfBirth: orNull(r.place_of_birth),
+        profilePath: orNull(r.profile_path),
+      };
+    },
+
+    async companyProfile(companyId) {
+      const json = await getOrNull(`/company/${companyId}`, {});
+      if (json === null) return null;
+      const r = decode(CompanyProfileSchema, json, `company ${companyId}`);
+      return {
+        id: r.id,
+        name: r.name,
+        description: (r.description ?? '').trim(),
+        headquarters: orNull(r.headquarters),
+        country: orNull(r.origin_country),
+        homepage: orNull(r.homepage),
+        logoPath: orNull(r.logo_path),
+        parent: orNull(r.parent_company?.name),
+      };
     },
 
     async list(name, kind, page = 1) {

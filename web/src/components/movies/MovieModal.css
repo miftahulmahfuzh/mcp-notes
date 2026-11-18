@@ -29,3 +29,37 @@
   .mm-body { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 14px; }
   .mm-title { font-size: 20px; }
 }
+/* The pop-up of a person, a studio or a genre: who or what it is, then its titles, scrolled inside the box. */
+.mm-panel.mm-entity { width: min(760px, 100%); display: flex; flex-direction: column; overflow: hidden; }
+.mm-entity .mm-head { flex: none; }
+.mm-ent-top { flex: none; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 20px; padding: 20px 20px 14px; }
+.mm-ent-top.bare { grid-template-columns: minmax(0, 1fr); }
+.mm-ent-img { align-self: start; }
+.mm-ent-img img { display: block; width: 100%; filter: var(--film); }
+.mm-ent-img.person img { aspect-ratio: 2 / 3; object-fit: cover; }
+.mm-ent-img.company { background: #ecebe6; padding: 12px; box-sizing: border-box; }
+.mm-ent-img.company img { filter: none; object-fit: contain; max-height: 90px; }
+.mm-ent-desc { margin-top: 10px; white-space: pre-line; }
+.mm-ent-desc.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.mm-ent-more { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; display: inline-block; }
+.mm-ent-count { flex: none; margin: 0; padding: 10px 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.mm-ent-list { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 120px; }
+.mm-ent-row { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 8px 20px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.mm-ent-row:hover { background: var(--hover); }
+.mm-ent-row:focus-visible { outline: 1px solid var(--ring); outline-offset: -1px; }
+.mm-ent-row:disabled { cursor: progress; }
+.mm-ent-poster .mv-poster { width: 38px; }
+.mm-ent-poster .mv-fallback-t, .mm-ent-poster .mv-fallback-y { display: none; }
+.mm-ent-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mm-ent-name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-ent-line { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-ent-tags { display: inline-flex; align-items: center; gap: 8px; }
+.mm-tag.watched { border-style: solid; border-color: var(--fg); background: var(--fg); color: var(--bg); }
+.mm-tag.not_interested { text-decoration: line-through; text-decoration-color: var(--line-45); }
+.mm-ent-foot { flex: none; margin: 0; padding: 10px 20px; }
+@media (max-width: 560px) {
+  .mm-ent-top { grid-template-columns: 72px minmax(0, 1fr); gap: 14px; padding: 14px; }
+  .mm-ent-tags .mv-code { display: none; }
+}
+/* The play menu drops out of the box, so the box must not clip it while it is open. */
+.mm-panel:has(.mv-menu-list) { overflow: visible; }

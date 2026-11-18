@@ -225,7 +225,18 @@ export interface TitleDetail extends TitleListItem {
   played_through: PlayedThrough | null;
   /** When each kind of stream last found nothing for the title on this machine; null: never, or it played since. */
   stream_failed: { cloud_at: string | null; torrent_at: string | null };
+  /** What last played the title through each stream method here (`cloud`, `torrent`, a site's name), newest first. */
+  played_methods: PlayedMethod[];
   metadata_fetched_at: string | null;
+}
+
+/** One stream method's last play of a title on this machine. `provider` names the cloud provider. */
+export interface PlayedMethod {
+  method: string;
+  provider: string | null;
+  played_at: string;
+  season: number | null;
+  episode: number | null;
 }
 
 /**
@@ -535,6 +546,7 @@ function normalizeDetail(d: TitleDetail): TitleDetail {
     stream_sources: list(d.stream_sources),
     played_through: d.played_through ?? null,
     stream_failed: { cloud_at: d.stream_failed?.cloud_at ?? null, torrent_at: d.stream_failed?.torrent_at ?? null },
+    played_methods: list(d.played_methods),
   };
 }
 
@@ -698,4 +710,96 @@ export async function streamPlay(ref: StreamRef): Promise<{ site: string | null 
   const r = await postJson<{ site?: unknown }>('/api/stream/play', ref);
   // A title last played on a streaming site plays there again: the answer names the site and carries no session.
   return { site: typeof r?.site === 'string' ? r.site : null };
+}
+
+/** The streaming sites a title can be played on by name, in the play menu's order. */
+export const STREAMING_SITES = ['idlix', 'lk21', 'flicksy', 'dramacool'] as const;
+export type StreamingSite = (typeof STREAMING_SITES)[number];
+
+/** Plays the title on one named streaming site (a series: that episode). Throws ApiError `no_match`, `several_matches`, `no_episode`, `series`, `not_playing`, `streaming_off`. */
+export async function sitePlay(titleId: string, site: StreamingSite, slot: { season: number; episode: number } | null): Promise<void> {
+  await postJson(`/api/movies/${encodeURIComponent(titleId)}/site-play`, slot === null ? { site } : { site, ...slot });
+}
+
+export interface PaheMatch {
+  title: string;
+  url: string;
+  year: number | null;
+  release: string | null;
+}
+
+/** The title's download pages on pahe.ink, best source first. Throws ApiError `pahe_error`. */
+export async function fetchPahe(titleId: string): Promise<{ matches: PaheMatch[]; search_url: string | null }> {
+  const r = await getJson<{ matches?: PaheMatch[]; search_url?: string | null }>(`/api/movies/${encodeURIComponent(titleId)}/pahe`);
+  return { matches: list(r.matches), search_url: r.search_url ?? null };
+}
+
+/** What the owner did with a listed title; null: nothing, or it is not stored. */
+export type GuideMark = 'watched' | 'not_interested' | 'started';
+
+export interface GuideTitle {
+  kind: TitleKind;
+  tmdb_id: number;
+  title_id: string;
+  title: string;
+  year: number | null;
+  release_date: string | null;
+  poster_url: string | null;
+  /** A person's roles in it, or why a genre's guide lists it. */
+  note: string | null;
+  /** Null until the title is stored (`ensureTitle`). */
+  movie_id: string | null;
+  mark: GuideMark | null;
+  has_file: boolean;
+}
+
+export interface GuideEntity {
+  kind: 'person' | 'company' | 'genre';
+  name: string;
+  image_url: string | null;
+  description: string;
+  facts: string[];
+  link: string | null;
+}
+
+/** Who a person or a studio is, or what a genre means for one title, with its titles newest first. */
+export interface EntityGuide {
+  entity: GuideEntity;
+  titles: GuideTitle[];
+  written_at?: string | null;
+  model?: string | null;
+}
+
+function normalizeGuide(g: EntityGuide): EntityGuide {
+  return { ...g, entity: { ...g.entity, description: g.entity.description ?? '', facts: list(g.entity.facts) }, titles: list(g.titles) };
+}
+
+export async function fetchPersonGuide(personId: number, signal?: AbortSignal): Promise<EntityGuide> {
+  return normalizeGuide(await getJson<EntityGuide>(`/api/movies/people/${personId}`, signal));
+}
+
+export async function fetchCompanyGuide(companyId: number, signal?: AbortSignal): Promise<EntityGuide> {
+  return normalizeGuide(await getJson<EntityGuide>(`/api/movies/companies/${companyId}`, signal));
+}
+
+const genreUrl = (titleId: string, genre: string): string => `/api/movies/${encodeURIComponent(titleId)}/genres/${encodeURIComponent(genre)}`;
+
+/** The stored guide of a genre for one title; null when it was never written. Never calls a model. */
+export async function fetchGenreGuide(titleId: string, genre: string, signal?: AbortSignal): Promise<EntityGuide | null> {
+  const r = await getJson<{ guide: EntityGuide | null }>(genreUrl(titleId, genre), signal);
+  return r.guide === null || r.guide === undefined ? null : normalizeGuide(r.guide);
+}
+
+/** Has the guide collated with web search (about a minute) and kept; `refresh` replaces the stored one. Throws ApiError `guide_off`, `guide_failed`. */
+export async function writeGenreGuide(titleId: string, genre: string, refresh = false): Promise<EntityGuide> {
+  const r = await postJson<{ guide: EntityGuide }>(genreUrl(titleId, genre), refresh ? { refresh: true } : {});
+  if (r === null || r.guide === null || r.guide === undefined) throw new Error('guide_failed');
+  return normalizeGuide(r.guide);
+}
+
+/** Stores a title the library does not hold yet and answers its movie id, so its pop-up can open. Throws ApiError `not_stored`. */
+export async function ensureTitle(kind: TitleKind, tmdbId: number): Promise<string> {
+  const r = await postJson<{ movie_id?: string | null }>('/api/movies/ensure', { kind, tmdb_id: tmdbId });
+  if (r === null || typeof r.movie_id !== 'string') throw new Error('not_stored');
+  return r.movie_id;
 }

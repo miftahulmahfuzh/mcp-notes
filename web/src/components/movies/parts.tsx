@@ -120,7 +120,7 @@ export interface EntityLinkProps {
   busy?: boolean;
 }
 
-/** A name on a title's page that asks about itself when clicked: looks like the text it replaces, underlined on hover. */
+/** A name on a title's page that opens its pop-up (a character: asks about itself) when clicked: looks like the text it replaces, underlined on hover. */
 export function EntityLink({ entity, onAsk, busy = false }: EntityLinkProps) {
   if (onAsk === undefined) return <>{entity.name}</>;
   return (

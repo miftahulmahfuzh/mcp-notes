@@ -33,6 +33,23 @@
   with a story through `$V exec` and open it on the page. Proof:
   `web/src/App.stream.test.tsx`, `tests/integration/movies.marks.int.test.ts`,
   `tests/unit/directStream/prober.test.ts` ("an asked pass").
+- Names and the play menu (a title's page). A person, a studio or a genre clicked opens a pop-up
+  (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;
+  `GET|POST /api/movies/:id/genres/:genre` reads or collates the guide of that genre for that title
+  (one model run with WebSearch, then `movie_genre_guides`). Every listed title carries `mark`
+  (`watched`, `started`, `not_interested`) and `has_file`, read at the request, and a click opens
+  the movie pop-up, after `POST /api/movies/ensure` for a title the library does not hold. A
+  character still asks the chat. The caret beside Play, and on every episode row, is the play
+  menu: the file (or pahe, `GET /api/movies/:id/pahe`), `POST /api/stream/play` with `provider`
+  `cloud` or `torrent`, `POST /api/movies/:id/site-play` for a site. What played is kept per
+  method (`movie_title_methods`), and a named kind goes back to it. Proof:
+  `npx vitest run web/src/App.movies.test.tsx web/src/lib/movies.test.tsx tests/unit/movies/guides.test.ts tests/unit/directStream/rememberedChannel.test.ts`,
+  `npm run test:int -- tests/integration/movies.guides.int.test.ts`. On an `up --web --movies` run
+  the fake TMDB knows no person or studio profile, so the pop-up is driven with Playwright
+  `page.route` on `/api/movies/people/*`; the play menu needs no stub to open, and its site, stream
+  and pahe rows are stubbed the same way (never give a throwaway run a real site, resolver or
+  model: `NOTESD_MOVIES_STORY_MODEL=off` is pinned, so a genre answers `guide_off` unless a row is
+  seeded into `movie_genre_guides` with `$V exec`).
 - Trending on torrents (Stream side, second section under the grid). `GET /api/movies/trending` is this
   host's daily list (`stream_trending`) of the most seeded films and series from apibay's top-100 and EZTV's
   newest pages, with a swarm probe per title (`TorrentStreams.peek`: file list only, no download row, no

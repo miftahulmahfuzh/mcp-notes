@@ -1,16 +1,18 @@
 // Pictures for docs/guide/movies.md. Run by scripts/docs/capture.mjs. They come from two places:
 //
 //   npm run docs:shots -- --live movies                       the owner's real library (most pictures)
-//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the two chat pictures (billed)
+//   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the chat picture (billed)       
+//   DOCS_SHOTS_NAMES=1 npm run docs:shots -- --live movies    only person.png and play-menu.png
 //   npm run docs:shots -- movies                              unmatched.png and assign.png only
 //
 // The owner wants this guide to show their real library, so `live` below takes the grid, a film,
 // a series, the trailer pop-up, the filter clip and the page of whatever VLC is playing from the
-// daemon on 7317, and the Stream side (stream.png) when this machine has a verified title; no Play
-// is pressed there. It only looks: it clicks filters, opens the trailer pop-up and reads pages. It
-// never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
-// pictures send real, billed questions (they are stored in the chat history), so they are retaken
-// only with DOCS_SHOTS_CHAT=1.
+// daemon on 7317, the pop-up of the film's director and its play menu, and the Stream side
+// (stream.png) when this machine has a verified title; no Play is pressed there. It only looks: it
+// clicks filters, opens the trailer pop-up, a person's pop-up and the play menu, and reads pages.
+// It never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
+// picture sends a real, billed question (it is stored in the chat history), so it is retaken only
+// with DOCS_SHOTS_CHAT=1.
 //
 // The unmatched list shows the names of files that could not be placed, which is not something to
 // publish from a real disk, and assigning a title writes. Those two pictures therefore come from
@@ -205,11 +207,38 @@ async function popupShot({ page, base, shot, fetchJson }) {
   }
 }
 
+/**
+ * The pop-up of the film's director and the film's play menu. It looks only: the pop-up is one read of TMDB, and
+ * the menu is opened and closed without choosing a row. A genre is never clicked here: its first click is a model run.
+ */
+async function nameShots({ page, base, shot }) {
+  await page.setViewportSize(VIEWPORT);
+  await page.goto(`${base}/movies/${LIVE_FILM}`);
+  await page.getByRole('region', { name: 'Cast' }).waitFor();
+  await postersLoaded(page);
+  await page.getByLabel('Credits').getByRole('button', { name: LIVE_FILM_DIRECTOR, exact: true }).first().click();
+  const popup = page.getByRole('dialog', { name: `About ${LIVE_FILM_DIRECTOR}` });
+  await popup.getByTestId('guide-title').first().waitFor({ timeout: 30000 });
+  await postersLoaded(page);
+  await page.mouse.move(640, 60);
+  await shot('person', { locator: popup });
+  await page.keyboard.press('Escape');
+  await popup.waitFor({ state: 'hidden' });
+
+  await page.getByRole('button', { name: /^Choose how to play / }).first().click();
+  const menu = page.getByRole('menu', { name: /^Play .* from$/ });
+  await menu.waitFor();
+  await page.mouse.move(900, 700);
+  await shot('play-menu', { locator: page.locator('.mv-detail-info') });
+  await page.keyboard.press('Escape');
+}
+
 /** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY: see the header. */
 export async function live({ page, base, shot, clip, fetchJson }) {
   // Alone, so a retake of the clip does not also retake every still.
   if (process.env.DOCS_SHOTS_PLAY === '1') return playClip({ base, clip, fetchJson });
   if (process.env.DOCS_SHOTS_PLAY === 'popup') return popupShot({ page, base, shot, fetchJson });
+  if (process.env.DOCS_SHOTS_NAMES === '1') return nameShots({ page, base, shot });
 
   // The poster grid.
   await page.goto(`${base}/movies`);
@@ -252,6 +281,9 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   await page.keyboard.press('Escape');
   await trailer.waitFor({ state: 'hidden' });
 
+  // A name's pop-up and the play menu, on the same film.
+  await nameShots({ page, base, shot });
+
   // A series: one row per episode, each with its movie id and progress, and the season's trailer icon.
   await page.setViewportSize(TALL);
   await page.goto(`${base}/movies/${LIVE_SERIES}`);
@@ -291,19 +323,8 @@ export async function live({ page, base, shot, clip, fetchJson }) {
     await tab.waitForTimeout(1100);
   });
 
-  // Two billed questions: a name on a film's page asking about itself, and one answer with movie
-  // ids. The pop-up an id opens is popupShot's. See the header.
+  // One billed question: an answer with movie ids. The pop-up an id opens is popupShot's. See the header.
   if (process.env.DOCS_SHOTS_CHAT === '1') {
-    await page.setViewportSize(TALL);
-    await page.goto(`${base}/movies/${LIVE_FILM}`);
-    await page.getByRole('region', { name: 'Cast' }).waitFor();
-    await postersLoaded(page);
-    await page.getByLabel('Credits').getByRole('button', { name: LIVE_FILM_DIRECTOR, exact: true }).first().click();
-    await answerDone(page);
-    await page.mouse.move(640, 60);
-    await shot('ask-name');
-    await page.setViewportSize(VIEWPORT);
-
     await page.goto(`${base}/movies/${LIVE_SERIES}`);
     const pill = page.getByTestId('movies-pill');
     await pill.getByRole('textbox', { name: /^Ask about / }).fill('Which episode did I stop in, and which one is next? Two short sentences.');

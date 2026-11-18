@@ -16,14 +16,19 @@ import {
   movieSiteTitles,
   moviePlays,
   movieStreamSources,
+  movieGenreGuides,
   movieTitleChannels,
+  movieTitleMethods,
   movieTitleCompanies,
   movieTitles,
   type MovieFileRow,
   type MoviePlayRow,
   type MovieSiteTitleRow,
   type MovieStreamSourceRow,
+  type GenreGuideItem,
+  type MovieGenreGuideRow,
   type MovieTitleChannelRow,
+  type MovieTitleMethodRow,
   type MovieTitleRow,
 } from '../db/schema.js';
 import { FINISHED_RATIO } from './state.js';
@@ -964,12 +969,59 @@ export class MoviesRepo {
       updatedAt: input.at,
       ...(input.channel === 'cloud' ? { cloudFailedAt: null } : input.channel === 'torrent' ? { torrentFailedAt: null } : {}),
     };
+    // The same play, kept per method: a later play through another method does not forget this one.
+    const method = {
+      provider: input.channel === 'cloud' ? input.provider : null,
+      infoHash: values.infoHash,
+      siteUrl: values.siteUrl,
+      season: input.season,
+      episode: input.episode,
+      playedAt: input.at,
+    };
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(movieTitleChannels)
+        .values({ titleId: input.titleId, host: input.host, ...values })
+        .onConflictDoUpdate({ target: [movieTitleChannels.titleId, movieTitleChannels.host], set: values })
+        .returning();
+      if (row === undefined) throw new Error('movie_title_channels upsert returned no row');
+      await tx
+        .insert(movieTitleMethods)
+        .values({ titleId: input.titleId, host: input.host, method: input.channel === 'site' ? input.provider : input.channel, ...method })
+        .onConflictDoUpdate({ target: [movieTitleMethods.titleId, movieTitleMethods.host, movieTitleMethods.method], set: method });
+      return row;
+    });
+  }
+
+  /** What last played the title through each method on `host` (`cloud`, `torrent`, a site's name); empty when nothing did. */
+  async methodsOf(titleIdValue: string, host: string): Promise<MovieTitleMethodRow[]> {
+    return this.db
+      .select()
+      .from(movieTitleMethods)
+      .where(and(eq(movieTitleMethods.titleId, titleIdValue), eq(movieTitleMethods.host, host)));
+  }
+
+  // ---------- what a genre means for a title (movie_genre_guides) ----------
+
+  /** The stored guide of one genre of a title, or null. `genre` in any case. */
+  async genreGuide(titleIdValue: string, genre: string): Promise<MovieGenreGuideRow | null> {
     const [row] = await this.db
-      .insert(movieTitleChannels)
-      .values({ titleId: input.titleId, host: input.host, ...values })
-      .onConflictDoUpdate({ target: [movieTitleChannels.titleId, movieTitleChannels.host], set: values })
+      .select()
+      .from(movieGenreGuides)
+      .where(and(eq(movieGenreGuides.titleId, titleIdValue), eq(movieGenreGuides.genre, genre.trim().toLowerCase())))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Keeps a genre's guide for a title, replacing the one stored. */
+  async saveGenreGuide(input: { titleId: string; genre: string; description: string; items: GenreGuideItem[]; model: string | null; at: Date }): Promise<MovieGenreGuideRow> {
+    const values = { description: input.description, items: input.items, model: input.model, writtenAt: input.at };
+    const [row] = await this.db
+      .insert(movieGenreGuides)
+      .values({ titleId: input.titleId, genre: input.genre.trim().toLowerCase(), ...values })
+      .onConflictDoUpdate({ target: [movieGenreGuides.titleId, movieGenreGuides.genre], set: values })
       .returning();
-    if (row === undefined) throw new Error('movie_title_channels upsert returned no row');
+    if (row === undefined) throw new Error('movie_genre_guides upsert returned no row');
     return row;
   }
 

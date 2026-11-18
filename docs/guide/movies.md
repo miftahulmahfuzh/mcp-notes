@@ -69,6 +69,8 @@ change behaviour:
 | Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
 | Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
 | How it was last streamed | `movie_title_channels` | Per host | One row per title: the channel it last really played through here (`cloud` with the provider, `torrent` with the info hash, `site` with the site and the title's page there), the season and episode of that play, and when every cloud provider, and every torrent, last found nothing. A play with no source named asks that channel first ([streaming.md](streaming.md#what-played-last-time-plays-first)). A file played in VLC is not kept here: it is read from the plays. |
+| What last played it, per method | `movie_title_methods` | Per host | One row per title and method (`cloud`, `torrent`, or a streaming site by name): the cloud provider, the torrent's info hash or the title's page on the site, with the season and episode of that play. Written with the row above, and kept when another method plays the title later, so a play that names its method goes back to the same provider, torrent or page ([the play menu](#the-play-menu)). |
+| What a genre means for a title | `movie_genre_guides` | This machine | One row per title and genre: the short description and the list of titles Claude collated with web search when you first clicked that genre on the title's page ([Names you can click](#names-you-can-click)). No watch state: the marks are read when it is shown. |
 | Title TMDB does not list | `movie_site_titles` | Per host | A title played on a streaming site that has no TMDB entry, so no row in `movie_titles`: its name, year, and the poster, synopsis, country, status and genres its page on the site gives, with the episode last played. Removed only by its button on the Stream side. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
@@ -337,6 +339,8 @@ characters (the first 18, with an icon for the rest).
   resume the open episode or play the next one (see
   [Continue](#continue-and-play-something)). It is disabled with the reason as its label when the
   file is on the other machine, when no file is left, or when VLC cannot be started here.
+- **The play menu.** The caret beside Play lists every way to play the title, to choose by hand.
+  See [The play menu](#the-play-menu).
 - **Trailer.** The screen icon beside Play plays the title's trailer from YouTube in a pop-up
   over the page, starting at once. The pop-up's header has a link that opens the same video on
   YouTube, for the videos whose owner does not allow playing them on other sites, and Esc, the X
@@ -381,28 +385,74 @@ director" or "the main character" mean that title. The page rides on the message
 (`[Movies · MobLand (2025) · M-CTGS]`). See [What you can ask](#what-you-can-ask) and
 [chat.md](chat.md).
 
+<a id="names-you-can-click"></a>
 **Names you can click.** On a title's page every genre, studio, director, writer, producer, cast
-member and character is a link that looks like the text it replaces and underlines on hover. A
-click sends one question through the pill at once, with no Enter and no page change:
+member and character is a link that looks like the text it replaces and underlines on hover.
 
-| Click | Question sent |
+| Click | What opens |
 | --- | --- |
-| A person | "Tell me about Jessica Henwick (Ruth in this film) and list their other films and series. Mark the ones in my library." |
-| A studio | "Tell me about StudioCanal and list their other films and series. Mark the ones in my library." |
-| A character | "Who is Ruth, played by Jessica Henwick, in this film?" |
-| A genre | "Recommend other Comedy films similar to How to Make a Killing: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library." |
+| A person | A pop-up: their photo, TMDB's biography (the first lines, with `more`), what they are known for and where and when they were born, then every film and series TMDB credits them on, with their role in each. Talk shows, news, appearances as themselves and "Thanks" credits are left out. |
+| A studio | A pop-up: its logo, where it is and its parent company, TMDB's description when it has one (it has none for most studios, and then none is shown), then the films and series it made. |
+| A genre | A pop-up written for this title: what the genre is in it, and the titles of that genre closest to it in tone and premise, each with one line on what they share. Comedy on one film is another list than Comedy on the next. |
+| A character | No pop-up: it asks the chat "Who is Ruth, played by Jessica Henwick, in this film?" through the pill, at once. |
 
-![The answer after a click on the director's name: who he is, then his films, with the one in the library as a movie id](img/movies/ask-name.png)
+![The pop-up of a cast member: photo, biography, and their films newest first with the watched and not-interested tags](img/movies/person.png)
 
-- A person's TMDB id rides on the first line (`· person 1202689`), so a shared name cannot answer
-  about someone else.
-- One question at a time: the links wait while an answer is still streaming.
+- **The list is newest first**, undated titles last, at most 120, and the line above it counts
+  them and their marks (`42 titles · 5 watched · 1 started · 1 not interested`).
+- **Every title carries what you did with it**, read when the pop-up opens, never stored with the
+  list: `watched` (finished, seen, or your watched flag), `started` (in progress or dropped),
+  `not interested`, `file here` when a file is on this machine, and its movie id when it is stored.
+- **A click on a title opens the movie pop-up** over this one, the same pop-up a movie id in chat
+  opens, with Play and the play menu. A title the library does not hold is stored first (its TMDB
+  details, as its first stream would store it; `POST /api/movies/ensure`), which takes a moment and
+  gives it a movie id; it stays out of the Library grid until it has a file. Esc or a click outside
+  closes the movie pop-up first, then this one.
+- **A genre is collated once.** The first click has Claude search the web for what critics and
+  viewers say of this title's tone and premise and for what is recommended to people who liked it
+  (`NOTESD_MOVIES_STORY_MODEL`, with WebSearch as its one tool; about a minute, and the pop-up
+  says so). Each title it names is then looked up on TMDB by name and year, and one TMDB does not
+  list is left out, never guessed. The result is kept per title and genre, so every later click
+  opens at once. The refresh icon in the header searches and writes it again.
+- **The header's icons.** The chat icon sends the question the name used to ask ("Tell me about
+  Jessica Henwick (Ruth in this film) and list their other films and series. Mark the ones in my
+  library."; for a genre "Recommend other Comedy films similar to ...") through the pill and
+  closes the pop-up; the arrow opens the person's or studio's own page. A person's TMDB id rides
+  on the question's first line (`· person 1202689`), so a shared name cannot answer about someone
+  else. While an answer is still streaming the chat icon is not there, and a character waits.
 - The answer panel lies over part of the page, so on a title's page it folds to its header line as
   soon as you press or turn the wheel anywhere outside it and the pill. Click the header to open
   it again. A pinned panel stays open, and every new answer opens unfolded.
-- Under an answer that came from a link there is a Google icon, which opens a search for that
+- Under an answer that came from a name there is a Google icon, which opens a search for that
   entity in a new tab. In any answer, a film, series or person that is not in the library is a
   link to a web search for it; a title in the library is its movie id, as before.
+
+<a id="the-play-menu"></a>
+**The play menu.** Play goes where the title last played. The caret beside it names the source
+instead, the way a [codename](streaming.md#codenames) does in chat, and every episode row has the
+same caret for that episode. On a series' own menu the stream and site rows play the episode Play
+would carry on with, and the menu's first line names it (`play S01E03 from`).
+
+| Row | What it does |
+| --- | --- |
+| Downloaded file · VLC | Plays the file on this machine (a series: Continue), as Play does when there is one. |
+| Find the download on pahe.ink | In its place when no file is here: the daemon runs the `/pahe` search for the title's name and year, and its best release (BluRay first) opens in a new tab; when pahe lists none, its search page opens. Nothing is downloaded for you. |
+| Non Torrent stream | A cloud provider and never a torrent (`NTM`, `NTS`). The provider that streamed the title last is asked alone first, then the others. |
+| Torrent stream | A torrent (`TM`, `TS`). The very torrent that last played this film or this episode is opened again, with no index asked; the indexes are searched only when none is remembered or its swarm has nothing now. |
+| Idlix, Lk21, Flicksy, Dramacool | Plays on that streaming site, in the streaming Chrome: from the page it played from last time, else from the one page the site's search returns for the name and year. Lk21 and Flicksy play films only, so a series lists Idlix and Dramacool. |
+
+![The play menu on a film's page: the file, the two kinds of stream and the four sites, each with what it remembers](img/movies/play-menu.png)
+
+- **Each row says what it remembers**: `VidRock first, as on Nov 18, 2026`, `the same torrent as
+  on Nov 17, 2026`, `played S01E03 · Nov 16, 2026`, or `found nothing on Nov 15, 2026`. The row the
+  title last played through is flagged `played last`.
+- **What plays is remembered per method** (`movie_title_methods`), on the play's first position
+  report or when a site's player runs, never when it is only asked for. So a torrent that played
+  is still the one Torrent stream opens after a cloud provider played the title in between.
+- **A site that cannot start it says why**: the site does not list it, lists several titles of
+  that name (name one with `/idlix` in chat), or has no such episode.
+- The movie pop-up has the same caret. There, Play itself streams a title that has no file here,
+  which is how a title opened from a person's or a studio's list plays.
 
 **No spoilers past where you are.** A question from a title you have started and not finished
 carries your position, read from the daemon at the moment you ask (`· at 45:15 of 1:45:28`): the
@@ -1104,18 +1154,21 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
 | `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the swarm probes, the off reasons) |
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
+| `src/movies/guides.ts` | The pop-ups of a person, a studio and a genre: TMDB's profile and titles with the owner's marks, and `GenreGuides`, the genre guide collated once with web search |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |
 | `src/movies/vlc/health.ts`, `incidents.ts` | The health log, hang lines, driver resets, video stalls, crash incidents |
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, the Stream list, unmatched, assign, user marks, sync, events; play, continue, player, health; the stream position report is in `src/http/directStreamApi.ts` |
+| `src/http/moviesGuideApi.ts` | Routes behind the names and the play menu: a person, a studio, a genre's guide, storing a listed title, a play on a named site, the pahe search |
 | `src/mcp/movieTools.ts` | The six `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
-| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal` |
+| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal`, `EntityModal` (a person, a studio, a genre), `PlayMenu` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
 | `drizzle/0032_*.sql` | `stream_trending` |
+| `drizzle/0036_movie_title_methods.sql` | `movie_title_methods`, `movie_genre_guides` |
 | `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql`, `drizzle/0021_stream_plays.sql` | The tables; the id sequence, function and triggers; the trailer columns; stream plays and stream sources |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
 
@@ -1141,11 +1194,13 @@ $V down RUN
   continue, recents, MCP, health, health crash).
 - The pictures on this page come from two places (`scripts/docs/shots/movies.mjs`):
   - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:
-    the grid, a film, the trailer pop-up, a series' episodes, the filter clip, and the page of the
-    title VLC has open (kept as it is when VLC has nothing open). It also takes `stream.png`, the Stream side, when
+    the grid, a film, the trailer pop-up, the pop-up of the film's director (`person.png`) and its
+    play menu (`play-menu.png`, opened and closed with no row chosen), a series' episodes, the
+    filter clip, and the page of the title VLC has open (kept as it is when VLC has nothing open).
+    `DOCS_SHOTS_NAMES=1` retakes only those two. It also takes `stream.png`, the Stream side, when
     this machine has at least one verified title; it presses no Play there either. It only looks: no Play, no mark,
-    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks two billed
-    questions for `ask-name.png` and `chat-answer.png`; they stay in the chat history.
+    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks one billed
+    question for `chat-answer.png`; it stays in the chat history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway
     instance. It never touches a picture the live run takes.
   - `DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies` retakes `play.gif` and nothing else.

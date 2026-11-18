@@ -6,6 +6,8 @@ import type {
   EpisodeView,
   FileReason,
   FileView,
+  GuideMark,
+  GuideTitle,
   MoviesStatusResponse,
   PlayedThrough,
   PlayerState,
@@ -23,6 +25,7 @@ import type {
   WatchState,
   TrendingTitle,
 } from '../moviesApi';
+import { STREAMING_SITES, type StreamingSite } from '../moviesApi';
 import type { MoviesRoute } from './route';
 
 export const MOVIES_HEADING = 'Movies.';
@@ -386,6 +389,97 @@ export function episodeAction(d: TitleDetail, e: EpisodeView, side: MoviesSide):
   if (file !== null && file.available) return { kind: 'vlc', file, stream: isFresh(target) ? target : null };
   if (side === 'stream' || isFresh(target)) return { kind: 'stream', target };
   return { kind: 'idle' };
+}
+
+/** One way to play a title, as the play menu lists it: the file, its download page, a kind of stream, or a streaming site by name. */
+export type PlayMethodKey = 'file' | 'pahe' | 'cloud' | 'torrent' | StreamingSite;
+
+export interface PlayMethodItem {
+  key: PlayMethodKey;
+  label: string;
+  /** What is remembered of this method for the title: what played it last, or that it found nothing. */
+  hint: string | null;
+  disabled: boolean;
+  /** The title last played through this method here. */
+  last: boolean;
+}
+
+/** The sites that play one episode of a series; the others play films only. */
+export const EPISODE_SITES: readonly StreamingSite[] = ['idlix', 'dramacool'];
+
+export interface PlayMenuModel {
+  /** `S01E03` for an episode (a series' menu names the episode its Play carries on with); '' for a film. */
+  code: string;
+  /** What the stream and site methods play; null for a series with no episode listed. */
+  target: StreamTarget | null;
+  items: PlayMethodItem[];
+}
+
+/**
+ * The play menu of a title (`episode` null: the film, or the episode a series carries on with) or
+ * of one episode row. The file on this machine, or its download page when there is none; a cloud
+ * stream; a torrent stream; then the streaming sites. Each says what it remembers: the provider
+ * that streamed it, the torrent that played this very film or episode, the site's last episode.
+ */
+export function playMenu(d: TitleDetail, episode: EpisodeView | null, player: PlayerState | null, streamEnabled: boolean): PlayMenuModel {
+  const target = episode !== null ? episodeStreamTarget(d, episode) : streamTarget(d);
+  const code = target?.code ?? '';
+  const through = d.played_through;
+  const method = (name: string) => d.played_methods.find((m) => m.method === name) ?? null;
+  const items: PlayMethodItem[] = [];
+
+  const file = episode !== null ? primaryFile(episode) : null;
+  const plan = episode === null ? playPlan(d) : null;
+  const hasFile = episode !== null ? file !== null && file.available && !file.deleted : plan !== null && (plan.kind === 'file' || plan.kind === 'continue');
+  if (hasFile) {
+    const state = episode !== null && file !== null ? filePlayLabel(file, player, code) : playLabel(plan as PlayPlan, player);
+    items.push({ key: 'file', label: 'Downloaded file · VLC', hint: state.label, disabled: state.disabled, last: through?.channel === 'vlc' });
+  } else {
+    const far = episode !== null ? (file !== null && !file.deleted ? file.host : null) : plan !== null && plan.kind === 'elsewhere' ? plan.host : null;
+    items.push({ key: 'pahe', label: 'Find the download on pahe.ink', hint: far !== null ? `a file is on ${far}, none here` : 'no file on this machine', disabled: false, last: false });
+  }
+
+  const off = !streamEnabled ? 'direct streaming is off on this machine' : target === null ? 'no episode is listed' : null;
+  const cloud = method('cloud');
+  const cloudFailed = d.stream_failed.cloud_at;
+  items.push({
+    key: 'cloud',
+    label: 'Non Torrent stream',
+    hint: off ?? (cloud !== null ? `${cloud.provider ?? 'a cloud provider'} first, as on ${dayText(cloud.played_at)}` : cloudFailed !== null ? `found nothing on ${dayText(cloudFailed)}` : null),
+    disabled: off !== null,
+    last: through?.channel === 'cloud',
+  });
+  const torrent = method('torrent');
+  const torrentFailed = d.stream_failed.torrent_at;
+  const sameSlot = torrent !== null && target !== null && (target.ref.kind === 'movie' ? torrent.season === null : torrent.season === target.ref.season && torrent.episode === target.ref.episode);
+  items.push({
+    key: 'torrent',
+    label: 'Torrent stream',
+    hint: off ?? (torrent !== null ? (sameSlot ? `the same torrent as on ${dayText(torrent.played_at)}` : `last from a torrent on ${dayText(torrent.played_at)}`) : torrentFailed !== null ? `found nothing on ${dayText(torrentFailed)}` : null),
+    disabled: off !== null,
+    last: through?.channel === 'torrent',
+  });
+
+  for (const site of STREAMING_SITES) {
+    if (d.kind === 'tv' && !EPISODE_SITES.includes(site)) continue;
+    const m = method(site);
+    const what = m !== null && m.season !== null && m.episode !== null ? `${episodeCode(m.season, m.episode)} · ` : '';
+    items.push({
+      key: site,
+      label: siteName(site),
+      hint: d.kind === 'tv' && target === null ? 'no episode is listed' : m !== null ? `played ${what}${dayText(m.played_at)}` : null,
+      disabled: d.kind === 'tv' && target === null,
+      last: through?.channel === 'site' && through.provider === site,
+    });
+  }
+  return { code, target, items };
+}
+
+/** What a failed play on a streaming site or a failed pahe search says. */
+export function methodErrorText(code: string, detail: string | null): string {
+  if (code === 'streaming_off') return 'the streaming sites are off on this machine';
+  if (code === 'movies_off') return MOVIES_OFF_TEXT;
+  return detail ?? `it did not start (${code})`;
 }
 
 /** `VidFast · 2160p · English subtitle`. */
@@ -805,7 +899,7 @@ export function moviesChatMessage(text: string, route: MoviesRoute, detail: Titl
 export type MovieEntity =
   | { kind: 'person'; name: string; personId: number; /** "Ruth" for a cast member, "director" for crew; null when unknown. */ role: string | null; cast: boolean }
   | { kind: 'character'; name: string; actor: string; personId: number }
-  | { kind: 'company'; name: string }
+  | { kind: 'company'; name: string; companyId: number }
   | { kind: 'genre'; name: string };
 
 const workWord = (d: TitleDetail): string => (d.kind === 'tv' ? 'series' : 'film');
@@ -885,9 +979,57 @@ export function entityHint(e: MovieEntity): string | null {
 }
 
 export function entityTip(e: MovieEntity): string {
-  if (e.kind === 'genre') return `Find ${e.name} titles like this one`;
+  if (e.kind === 'genre') return `${e.name} titles like this one`;
   if (e.kind === 'character') return `Ask who ${e.name} is`;
-  return `Ask about ${e.name}`;
+  if (e.kind === 'company') return `About ${e.name} and its films and series`;
+  return `About ${e.name} and their films and series`;
+}
+
+/** The names that open the pop-up (EntityModal); a character still asks the chat. */
+export type GuideEntityRef = Exclude<MovieEntity, { kind: 'character' }>;
+
+export function opensGuide(e: MovieEntity): e is GuideEntityRef {
+  return e.kind !== 'character';
+}
+
+export const GUIDE_MARK_LABEL: Record<GuideMark, string> = { watched: 'watched', not_interested: 'not interested', started: 'started' };
+
+/** The pop-up's header line: `person`, `studio`, or `comedy · for How to Make a Killing`. */
+export function guideHeading(e: GuideEntityRef, d: TitleDetail): string {
+  if (e.kind === 'person') return 'person';
+  if (e.kind === 'company') return 'studio';
+  return `genre · for ${d.title}`;
+}
+
+/** What the pop-up says while a genre's guide is collated for the first time. */
+export const GUIDE_WRITING_TEXT = 'Searching the web for what this genre means for this title, and for the titles closest to it. This takes a minute, once; after that it opens at once.';
+
+export function guideErrorText(code: string, detail: string | null): string {
+  switch (code) {
+    case 'guide_off':
+      return 'Genre guides are off on this machine (NOTESD_MOVIES_STORY_MODEL=off, no claude binary, or no TMDB credentials).';
+    case 'tmdb_off':
+      return 'No TMDB credentials are configured, so this cannot be read.';
+    case 'not_found':
+      return 'TMDB does not know this one.';
+    case 'movies_off':
+      return MOVIES_OFF_TEXT;
+    default:
+      return detail ?? `This could not be read (${code}).`;
+  }
+}
+
+/** Under a listed title's name: `2024 · series · as Ruth`. */
+export function guideTitleLine(t: GuideTitle): string {
+  return [t.year === null ? 'undated' : String(t.year), t.kind === 'tv' ? 'series' : '', t.note ?? ''].filter((x) => x !== '').join(' · ');
+}
+
+/** How many listed titles carry each mark: `42 titles · 5 watched · 1 not interested`. */
+export function guideCountLine(titles: readonly GuideTitle[]): string {
+  const n = (m: GuideMark) => titles.filter((t) => t.mark === m).length;
+  return [plural(titles.length, 'title'), n('watched') > 0 ? `${n('watched')} watched` : '', n('started') > 0 ? `${n('started')} started` : '', n('not_interested') > 0 ? `${n('not_interested')} not interested` : '']
+    .filter((x) => x !== '')
+    .join(' · ');
 }
 
 export interface CreditGroup {
@@ -905,7 +1047,7 @@ export function creditGroups(d: TitleDetail): CreditGroup[] {
     more: Math.max(0, people.length - limit),
   });
   const rows: CreditGroup[] = [];
-  if (d.companies.length > 0) rows.push({ label: 'Studios', entities: d.companies.map((c) => ({ kind: 'company', name: c.name })), more: 0 });
+  if (d.companies.length > 0) rows.push({ label: 'Studios', entities: d.companies.map((c) => ({ kind: 'company', name: c.name, companyId: c.id })), more: 0 });
   if (d.creators.length > 0) rows.push(crew('Created by', 'creator', d.creators));
   if (d.directors.length > 0) rows.push(crew('Directed by', 'director', d.directors));
   if (d.writers.length > 0) rows.push(crew('Written by', 'writer', d.writers));

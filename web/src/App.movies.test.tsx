@@ -18,6 +18,21 @@ const CHAT_SSE_IDS =
   'event: done\ndata: {"thread_id":"T-1","user_message_id":"Q001","assistant_message_id":"A001","reply_to":null,"brain":"claude"}\n\n';
 let chatSse: string;
 
+const guideTitle = (over: Record<string, unknown>) => ({ kind: 'movie', tmdb_id: 1, title_id: 'movie-1', title: 'T', year: 2020, release_date: '2020-01-01', poster_url: null, note: null, movie_id: null, mark: null, has_file: false, ...over });
+const PERSON_GUIDE = {
+  entity: { kind: 'person', name: 'Mara Example', image_url: 'https://img.test/mara.jpg', description: 'An actor.', facts: ['Acting'], link: 'https://www.themoviedb.org/person/4' },
+  titles: [
+    guideTitle({ tmdb_id: 467905, title_id: 'movie-467905', title: 'How to Make a Killing', year: 2026, note: 'as Julia', movie_id: 'M-23T4', mark: 'started', has_file: true }),
+    guideTitle({ tmdb_id: 900, title_id: 'movie-900', title: 'Older Film', year: 2019, note: 'as Ann', mark: 'watched', movie_id: 'M-9AAA' }),
+    guideTitle({ tmdb_id: 901, title_id: 'movie-901', title: 'Skipped Film', year: 2018, mark: 'not_interested', movie_id: 'M-9AAB' }),
+    guideTitle({ tmdb_id: 902, title_id: 'movie-902', title: 'Unknown Film', year: 2017 }),
+  ],
+};
+const COMPANY_GUIDE = { entity: { kind: 'company', name: 'Blumhouse Productions', image_url: null, description: '', facts: ['US'], link: null }, titles: [guideTitle({ title: 'Studio Film' })] };
+const GENRE_GUIDE = { entity: { kind: 'genre', name: 'Crime', image_url: null, description: 'A con that curdles.', facts: [], link: null }, titles: [guideTitle({ title: 'Close Cousin', note: 'the same cold humour' })], written_at: '2026-11-18T00:00:00.000Z', model: 'sonnet' };
+/** The stored Crime guide; null until the first POST writes it. */
+let genreStored: typeof GENRE_GUIDE | null;
+
 let calls: string[];
 let posts: { url: string; body: Record<string, unknown> | null }[];
 let off: boolean;
@@ -34,6 +49,7 @@ beforeEach(() => {
   player = PLAYER_IDLE;
   alreadyPlaying = false;
   chatSse = CHAT_SSE;
+  genreStored = null;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -52,6 +68,14 @@ beforeEach(() => {
       if (url.startsWith('/api/movies/search-tmdb?')) return json({ results: SEARCH });
       if (url === '/api/movies/movie-467905' || url === '/api/movies/M-23T4') return json(MOVIE);
       if (url === '/api/movies/tv-247718' || url === '/api/movies/M-0S12' || url === '/api/movies/M-8TR4') return json(SERIES);
+      if (url === '/api/movies/people/4') return json(PERSON_GUIDE);
+      if (url === '/api/movies/companies/3172') return json(COMPANY_GUIDE);
+      if (url === '/api/movies/movie-467905/genres/Crime') {
+        if (method === 'POST') genreStored = GENRE_GUIDE;
+        return json({ guide: genreStored, cached: method !== 'POST' });
+      }
+      if (method === 'POST' && url === '/api/movies/ensure') return json({ title_id: 'movie-902', movie_id: 'M-23T4' });
+      if (url === '/api/movies/movie-467905/pahe') return json({ matches: [{ title: 'How to Make a Killing (2026) WEB-DL', url: 'https://pahe.ink/how-to-make-a-killing', year: 2026, release: 'WEB-DL' }], search_url: 'https://pahe.ink/?s=x' });
       if (method === 'POST' && url === '/api/movies/files/32/assign') return json({ file_id: 32, title: { ...MOVIE, id: 'movie-1125510', title: 'Ne Zha 2' } });
       if (method === 'POST' && url === '/api/movies/continue' && alreadyPlaying) return json({ action: 'already_playing', title: { id: 'movie-467905', title: 'How to Make a Killing', kind: 'movie', year: 2026 }, file: { file_id: 11, season: null, episode: null, absolute_episode: null, name: null }, position: 2710, play: { already_playing: true } });
       if (method === 'POST' && /^\/api\/movies\/files\/\d+\/play$/.test(url) && alreadyPlaying) return json({ ok: true, play: { already_playing: true } }, 202);
@@ -348,7 +372,7 @@ describe('App: Movies', () => {
     expect(String(postsTo('/api/chat')[0]?.message).split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4 · at 45:15 of 1:52:00]');
   });
 
-  it('a person, a studio, a character and a genre on the title page each ask about themselves in one click, with a Google icon under the answer', async () => {
+  it('a person, a studio and a genre on the title page open their pop-up with their titles tagged; a character asks the chat', async () => {
     at('/movies/movie-467905');
     render(<App />);
     const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
@@ -356,38 +380,101 @@ describe('App: Movies', () => {
     const sent = () => postsTo('/api/chat').map((p) => String(p?.message));
 
     fireEvent.click(within(a.getByRole('region', { name: 'Cast' })).getByRole('button', { name: 'Mara Example' }));
+    const person = within(await screen.findByRole('dialog', { name: 'About Mara Example' }));
+    await person.findByText('An actor.');
+    expect(sent()).toHaveLength(0);
+    expect(person.getByRole('status').textContent).toBe('4 titles · 1 watched · 1 started · 1 not interested · newest first');
+    const rows = person.getAllByTestId('guide-title');
+    expect(rows.map((r) => r.dataset.mark ?? null)).toEqual(['started', 'watched', 'not_interested', null]);
+    expect(within(rows[0]!).getByText('file here')).toBeTruthy();
+    expect(within(rows[1]!).getByText('watched')).toBeTruthy();
+    expect(within(rows[2]!).getByText('not interested')).toBeTruthy();
+    expect(within(rows[1]!).getByText('2019 · as Ann')).toBeTruthy();
+
+    // A stored title opens the movie pop-up over this one; Esc closes that one only.
+    fireEvent.click(rows[1]!);
+    await screen.findByRole('dialog', { name: 'Movie M-9AAA' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Movie M-9AAA' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'About Mara Example' })).toBeTruthy();
+
+    // A title the library does not hold is stored first, then opened.
+    fireEvent.click(rows[3]!);
+    await waitFor(() => expect(postsTo('/api/movies/ensure')).toEqual([{ kind: 'movie', tmdb_id: 902 }]));
+    await screen.findByRole('dialog', { name: 'Movie M-23T4' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Movie M-23T4' })).toBeNull());
+
+    // The chat icon sends the question the name used to ask, and closes the pop-up.
+    fireEvent.click(person.getByRole('button', { name: 'Ask the chat about Mara Example' }));
     await waitFor(() => expect(sent()).toHaveLength(1));
     expect(sent()[0]).toBe(
       '[Movies · How to Make a Killing (2026) · M-23T4 · at 45:00 of 1:52:00 · person 4]\nTell me about Mara Example (Julia in this film) and list their other films and series. Mark the ones in my library.',
     );
+    expect(screen.queryByRole('dialog', { name: 'About Mara Example' })).toBeNull();
     await screen.findByText('Watch MobLand next.');
     const google = await screen.findByRole('link', { name: 'Search Google' });
     expect(google.getAttribute('href')).toBe('https://www.google.com/search?q=Mara%20Example%20movies%20and%20series');
-    expect(google.getAttribute('target')).toBe('_blank');
 
     fireEvent.click(a.getByRole('button', { name: 'Julia' }));
     await waitFor(() => expect(sent()).toHaveLength(2));
     expect(sent()[1]!.split('\n')[1]).toBe('Who is Julia, played by Mara Example, in this film?');
     expect(sent()[1]!.split('\n')[0]).toContain('· person 4]');
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Search Google' }).getAttribute('href')).toContain('Julia%20How%20to%20Make%20a%20Killing%202026%20character'));
 
     fireEvent.click(a.getByRole('button', { name: 'Blumhouse Productions' }));
-    await waitFor(() => expect(sent()).toHaveLength(3));
-    expect(sent()[2]!.split('\n')[1]).toBe('Tell me about Blumhouse Productions and list their other films and series. Mark the ones in my library.');
-    expect(sent()[2]!.split('\n')[0]).toBe('[Movies · How to Make a Killing (2026) · M-23T4 · at 45:00 of 1:52:00]');
+    const studio = within(await screen.findByRole('dialog', { name: 'About Blumhouse Productions' }));
+    await studio.findAllByText('Studio Film');
+    expect(studio.queryByTestId('entity-description')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'About Blumhouse Productions' })).toBeNull());
+    expect(sent()).toHaveLength(2);
+  });
 
-    await screen.findByRole('link', { name: 'Search Google' });
-    fireEvent.click(a.getByRole('button', { name: 'Crime' }));
-    await waitFor(() => expect(sent()).toHaveLength(4));
-    expect(sent()[3]!.split('\n')[1]).toBe(
-      'Recommend other Crime films similar to How to Make a Killing: the same tone and premise, not just the genre. Prefer ones I have not seen, and say which are already in my library.',
-    );
-    const director = a.getAllByRole('button', { name: 'Ava Director' });
-    expect(director).toHaveLength(2);
-    await screen.findByRole('link', { name: 'Search Google' });
-    fireEvent.click(director[0]!);
-    await waitFor(() => expect(sent()).toHaveLength(5));
-    expect(sent()[4]!.split('\n')[1]).toBe('Tell me about Ava Director (director of this film) and list their other films and series. Mark the ones in my library.');
+  it('a genre is collated once for the title, then read from the store', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    fireEvent.click(within(article).getByRole('button', { name: 'Crime' }));
+    const first = within(await screen.findByRole('dialog', { name: 'About Crime' }));
+    await first.findByText('A con that curdles.');
+    expect(first.getByText('genre · for How to Make a Killing')).toBeTruthy();
+    expect(first.getByText('2020 · the same cold humour')).toBeTruthy();
+    expect(postsTo('/api/movies/movie-467905/genres/Crime')).toEqual([{}]);
+    fireEvent.click(first.getByRole('button', { name: 'Close' }));
+
+    fireEvent.click(within(article).getByRole('button', { name: 'Crime' }));
+    await within(await screen.findByRole('dialog', { name: 'About Crime' })).findByText('A con that curdles.');
+    expect(postsTo('/api/movies/movie-467905/genres/Crime')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rewrite this guide' }));
+    await waitFor(() => expect(postsTo('/api/movies/movie-467905/genres/Crime')).toEqual([{}, { refresh: true }]));
+    expect(postsTo('/api/chat')).toHaveLength(0);
+  });
+
+  it('the play menu names the source: the file, a cloud stream, a torrent, a site; without a file, pahe', async () => {
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    const openMenu = () => fireEvent.click(within(article).getByRole('button', { name: 'Choose how to play How to Make a Killing' }));
+    openMenu();
+    const menu = within(screen.getByRole('menu', { name: 'Play How to Make a Killing from' }));
+    expect(menu.getAllByRole('menuitem').map((m) => m.dataset.method)).toEqual(['file', 'cloud', 'torrent', 'idlix', 'lk21', 'flicksy', 'dramacool']);
+    fireEvent.click(menu.getByRole('menuitem', { name: /^Torrent stream/ }));
+    await waitFor(() => expect(postsTo('/api/stream/play')).toEqual([{ kind: 'movie', tmdb_id: 467905, provider: 'torrent' }]));
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Non Torrent stream/ }));
+    await waitFor(() => expect(postsTo('/api/stream/play')).toHaveLength(2));
+    expect(postsTo('/api/stream/play')[1]).toEqual({ kind: 'movie', tmdb_id: 467905, provider: 'cloud' });
+
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Lk21/ }));
+    await waitFor(() => expect(postsTo('/api/movies/movie-467905/site-play')).toEqual([{ site: 'lk21' }]));
+
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Downloaded file/ }));
+    await waitFor(() => expect(postsTo('/api/movies/files/11/play')).toHaveLength(1));
   });
 
   it('on a title page, reaching for the page folds the answer panel to its header; the panel itself, the pill and a pinned panel do not', async () => {
@@ -395,7 +482,7 @@ describe('App: Movies', () => {
     render(<App />);
     const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
     const panel = () => document.querySelector('.answer') as HTMLElement;
-    fireEvent.click(within(article).getByRole('button', { name: 'Crime' }));
+    fireEvent.click(within(article).getByRole('button', { name: 'Julia' }));
     await screen.findByText('Watch MobLand next.');
     expect(panel().className).toBe('answer');
 
@@ -409,7 +496,7 @@ describe('App: Movies', () => {
     fireEvent.pointerDown(article);
     expect(panel().className).toBe('answer collapsed');
 
-    fireEvent.click(within(article).getByRole('button', { name: 'Comedy' }));
+    fireEvent.click(within(article).getByRole('button', { name: 'Becket' }));
     await waitFor(() => expect(panel().className).toBe('answer'));
     await screen.findByText('Watch MobLand next.');
     fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
@@ -434,7 +521,7 @@ describe('App: Movies', () => {
     expect((document.querySelector('.answer') as HTMLElement).className).toBe('answer');
   });
 
-  it('entity links wait while an answer is still streaming', async () => {
+  it('character links wait while an answer is still streaming; a name still opens its pop-up, without its chat icon', async () => {
     chatSse = 'event: accepted\ndata: {"thread_id":"t1"}\n\nevent: delta\ndata: {"text":"Thinking"}\n\n';
     let release: () => void = () => {};
     const hold = new Promise<void>((r) => (release = r));
@@ -463,12 +550,17 @@ describe('App: Movies', () => {
     at('/movies/movie-467905');
     render(<App />);
     const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
-    const crime = within(article).getByRole('button', { name: 'Crime' }) as HTMLButtonElement;
+    const crime = within(article).getByRole('button', { name: 'Julia' }) as HTMLButtonElement;
     fireEvent.click(crime);
     await screen.findByText(/Thinking/);
     expect(crime.disabled).toBe(true);
-    fireEvent.click(within(article).getByRole('button', { name: 'Comedy' }));
+    fireEvent.click(within(article).getByRole('button', { name: 'Becket' }));
     expect(postsTo('/api/chat')).toHaveLength(1);
+    fireEvent.click(within(article).getByRole('button', { name: 'Blumhouse Productions' }));
+    const studio = within(await screen.findByRole('dialog', { name: 'About Blumhouse Productions' }));
+    await studio.findAllByText('Studio Film');
+    expect(studio.queryByRole('button', { name: /Ask the chat/ })).toBeNull();
+    fireEvent.click(studio.getByRole('button', { name: 'Close' }));
     release();
     await waitFor(() => expect(crime.disabled).toBe(false));
   });
