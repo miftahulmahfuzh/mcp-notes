@@ -266,7 +266,10 @@ Things that are not obvious:
   `--disable-features=CalculateNativeWinOcclusion`, so a window covered by another still counts
   as visible, and the window is brought to the front. Minimizing it during the wait stops the
   flow; the answer says at which stage, and asking again starts over.
-- **One film at a time.** Starting a film closes the tabs of the other site.
+- **One film at a time.** Starting a film closes the tabs of the other site. Going the other way,
+  the daemon's own player page (`/direct-stream`, a stream from the wall) closes the streaming
+  sites' tabs when it starts a film with sound, and only those: a site's film would go on playing
+  behind it, and a resolver's tab is left alone.
 
 ## The streaming Chrome
 
@@ -653,7 +656,7 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | Answer | Meaning |
 | --- | --- |
 | `direct_stream_off` | `NOTESD_DIRECT_STREAM=off`, `NOTESD_MOVIES=off`, or the daemon was started without it. Nothing is resolved and Chrome is not started |
-| `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried |
+| `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried. Each kind's failure is kept with its day and shown on the title's page ([What played last time plays first](#what-played-last-time-plays-first)) |
 | `pending` | Not an error: `direct_stream_play` answered `started: false, pending: true` because the play outlasted 45 s. See [A play that is being started](#a-play-that-is-being-started) |
 | `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
 | `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
@@ -993,7 +996,9 @@ starts season 2.
 ### Codenames
 
 Six words name where a title is watched from. Each is one whole upper-case word, usually the last
-of a request, and never part of a title. A request without one behaves exactly as before.
+of a request, and never part of a title. A request without one names no source, and the title
+then plays the way it last played on this machine
+([What played last time plays first](#what-played-last-time-plays-first)).
 
 | Codename | Source | Kind | How it plays |
 | --- | --- | --- | --- |
@@ -1048,6 +1053,58 @@ What each one leans on:
 - **10** needs a season without an episode. "House of Dragon" is not the title's exact name, so
   Claude passes "House of the Dragon"; passed as typed, the answer would be `no_match` with the
   series in `did_you_mean`.
+
+### What played last time plays first
+
+Finding a stream is the slow part: a first play may ask twenty providers, look at the picture of
+each stream it finds, and only then turn to the torrents. So the daemon keeps, per title and per
+machine, how the title was last streamed (`movie_title_channels`), and a play that names no source
+goes there first. A series has one answer for all its episodes: what served episode 3 is asked
+first for episode 4.
+
+| The title last played through | A play with no source named |
+| --- | --- |
+| A cloud provider (`VidRock`) | Asks that provider alone. Only when it has no stream now are the others asked, without it, and then the torrents |
+| A torrent | Asks the torrents first: no cloud provider is tried unless they find nothing |
+| A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Plays on that site again, from the title's page its search returned. When the site does not start it, the title is streamed the usual way |
+| Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers |
+| Nothing yet | The long way: every cloud provider, then the torrents |
+
+- **This machine's stream cache and a finished torrent download still come first**: they need no
+  search at all.
+- **A named source always wins.** A codename (`play Summer Vacation TS`), `provider` in the tool or
+  a provider's name is asked whatever is remembered.
+- **The last success wins.** What is remembered is what last really played: the player page's first
+  position report for a cloud or torrent stream, a site's player running for a site. So a title
+  played once with `TS` goes to the torrents from then on, until something else plays it.
+- **A remembered provider that fails says nothing of the title.** Its failure is an attempt in the
+  answer and its health, and the title is not marked stale for it.
+- **Failures are kept with their day**: when every cloud provider found nothing, and when every
+  torrent did. A play of that kind clears its failure. They never stop a play: the title's page
+  shows them, and asking again tries again.
+- **A title streamed before this was kept** answers by its last stream play, so nothing has to be
+  played again to be remembered.
+
+**A play on a streaming site is kept too.** `claude/streaming/cli.mjs` reports every play that
+started to the daemon (`POST /api/movies/site-play`, on `127.0.0.1` and `NOTESD_PORT`; `kept` in
+its answer says what became of it), whether a skill ran it in Claude Code or a streaming tool did
+in the chat bar. The daemon finds the title by its name and year, among the stored titles first
+and then on TMDB, stores it when it is new, and gives it one play (the site as its provider,
+position unknown: a site's player is in another host's frame and reports none) and the site as
+its channel. The title is then on the [Stream side](movies.md#the-stream-side) with its TMDB
+poster and page, and Play there goes back to the site. An episode played on a site reads as
+started and never as finished by itself; a series last played on a site carries on with the
+episode after the last one played.
+
+**A title TMDB does not list** has no title to hang the play on. It is kept by what the site's own
+page says of it (`cli.mjs <site> --details <title url>`: the poster, synopsis, country, status and
+genres; dramacool reads them, a site whose module reads none keeps the name and year) in
+`movie_site_titles`, and shown in its own section of the Stream side, "From streaming sites".
+It has no page: its poster plays the next episode on the site again.
+
+What is not kept: a play started by its address alone (`--play-url`, after "which of these two?")
+names no title, and a play whose name two titles share is left out rather than guessed
+(`kept.reason`: `no_name`, `several_matches`).
 
 ### What a title says: its dialogue
 
@@ -1842,13 +1899,14 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 
 | Path | What |
 | --- | --- |
-| `claude/streaming/cli.mjs` | The one command: find, `--play`, `--play-url` |
+| `claude/streaming/cli.mjs` | The one command: find, `--play`, `--play-url`, `--play-from` (an episode from a title page already known), `--details`; it reports each play that started to the daemon |
 | `claude/streaming/sites/*.mjs`, `sites/index.mjs` | One module per site, and the list of them |
 | `claude/streaming/match.mjs`, `play.mjs`, `chrome.mjs` | Title matching; the shared play flow and the fill-screen style; running `cdp.ps1` |
 | `claude/streaming/cdp.ps1` | The Windows half: Chrome, tabs, frames, one expression |
 | `claude/skills/pahe/`, `idlix/`, `lk21/`, `flicksy/`, `dramacool/` | The skills; `pahe/search.mjs` also holds the title parsing the others share |
 | `claude/skills/create-streaming-skill/` | How to add a site |
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
+| `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a play sent back to its site (`replayOnSite`); the routes the command and the Stream side call |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
 | `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |

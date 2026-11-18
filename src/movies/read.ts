@@ -11,12 +11,15 @@ import {
   moviePeople,
   moviePlays,
   movieStreamSources,
+  movieTitleChannels,
   movieTitleCompanies,
   movieTitles,
   notes,
 } from '../db/schema.js';
 import { emptyTitleMovieIds, episodeKey, movieIdsOfTitles, type TitleMovieIds } from './ids.js';
 import { freshStreamSourceSql } from './repo.js';
+import { STREAMING_SITES } from '../streaming/service.js';
+import { TORRENT_PROVIDER_NAME } from './streams.js';
 import { reviewText } from './reviewNote.js';
 import { FINISHED_RATIO, episodeState, fileState, resumePosition, streamLeads, streamState, titleState, type SourceSummary } from './state.js';
 import { posterUrl, type TmdbSearchHit } from './tmdb.js';
@@ -239,7 +242,24 @@ export interface TitleDetail extends TitleListItem {
   plays: PlayView[];
   /** This host's verified stream sources (direct streaming): the film's, or each episode's. */
   stream_sources: StreamSourceView[];
+  /** How the title was last played on this host; null: never. A play with no source named goes there again. */
+  played_through: PlayedThrough | null;
+  /** When each kind of stream last found nothing for the title on this host; null: it never failed, or played since. */
+  stream_failed: { cloud_at: string | null; torrent_at: string | null };
   metadata_fetched_at: string | null;
+}
+
+/**
+ * How a title was last played on this host: a downloaded file in VLC (`vlc`), a cloud provider's
+ * stream (`cloud`, `provider` names it), a torrent, or a streaming site (`site`, `provider` names
+ * it: `dramacool`). `season` and `episode` are those of that play; null for a film.
+ */
+export interface PlayedThrough {
+  channel: 'vlc' | 'cloud' | 'torrent' | 'site';
+  provider: string | null;
+  played_at: string;
+  season: number | null;
+  episode: number | null;
 }
 
 /** One verified stream source of this host, as the routes answer it (a film is season 0, episode 0). */
@@ -798,7 +818,8 @@ export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext):
 
 /**
  * The Stream grid's titles (direct streaming, invariant 10): those with a source verified on
- * `ctx.host` at or after `freshSince` and not stale (repo.ts freshStreamSourceSql), files or not.
+ * `ctx.host` at or after `freshSince` and not stale (repo.ts freshStreamSourceSql), files or not,
+ * and those last played here on a streaming site.
  * `filter.scope` is ignored. GET /api/movies/stream (phase 9) calls it with
  * `streamFreshSince(now, config.directStream.freshDays)`.
  */
@@ -807,7 +828,9 @@ export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadCon
   // filter) for as long as this host ever verified it: the mark can always be taken back here.
   const kept = sql`(movie_titles.not_interested_at is not null and exists (
     select 1 from movie_stream_sources s where s.title_id = movie_titles.id and s.host = ${ctx.host} and s.verified_at is not null))`;
-  return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept})`);
+  // A title last played on a streaming site has no source to verify: it is listed for as long as that is how it plays here.
+  const onSite = sql`exists (select 1 from movie_title_channels c where c.title_id = movie_titles.id and c.host = ${ctx.host} and c.channel = 'site')`;
+  return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept} or ${onSite})`);
 }
 
 /**
@@ -959,6 +982,37 @@ async function streamSourceViews(db: Db, titleIdValue: string, host: string): Pr
   }));
 }
 
+/**
+ * How the title was last played on `host`: its last stream as movie_title_channels keeps it, or its
+ * last file play (`plays`: the title's plays, newest first) when that is the later one.
+ */
+async function playedThrough(db: Db, titleIdValue: string, host: string, plays: readonly PlayView[]): Promise<Pick<TitleDetail, 'played_through' | 'stream_failed'>> {
+  const [row] = await db
+    .select()
+    .from(movieTitleChannels)
+    .where(and(eq(movieTitleChannels.titleId, titleIdValue), eq(movieTitleChannels.host, host)))
+    .limit(1);
+  const stream_failed = { cloud_at: isoOrNull(row?.cloudFailedAt ?? null), torrent_at: isoOrNull(row?.torrentFailedAt ?? null) };
+  // No channel kept yet (a title streamed before the table existed, or copied in): its last stream play here says.
+  const earlier = row === undefined ? plays.find((p) => p.source === 'stream' && p.host === host && p.provider !== null) : undefined;
+  const streamed: PlayedThrough | null =
+    row !== undefined && row.channel !== null && row.playedAt !== null
+      ? { channel: row.channel, provider: row.provider, played_at: row.playedAt.toISOString(), season: row.season, episode: row.episode }
+      : earlier !== undefined
+        ? {
+            channel: earlier.provider === TORRENT_PROVIDER_NAME ? 'torrent' : (STREAMING_SITES as readonly string[]).includes(earlier.provider ?? '') ? 'site' : 'cloud',
+            provider: earlier.provider === TORRENT_PROVIDER_NAME ? null : earlier.provider,
+            played_at: earlier.started_at,
+            season: earlier.season,
+            episode: earlier.episode,
+          }
+        : null;
+  const file = plays.find((p) => p.file_id !== null && p.host === host);
+  const onFile: PlayedThrough | null = file === undefined ? null : { channel: 'vlc', provider: null, played_at: file.started_at, season: file.season, episode: file.episode };
+  const played_through = onFile !== null && (streamed === null || Date.parse(onFile.played_at) > Date.parse(streamed.played_at)) ? onFile : streamed;
+  return { played_through, stream_failed };
+}
+
 /** One title with every file (deleted and other hosts included), episodes, credits, review and recent plays. */
 export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<TitleDetail | null> {
   const [t] = await db.select().from(movieTitles).where(eq(movieTitles.id, id)).limit(1);
@@ -1004,6 +1058,7 @@ export async function getTitle(db: Db, id: string, ctx: ReadContext): Promise<Ti
     unplaced_files: built.unplaced,
     plays,
     stream_sources: streamSources,
+    ...(await playedThrough(db, t.id, ctx.host, plays)),
     metadata_fetched_at: isoOrNull(t.metadataFetchedAt),
   };
 }

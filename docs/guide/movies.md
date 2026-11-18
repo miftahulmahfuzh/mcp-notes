@@ -68,6 +68,8 @@ change behaviour:
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
 | Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
 | Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
+| How it was last streamed | `movie_title_channels` | Per host | One row per title: the channel it last really played through here (`cloud` with the provider, `torrent` with the info hash, `site` with the site and the title's page there), the season and episode of that play, and when every cloud provider, and every torrent, last found nothing. A play with no source named asks that channel first ([streaming.md](streaming.md#what-played-last-time-plays-first)). A file played in VLC is not kept here: it is read from the plays. |
+| Title TMDB does not list | `movie_site_titles` | Per host | A title played on a streaming site that has no TMDB entry, so no row in `movie_titles`: its name, year, and the poster, synopsis, country, status and genres its page on the site gives, with the episode last played. Removed only by its button on the Stream side. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
 `MoviesRepo` (`src/movies/repo.ts`) is the only writer of these tables. Watch state is not in any of
@@ -78,7 +80,8 @@ A title first met through a stream is stored like any other (TMDB details, credi
 it stays out of the Library grid until it has a file: the Library lists titles with a file on
 either machine, and titles that were never streamed. Opened by id (`/movies/<id>`, `movies_get`)
 it shows like any title, with its stream plays. A title is on the Stream side only while one of
-its source rows on this machine was verified within `NOTESD_STREAM_FRESH_DAYS` and is not stale.
+its source rows on this machine was verified within `NOTESD_STREAM_FRESH_DAYS` and is not stale,
+or while a streaming site is how it was last played here.
 
 ## The scan
 
@@ -424,8 +427,10 @@ and the open title every five seconds.
 The Stream icon at the top of `/movies` opens `/movies?side=stream`: the same poster grid and
 filters, filled from `GET /api/movies/stream` instead of the library. A title is on it only when a
 provider returned a playable stream for it on this machine within the freshness window
-(`NOTESD_STREAM_FRESH_DAYS`, 7 days by default) and its last try did not fail. Nothing else is
-shown there, so every poster plays. A title with no file is not dimmed on this side, and there is
+(`NOTESD_STREAM_FRESH_DAYS`, 7 days by default) and its last try did not fail, or when it was
+last played here on a streaming site (`/dramacool summer vacation 3`: such a title has no source
+to verify, and stays for as long as the site is how it plays). Nothing else is shown there, so
+every poster plays. A title with no file is not dimmed on this side, and there is
 no `gone` pill. The title played last is first, at the top left, whatever its state; a title that
 was verified but never played comes after, newest first. The header says how many titles are
 verified and over how many days.
@@ -454,8 +459,35 @@ A poster opens the title's page at `/movies/<id>?side=stream`, the same page as 
 source: provider, best quality and whether it has an English subtitle (`Stream: VidFast · 2160p ·
 English subtitle`).
 
+Every title's page, on either side, also says how it was last played on this machine, which is
+where Play goes again unless you name another source:
+
+| The line | Meaning |
+| --- | --- |
+| `Previously played through VLC (Downloaded File)` | A file on this machine, in VLC |
+| `Previously played through VidRock (Non Torrent)` | A cloud provider's stream, by its name |
+| `Previously played through Magnet (Torrent)` | A torrent |
+| `Previously played through Dramacool` (`Idlix`, `Lk21`, `Flicksy`) | A streaming site |
+| `Never been played before` | Nothing was played here, and the title is unwatched |
+| `Not played on this machine yet` | Nothing was played here, but the title is not unwatched: it was marked by hand, or played on the other machine |
+| `... · all Non Torrent stream methods failed on <day>` | Every cloud provider found nothing that day |
+| `... · all Torrent stream methods failed on <day>` | Every torrent found nothing that day |
+| `... · all Direct (Non Torrent and Torrent) stream methods failed, last on <day>` | Both did |
+
+A played title's line carries the episode and the day (`· S01E03 · Nov 18, 2026`), and a kind that
+failed since (`· Non Torrent found nothing on Nov 17, 2026`). A failure is what happened that day,
+not a verdict: Play tries again whenever you ask. What a play with no source named does with all
+this is in [streaming.md](streaming.md#what-played-last-time-plays-first).
+
+**From streaming sites.** Under the grid, a title played on a streaming site that TMDB does not
+list has its own section: the site's poster, its name, year and the episode last played. It has no
+page. Its poster (or the play icon) plays the next episode on the site again, the second icon the
+last episode once more, and the cross takes it off the list.
+
 - **Play** asks the daemon to resolve the title and open the player full screen in the streaming
-  Chrome, with no further click; the page says "opening in the streaming Chrome". When no provider
+  Chrome, with no further click; the page says "opening in the streaming Chrome". A title last
+  played on a streaming site plays there instead (the button says "on Dramacool, where it played
+  last time"), and one last played from a torrent goes to the torrents first. When no provider
   answers, the source is marked stale, the page says "no provider could stream <title> now; it
   leaves the Stream grid", and the title is gone from the grid on the refresh that follows.
 - **A file on this machine wins.** When a title has both a file here and a verified stream, Play
@@ -1071,7 +1103,7 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/reviewNote.ts` | The review as a note through `NotesService` |
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
 | `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the swarm probes, the off reasons) |
-| `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position |
+| `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
 | `src/movies/vlc/recents.ts` | `[RecentsMRL]` to play observations |

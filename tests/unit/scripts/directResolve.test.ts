@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { ChromeError } from '../../../claude/streaming/chrome.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { ANIME_SEED_PATH, main, openInChrome, parseArgs, readHealth, readProviders, SEED_PATH, START_EXPRESSION, wantsStart } from '../../../claude/streaming/direct/cli.mjs';
+import { ANIME_SEED_PATH, main, openInChrome, parseArgs, readHealth, readProviders, SEED_PATH, SITE_HOSTS, START_EXPRESSION, wantsStart } from '../../../claude/streaming/direct/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { orderProviders } from '../../../claude/streaming/direct/order.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -438,7 +438,8 @@ describe('the command', () => {
     // The page went full screen itself: the window is never made full screen (F11's kind, which a double click cannot leave).
     const own = await run('started');
     expect(own.result).toMatchObject({ ok: true, started: true });
-    expect(own.asked.map((a) => a[1])).toEqual([{ show: true, windowState: 'normal' }, {}]);
+    // A film that starts with sound closes the streaming sites' tabs first: their film would go on playing behind it.
+    expect(own.asked.map((a) => a[1])).toEqual([{ show: true, windowState: 'normal', closeHosts: SITE_HOSTS }, {}]);
     // The film started but Chrome did not give the page the screen: the window takes it.
     const windowed = await run('windowed');
     expect(windowed.result).toMatchObject({ ok: true, started: true });
@@ -462,7 +463,8 @@ describe('the command', () => {
     const wait = async (): Promise<void> => {};
     const played = await openInChrome('http://localhost:7317/stream/abc', { fullscreen: true }, { evaluate, wait });
     expect(played).toEqual({ ok: true, url: 'http://localhost:7317/stream/abc', fullscreen: true, started: true });
-    expect(asked[0]).toEqual(['http://localhost:7317', "location.assign(\"/stream/abc\"); 'ok'", { show: true, windowState: 'normal' }]);
+    expect(asked[0]).toEqual(['http://localhost:7317', "location.assign(\"/stream/abc\"); 'ok'", { show: true, windowState: 'normal', closeHosts: SITE_HOSTS }]);
+    expect(SITE_HOSTS).toContain('dramacool9.com.ro');
     expect(asked.slice(1).map((a) => a[1])).toEqual([START_EXPRESSION, START_EXPRESSION, START_EXPRESSION]);
 
     asked.length = 0;

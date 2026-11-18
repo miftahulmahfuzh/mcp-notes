@@ -17,6 +17,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeError, evaluateInChrome, sleep } from '../chrome.mjs';
+import { SITES } from '../sites/index.mjs';
 import { isBotCheckPage } from '../torrent/page.mjs';
 // Origin-agnostic despite its home: the tab these drive is named by address, never a torrent site.
 import { askInTab, BotCheckError, foregroundTab, secondsLeft } from '../torrent/browser.mjs';
@@ -255,6 +256,9 @@ export function readHealth(text) {
   return health;
 }
 
+/** The hosts of the streaming sites (sites/*.mjs): where a film may be playing in a tab of its own. */
+export const SITE_HOSTS = Object.values(SITES).map((site) => new URL(site.origin).host);
+
 /** A full-screen open starts the film with sound, except for a muted check (`?muted=1`, phase 6). */
 export function wantsStart(url, fullscreen) {
   return fullscreen === true && new URL(url).searchParams.get('muted') !== '1';
@@ -262,7 +266,8 @@ export function wantsStart(url, fullscreen) {
 
 /**
  * Opens a daemon page in the streaming Chrome, in front, full screen when asked. Never throws.
- * Other tabs are left alone: a resolve may have one open. With `fullscreen` (and no `muted=1`),
+ * Other tabs are left alone: a resolve may have one open. Only a streaming site's tab is closed,
+ * and only for a play that starts with sound: its film would go on playing behind this one. With `fullscreen` (and no `muted=1`),
  * it then calls the player's start() as a user gesture so the film plays with sound (D2); a page
  * that never exposes start() leaves `started: false` and the page's own muted start stands.
  *
@@ -276,7 +281,7 @@ export async function openInChrome(url, { fullscreen }, { evaluate = evaluateInC
   const target = new URL(url);
   const where = `${target.pathname}${target.search}${target.hash}`;
   const starts = wantsStart(url, fullscreen);
-  const go = () => evaluate(target.origin, `location.assign(${JSON.stringify(where)}); 'ok'`, { show: true, windowState: fullscreen && !starts ? 'fullscreen' : 'normal' });
+  const go = () => evaluate(target.origin, `location.assign(${JSON.stringify(where)}); 'ok'`, { show: true, windowState: fullscreen && !starts ? 'fullscreen' : 'normal', ...(starts ? { closeHosts: SITE_HOSTS } : {}) });
   try {
     // A Chrome that is just closing still answers its port and then drops the call. Once more
     // starts a fresh one (as claude/streaming/play.mjs does).

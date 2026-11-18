@@ -1354,6 +1354,90 @@ export const movieStreamSources = pgTable(
   ],
 )
 
+/** How a title was last played on a host: a downloaded file in VLC is derived from `movie_plays`, never stored here. */
+export const MOVIE_CHANNELS = ['cloud', 'torrent', 'site'] as const
+export type MovieChannel = (typeof MOVIE_CHANNELS)[number]
+
+/**
+ * How a title was last streamed on one host, and which kinds of stream last found nothing (migration
+ * 0034). One row per (title, host): a series has one, whatever the episode, since what served one
+ * episode is asked first for the next. Written by MoviesRepo only: `recordChannel` when a play really
+ * started (the player page's first position report, or a streaming site's player running), which also
+ * clears that kind's failure; `recordChannelFailure` when every cloud provider, or every torrent,
+ * found nothing. `provider` is the cloud provider's name (`VidRock`) or the streaming site's
+ * (`dramacool`); `info_hash` the torrent that played; `site_url` the title's page on the site, as
+ * the site's search returned it. `season` and `episode` are those of that play (null for a film).
+ * A row may hold failures only (`channel` null): the title was asked for and never played.
+ */
+export const movieTitleChannels = pgTable(
+  'movie_title_channels',
+  {
+    titleId: text('title_id')
+      .notNull()
+      .references(() => movieTitles.id, { onDelete: 'cascade' }),
+    host: text('host').notNull(),
+    channel: text('channel').$type<MovieChannel>(),
+    provider: text('provider'),
+    infoHash: text('info_hash'),
+    siteUrl: text('site_url'),
+    season: integer('season'),
+    episode: integer('episode'),
+    playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }),
+    cloudFailedAt: timestamp('cloud_failed_at', { withTimezone: true, mode: 'date' }),
+    torrentFailedAt: timestamp('torrent_failed_at', { withTimezone: true, mode: 'date' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.titleId, t.host] }),
+    check('movie_title_channels_channel_check', sql`${t.channel} is null or ${t.channel} in ('cloud', 'torrent', 'site')`),
+    check('movie_title_channels_played_check', sql`(${t.channel} is null) = (${t.playedAt} is null)`),
+    check(
+      'movie_title_channels_detail_check',
+      sql`(${t.channel} is distinct from 'torrent' or ${t.provider} is null)
+        and (${t.channel} is not distinct from 'torrent' or ${t.infoHash} is null)
+        and (${t.channel} is not distinct from 'site' or ${t.siteUrl} is null)
+        and (${t.channel} is null or ${t.channel} = 'torrent' or ${t.provider} is not null)
+        and (${t.channel} is distinct from 'site' or ${t.siteUrl} is not null)
+        and (${t.season} is null) = (${t.episode} is null)`,
+    ),
+  ],
+)
+
+/**
+ * A title played on a streaming site that TMDB does not list (migration 0035), per host: it has no
+ * `movie_titles` row, so it is kept here with what the site's own page says of it, and shown on the
+ * Stream side from this row alone. One row per (host, site, the title's page on the site). `kind`
+ * is `series` for a list of episodes (`season`, `episode`: the one last played) and `movie` for a
+ * film. Written by MoviesRepo only (`keepSiteTitle`, `removeSiteTitle`).
+ */
+export const movieSiteTitles = pgTable(
+  'movie_site_titles',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    host: text('host').notNull(),
+    site: text('site').notNull(),
+    siteUrl: text('site_url').notNull(),
+    kind: text('kind').$type<'movie' | 'series'>().notNull(),
+    name: text('name').notNull(),
+    year: integer('year'),
+    posterUrl: text('poster_url'),
+    overview: text('overview').notNull().default(''),
+    country: text('country'),
+    status: text('status'),
+    genres: text('genres').array().notNull().default(sql`'{}'::text[]`),
+    alsoKnown: text('also_known'),
+    season: integer('season'),
+    episode: integer('episode'),
+    playedAt: timestamp('played_at', { withTimezone: true, mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('movie_site_titles_page_uniq').on(t.host, t.site, t.siteUrl),
+    check('movie_site_titles_kind_check', sql`${t.kind} in ('movie', 'series')`),
+    check('movie_site_titles_slot_check', sql`(${t.season} is null) = (${t.episode} is null)`),
+  ],
+)
+
 /** The closed sets of the stream tables (migration 0020). The CHECK constraints enforce the same lists. */
 export const STREAM_ID_KINDS = ['tmdb', 'imdb', 'anilist'] as const
 export type StreamIdKind = (typeof STREAM_ID_KINDS)[number]
@@ -1694,6 +1778,8 @@ export type MovieEpisodeRow = typeof movieEpisodes.$inferSelect
 export type MovieFileRow = typeof movieFiles.$inferSelect
 export type MoviePlayRow = typeof moviePlays.$inferSelect
 export type MovieStreamSourceRow = typeof movieStreamSources.$inferSelect
+export type MovieTitleChannelRow = typeof movieTitleChannels.$inferSelect
+export type MovieSiteTitleRow = typeof movieSiteTitles.$inferSelect
 export type MovieDialogueRow = typeof movieDialogues.$inferSelect
 export type StreamProviderRow = typeof streamProviders.$inferSelect
 export type StreamProviderHealthRow = typeof streamProviderHealth.$inferSelect

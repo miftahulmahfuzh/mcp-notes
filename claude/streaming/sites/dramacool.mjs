@@ -98,6 +98,40 @@ export function parseEpisodes(html, origin = ORIGIN) {
   return episodes;
 }
 
+const text = (html) => decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+
+/**
+ * What a title's own page says of it: { poster_url, overview, country, status, year, genres,
+ * also_known }, each null (or []) when the page does not say. For a title TMDB does not list, this
+ * is all there is to show of it.
+ */
+export function parseDetails(html, origin = ORIGIN) {
+  const block = /<p class="([a-z-]+)">([\s\S]*?)<\/p>/g;
+  const said = {};
+  for (const m of html.matchAll(block)) said[m[1]] = m[2];
+  const poster = /<figure class="drama-thumbnail">[\s\S]*?<img[^>]*\bdata-original="([^"]+)"/.exec(html);
+  let posterUrl = null;
+  try {
+    const url = poster ? new URL(decodeEntities(poster[1]), origin) : null;
+    if (url && url.protocol === 'https:') posterUrl = url.href;
+  } catch {}
+  const synopsis = /<div class="synopsis">([\s\S]*?)<\/div>/.exec(html);
+  const overview = synopsis ? text(synopsis[1]).replace(/^Synopsis:\s*/i, '') : '';
+  const known = /<span>Also known as:\s*<\/span>([\s\S]*?)<\/p>/.exec(html);
+  const value = (name, label) => (said[name] === undefined ? null : text(said[name]).replace(label, '').trim() || null);
+  const year = value('release-year', /^Release Year:/i);
+  const genres = value('genres', /^Genres:/i);
+  return {
+    poster_url: posterUrl,
+    overview: overview === '' ? null : overview,
+    country: value('country', /^Country:/i),
+    status: value('status', /^Status:/i),
+    year: year !== null && /^\d{4}$/.test(year) ? Number(year) : null,
+    genres: genres === null ? [] : genres.split(',').map((g) => g.trim()).filter(Boolean),
+    also_known: known ? text(known[1]) || null : null,
+  };
+}
+
 /** On the episode page: wait for the player's frame and say where it points. */
 export const FIND_FRAME_EXPRESSION = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -188,6 +222,12 @@ export default {
       .map((hit) => ({ season: pageSeason, episode: hit.episode, name: null, has_video: true, url: hit.url }));
   },
 
+  /** What the title's own page says of it (parseDetails). Throws for an address that is not a title page on the site. */
+  async details(titleUrl) {
+    if (pathOnSite(titleUrl, ORIGIN, TITLE_PATH) === null) throw new Error(`not a title page on ${ORIGIN}: ${titleUrl}`);
+    return parseDetails(await get(titleUrl));
+  },
+
   async search(query) {
     // The site's own search page; its first page (20 titles) is read.
     const html = await get(`${ORIGIN}/?s=${encodeURIComponent(query.name).replace(/%20/g, '+')}`);
@@ -195,13 +235,20 @@ export default {
   },
 
   async start({ evalPage, sleep, pathname }) {
-    // The old page may still answer for a moment while the new one loads.
+    // The old page may still answer for a moment while the new one loads. And now and then the
+    // site's advertising sends the tab to an advert's address in place of the episode: the site's
+    // tab is then a new one on another page, and the episode is asked for again, as a person
+    // would go back and click it again.
     let page = null;
-    for (let attempt = 0; attempt < 4 && !(page?.frame && new URL(page.url).pathname === pathname); attempt++) {
+    const onEpisode = () => page?.url !== undefined && new URL(page.url).pathname === pathname;
+    for (let attempt = 0; attempt < 6 && !(page?.frame && onEpisode()); attempt++) {
       if (attempt > 0) await sleep(1500);
       page = await evalPage(FIND_FRAME_EXPRESSION, { show: true, timeoutS: 30 }).catch(() => null);
+      if (page !== null && !onEpisode() && attempt >= 1) {
+        await evalPage(`location.assign(${JSON.stringify(pathname)}); 'ok'`, { show: true, closeOtherTabs: true }).catch(() => null);
+      }
     }
-    if (!page?.frame || new URL(page.url).pathname !== pathname) return { playing: false, stage: 'no_player' };
+    if (!page?.frame || !onEpisode()) return { playing: false, stage: 'no_player' };
     // The frame loads after the page, and one press is not always enough. Ask until it runs.
     const expression = startPlayerExpression(page.frame);
     const frameMatch = frameMatchOf(page.frame);

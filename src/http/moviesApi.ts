@@ -33,6 +33,7 @@ import { titleId as makeTitleId } from '../movies/types.js';
 import { parseDateBound } from '../notes/dates.js';
 import { NoteError } from '../notes/types.js';
 import { describeIssues, readJson, SSE_HEARTBEAT_MS } from './api.js';
+import { siteTitleView, type SiteTitleView } from '../streaming/sitePlays.js';
 import { sameOriginOnly } from './sameOrigin.js';
 import { isFreshForTrending, isSkippedLanguage, type TrendingOffReason, type TrendingStatus } from '../directStream/trending/job.js';
 import { TrendingRepo } from '../directStream/trending/repo.js';
@@ -90,7 +91,7 @@ export type TitleDetailResponse = Omit<TitleDetail, 'stream_sources'> & { stream
 
 /** `GET /api/movies/stream`. Off is a normal answer, not an error, so the page can say how to turn it on. */
 export type StreamListResponse =
-  | { enabled: true; titles: TitleListItem[]; fresh_days: number }
+  | { enabled: true; titles: TitleListItem[]; fresh_days: number; /** The titles played on a streaming site that TMDB does not list, this machine's, the one played last first. */ site_titles: SiteTitleView[] }
   | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
 
 /** One title of the Trending section: the grid's shape plus what the indexes and the swarm probe said of its torrent. */
@@ -333,7 +334,7 @@ export function moviesApiRoutes(
    */
   api.get(
     '/api/movies/stream',
-    withMovies(async (c, _movies, ctx) => {
+    withMovies(async (c, movies, ctx) => {
       const window = streamWindow(deps);
       if (window === null) {
         const off: StreamListResponse = { enabled: false, reason: 'direct_stream_off', titles: [] };
@@ -343,6 +344,7 @@ export function moviesApiRoutes(
         enabled: true,
         titles: await listStreamTitles(db, {}, ctx, window.since),
         fresh_days: window.freshDays,
+        site_titles: (await movies.repo.siteTitles(movies.host)).map(siteTitleView),
       };
       return c.json(body);
     }),

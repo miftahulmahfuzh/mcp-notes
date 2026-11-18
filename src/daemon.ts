@@ -212,11 +212,12 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       console.error(`[notesd] direct stream: could not close stale stream plays: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  // Builds nothing and runs nothing until a streaming tool is called.
-  const streaming = config.streaming?.enabled ? scriptRunner() : null;
   // The bound port, known only after listen() (config.port may be 0). The chat agent reaches notes
-  // through this daemon's own /mcp, and a direct-stream play opens this daemon's player page.
+  // through this daemon's own /mcp, a direct-stream play opens this daemon's player page, and the
+  // streaming command reports its plays to it.
   let boundPort: number | null = null;
+  // Builds nothing and runs nothing until a streaming tool is called.
+  const streaming = config.streaming?.enabled ? scriptRunner({ port: () => boundPort }) : null;
   // Direct streaming: null with NOTESD_DIRECT_STREAM=off or NOTESD_MOVIES=off. The provider seed is
   // loaded into the shared registry here; the resolver and Chrome run only when a play or a tool asks.
   // null with NOTESD_ANIME_MAP_URL=off: no lookup is made and an anime resolves like any series.
@@ -375,6 +376,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
             neighbors: (ref) => movieStreams.neighbors(ref),
             imdbId: (ref) => movieStreams.imdbId(ref),
             titleNames: (ref) => movieStreams.titleNames(ref),
+            channel: (ref) => movieStreams.channel(ref),
+            channelFailed: (ref, kind) => movieStreams.channelFailed(ref, kind),
           },
   });
   if (directStream !== null) {

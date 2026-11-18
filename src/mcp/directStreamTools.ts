@@ -45,6 +45,7 @@ import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSourc
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
 import { MovieStreams } from '../movies/streams.js';
+import { replayOnSite } from '../streaming/sitePlays.js';
 import { TmdbError, type TmdbCatalog, type TmdbClient, type TmdbDiscovery, type TmdbGenre, type TmdbNamedHit } from '../movies/tmdb.js';
 import { titleId, type TitleKind } from '../movies/types.js';
 import { DEFAULT_WALL_URL } from './instructions.js';
@@ -142,6 +143,11 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
       return id === null ? false : movies.repo.addTitleAlias(id, normalizeName(name));
     },
     play: async (target, provider, magnet) => {
+      // No provider named: a title last played on a streaming site plays there again.
+      if (provider === undefined && magnet === undefined) {
+        const onSite = await replayOnSite(target, await service.remembered(target), { runner: deps.streaming ?? null, streams: new MovieStreams(movies) });
+        if (onSite !== null) return { site: onSite.site, site_url: onSite.url, site_play: onSite.play };
+      }
       const out = await service.playWithin(target, { ...(provider === undefined ? {} : { provider }), ...(magnet === undefined ? {} : { magnet }) }, PLAY_ANSWER_MS);
       return out.pending ? out : out.result;
     },
@@ -196,6 +202,8 @@ const PLAY_DESCRIPTION =
   'or skipped_play episode_unclear with candidates when the count and the numbering name different episodes (list them and ask; then call again with that season and episode), or no_such_episode when the series is shorter. Otherwise: ' +
   'without them the daemon picks the episode from what was watched, on file or streamed (picked: first, nothing played yet; resume, the episode played last is unfinished and carries on where it stopped; next, the episode after the last finished one). ' +
   'started true: the player page is open, season and episode say which episode, and play carries the session and the source (provider, quality, subtitles). ' +
+  'The daemon remembers how each title was last streamed on this machine, and a call without provider goes there first: the cloud provider that streamed it (alone; the others only when it has no stream now), the torrents, or the streaming site it was played on (idlix, lk21, flicksy, dramacool), where play is then { site, site_url, site_play } with no session. ' +
+  'A title never streamed whose last cloud search found nothing in the last three days goes to the torrents first. Naming a provider (a codename) always overrides this, and what plays then is what is remembered from then on. ' +
   'started false with skipped_play says why nothing started: several_matches (list candidates with their years and ask which, then call again with that one\'s movie_id, or title and year), ' +
   'caught_up (every episode after the last one played is finished or there is none: say so, with last and seasons), not_aired (the next episode airs on air_date), ' +
   'or no_match: did_you_mean lists titles close to the words, none of them the asked name; show them with their years and ask which. When the owner picks one, call again with its title_key (or movie_id) and asked_as set to the name the owner first used, ' +
@@ -714,6 +722,18 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
               next:
                 'Not started yet, and not failed: the daemon is still starting it and opens the player by itself as soon as a source plays. Tell the owner in one line that it is still being started and what is being tried (stage), with the attempts so far when there are any. ' +
                 'Then call direct_stream_play again with exactly the same arguments: that joins the play in flight (it never starts a second one) and answers its outcome, or pending again. Do not try another source or another tool meanwhile.',
+            });
+          }
+          const onSite = (play as { site?: unknown } | null)?.site;
+          if (typeof onSite === 'string') {
+            return ok({
+              started: true,
+              title: candidateView(await stored(), wall),
+              ...picked,
+              play,
+              next:
+                `It is playing on ${onSite}, the streaming site it was last played on here, full screen in the streaming Chrome window (F11 leaves full screen): play.site_url is its page there. Say so in one line${target.kind === 'tv' ? ', with the season and episode' : ''}. ` +
+                'It did not go through a cloud provider or a torrent; the owner names another source to get one (NTM, NTS: provider "cloud"; TM, TS: provider "torrent").',
             });
           }
           return ok({

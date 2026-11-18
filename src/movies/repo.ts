@@ -13,17 +13,22 @@ import {
   movieEpisodes,
   movieFiles,
   moviePeople,
+  movieSiteTitles,
   moviePlays,
   movieStreamSources,
+  movieTitleChannels,
   movieTitleCompanies,
   movieTitles,
   type MovieFileRow,
   type MoviePlayRow,
+  type MovieSiteTitleRow,
   type MovieStreamSourceRow,
+  type MovieTitleChannelRow,
   type MovieTitleRow,
 } from '../db/schema.js';
 import { FINISHED_RATIO } from './state.js';
 import {
+  type ChannelPlay,
   type EpisodeRef,
   classifyReason,
   titleId,
@@ -37,6 +42,8 @@ import {
   type NewPlay,
   type PlayReading,
   type RecentsObservation,
+  type SitePlayInput,
+  type SiteTitleInput,
   type StreamPositionInput,
   type StreamPositionWrite,
   type StreamSourceOutcome,
@@ -907,6 +914,144 @@ export class MoviesRepo {
       .from(movieStreamSources)
       .where(and(eq(movieStreamSources.titleId, titleIdValue), eq(movieStreamSources.host, host)))
       .orderBy(asc(movieStreamSources.season), asc(movieStreamSources.episode));
+  }
+
+  // ---------- how a title was last streamed (movie_title_channels) ----------
+
+  /** How the title was last streamed on `host`, and which kinds of stream last found nothing; null when nothing was recorded. */
+  async channelOf(titleIdValue: string, host: string): Promise<MovieTitleChannelRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(movieTitleChannels)
+      .where(and(eq(movieTitleChannels.titleId, titleIdValue), eq(movieTitleChannels.host, host)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * The title's newest stream play on `host`, any episode: what stands in for its channel while no
+   * row says (plays copied in from the shared database have none). A streaming site's play is passed
+   * over: without its row nothing knows the title's page there.
+   */
+  async lastStreamPlayOfTitle(titleIdValue: string, host: string, sites: readonly string[]): Promise<MoviePlayRow | null> {
+    const rows = await this.db
+      .select()
+      .from(moviePlays)
+      .where(and(eq(moviePlays.source, 'stream'), eq(moviePlays.titleId, titleIdValue), eq(moviePlays.host, host), isNotNull(moviePlays.provider)))
+      .orderBy(desc(moviePlays.startedAt), desc(moviePlays.id))
+      .limit(20);
+    return rows.find((r) => r.provider !== null && !sites.includes(r.provider)) ?? null;
+  }
+
+  /**
+   * A stream of the title really started on the host: its row now names this channel, whatever it
+   * named before (the last success wins), and that kind's failure is cleared.
+   */
+  async recordChannel(input: ChannelPlay): Promise<MovieTitleChannelRow> {
+    const values = {
+      channel: input.channel,
+      provider: input.channel === 'torrent' ? null : input.provider,
+      infoHash: input.channel === 'torrent' ? input.infoHash : null,
+      siteUrl: input.channel === 'site' ? input.siteUrl : null,
+      season: input.season,
+      episode: input.episode,
+      playedAt: input.at,
+      updatedAt: input.at,
+      ...(input.channel === 'cloud' ? { cloudFailedAt: null } : input.channel === 'torrent' ? { torrentFailedAt: null } : {}),
+    };
+    const [row] = await this.db
+      .insert(movieTitleChannels)
+      .values({ titleId: input.titleId, host: input.host, ...values })
+      .onConflictDoUpdate({ target: [movieTitleChannels.titleId, movieTitleChannels.host], set: values })
+      .returning();
+    if (row === undefined) throw new Error('movie_title_channels upsert returned no row');
+    return row;
+  }
+
+  /** Every cloud provider (`cloud`) or every torrent (`torrent`) found nothing for the title on the host. The channel it last played through stays. */
+  async recordChannelFailure(titleIdValue: string, host: string, kind: 'cloud' | 'torrent', at: Date): Promise<void> {
+    const values = kind === 'cloud' ? { cloudFailedAt: at, updatedAt: at } : { torrentFailedAt: at, updatedAt: at };
+    await this.db
+      .insert(movieTitleChannels)
+      .values({ titleId: titleIdValue, host, ...values })
+      .onConflictDoUpdate({ target: [movieTitleChannels.titleId, movieTitleChannels.host], set: values });
+  }
+
+  /**
+   * A streaming site's player started the title on the host. The site's player is in another
+   * host's frame and reports no position, so the play is one closed row, "opened, position
+   * unknown", with the site as its provider; and the title's channel is this site.
+   */
+  async recordSitePlay(input: SitePlayInput, session: string): Promise<MoviePlayRow> {
+    const [play] = await this.db
+      .insert(moviePlays)
+      .values({
+        fileId: null,
+        titleId: input.titleId,
+        season: input.season,
+        episode: input.episode,
+        provider: input.site,
+        streamSession: session,
+        host: input.host,
+        source: 'stream',
+        startedAt: input.at,
+        endedAt: input.at,
+        startPositionS: null,
+        positionS: null,
+        durationS: null,
+        updatedAt: input.at,
+      })
+      .returning();
+    if (play === undefined) throw new Error('movie_plays insert returned no row');
+    await this.recordChannel({ titleId: input.titleId, host: input.host, season: input.season, episode: input.episode, at: input.at, channel: 'site', provider: input.site, siteUrl: input.siteUrl });
+    return play;
+  }
+
+  // ---------- titles TMDB does not list (movie_site_titles) ----------
+
+  /**
+   * A title TMDB does not list was played on a streaming site: its row on the host is made, or gets
+   * this play's episode and time. What the title's page said replaces what was kept only where it
+   * says something, so a play whose page could not be read keeps the poster and synopsis it had.
+   */
+  async keepSiteTitle(input: SiteTitleInput): Promise<MovieSiteTitleRow> {
+    const said = {
+      ...(input.posterUrl ? { posterUrl: input.posterUrl } : {}),
+      ...(input.overview ? { overview: input.overview } : {}),
+      ...(input.country ? { country: input.country } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.genres !== undefined && input.genres.length > 0 ? { genres: input.genres } : {}),
+      ...(input.alsoKnown ? { alsoKnown: input.alsoKnown } : {}),
+    };
+    const played = { kind: input.kind, name: input.name, year: input.year, season: input.season, episode: input.episode, playedAt: input.at };
+    const [row] = await this.db
+      .insert(movieSiteTitles)
+      .values({ host: input.host, site: input.site, siteUrl: input.siteUrl, ...played, ...said, createdAt: input.at })
+      .onConflictDoUpdate({ target: [movieSiteTitles.host, movieSiteTitles.site, movieSiteTitles.siteUrl], set: { ...played, ...said } })
+      .returning();
+    if (row === undefined) throw new Error('movie_site_titles upsert returned no row');
+    return row;
+  }
+
+  /** The host's titles TMDB does not list, the one played last first. */
+  async siteTitles(host: string): Promise<MovieSiteTitleRow[]> {
+    return this.db.select().from(movieSiteTitles).where(eq(movieSiteTitles.host, host)).orderBy(desc(movieSiteTitles.playedAt), desc(movieSiteTitles.id));
+  }
+
+  async siteTitleById(id: number): Promise<MovieSiteTitleRow | null> {
+    const [row] = await this.db.select().from(movieSiteTitles).where(eq(movieSiteTitles.id, id)).limit(1);
+    return row ?? null;
+  }
+
+  /** The play of a kept site title that just started: its episode and time. */
+  async playedSiteTitle(id: number, season: number | null, episode: number | null, at: Date): Promise<void> {
+    await this.db.update(movieSiteTitles).set({ season, episode, playedAt: at }).where(eq(movieSiteTitles.id, id));
+  }
+
+  /** Takes a site title off the host's list (the owner's button). True when there was one. */
+  async removeSiteTitle(id: number): Promise<boolean> {
+    const rows = await this.db.delete(movieSiteTitles).where(eq(movieSiteTitles.id, id)).returning({ id: movieSiteTitles.id });
+    return rows.length > 0;
   }
 
   // ---------- dialogue (src/directStream/dialogue.ts) ----------

@@ -215,7 +215,7 @@ describe('buildChatSystemPrompt', () => {
   });
 
   it('knows the six watch codenames, and what the ten requests they were written for lean on', () => {
-    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'provider "cloud"', 'provider "torrent"', 'never part of a title', 'asks for nothing', 'pass no provider']) expect(prompt, word).toContain(word);
+    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'provider "cloud"', 'provider "torrent"', 'never part of a title', 'asks for nothing', 'passes no provider', 'the way it last played on this machine', 'A codename always overrides that']) expect(prompt, word).toContain(word);
     expect(prompt).toMatch(/when filters\.keywords_dropped is true the list was not filtered by the keyword/);
     expect(prompt).toMatch(/Through My Window, 2022/);
     expect(prompt).toMatch(/is direct_stream_play with season alone/);

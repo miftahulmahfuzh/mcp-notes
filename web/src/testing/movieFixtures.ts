@@ -91,6 +91,8 @@ function detailOf(item: TitleListItem, over: Partial<TitleDetail>): TitleDetail 
     unplaced_files: [],
     plays: [],
     stream_sources: [],
+    played_through: null,
+    stream_failed: { cloud_at: null, torrent_at: null },
     metadata_fetched_at: ISO,
     ...over,
   };

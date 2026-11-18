@@ -24,6 +24,7 @@ import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
   DirectStreamError,
+  type RememberedChannel,
   isEnglish,
   refLabel,
   toStreamRef,
@@ -92,6 +93,13 @@ export interface DirectStreamHooks {
    * (torrent phase 3). Null: unknown; the finder then checks no title.
    */
   titleNames?: (ref: StreamRef) => Promise<{ title: string; originalTitle: string | null; year: number | null; episodeInSeason?: number | null } | null>;
+  /**
+   * How the title was last streamed on this machine and which kinds of stream last found nothing. A play with no
+   * provider named asks that channel first. Null: nothing is known, and the play goes the long way.
+   */
+  channel?: (ref: StreamRef) => Promise<RememberedChannel | null>;
+  /** Every cloud provider (`cloud`) or every torrent (`torrent`) found nothing for the title. */
+  channelFailed?: (ref: StreamRef, kind: 'cloud' | 'torrent') => Promise<void>;
 }
 
 export interface SessionSubtitle {
@@ -285,6 +293,12 @@ const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_s
 
 /** A torrent session no page asked about for this long lets go of its torrent (the page reports every 5 s, paused or not). */
 export const TORRENT_IDLE_MS = 2 * 60_000;
+/**
+ * A play with no provider named goes to the torrents before the cloud providers while the title's last
+ * cloud search found nothing less than this long ago (and no torrent search failed since): the cloud search is
+ * the slow one, and it has just been made.
+ */
+export const CLOUD_FAILURE_KEEP_MS = 3 * 24 * 60 * 60_000;
 const TORRENT_SWEEP_MS = 60_000;
 
 /** cacheSession's answer: the session as it is now, whether this call moved it onto the cache, and where the download stands. */
@@ -424,14 +438,15 @@ export class DirectStreamService {
    * has run before this returns or throws. Always resolves: a cache is `play`'s business, and
    * `subtitleText` needs a resolved source.
    */
-  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean } = {}): Promise<StreamSession> {
+  async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean; skip?: readonly string[] } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
+    const left = options.skip ?? [];
     // `vet`: something is about to be watched or kept (a play, a cache), so the picture is looked at
     // (picture.ts). Not for a provider the owner named, and not for a resolve that only reads a subtitle.
     const out =
       options.vet === true && options.only === undefined
-        ? await this.vetted(ref, [], (skip, later) => (later ? this.resolveQuietly(ref, skip) : this.resolveSource(ref, options.deadlineS, skip)))
-        : await this.resolveSource(ref, options.deadlineS, [], options.only);
+        ? await this.vetted(ref, left, (skip, later) => (later ? this.resolveQuietly(ref, skip) : this.resolveSource(ref, options.deadlineS, skip)))
+        : await this.resolveSource(ref, options.deadlineS, left, options.only);
     const resumeS = await this.startAt(ref, options.resumeS ?? null);
     const session = this.sessions.create(ref, out.source, out.attempts, resumeS, await this.audioLang(ref));
     safeRecord(this.evidence, sessionRecord(session, 'created', null));
@@ -593,7 +608,7 @@ export class DirectStreamService {
     if (magnet !== null) session = await this.magnetSession(ref, resumeS, magnet, track);
     else if (only === null) session = await this.sessionFor(ref, resumeS, track);
     else if (namesTorrent(only)) session = (await this.diskSession(ref, resumeS)) ?? (await this.torrentSession(ref, resumeS, null, track));
-    else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.cloudSession(ref, { resumeS, vet: true }, track));
+    else if (namesCloud(only)) session = (await this.cachedSession(ref, resumeS)) ?? (await this.everyCloud(ref, resumeS, track));
     else session = await this.cloudSession(ref, { resumeS, only }, track);
     track.stage = 'opening the player page';
     track.attempts = session.attempts;
@@ -601,27 +616,122 @@ export class DirectStreamService {
   }
 
   /** `resolve`, with the play's stage said first: the cloud resolver answers its attempts only at its end. */
-  private cloudSession(ref: StreamRef, options: { resumeS?: number | null; only?: string; vet?: boolean }, track: PlayTrack | null): Promise<StreamSession> {
+  private cloudSession(ref: StreamRef, options: { resumeS?: number | null; only?: string; vet?: boolean; skip?: readonly string[] }, track: PlayTrack | null): Promise<StreamSession> {
     if (track !== null) track.stage = options.only === undefined ? 'asking the cloud providers' : `asking ${options.only}`;
     return this.resolve(ref, options);
   }
 
   /**
-   * A play with no provider named: this host's stream cache, then this host's finished torrent download of the
-   * title (R2.9: no index, no swarm), then the cloud providers, and after them the torrent source.
+   * How the title was last streamed on this machine (the `channel` hook), or null. The routes and tools read it
+   * to send a play with no provider named back to a streaming site.
+   */
+  async remembered(input: StreamRefInput): Promise<RememberedChannel | null> {
+    const hook = this.opts.hooks?.channel;
+    if (hook === undefined) return null;
+    const ref = toStreamRef(input);
+    return this.hookValue('channel', () => hook(ref));
+  }
+
+  private async failed(ref: StreamRef, kind: 'cloud' | 'torrent'): Promise<void> {
+    const hook = this.opts.hooks?.channelFailed;
+    if (hook !== undefined) await this.hookValue('channelFailed', async () => (await hook(ref, kind), null));
+  }
+
+  /**
+   * A play with no provider named. This host's stream cache, then this host's finished torrent download of the
+   * title (R2.9: no index, no swarm). Then what streamed the title last time: that cloud provider alone, or the
+   * torrents; a title never streamed whose cloud search just found nothing goes to the torrents too. Only when
+   * that finds nothing does the play go the long way: every cloud provider, and after them the torrent source.
    */
   private async sessionFor(ref: StreamRef, resumeS: number | null, track: PlayTrack | null = null): Promise<StreamSession> {
-    return (await this.cachedSession(ref, resumeS)) ?? (await this.diskSession(ref, resumeS)) ?? (await this.resolveOrTorrent(ref, resumeS, track));
+    const local = (await this.cachedSession(ref, resumeS)) ?? (await this.diskSession(ref, resumeS));
+    if (local !== null) return local;
+    const known = await this.remembered(ref);
+    if (known !== null && known.channel === 'cloud' && known.provider !== null) {
+      const provider = known.provider;
+      const tried: ResolveAttempt[] = [];
+      const again = await this.rememberedCloud(ref, provider, resumeS, track, tried);
+      if (again !== null) return again;
+      return this.after(tried, () => this.resolveOrTorrent(ref, resumeS, track, [provider]));
+    }
+    if (known !== null && this.torrentSource() !== null && this.torrentsFirst(known)) {
+      try {
+        if (track !== null) track.stage = known.channel === 'torrent' ? 'asking the torrents, which streamed it last time' : 'asking the torrents: no cloud provider had it last time';
+        return await this.torrentSession(ref, resumeS, null, track);
+      } catch (err) {
+        if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+        return this.after(err.attempts, () => this.everyCloud(ref, resumeS, track));
+      }
+    }
+    return this.resolveOrTorrent(ref, resumeS, track);
+  }
+
+  /** True when the torrents are asked before the cloud providers: they streamed the title last, or the title never streamed and its last cloud search, a recent one, found nothing. */
+  private torrentsFirst(known: RememberedChannel): boolean {
+    if (known.channel === 'torrent') return true;
+    if (known.channel === 'cloud' || known.cloudFailedAt === null) return false;
+    const cloudAt = known.cloudFailedAt.getTime();
+    if (this.now().getTime() - cloudAt >= CLOUD_FAILURE_KEEP_MS) return false;
+    return known.torrentFailedAt === null || known.torrentFailedAt.getTime() < cloudAt;
+  }
+
+  /**
+   * The provider that streamed the title last time, asked alone. Null when it has no stream now (`tried` gets its
+   * attempts): the play then asks the others. A failure here says nothing of the title, so the recordResolve hook
+   * runs only on a success.
+   */
+  private async rememberedCloud(ref: StreamRef, provider: string, resumeS: number | null, track: PlayTrack | null, tried: ResolveAttempt[]): Promise<StreamSession | null> {
+    if (track !== null) track.stage = `asking ${provider}, which streamed it last time`;
+    const out = await this.runResolve(ref, { only: provider });
+    if (!out.ok) {
+      tried.push(...out.attempts);
+      if (track !== null) track.attempts = [...tried];
+      this.log(`[notesd] direct stream: ${provider} streamed ${refLabel(ref)} last time and has no stream now (${out.error}); asking the others`);
+      return null;
+    }
+    const hook = this.opts.hooks?.recordResolve;
+    if (hook !== undefined) {
+      try {
+        await hook(ref, out);
+      } catch (err) {
+        this.log(`[notesd] direct stream: the recordResolve hook failed: ${messageOf(err)}`);
+      }
+    }
+    const session = this.sessions.create(ref, out.source, out.attempts, await this.startAt(ref, resumeS), await this.audioLang(ref));
+    safeRecord(this.evidence, sessionRecord(session, 'created', null));
+    return session;
+  }
+
+  /** `run`, with the attempts made before it put first in its session's, or in its failure's. */
+  private async after(earlier: readonly ResolveAttempt[], run: () => Promise<StreamSession>): Promise<StreamSession> {
+    if (earlier.length === 0) return run();
+    try {
+      const session = await run();
+      session.attempts = [...earlier, ...session.attempts];
+      return session;
+    } catch (err) {
+      if (!(err instanceof DirectStreamError)) throw err;
+      throw new DirectStreamError(err.code, err.message, { ...(err.reason === null ? {} : { reason: err.reason }), attempts: [...earlier, ...err.attempts] });
+    }
+  }
+
+  /** Every cloud provider but `skip`, with the picture looked at (picture.ts). When none has the title, that is kept (`channelFailed`). */
+  private async everyCloud(ref: StreamRef, resumeS: number | null, track: PlayTrack | null, skip: readonly string[] = []): Promise<StreamSession> {
+    try {
+      return await this.cloudSession(ref, { resumeS, vet: true, skip }, track);
+    } catch (err) {
+      if (err instanceof DirectStreamError && err.code === 'no_source') await this.failed(ref, 'cloud');
+      throw err;
+    }
   }
 
   /**
    * The cloud resolve, and when no provider resolves the title (`no_source`) or the resolve could not run
    * (`resolve_failed`: a torrent needs no Chrome), the torrent source. Torrents off: exactly `resolve`.
    */
-  private async resolveOrTorrent(ref: StreamRef, resumeS: number | null, track: PlayTrack | null): Promise<StreamSession> {
+  private async resolveOrTorrent(ref: StreamRef, resumeS: number | null, track: PlayTrack | null, skip: readonly string[] = []): Promise<StreamSession> {
     try {
-      // `vet`: a play looks at the picture of what the cloud providers answer (picture.ts).
-      return await this.cloudSession(ref, { resumeS, vet: true }, track);
+      return await this.everyCloud(ref, resumeS, track, skip);
     } catch (err) {
       if (!(err instanceof DirectStreamError) || (err.code !== 'no_source' && err.code !== 'resolve_failed') || this.torrentSource() === null) throw err;
       return this.torrentSession(ref, resumeS, err, track);
@@ -662,6 +772,7 @@ export class DirectStreamService {
     });
     const attempts = [...before, ...out.attempts];
     if (!out.ok) {
+      await this.failed(ref, 'torrent');
       if (cloud !== null && cloud.code === 'resolve_failed') {
         throw new DirectStreamError('resolve_failed', cloud.message, { ...(cloud.reason === null ? {} : { reason: cloud.reason }), attempts });
       }

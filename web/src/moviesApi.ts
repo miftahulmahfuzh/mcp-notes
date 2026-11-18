@@ -221,7 +221,24 @@ export interface TitleDetail extends TitleListItem {
   plays: PlayView[];
   /** This machine's verified stream sources, in season and episode order; [] when none. */
   stream_sources: StreamSourceView[];
+  /** How the title was last played on this machine; null: never. Play goes there again unless another source is named. */
+  played_through: PlayedThrough | null;
+  /** When each kind of stream last found nothing for the title on this machine; null: never, or it played since. */
+  stream_failed: { cloud_at: string | null; torrent_at: string | null };
   metadata_fetched_at: string | null;
+}
+
+/**
+ * How a title was last played on this machine: a downloaded file in VLC, a cloud provider's stream
+ * (`provider` names it), a torrent, or a streaming site (`provider` names it: `dramacool`).
+ * `season` and `episode` are that play's; null for a film.
+ */
+export interface PlayedThrough {
+  channel: 'vlc' | 'cloud' | 'torrent' | 'site';
+  provider: string | null;
+  played_at: string;
+  season: number | null;
+  episode: number | null;
 }
 
 export interface ParsedView {
@@ -397,8 +414,30 @@ export type AssignBody = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb
 
 /** `GET /api/movies/stream`. Off is an answer, not an error: the page says how to turn it on. */
 export type StreamListResponse =
-  | { enabled: true; titles: TitleListItem[]; fresh_days: number }
+  | { enabled: true; titles: TitleListItem[]; fresh_days: number; /** Titles played on a streaming site that TMDB does not list; absent reads as none. */ site_titles?: SiteTitle[] }
   | { enabled: false; reason: 'direct_stream_off'; titles: TitleListItem[] };
+
+/**
+ * A title played on a streaming site that TMDB does not list: it has no title page, only what the
+ * site's own page says of it. `season` and `episode` are the episode last played; null for a film.
+ */
+export interface SiteTitle {
+  id: number;
+  site: string;
+  site_url: string;
+  kind: 'movie' | 'series';
+  name: string;
+  year: number | null;
+  poster_url: string | null;
+  overview: string;
+  country: string | null;
+  status: string | null;
+  genres: string[];
+  also_known: string | null;
+  season: number | null;
+  episode: number | null;
+  played_at: string;
+}
 
 /** The body of phase 3's `POST /api/stream/play`. A series always names its episode. `provider` asks that one provider only (`torrent`). */
 export type StreamRef = ({ kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season: number; episode: number }) & { provider?: string };
@@ -494,6 +533,8 @@ function normalizeDetail(d: TitleDetail): TitleDetail {
     unplaced_files: list(d.unplaced_files),
     plays: list(d.plays),
     stream_sources: list(d.stream_sources),
+    played_through: d.played_through ?? null,
+    stream_failed: { cloud_at: d.stream_failed?.cloud_at ?? null, torrent_at: d.stream_failed?.torrent_at ?? null },
   };
 }
 
@@ -614,8 +655,8 @@ export async function continueTitle(titleId: string): Promise<ContinueResult> {
 
 /** The Stream side's titles. Anything but a well-formed `enabled: true` reads as off. */
 export async function fetchStreamTitles(signal?: AbortSignal): Promise<StreamListResponse> {
-  const j = await getJson<{ enabled?: unknown; titles?: TitleListItem[] | null; fresh_days?: unknown }>('/api/movies/stream', signal);
-  if (j.enabled === true && typeof j.fresh_days === 'number') return { enabled: true, titles: list(j.titles), fresh_days: j.fresh_days };
+  const j = await getJson<{ enabled?: unknown; titles?: TitleListItem[] | null; fresh_days?: unknown; site_titles?: SiteTitle[] | null }>('/api/movies/stream', signal);
+  if (j.enabled === true && typeof j.fresh_days === 'number') return { enabled: true, titles: list(j.titles), fresh_days: j.fresh_days, site_titles: list(j.site_titles) };
   return { enabled: false, reason: 'direct_stream_off', titles: [] };
 }
 
@@ -640,7 +681,21 @@ export async function askTrendingRefresh(): Promise<void> {
   await postJson<unknown>('/api/movies/trending/refresh', {});
 }
 
+/** Plays a title TMDB does not list on its streaming site again: the film, or `episode` (none: the one after the last played). Throws ApiError `no_episode`, `not_playing`, `streaming_off`. */
+export async function playSiteTitle(id: number, episode?: number): Promise<{ episode: number | null }> {
+  const r = await postJson<{ episode?: unknown }>(`/api/movies/site-titles/${id}/play`, episode === undefined ? {} : { episode });
+  return { episode: typeof r?.episode === 'number' ? r.episode : null };
+}
+
+/** Takes a title TMDB does not list off this machine's Stream side. */
+export async function removeSiteTitle(id: number): Promise<void> {
+  const res = await fetch(`/api/movies/site-titles/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw await failure(res);
+}
+
 /** Phase 3: resolve the title and open the player page full screen in the streaming Chrome. Throws ApiError `no_source`, `direct_stream_off`, ... */
-export async function streamPlay(ref: StreamRef): Promise<void> {
-  await postJson<unknown>('/api/stream/play', ref);
+export async function streamPlay(ref: StreamRef): Promise<{ site: string | null }> {
+  const r = await postJson<{ site?: unknown }>('/api/stream/play', ref);
+  // A title last played on a streaming site plays there again: the answer names the site and carries no session.
+  return { site: typeof r?.site === 'string' ? r.site : null };
 }

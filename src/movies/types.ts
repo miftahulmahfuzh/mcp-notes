@@ -7,6 +7,7 @@ import type {
   MovieParsedName,
   MoviePlayRow,
   MoviePlaySource,
+  MovieChannel,
   MovieStreamSourceRow,
   MovieTitleKind,
 } from '../db/schema.js';
@@ -18,7 +19,7 @@ import type {
  * TMDB match stores, phase 2 builds it, `MoviesRepo.upsertTitle` writes it).
  */
 
-export type { MovieFileRow, MoviePlayRow, MovieStreamSourceRow, MovieTitleRow } from '../db/schema.js';
+export type { MovieFileRow, MoviePlayRow, MovieSiteTitleRow, MovieStreamSourceRow, MovieTitleChannelRow, MovieTitleRow } from '../db/schema.js';
 
 export type TitleKind = MovieTitleKind;
 export type FileStatus = MovieFileStatus;
@@ -298,6 +299,56 @@ export interface StreamSourceKey {
 export type StreamSourceOutcome =
   | (StreamSourceKey & { outcome: 'verified'; provider: string; manifestKind: string; bestHeight: number | null; enSubtitle: boolean })
   | (StreamSourceKey & { outcome: 'stale'; failure: string });
+
+/** How a title is streamed: a cloud provider, a torrent, or a streaming site (`MOVIE_CHANNELS`). */
+export type StreamChannel = MovieChannel;
+
+/**
+ * A stream that really started, for `MoviesRepo.recordChannel`: the title's row on the host is
+ * replaced by it (the last success wins). `season` and `episode` are both null for a film.
+ */
+export type ChannelPlay = { titleId: string; host: string; season: number | null; episode: number | null; at: Date } & (
+  | { channel: 'cloud'; provider: string }
+  | { channel: 'torrent'; infoHash: string | null }
+  | { channel: 'site'; provider: string; siteUrl: string }
+);
+
+/** A streaming site's player that started, for `MoviesRepo.recordSitePlay`: the play row and the title's channel. */
+export interface SitePlayInput {
+  titleId: string;
+  host: string;
+  /** The site's name (`dramacool`). */
+  site: string;
+  /** The title's page on the site, as its search returned it. */
+  siteUrl: string;
+  season: number | null;
+  episode: number | null;
+  at: Date;
+}
+
+/**
+ * A title played on a streaming site that TMDB does not list, for `MoviesRepo.keepSiteTitle`: what
+ * the site's search and the title's own page say of it, and the play that just started.
+ */
+export interface SiteTitleInput {
+  host: string;
+  site: string;
+  /** The title's page on the site, as its search returned it. */
+  siteUrl: string;
+  kind: 'movie' | 'series';
+  name: string;
+  year: number | null;
+  /** What the title's page says; all absent when the site's module reads no details. */
+  posterUrl?: string | null;
+  overview?: string | null;
+  country?: string | null;
+  status?: string | null;
+  genres?: string[];
+  alsoKnown?: string | null;
+  season: number | null;
+  episode: number | null;
+  at: Date;
+}
 
 /** One episode of a series, by season and number. */
 export interface EpisodeRef {

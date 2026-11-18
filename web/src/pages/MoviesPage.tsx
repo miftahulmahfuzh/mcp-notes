@@ -3,11 +3,12 @@ import { ArrowLeft, ArrowsClockwise, Books, Broadcast, FilmSlate, Question, Warn
 import { MovieDetail } from '../components/movies/MovieDetail';
 import { MoviesGrid } from '../components/movies/MoviesGrid';
 import { MoviesPill } from '../components/movies/MoviesPill';
+import { SiteTitlesSection } from '../components/movies/SiteTitlesSection';
 import { TrendingSection } from '../components/movies/TrendingSection';
 import { UnmatchedList } from '../components/movies/UnmatchedList';
 import { useNotice } from '../hooks/useNotice';
 import type { MoviesStore } from '../hooks/useMovies';
-import { askProberPass, askTrendingRefresh, errorCode, fetchProber, saveTitleUser, startSync, streamPlay, type ProberState, type TitleListItem, type TrendingTitle } from '../moviesApi';
+import { askProberPass, askTrendingRefresh, errorCode, fetchProber, playSiteTitle, removeSiteTitle, saveTitleUser, startSync, streamPlay, type ProberState, type SiteTitle, type TitleListItem, type TrendingTitle } from '../moviesApi';
 import {
   detailIsFor,
   emptyLibraryText,
@@ -146,6 +147,30 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
       show(errorCode(e) === 'trending_off' ? 'the trending list is off: set NOTESD_TRENDING=on and restart notesd' : `refresh refused: ${errorCode(e)}`);
     } finally {
       setTrendBusy(false);
+      refreshStore();
+    }
+  };
+  // A title TMDB does not list plays on its streaming site again: there is no other source for it.
+  const [siteBusy, setSiteBusy] = useState(false);
+  const playOnSite = async (t: SiteTitle, episode?: number) => {
+    setSiteBusy(true);
+    show(`${t.name}: opening on ${t.site}`);
+    try {
+      const played = await playSiteTitle(t.id, episode);
+      show(played.episode === null ? `${t.name}: playing on ${t.site} in the streaming Chrome window` : `${t.name}: episode ${played.episode} is playing on ${t.site} in the streaming Chrome window`);
+    } catch (e) {
+      show(errorCode(e) === 'no_episode' ? `${t.name}: ${t.site} lists no later episode yet` : `${t.name}: could not play on ${t.site} (${errorCode(e)})`);
+    } finally {
+      setSiteBusy(false);
+      refreshStore();
+    }
+  };
+  const removeFromSites = async (t: SiteTitle) => {
+    try {
+      await removeSiteTitle(t.id);
+    } catch (e) {
+      show(`${t.name}: could not take it off the list (${errorCode(e)})`);
+    } finally {
       refreshStore();
     }
   };
@@ -373,6 +398,9 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
         </p>
       )}
       {content}
+      {side === 'stream' && route.title === null && !route.unmatched && !off && store.stream?.enabled === true && (
+        <SiteTitlesSection titles={store.stream.site_titles ?? []} busy={siteBusy} onPlay={(t, episode) => void playOnSite(t, episode)} onRemove={(t) => void removeFromSites(t)} />
+      )}
       {side === 'stream' && route.title === null && !route.unmatched && !off && store.streamError === null && (
         <TrendingSection
           trending={store.trending === null ? null : { ...store.trending, titles: withMarks(store.trending.titles, marks) }}

@@ -18,7 +18,10 @@ param(
   [string]$WindowState = 'normal',
   # Close every tab that is not on the site: the advertising tabs a click on a player opens.
   # They take the front, and a site's countdown stops while its own tab is behind one.
-  [switch]$CloseOtherTabs
+  [switch]$CloseOtherTabs,
+  # Close every tab on these hosts (comma-separated): the streaming sites' tabs, whose film would
+  # go on playing behind the daemon's own player page. Other tabs are left alone.
+  [string]$CloseHosts = ''
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -70,6 +73,13 @@ if (-not (Test-Chrome)) {
 
 if ($CloseOtherTabs) {
   Get-Targets | Where-Object { $_.type -eq 'page' -and $_.url -notmatch '^(chrome|about|devtools):' -and (Get-HostOf $_.url) -ne $originHost } | ForEach-Object {
+    try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/close/$($_.id)" -TimeoutSec 3 | Out-Null } catch { }
+  }
+}
+
+if ($CloseHosts) {
+  $closing = @($CloseHosts.Split(',') | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ -and $_ -ne $originHost })
+  Get-Targets | Where-Object { $_.type -eq 'page' -and ($closing -contains (Get-HostOf $_.url).ToLower()) } | ForEach-Object {
     try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/close/$($_.id)" -TimeoutSec 3 | Out-Null } catch { }
   }
 }

@@ -3,7 +3,12 @@ import type { EpisodeNeighbors } from '../directStream/types.js';
 import type { MoviesService } from './service.js';
 import { TmdbError, type TmdbClient, type TmdbTitleNames } from './tmdb.js';
 import { streamResumePosition } from './state.js';
-import { streamSlot, titleId, type MovieStreamSourceRow, type StreamPositionWrite, type StreamTarget, type TitleMetadata } from './types.js';
+import { streamSlot, titleId, type MovieStreamSourceRow, type SitePlayInput, type StreamChannel, type StreamPositionWrite, type StreamTarget, type TitleMetadata } from './types.js';
+import { randomUUID } from 'node:crypto';
+import { STREAMING_SITES } from '../streaming/service.js';
+
+/** The provider a torrent session's play row carries (src/directStream/torrent/source.ts TORRENT_PROVIDER). */
+export const TORRENT_PROVIDER_NAME = 'Torrent';
 
 /** The resolve error that means the title has no source now. Every other error is the local Chrome's and records nothing. */
 export const NO_SOURCE = 'no_source';
@@ -28,6 +33,25 @@ export interface StreamSessionRef {
   id: string;
   ref: StreamTarget;
   source: { provider: string };
+  /** The torrent the session plays from; null or absent: a cloud provider's stream. */
+  torrent?: { infoHash?: string } | null;
+}
+
+/** How a title was last streamed on this host, and when each kind of stream last found nothing (`MovieStreams.channel`). */
+export interface TitleChannel {
+  /** Null: asked for and never played. */
+  channel: StreamChannel | null;
+  /** The cloud provider (`VidRock`) or the streaming site (`dramacool`); null for a torrent. */
+  provider: string | null;
+  infoHash: string | null;
+  /** The title's page on the streaming site. */
+  siteUrl: string | null;
+  /** The season and episode of that play; null for a film. */
+  season: number | null;
+  episode: number | null;
+  playedAt: Date | null;
+  cloudFailedAt: Date | null;
+  torrentFailedAt: Date | null;
 }
 
 /** One position report of the player page, validated by the route. */
@@ -301,7 +325,79 @@ export class MovieStreams {
       at: this.now(),
     });
     if (written.created || written.closed) this.emit('play', id);
+    // The page's first report: the stream really plays, so this is how the title is streamed from now on.
+    if (written.created) {
+      const key = { titleId: id, host: this.movies.host, season: slot.play.season, episode: slot.play.episode, at: this.now() };
+      const torrent = session.torrent ?? null;
+      try {
+        await this.movies.repo.recordChannel(torrent !== null ? { ...key, channel: 'torrent', infoHash: torrent.infoHash ?? null } : { ...key, channel: 'cloud', provider: session.source.provider });
+      } catch (err) {
+        this.log(`[notesd] direct stream: could not record how ${describeTarget(session.ref)} plays: ${messageOf(err)}`);
+      }
+    }
     return written;
+  }
+
+  /**
+   * How the target's title was last streamed on this host (a series has one answer for all its
+   * episodes) and which kinds of stream last found nothing. Null when nothing is recorded, or on
+   * any failure: the play then goes the long way.
+   */
+  async channel(target: StreamTarget): Promise<TitleChannel | null> {
+    try {
+      const id = titleId(target.kind, target.tmdbId);
+      const row = await this.movies.repo.channelOf(id, this.movies.host);
+      if (row === null) {
+        // No row yet (a title streamed before the table existed, or copied in): its last stream play says.
+        const last = await this.movies.repo.lastStreamPlayOfTitle(id, this.movies.host, STREAMING_SITES);
+        if (last === null || last.provider === null) return null;
+        const torrent = last.provider === TORRENT_PROVIDER_NAME;
+        return { channel: torrent ? 'torrent' : 'cloud', provider: torrent ? null : last.provider, infoHash: null, siteUrl: null, season: last.season, episode: last.episode, playedAt: last.startedAt, cloudFailedAt: null, torrentFailedAt: null };
+      }
+      return {
+        channel: row.channel,
+        provider: row.provider,
+        infoHash: row.infoHash,
+        siteUrl: row.siteUrl,
+        season: row.season,
+        episode: row.episode,
+        playedAt: row.playedAt,
+        cloudFailedAt: row.cloudFailedAt,
+        torrentFailedAt: row.torrentFailedAt,
+      };
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read how ${describeTarget(target)} was last played: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /** Every cloud provider, or every torrent, found nothing for the target's title on this host. Never throws. */
+  async channelFailed(target: StreamTarget, kind: 'cloud' | 'torrent'): Promise<void> {
+    try {
+      const id = await this.ensureTitle(target);
+      if (id === null) return;
+      await this.movies.repo.recordChannelFailure(id, this.movies.host, kind, this.now());
+      this.emit('stream', id);
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not record that no ${kind} source streams ${describeTarget(target)}: ${messageOf(err)}`);
+    }
+  }
+
+  /**
+   * A streaming site's player started the target (the /idlix, /lk21, /flicksy, /dramacool skills
+   * and the streaming tools report it): one play row with the site as its provider, and the title's
+   * channel. Null when the target has no slot or its title cannot be stored.
+   */
+  async recordSitePlay(target: StreamTarget, site: string, siteUrl: string): Promise<{ titleId: string; playId: number } | null> {
+    const slot = streamSlot(target);
+    if (slot === null) return null;
+    const id = await this.ensureTitle(target);
+    if (id === null) return null;
+    const input: SitePlayInput = { titleId: id, host: this.movies.host, site, siteUrl, season: slot.play.season, episode: slot.play.episode, at: this.now() };
+    const play = await this.movies.repo.recordSitePlay(input, `site-${randomUUID()}`);
+    this.emit('play', id);
+    this.emit('stream', id);
+    return { titleId: id, playId: play.id };
   }
 
   /** Daemon start: closes the stream plays this host left open (MoviesRepo.closeOpenStreamPlays). */

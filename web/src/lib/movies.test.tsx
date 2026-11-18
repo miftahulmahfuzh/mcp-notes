@@ -29,6 +29,10 @@ import {
   stateFilters,
   type MoviesFilter,
   type MoviesView,
+  channelText,
+  playedLine,
+  siteTitleCaption,
+  siteTitleNext,
   streamLabel,
   streamLine,
   streamTarget,
@@ -36,7 +40,7 @@ import {
   agoText,
   magnetQuality,
 } from './movies';
-import type { TrendingTitle } from '../moviesApi';
+import type { SiteTitle, TrendingTitle } from '../moviesApi';
 
 const ids = (f: MoviesFilter) => TITLES.filter((t) => matchesFilter(t, f)).map((t) => t.id);
 
@@ -245,6 +249,71 @@ describe('stream decisions', () => {
     expect(streamLabel(target, true)).toEqual({ label: 'Stream (VidFast · 2160p · English subtitle)', disabled: false });
     expect(streamLabel(target, false)).toEqual({ label: 'Direct streaming is off on this machine', disabled: true });
     expect(streamLine({ ...FIGHT_CLUB, stream_sources: [makeSource(0, 0, { en_subtitle: false, best_height: null })] }, 'stream')).toBe('Stream: VidFast · no English subtitle');
+  });
+});
+
+describe('how a title was last played', () => {
+  const AT = '2026-11-18T10:00:00.000Z';
+  const through = (channel: 'vlc' | 'cloud' | 'torrent' | 'site', provider: string | null = null, season: number | null = null, episode: number | null = null) => ({ channel, provider, played_at: AT, season, episode });
+
+  it('names each source the way the owner does', () => {
+    expect(channelText(through('vlc'))).toBe('VLC (Downloaded File)');
+    expect(channelText(through('cloud', 'VidRock'))).toBe('VidRock (Non Torrent)');
+    expect(channelText(through('torrent'))).toBe('Magnet (Torrent)');
+    expect(channelText(through('site', 'dramacool'))).toBe('Dramacool');
+    expect(channelText(through('site', 'lk21'))).toBe('Lk21');
+  });
+
+  it('says what it was played through, with the episode and the day', () => {
+    expect(playedLine({ ...FIGHT_CLUB, played_through: through('cloud', 'VidRock') })).toBe('Previously played through VidRock (Non Torrent) · Nov 18, 2026');
+    expect(playedLine({ ...SERIES, played_through: through('site', 'dramacool', 1, 3) })).toBe('Previously played through Dramacool · S01E03 · Nov 18, 2026');
+    expect(playedLine({ ...FIGHT_CLUB, played_through: through('torrent'), stream_failed: { cloud_at: '2026-11-17T10:00:00.000Z', torrent_at: null } })).toBe(
+      'Previously played through Magnet (Torrent) · Nov 18, 2026 · Non Torrent found nothing on Nov 17, 2026',
+    );
+  });
+
+  it('says a title was never played, and which kinds of stream failed, with the day', () => {
+    expect(playedLine({ ...FIGHT_CLUB, state: 'unwatched' })).toBe('Never been played before');
+    // Finished by a mark, or on the other machine: it was played, only not here.
+    expect(playedLine({ ...FIGHT_CLUB, state: 'finished' })).toBe('Not played on this machine yet');
+    expect(playedLine({ ...FIGHT_CLUB, stream_failed: { cloud_at: AT, torrent_at: null } })).toBe('Never been played before · all Non Torrent stream methods failed on Nov 18, 2026');
+    expect(playedLine({ ...FIGHT_CLUB, stream_failed: { cloud_at: null, torrent_at: AT } })).toBe('Never been played before · all Torrent stream methods failed on Nov 18, 2026');
+    expect(playedLine({ ...FIGHT_CLUB, stream_failed: { cloud_at: '2026-11-16T10:00:00.000Z', torrent_at: AT } })).toBe(
+      'Never been played before · all Direct (Non Torrent and Torrent) stream methods failed, last on Nov 18, 2026',
+    );
+  });
+
+  it('a stream button says where the play goes again; a file play changes nothing', () => {
+    const onSite = streamTarget({ ...FIGHT_CLUB, played_through: through('site', 'flicksy') });
+    expect(onSite && streamLabel(onSite, true).label).toBe('Stream on Flicksy, where it played last time');
+    const torrent = streamTarget({ ...FIGHT_CLUB, played_through: through('torrent') });
+    expect(torrent && streamLabel(torrent, true).label).toBe('Stream from a torrent, as last time');
+    const file = streamTarget({ ...FIGHT_CLUB, played_through: through('vlc') });
+    expect(file && streamLabel(file, true).label).toBe('Stream (VidFast · 2160p · English subtitle)');
+  });
+
+  it('a series last played on a site carries on with the episode after that one', () => {
+    const episodes = SERIES.seasons.flatMap((s) => s.episodes);
+    const [first, second] = episodes;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
+    const next = streamTarget({ ...SERIES, played_through: through('site', 'dramacool', first.season, first.episode) });
+    expect(next?.ref).toEqual({ kind: 'tv', tmdb_id: SERIES.tmdb_id, season: second.season, episode: second.episode });
+    const last = episodes[episodes.length - 1]!;
+    expect(streamTarget({ ...SERIES, played_through: through('site', 'dramacool', last.season, last.episode) })?.ref).toMatchObject({ season: last.season, episode: last.episode });
+  });
+});
+
+describe('a title TMDB does not list', () => {
+  const DRAMA: SiteTitle = { id: 1, site: 'dramacool', site_url: 'https://dramacool9.com.ro/x-2026', kind: 'series', name: 'X', year: 2026, poster_url: null, overview: '', country: null, status: null, genres: [], also_known: null, season: 1, episode: 3, played_at: '2026-11-18T10:00:00.000Z' };
+
+  it('says where it is from and which episode was played, and plays the one after it', () => {
+    expect(siteTitleCaption(DRAMA)).toBe('2026 · Dramacool · episode 3');
+    expect(siteTitleNext(DRAMA)).toEqual({ episode: 4, label: 'Play episode 4 of X on Dramacool' });
+    const film: SiteTitle = { ...DRAMA, kind: 'movie', year: null, season: null, episode: null };
+    expect(siteTitleCaption(film)).toBe('Dramacool');
+    expect(siteTitleNext(film)).toEqual({ episode: null, label: 'Play X on Dramacool' });
   });
 });
 

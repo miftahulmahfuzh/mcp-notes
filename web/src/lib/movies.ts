@@ -7,9 +7,11 @@ import type {
   FileReason,
   FileView,
   MoviesStatusResponse,
+  PlayedThrough,
   PlayerState,
   ProgressView,
   SeasonView,
+  SiteTitle,
   StreamLiveSnapshot,
   StreamListResponse,
   StreamRef,
@@ -307,6 +309,13 @@ export interface StreamTarget {
   ref: StreamRef;
   code: string;
   source: StreamSourceView | null;
+  /** How the title was last played on this machine, when that was a stream: where this one goes first. */
+  through?: PlayedThrough | null;
+}
+
+/** The title's last play when it was a stream (a cloud provider, a torrent, a streaming site); null after a file play or none. */
+function streamedThrough(d: TitleDetail): PlayedThrough | null {
+  return d.played_through !== null && d.played_through.channel !== 'vlc' ? d.played_through : null;
 }
 
 /** This machine's source row for a film (season 0, episode 0) or one episode; null when none was ever recorded. */
@@ -319,6 +328,7 @@ export function episodeStreamTarget(d: TitleDetail, e: EpisodeView): StreamTarge
     ref: { kind: 'tv', tmdb_id: d.tmdb_id, season: e.season, episode: e.episode },
     code: episodeCode(e.season, e.episode),
     source: sourceOf(d, e.season, e.episode),
+    through: streamedThrough(d),
   };
 }
 
@@ -327,10 +337,22 @@ export function episodeStreamTarget(d: TitleDetail, e: EpisodeView): StreamTarge
  * not finished, else its first episode. Null for a series with no episode listed.
  */
 export function streamTarget(d: TitleDetail): StreamTarget | null {
-  if (d.kind === 'movie') return { ref: { kind: 'movie', tmdb_id: d.tmdb_id }, code: '', source: sourceOf(d, 0, 0) };
+  if (d.kind === 'movie') return { ref: { kind: 'movie', tmdb_id: d.tmdb_id }, code: '', source: sourceOf(d, 0, 0), through: streamedThrough(d) };
   const episodes = d.seasons.filter((s) => s.season >= 1).flatMap((s) => s.episodes);
-  const next = episodes.find((e) => e.state !== 'finished' && e.state !== 'seen') ?? episodes[0];
+  const next = afterSitePlay(d, episodes) ?? episodes.find((e) => e.state !== 'finished' && e.state !== 'seen') ?? episodes[0];
   return next === undefined ? null : episodeStreamTarget(d, next);
+}
+
+/**
+ * A streaming site's player reports no position, so an episode played there never reads as
+ * finished. A series last played on a site therefore carries on with the episode after that one
+ * (that one again when it is the last listed); null when the series was not last played on a site.
+ */
+function afterSitePlay(d: TitleDetail, episodes: EpisodeView[]): EpisodeView | null {
+  const last = d.played_through;
+  if (last === null || last.channel !== 'site' || last.season === null || last.episode === null) return null;
+  const at = episodes.findIndex((e) => e.season === last.season && e.episode === last.episode);
+  return at === -1 ? null : (episodes[at + 1] ?? episodes[at] ?? null);
 }
 
 function isFresh(t: StreamTarget | null): t is StreamTarget {
@@ -385,11 +407,67 @@ export function streamLine(d: TitleDetail, side: MoviesSide): string | null {
   return side === 'stream' ? 'Stream: not verified yet; Play checks it' : null;
 }
 
+/** `Dramacool` for `dramacool`: a streaming site by its name. */
+function siteName(site: string): string {
+  return site === '' ? site : `${site[0]!.toUpperCase()}${site.slice(1)}`;
+}
+
+/** Under a site title's poster: `2026 · Dramacool · episode 3`. */
+export function siteTitleCaption(t: SiteTitle): string {
+  return [t.year === null ? '' : String(t.year), siteName(t.site), t.kind === 'series' && t.episode !== null ? `episode ${t.episode}` : ''].filter((x) => x !== '').join(' · ');
+}
+
+/** What a click on a site title's poster starts: the film, or the episode after the last one played. */
+export function siteTitleNext(t: SiteTitle): { episode: number | null; label: string } {
+  if (t.kind === 'movie') return { episode: null, label: `Play ${t.name} on ${siteName(t.site)}` };
+  const episode = (t.episode ?? 0) + 1;
+  return { episode, label: `Play episode ${episode} of ${t.name} on ${siteName(t.site)}` };
+}
+
+/** What a title was played through, as the owner names the sources: `VidRock (Non Torrent)`, `Magnet (Torrent)`, `Dramacool`. */
+export function channelText(p: PlayedThrough): string {
+  if (p.channel === 'vlc') return 'VLC (Downloaded File)';
+  if (p.channel === 'torrent') return 'Magnet (Torrent)';
+  if (p.channel === 'site') return siteName(p.provider ?? 'a streaming site');
+  return `${p.provider ?? 'a cloud provider'} (Non Torrent)`;
+}
+
+/**
+ * The line on a title's page that says how it was last played here, which is where Play goes
+ * again, or that it never was; and which kinds of stream found nothing the last time they were
+ * asked. A failure is dated: it says what happened then, and the title can be tried again.
+ */
+export function playedLine(d: TitleDetail): string {
+  const { cloud_at, torrent_at } = d.stream_failed;
+  const p = d.played_through;
+  if (p !== null) {
+    const what = p.season !== null && p.episode !== null ? ` · ${episodeCode(p.season, p.episode)}` : '';
+    const failed = [cloud_at !== null && p.channel !== 'cloud' ? `Non Torrent found nothing on ${dayText(cloud_at)}` : '', torrent_at !== null && p.channel !== 'torrent' ? `Torrent found nothing on ${dayText(torrent_at)}` : '']
+      .filter((x) => x !== '')
+      .map((x) => ` · ${x}`)
+      .join('');
+    return `Previously played through ${channelText(p)}${what} · ${dayText(p.played_at)}${failed}`;
+  }
+  // A title watched elsewhere (the other machine, a mark by hand) was played, only not here.
+  const never = d.state === 'unwatched' ? 'Never been played before' : 'Not played on this machine yet';
+  if (cloud_at !== null && torrent_at !== null) {
+    const last = Date.parse(cloud_at) > Date.parse(torrent_at) ? cloud_at : torrent_at;
+    return `${never} · all Direct (Non Torrent and Torrent) stream methods failed, last on ${dayText(last)}`;
+  }
+  if (cloud_at !== null) return `${never} · all Non Torrent stream methods failed on ${dayText(cloud_at)}`;
+  if (torrent_at !== null) return `${never} · all Torrent stream methods failed on ${dayText(torrent_at)}`;
+  return never;
+}
+
 /** A stream button's label: what it starts and from where, or why it cannot. */
 export function streamLabel(t: StreamTarget, enabled: boolean): PlayButtonState {
   if (!enabled) return { label: 'Direct streaming is off on this machine', disabled: true };
   const what = t.code === '' ? 'Stream' : `Stream ${t.code}`;
   const s = t.source;
+  // A title last played on a streaming site, or from a torrent, goes there again: no source is checked first.
+  const through = t.through ?? null;
+  if (through !== null && through.channel === 'site') return { label: `${what} on ${channelText(through)}, where it played last time`, disabled: false };
+  if (through !== null && through.channel === 'torrent') return { label: `${what} from a torrent, as last time`, disabled: false };
   if (s !== null && s.fresh) return { label: `${what} (${streamSourceText(s)})`, disabled: false };
   if (s !== null && s.stale_at !== null) return { label: `${what}: no source answered last time, try again`, disabled: false };
   return { label: `${what}: checked when it starts`, disabled: false };

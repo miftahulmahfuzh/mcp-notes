@@ -20,6 +20,24 @@ export interface StreamRefInput {
   episode?: number | null;
 }
 
+/**
+ * How a title was last streamed on this machine, and when each kind of stream last found nothing (the `channel`
+ * hook; the movies store keeps it per title, so a series has one answer for all its episodes). `channel` null:
+ * asked for and never played. `provider` is the cloud provider's name or the streaming site's; null for a torrent.
+ */
+export interface RememberedChannel {
+  channel: 'cloud' | 'torrent' | 'site' | null;
+  provider: string | null;
+  infoHash: string | null;
+  /** The title's page on the streaming site. */
+  siteUrl: string | null;
+  season: number | null;
+  episode: number | null;
+  playedAt: Date | null;
+  cloudFailedAt: Date | null;
+  torrentFailedAt: Date | null;
+}
+
 /** The one place a loose target becomes a StreamRef. Callers validate first; a series without an episode is a programming error. */
 export function toStreamRef(input: StreamRefInput): StreamRef {
   if (input.kind === 'movie') return { kind: 'movie', tmdbId: input.tmdbId };

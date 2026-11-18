@@ -6,13 +6,13 @@ import { fillScreenExpression } from '../../../claude/streaming/play.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import idlix, { CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, episodeExpression, searchExpression, seriesSlug, toResult as idlixResult } from '../../../claude/streaming/sites/idlix.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { findEpisode, readEpisodeFlags } from '../../../claude/streaming/cli.mjs';
+import { findEpisode, playReport, readEpisodeFlags, reportPlay } from '../../../claude/streaming/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import lk21, { START_PLAYER_EXPRESSION, searchHost, splitTitle, toResult as lk21Result } from '../../../claude/streaming/sites/lk21.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import flicksy, { startPlayerExpression, toResult as flicksyResult } from '../../../claude/streaming/sites/flicksy.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import dramacool, { FIND_FRAME_EXPRESSION, decodeEntities, frameMatchOf, parseEpisodes, parseSearch, seasonOfPage, splitTitle as dramacoolTitle, startPlayerExpression as dramacoolPlayer, toResult as dramacoolResult } from '../../../claude/streaming/sites/dramacool.mjs';
+import dramacool, { FIND_FRAME_EXPRESSION, decodeEntities, frameMatchOf, parseDetails, parseEpisodes, parseSearch, seasonOfPage, splitTitle as dramacoolTitle, startPlayerExpression as dramacoolPlayer, toResult as dramacoolResult } from '../../../claude/streaming/sites/dramacool.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { SITES } from '../../../claude/streaming/sites/index.mjs';
 
@@ -154,7 +154,7 @@ describe('an episode of a series (cli.mjs)', () => {
   it('finds the one series that has the episode, in the season the site names', async () => {
     const s = site({ [OP.url]: [[18, 787]], [LIVE.url]: [[1, 1], [2, 1]] });
     const found = await findEpisode(s, [OP, LIVE, FILM], { season: null, episode: 787 });
-    expect(found).toEqual({ episode: { ...hit(OP.url, 18, 787), title: 'One Piece (1999)' } });
+    expect(found).toEqual({ episode: { ...hit(OP.url, 18, 787), title: 'One Piece (1999)', series_url: OP.url } });
     // Only series are asked, never a film.
     expect(s.asked).toEqual([[OP.url, { season: null, episode: 787 }], [LIVE.url, { season: null, episode: 787 }]]);
   });
@@ -184,6 +184,39 @@ describe('an episode of a series (cli.mjs)', () => {
     const clicks = [CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION].join('\n').match(/\w+\.click\(\)/g);
     expect(clicks).toEqual(['hero.click()', 'skip.click()']);
     expect(WAIT_FOR_FILM_EXPRESSION).toContain('/^skip ad$/i');
+  });
+});
+
+describe('a play that started is reported to the daemon', () => {
+  const MATCH = { title: 'Summer Vacation (2026)', name: 'Summer Vacation', original_name: null, year: 2026, kind: 'series', quality: null, seasons: null, url: 'https://dramacool9.com.ro/summer-vacation-2026' };
+
+  it("reports the title's page and what the search said of it, with the episode's numbers", () => {
+    expect(playReport('dramacool', MATCH, { season: 1, episode: 3, url: 'https://dramacool9.com.ro/summer-vacation-2026-episode-3.html' })).toEqual({
+      site: 'dramacool',
+      url: 'https://dramacool9.com.ro/summer-vacation-2026',
+      name: 'Summer Vacation',
+      original_name: null,
+      year: 2026,
+      kind: 'series',
+      season: 1,
+      episode: 3,
+    });
+    expect(playReport('lk21', { ...MATCH, kind: 'movie' })).toMatchObject({ site: 'lk21', kind: 'movie', season: null, episode: null });
+  });
+
+  it("posts to this machine's daemon and answers what it kept; a daemon that is down never fails the play", async () => {
+    const calls: Array<{ url: string; init: { method: string; headers: Record<string, string>; body: string } }> = [];
+    const fetchOk = async (url: string, init: never) => {
+      calls.push({ url, init });
+      return { json: async () => ({ recorded: true, title_id: 'tv-335951', season: 1, episode: 3 }) };
+    };
+    expect(await reportPlay(playReport('dramacool', MATCH), fetchOk)).toEqual({ recorded: true, title_id: 'tv-335951', season: 1, episode: 3 });
+    expect(calls[0]!.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/api\/movies\/site-play$/);
+    expect(calls[0]!.init.method).toBe('POST');
+    expect(calls[0]!.init.headers['x-notes-site-play']).toBe('1');
+    expect(JSON.parse(calls[0]!.init.body).name).toBe('Summer Vacation');
+    expect(await reportPlay(playReport('dramacool', MATCH), async () => { throw new Error('ECONNREFUSED'); })).toBeNull();
+    expect(await reportPlay(playReport('dramacool', MATCH), async () => ({ json: async () => ({ error: 'movies_off' }) }))).toBeNull();
   });
 });
 
@@ -373,11 +406,69 @@ describe('dramacool', () => {
     await expect(dramacool.episodes(`${dramacool.origin}/genre/youth`, { season: null, episode: 1 })).rejects.toThrow(/not a title page/);
   });
 
+  it("reads what a title's own page says of it, for a title TMDB does not list", async () => {
+    const PAGE = `
+      <figure class="drama-thumbnail"><a href="https://dramacool9.com.ro/summer-vacation-2026" rel="bookmark" title="Summer Vacation (2026)">
+        <img width="220" height="320" data-original="https://dramacool9.com.ro/wp-content/uploads/2026/10/PeXjdX_4f-220x320.jpg" class="lazy wp-post-image" alt="" /></a></figure>
+      <div class="drama-details"><header class="entry-header"><h1>Summer Vacation (2026)</h1></header>
+        <div class="synopsis"><span>Synopsis:</span><p></p><p>An ordinary girl &amp; her summer.</p></div>
+        <p></p>
+        <p><span>Also known as: </span><a href="https://dramacool9.com.ro/summer-vacation-2026" title="Yeoreumbanghak ">Yeoreumbanghak </a></p>
+        <p class="country"><span>Country: </span> <a href="https://dramacool9.com.ro/country/south-korea" rel="tag">South Korea</a></p>
+        <p class="status"><span>Status: </span>Ongoing</p>
+        <p class="release-year"><span>Release Year: </span><a href="https://dramacool9.com.ro/release-year/2026" rel="tag">2026</a></p>
+        <p class="genres"><span>Genres: </span><a href="/genre/drama" rel="tag">Drama</a>, <a href="/genre/sci-fi-fantasy" rel="tag">Sci-Fi &amp; Fantasy</a></p>
+        <p class="starring"></p>
+      </div>`;
+    expect(parseDetails(PAGE, ORIGIN)).toEqual({
+      poster_url: 'https://dramacool9.com.ro/wp-content/uploads/2026/10/PeXjdX_4f-220x320.jpg',
+      overview: 'An ordinary girl & her summer.',
+      country: 'South Korea',
+      status: 'Ongoing',
+      year: 2026,
+      genres: ['Drama', 'Sci-Fi & Fantasy'],
+      also_known: 'Yeoreumbanghak',
+    });
+    expect(parseDetails('<h1>Nothing here</h1>', ORIGIN)).toEqual({ poster_url: null, overview: null, country: null, status: null, year: null, genres: [], also_known: null });
+    // A poster that is not an https address is not kept: the wall would load it.
+    expect(parseDetails('<figure class="drama-thumbnail"><img data-original="javascript:alert(1)"></figure>', ORIGIN).poster_url).toBeNull();
+    await expect(dramacool.details('https://elsewhere.example/x-2025')).rejects.toThrow(/not a title page/);
+    await expect(dramacool.details(`${dramacool.origin}/x-2025-episode-1.html`)).rejects.toThrow(/not a title page/);
+  });
+
   it("plays only an episode's page on the site itself", () => {
     expect(dramacool.titlePath(`${dramacool.origin}/summer-vacation-2026-episode-3.html`)).toBe('/summer-vacation-2026-episode-3.html');
     expect(dramacool.titlePath(`${dramacool.origin}/summer-vacation-2026`)).toBeNull();
     expect(dramacool.titlePath(`${dramacool.origin}/genre/x-episode-3.html`)).toBeNull();
     expect(dramacool.titlePath('https://elsewhere.example/summer-vacation-2026-episode-3.html')).toBeNull();
+  });
+
+  it('asks for the episode again when an advert took the tab, then starts the player in its frame', async () => {
+    const pathname = '/summer-vacation-2026-episode-3.html';
+    const frame = 'https://vidbasic.top/embed/e3meaiw4vgk';
+    // The site's tab as each look finds it: a fresh tab on the home page twice, then the episode.
+    const looks = [`${dramacool.origin}/`, `${dramacool.origin}/`, `${dramacool.origin}${pathname}`];
+    const calls: string[] = [];
+    const evalPage = async (expression: string, options: { frameMatch?: string; closeOtherTabs?: boolean } = {}) => {
+      if (expression.startsWith('location.assign')) {
+        calls.push(`assign ${expression.includes(JSON.stringify(pathname)) ? 'episode' : 'other'}${options.closeOtherTabs ? ' closing other tabs' : ''}`);
+        return 'ok';
+      }
+      if (expression === FIND_FRAME_EXPRESSION) {
+        const url = looks.shift() ?? `${dramacool.origin}${pathname}`;
+        calls.push('look');
+        return { url, frame: url.endsWith(pathname) ? frame : null, visible: true };
+      }
+      calls.push(`player in ${options.frameMatch}`);
+      return { playing: true, position_s: 0, duration_s: 3530, muted: false };
+    };
+    const played = await dramacool.start({ evalPage, sleep: async () => undefined, pathname });
+    expect(played).toMatchObject({ playing: true, duration_s: 3530 });
+    expect(calls).toEqual(['look', 'look', 'assign episode closing other tabs', 'look', 'player in vidbasic\\.top']);
+
+    // A page that never becomes the episode gives up and says where.
+    const lost = await dramacool.start({ evalPage: async (e: string) => (e === FIND_FRAME_EXPRESSION ? { url: `${dramacool.origin}/`, frame: null, visible: true } : 'ok'), sleep: async () => undefined, pathname });
+    expect(lost).toEqual({ playing: false, stage: 'no_player' });
   });
 
   it("ships expressions that parse, check the frame's address and press only the player's own play", () => {

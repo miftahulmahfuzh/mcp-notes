@@ -309,7 +309,7 @@ describe('buildInstructions: Codenames', () => {
     const paragraphs = buildInstructions().split('\n\n').filter((p) => p.startsWith('Codenames.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0] ?? '';
-    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'movies_continue', 'provider "cloud"', 'provider "torrent"', 'never part of a title', '"continue OP TS"', 'asks for nothing', 'pass no provider', 'keywords_dropped', 'a season alone']) {
+    for (const word of ['DM and DS', 'NTM and NTS', 'TM and TS', 'movies_continue', 'provider "cloud"', 'provider "torrent"', 'never part of a title', '"continue OP TS"', 'asks for nothing', 'passes no provider', 'the way it last played on this machine', 'A codename always overrides that', 'keywords_dropped', 'a season alone']) {
       expect(p, word).toContain(word);
     }
   });

@@ -32,7 +32,12 @@ the last of the request, and never part of the title: take it off before reading
 - The M or S also gives the `kind` (`movie` or `tv`) when you look a title up or discover one.
 - A codename at the start of a remark ("TM shadow edge is smooth af") says what was played and how.
   It asks for nothing; a request that follows in the same message keeps that codename.
-- Without a codename nothing changes: pass no `provider`.
+- Without a codename pass no `provider`. The daemon then plays the title the way it last played
+  on this machine: the cloud provider that streamed it, the torrents, or the streaming site it was
+  played on (`play` is then `{ site, site_url, site_play }`: say it plays on that site). Only a
+  title never streamed is searched on every source. A codename always overrides that
+  ("play Summer Vacation TS" is a torrent even when it last played on dramacool), and what plays
+  is what is remembered from then on.
 - `provider: "cloud"` never falls back to a torrent, and `provider: "torrent"` asks no cloud
   provider. When one answers `no_source`, say so and offer the other; do not switch unasked.
 

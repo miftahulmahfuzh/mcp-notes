@@ -20,6 +20,7 @@ import { captureRoutes } from './capture.js';
 import { imageRoutes } from './images.js';
 import { moviesApiRoutes } from './moviesApi.js';
 import { moviesPlayRoutes } from './moviesPlayApi.js';
+import { sitePlayRoutes } from './sitePlayApi.js';
 import { revealRoutes, type RevealDeps } from './reveal.js';
 import { isLoopbackUrl } from './sameOrigin.js';
 import { sessionHookRoutes } from './sessionHooks.js';
@@ -144,6 +145,7 @@ export function createApp(deps: AppDeps, options: CreateAppOptions = {}): Hono {
   app.route('/', adversaryApiRoutes(deps, { seer: options.adversarySeer }));
   app.route('/', moviesApiRoutes(deps));
   app.route('/', moviesPlayRoutes(deps));
+  app.route('/', sitePlayRoutes(deps));
   app.route('/', directStreamRoutes(deps));
   app.route('/', streamProberRoutes(deps));
   app.route('/', streamEvidenceRoutes(deps));

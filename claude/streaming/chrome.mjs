@@ -28,14 +28,16 @@ export class ChromeError extends Error {
  * - frameMatch: evaluate inside the embedded frame whose address matches (a player on another host).
  * - show: put the window in front first; windowState 'fullscreen' makes it fill the screen.
  * - closeOtherTabs: close the advertising tabs a player's clicks open.
+ * - closeHosts: close the tabs on these hosts only (a streaming site's film, before the daemon's player opens).
  */
-export async function evaluateInChrome(origin, expression, { frameMatch = '', show = false, windowState = 'normal', closeOtherTabs = false, timeoutS = 45 } = {}) {
+export async function evaluateInChrome(origin, expression, { frameMatch = '', show = false, windowState = 'normal', closeOtherTabs = false, closeHosts = [], timeoutS = 45 } = {}) {
   const { stdout: winScript } = await run('wslpath', ['-w', CDP_SCRIPT]);
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', winScript.trim(), '-Origin', origin];
   args.push('-JsB64', Buffer.from(expression, 'utf8').toString('base64'), '-TimeoutS', String(timeoutS));
   if (frameMatch) args.push('-FrameMatch', frameMatch);
   if (show) args.push('-Show', '-WindowState', windowState);
   if (closeOtherTabs) args.push('-CloseOtherTabs');
+  if (closeHosts.length > 0) args.push('-CloseHosts', closeHosts.join(','));
   let stdout;
   try {
     // powershell.exe cannot start in a Linux-only folder.

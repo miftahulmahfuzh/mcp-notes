@@ -17,6 +17,7 @@ import {
   STREAM_OPENING_NOTICE,
   streamErrorText,
   streamLabel,
+  playedLine,
   streamLine,
   TILE_LIVE_LABEL,
   tileLive,
@@ -109,8 +110,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   const streamOne = (t: StreamTarget) => {
     void run(
       async () => {
-        await streamPlay(t.ref);
-        return STREAM_OPENING_NOTICE;
+        const { site } = await streamPlay(t.ref);
+        return site === null ? STREAM_OPENING_NOTICE : `Playing on ${site} in the streaming Chrome window`;
       },
       (code, detail) => streamErrorText(code, detail, t, d.title),
     );
@@ -253,6 +254,9 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
               {line}
             </p>
           )}
+          <p className="mv-stream-line" data-testid="played-through">
+            {playedLine(d)}
+          </p>
           <div className="mv-actions">
             <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
               <Play weight="duotone" />

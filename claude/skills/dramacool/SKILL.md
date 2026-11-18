@@ -67,6 +67,12 @@ It prints JSON:
   `title`, its series), found on the page of every matching title; null when none or several
   fit, and then `episode_candidates` lists the ones that do.
 - `play`, with `--play` only: what happened on screen (below).
+- `kept`, after a play that started: what the daemon kept of it. `recorded: true` with `title_id`:
+  the title is now on the Stream side of the wall's movies page, and Play there, or a
+  `direct_stream_play` that names no source, comes back to this site. `recorded: true` with
+  `site_title_id`: TMDB does not list the title, so it is kept by what the site says of it, in the
+  Stream side's "From streaming sites" section. `recorded: false` with `reason`, or null (the
+  daemon is down): the play happened and is only not kept; say so only when asked.
 - `ok: false` with `error`: the site could not be asked. A host that does not resolve usually
   means the site moved to another host: ask the user for the current address and rerun with
   `DRAMACOOL_ORIGIN=https://<host>`. `no_chrome` means Chrome is not installed on Windows.

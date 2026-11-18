@@ -8,6 +8,15 @@
 - `/idlix`, `/lk21`, `/flicksy`, `/dramacool`: find a title, and start a single matching film (on
   dramacool, one episode) full screen. Matching and
   result building proven by `npx vitest run tests/unit/scripts/streamingSites.test.ts`.
+- What played last time plays first, and site plays are kept: the routing by
+  `npx vitest run tests/unit/directStream/rememberedChannel.test.ts`, the title match and the
+  TMDB-less keeper by `npx vitest run tests/unit/streaming.sitePlays.test.ts`, the tables, the
+  title page's `played_through` and the routes by
+  `scripts/test-int.sh tests/integration/movies.channels.int.test.ts`, the page's line and the
+  "From streaming sites" section by `npx vitest run web/src/lib/movies.test.tsx
+  web/src/components/movies/SiteTitlesSection.test.tsx`. Live (plays on screen, ask first):
+  `node claude/skills/dramacool/search.mjs --play summer vacation --episode 3` answers `kept`,
+  then `GET /api/movies/tv-335951` shows `played_through.channel: "site"`.
 - `streaming_find`, `streaming_play` (MCP, chat bar): proven with a fake runner by
   `npx vitest run tests/unit/mcp.streamingTools.test.ts tests/unit/streaming.test.ts`; the chat
   allow list and captions by `tests/unit/chat-status.test.ts`.

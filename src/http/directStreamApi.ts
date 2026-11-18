@@ -7,6 +7,7 @@ import { isFile } from '../directStream/torrent/subtitles/disk.js';
 import { DirectStreamError, type StreamRef } from '../directStream/types.js';
 import type { StreamLive } from '../movies/streamLive.js';
 import { MovieStreams, type MovieStreamsSource, type StreamSessionRef } from '../movies/streams.js';
+import { replayOnSite } from '../streaming/sitePlays.js';
 import { sameOriginOnly } from './sameOrigin.js';
 
 /**
@@ -74,7 +75,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'streaming'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -100,7 +101,14 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
       return c.json({ error: 'invalid_body', message: body.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') }, 400);
     }
     try {
-      const played = await service().play(refFromBody(body.data), { resumeS: body.data.resume_s ?? null, provider: body.data.provider ?? null, magnet: body.data.magnet ?? null });
+      const ref = refFromBody(body.data);
+      // No provider named: a title last played on a streaming site plays there again.
+      const movies = deps.movies ?? null;
+      if ((body.data.provider ?? null) === null && (body.data.magnet ?? null) === null && movies !== null) {
+        const onSite = await replayOnSite(ref, await service().remembered(ref), { runner: deps.streaming ?? null, streams: new MovieStreams(movies) });
+        if (onSite !== null) return c.json({ ok: true, site: onSite.site, site_url: onSite.url, site_play: onSite.play });
+      }
+      const played = await service().play(ref, { resumeS: body.data.resume_s ?? null, provider: body.data.provider ?? null, magnet: body.data.magnet ?? null });
       return c.json({ ok: true, ...played });
     } catch (err) {
       return directStreamErrorResponse(c, err);

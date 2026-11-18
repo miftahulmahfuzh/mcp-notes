@@ -2,8 +2,12 @@
 // One command for every streaming site: find a title, and with --play start it full screen.
 // Usage: cli.mjs <site> [--play] <title> [year] [--episode <n> [--season <n>]]
 //        cli.mjs <site> --play-url <url>
+//        cli.mjs <site> --play-from <title url> --episode <n> [--season <n>]
+//        cli.mjs <site> --details <title url>
 //        cli.mjs --sites
-// Prints one JSON object. The /idlix and /lk21 skills and the daemon's streaming tools all run this.
+// Prints one JSON object. The site skills (/idlix, /lk21, ...) and the daemon's streaming tools all
+// run this. A play that started is reported to the daemon, which keeps it with the title (`kept`
+// in the answer); --no-report leaves that to the caller.
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { parseQuery, pickMatches } from './match.mjs';
@@ -12,15 +16,81 @@ import { SITES } from './sites/index.mjs';
 
 const print = (value) => console.log(JSON.stringify(value, null, 2));
 
-export async function main(siteName, argv) {
+const REPORT_TIMEOUT_MS = 20_000;
+
+/** What the daemon is told of a play that started: the site, the title's page there, and what the search said of it. */
+export function playReport(siteName, match, episode = null) {
+  return {
+    site: siteName,
+    url: match.url,
+    name: match.name ?? null,
+    original_name: match.original_name ?? null,
+    year: match.year ?? null,
+    kind: match.kind ?? null,
+    season: episode ? episode.season : null,
+    episode: episode ? episode.episode : null,
+  };
+}
+
+/**
+ * Tells the daemon (127.0.0.1, NOTESD_PORT or 7317) that a site's player started, so the title's
+ * page and the Stream side know it. Answers what the daemon kept, or null when it could not be
+ * told: a play is never held up or failed by this.
+ */
+export async function reportPlay(report, fetchImpl = fetch) {
+  const port = /^\d{1,5}$/.test(process.env.NOTESD_PORT ?? '') ? process.env.NOTESD_PORT : '7317';
+  try {
+    const res = await fetchImpl(`http://127.0.0.1:${port}/api/movies/site-play`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-notes-site-play': '1' },
+      body: JSON.stringify(report),
+      signal: AbortSignal.timeout(REPORT_TIMEOUT_MS),
+    });
+    const body = await res.json();
+    return body && typeof body === 'object' && typeof body.recorded === 'boolean' ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function main(siteName, allArgv) {
   const site = SITES[siteName];
   if (!site) {
     print({ ok: false, error: `unknown site "${siteName}"; known: ${Object.keys(SITES).join(', ')}` });
     return 2;
   }
+  const report = !allArgv.includes('--no-report');
+  const argv = allArgv.filter((word) => word !== '--no-report');
+  if (argv[0] === '--details') {
+    // What the title's own page says of it, for a title TMDB does not list. A site without it answers null.
+    try {
+      print({ ok: true, site: site.name, url: argv[1] ?? null, details: typeof site.details === 'function' ? await site.details(argv[1] ?? '') : null });
+      return 0;
+    } catch (err) {
+      print({ ok: false, site: site.name, url: argv[1] ?? null, error: String(err?.message ?? err) });
+      return 1;
+    }
+  }
   if (argv[0] === '--play-url') {
     const played = await playTitle(site, argv[1] ?? '');
-    print({ ok: played.playing === true, site: site.name, origin: site.origin, url: argv[1] ?? null, play: played });
+    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: argv[1] ?? null, play: played };
+    if (played.playing && report) out.kept = await reportPlay({ site: site.name, url: argv[1] });
+    print(out);
+    return played.playing ? 0 : 1;
+  }
+  if (argv[0] === '--play-from') {
+    // An episode of a title whose page is already known (it was played from this site before).
+    const { words, season, episode, bad } = readEpisodeFlags(argv.slice(1));
+    if (words.length !== 1 || episode === null || bad !== null) {
+      print({ ok: false, error: bad ?? 'usage: --play-from <title url> --episode <n> [--season <n>]' });
+      return 2;
+    }
+    const found = await findEpisode(site, [{ kind: 'series', url: words[0], title: null }], { season, episode });
+    const played = found.episode ? await playTitle(site, found.episode.url) : { playing: false, skipped_play: found.skipped };
+    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: words[0], episode: found.episode, play: played };
+    if (found.error) out.episode_error = found.error;
+    if (played.playing && report) out.kept = await reportPlay({ site: site.name, url: words[0], season: found.episode.season, episode: found.episode.episode });
+    print(out);
     return played.playing ? 0 : 1;
   }
   const wantPlay = argv[0] === '--play';
@@ -46,6 +116,8 @@ export async function main(siteName, argv) {
     if (found.error) out.episode_error = found.error;
     if (found.candidates) out.episode_candidates = found.candidates;
     if (wantPlay) out.play = found.episode ? await playTitle(site, found.episode.url) : { playing: false, skipped_play: found.skipped };
+    const series = found.episode ? matches.find((m) => m.url === found.episode.series_url) : undefined;
+    if (out.play?.playing && report && series) out.kept = await reportPlay(playReport(site.name, series, found.episode));
     print(out);
     return 0;
   }
@@ -55,6 +127,7 @@ export async function main(siteName, argv) {
       matches.length === 1 && matches[0].kind === 'movie'
         ? await playTitle(site, matches[0].url)
         : { playing: false, skipped_play: matches.length === 0 ? 'no_match' : matches.length > 1 ? 'several_matches' : 'series' };
+    if (out.play.playing && report) out.kept = await reportPlay(playReport(site.name, matches[0]));
   }
   print(out);
   return 0;
@@ -83,8 +156,8 @@ export function readEpisodeFlags(argv) {
  * The one episode the request names, among the series that matched the title. `skipped` says why
  * there is none: `no_match` (no series of that name), `no_episodes` (the site's series are only
  * links here), `no_episode` (no matching series has that episode), `several_episodes` (more than
- * one does: `candidates` lists them, each with its series' title), `no_video` (the site lists the
- * episode without a video).
+ * one does: `candidates` lists them, each with its series' title and page), `no_video` (the site
+ * lists the episode without a video).
  */
 export async function findEpisode(site, matches, { season, episode }) {
   const series = matches.filter((m) => m.kind === 'series');
@@ -93,7 +166,7 @@ export async function findEpisode(site, matches, { season, episode }) {
   const candidates = [];
   try {
     for (const match of series) {
-      for (const hit of await site.episodes(match.url, { season, episode })) candidates.push({ ...hit, title: match.title });
+      for (const hit of await site.episodes(match.url, { season, episode })) candidates.push({ ...hit, title: match.title, series_url: match.url });
     }
   } catch (err) {
     return { episode: null, skipped: 'episode_lookup_failed', error: String(err?.message ?? err) };

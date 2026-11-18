@@ -213,7 +213,7 @@ export async function live({ page, base, shot, clip, fetchJson }) {
 
   // The poster grid.
   await page.goto(`${base}/movies`);
-  await page.getByRole('list', { name: 'Posters' }).waitFor();
+  await page.getByRole('list', { name: 'Posters', exact: true }).waitFor();
   await postersLoaded(page);
   await shot('grid');
 
@@ -223,7 +223,7 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   const stream = await fetchJson('GET', '/api/movies/stream').catch(() => null);
   if (stream?.enabled === true && stream.titles.length > 0) {
     await page.goto(`${base}/movies?side=stream`);
-    await page.getByRole('list', { name: 'Posters' }).waitFor();
+    await page.getByRole('list', { name: 'Posters', exact: true }).waitFor();
     await postersLoaded(page);
     await page.mouse.move(640, 60);
     await shot('stream');
@@ -276,7 +276,7 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   // Filtering the grid: state pills, the kind icons, the text filter.
   await clip('filter', async (tab) => {
     await tab.goto(`${base}/movies`);
-    await tab.getByRole('list', { name: 'Posters' }).waitFor();
+    await tab.getByRole('list', { name: 'Posters', exact: true }).waitFor();
     await postersLoaded(tab);
     await tab.waitForTimeout(700);
     const states = tab.getByRole('group', { name: 'State' });

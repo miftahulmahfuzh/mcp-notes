@@ -32,6 +32,11 @@ export interface ScriptRunnerOptions {
   /** Path of cli.mjs. Default: DEFAULT_STREAMING_CLI. */
   cliPath?: string;
   timeoutMs?: number;
+  /**
+   * This daemon's port, read at each run (it is known only after listen()): the command reports a
+   * play that started to `127.0.0.1:<NOTESD_PORT>`, so a daemon on another port is told its own plays.
+   */
+  port?: () => number | null;
 }
 
 export interface JsonScriptOptions {
@@ -41,6 +46,8 @@ export interface JsonScriptOptions {
   /** Script path first, then its arguments. */
   argv: string[];
   timeoutMs: number;
+  /** Variables added to the daemon's own environment for the script. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -51,7 +58,7 @@ export interface JsonScriptOptions {
 export async function runJsonScript(options: JsonScriptOptions): Promise<unknown> {
   let stdout: string;
   try {
-    ({ stdout } = await run(options.nodeBin, options.argv, { timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024 }));
+    ({ stdout } = await run(options.nodeBin, options.argv, { timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024, ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }) }));
   } catch (err) {
     const out = (err as { stdout?: unknown }).stdout;
     if (typeof out !== 'string' || out.trim() === '') {
@@ -70,5 +77,8 @@ export function scriptRunner(options: ScriptRunnerOptions = {}): StreamingRunner
   const nodeBin = options.nodeBin ?? process.execPath;
   const cliPath = options.cliPath ?? DEFAULT_STREAMING_CLI;
   const timeoutMs = options.timeoutMs ?? STREAMING_TIMEOUT_MS;
-  return (site, args) => runJsonScript({ label: 'streaming script', nodeBin, argv: [cliPath, site, ...args], timeoutMs });
+  return (site, args) => {
+    const port = options.port?.() ?? null;
+    return runJsonScript({ label: 'streaming script', nodeBin, argv: [cliPath, site, ...args], timeoutMs, ...(port === null ? {} : { env: { NOTESD_PORT: String(port) } }) });
+  };
 }
