@@ -225,6 +225,8 @@ export const DEFAULT_TORRENT_WYZIE_URL = 'https://sub.wyzie.io'
 
 /** The model that looks at a stream's picture before it plays (src/directStream/picture.ts). */
 export const DEFAULT_STREAM_PICTURE_MODEL = 'haiku'
+/** The cloud provider tried first: the quickest to a stream of those measured (2026-11-18). */
+export const DEFAULT_STREAM_FIRST_PROVIDER = 'cinemaos.live'
 /** `NOTESD_FFMPEG_BIN`: the one ffmpeg, for the picture check's frames and for the torrent source (remux, subtitle extraction, Whisper's audio cuts). */
 export const DEFAULT_FFMPEG_BIN = 'ffmpeg'
 
@@ -272,6 +274,12 @@ export interface DirectStreamConfig {
    * downloaded to this machine (src/directStream/ahead.ts). `off` or unset in a literal: never.
    */
   ahead?: boolean
+  /**
+   * `NOTESD_STREAM_FIRST_PROVIDER`, default `cinemaos.live`: the cloud provider every resolve tries
+   * before the others, while it keeps working (claude/streaming/direct/order.mjs). `off`, null or
+   * unset in a literal: none, the providers are ordered by what was measured.
+   */
+  firstProvider?: string | null
   /** The background prober (phase 10). Off unless NOTESD_STREAM_PROBER=on. */
   prober: StreamProberConfig
   /** The daily trending list. Unset in a literal: off. */
@@ -984,6 +992,15 @@ export function parseMovies(env: Record<string, string | undefined>): MoviesConf
   }
 }
 
+/** A provider's name as the registry has it; `off` is none, unset the default. */
+function parseFirstProvider(raw: string | undefined): string | null {
+  const name = raw?.trim() ?? ''
+  if (name === '') return DEFAULT_STREAM_FIRST_PROVIDER
+  if (name.toLowerCase() === 'off') return null
+  if (name.length > 60 || name.includes(',')) throw new Error(`NOTESD_STREAM_FIRST_PROVIDER must be a provider's name or off (got ${name.slice(0, 80)})`)
+  return name
+}
+
 export function parseDirectStream(env: Record<string, string | undefined>): DirectStreamConfig {
   return {
     enabled: parseSwitch('NOTESD_DIRECT_STREAM', env.NOTESD_DIRECT_STREAM),
@@ -997,6 +1014,7 @@ export function parseDirectStream(env: Record<string, string | undefined>): Dire
         : parseModel('NOTESD_STREAM_PICTURE_MODEL', env.NOTESD_STREAM_PICTURE_MODEL, DEFAULT_STREAM_PICTURE_MODEL),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     ahead: env.NOTESD_STREAM_AHEAD?.trim().toLowerCase() !== 'off',
+    firstProvider: parseFirstProvider(env.NOTESD_STREAM_FIRST_PROVIDER),
     audioCheck: parseSwitch('NOTESD_STREAM_AUDIO_CHECK', env.NOTESD_STREAM_AUDIO_CHECK),
     prober: parseStreamProber(env),
     trending: parseTrending(env),

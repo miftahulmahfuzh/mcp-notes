@@ -133,6 +133,17 @@ describe('the order providers are tried in (R1.2)', () => {
     expect(names(orderProviders(list, {}))).toEqual(['C', 'A', 'D', 'B']);
   });
 
+  it('tries the provider put first before every other, while it keeps working', () => {
+    const list = [provider('A', { en_subtitle: true }), provider('cinemaos.live', { en_subtitle: false }), provider('C', { en_subtitle: true })];
+    expect(names(orderProviders(list, {}, { first: 'Cinemaos.Live' }))).toEqual(['cinemaos.live', 'A', 'C']);
+    expect(names(orderProviders(list, {}, { first: 'nobody' }))).toEqual(['A', 'C', 'cinemaos.live']);
+    // Two failures in a row keep the place; three, or a bad delivery, lose it until it works again.
+    const failing = (n: number) => readHealth(JSON.stringify({ 'cinemaos.live': { last_success_at: '2026-11-18T10:00:00Z', consecutive_failures: n } }));
+    expect(names(orderProviders(list, failing(2), { first: 'cinemaos.live' }))[0]).toBe('cinemaos.live');
+    expect(names(orderProviders(list, failing(3), { first: 'cinemaos.live' }))).toEqual(['A', 'C', 'cinemaos.live']);
+    expect(names(orderProviders(list, { 'cinemaos.live': { delivery: 'bad' } }, { first: 'cinemaos.live' }))).toEqual(['A', 'C', 'cinemaos.live']);
+  });
+
   it('ranks by English subtitle before health', () => {
     const health = readHealth(JSON.stringify({ E1: { consecutive_failures: 3 }, E2: { last_success_at: '2026-11-15T10:00:00Z', best_height: 2160 } }));
     expect(names(orderProviders([provider('E2', { en_subtitle: false }), provider('E1', { en_subtitle: true })], health))).toEqual(['E1', 'E2']);

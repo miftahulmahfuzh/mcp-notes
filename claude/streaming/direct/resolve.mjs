@@ -276,6 +276,7 @@ function describe(found) {
  * Resolves a title: providers in the D1 order, the first stream wins. `ref` is
  * { kind: 'movie' | 'tv', tmdbId, season, episode }, already validated. `sniff(url, options)` is
  * the sniffer (sniffEmbed in use, a fake in tests); every call gets the same options object.
+ * `first` (null: none) names the provider tried before every other while it keeps working (order.mjs).
  * `deadlineS` (null: none): once that many seconds have passed, no further provider is sniffed and
  * the answer is `error: "deadline"` (it says nothing about the title).
  *
@@ -299,10 +300,10 @@ function describe(found) {
  */
 export async function resolveTitle(
   ref,
-  { providers, health = {}, sniff, only = null, skip = [], sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
+  { providers, health = {}, sniff, only = null, skip = [], first = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
 ) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
-  let candidates = orderProviders(providers, health);
+  let candidates = orderProviders(providers, health, { first });
   // An anime goes to the anime embeds first: they are asked for the original audio with English subtitles.
   if (ref.anime) candidates = [...candidates.filter((p) => p.id_kind === 'anilist'), ...candidates.filter((p) => p.id_kind !== 'anilist')];
   // A session that left a provider because its stream stalled asks for another one.

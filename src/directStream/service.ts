@@ -272,6 +272,8 @@ export interface DirectStreamServiceOptions {
   outside?: () => OutsideSubtitles | null;
   /** True: the next episode of a series being watched is fetched to this machine while this one plays (ahead.ts). Unset: never. */
   ahead?: boolean;
+  /** The provider every resolve tries before the others while it keeps working (order.mjs `first`). Unset or null: none. */
+  firstProvider?: string | null;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -1345,6 +1347,7 @@ export class DirectStreamService {
           ...(ref.kind === 'tv' ? [String(ref.season), String(ref.episode)] : []),
           ...(options.only !== undefined ? ['--only', options.only] : []),
           ...(skip.length > 0 ? ['--skip', skip.join(',')] : []),
+          ...(typeof this.opts.firstProvider === 'string' && options.only === undefined ? ['--first', this.opts.firstProvider] : []),
           ...(options.deadlineS !== undefined ? ['--deadline-s', String(Math.max(1, Math.floor(options.deadlineS)))] : []),
           ...(audioLang !== null ? ['--audio-lang', audioLang] : []),
           ...(anime !== null ? ['--anime', `${anime.id}:${anime.episode}`] : []),
@@ -1709,6 +1712,7 @@ export function buildDirectStreamService(
     torrent: wiring.torrent,
     outside: wiring.outside,
     ahead: ds.ahead === true,
+    firstProvider: ds.firstProvider ?? null,
     fetch: overrides.fetch,
     now: overrides.now,
     log: overrides.log,

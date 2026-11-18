@@ -1,4 +1,5 @@
-// The order providers are tried in, the one place it lives (decision D1): a provider that never
+// The order providers are tried in, the one place it lives (decision D1): the provider the owner
+// put first (`first`, NOTESD_STREAM_FIRST_PROVIDER) while it keeps working; then a provider that never
 // gave a stream on this machine in DEAD_AFTER tries or more goes last of all; then a provider known to
 // offer an English subtitle first, unknown next, known without one last; then delivery (a provider
 // whose last play on this machine kept stalling goes last); then health; then the best quality;
@@ -46,13 +47,29 @@ export function deliveryRank(health) {
   return health?.delivery === 'bad' ? 1 : 0;
 }
 
-/** The providers in the order a resolve tries them. Does not drop any; the resolver skips. */
-export function orderProviders(providers, health = {}) {
+/** The provider put first loses its place after this many failures in a row, until it gives a stream again. */
+export const FIRST_GIVES_UP_AFTER = 3;
+
+/**
+ * 0: the provider the owner put first, while it earns the place: fewer than FIRST_GIVES_UP_AFTER
+ * failures in a row and no bad delivery. Otherwise 1, and it is ordered like any other: a
+ * provider that went down must not cost every play its 35 seconds.
+ */
+export function firstRank(provider, health, first) {
+  if (first === null || provider.name.toLowerCase() !== first.toLowerCase()) return 1;
+  return (health?.consecutive_failures ?? 0) >= FIRST_GIVES_UP_AFTER || deliveryRank(health) === 1 ? 1 : 0;
+}
+
+/**
+ * The providers in the order a resolve tries them. Does not drop any; the resolver skips.
+ * `first`: the name of the provider to try before every other, or null.
+ */
+export function orderProviders(providers, health = {}, { first = null } = {}) {
   const keyed = providers.map((provider, index) => {
     const h = Object.hasOwn(health, provider.name) ? health[provider.name] : null;
     return {
       provider,
-      key: [deadRank(h), englishTier(provider, h), deliveryRank(h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
+      key: [firstRank(provider, h, first), deadRank(h), englishTier(provider, h), deliveryRank(h), healthRank(h), -(h?.best_height ?? 0), h?.median_s ?? Number.POSITIVE_INFINITY, index],
     };
   });
   keyed.sort((a, b) => {
