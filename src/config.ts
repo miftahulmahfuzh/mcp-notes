@@ -446,6 +446,13 @@ export interface TorrentConfig {
   discovery: boolean
   /** `NOTESD_TORRENT_PEERS`: `host:port` addresses (comma-separated) added as a peer to every torrent. Empty by default. */
   peers: string[]
+  /**
+   * `NOTESD_TORRENT_TRACKER_LISTS`, default on: once a day the public tracker lists (ngosang `trackers_best`,
+   * newtrackon `stable`) are read and the UDP trackers on them that answer a BEP 15 connect are added to every
+   * torrent opened and every scrape (src/directStream/torrent/trackerLists.ts). Needs `discovery`. Unset (a Config
+   * literal, DEFAULT_TORRENT_CONFIG): off.
+   */
+  trackerLists?: boolean
   /** The finder's settings (torrent phase 3); unset: the finder's defaults. */
   finder?: TorrentFinderConfig
   /** `NOTESD_FFMPEG_BIN`, default `ffmpeg` on PATH; a path is ~-expanded and made absolute (torrent phase 3). */
@@ -1107,6 +1114,7 @@ export function parseTorrent(env: Record<string, string | undefined>, dataDir: s
       : { subtitleWaitMs: parsePositiveInt('NOTESD_TORRENT_SUBTITLE_WAIT_MS', env.NOTESD_TORRENT_SUBTITLE_WAIT_MS, 1500) }),
     discovery: parseSwitch('NOTESD_TORRENT_DISCOVERY', env.NOTESD_TORRENT_DISCOVERY),
     peers: parsePeers(env.NOTESD_TORRENT_PEERS),
+    trackerLists: parseSwitch('NOTESD_TORRENT_TRACKER_LISTS', env.NOTESD_TORRENT_TRACKER_LISTS),
     finder: parseTorrentFinder(env),
     ffmpegBin: parseBin(env.NOTESD_FFMPEG_BIN, DEFAULT_FFMPEG_BIN),
     remux: parseSwitch('NOTESD_TORRENT_REMUX', env.NOTESD_TORRENT_REMUX),
@@ -1201,6 +1209,7 @@ function parseTorrentSiteOrigin(name: string, raw: string | undefined, fallback:
  * Direct-streaming prober keys: NOTESD_STREAM_PROBER (default off), NOTESD_STREAM_CATALOG_SIZE,
  * NOTESD_STREAM_PROBE_BUDGET, NOTESD_STREAM_IDLE_SECONDS, NOTESD_STREAM_PROBE_MS.
  * Torrent keys: NOTESD_TORRENT, NOTESD_TORRENT_DIR, NOTESD_TORRENT_UPLOAD_KBPS, NOTESD_TORRENT_KEEP_DAYS, NOTESD_TORRENT_SUBTITLE_WAIT_MS,
+ * NOTESD_TORRENT_TRACKER_LISTS (on or off; anything else throws ConfigError),
  * NOTESD_TORRENT_DISCOVERY, NOTESD_TORRENT_PEERS (a relative folder, a cap or keep of 0, a peer without a port throw ConfigError),
  * NOTESD_TORRENT_MIN_SEEDS, NOTESD_TORRENT_MAX_GB, NOTESD_TORRENT_INDEX_TIMEOUT_MS, NOTESD_TORRENT_TORRENTIO_URL,
  * NOTESD_TORRENT_APIBAY_URL, NOTESD_TORRENT_EZTV_URL, NOTESD_TORRENT_YTS_URL, NOTESD_TORRENT_TORRENTSDB_URL, NOTESD_TORRENT_PEERFLIX_URL,

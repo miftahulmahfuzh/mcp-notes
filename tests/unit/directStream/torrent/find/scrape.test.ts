@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectPacket, deadLast, looksDead, readScrape, SCRAPE_MAX_TRACKERS, scrapePacket, udpScraper, udpTrackerOf, udpTrackers, type ScrapeSocket } from '../../../../../src/directStream/torrent/find/scrape.js';
+import { connectPacket, deadLast, looksDead, readScrape, SCRAPE_LIST_SLOTS, SCRAPE_MAX_TRACKERS, scrapePacket, scrapeTrackerOrder, udpConnector, udpScraper, udpTrackerOf, udpTrackers, type ScrapeSocket } from '../../../../../src/directStream/torrent/find/scrape.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -94,5 +94,44 @@ describe('the tracker scrape (BEP 15)', () => {
     expect(looksDead(undefined)).toBe(false);
     const list = [{ infoHash: A }, { infoHash: B }, { infoHash: 'c' }];
     expect(deadLast(list, new Map([[A, { seeders: 0, leechers: 0, trackers: 3 }]])).map((c) => c.infoHash)).toEqual([B, 'c', A]);
+  });
+});
+
+describe('the connect-only check (public tracker lists)', () => {
+  it('sends only a connect to each tracker, once, and answers the addresses whose tracker replied', async () => {
+    const net = fakeSocket({ 'one.example': [], 'two.example': [], 'mute.example': 'silent' });
+    const answered = await udpConnector({ socket: () => net.socket })(
+      ['udp://one.example:1337/announce', 'udp://ONE.example:1337', 'udp://two.example:80', 'udp://mute.example:6969', 'http://web.example/announce'],
+      { timeoutMs: 30 },
+    );
+    expect([...answered].sort()).toEqual(['udp://one.example:1337/announce', 'udp://two.example:80']);
+    expect(net.sent.every((s) => s.action === 0)).toBe(true);
+    expect(net.sent.map((s) => s.host).sort()).toEqual(['mute.example', 'one.example', 'two.example']);
+    expect(net.closed()).toBe(1);
+  });
+
+  it('opens no socket without a udp tracker, and answers what arrived when the time is up', async () => {
+    let opened = 0;
+    const connect = udpConnector({ socket: () => ((opened += 1), fakeSocket({}).socket) });
+    expect((await connect(['http://web.example/announce'])).size).toBe(0);
+    expect(opened).toBe(0);
+    const started = Date.now();
+    expect((await udpConnector({ socket: () => fakeSocket({ 'mute.example': 'silent' }).socket })(['udp://mute.example:1'], { timeoutMs: 30 })).size).toBe(0);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe('the trackers one scrape asks', () => {
+  it('keeps the last SCRAPE_LIST_SLOTS places for the list trackers, after the others, without repeats', () => {
+    const first = Array.from({ length: 30 }, (_, i) => `udp://f${i}.example:1`);
+    const lists = ['udp://f0.example:1/announce', ...Array.from({ length: 10 }, (_, i) => `udp://l${i}.example:1`)];
+    const order = scrapeTrackerOrder(first, lists);
+    expect(order).toHaveLength(SCRAPE_MAX_TRACKERS);
+    expect(order.slice(0, SCRAPE_MAX_TRACKERS - SCRAPE_LIST_SLOTS)).toEqual(first.slice(0, SCRAPE_MAX_TRACKERS - SCRAPE_LIST_SLOTS));
+    expect(order.slice(SCRAPE_MAX_TRACKERS - SCRAPE_LIST_SLOTS)).toEqual(lists.slice(1, 1 + SCRAPE_LIST_SLOTS));
+    // Few others: the list trackers fill the rest. No list: the others fill every place. Only UDP is asked.
+    expect(scrapeTrackerOrder(first.slice(0, 3), lists)).toEqual([...first.slice(0, 3), ...lists.slice(1)]);
+    expect(scrapeTrackerOrder(first, [])).toEqual(first.slice(0, SCRAPE_MAX_TRACKERS));
+    expect(scrapeTrackerOrder(['http://web.example/announce', 'udp://a.example:1'], ['http://other.example/announce'])).toEqual(['udp://a.example:1']);
   });
 });

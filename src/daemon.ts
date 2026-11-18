@@ -37,6 +37,7 @@ import { buildDirectStreamService } from './directStream/service.js';
 import { torrentSiteIndexes, torrentSitesScriptRunner } from './directStream/torrent/find-sites.js';
 import { buildTorrentRemux } from './directStream/torrent/remux.js';
 import { buildTorrentSource, type TorrentSource } from './directStream/torrent/source.js';
+import { buildTrackerLists } from './directStream/torrent/trackerLists.js';
 import { buildSubtitleTiers } from './directStream/torrent/subtitles/chain.js';
 import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js';
 import { CueFeeds, cueFeedUrl, whisperTrackId } from './directStream/torrent/subtitles/feed.js';
@@ -348,6 +349,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         // Phase 5 adds `remux` and phase 9 `fallback` here (one line each).
         remux: torrentRemux,
         fallback: torrentSiteFallback,
+        // The public tracker lists' store, filled by startBackground's daily refresh; null when it is off.
+        lists: trackerLists.lists,
         sync:
           subtitleSync === null
             ? null
@@ -397,6 +400,10 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Torrents (torrent-stream-source phase 1): null with NOTESD_TORRENT=off or direct streaming off.
   // Building it joins nothing: the WebTorrent engine starts with the first torrent opened.
   const torrents = buildTorrentStreams(config, directStream, db);
+  // The public tracker lists (wider-torrent-sources phase 3): one store, read by every torrent opened and every scrape,
+  // and the job that refreshes it once a day from startBackground. Off with NOTESD_TORRENT_TRACKER_LISTS, torrents or
+  // discovery off: no store, and a job that does nothing.
+  const trackerLists = buildTrackerLists(config.torrent, torrents !== null);
   // Phase 7: the growing cue feeds (the subtitle track inside a torrent's file; phase 8's Whisper) and
   // the ffmpeg extraction that fills them. ffmpeg reads the file from disk once it is complete, else
   // through this daemon's own file route, which waits for the pieces as the torrent downloads.
@@ -490,6 +497,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     torrents: deps.torrents ?? null,
     busy: () => moviesPlayer?.current() != null || streamLive?.current() != null || (deps.directStream?.starting(null).length ?? 0) > 0,
   });
+  // Started and closed by startBackground; never in a play's path.
+  deps.trackerLists = trackerLists.job;
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
   deps.torrentWhisper = whisperTier;
   // The cloud audio-language check's Whisper worker (audioLang.ts): closed by startBackground's stop. Null when the check is off.

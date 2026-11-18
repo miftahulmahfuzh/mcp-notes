@@ -6,7 +6,7 @@ const DATA = '/srv/notes';
 
 describe('torrent settings', () => {
   it('are on, under <dataDir>/movies/torrents, capped at 100 kB/s and kept 7 days by default', () => {
-    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', wyzieSync: null, sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
+    expect(parseTorrent({}, DATA)).toEqual({ enabled: true, dir: path.join(DATA, 'movies', 'torrents'), uploadKbps: 100, keepDays: 7, discovery: true, peers: [], trackerLists: true, finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', wyzieSync: null, sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
   });
 
   it('read every variable', () => {
@@ -19,10 +19,11 @@ describe('torrent settings', () => {
           NOTESD_TORRENT_KEEP_DAYS: '3',
           NOTESD_TORRENT_DISCOVERY: 'off',
           NOTESD_TORRENT_PEERS: '127.0.0.1:6881, [::1]:7000,127.0.0.1:6881,seed.local:51413',
+          NOTESD_TORRENT_TRACKER_LISTS: 'off',
         },
         DATA,
       ),
-    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', wyzieSync: null, sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
+    ).toEqual({ enabled: false, dir: '/mnt/data/torrents', uploadKbps: 64, keepDays: 3, discovery: false, peers: ['127.0.0.1:6881', '[::1]:7000', 'seed.local:51413'], trackerLists: false, finder: { indexes: {} }, ffmpegBin: 'ffmpeg', remux: true, subtitleUrl: 'https://opensubtitles-v3.strem.io', wyzieKey: null, wyzieUrl: 'https://sub.wyzie.io', wyzieSync: null, sites: DEFAULT_TORRENT_SITES_CONFIG, whisper: { enabled: true, dir: path.join(DATA, 'whisper'), python: path.join(DATA, 'whisper', 'venv', 'bin', 'python'), model: 'small', threads: 8, stretchS: 300 } });
   });
 
   it('refuse a relative folder, a zero cap or keep, and a peer without a port', () => {
@@ -38,6 +39,14 @@ describe('torrent settings', () => {
     expect(parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: '40000' }, DATA).subtitleWaitMs).toBe(40000);
     expect(parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: ' ' }, DATA)).not.toHaveProperty('subtitleWaitMs');
     expect(() => parseTorrent({ NOTESD_TORRENT_SUBTITLE_WAIT_MS: '0' }, DATA)).toThrow(/NOTESD_TORRENT_SUBTITLE_WAIT_MS must be a positive integer/);
+  });
+
+  it('read the tracker lists switch: on by default, unset in DEFAULT_TORRENT_CONFIG', () => {
+    expect(parseTorrent({}, DATA).trackerLists).toBe(true);
+    expect(parseTorrent({ NOTESD_TORRENT_TRACKER_LISTS: 'off' }, DATA).trackerLists).toBe(false);
+    expect(parseTorrent({ NOTESD_TORRENT_TRACKER_LISTS: 'on' }, DATA).trackerLists).toBe(true);
+    expect(() => parseTorrent({ NOTESD_TORRENT_TRACKER_LISTS: 'maybe' }, DATA)).toThrow(/NOTESD_TORRENT_TRACKER_LISTS must be "on" or "off"/);
+    expect(DEFAULT_TORRENT_CONFIG.trackerLists).toBeUndefined();
   });
 
   it('follow NOTES_DATA_DIR in loadConfig', () => {

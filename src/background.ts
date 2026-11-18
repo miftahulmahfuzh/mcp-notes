@@ -43,7 +43,7 @@ export const SUMMARY_DUE_MARGIN_MS = 30_000;
  * the reply embedding worker (one vector per Claude reply of this host's sessions). With
  * `deps.adversary`, the Seer Adversarial reviewer's poll loop. With deps.movies, the movies
  * library's poll loop over NOTESD_MOVIES_ROOTS. With deps.streamProber enabled
- * (NOTESD_STREAM_PROBER=on), the direct-streaming prober's loop. With deps.trending, the daily trending list's loop.
+ * (NOTESD_STREAM_PROBER=on), the direct-streaming prober's loop. With deps.trending, the daily trending list's loop; with deps.trackerLists, the public tracker lists' daily refresh.
  * Creates images/, cache/, inbox/, inbox/failed/, chat-images/ under the data dir first (idempotent; the
  * daemon already made them, but tests call this without startDaemon). Then copies any legacy
  * image (notes.image_path/image_meta without a note_images row, e.g. ingested by an older daemon
@@ -220,6 +220,14 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
     trending.start();
   }
 
+  // The public tracker lists (trackerLists.ts): built by the daemon (on with torrents and discovery), refreshed a minute
+  // after start and once a day, closed on stop. A disabled one only logs why.
+  const trackerLists = deps.trackerLists ?? null;
+  if (trackerLists !== null) {
+    console.log(trackerLists.startLine());
+    trackerLists.start();
+  }
+
   // Stream cache (stream-cache phase 5): this host's unfinished downloads carry on; closed on stop.
   const streamCache = deps.streamCache ?? null;
   if (streamCache !== null) {
@@ -269,6 +277,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.movies?.close(),
       prober?.close(),
       trending?.close(),
+      trackerLists?.close(),
       // Before the torrents: ffmpeg stops reading the file route first.
       deps.torrentRemux?.close(),
       streamCache?.close(),

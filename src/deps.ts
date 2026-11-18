@@ -22,6 +22,7 @@ import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subt
 import type { StreamLive } from './movies/streamLive.js';
 import type { StreamProberHandle } from './directStream/prober.js';
 import type { TrendingHandle } from './directStream/trending/job.js';
+import type { TrackerListsHandle } from './directStream/torrent/trackerLists.js';
 import type { StreamEvidence } from './directStream/evidence.js';
 import type { StreamReporter } from './directStream/report.js';
 import type { NoteEvents } from './notes/events.js';
@@ -128,6 +129,12 @@ export interface AppDeps {
    * Absent (tests), GET /api/movies/trending reports it off. Started and closed by startBackground.
    */
   trending?: TrendingHandle | null;
+  /**
+   * The public tracker lists' daily refresh (src/directStream/torrent/trackerLists.ts). The daemon always sets it: a
+   * DisabledTrackerLists unless NOTESD_TORRENT_TRACKER_LISTS, torrents and discovery are on. Started and closed by
+   * startBackground; absent (tests): nothing runs.
+   */
+  trackerLists?: TrackerListsHandle | null;
   /**
    * This host's stream evidence log (src/directStream/evidence.ts): every pass-through answer, the
    * player page's log lines, and snapshots under <dataDir>/movies/stream-reports/. The daemon builds

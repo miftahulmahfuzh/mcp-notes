@@ -4,6 +4,8 @@ import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
 import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, IndexHealth, looksDead, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
 import { readMagnet, TRACKER_BOOK_FILE, TrackerBook, trackerKey } from './origins.js';
+import { scrapeTrackerOrder } from './find/scrape.js';
+import type { TrackerLists } from './trackerLists.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { canRemux, pickAudioStream, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
@@ -112,6 +114,11 @@ export interface TorrentSourceOptions {
   scrape?: ScrapeTrackers | null;
   /** The public trackers learned from pasted magnets (origins.ts), added to every torrent opened; null or unset: none. */
   book?: TrackerBook | null;
+  /**
+   * The public tracker lists' trackers that answered a connect (trackerLists.ts), added after the candidate's and the
+   * book's to every torrent opened and every scrape; null or unset: none (NOTESD_TORRENT_TRACKER_LISTS or discovery off).
+   */
+  lists?: Pick<TrackerLists, 'list'> | null;
   /** The torrent sites' addresses by name (TorrentSitesConfig.origins; null: off), for what learnMagnet says of an index. */
   sites?: Readonly<Record<string, string | null>>;
   /** Default TORRENT_SETTLE_MS. */
@@ -475,16 +482,31 @@ export class TorrentSource {
     return any;
   }
 
-  /** A candidate's trackers followed by the learned ones (the tracker book), without repeats. */
+  /**
+   * A candidate's trackers, then the learned ones (the tracker book), then the public lists' (trackerLists.ts),
+   * without repeats: two spellings of one tracker (trackerKey) are one, the first kept.
+   */
   private trackersOf(c: Pick<TorrentCandidate, 'trackers'>): string[] {
-    return [...new Set([...c.trackers, ...(this.opts.book?.list() ?? [])])];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const url of [...c.trackers, ...(this.opts.book?.list() ?? []), ...(this.opts.lists?.list() ?? [])]) {
+      const key = trackerKey(url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(url);
+    }
+    return out;
   }
 
-  /** What the trackers know of each candidate's swarm, asked before any is joined; empty when nobody is asked or answers. */
+  /**
+   * What the trackers know of each candidate's swarm, asked before any is joined; empty when nobody is asked or
+   * answers. The defaults, the book and the candidates' own trackers come first; the list trackers get the last
+   * places (scrapeTrackerOrder), so they are asked without making the scrape longer.
+   */
   private async swarmCounts(candidates: readonly TorrentCandidate[], timeoutMs?: number): Promise<Map<string, SwarmCount>> {
     const scrape = this.opts.scrape ?? null;
     if (scrape === null || candidates.length === 0) return new Map();
-    const trackers = [...DEFAULT_TRACKERS, ...(this.opts.book?.list() ?? []), ...candidates.flatMap((c) => c.trackers)];
+    const trackers = scrapeTrackerOrder([...DEFAULT_TRACKERS, ...(this.opts.book?.list() ?? []), ...candidates.flatMap((c) => c.trackers)], this.opts.lists?.list() ?? []);
     try {
       return await scrape(candidates.map((c) => c.infoHash), trackers, timeoutMs === undefined ? {} : { timeoutMs });
     } catch (err) {
@@ -1074,6 +1096,8 @@ export function buildTorrentSource(
     remux?: TorrentRemux | null;
     /** Wyzie Synced (buildSubtitleSync); null or unset: no subtitle is re-timed. */
     sync?: { start(request: TorrentSyncRequest): unknown } | null;
+    /** The public tracker lists (buildTrackerLists in src/daemon.ts, which reads the switches); null or unset: none. */
+    lists?: Pick<TrackerLists, 'list'> | null;
   },
 ): TorrentSource | null {
   if (config.torrent?.enabled !== true || torrents === null) return null;
@@ -1101,6 +1125,7 @@ export function buildTorrentSource(
     // NOTESD_TORRENT_DISCOVERY=off asks no tracker at all, so nothing is scraped either.
     scrape: config.torrent.discovery ? udpScraper() : null,
     book: new TrackerBook(join(config.torrent.dir, TRACKER_BOOK_FILE)),
+    lists: wiring.lists ?? null,
     ...(config.torrent.sites === undefined ? {} : { sites: config.torrent.sites.origins }),
     localBase: wiring.localBase,
     ...(config.torrent.subtitleWaitMs === undefined ? {} : { subtitleHeadMs: config.torrent.subtitleWaitMs }),

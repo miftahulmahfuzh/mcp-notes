@@ -3,16 +3,16 @@
 **Package Path**: `.`
 **Package Code**: NOTES
 **Last Updated**: 2026-11-19
-**Total Active Tasks**: 19
+**Total Active Tasks**: 17
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 19
+- P1 High: 17
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 121
+- Completed: 123
 
 ---
 
@@ -42,15 +42,27 @@
   - **Decided**:
     - Plan index names worktree wider-torrent-sources / branch feature/wider-torrent-sources, session launched by swarm.py in the per-phase worktree -> applied here (swarm ledger lists this session as phase 2; the coordinator integrates the phase branch)
   - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with phase 3 (P1-NOTES-A138) running beside it; the coordinator's integrator reconciles them. No successor to unblock: P1-NOTES-A138 does not depend on this phase and is already in_progress.
-- [ ] **P1-NOTES-A138** Phase 3: Daily verified public tracker lists
+- [x] **P1-NOTES-A138** Phase 3: Daily verified public tracker lists
   - **Difficulty**: NORMAL
   - **Type**: Feature
   - **Context**: Owns: A new module beside `origins.ts` (the tracker lists): fetch the two lists with notesd's User-Agent, parse, keep UDP trackers not already in `DEFAULT_TRACKERS` or the book, verify each by a BEP 15 connect (a connect-only check added to `find/scrape.ts` on its existing socket seam), store `<torrent dir>/tracker-lists.json` (`{ fetched_at, trackers: [{ url, source }] }`, capped), keep the previous file when a refresh fails or nothing answers. Injected fetch, socket and clock. A daily loop started and closed in `src/background.ts` (built in `src/daemon.ts`), first run shortly after start, never in a play's path; off when `NOTESD_TORRENT=off`, `NOTESD_TORRENT_DISCOVERY=off` or `NOTESD_TORRENT_TRACKER_LISTS=off`. `TorrentSource`: a `lists` option beside `book`; `trackersOf` and `swarmCounts` append the kept trackers after the candidate's and the book's; the scrape's tracker cap reviewed so the added trackers are actually asked without lengthening `SCRAPE_TIMEOUT_MS`; `buildTorrentSource` wires it. `find/scrape.ts`: the connect-only `udpConnector`, `SCRAPE_MAX_TRACKERS` 8 -> 16 with the last `SCRAPE_LIST_SLOTS` (6) kept for list trackers (`scrapeTrackerOrder`); no new barrel line (the existing `export * from './scrape.js'` carries them; no name collides with phases 1-2's exports). `src/config.ts` torrent block: `trackerLists` switch (+ the two list addresses as constants, not settings), and one new line in loadConfig's key-list comment after :1194; one `configuration.md` row placed after `NOTESD_TORRENT_PEERS`; a guide section under "Torrents" next to "What a magnet says of its index"; feature map bullet after :574; a CLAUDE.md bullet after :120; `verify.sh` pins `NOTESD_TORRENT_TRACKER_LISTS=off` in the base `env=(...)` array (:262) for every throwaway daemon. Tests: parsing, verification with a fake socket, keep-previous on failure, the off switches, `trackersOf`/`swarmCounts` order. Exit criteria: R3.1-R3.4 hold; a daemon with the switch off behaves exactly as today; `npm run typecheck` and `npm test` pass.
-  - **Status**: in_progress
+  - **Status**: done
   - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 3 of 3)
   - **Satisfies**: R3 — "more tracker lists, etc)" · criteria: R3.1, R3.2, R3.3, R3.4
   - **Depends on**: —
   - **Plan**: `.workflows/plan/P1-NOTES-A138.md`
+  - **Completed**: 2026-11-19 03:35
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/find/scrape.ts, src/directStream/torrent/trackerLists.ts, src/directStream/torrent/source.ts, src/config.ts, src/deps.ts, src/daemon.ts, src/background.ts, tests/fixtures/torrent/tracker-lists/ngosang-trackers_best.txt, tests/fixtures/torrent/tracker-lists/newtrackon-stable.txt, tests/unit/directStream/torrent/trackerLists.test.ts, tests/unit/directStream/torrent/find/scrape.test.ts, tests/unit/directStream/torrentRotation.test.ts, tests/unit/config.torrent.test.ts, tests/unit/config.test.ts, docs/guide/reference/configuration.md, docs/guide/streaming.md, CLAUDE.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/features/direct-streaming.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/wider-torrent-sources-p3-evidence
+  - **Drift**:
+    - Worktree/branch: the plan index names /home/miftah/.worktrees/mcp-notes/wider-torrent-sources on feature/wider-torrent-sources; the swarm launched this phase isolated in /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p3 on phase-3-wider-torrent-sources (base 6a2905b). No code drift: every plan anchor matched exactly.
+    - tests/unit/config.test.ts was not in the plan's Files table but its 'applies defaults' whole-config expectation needed trackerLists: true.
+  - **Decided**:
+    - Plan worktree vs the swarm's per-phase worktree → implemented in the worktree the swarm launched (rung 6: swarm convention; ledger tracks this phase here)
+    - Plan's test 'runs a minute after start…' failed as written: it advances the fake clock 2 days after close, then expects a 'restart within the day' to fetch nothing → set the fake clock to 1 h after the last save before the restart; assertion unchanged, code unchanged (rung 2: R3.1 'once a day')
+    - tests/unit/config.test.ts 'applies defaults' outside the plan's file list → added trackerLists: true to its expected torrent object (rung 1: invariant 1, npm test passes at the end of each phase)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases 1-2; the coordinator's integrator reconciles them. Last phase of the set: no successor to unblock.
 - [x] **P1-NOTES-A127** Phase 1: The torrent engine and its file route
   - **Difficulty**: HARD
   - **Type**: Feature
