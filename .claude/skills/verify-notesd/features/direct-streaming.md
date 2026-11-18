@@ -441,6 +441,14 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   its attempt says `not asked`; a provider's bot check, timeout or failure is its own attempt and the others still answer;
   `NOTESD_TORRENT_TORRENTSDB_URL=off` / `NOTESD_TORRENT_PEERFLIX_URL=off` send nothing. Every throwaway daemon sets both
   `off`, so its attempt lists are unchanged.
+- Indexes asked by title (Knaben, Bitsearch, torrents-csv: `Index: knaben`, `Index: bitsearch`, `Index: torrentscsv`):
+  a film by title and year, an episode by title and `SxxEyy`; a release only they list must be the title followed by
+  the year (one either way) or the episode's marker, else `other_title` / `other_year` / `other_episode` in `excluded`;
+  a bot check, timeout or failure is that index's attempt only. Proven by
+  `npx vitest run tests/unit/directStream/torrent/find/titleSearch.test.ts tests/unit/config.torrentFinder.test.ts`
+  over the answers recorded on 2026-11-19 (`tests/fixtures/torrent/{knaben,bitsearch,torrentscsv}-shawshank.json`).
+  Every throwaway daemon pins the three `off` (the fake index is Torrentio-shaped only): a `--torrent` run's play
+  names no `Index: knaben`, `Index: bitsearch` or `Index: torrentscsv` attempt.
 - Throwaway daemon, a torrent run (`$V up --web --torrent`, note RUN): in this order,
   `.claude/skills/verify-notesd/scripts/direct-stream/torrent.sh RUN fallback named`, then
   `SID=$(cat ~/.local/state/notesd-verify/RUN/torrent-journey/sid) $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs`

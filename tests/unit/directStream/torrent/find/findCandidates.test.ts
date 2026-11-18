@@ -45,6 +45,14 @@ function addonAnswer(addon: string, rows: Array<{ title: string; seeds: number; 
   });
 }
 const NO_YTS = '{"status":"ok","data":{"movie_count":0}}';
+// The title-search indexes (WIDER_TORRENT_SOURCES phase 2) answering nothing, for the tests about the IMDb-keyed ones.
+const KNABEN = 'https://api.knaben.org/v1';
+const BITSEARCH_FILM = 'https://bitsearch.to/api/v1/search?q=Sintel%202010&sort=seeders';
+const BITSEARCH_EPISODE = 'https://bitsearch.to/api/v1/search?q=Breaking%20Bad%20S01E01&sort=seeders';
+const TCSV_FILM = 'https://torrents-csv.com/service/search?q=Sintel%202010&size=50';
+const TCSV_EPISODE = 'https://torrents-csv.com/service/search?q=Breaking%20Bad%20S01E01&size=50';
+const NOTHING_BY_TITLE_FILM: Record<string, Route> = { [KNABEN]: body('{"hits":[]}'), [BITSEARCH_FILM]: body('{"success":true,"results":[]}'), [TCSV_FILM]: body('{"torrents":[]}') };
+const NOTHING_BY_TITLE_EPISODE: Record<string, Route> = { [KNABEN]: body('{"hits":[]}'), [BITSEARCH_EPISODE]: body('{"success":true,"results":[]}'), [TCSV_EPISODE]: body('{"torrents":[]}') };
 
 describe('findCandidates', () => {
   it('asks Torrentio, apibay, TorrentsDB and YTS for a film by its IMDb id and answers ranked candidates', async () => {
@@ -53,9 +61,10 @@ describe('findCandidates', () => {
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
       [YTS_FILM]: body(fixture('yts-sintel.json')),
       [TORRENTSDB_FILM]: body(NO_STREAMS),
+      ...NOTHING_BY_TITLE_FILM,
     });
     const found = await findCandidates(SINTEL, { fetch });
-    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, TORRENTSDB_FILM, YTS_FILM].sort());
+    expect(calls.map((c) => c.url).sort()).toEqual([APIBAY_FILM, TORRENTIO_FILM, TORRENTSDB_FILM, YTS_FILM, KNABEN, BITSEARCH_FILM, TCSV_FILM].sort());
     expect(calls.every((c) => c.userAgent === TORRENT_INDEX_USER_AGENT)).toBe(true);
     expect(found.indexes.map((a) => [a.index, a.outcome, a.listed])).toEqual([
       ['torrentio', 'ok', 32],
@@ -63,6 +72,9 @@ describe('findCandidates', () => {
       ['torrentsdb', 'empty', 0],
       ['peerflix', 'empty', 0],
       ['yts', 'ok', 3],
+      ['knaben', 'empty', 0],
+      ['bitsearch', 'empty', 0],
+      ['torrentscsv', 'empty', 0],
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
       'a779fa758f2229586eebc2e5960eb32fe5659596',
@@ -89,6 +101,7 @@ describe('findCandidates', () => {
       [APIBAY_SERIES]: body(fixture('apibay-empty.json')),
       [EZTV_SERIES]: body(fixture('eztv-page.json')),
       [TORRENTSDB_EPISODE]: body(NO_STREAMS),
+      ...NOTHING_BY_TITLE_EPISODE,
     });
     const found = await findCandidates(BREAKING_BAD, { fetch });
     expect(calls.some((c) => c.url.includes('yts'))).toBe(false);
@@ -99,6 +112,9 @@ describe('findCandidates', () => {
       ['eztv', 'empty'],
       ['torrentsdb', 'empty'],
       ['peerflix', 'empty'],
+      ['knaben', 'empty'],
+      ['bitsearch', 'empty'],
+      ['torrentscsv', 'empty'],
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([
       '6bbad06245a0d631b0a5e47c8cd6e5abc9a70211',
@@ -179,6 +195,7 @@ describe('findCandidates', () => {
       [APIBAY_FILM]: body(fixture('apibay-sintel.json')),
       [YTS_FILM]: () => new Promise<Response>(() => {}),
       [TORRENTSDB_FILM]: body(NO_STREAMS),
+      ...NOTHING_BY_TITLE_FILM,
     });
     const found = await findCandidates(SINTEL, { fetch, timeoutMs: 50 });
     expect(found.indexes).toEqual([
@@ -187,6 +204,9 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'torrentsdb', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'peerflix', outcome: 'empty', listed: 0 }),
       expect.objectContaining({ index: 'yts', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
+      expect.objectContaining({ index: 'knaben', outcome: 'empty', listed: 0 }),
+      expect.objectContaining({ index: 'bitsearch', outcome: 'empty', listed: 0 }),
+      expect.objectContaining({ index: 'torrentscsv', outcome: 'empty', listed: 0 }),
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual(['43f4001de4ab25d521c63684e2b69804193ed9d9', '150922bce30a1091e347741ebbf96072593a69b4']);
   });
@@ -203,6 +223,9 @@ describe('findCandidates', () => {
       expect.objectContaining({ index: 'eztv', outcome: 'bot_check' }),
       expect.objectContaining({ index: 'torrentsdb', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
       expect.objectContaining({ index: 'peerflix', outcome: 'empty' }),
+      expect.objectContaining({ index: 'knaben', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
+      expect.objectContaining({ index: 'bitsearch', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
+      expect.objectContaining({ index: 'torrentscsv', outcome: 'error', detail: expect.stringContaining('fetch failed') }),
     ]);
     expect(found.candidates).toEqual([]);
   });
@@ -335,6 +358,9 @@ describe('findCandidates with the Stremio add-on providers', () => {
       ['torrentsdb', 'empty'],
       ['peerflix', 'ok'],
       ['yts', 'empty'],
+      ['knaben', 'error'],
+      ['bitsearch', 'error'],
+      ['torrentscsv', 'error'],
     ]);
     expect(found.candidates).toEqual([expect.objectContaining({ infoHash: hash(6), index: 'peerflix', listedBy: ['peerflix'], site: 'Peerflix' })]);
   });
@@ -369,6 +395,9 @@ describe('findCandidates with the Stremio add-on providers', () => {
       expect.objectContaining({ index: 'torrentsdb', outcome: 'bot_check', listed: 0 }),
       expect.objectContaining({ index: 'peerflix', outcome: 'error', detail: expect.stringMatching(/^timed out after /), listed: 0 }),
       expect.objectContaining({ index: 'yts', outcome: 'empty' }),
+      expect.objectContaining({ index: 'knaben', outcome: 'error', listed: 0 }),
+      expect.objectContaining({ index: 'bitsearch', outcome: 'error', listed: 0 }),
+      expect.objectContaining({ index: 'torrentscsv', outcome: 'error', listed: 0 }),
     ]);
     expect(found.candidates.map((c) => c.infoHash)).toEqual([hash(1)]);
 

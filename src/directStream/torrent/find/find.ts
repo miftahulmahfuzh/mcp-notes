@@ -1,9 +1,12 @@
 import { apibayIndex } from './apibay.js';
+import { bitsearchIndex } from './bitsearch.js';
 import { normalizeImdbId } from './candidate.js';
 import { eztvIndex } from './eztv.js';
+import { knabenIndex } from './knaben.js';
 import { peerflixIndex } from './peerflix.js';
 import { DEFAULT_RANK_SETTINGS, rankCandidates, type RankSettings } from './rank.js';
 import { torrentioIndex } from './torrentio.js';
+import { torrentscsvIndex } from './torrentscsv.js';
 import { torrentsdbIndex } from './torrentsdb.js';
 import { ytsIndex } from './yts.js';
 import type { FetchLike, FoundCandidates, IndexAnswer, IndexAttempt, IndexContext, IndexOutcome, TorrentCandidate, TorrentIndex, TorrentQuery } from './types.js';
@@ -76,6 +79,12 @@ export interface IndexBases {
   torrentsdb: string;
   /** A Stremio add-on of Spanish releases, asked only for a title made in Spanish. */
   peerflix: string;
+  /** Asked by title with a JSON POST (find/titleSearch.ts). */
+  knaben: string;
+  /** Up to and including `/api/v1`. Asked by title. */
+  bitsearch: string;
+  /** Up to and including `/service`. Asked by title. */
+  torrentscsv: string;
 }
 
 export const DEFAULT_INDEX_BASES: Readonly<IndexBases> = {
@@ -85,6 +94,9 @@ export const DEFAULT_INDEX_BASES: Readonly<IndexBases> = {
   yts: 'https://yts.mx/api/v2',
   torrentsdb: 'https://torrentsdb.com',
   peerflix: 'https://addon.peerflix.mov',
+  knaben: 'https://api.knaben.org/v1',
+  bitsearch: 'https://bitsearch.to/api/v1',
+  torrentscsv: 'https://torrents-csv.com/service',
 };
 
 export interface FindOptions extends Partial<RankSettings> {
@@ -115,7 +127,10 @@ export interface FindOptions extends Partial<RankSettings> {
   health?: IndexHealth;
 }
 
-/** Torrentio, apibay, EZTV, TorrentsDB, Peerflix (it asks only for a title made in Spanish), and YTS unless `yts` is false. */
+/**
+ * Torrentio, apibay, EZTV, TorrentsDB, Peerflix (it asks only for a title made in Spanish), and YTS unless `yts` is
+ * false, all asked by IMDb id; then Knaben, Bitsearch and torrents-csv, asked by title (find/titleSearch.ts).
+ */
 export function defaultIndexes(options: Pick<FindOptions, 'bases' | 'yts'> = {}): TorrentIndex[] {
   const bases = options.bases ?? {};
   const indexes = [
@@ -126,6 +141,12 @@ export function defaultIndexes(options: Pick<FindOptions, 'bases' | 'yts'> = {})
     peerflixIndex(bases.peerflix ?? DEFAULT_INDEX_BASES.peerflix),
   ];
   if (options.yts !== false) indexes.push(ytsIndex(bases.yts ?? DEFAULT_INDEX_BASES.yts));
+  // Asked by title, not by IMDb id (titleSearch.ts); each answers `empty` without a request for a title with no name or a film with no year.
+  indexes.push(
+    knabenIndex(bases.knaben ?? DEFAULT_INDEX_BASES.knaben),
+    bitsearchIndex(bases.bitsearch ?? DEFAULT_INDEX_BASES.bitsearch),
+    torrentscsvIndex(bases.torrentscsv ?? DEFAULT_INDEX_BASES.torrentscsv),
+  );
   return indexes;
 }
 
@@ -172,8 +193,14 @@ async function askOne(index: TorrentIndex, query: TorrentQuery, run: AskSettings
     fetch: (url, init) => {
       const headers = new Headers(init?.headers);
       if (!headers.has('accept')) headers.set('accept', 'application/json');
+      // Set last: whatever headers an index passes, every request says it is notesd.
       headers.set('user-agent', run.userAgent);
-      return run.fetch(url, { headers, signal: controller.signal });
+      return run.fetch(url, {
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        headers,
+        ...(init?.body === undefined ? {} : { body: init.body }),
+        signal: controller.signal,
+      });
     },
   };
   let answer: IndexAnswer;

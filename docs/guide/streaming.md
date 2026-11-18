@@ -1811,6 +1811,16 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   480p), then more seeds. For an
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
+- **Indexes asked by title.** Knaben, Bitsearch and torrents-csv hold no IMDb ids, so the finder asks them by name, at
+  the same time as the others: a film as its title and year (`Dune 2021`), an episode as its title and `SxxEyy`
+  (numbered within the season when TMDB's number runs on across seasons). Each is its own attempt (`Index: knaben`,
+  `Index: bitsearch`, `Index: torrentscsv`) with its own 8 s and its own address setting (`off` never asks it), and none
+  is asked for a title with no name or a film with no year. A name search lists anything whose name holds the words, so
+  a release only these three list must start with the title (after a `[group]` or `www.site - ` prefix) and go straight
+  on to the film's year, give or take one (an edition word such as `Extended` may sit between), or to the episode's
+  season or episode marker: for Dune (2021), `Dune Part Two 2024` is left out as `other_title`, `Dune 1984` or a release
+  that names no year as `other_year`, and another episode as `other_episode`. A release an index asked by IMDb id also
+  lists is held only to the usual checks. A bot check, a failure or a timeout is that index's attempt and nothing more.
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 

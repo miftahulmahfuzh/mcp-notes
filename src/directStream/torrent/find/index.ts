@@ -13,3 +13,7 @@ export * from './eztv.js';
 export * from './yts.js';
 export * from './find.js';
 export * from './scrape.js';
+export * from './titleSearch.js';
+export * from './knaben.js';
+export * from './bitsearch.js';
+export * from './torrentscsv.js';

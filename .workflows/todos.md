@@ -22,15 +22,26 @@
 
 ### [P1] High
 
-- [ ] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
+- [x] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
   - **Difficulty**: HARD
   - **Type**: Feature
   - **Context**: Owns: `IndexFetch`/`FetchLike` and `askOne`'s fetch wrapper: an index may send `method` and `body` (Knaben is a POST), with notesd's User-Agent still forced last and the signal still bound; a JSON helper beside `getIndexJson` for it. A shared title-search helper under `find/`: the query text (film: title and year; episode: title and `SxxEyy`, using `alt` when set) and the fit a title-search row must pass before it becomes a candidate (names the title; a film row that names a year names the asked year, a row with no year is dropped when the query has one; an episode row fits the episode or is its season pack by `episodeFitOf`), reported so the finder's `excluded` list still shows why (R1.2). New indexes `knaben` (`https://api.knaben.org/v1`), `bitsearch` (`https://bitsearch.to/api/v1`), `torrentscsv` (`https://torrents-csv.com/service`), each with its own `timeoutMs`, skipped (`empty`, no request) when the query has no title. `find/rank.ts`: `exclusionOf` holds a candidate every listing of which came from a title search (`TorrentCandidate.titleSearch?: true`, `find/types.ts`) to `titleSearchExclusion` right after `bad_hash`; `joinListings` drops `titleSearch` when an IMDb-keyed index lists the same hash. `ExcludeReason` gains `'other_year'` (no exhaustive switch or record over it exists in the repo: grep of `src`, `web/src`, `claude`, `scripts`, `tests`). Registry lines as phase 1 left them, plus `NOTESD_TORRENT_KNABEN_URL`, `NOTESD_TORRENT_BITSEARCH_URL`, `NOTESD_TORRENT_TORRENTSCSV_URL`; the `defaultIndexes` doc comment; loadConfig's key-list comment line :1197 (naming phase 1's two keys and its own three); `verify.sh`: its three keys `off` on a line of their own in **both** index branches (phase 1's test); three more `configuration.md` rows after phase 1's; a short "Indexes asked by title" bullet before "**Off.**" in the guide; feature map; a CLAUDE.md bullet directly after phase 1's. Phase 1's tests that pin the default index list: `findCandidates.test.ts` (four edited and two new tests) and `addonSwitches.test.ts` gain the three title-search entries. Tests + fixtures (real samples in the analysis samples folder), including a wrong-year film and a wrong-episode row. Exit criteria: R1.1-R1.4 hold; existing index tests still pass unchanged in meaning; `npm run typecheck` and `npm test` pass.
-  - **Status**: open
+  - **Status**: completed
   - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 2 of 3)
   - **Satisfies**: R1 — "improve our TM / TS in anyway shape or form (more indexes" · criteria: R1.1, R1.2, R1.3, R1.4
   - **Depends on**: P1-NOTES-A136
   - **Plan**: `.workflows/plan/P1-NOTES-A137.md`
+  - **Completed**: 2026-11-19 03:33
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, CLAUDE.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, src/config.ts, src/directStream/torrent/find/find.ts, src/directStream/torrent/find/http.ts, src/directStream/torrent/find/index.ts, src/directStream/torrent/find/rank.ts, src/directStream/torrent/find/types.ts, tests/unit/config.torrentFinder.test.ts, tests/unit/directStream/torrent/find/addonSwitches.test.ts, tests/unit/directStream/torrent/find/findCandidates.test.ts, src/directStream/torrent/find/bitsearch.ts, src/directStream/torrent/find/knaben.ts, src/directStream/torrent/find/titleSearch.ts, src/directStream/torrent/find/torrentscsv.ts, tests/fixtures/torrent/bitsearch-shawshank.json, tests/fixtures/torrent/knaben-shawshank.json, tests/fixtures/torrent/torrentscsv-shawshank.json, tests/unit/directStream/torrent/find/titleSearch.test.ts
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/evidence-wider-torrent-sources-p2
+  - **Drift**:
+    - Plan line numbers were off by a few lines after phase 1 (e.g. config.ts comment at :1203, not :1197); every Before block matched exactly, no code drift.
+    - This swarm phase ran in its own worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p2 on branch phase-2-wider-torrent-sources (base 5c2cd6d, phase 1 landed), not the set worktree the index names.
+    - Neighbor check ordering: run on the same throwaway daemon right after J4's play, torrent.sh 'fallback' fails ('attempts are not cloud, then index, then torrent') because J4's own play of the same title leaves its cloud failure remembered; on a fresh 'verify.sh up --torrent' it ends 'torrent: PASS (fallback named)'. No code changed between the two runs. Evidence: neighbor-torrent.txt (after J4) and neighbor-torrent-fresh.txt.
+  - **Decided**:
+    - Plan index names worktree wider-torrent-sources / branch feature/wider-torrent-sources, session launched by swarm.py in the per-phase worktree -> applied here (swarm ledger lists this session as phase 2; the coordinator integrates the phase branch)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with phase 3 (P1-NOTES-A138) running beside it; the coordinator's integrator reconciles them. No successor to unblock: P1-NOTES-A138 does not depend on this phase and is already in_progress.
 - [ ] **P1-NOTES-A138** Phase 3: Daily verified public tracker lists
   - **Difficulty**: NORMAL
   - **Type**: Feature

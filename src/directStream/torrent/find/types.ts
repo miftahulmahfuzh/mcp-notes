@@ -110,6 +110,12 @@ export interface TorrentCandidate {
   trackers: string[];
   /** The index answered for this exact episode (Torrentio's series address), so a name that says nothing still fits. */
   scoped: boolean;
+  /**
+   * Every listing of this info hash came from an index asked by title (find/titleSearch.ts), none from one asked by
+   * IMDb id. rank.ts then holds it to the title-search fit: the title, followed directly by the film's year or the
+   * episode's marker. Absent otherwise; never false.
+   */
+  titleSearch?: true;
   release: ReleaseInfo;
 }
 
@@ -124,9 +130,10 @@ export interface IndexAnswer {
 
 /**
  * The only fetch an index gets. findCandidates builds it: it sets notesd's User-Agent last (an
- * index cannot replace it) and binds the index's timeout signal.
+ * index cannot replace it) and binds the index's timeout signal. An index may send a method and a
+ * body (Knaben's search is a JSON POST); nothing else of a request is the index's to choose.
  */
-export type IndexFetch = (url: string, init?: { headers?: Record<string, string> }) => Promise<Response>;
+export type IndexFetch = (url: string, init?: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string }) => Promise<Response>;
 
 export interface IndexContext {
   fetch: IndexFetch;
@@ -147,8 +154,8 @@ export interface TorrentIndex {
   find(query: TorrentQuery, ctx: IndexContext): Promise<IndexAnswer>;
 }
 
-/** What findCandidates calls. The global fetch fits. */
-export type FetchLike = (url: string, init: { headers: Headers; signal: AbortSignal }) => Promise<Response>;
+/** What findCandidates calls. The global fetch fits. `method` and `body` are present only when the index gave them. */
+export type FetchLike = (url: string, init: { method?: 'GET' | 'POST'; headers: Headers; body?: string; signal: AbortSignal }) => Promise<Response>;
 
 /** One index's outcome; phase 3 turns it into a ResolveAttempt named `Index: <index>`. */
 export interface IndexAttempt {
@@ -160,7 +167,8 @@ export interface IndexAttempt {
   listed: number;
 }
 
-export type ExcludeReason = 'bad_hash' | 'other_title' | 'dubbed' | 'cam' | 'three_d' | 'other_episode' | 'few_seeds' | 'too_big';
+/** `other_year`: a release only a title search listed names another year than the film's, or none (titleSearch.ts). */
+export type ExcludeReason = 'bad_hash' | 'other_title' | 'other_year' | 'dubbed' | 'cam' | 'three_d' | 'other_episode' | 'few_seeds' | 'too_big';
 
 export interface ExcludedCandidate {
   infoHash: string;

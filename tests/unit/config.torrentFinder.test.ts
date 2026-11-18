@@ -22,6 +22,17 @@ describe('parseTorrentFinder', () => {
     ).toEqual({ minSeeds: 8, maxSizeBytes: 12 * 1024 ** 3, indexTimeoutMs: 6000, indexes: { torrentio: 'http://127.0.0.1:4555', yts: null } });
   });
 
+  it('reads the title-search indexes: an address replaces the finder\'s, off never asks it', () => {
+    expect(
+      parseTorrentFinder({
+        NOTESD_TORRENT_KNABEN_URL: 'off',
+        NOTESD_TORRENT_BITSEARCH_URL: 'OFF',
+        NOTESD_TORRENT_TORRENTSCSV_URL: 'http://127.0.0.1:4555/',
+      }),
+    ).toEqual({ indexes: { knaben: null, bitsearch: null, torrentscsv: 'http://127.0.0.1:4555' } });
+    expect(() => parseTorrentFinder({ NOTESD_TORRENT_KNABEN_URL: 'api.knaben.org' })).toThrow(ConfigError);
+  });
+
   it('rejects a bad number and an address that is not http(s)', () => {
     expect(() => parseTorrentFinder({ NOTESD_TORRENT_MIN_SEEDS: '0' })).toThrow(ConfigError);
     expect(() => parseTorrentFinder({ NOTESD_TORRENT_EZTV_URL: 'eztvx.to' })).toThrow(ConfigError);

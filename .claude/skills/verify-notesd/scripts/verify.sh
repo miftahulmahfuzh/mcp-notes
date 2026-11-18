@@ -337,6 +337,7 @@ EOF
       "NOTESD_TORRENT_TORRENTIO_URL=http://127.0.0.1:$(cat "$dir/torrent/index.port")"
       NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off NOTESD_TORRENT_MIN_SEEDS=1
       NOTESD_TORRENT_TORRENTSDB_URL=off NOTESD_TORRENT_PEERFLIX_URL=off
+      NOTESD_TORRENT_KNABEN_URL=off NOTESD_TORRENT_BITSEARCH_URL=off NOTESD_TORRENT_TORRENTSCSV_URL=off
     )
     # --trending: the daily list reads the fake index's top lists (apibay's and EZTV's own routes), never a real index.
     if [ "$trending" = 1 ]; then
@@ -345,6 +346,8 @@ EOF
   else
     env+=(NOTESD_TORRENT_TORRENTIO_URL=off NOTESD_TORRENT_APIBAY_URL=off NOTESD_TORRENT_EZTV_URL=off NOTESD_TORRENT_YTS_URL=off)
     env+=(NOTESD_TORRENT_TORRENTSDB_URL=off NOTESD_TORRENT_PEERFLIX_URL=off)
+    # The title-search indexes are never asked by a throwaway daemon: the fake index answers only Torrentio's shape.
+    env+=(NOTESD_TORRENT_KNABEN_URL=off NOTESD_TORRENT_BITSEARCH_URL=off NOTESD_TORRENT_TORRENTSCSV_URL=off)
   fi
   # NOTESD_TRENDING=off unless --trending: a throwaway daemon never reads an index's top lists on its own.
   if [ "$trending" = 1 ]; then env+=(NOTESD_TRENDING=on); else env+=(NOTESD_TRENDING=off); fi
