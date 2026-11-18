@@ -433,6 +433,11 @@ export class SubtitleSync {
       });
   }
 
+  /** Stops the job of one film, if one runs: /sync-subtitle chose its subtitle, and a sync ending later must not replace it. */
+  cancel(key: string): void {
+    this.jobs.get(key)?.controller.abort(new Error('the subtitle was checked'));
+  }
+
   /** Stops every job: notesd is stopping. */
   close(): void {
     for (const job of this.jobs.values()) job.controller.abort(new Error('notesd is stopping'));

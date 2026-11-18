@@ -20,6 +20,8 @@ export const TITLE_KEY_PATTERN = /^(?:movie-\d{1,10}|tv-\d{1,10}-s\d{1,4}e\d{1,5
 export const TITLE_OUTSIDE_NAME = 'outside.vtt';
 /** The file Wyzie Synced re-timed against the stream's audio. */
 export const TITLE_SYNCED_NAME = 'synced.vtt';
+/** The file /sync-subtitle chose and checked against the stream's audio (subtitleCheck/): `checked-<tag>.vtt`, the tag from its text, so a new choice is a new address. */
+export const titleCheckedName = (tag: string): string => `checked-${tag}.vtt`;
 const CHOSEN_FILE = 'chosen.json';
 
 export function titleKey(ref: StreamRef): string {
@@ -53,14 +55,18 @@ export class TitleSubtitleShelf {
     return path.join(this.dir(key), name);
   }
 
-  /** Writes one WebVTT file and makes it the title's chosen subtitle, each through a temporary file and a rename. */
-  async save(ref: StreamRef, name: string, vtt: string, label: string): Promise<CacheSubtitleView> {
+  /**
+   * Writes one WebVTT file and makes it the title's chosen subtitle, each through a temporary file and a rename.
+   * `replaces`: the provider whose own English track this file stands in for (/sync-subtitle found that track wrong
+   * or out of step); a session of that provider then shows this file and not the provider's.
+   */
+  async save(ref: StreamRef, name: string, vtt: string, label: string, replaces: string | null = null): Promise<CacheSubtitleView> {
     const key = titleKey(ref);
     const target = this.file(key, name);
     if (target === null) throw new RangeError(`not a subtitle file name: ${name}`);
     await mkdir(this.dir(key), { recursive: true });
     await writeAtomic(target, vtt);
-    await writeAtomic(path.join(this.dir(key), CHOSEN_FILE), `${JSON.stringify({ name, label })}\n`);
+    await writeAtomic(path.join(this.dir(key), CHOSEN_FILE), `${JSON.stringify({ name, label, ...(replaces === null ? {} : { replaces }) })}\n`);
     return { url: titleSubtitleUrl(key, name), lang: 'en', label };
   }
 
@@ -79,6 +85,16 @@ export class TitleSubtitleShelf {
     const file = this.file(key, name);
     if (file === null || !(await isFile(file))) return null;
     return { url: titleSubtitleUrl(key, name), lang: 'en', label };
+  }
+
+  /** The provider whose own English track the title's chosen subtitle stands in for, or null: it only fills a gap. */
+  async replaces(ref: StreamRef): Promise<string | null> {
+    try {
+      const raw = JSON.parse(await readFile(path.join(this.dir(titleKey(ref)), CHOSEN_FILE), 'utf8')) as { replaces?: unknown } | null;
+      return typeof raw?.replaces === 'string' && raw.replaces !== '' && (await this.kept(ref)) !== null ? raw.replaces : null;
+    } catch {
+      return null;
+    }
   }
 
   /** The text of the title's chosen subtitle, or null. */

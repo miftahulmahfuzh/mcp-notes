@@ -1,0 +1,348 @@
+import { mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+import type { CacheSubtitleView } from '../cachePlay.js';
+import type { StreamRef } from '../types.js';
+import type { SyncInput } from '../torrent/subtitles/synced.js';
+import { whisperTask, type AudioCutter, type Transcriber, type WhisperTask } from '../torrent/subtitles/whisper.js';
+import { withoutSecrets } from '../torrent/subtitles/wyzie.js';
+import type { Candidate } from './candidates.js';
+import { judge, MIN_HEARD_LINES, MIN_LINE_WORDS, retime, wordsOf, type HeardLine, type Judgement } from './match.js';
+
+/**
+ * /sync-subtitle (direct_stream_sync_subtitle): is the subtitle of this film the right one, and in step with what is
+ * said? Unlike Wyzie Synced (torrent/subtitles/synced.ts), which asks a service to line a subtitle up and trusts its
+ * answer, this hears the film itself:
+ *
+ * 1. **Hear.** ffmpeg cuts a minute of audio at six places spread over the film (more when little was said there),
+ *    and Whisper writes down what is said in each, with its times.
+ * 2. **Judge the subtitle that is shown** against those lines (match.ts): right text and in step is `ok`, and
+ *    nothing changes.
+ * 3. **Otherwise find one.** Right text but late, early or drifting: the same subtitle is re-timed by the offsets
+ *    the lines agree on. Wrong text (another episode's file), or cut for another edit: the subtitle services' other
+ *    files are tried one by one, each judged the same way, re-timed when that is all it lacks, and judged again.
+ *    A file that is right as it is comes before one that had to be re-timed: after the first that needed it,
+ *    LOOK_FURTHER more are tried.
+ * 4. **Keep and show.** The first that is right and in step is kept as the film's chosen subtitle (a torrent's
+ *    `checked-<file>.vtt`, a title's `checked.vtt`), so the next play starts with it, and put on the live session:
+ *    its `subtitleRev` goes up and the open page loads it on its next position report.
+ *
+ * Nothing is changed unless a subtitle passed both checks. A check runs as a job: an answer that would outlast the
+ * MCP client's time limit says `pending`, and the same call again joins it.
+ */
+
+export const CHECKED_LABEL = 'English (checked)';
+/** Seconds of audio heard at each place. */
+export const WINDOW_S = 60;
+/** Where the first six windows start, as shares of the film; the next five are heard only when the first said too little. */
+export const FIRST_WINDOWS: readonly number[] = [0.02, 0.2, 0.4, 0.6, 0.8, 0.93];
+export const MORE_WINDOWS: readonly number[] = [0.1, 0.3, 0.5, 0.7, 0.87];
+/** Where to listen in a film of unknown length, in seconds; a window past the end is cut short and passed over. */
+export const BLIND_WINDOWS_S: readonly number[] = [60, 480, 960, 1500, 2100, 2700, 3600, 4800, 6000];
+/** Countable heard lines that are plenty: no further window is cut. */
+export const ENOUGH_LINES = 30;
+/** A window whose bytes do not come in this long (a torrent still downloading, a slow host) is passed over. */
+export const WINDOW_CUT_TIMEOUT_MS = 90_000;
+/** After a candidate that is right once re-timed, this many more are tried for one that is right as it is. */
+export const LOOK_FURTHER = 3;
+/** A finished check is kept this long for the call that was told `pending`. */
+export const RESULT_KEEP_MS = 10 * 60_000;
+
+/** What the checker needs of one film: where its audio and its subtitle are, and how a better one is kept and shown. */
+export interface CheckSubject {
+  /** Names the job: one check runs per film at a time. */
+  key: string;
+  ref: StreamRef;
+  /** "American Horror Story S01E02". */
+  title: string;
+  /** `live`: a session of it is open in the player and gets the subtitle at once; `idle`: the next play gets it. */
+  mode: 'live' | 'idle';
+  source: 'torrent' | 'cloud';
+  provider: string;
+  sessionId: string | null;
+  durationS: number | null;
+  /** The title's original language (TMDB's code), or null. */
+  audioLang: string | null;
+  /** What ffmpeg reads the audio from; read again for every window. */
+  input(): SyncInput | Promise<SyncInput>;
+  /** The subtitle shown now: its text, or why it cannot be read (`skip`), or null when there is none. */
+  current(): Promise<{ label: string; vtt: string } | { label: string; skip: string } | null>;
+  /** The other subtitles to try, in order. */
+  candidates(notes: string[]): AsyncGenerator<Candidate>;
+  /** Keeps `vtt` as the film's chosen subtitle and puts it on the live session, if any. */
+  keep(vtt: string): Promise<CacheSubtitleView>;
+}
+
+export interface HeardWindow {
+  at_s: number;
+  length_s: number;
+  /** Lines of MIN_LINE_WORDS words or more heard in it; null when it could not be cut or transcribed. */
+  lines: number | null;
+  problem?: string;
+}
+
+export type CheckVerdict = 'ok' | 'retimed' | 'replaced' | 'none_fits' | 'unsure' | 'unheard';
+
+export interface CheckResult {
+  verdict: CheckVerdict;
+  /** True when the film's subtitle is another file, or the same one re-timed, than before the check. */
+  changed: boolean;
+  title: string;
+  mode: 'live' | 'idle';
+  source: 'torrent' | 'cloud';
+  provider: string;
+  session_id: string | null;
+  heard: { task: WhisperTask; lines: number; windows: HeardWindow[] };
+  /** The subtitle that was shown, judged; null when there was none. */
+  current: ({ label: string } & (Judgement | { skipped: string })) | null;
+  /** Every other subtitle tried, in order. */
+  tried: Array<{ from: string; name: string | null; retimed: boolean } & Judgement>;
+  /** The subtitle now kept and shown, when `changed`. */
+  chosen: { from: string; name: string | null; label: string; retimed: boolean; shift_s: number | null; stretch: number | null; url: string } | null;
+  notes: string[];
+  took_s: number;
+}
+
+export interface PendingCheck {
+  pending: true;
+  since: string;
+  waited_s: number;
+  stage: string;
+}
+
+export interface SubtitleCheckerOptions {
+  cutter: AudioCutter;
+  transcriber: Transcriber;
+  /** WAVs of the window in progress are written here and removed. */
+  workDir: string;
+  now?: () => number;
+  log?: (line: string) => void;
+}
+
+interface Job {
+  promise: Promise<CheckResult>;
+  since: number;
+  stage: string;
+  /** Set when the job ended. */
+  done: { at: number; result: CheckResult | null; error: unknown } | null;
+  /** A caller was told `pending`, so the outcome is kept for its next call. */
+  awaited: boolean;
+}
+
+const messageOf = (err: unknown): string => withoutSecrets(err instanceof Error ? err.message : String(err));
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/** Where the windows start for a film of this length, the first batch or the second. */
+export function windowStarts(durationS: number | null, more: boolean): number[] {
+  if (durationS === null || !(durationS > 0)) return more ? [] : [...BLIND_WINDOWS_S];
+  if (durationS <= WINDOW_S * 2) return more ? [] : [0];
+  const last = Math.max(0, durationS - WINDOW_S - 5);
+  const starts = (more ? MORE_WINDOWS : FIRST_WINDOWS).map((share) => Math.min(last, Math.round(share * durationS)));
+  return [...new Set(starts)];
+}
+
+const countable = (lines: readonly HeardLine[]): number => lines.filter((l) => wordsOf(l.text).length >= MIN_LINE_WORDS).length;
+
+export class SubtitleChecker {
+  private readonly jobs = new Map<string, Job>();
+  private readonly now: () => number;
+  private readonly log: (line: string) => void;
+  private running = 0;
+
+  constructor(private readonly opts: SubtitleCheckerOptions) {
+    this.now = opts.now ?? (() => Date.now());
+    this.log = opts.log ?? ((line: string) => console.log(line));
+  }
+
+  /**
+   * The check of one film, answered within `waitMs` or as `pending`. `subject` is asked for only when no check of
+   * `key` runs: a second call joins the first. Rejects with what the subject or the check threw.
+   */
+  async within(key: string, subject: () => Promise<CheckSubject>, waitMs: number): Promise<CheckResult | PendingCheck> {
+    const job = this.jobFor(key, subject);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), Math.max(0, waitMs));
+    });
+    try {
+      const got = await Promise.race([job.promise, late]);
+      if (got !== 'late') {
+        this.jobs.delete(key);
+        return got;
+      }
+      job.awaited = true;
+      return { pending: true, since: new Date(job.since).toISOString(), waited_s: round1((this.now() - job.since) / 1000), stage: job.stage };
+    } catch (err) {
+      this.jobs.delete(key);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Ends the Whisper worker: notesd is stopping. */
+  async close(): Promise<void> {
+    await this.opts.transcriber.stop();
+  }
+
+  private jobFor(key: string, subject: () => Promise<CheckSubject>): Job {
+    const known = this.jobs.get(key);
+    // A running check is joined; a finished one is handed to the caller that was told to come back, once.
+    if (known !== undefined && (known.done === null || (known.awaited && this.now() - known.done.at < RESULT_KEEP_MS))) return known;
+    const job: Job = { promise: Promise.resolve(null as never), since: this.now(), stage: 'reading the session', done: null, awaited: false };
+    this.running += 1;
+    job.promise = subject()
+      .then((s) => this.check(s, (stage) => (job.stage = stage)))
+      .then(
+        (result) => {
+          job.done = { at: this.now(), result, error: null };
+          return result;
+        },
+        (error: unknown) => {
+          job.done = { at: this.now(), result: null, error };
+          throw error;
+        },
+      )
+      .finally(() => {
+        this.running -= 1;
+        // Nothing left to hear: the worker's memory (about 850 MB with `small`) goes back.
+        if (this.running === 0) void this.opts.transcriber.stop();
+      });
+    job.promise.catch(() => undefined);
+    this.jobs.set(key, job);
+    return job;
+  }
+
+  /** One check, start to end. */
+  async check(subject: CheckSubject, stage: (text: string) => void = () => undefined): Promise<CheckResult> {
+    const started = this.now();
+    const notes: string[] = [];
+    const { task, language } = whisperTask(subject.audioLang);
+    const windows: HeardWindow[] = [];
+    const heard: HeardLine[] = [];
+    const result = (verdict: CheckVerdict, rest: Pick<CheckResult, 'current' | 'tried' | 'chosen'>): CheckResult => {
+      const out: CheckResult = {
+        verdict,
+        changed: rest.chosen !== null,
+        title: subject.title,
+        mode: subject.mode,
+        source: subject.source,
+        provider: subject.provider,
+        session_id: subject.sessionId,
+        heard: { task, lines: countable(heard), windows },
+        ...rest,
+        notes,
+        took_s: round1((this.now() - started) / 1000),
+      };
+      this.log(
+        '[notesd] subtitle check: ' + subject.title + ' (' + subject.source + ', ' + subject.mode + '): ' + verdict +
+          (rest.chosen === null ? '' : ', now ' + rest.chosen.from + (rest.chosen.name === null ? '' : ' ' + rest.chosen.name) + (rest.chosen.retimed ? ' re-timed' : '')) +
+          ', ' + out.heard.lines + ' line(s) heard in ' + windows.filter((w) => w.lines !== null).length + ' window(s), ' + out.took_s + ' s',
+      );
+      return out;
+    };
+
+    if (task === 'translate') notes.push('The film is not in English: Whisper translated what it heard, which matches a subtitle\'s wording less closely, so a verdict of unsure is more likely.');
+    stage('listening to the film');
+    await this.hear(subject, windowStarts(subject.durationS, false), { task, language }, windows, heard, stage);
+    if (countable(heard) < ENOUGH_LINES) await this.hear(subject, windowStarts(subject.durationS, true), { task, language }, windows, heard, stage);
+    heard.sort((a, b) => a.startS - b.startS);
+    windows.sort((a, b) => a.at_s - b.at_s);
+
+    stage('judging the subtitle shown now');
+    const shown = await subject.current();
+    const current: CheckResult['current'] = shown === null ? null : 'skip' in shown ? { label: shown.label, skipped: shown.skip } : { label: shown.label, ...judge(shown.vtt, heard, subject.durationS) };
+    if (countable(heard) < MIN_HEARD_LINES) {
+      notes.push('Too little speech was heard to judge a subtitle (' + countable(heard) + ' line(s) of ' + MIN_LINE_WORDS + ' words or more; ' + MIN_HEARD_LINES + ' are needed). Nothing was changed.');
+      return result('unheard', { current, tried: [], chosen: null });
+    }
+    if (current !== null && 'skipped' in current) {
+      notes.push('The subtitle shown could not be read as a file (' + current.skipped + '), so it was not judged and not replaced.');
+      return result('unsure', { current, tried: [], chosen: null });
+    }
+    if (current !== null && current.grade === 'good') return result('ok', { current, tried: [], chosen: null });
+
+    const keep = async (vtt: string, from: string, name: string | null, fixed: Judgement | null): Promise<NonNullable<CheckResult['chosen']>> => {
+      stage('keeping the subtitle');
+      const view = await subject.keep(vtt);
+      return { from, name, label: view.label, retimed: fixed !== null, shift_s: fixed?.fit?.shiftS ?? null, stretch: fixed?.fit?.stretch ?? null, url: view.url };
+    };
+    /** `vtt` re-timed by its own fit, when that makes it good. */
+    const fixed = (vtt: string, was: Judgement): { vtt: string; now: Judgement } | null => {
+      if (was.grade !== 'fixable' || was.fit === null) return null;
+      const moved = retime(vtt, was.fit);
+      const now = judge(moved, heard, subject.durationS);
+      return now.grade === 'good' ? { vtt: moved, now } : null;
+    };
+
+    // The right subtitle at the wrong time: the same file, re-timed.
+    if (shown !== null && 'vtt' in shown && current !== null && !('skipped' in current)) {
+      const again = fixed(shown.vtt, current);
+      if (again !== null) return result('retimed', { current, tried: [], chosen: await keep(again.vtt, 'the subtitle shown', null, current) });
+    }
+
+    const tried: CheckResult['tried'] = [];
+    /** The first candidate that is right once re-timed: kept unless one right as it is follows soon. */
+    let moved: { candidate: Candidate; vtt: string; was: Judgement; left: number } | null = null;
+    stage('trying other subtitles');
+    for await (const candidate of subject.candidates(notes)) {
+      const was = judge(candidate.vtt, heard, subject.durationS);
+      stage('trying other subtitles (' + (tried.length + 1) + ' so far)');
+      if (was.grade === 'good') {
+        tried.push({ from: candidate.from, name: candidate.name, retimed: false, ...was });
+        return result('replaced', { current, tried, chosen: await keep(candidate.vtt, candidate.from, candidate.name, null) });
+      }
+      const again: { vtt: string; now: Judgement } | null = moved === null ? fixed(candidate.vtt, was) : null;
+      if (again !== null) {
+        tried.push({ from: candidate.from, name: candidate.name, retimed: true, ...again.now });
+        moved = { candidate, vtt: again.vtt, was, left: LOOK_FURTHER };
+        continue;
+      }
+      tried.push({ from: candidate.from, name: candidate.name, retimed: false, ...was });
+      if (moved !== null && (moved.left -= 1) <= 0) break;
+    }
+    if (moved !== null) return result('replaced', { current, tried, chosen: await keep(moved.vtt, moved.candidate.from, moved.candidate.name, moved.was) });
+    if (current !== null && current.grade === 'unsure') return result('unsure', { current, tried, chosen: null });
+    return result('none_fits', { current, tried, chosen: null });
+  }
+
+  /** Cuts and transcribes the windows at `starts`, in order; a window that fails is recorded and passed over. Never throws. */
+  private async hear(
+    subject: CheckSubject,
+    starts: readonly number[],
+    how: { task: WhisperTask; language: string | null },
+    windows: HeardWindow[],
+    heard: HeardLine[],
+    stage: (text: string) => void,
+  ): Promise<void> {
+    const signal = new AbortController().signal;
+    await mkdir(this.opts.workDir, { recursive: true });
+    let short = false;
+    for (const [i, startS] of starts.entries()) {
+      // A film of unknown length: the first window cut short was the end.
+      if (short) break;
+      stage('listening to the film (' + (windows.length + 1) + ' of about ' + (windows.length + starts.length - i) + ' stretches)');
+      const wav = path.join(this.opts.workDir, subject.key.replace(/[^a-z0-9-]/gi, '-') + '-' + Math.round(startS) + '-' + this.now() + '.wav');
+      try {
+        const input = await subject.input();
+        const cut = await this.opts.cutter({ ...input, startS, lengthS: WINDOW_S, out: wav }, signal);
+        if (!cut.ok) {
+          windows.push({ at_s: startS, length_s: 0, lines: null, problem: 'the audio could not be cut: ' + withoutSecrets(cut.reason).slice(0, 160) });
+          continue;
+        }
+        if (cut.lengthS < WINDOW_S - 1) short = subject.durationS === null;
+        if (cut.lengthS < 5) {
+          windows.push({ at_s: startS, length_s: round1(cut.lengthS), lines: null, problem: 'past the end of the film' });
+          continue;
+        }
+        const cues = await this.opts.transcriber.transcribe({ wav, task: how.task, language: how.language }, signal);
+        const lines = cues.map((c): HeardLine => ({ startS: startS + c.start_s, endS: startS + c.end_s, text: c.text }));
+        heard.push(...lines);
+        windows.push({ at_s: startS, length_s: round1(cut.lengthS), lines: countable(lines) });
+      } catch (err) {
+        windows.push({ at_s: startS, length_s: 0, lines: null, problem: messageOf(err).slice(0, 200) });
+      } finally {
+        await rm(wav, { force: true });
+      }
+    }
+  }
+}

@@ -557,6 +557,17 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
   seeds and 40-hex `info_hash`).
 
+## /sync-subtitle: a subtitle checked against the film's audio
+- `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the
+  film, the subtitle is judged for text (heard lines found in its cues) and timing (anchors' offsets), and a
+  wrong or out-of-step one is re-timed or replaced by the first of the services' files that passes both; live
+  (the session on screen gets it, `subtitle_rev` goes up) or idle (kept for the next play). Nothing changes
+  unless a subtitle passed both checks. Proven by `npx vitest run tests/unit/directStream/subtitleCheck
+  tests/unit/mcp.subtitleCheckTools.test.ts tests/unit/directStream/torrent/subtitles/wyzie.test.ts` (a fake
+  cutter and transcriber; real shelves in a temporary folder; another episode's file ranked last). The
+  throwaway daemon has no Whisper: the tool answers `subtitle_check_off` there. A real check needs a real
+  film: the session log of 2026-11-18 (FS-93) ran it on American Horror Story S01E02 from disk.
+
 ## Wyzie Synced, and a cloud stream with no English subtitle
 - Wyzie Synced: a torrent session's subtitle from the `service` or `borrow` tier (also when `kept` answers it
   on a replay) is re-timed behind the play. ffmpeg cuts the film's audio in 5-minute stretches,

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildSubtitleTiers, type SubtitleContext } from '../../../../../src/directStream/torrent/subtitles/chain.js';
 import { SubtitleShelf } from '../../../../../src/directStream/torrent/subtitles/disk.js';
 import { serviceTier } from '../../../../../src/directStream/torrent/subtitles/service.js';
-import { chooseWyzieSubtitles, parseWyzieAnswer, withoutSecrets, wyzieSearchUrl, type WyzieSubtitle } from '../../../../../src/directStream/torrent/subtitles/wyzie.js';
+import { chooseWyzieSubtitles, namesOtherEpisode, parseWyzieAnswer, withoutSecrets, wyzieSearchUrl, type WyzieSubtitle } from '../../../../../src/directStream/torrent/subtitles/wyzie.js';
 import type { TorrentStreams } from '../../../../../src/directStream/torrent/service.js';
 import { REST_OF_CONTEXT } from './context.js';
 
@@ -24,6 +24,22 @@ describe('the Wyzie answer', () => {
     expect(list.map((s) => s.id)).toEqual(['1952537611', '1955318586', '1953329013', '1952529149']);
     expect(list[1]!.names).toEqual(['Sintel (2010)', 'Sintel (2010).eng.srt']);
     expect(() => parseWyzieAnswer({ error: 'Source temporarily offline' })).toThrow(/not a list/);
+  });
+
+  it("puts another episode's file last, whatever else it shares with the release", () => {
+    // Wyzie's list for American Horror Story S01E02 on 2026-11-18: the Pilot's BluRay file sat in it and won on "BluRay".
+    const ref = { kind: 'tv', tmdbId: 1413, season: 1, episode: 2 } as const;
+    const list = [
+      sub({ id: 'pilot', names: ['American.Horror.Story.S01E01.720p.BluRay.x264-DEMAND'], origin: 'BluRay', downloadCount: 13180 }),
+      sub({ id: 'pack', names: ['American.Horror.Story.S01EAll.720p.WEB-DL-CtrlHD', 'American.Horror.Story.S01E02.Home.Invasion.720p.WEB-DL-CtrlHD.eng.srt'], origin: 'WEB' }),
+      sub({ id: 'plain', names: ['Season 1 - Episode 2 - Home Invasion_1'] }),
+    ];
+    const release = 'American Horror Story Season 1 S01 1080p BluRay HEVC x265 n0m1';
+    expect(chooseWyzieSubtitles(list, release)[0]!.id).toBe('pilot');
+    expect(chooseWyzieSubtitles(list, release, ref).map((s) => s.id)).toEqual(['pack', 'plain', 'pilot']);
+    expect(namesOtherEpisode(['Show - 01x02 - Name.srt'], ref)).toBe(false);
+    expect(namesOtherEpisode(['Show - 01x03 - Name.srt'], ref)).toBe(true);
+    expect(namesOtherEpisode(['Show.S01E02.srt'], { kind: 'movie', tmdbId: 1 })).toBe(false);
   });
 
   it('orders by words shared with the release, then the same origin, then not hearing-impaired, then downloads', async () => {

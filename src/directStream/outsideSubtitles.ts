@@ -118,6 +118,11 @@ export class OutsideSubtitles {
     }
   }
 
+  /** True when the title's kept subtitle stands in for this provider's own English track (/sync-subtitle put it there). Never throws. */
+  async replaces(ref: StreamRef, provider: string): Promise<boolean> {
+    return (await this.opts.shelf.replaces(ref).catch(() => null)) === provider;
+  }
+
   /** The text of the title's outside subtitle for its dialogue: the kept file, else asked for now. Null: there is none. Never throws. */
   async text(ref: StreamRef): Promise<{ label: string; vtt: string } | null> {
     try {

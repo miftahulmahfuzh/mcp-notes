@@ -15,6 +15,7 @@ import type { StreamCache } from './directStream/cache/service.js';
 import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
+import type { SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
 import type { TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
 import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
@@ -158,6 +159,12 @@ export interface AppDeps {
   torrentSync?: SubtitleSync | null;
   /** Where a title's outside subtitle is kept on this machine (`<data dir>/movies/stream-subs`); the `/api/stream/subs` route reads it. Null or absent without direct streaming. */
   titleSubtitles?: TitleSubtitleShelf | null;
+  /**
+   * /sync-subtitle (direct_stream_sync_subtitle): judges a stream's subtitle against the film's own audio, heard
+   * by a Whisper worker of its own, and replaces a wrong or out-of-step one (src/directStream/subtitleCheck/).
+   * Null or absent with direct streaming off, Whisper off or not installed. startBackground's stop closes it.
+   */
+  subtitleCheck?: SubtitleCheckService | null;
   /**
    * Session context changes: this host's ingest emits (src/background.ts), each open
    * GET /api/sessions/:nodeId/context/stream listens. The daemon always sets it; omitted (tests),

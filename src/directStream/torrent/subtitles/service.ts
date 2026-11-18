@@ -171,7 +171,8 @@ async function videoHash(ctx: SubtitleContext, torrents: TorrentFilePaths, timeo
 
 const HEADERS = { accept: 'application/json', 'user-agent': SUBTITLE_SERVICE_USER_AGENT } as const;
 
-async function getList(fetchImpl: FetchLike, url: string): Promise<ServiceSubtitle[]> {
+/** The add-on's English entries at one list address (serviceListUrl). Throws when it does not answer. */
+export async function getList(fetchImpl: FetchLike, url: string): Promise<ServiceSubtitle[]> {
   const res = await fetchImpl(url, { headers: HEADERS, signal: AbortSignal.timeout(LIST_TIMEOUT_MS) });
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
@@ -182,7 +183,8 @@ async function getList(fetchImpl: FetchLike, url: string): Promise<ServiceSubtit
   return parseServiceAnswer(JSON.parse(body.toString('utf8')));
 }
 
-async function getFile(fetchImpl: FetchLike, url: string): Promise<string | null> {
+/** One of the add-on's files as WebVTT, or null when it cannot be read or holds no cue. */
+export async function getFile(fetchImpl: FetchLike, url: string): Promise<string | null> {
   const res = await fetchImpl(url, { headers: { ...HEADERS, accept: '*/*' }, signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);

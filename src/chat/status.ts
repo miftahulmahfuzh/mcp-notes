@@ -119,6 +119,14 @@ export const CLAUDE_CODE_ONLY_TOOL_NAMES: readonly DirectStreamToolName[] = ['di
 export const STREAM_CACHE_TOOL_NAMES = ['direct_stream_cache'] as const;
 
 /**
+ * direct_stream_sync_subtitle (src/mcp/subtitleCheckTools.ts): hear a film's audio with Whisper, judge its subtitle
+ * against it and put a right one, in step, in its place. Claude Code's /sync-subtitle asks for it; NOT in
+ * allowedChatTools(): it runs Whisper on this laptop for up to a few minutes and the chat bar's prompt does not
+ * describe it.
+ */
+export const SUBTITLE_CHECK_TOOL_NAMES = ['direct_stream_sync_subtitle'] as const;
+
+/**
  * The four curated dword (daily-words) tools (DWORD_CONNECTOR_PLAN phases 3/4: src/mcp/dwordVocabTools.ts,
  * src/mcp/dwordJournalTools.ts). Named here only so `captionForToolUse` can give each one its own caption
  * and so this file's tests can assert on them by name. Unlike ADVERSARY_TOOL_NAMES/SESSION_TOOL_NAMES,

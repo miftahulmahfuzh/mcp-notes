@@ -100,22 +100,42 @@ function originOf(text: string | null): Origin | null {
 }
 
 /**
- * The entries in the order they are tried: most words shared between the torrent's release name
- * and the entry's names; then the same origin (BluRay, WEB) as the release; then a plain subtitle
- * before a hearing-impaired one; then the more downloaded; then Wyzie's own order.
+ * True when an entry's names say it is another episode's file: they name an episode (`S01E01`, `1x01`) and none of
+ * them names the one asked for. Wyzie's list for an episode sometimes holds a file of its neighbour (on 2026-11-18
+ * the list for American Horror Story S01E02 held `...S01E01.720p.BluRay...`, the Pilot's lines). A name with no
+ * episode in it, and a season pack's `S01EAll`, say nothing.
  */
-export function chooseWyzieSubtitles(list: readonly WyzieSubtitle[], release: string): WyzieSubtitle[] {
+export function namesOtherEpisode(names: readonly string[], ref: StreamRef): boolean {
+  if (ref.kind !== 'tv') return false;
+  let named = false;
+  for (const name of names) {
+    for (const m of name.matchAll(/(?:^|[^a-z0-9])(?:s(\d{1,2})[ ._-]?e(\d{1,4})|(\d{1,2})x(\d{2,4}))(?![0-9])/gi)) {
+      named = true;
+      if (Number(m[1] ?? m[3]) === ref.season && Number(m[2] ?? m[4]) === ref.episode) return false;
+    }
+  }
+  return named;
+}
+
+/**
+ * The entries in the order they are tried: a file that names another episode last of all (`ref`); then most words
+ * shared between the torrent's release name and the entry's names; then the same origin (BluRay, WEB) as the
+ * release; then a plain subtitle before a hearing-impaired one; then the more downloaded; then Wyzie's own order.
+ */
+export function chooseWyzieSubtitles(list: readonly WyzieSubtitle[], release: string, ref: StreamRef | null = null): WyzieSubtitle[] {
   const wanted = new Set(words(release));
   const origin = originOf(release);
   return list
     .map((s, order) => ({
       s,
       order,
+      otherEpisode: ref !== null && namesOtherEpisode(s.names, ref),
       shared: new Set(words(s.names.join(' ')).filter((w) => wanted.has(w))).size,
       sameOrigin: origin !== null && (originOf(s.origin) ?? originOf(s.names.join(' '))) === origin,
     }))
     .sort(
       (a, b) =>
+        Number(a.otherEpisode) - Number(b.otherEpisode) ||
         b.shared - a.shared ||
         Number(b.sameOrigin) - Number(a.sameOrigin) ||
         Number(a.s.hearingImpaired) - Number(b.s.hearingImpaired) ||
@@ -139,6 +159,55 @@ export interface WyzieQuery {
   ref: StreamRef;
   imdbId: string | null;
   release: string;
+}
+
+/**
+ * Wyzie's English subtitles for the title, in the order they are tried (chooseWyzieSubtitles). Throws when Wyzie
+ * did not answer (any non-200, a body that is no list, the time limit). For /sync-subtitle, which tries several.
+ */
+export async function wyzieEntries(deps: WyzieDeps, query: WyzieQuery): Promise<WyzieSubtitle[]> {
+  const now = deps.now ?? (() => Date.now());
+  const deadline = now() + (deps.timeoutMs ?? WYZIE_TIMEOUT_MS);
+  const list = async (source: 'default' | 'all'): Promise<WyzieSubtitle[]> => {
+    let res: Response;
+    try {
+      res = await deps.fetch(wyzieSearchUrl(deps.baseUrl, query.ref, query.imdbId, deps.key, source), {
+        headers: { 'user-agent': deps.userAgent, accept: 'application/json' },
+        signal: AbortSignal.timeout(Math.max(1, deadline - now())),
+      });
+    } catch (err) {
+      throw new Error(`the search did not answer (${messageOf(err)})`);
+    }
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new Error(`the search answered HTTP ${res.status}`);
+    }
+    const body = await readBody(res, LIST_MAX_BYTES, false);
+    if (body === null) throw new Error(`the search answer is larger than ${LIST_MAX_BYTES} bytes`);
+    try {
+      return parseWyzieAnswer(JSON.parse(body.toString('utf8')));
+    } catch {
+      throw new Error('the search answer is not a JSON list');
+    }
+  };
+  let found = await list('default');
+  if (found.length === 0) found = await list('all');
+  return chooseWyzieSubtitles(found, query.release, query.ref);
+}
+
+/** One entry's file as WebVTT, or null when it cannot be read. Never throws; its address is never logged or kept. */
+export async function wyzieFile(deps: Pick<WyzieDeps, 'fetch' | 'userAgent'>, entry: WyzieSubtitle, timeoutMs: number): Promise<string | null> {
+  try {
+    const res = await deps.fetch(entry.url, { headers: { 'user-agent': deps.userAgent, accept: '*/*' }, signal: AbortSignal.timeout(Math.max(1, timeoutMs)) });
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const body = await readBody(res, FILE_MAX_BYTES, false);
+    return body === null ? null : vttFromBytes(body);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -175,7 +244,7 @@ export async function wyzieSubtitle(deps: WyzieDeps, query: WyzieQuery): Promise
 
   let list = await search('default');
   if (list.length === 0) list = await search('all');
-  for (const entry of chooseWyzieSubtitles(list, query.release).slice(0, FILE_TRIES)) {
+  for (const entry of chooseWyzieSubtitles(list, query.release, query.ref).slice(0, FILE_TRIES)) {
     if (now() >= deadline) break;
     try {
       const res = await deps.fetch(entry.url, { headers: { ...headers, accept: '*/*' }, signal: signal() });

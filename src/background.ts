@@ -275,6 +275,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.torrentWhisper?.close(),
       deps.audioDetector?.stop(),
       deps.torrentSync?.close(),
+      deps.subtitleCheck?.close(),
       torrents?.close(),
     ]);
   };

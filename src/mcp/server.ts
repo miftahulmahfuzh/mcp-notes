@@ -10,6 +10,7 @@ import { registerSimilarTools } from './similarTools.js';
 import { registerStreamingTools } from './streamingTools.js';
 import { registerDirectStreamTools } from './directStreamTools.js';
 import { registerStreamCacheTool } from './streamCacheTools.js';
+import { registerSubtitleCheckTools } from './subtitleCheckTools.js';
 import { registerNoteTools, type ToolDeps } from './tools.js';
 
 export const SERVER_NAME = 'mcp-notes';
@@ -37,6 +38,7 @@ export function createMcpServer(deps: ToolDeps): McpServer {
   registerDirectStreamTools(server, deps);
   // The stream cache (stream-cache phase 5). Answers direct_stream_off when deps.streamCache is unset.
   registerStreamCacheTool(server, deps);
+  registerSubtitleCheckTools(server, deps);
   return server;
 }
 

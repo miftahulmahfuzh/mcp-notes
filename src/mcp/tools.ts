@@ -14,6 +14,7 @@ import type { AdversaryService } from '../adversary/service.js';
 import type { MovieToolDeps } from './movieTools.js';
 import type { StreamingRunner } from '../streaming/service.js';
 import type { DirectStreamToolDeps } from './directStreamTools.js';
+import type { SubtitleCheckToolDeps } from './subtitleCheckTools.js';
 import type { StreamCacheToolDeps } from './streamCacheTools.js';
 
 export interface ToolDeps {
@@ -46,6 +47,8 @@ export interface ToolDeps {
   directStream?: DirectStreamToolDeps | null;
   /** The stream cache behind direct_stream_cache (stream-cache phase 5). Omitted or null: it answers direct_stream_off. */
   streamCache?: StreamCacheToolDeps | null;
+  /** The subtitle check behind direct_stream_sync_subtitle (/sync-subtitle). Omitted or null: it answers subtitle_check_off (direct streaming off, or Whisper not installed). */
+  subtitleCheck?: SubtitleCheckToolDeps | null;
 }
 
 /** Appended to the `list` and `search` descriptions. */

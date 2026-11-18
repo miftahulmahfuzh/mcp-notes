@@ -9,6 +9,7 @@ import type { ToolDeps } from '../mcp/tools.js';
 import { movieToolDeps } from '../mcp/movieTools.js';
 import { directStreamToolDeps } from '../mcp/directStreamTools.js';
 import { streamCacheToolDeps } from '../mcp/streamCacheTools.js';
+import { subtitleCheckToolDeps } from '../mcp/subtitleCheckTools.js';
 import { sessionsReadDeps, type SessionsReadOverrides } from '../sessions/readModel.js';
 import type { SessionResumer } from '../sessions/resume.js';
 import { adversaryApiRoutes } from './adversaryApi.js';
@@ -98,6 +99,7 @@ export function mcpToolDeps(
     streaming: deps.streaming ?? null,
     directStream: directStreamToolDeps(deps),
     streamCache: streamCacheToolDeps(deps),
+    subtitleCheck: subtitleCheckToolDeps(deps),
     ...(wallUrl !== undefined ? { wallUrl } : {}),
     ...(extra.sessionResume !== undefined ? { sessionResume: extra.sessionResume } : {}),
   };

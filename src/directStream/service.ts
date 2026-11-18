@@ -1253,6 +1253,35 @@ export class DirectStreamService {
     );
   }
 
+  /**
+   * The English subtitle a cloud session's own source carries, as text: the track the page shows by default (an
+   * English one, a separate file before a track inside the manifest, or the source's one unnamed file). Null for a
+   * torrent session, an unknown id, or a source with none that can be read. For /sync-subtitle (subtitleCheck/).
+   */
+  async ownSubtitleText(id: string): Promise<{ label: string; vtt: string } | null> {
+    const session = this.sessions.peek(id);
+    if (session === null || session.torrent !== null) return null;
+    const byDefault = <T extends { lang: string | null; label: string }>(tracks: readonly T[]): T[] => {
+      const english = tracks.filter((t) => isEnglish(t));
+      return english.length > 0 ? english : showsEnglish(tracks) ? [...tracks] : [];
+    };
+    if (session.cache !== null) {
+      for (const track of byDefault(session.cache.subtitles)) {
+        if (track.growing === true) continue;
+        const res = await this.fetchImpl(`${this.opts.pageBase()}${track.url}`, { signal: AbortSignal.timeout(SUBTITLE_TIMEOUT_MS) }).catch(() => null);
+        const vtt = res !== null && res.ok ? await res.text() : null;
+        if (vtt !== null && parseCues(vtt).length >= DIALOGUE_MIN_CUES) return { label: track.label || 'English', vtt };
+      }
+      return null;
+    }
+    const mine = byDefault(session.source.subtitles);
+    for (const track of [...mine.filter((t) => t.source === 'request'), ...mine.filter((t) => t.source !== 'request')]) {
+      const vtt = await this.readSubtitle(session, track.url, track.format).catch(() => null);
+      if (vtt !== null && parseCues(vtt).length >= DIALOGUE_MIN_CUES) return { label: track.label || 'English', vtt };
+    }
+    return null;
+  }
+
   /** One subtitle track as WebVTT text: a file, or the segments of an HLS subtitle playlist joined. Null when the host refuses it. */
   private async readSubtitle(session: StreamSession, url: string, format: string): Promise<string | null> {
     const get = async (target: string, vtt: boolean): Promise<string | null> => {
@@ -1567,7 +1596,7 @@ export class DirectStreamService {
    * plays from one (its local playlist; the cache's route fetches what is missing), else the provider's manifest
    * with the headers the resolve captured, as picture.ts hands them over.
    */
-  private audioInput(id: string): SyncInput {
+  audioInput(id: string): SyncInput {
     const session = this.sessions.peek(id);
     if (session === null) throw new Error('the stream session ended');
     if (session.cache !== null) return { url: `${this.opts.pageBase()}${session.cache.manifestUrl}` };
@@ -1584,7 +1613,10 @@ export class DirectStreamService {
     // A cache's or a torrent's files come from their own routes on this daemon, never through the pass-through.
     const local = torrent ?? cache;
     // A cloud session whose source shows no English subtitle gets the title's outside one (outsideSubtitles.ts).
-    const lacksEnglish = torrent === null && !showsEnglish(cache === null ? source.subtitles : cache.subtitles);
+    // /sync-subtitle may have found this provider's own English track wrong and kept a checked file in its place.
+    const replaced = torrent === null && (await this.opts.outside?.()?.replaces(ref, source.provider)) === true;
+    const shown = <T extends { lang: string | null; label: string }>(tracks: readonly T[]): T[] => (replaced ? tracks.filter((t) => !isEnglish(t) && !showsEnglish([t])) : [...tracks]);
+    const lacksEnglish = torrent === null && (replaced || !showsEnglish(cache === null ? source.subtitles : cache.subtitles));
     if (lacksEnglish) await this.opts.outside?.()?.attach(session, () => this.audioInput(session.id));
     const outside = lacksEnglish ? session.outside.subtitles.map(localSubtitle) : [];
     const titleHook = this.opts.hooks?.titleLabel;
@@ -1603,7 +1635,7 @@ export class DirectStreamService {
       manifest_url: local === null ? proxiedUrl(session.id, source.manifest_url) : local.manifestUrl,
       subtitles: [
         ...(local === null
-          ? source.subtitles.map((t) => {
+          ? shown(source.subtitles).map((t) => {
               const srt = t.format === 'srt' || /\.srt$/i.test(new URL(t.url).pathname);
               return {
                 url: proxiedUrl(session.id, t.url, { vtt: srt }),
@@ -1614,7 +1646,7 @@ export class DirectStreamService {
                 english: isEnglish(t),
               };
             })
-          : local.subtitles.map(localSubtitle)),
+          : shown(local.subtitles).map(localSubtitle)),
         ...outside,
       ],
       best_height: source.best_height,

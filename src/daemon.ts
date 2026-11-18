@@ -43,9 +43,11 @@ import { CueFeeds, cueFeedUrl, whisperTrackId } from './directStream/torrent/sub
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
 import { OutsideSubtitles } from './directStream/outsideSubtitles.js';
 import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubtitles.js';
+import { SubtitleChecker, WINDOW_CUT_TIMEOUT_MS } from './directStream/subtitleCheck/checker.js';
+import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
 import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
-import { buildWhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
+import { buildWhisperTier, ffmpegCutter, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
@@ -495,6 +497,44 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   // Wyzie Synced and the per-title subtitle shelf: closed by startBackground's stop; read by the `/api/stream/subs` route.
   deps.torrentSync = subtitleSync;
   deps.titleSubtitles = titleSubtitles;
+  // /sync-subtitle: a stream's subtitle judged against the film's own audio (subtitleCheck/). It hears with a Whisper
+  // worker of its own, started by the first check and ended when none runs. Null without direct streaming, with
+  // Whisper off, or before install.sh has made Whisper's Python.
+  deps.subtitleCheck = null;
+  if (directStream !== null && whisperCfg?.enabled === true && config.torrent !== undefined && (await access(whisperCfg.python, fsConstants.X_OK).then(() => true, () => false))) {
+    const ffmpegBin = config.torrent.ffmpegBin;
+    deps.subtitleCheck = new SubtitleCheckService(
+      new CheckSubjects({
+        directStream,
+        torrents,
+        torrentShelf: torrents === null ? null : new SubtitleShelf(config.torrent.dir),
+        titleShelf: titleSubtitles,
+        services: { baseUrl: config.torrent.subtitleUrl, wyzie, fetch: (url, init) => fetch(url, init) },
+        localBase: () => `http://127.0.0.1:${boundPort ?? config.port}`,
+        onScreen: () => {
+          const on = streamLive?.current() ?? null;
+          return on === null ? null : { sessionId: on.session_id, durationS: on.duration };
+        },
+        imdbId: async (ref) => (movieStreams === null ? null : movieStreams.imdbId(ref)),
+        audioLang: async (ref) => (movieStreams === null ? null : movieStreams.originalLanguage(ref)),
+        titleLabel: async (ref) => (movieStreams === null ? null : movieStreams.titleLabel(ref)),
+        cancelSync: (key) => subtitleSync?.cancel(key),
+      }),
+      new SubtitleChecker({
+        cutter: ffmpegCutter({ ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }),
+        transcriber: new WorkerTranscriber({
+          python: whisperCfg.python,
+          script: DEFAULT_TORRENT_WHISPER_SCRIPT,
+          model: whisperCfg.model,
+          threads: whisperCfg.threads,
+          modelsDir: join(whisperCfg.dir, 'models'),
+          hfHome: join(whisperCfg.dir, 'hf'),
+          log: (line) => console.log(line),
+        }),
+        workDir: join(config.dataDir, 'movies', 'subtitle-check'),
+      }),
+    );
+  }
   // The player's report button (stream-cache-and-bug-report phase 4): phase 1's snapshot, then a
   // tmux window running claude on /report-stream-bug in this checkout. Nothing runs until a click.
   const reportStream = deps.directStream ?? null;

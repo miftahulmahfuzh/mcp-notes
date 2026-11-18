@@ -13,6 +13,7 @@ another skill adds a site:
 | A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
 | An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
 | A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
+| A subtitle that does not fit | `/sync-subtitle [movie id, title or player address]` | Hears the film with Whisper, judges the subtitle's text and timing against it, re-times or replaces it | No: it runs Whisper on this laptop for up to a few minutes |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
 Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
@@ -25,6 +26,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
 [Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
 [What a title says](#what-a-title-says-its-dialogue) ·
 [Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) ·
+[A subtitle checked against the audio](#sync-subtitle-a-subtitle-checked-against-the-films-audio) ·
 [Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
 
 ## pahe.ink
@@ -1831,6 +1833,69 @@ after the play has started:
   second time for the cut, at the provider's speed. `NOTESD_TORRENT_WYZIE_SYNC=off` turns the whole
   thing off. Neither the key nor a download token is ever logged or kept.
 
+### `/sync-subtitle`: a subtitle checked against the film's audio
+
+A subtitle from outside the stream is picked by its name, and Wyzie Synced trusts a service's
+answer. Neither looks at what the subtitle says. `/sync-subtitle` does: it hears the film and reads
+the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`) over one tool,
+`direct_stream_sync_subtitle`, for every kind of direct stream.
+
+```text
+/sync-subtitle                                   the stream on screen
+/sync-subtitle M-NT38                            a film, or one episode, by its movie id
+/sync-subtitle dune 2021
+/sync-subtitle http://localhost:7317/stream/<session id>
+```
+
+- **Live and idle.** With a stream of the title on screen, the audio is that stream's and the fix is
+  put on its session: `subtitle_rev` goes up and the open page loads it on its next position report,
+  without touching the film. With none, this machine's finished torrent download of the title is
+  checked, else a cloud source resolved out of sight as the dialogue reader does, and the fix is kept
+  for the next play.
+- **Hearing.** ffmpeg cuts a minute of audio at six places spread over the film (2%, 20%, 40%, 60%,
+  80% and 93% of its length; five more between them when fewer than 30 lines were heard), and a
+  Whisper worker of the check's own writes down what is said in each with its times. A window whose
+  bytes are not there (a torrent not downloaded that far) is passed over and named in the answer.
+- **Text.** Each heard line of four words or more is looked for anywhere in the subtitle, against
+  every run of one to four cues, by the longest run of words they share in order. With half the
+  lines found the subtitle is of this film (`correct`); with a fifth or fewer it is not (`wrong`). On
+  2026-11-18 the right file of an episode held 94% of 82 heard lines and the Pilot's file 6%.
+- **Timing.** Each line found is an anchor: the cue's start beside the moment it was heard. The
+  anchors give one shift (their median offset), or a shift and a stretch when the offset grows over
+  the film (a 25 fps file on a 23.976 fps film). `in_step`: within 0.6 s at the start and the end,
+  with 70% of the anchors agreeing. `off`: one such fix puts 70% of them right. `scattered`: no
+  single fix does, so the file was cut for another edit.
+- **What it does about it.** Right and in step: nothing (`ok`). Right text, `off`: the same file is
+  re-timed (`retimed`) and judged again. Wrong, missing or `scattered`: Wyzie's list (up to eight
+  files) and the OpenSubtitles add-on's (up to five) are tried one by one, each judged the same way;
+  the first right and in step as it is wins, and one that had to be re-timed is kept only when none
+  of the next three is right as it is (`replaced`). **Nothing is changed unless a subtitle passed
+  both checks**: `none_fits`, `unsure` (a film not in English is heard through Whisper's
+  translation, which matches a subtitle's wording less closely; a growing track cannot be read as a
+  file) and `unheard` leave the player as it was.
+- **Where the choice is kept.** A torrent's as `checked-<file index>-<tag>.vtt` in its
+  `.notesd-subs`, its chosen track, so the `kept` tier answers it on the next play. A cloud title's
+  as `checked-<tag>.vtt` in its `stream-subs` folder; when it stands in for the provider's own
+  English track, `chosen.json` names that provider (`replaces`), and a session of that provider
+  shows the checked file and leaves the provider's English track out. Both are named
+  **English (checked)**, and neither is synced again: a Wyzie Synced job still running for the film
+  is stopped before the choice is written.
+- **Time and cost.** About 40 s for a 43-minute episode on disk (Whisper `small` on 8 threads); a
+  cloud stream's audio is fetched at the provider's speed. The tool answers `pending` after 45 s and
+  the same call again joins the check. A check asks Wyzie's search once and reads a file per
+  candidate; it never calls `/sync`, so it costs none of the key's sync requests.
+- **Limits.** It needs Whisper's Python (`scripts/install.sh`); without it the tool answers
+  `subtitle_check_off`. Idle, a torrent is checked only from a finished download (`no_audio`
+  otherwise). A checked cloud file was judged against one provider's cut; another provider of the
+  same title may run differently, and is checked on its own when asked.
+
+**Another episode's file is ranked last.** Wyzie's list for an episode sometimes holds a file of its
+neighbour: on 2026-11-18 the list for American Horror Story S01E02 held
+`American.Horror.Story.S01E01.720p.BluRay.x264-DEMAND`, which won the ranking on "BluRay" and showed
+the Pilot's lines until Wyzie Synced replaced it three minutes in. An entry whose names name an
+episode, none of them the one asked for, now goes last (`namesOtherEpisode` in `wyzie.ts`); a season
+pack's `S01EAll` and a name with no episode in it say nothing.
+
 ### The subtitle track inside the file
 
 When the torrent holds no subtitle file, the video file's own English text track is used: SubRip,
@@ -1992,6 +2057,8 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |
+| `src/directStream/subtitleCheck/` | `/sync-subtitle`: `match.ts` (text and timing of a subtitle against heard lines, re-timing), `checker.ts` (hear, judge, choose, keep), `candidates.ts` (the services' other files), `subjects.ts` (a session or a title as something to check) |
+| `src/mcp/subtitleCheckTools.ts`, `claude/skills/sync-subtitle/` | `direct_stream_sync_subtitle` and the `/sync-subtitle` skill |
 | `src/mcp/streamingTools.ts` | `streaming_find`, `streaming_play` |
 | `src/chat/prompt.ts` | When the chat bar looks and when it plays |
 
@@ -2010,6 +2077,10 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - Direct streaming: the feature map entry is `.claude/skills/verify-notesd/features/direct-streaming.md`.
   `verify.sh up --direct-stream` drives it against a fake resolver and a fixture stream host, never
   a provider or Chrome; every other throwaway run has it off.
+- `/sync-subtitle`: `npx vitest run tests/unit/directStream/subtitleCheck tests/unit/mcp.subtitleCheckTools.test.ts`
+  (a fake cutter and transcriber over a made-up film; a session and a download as subjects over real
+  shelves in a temporary folder). The throwaway daemon has no Whisper, so the tool answers
+  `subtitle_check_off` there.
 - `/report-stream-bug`: `npx vitest run tests/unit/scripts/reportStreamBug.test.ts` (a fake daemon
   and stream host; the known causes over `tests/fixtures/stream-report/`). On a throwaway daemon, the
   "/report-stream-bug" section of the feature map entry.
