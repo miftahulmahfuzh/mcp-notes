@@ -2,7 +2,7 @@
 name: direct-stream
 description: >-
   Stream a film or one episode of a series from a cloud source or a torrent into mcp-notes' own player page, full screen in the streaming Chrome on Windows, with an English subtitle when a source has one and no site adverts. Use for "/direct-stream <title> [year] [season N episode M]" and for a plain request to stream, play or resume something directly, including something the user describes instead of naming (an actor, director, studio, service, language, genre or year, or where they left off in a series). Also for a request that ends with one of the user's watch codenames (TM or TS, a film or a series from a torrent; NTM or NTS, from a cloud provider, never a torrent), and for caching a title on this laptop before watching it, asking whether it is cached, or clearing that cache. A question such as "can I stream Saltburn directly?" is a lookup that starts nothing.
-argument-hint: <title> [year] [season N episode M] [TM|TS|NTM|NTS] | <a description: a person, studio, service, language, genre, year>
+argument-hint: '<title> [year] [season N episode M] [TM|TS|NTM|NTS] | <a description: a person, studio, service, language, genre, year>'
 ---
 
 # /direct-stream — stream a film straight to the player page
