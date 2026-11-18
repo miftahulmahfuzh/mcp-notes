@@ -220,7 +220,7 @@ const PLAY_DESCRIPTION =
   'Tell the owner it plays in the streaming Chrome window and that a double click, F, Esc or F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
 const SOURCES_DESCRIPTION =
-  'List the direct-streaming providers in the registry both machines share: each one\'s name, film and episode address templates ' +
+  'List the direct-streaming providers in this machine\'s registry: each one\'s name, film and episode address templates ' +
   '({id} is the TMDB id), whether it plays only in its own page (browser_only), whether it is known to offer an English subtitle, ' +
   'the aggregator site it was added from (origin_site, null for the checked-in seed) and when, and this machine\'s health for it ' +
   '(last success and failure, consecutive failures, median seconds to a stream, best quality). Health is per machine: the other ' +
@@ -350,7 +350,7 @@ const DIALOGUE_DESCRIPTION =
   'a synopsis is two sentences, this is the title itself. Read all of it before answering, and answer from it; movies_get gives the episode\'s name, air date and synopsis around it, and a web search the wider context. ' +
   'Pass title (words without the year, a movie id, or a title key) with year and kind when known; for a series the episode is required: season and episode, or absolute_episode for an episode named by one number ("One Piece episode 760"), or an episode\'s movie id as title. ' +
   '"The last episode I watched" is movies_get first (last_play.season and episode). ' +
-  'The first call for a title resolves a stream source out of sight in the streaming Chrome (5 to 40 seconds; no window, no sound, nothing plays) and stores the dialogue; later calls answer from the store at once, on both machines. ' +
+  'The first call for a title resolves a stream source out of sight in the streaming Chrome (5 to 40 seconds; no window, no sound, nothing plays) and stores the dialogue; later calls answer from the store at once. ' +
   'Returns { title, season, episode, dialogue: { language, provider, cues, minutes, fetched_at, cached, from_minute, next_from_minute, lines, text }, story }: text is one line per subtitle cue, "[mm:ss] what is said" (minutes run on past the hour); ' +
   'story is there only when the owner had the story written on the wall (the book icon of an episode): a retelling made from this same dialogue, { text, model, written_at }, good for a quick answer while the lines stay the source. ' +
   'A long film comes in pages: when next_from_minute is not null, call again with from_minute set to it for the rest. refresh true reads the subtitle again. ' +

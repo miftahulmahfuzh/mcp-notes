@@ -21,7 +21,7 @@ import { isPageVisible, onBecameVisible, startAdaptivePoll } from '../lib/pageAc
 import { anyLive, detailIsFor } from '../lib/movies';
 import type { MoviesRoute } from '../lib/route';
 
-/** Every minute while the tab is visible: picks up a sync or a play on the other laptop (its events never reach this daemon). */
+/** Every minute while the tab is visible: picks up what no event announced (a second daemon on the same Postgres: its events never reach this one). */
 export const MOVIES_POLL_MS = 60_000;
 /** While a VLC that notesd started is playing: the player and the open title, so the position moves on the page. */
 export const PLAY_POLL_MS = 5_000;

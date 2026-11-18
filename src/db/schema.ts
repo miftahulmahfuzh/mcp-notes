@@ -891,7 +891,7 @@ export const ccPendingSpawns = pgTable(
 )
 
 /**
- * Small key/value settings shared by both machines (migration 0007), e.g. `projects.selected`
+ * Small key/value settings (migration 0007), e.g. `projects.selected`
  * (src/sessions/types.ts SELECTED_PROJECT_KEY). Written only through src/sessions/repo.ts.
  */
 export const appSettings = pgTable('app_settings', {
@@ -1162,7 +1162,7 @@ export const movieEpisodeMarks = pgTable(
 /**
  * The dialogue of a film (season 0, episode 0) or of one episode: the text of its English
  * subtitle as a stream source carried it (src/directStream/dialogue.ts), one line per cue,
- * `mm:ss<TAB>text`. Read once and kept, so both machines answer "what is this episode about"
+ * `mm:ss<TAB>text`. Read once and kept, so "what is this episode about" is answered
  * without resolving again. Written only by `MoviesRepo.saveDialogue` and `saveStory`.
  */
 export const movieDialogues = pgTable(
@@ -1516,7 +1516,7 @@ export const STREAM_MANIFEST_KINDS = ['hls', 'dash', 'mp4'] as const
 export type StreamManifestKind = (typeof STREAM_MANIFEST_KINDS)[number]
 
 /**
- * The direct-streaming provider registry (migration 0020), shared by both machines. A provider is an
+ * The direct-streaming provider registry (migration 0020), one per database. A provider is an
  * embed address template keyed by the TMDB (or IMDb) id: `movie` has `{id}`, `tv` adds `{season}` and
  * `{episode}` (null: no episode template known). `origin_site` null means the row comes from the
  * checked-in seed, which the daemon syncs at every start; a site's address means /update-cloud-source

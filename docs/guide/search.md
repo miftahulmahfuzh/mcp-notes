@@ -146,9 +146,8 @@ dimensions, into `note_embeddings` (pgvector, HNSW cosine index).
   never blocks or fails a save. Right after a `create`, the note has no vector yet and is found by
   words only.
 - **How the worker runs.** Note events schedule a drain after a 500 ms debounce, in batches of 16
-  with at least one second between calls. A sweep every 30 minutes picks up notes written by the
-  daemon on the other machine and retries that are due. It is rare on purpose: every sweep is a
-  query, and a query every minute never lets Neon suspend.
+  with at least one second between calls. A sweep every 30 minutes picks up what no event
+  announced and retries that are due. It is rare on purpose: every sweep is a query.
 - **Retries.** A failed note is due again after 30 seconds, doubling up to one hour; the worker
   drains once more a minute after a failure, and after that at the next write or sweep. The last error
   is kept on the row with keys redacted.

@@ -132,7 +132,7 @@ export interface PlanInput {
   failures: ReadonlyMap<string, number>;
   /** attemptKey of skipped_budget rows already written today (WIB). */
   skippedToday: ReadonlySet<string>;
-  /** Deep reviews already spent today (WIB), both machines. */
+  /** Deep reviews already spent today (WIB), counted in this database. */
   used: number;
   cap: number;
   /** Review symbols that already have a verdict again, superseding it (manual review only). */

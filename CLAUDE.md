@@ -33,7 +33,7 @@ npx vitest run tests/unit/path/file.test.ts         # one file
 npx vitest run -t "name fragment"                   # one test by name
 npm run test:int             # integration tests against pgvector Postgres in Docker (scripts/test-int.sh)
 npm run db:generate          # new drizzle migration after editing src/db/schema.ts
-npm run db:migrate           # apply migrations (uses the unpooled URL)
+npm run db:migrate           # apply migrations by hand (the daemon applies them at every start)
 npm run docs:gen             # regenerate docs/guide/reference/{mcp-tools,http-api}.md from the code
 npm run docs:check           # stale reference, undocumented route or env var, broken link, unused picture
 npm run docs:shots -- wall   # retake a guide's pictures from a throwaway daemon (scripts/docs/shots/<guide>.mjs)
@@ -57,7 +57,7 @@ scripts/install.sh --check-idle   # exit 0: nothing plays or is being started; 7
 - **New or changed HTTP route:** describe it in `scripts/docs/httpRoutes.ts`, then `npm run docs:gen`.
 - **New environment variable:** add a row to `docs/guide/reference/configuration.md` (a name that is not a setting goes in `scripts/docs/envVars.ts` with a reason).
 - **Changed behaviour:** update the subsystem's guide. Never hand-edit the two generated reference files, and never copy tool, route or env tables into a guide or the README.
-- **Changed UI:** retake the pictures with `npm run docs:shots -- <guide>`. Pictures come from the throwaway daemon with seeded data. The one exception is the movies guide, which the owner wants to show their real library: its pictures are retaken with `npm run docs:shots -- --live movies` (read-only against the live daemon; `DOCS_SHOTS_CHAT=1` adds the billed chat picture, `DOCS_SHOTS_NAMES=1` retakes only `person.png` and `play-menu.png`, `DOCS_SHOTS_PLAY=1` retakes only `play.gif` and `DOCS_SHOTS_PLAY=popup` only `chat-movie-id.png`, each with one real play, so ask first), and plain `docs:shots -- movies` retakes only `unmatched.png` and `assign.png`. Never replace a real-library picture with a fixture one. A picture nothing shows fails the test.
+- **Changed UI:** retake the pictures with `npm run docs:shots -- <guide>`. Pictures come from the throwaway daemon with seeded data (the streaming guide's player pictures too: `docs:shots -- streaming`, faked stream routes and the Sintel trailer). The one exception is the movies guide, which the owner wants to show their real library: its pictures are retaken with `npm run docs:shots -- --live movies` (read-only against the live daemon; `DOCS_SHOTS_CHAT=1` adds the billed chat picture, `DOCS_SHOTS_NAMES=1` retakes only `person.png`, `studio.png`, `genre.png` and `play-menu.png`, `DOCS_SHOTS_PLAY=1` retakes only `play.gif` and `playing.png` and `DOCS_SHOTS_PLAY=popup` only `chat-movie-id.png`, each with one real play, so ask first), and plain `docs:shots -- movies` retakes only `unmatched.png` and `assign.png`. Never replace a real-library picture with a fixture one. A picture nothing shows fails the test.
 - Keep `README.md` short: one line per subsystem and a link. Detail goes in the guide.
 
 ## Architecture
@@ -137,7 +137,7 @@ The owner names where a title is watched from with one upper-case word, usually 
 | NTM, NTS | a cloud provider, never a torrent: a film, a series | `direct_stream_play` with `provider: "cloud"` |
 | TM, TS | a torrent: a film, a series | `direct_stream_play` with `provider: "torrent"` |
 
-The same words are told to every client in `src/mcp/instructions.ts`, `src/chat/prompt.ts` and the `direct-stream` and `n` skills: change them together. The ten requests they were written for are in `docs/guide/streaming.md` ("Codenames") and run in `verify.sh up --discovery` (`direct-stream/codenames.sh`).
+The same words are told to every client in `src/mcp/instructions.ts`, `src/chat/prompt.ts` and the `direct-stream` and `n` skills: change them together. The ten requests they were written for are in `docs/guide/streaming.md` ("Codenames") and run in `verify.sh up --discovery --torrent` (`direct-stream/codenames.sh`).
 
 ## Conventions
 

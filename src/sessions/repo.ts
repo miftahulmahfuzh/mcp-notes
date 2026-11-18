@@ -1322,7 +1322,7 @@ export class SessionsRepo {
       .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: now } });
   }
 
-  /** The repo selected in the wall's project sidebar, shared by both machines. */
+  /** The repo selected in the wall's project sidebar, kept in the database. */
   async getSelectedProject(): Promise<string | null> {
     const value = await this.getSetting(SELECTED_PROJECT_KEY);
     return typeof value === 'string' && value.length > 0 ? value : null;

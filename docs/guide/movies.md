@@ -1,12 +1,14 @@
 # Movies
 
-The Movies library is notesd's record of the video files on your machines: which films and series
-you have, what you watched, when, and how far you got. It scans the folders you name, looks every
-video up on TMDB, shows the result as a poster grid at `/movies`, plays files in the Windows VLC and
-follows the position while they play. A second side of the same page, Stream, lists the titles a
-provider was verified to stream on this machine and plays them in the streaming Chrome (see
-[The Stream side](#the-stream-side)). Seven `movies_*` MCP tools answer questions about it from
-Claude Code (`/n ...`) and from the wall's chat.
+The Movies library is notesd's record of what you watch: which films and series you have, what
+you watched, when, and how far you got. It scans the folders you name, looks every video up on
+TMDB, shows the result as a poster grid at `/movies`, plays files in the Windows VLC and follows
+the position while they play. A second side of the same page, Stream, lists the titles that
+stream on this machine, your watch list and a daily list of what is trending on torrents, and
+plays them in notesd's own player (see [The Stream side](#the-stream-side) and
+[streaming.md](streaming.md)). On a title's page Play goes where the title last played, a caret
+names another source, and every person, studio and genre opens its own list. Seven `movies_*` MCP
+tools answer questions about all of it from Claude Code (`/n ...`) and from the wall's chat.
 
 ![The poster grid of a real library: a film paused in VLC first, then the titles in progress](img/movies/grid.png)
 
@@ -17,9 +19,24 @@ scan could not place are not something to publish from a real disk. The tool cal
 further down were run against that same generated library of `verify.sh up --movies` (six titles,
 a fake TMDB, a fake VLC), so their titles, ids and paths are the fixture's.
 
-Contents: [Setup](#setup) · [What is stored](#what-is-stored) · [The scan](#the-scan) ·
-[Trailers](#trailers) ·
-[Movie ids](#movie-ids) · [Watch state](#watch-state) · [The Movies page](#the-movies-page) ·
+## What sets it apart
+
+| | What it does | Where |
+| --- | --- | --- |
+| It keeps itself | The folders are polled, files are named from six filename shapes and matched on TMDB (a model names the unclear ones), and a moved file keeps its history. You type nothing in | [The scan](#the-scan) |
+| It knows how far you got | Play starts VLC at the second you stopped and reads its position every 5 seconds; a film opened from Explorer is seen through VLC's recent list. Watch state is derived from that, never stored | [Playback](#playback), [Watch state](#watch-state) |
+| One Play, every source | Play goes where the title last played. The caret names the source by hand: the file, a cloud stream, a torrent, or one of four sites, each row saying what it remembers | [The play menu](#the-play-menu) |
+| Every name opens a list | A person, a studio or a genre on a title's page opens its titles with your marks on each. A genre's guide is written for that one title, with web search, once | [Names you can click](#names-you-can-click) |
+| A watch list and a shortlist | "Interested" keeps a title for later. Trending on torrents lists the most seeded films and series you have not seen, each swarm opened to see whether a peer answers | [The Stream side](#the-stream-side), [Trending on torrents](#trending-on-torrents) |
+| An episode's whole story | The book icon on an episode retells it from its own dialogue | [The Movies page](#the-movies-page) |
+| Ask it | Seven tools in Claude Code and the wall's chat: history, filmographies, "play something", marks, who is on the poster. An answer about a title you are halfway through stops where you stopped | [What you can ask](#what-you-can-ask) |
+| A broken VLC explains itself | A health log of every `vlc.exe`, driver resets and a lost picture included, and `/trace-vlc-bug` to read it | [The VLC health log](#the-vlc-health-log), [Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug) |
+
+Contents: [What sets it apart](#what-sets-it-apart) · [Setup](#setup) ·
+[What is stored](#what-is-stored) · [The scan](#the-scan) · [Trailers](#trailers) ·
+[Movie ids](#movie-ids) · [Watch state](#watch-state) · [The Movies page](#the-movies-page)
+([Names you can click](#names-you-can-click) · [The play menu](#the-play-menu) ·
+[The Stream side](#the-stream-side) · [Trending on torrents](#trending-on-torrents)) ·
 [Playback](#playback) · [Continue and "play something"](#continue-and-play-something) ·
 [The VLC health log](#the-vlc-health-log) ·
 [Tracing a VLC problem](#tracing-a-vlc-problem-trace-vlc-bug) · [Two machines](#two-machines) ·
@@ -30,7 +47,8 @@ Contents: [Setup](#setup) · [What is stored](#what-is-stored) · [The scan](#th
 ## Setup
 
 Put the folders, the TMDB token and VLC's settings file in `.env.local`, then run
-`npm run db:migrate` once and `scripts/install.sh` (see [install.md](install.md)):
+`scripts/install.sh` (see [install.md](install.md)). The daemon applies the database migrations
+itself at every start:
 
 ```
 NOTESD_MOVIES_ROOTS=/mnt/c/Users/<you>/Videos:/mnt/c/Users/<you>/Downloads/Telegram Desktop
@@ -45,11 +63,12 @@ change behaviour:
 | Setting | What it changes |
 | --- | --- |
 | `NOTESD_MOVIES` | `off` builds nothing: no scan, no TMDB call, no VLC, and every route and tool answers `movies_off`. Default on. |
-| `NOTESD_MOVIES_ROOTS` | The folders to scan, absolute, separated by `:`, searched recursively (24 levels deep). Empty: nothing is scanned on this machine, but the page, the tools and titles from the other machine still work. |
+| `NOTESD_MOVIES_ROOTS` | The folders to scan, absolute, separated by `:`, searched recursively (24 levels deep). Empty: nothing is scanned on this machine and no pass runs on its own (VLC's recent list is read only when you press rescan), but the page, the tools and the titles already stored still work. |
 | `NOTESD_MOVIES_DONE_DIRS` | Folder names (not paths, any case, default `Done`) that mean "watched". See [Done folders](#moved-deleted-and-done-folders). |
 | `NOTESD_MOVIES_SCAN_MS` | Pause between passes, default two minutes. |
 | `NOTESD_MOVIES_MIN_SECONDS` | Videos shorter than this (default 900, 15 minutes) never reach TMDB. |
 | `NOTESD_MOVIES_FALLBACK_MODEL` | The Claude model asked to name a file TMDB could not match (default `haiku`); `off` disables it. |
+| `NOTESD_MOVIES_STORY_MODEL` | The Claude model that writes an episode's story and a genre's guide (default `sonnet`); `off` disables both. |
 | `TMDB_API_READ_ACCESS_TOKEN` / `TMDB_API_KEY` | The token is preferred; the key is used only without one. With neither, files are still registered, all unmatched as `no_tmdb_credentials`. |
 | `NOTESD_VLC_INI` | VLC's `vlc-qt-interface.ini`. Unset: films opened from Explorer are not seen, only plays started by notesd. |
 | `NOTESD_VLC_BIN`, `NOTESD_CURL_EXE` | The Windows `vlc.exe` and `curl.exe`. Play needs both, WSL interop and `wslpath`. |
@@ -61,29 +80,33 @@ change behaviour:
 
 | Thing | Table | Scope | Lifetime |
 | --- | --- | --- | --- |
-| Title | `movie_titles` | Shared by both machines | One per TMDB film (`movie-<tmdb id>`) or series (`tv-<tmdb id>`). Never deleted, even when every file is gone. Holds the poster path, release date, synopsis, runtime, genres, the trailers (see [Trailers](#trailers)), and your watched flag, rating and review link. |
+| Title | `movie_titles` | Shared | One per TMDB film (`movie-<tmdb id>`) or series (`tv-<tmdb id>`). Never deleted, even when every file is gone. Holds the poster path, release date, synopsis, runtime, genres, the trailers (see [Trailers](#trailers)), and your watched flag, "interested" and "not interested" marks, rating, review link and the other names you call it. |
 | Studios, people, credits | `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits` | Shared | Stored with the title on its first match: up to 40 cast with character names, and up to 20 each of directors, writers, producers and creators. |
 | Episode | `movie_episodes` | Shared | Every episode TMDB lists for a series, with name, air date, runtime and synopsis, whether or not you have its file. |
 | Episode mark | `movie_episode_marks` | Shared | Your "finished" mark on one episode, with or without a file: an episode seen somewhere else. Kept apart from `movie_episodes`, which is replaced on every metadata fetch. |
 | File | `movie_files` | Per host | One row per video path on one machine: size, mtime, duration, season and episode, status (`matched`, `unmatched`, `pending`) and reason. Soft-deleted: a file that leaves the disk keeps its row with `deleted_at`. |
-| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
+| Play | `movie_plays` | Per host | One row per play: start, end, position reached, duration, and source (`live` for a VLC notesd started, `vlc_recents` for one read from VLC's recent list, `stream` for the direct-stream player page, and for a play on a streaming site: one closed row with the site as provider and no position). A file play names its file. A stream play has no file: it names its title, season and episode (none for a film), the provider, and its player session (one row per session). Never deleted, and it outlives its file. |
 | Stream source | `movie_stream_sources` | Per host | One row per film or episode this machine resolved: the provider that last resolved it, manifest kind, best height, whether it had an English subtitle, `verified_at`, and `stale_at` with `failure` when a resolve last found no source. A film is season 0, episode 0. Written after every resolve; a failure of the streaming Chrome itself writes nothing. |
 | How it was last streamed | `movie_title_channels` | Per host | One row per title: the channel it last really played through here (`cloud` with the provider, `torrent` with the info hash, `site` with the site and the title's page there), the season and episode of that play, and when every cloud provider, and every torrent, last found nothing. A play with no source named asks that channel first ([streaming.md](streaming.md#what-played-last-time-plays-first)). A file played in VLC is not kept here: it is read from the plays. |
 | What last played it, per method | `movie_title_methods` | Per host | One row per title and method (`cloud`, `torrent`, or a streaming site by name): the cloud provider, the torrent's info hash or the title's page on the site, with the season and episode of that play. Written with the row above, and kept when another method plays the title later, so a play that names its method goes back to the same provider, torrent or page ([the play menu](#the-play-menu)). |
-| What a genre means for a title | `movie_genre_guides` | This machine | One row per title and genre: the short description and the list of titles Claude collated with web search when you first clicked that genre on the title's page ([Names you can click](#names-you-can-click)). No watch state: the marks are read when it is shown. |
+| What a genre means for a title | `movie_genre_guides` | Shared | One row per title and genre: the short description and the list of titles Claude collated with web search when you first clicked that genre on the title's page ([Names you can click](#names-you-can-click)). No watch state: the marks are read when it is shown. |
 | Title TMDB does not list | `movie_site_titles` | Per host | A title played on a streaming site that has no TMDB entry, so no row in `movie_titles`: its name, year, and the poster, synopsis, country, status and genres its page on the site gives, with the episode last played. Removed only by its button on the Stream side. |
+| Dialogue and story | `movie_dialogues` | Shared | One row per film or episode: the lines of its English subtitle as a stream source carried them ([streaming.md](streaming.md#what-a-title-says-its-dialogue)), and the story Claude wrote from them when you pressed the book icon. Read once and kept. |
 | Movie id | `movie_ids` | Shared | The `M-23T4` id of every title and every episode. See [Movie ids](#movie-ids). |
 
 `MoviesRepo` (`src/movies/repo.ts`) is the only writer of these tables. Watch state is not in any of
 them: it is derived when read. Posters and backdrops are not stored either: the page hotlinks them
-from `TMDB_IMAGE_BASE`, so both machines show them.
+from `TMDB_IMAGE_BASE`. Scope says what two daemons on one Postgres would share; each machine has
+its own database now, so in practice everything here is this machine's (see
+[Two machines](#two-machines)).
 
 A title first met through a stream is stored like any other (TMDB details, credits, episodes), but
-it stays out of the Library grid until it has a file: the Library lists titles with a file on
-either machine, and titles that were never streamed. Opened by id (`/movies/<id>`, `movies_get`)
-it shows like any title, with its stream plays. A title is on the Stream side only while one of
-its source rows on this machine was verified within `NOTESD_STREAM_FRESH_DAYS` and is not stale,
-or while a streaming site is how it was last played here.
+it stays out of the Library grid until it has a file: the Library lists titles that have a file
+row (any host, deleted files included), and titles that were never streamed. Opened by id
+(`/movies/<id>`, `movies_get`) it shows like any title, with its stream plays. A title is on the
+Stream side while one of its source rows on this machine was verified within
+`NOTESD_STREAM_FRESH_DAYS` and is not stale, while a streaming site or a torrent is how it was
+last played here, or while it is marked interested (see [The Stream side](#the-stream-side)).
 
 ## The scan
 
@@ -147,9 +170,11 @@ spec is the table in `tests/fixtures/movies/filenames.ts`.
 
 `src/movies/tmdb.ts` is the only module that talks to TMDB. When TMDB cannot be reached at all
 (network error, timeout, 401, 403, 429 or 5xx) the pass stops calling it, the remaining files stay
-`pending` with `tmdb_error`, and the next pass retries them. A title's metadata is fetched once,
-when it is first matched; it is not refreshed afterwards. The one exception is the trailers of a
-title stored before trailers were kept.
+`pending` with `tmdb_error`, and the next pass retries them; an error for one title alone leaves
+only that file pending. A title's metadata is fetched once, when it is first matched; it is not
+refreshed afterwards. The exceptions are the trailers of a title stored before trailers were kept,
+and the original language, which is filled in the first time a stream or the Trending list needs
+it.
 
 ### Trailers
 
@@ -167,7 +192,7 @@ is searched on the web and YouTube's API is never called, so there is no key and
   kept. Each pass asks TMDB for the videos of up to ten of them (`TRAILER_BACKFILL_PER_PASS`): one
   request for the title and one per season its episode list names. A title is marked checked
   whether or not TMDB lists a trailer, and when TMDB no longer has it (404). When TMDB cannot be
-  reached the rest wait for the next pass. Both machines share the result.
+  reached the rest wait for the next pass.
 - **Once.** Like the rest of the metadata, a title's trailers are read once. A trailer TMDB adds
   later does not arrive on its own.
 
@@ -178,7 +203,8 @@ your `claude` login, no tools, one turn) for the title, year and kind from the r
 names. Its answer goes through the same TMDB search and the same 0.85 rule; an answer of `null`
 (a phone clip, a screen recording) leaves the file unmatched. It is one call per file and never
 repeated: a file that ends up `no_match` or `low_confidence` is not looked at again until you assign
-it by hand. Files shorter than the minimum never get there.
+it by hand. Files shorter than the minimum never get there. Without a `claude` binary there is no
+fallback, and a call that fails or takes over a minute counts as no answer.
 
 ### The unmatched list
 
@@ -220,8 +246,8 @@ into a play observation with source `vlc_recents`:
 
 - An entry for a known file is recorded only when it says something the file's last play does not
   (a position more than 10 seconds away), so a play notesd followed live is not counted twice.
-- An entry with time 0 or -1 means "opened, position unknown". It is recorded once and gives the
-  state `seen`.
+- An entry with time 0 or -1 means "opened, position unknown". It is recorded only when the file
+  has no play yet, and gives `in_progress` while the file is on disk and `seen` once it is deleted.
 - An entry whose file is no longer on disk is matched to a title by its name and stored as an
   already deleted file, so films watched and deleted before notesd knew them still have history.
 
@@ -232,7 +258,8 @@ Every title has an id like `M-23T4`, and so has every episode of a series, with 
 - Shape: `M-` and four characters from `0-9A-Z`. A note id (`A-B32`) has three characters after the
   dash, a session node id (`A0-3G`) two on each side.
 - The database writes them, never application code. `movie_next_id()` scrambles a sequence over the
-  1,679,616 possible ids, so they look random, never repeat and are the same from either machine.
+  1,679,616 possible ids, so they look random and never repeat. Each machine's database hands out its own, so a title first
+  stored after the databases were split can have another id on the other machine.
   Triggers on `movie_titles`, `movie_episodes` and `movie_files` register an id for every new title,
   every episode row and every season and episode a file names (`drizzle/0018_movie_ids.sql`). An
   episode keeps its id when the title's metadata is rewritten. Never invent one.
@@ -247,7 +274,7 @@ Where an id is accepted and shown:
 | The title's page | The title's id is the first fact under the heading; each episode row carries its own. |
 | `/movies/<id>` | Opens the title. An episode's id opens its series scrolled to that episode, with the row marked, even when the season has no file. |
 | `GET /api/movies/<id>` | Answers the title; an episode's id answers its series. |
-| Every `movies_*` tool | `title` takes a movie id. In `movies_get` an episode's id answers that episode first; in `movies_continue` it plays exactly that episode; in `movies_mark` it takes `watched` only. |
+| The `movies_*` tools that take a `title` (`movies_get`, `movies_history`, `movies_continue`, `movies_pictures`, `movies_mark`) | `title` takes a movie id. In `movies_get` an episode's id answers that episode first; in `movies_continue` it plays exactly that episode; in `movies_mark` it takes `watched` only. |
 | Wall chat | An id in an answer is a chip. Clicking it opens the movie pop-up (`MovieModal`) with Play and a button to the page (`web/src/lib/chatSegments.ts`). While VLC has that title open (for an episode's id, that episode) the pop-up follows it like the title's page: the outline and badge on the poster, and the state and position beside Play, re-read every five seconds. |
 | Claude Code | The MCP instructions tell Claude to write `[M-23T4](http://localhost:7317/movies/M-23T4)`, and the `note-links` mod links a bare id the same way. See [claude-code.md](claude-code.md). |
 
@@ -294,8 +321,8 @@ A title's state comes from its files:
   the episode's primary copy (or there is no copy), and the primary copy decides when not.
 
 Play resumes at the last known position, or from the start when there is none or the file is
-finished. The stream player resumes a film or an episode at its last stream play's position, from
-either machine, with the same rule.
+finished. The stream player resumes a film or an episode at its last stream play's position, with
+the same rule (plays copied in from the other machine count; its newer plays are not seen).
 
 ## The Movies page
 
@@ -316,7 +343,8 @@ the share of episodes finished, and a title with no file left on any machine is 
 appears at its top right: one click sets or clears the title's watched flag, without opening the
 title and without a confirmation. On a series that is the whole series, every season. On the Stream
 side a bookmark icon beside it marks the title "interested" and a crossed-eye icon "not interested"
-(see [The Stream side](#the-stream-side)). The poster leaves the grid at the click, without a reload: a
+(see [The Stream side](#the-stream-side)); a title that carries one of the two marks shows that
+icon lit on the Library side too, where a click clears it. The poster leaves the grid at the click, without a reload: a
 title whose watched flag is set shows under `finished` (and `gone`) only, not under `all`, on both
 sides. A title finished by playing it stays under `all`. The notice offers an undo, and a title
 marked by mistake is still there under `finished`, where the same icon clears the flag.
@@ -363,14 +391,15 @@ characters (the first 18, with an icon for the rest).
 - **Files or episodes.** A film lists its files; a series lists the seasons that have a file on any
   machine, one row per episode with its code, name, movie id, a progress meter, a watched icon and a
   play icon. A deleted file is flagged "deleted" with its date in the tooltip; a file on the other
-  machine is flagged "on <host>". Seasons with no file anywhere are counted, not listed.
+  machine is flagged "on <host>". Seasons with no file anywhere are counted, not listed. Files of a
+  series that match no episode are listed last, under Other files.
 - **An episode's story.** The book icon between an episode's code and its name opens the whole
   story of that episode, every spoiler included, in a pop-up. The first press has it written:
   the daemon reads the episode's dialogue (the stored one, else the English subtitle of a stream
   source, resolved out of sight; see [streaming.md](streaming.md#what-a-title-says-its-dialogue))
   and Claude retells it in one call (`NOTESD_MOVIES_STORY_MODEL`), which takes about a minute. The
   story is kept with the dialogue, so it is written once: after that the icon is filled and the
-  story opens at once, on both machines. Nothing is written until you press. When there is no
+  story opens at once on this machine. Nothing is written until you press. When there is no
   English subtitle, or no source has the episode, the pop-up says so. Closing the pop-up while it
   is being written does not stop it.
 - **Folding a season.** The caret before a season's name hides its episodes and shows a count in
@@ -398,6 +427,10 @@ member and character is a link that looks like the text it replaces and underlin
 | A character | No pop-up: it asks the chat "Who is Ruth, played by Jessica Henwick, in this film?" through the pill, at once. |
 
 ![The pop-up of a cast member: photo, biography, and their films newest first with the three mark buttons on each](img/movies/person.png)
+
+![A studio's pop-up: its logo, where it is, its parent company and the titles it made](img/movies/studio.png)
+
+![A genre's pop-up, written for one film: what science fiction is in WALL·E, and the titles closest to it with one line each](img/movies/genre.png)
 
 - **The list is newest first**, undated titles last, at most 120, and the line above it counts
   them and their marks (`42 titles · 5 watched · 1 started · 2 interested · 1 not interested`).
@@ -445,7 +478,7 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
 | Downloaded file · VLC | Plays the file on this machine (a series: Continue), as Play does when there is one. |
 | Find the download on pahe.ink | In its place when no file is here: the daemon runs the `/pahe` search for the title's name and year, and its best release (BluRay first) opens in a new tab; when pahe lists none, its search page opens. Nothing is downloaded for you. |
 | Non Torrent stream | A cloud provider and never a torrent (`NTM`, `NTS`). The provider that streamed the title last is asked alone first, then the others. |
-| Torrent stream | A torrent (`TM`, `TS`). The very torrent that last played this film or this episode is opened again, with no index asked; the indexes are searched only when none is remembered or its swarm has nothing now. |
+| Torrent stream | A torrent (`TM`, `TS`). The very torrent that last played this film or this episode is opened again, with no index asked; the indexes are searched only when none is remembered or its swarm has nothing now. On another episode of the series the row reads `last from a torrent on Nov 17, 2026`, and the indexes are searched for that episode. |
 | Idlix, Lk21, Flicksy, Dramacool | Plays on that streaming site, in the streaming Chrome: from the page it played from last time, else from the one page the site's search returns for the name and year. Lk21 and Flicksy play films only, so a series lists Idlix and Dramacool. |
 
 ![The play menu on a film's page: the file, the two kinds of stream and the four sites, each with what it remembers](img/movies/play-menu.png)
@@ -458,8 +491,9 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
   is still the one Torrent stream opens after a cloud provider played the title in between.
 - **A play being started says what it is doing.** From the click until the play answers, a line
   beside Play follows it: first what was asked (`asking the torrents`), then the daemon's own
-  stage for that title as it changes (`asking the torrent indexes`, `opening 3 torrents`,
-  `opening the player page`), with the seconds it has taken. The page reads it from
+  stage for that title as it changes (`asking the torrent indexes`,
+  `opening 3 torrents: <their names>`, `opening the player page`), with the seconds it has taken
+  once that is two or more. The page reads it from
   `GET /api/movies/player` (`starting`) once a second, only while a play is being started, on the
   title's page and in the movie pop-up alike. A streaming site reports no stages, so its row
   says that the site's countdown can take a minute. A play started from an episode's row (its
@@ -472,7 +506,8 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
 
 **No spoilers past where you are.** A question from a title you have started and not finished
 carries your position, read from the daemon at the moment you ask (`· at 45:15 of 1:45:28`): the
-followed VLC when it shows that title, else a film's saved resume point. The chat leaves out what
+followed VLC when it shows that title, else its stream on screen in the player page, else a film's
+saved resume point. The chat leaves out what
 happens after it and says so, unless you ask for spoilers outright. For a later message without
 that part, and in `/n`, Claude reads `last_play` from `movies_get` again before it talks about the
 plot, and never reuses a position from earlier in the conversation.
@@ -484,8 +519,8 @@ a grid they share one row with the filters: the switch first, a hairline, the st
 kind icons and the text filter, then the Library's two buttons at the right. On a title, the
 unmatched list or an empty page they are a toolbar of their own.
 
-**Live updates.** The page listens on `/api/movies/events` and reloads on every change, polls once
-a minute for changes made by the other machine, and while a play is followed re-reads the player
+**Live updates.** The page listens on `/api/movies/events` and reloads on every change, reads
+everything again once a minute while the tab is visible, and while a play is followed re-reads the player
 and the open title every five seconds.
 
 ### The Stream side
@@ -532,7 +567,10 @@ catalog too.
 A poster opens the title's page at `/movies/<id>?side=stream`, the same page as from the library
 (poster, facts, people, trailer, review), with one more line under the facts naming the stream
 source: provider, best quality and whether it has an English subtitle (`Stream: VidFast · 2160p ·
-English subtitle`).
+English subtitle`). A series' line counts its verified episodes, a film whose source failed says
+`Stream: no source answered on <day>`, and a title nothing verified yet says that Play checks it.
+
+![A series opened from the Stream side: the stream line, how it last played here, Play with its caret, the trailer, watched, interested and not interested icons](img/movies/stream-title.png)
 
 Every title's page, on either side, also says how it was last played on this machine, which is
 where Play goes again unless you name another source:
@@ -544,7 +582,7 @@ where Play goes again unless you name another source:
 | `Previously played through Magnet (Torrent)` | A torrent |
 | `Previously played through Dramacool` (`Idlix`, `Lk21`, `Flicksy`) | A streaming site |
 | `Never been played before` | Nothing was played here, and the title is unwatched |
-| `Not played on this machine yet` | Nothing was played here, but the title is not unwatched: it was marked by hand, or played on the other machine |
+| `Not played on this machine yet` | Nothing was played here, but the title is not unwatched: it was marked by hand, or its play came in with the copy of the other machine's data |
 | `... · all Non Torrent stream methods failed on <day>` | Every cloud provider found nothing that day |
 | `... · all Torrent stream methods failed on <day>` | Every torrent found nothing that day |
 | `... · all Direct (Non Torrent and Torrent) stream methods failed, last on <day>` | Both did |
@@ -575,8 +613,8 @@ last episode once more, and the cross takes it off the list.
 - **Series** list every season on this side, not only the seasons with a file. Every episode has
   a play icon; an episode without a verified stream is checked when you click it ("checked when
   it starts"), and one with a verified stream carries a `verified` flag naming its source.
-- **The other machine** verifies its own titles. A title verified only on the other laptop is not
-  on this machine's Stream side, and its source is not offered here.
+- **The other machine** verifies its own titles, in its own database: nothing it verified shows
+  here.
 
 ### Trending on torrents
 
@@ -584,6 +622,8 @@ Under the Stream grid there is a second, separately headed section, "Trending on
 and series with the most seeders on the torrent indexes that you have not seen. These titles were never
 asked to play, so nothing in this section is "verified to stream"; it is a shortlist to pick from, and
 the Stream grid above it stays what it was (titles that actually resolved on this machine).
+
+![Trending on torrents: under each poster the seeds the index lists and what the swarm said when it was opened; a film has a play icon](img/movies/trending.png)
 
 **Where the list comes from.** Once a day (the job looks every hour whether the list is a day old, and
 builds the first one two minutes after notesd starts) the daemon reads the torrent indexes' own top
@@ -593,7 +633,8 @@ answers only a title search. A listing becomes a title when it names an IMDb id,
 film or series (an episode's id answers its series); a listing with no IMDb id is left out, and so is a
 cinema recording, a dub, a 3D release, a swarm under 5 seeds and a film over 25 GB. A series is its
 best-seeded episode or pack. The first `NOTESD_TRENDING_SIZE` (100) of each kind that you have not seen
-make the list, so the list is still full when the top is mostly watched. Titles whose TMDB original language is in `NOTESD_TRENDING_SKIP_LANGUAGES` (default: Hindi and the other
+make the list, taken from the 300 most seeded listings of that kind, so it can come out shorter when
+most of those are watched. Titles whose TMDB original language is in `NOTESD_TRENDING_SKIP_LANGUAGES` (default: Hindi and the other
 languages of Indian cinema) are left out of the build and of every read, so one already on the list goes at
 once. A title with no stored language is asked of TMDB at the build and the answer kept; until it is known, a release
 name that says only a skipped language ("Telugu DVDScr") skips it. The list skews to what the
@@ -615,11 +656,12 @@ verdict. The seed count is the index's claim and a dead swarm shows one too (sev
 | filled dot, "confirmed 3 h ago" | The swarm was opened and a peer sent its file list, with at least one video file, at that time. |
 | dashed dot, "not confirmed" | Listed, swarm not opened yet (probes run after the list is built, or `NOTESD_TRENDING_PROBE` is lower than the list). |
 | dashed dot, struck through, "no peer answered 10 min ago" | The swarm was opened and no peer sent a file list within 20 s. The listing may be stale. |
-| dashed dot, struck through, "no video file" | A peer answered, but the torrent holds no video file. |
-| dashed dot, "could not check" | The check itself failed (the engine, not the swarm); not a verdict on the torrent. |
+| dashed dot, struck through, "no video file 10 min ago" | A peer answered, but the torrent holds no video file. |
+| dashed dot, "could not check 10 min ago" | The check itself failed (the engine, not the swarm); not a verdict on the torrent. |
 
-Hover the line for the full text: seeds and the index that listed them, what the swarm showed, and
-when. "Confirmed" says a file list arrived, not that the film will play at speed: the real play still
+The line under the heading says when the list was built and how many of its titles are confirmed
+(`Listed 7 h ago; 130 of 166 confirmed`). Hover a poster's line for the full text: seeds and the
+index that listed them, what the swarm showed, and when. "Confirmed" says a file list arrived, not that the film will play at speed: the real play still
 opens the swarm, probes the header and may remux.
 
 **The probe.** After a build, the daemon opens the swarms of the most seeded titles, films and series
@@ -628,7 +670,7 @@ alternating, up to `NOTESD_TRENDING_PROBE` (200) a day, three at a time, each fo
 writes no download record and leaves the swarm at once, so it leaves nothing on disk and no row among
 the downloads. A torrent already open for a play, or finished on this machine, answers from what it
 holds. Nothing is probed while a VLC play, a stream on screen or a stream being started exists; the
-pass stops and the rest wait for the next one. 200 swarms take a few minutes when most are alive and at
+pass stops and the rest are probed at the next hourly check. 200 swarms take a few minutes when most are alive and at
 most about 20 minutes when most are dead. A confirmation of the last 12 hours is carried over when a refresh
 lists the same torrent again; a failure never is, because it may be this machine's network (an office
 firewall hid every peer once), so it is tried again. This is a daily snapshot, not a promise for tonight: a swarm that was
@@ -650,12 +692,12 @@ the pass runs. `NOTESD_TRENDING=off` shows the section with one line saying it i
 is asked of an index or TMDB and no swarm is opened. The list is also off while torrents, direct
 streaming, the movie library or the TMDB credential are.
 
-**Two machines.** Each machine builds and probes its own list (a swarm answers differently from
-another network), so a title confirmed on one laptop is "not confirmed" on the other until its own pass.
+**Two machines.** Each machine builds and probes its own list from its own network (a swarm answers
+differently from another network). Nothing of it is carried to the other machine.
 
 ## Playback
 
-![A film's page while VLC has it paused: "paused" on the poster and the position beside the stars](img/movies/playing.png)
+![A film's page while VLC plays it: "playing" on the poster and the position beside the stars](img/movies/playing.png)
 
 Play, Continue and `movies_continue` all end in `MoviePlayer` (`src/movies/player.ts`):
 
@@ -676,7 +718,7 @@ Play, Continue and `movies_continue` all end in `MoviePlayer` (`src/movies/playe
 7. Every `NOTESD_VLC_POLL_MS` the position is read into the play's one row. When VLC exits, the
    play closes at the last position read.
 
-![Resume on a film in progress: VLC starts, the poster and the line beside the stars follow the position, and the button moves on to the new resume point](img/movies/play.gif)
+![Play on a film in progress: VLC starts and resumes where it stopped, "playing" appears on the poster and the line beside the stars follows the position](img/movies/play.gif)
 
 Rules worth knowing:
 
@@ -709,9 +751,10 @@ Rules worth knowing:
 - **`NOTESD_VLC_EXTRA_ARGS`** is split on whitespace with no quoting, for example
   `--avcodec-hw=none`. `--http-*`, `--extraintf`, `--intf` and `-I` are rejected at start, because
   notesd owns VLC's HTTP interface.
-- **A daemon restart** closes the plays the previous process left open and does not pick them up
-  again. The film keeps playing; with `NOTESD_VLC_INI` set, its position is next seen through
-  VLC's recent list.
+- **A daemon restart** closes the plays the previous process left open. A VLC that is still open
+  is then followed again (see above). When none is found, or the health log is off, the film
+  keeps playing unfollowed; with `NOTESD_VLC_INI` set, its position is next seen through VLC's
+  recent list.
 
 `GET /api/movies/player` says whether playback works here (`available`, and a `reason` such as
 `no_interop`, `no_vlc`, `no_curl`) and which play is followed. The same check feeds
@@ -743,7 +786,7 @@ here.
 | `missing` | Nothing played. `missing` is the episode with no file here; `present` lists later episodes that have one. For a film, both are empty. |
 | `nothing` | Nothing played. `reason` is `finished`, `caught_up` or `no_episodes`. |
 | `ambiguous` | The words fit several titles; `candidates` lists them. |
-| `no_match` | No title fits, or (without a title) nothing was ever played here. |
+| `no_match` | No title fits, (without a title) nothing was ever played here, or (with `random`) nothing here is left to watch. |
 
 In a request, the codenames **DM** (a film) and **DS** (a series) mean the library: "play
 interstellar DM" is `movies_continue`, never a stream. The four stream codenames are in
@@ -778,7 +821,9 @@ freezes after the fact.
 - **Hangs.** When a VLC notesd started stops answering for two polls while its process is alive,
   one `hang` start line is written and the play stays open at its last position, however long the
   silence lasts. An end line follows when it answers again, exits, or tracking ends. When the
-  process is gone the play closes at once.
+  process is gone the play closes at once. When the monitor cannot tell whether the process is
+  alive (the health log is off, or there is no `powershell.exe`), six silent polls in a row end
+  the tracking at the last position.
 - **Driver resets.** While any `vlc.exe` exists, every sample also reads the Windows System log
   for `Display` events and writes one `gpu_reset` line per new one, with the VLC pids and the
   followed play at that moment. Event 4101 ("display driver stopped responding and has successfully
@@ -831,7 +876,7 @@ closes, restarts or replaces one. If the cure is to close it, it says so and you
 
 | File | What it holds |
 | --- | --- |
-| `windows.txt` | Every `vlc.exe` (memory, handles, whether it responds, its command line with the password redacted), its windows, its frame counters read twice, the graphics driver version, display-driver events, application crashes and hangs, sleep and resume |
+| `windows.txt` | Every `vlc.exe` (memory, handles, whether it responds, its command line with the password redacted), its windows, its frame counters read twice, the graphics driver version, display-driver events, application crashes and hangs, sleep and resume, VLC's crash dumps and the `vlcrc` lines that matter |
 | `health.json` | `GET /api/movies/player/health`: samples, run summaries, driver resets, stalls, hangs, incidents |
 | `player.json` | The play notesd follows now, with `video_stalled` |
 | `notesd.log`, `vlc-health-tail.jsonl` | The daemon's lines about VLC; the raw tail of the health log |
@@ -862,6 +907,7 @@ not in the table is added to the skill.
 **Options it uses.** `trace.sh --front` brings each VLC to the front for the two screenshots and
 gives focus back. `--probe` is for a paused VLC, whose frozen counters prove nothing: it plays it
 for 6 seconds and pauses it again. `--hours N` widens the Windows event window (default 6).
+`--wall URL` reads another daemon than the one on 7317.
 
 **The fix measured on this machine.** `NOTESD_VLC_EXTRA_ARGS=--vout=wingdi --avcodec-hw=none`
 keeps VLC off Direct3D, the one setting that played through a driver reset. The other video
@@ -894,8 +940,8 @@ and the list describe two daemons pointed at one Postgres by hand.
 
 ## What you can ask
 
-The six tools are the same in both places. Claude Code reaches them through the `notes` MCP server
-(the `/n` skill maps the phrasings below), and the wall's chat agent has all six in its tool list
+The seven tools are the same in both places. Claude Code reaches them through the `notes` MCP server
+(the `/n` skill maps the phrasings below), and the wall's chat agent has all seven in its tool list
 (`allowedChatTools` in `src/chat/status.ts`) plus web search. Argument details are in
 [reference/mcp-tools.md](reference/mcp-tools.md#movies_list).
 
@@ -935,8 +981,8 @@ Differences between the two places:
 
 - `q` matches words in the title, original title and synopsis. It does not search genres, cast or
   studios; those are `person` and `company`, which match part of a name in any credit role.
-- The list is ordered by newest play, then by when the title was added. The tool has no sort
-  argument.
+- The list is ordered by the later of a title's newest play and the day it was added, newest
+  first. The tool has no sort argument.
 - `finished_from` and `finished_to` take `YYYY-MM-DD` (a whole day in the daemon's timezone) or an
   ISO datetime. Either one drops titles with nothing finished.
 - Each title carries `movie_id`, `state`, `rating`, `progress`, `last_played_at`, `finished_at`,
@@ -957,7 +1003,8 @@ Differences between the two places:
 | `/n when did I delete The Dog Stars?` | `movies_get {"title":"The Dog Stars"}`, read `files[].deleted_at` | Both |
 | `Who is the main character?` (pill on a title's page) | `movies_get` with the id on the message's first line, first `cast` entry | Wall chat |
 | `Any trivia about this film?` (pill on a title's page) | `movies_get` for the year, then web search | Wall chat |
-| `/n what is Citizen of a Kind about? who is the woman at the front in the thumbnail?` | `movies_get {"title":"Citizen of a Kind"}`, read `overview`, `cast`; the poster image itself answers who is in front | Both |
+| `/n what is Citizen of a Kind about? who is the woman at the front in the thumbnail?` | `movies_get {"title":"Citizen of a Kind"}` for `overview` and `cast`, then `movies_pictures {"title":"Citizen of a Kind"}`: the poster comes back as an image Claude looks at | Both |
+| `/n who is the woman on the poster of M-CNJ0?` | `movies_pictures {"title":"M-CNJ0"}`: the poster and backdrop come back as images Claude looks at (an episode's id adds its still), then `movies_get` for the cast | Both |
 
 - `trailer_url` is the trailer on YouTube, or null when TMDB lists none; `trailer_key` is its video
   id, and each season carries its own `trailer_key`. No tool plays a trailer: Claude answers with
@@ -972,10 +1019,9 @@ Differences between the two places:
   `episode`. `episode` alone matches that number in any season.
 - Words that fit several titles answer `ambiguous` with the candidates and their ids; words that
   fit nothing answer `not_found`; a movie id that names nothing answers `not_found`.
-- **A question about who is pictured is answered from the poster itself, not just the credit
-  list.** The poster is a hotlinked TMDB image (`poster_url`), and Claude can look at it: asked who
-  is at the front of a poster, it reads the image and matches the face to the cast TMDB names, not
-  just reports the cast in credit order.
+- **A question about who is pictured is answered from the picture itself.** `movies_pictures`
+  returns the poster, the backdrop and (for an episode's id) the still as images; Claude matches
+  what it sees to the cast from `movies_get` and says when it is inferring.
 
 ### Watch history
 
@@ -988,10 +1034,12 @@ Differences between the two places:
 | `/n every time I played M-5CWN` | `movies_history {"title":"M-5CWN"}` | Both |
 
 - A play has `started_at`, `ended_at`, `position_s`, `duration_s`, `ratio`, `source`, `host`, the
-  title, season, episode and episode name, `file_deleted` with `file_deleted_at`, and `movie_id` (the
-  episode that was played, or the film).
-- History covers both machines and survives the file's deletion. `position_s: null` means VLC was
-  opened and the position is unknown.
+  title, season, episode and episode name, `provider` for a stream play, `file_deleted` with
+  `file_deleted_at`, and `movie_id` (the episode that was played, or the film).
+- History lists every play in this machine's database, the other laptop's plays that were copied
+  in once included (`host` says which), and survives the file's deletion. `position_s: null` means
+  the position is unknown: VLC was opened without a reading, or the play ran on a streaming site,
+  which reports none.
 - With `title`, an episode's movie id narrows to its series, not to that episode. Use `movies_get`
   with the episode's id for one episode's plays.
 
@@ -1006,7 +1054,8 @@ Differences between the two places:
 | `/n not that one, the other person with that name` | `movies_person {"name":"Tom Hardy","person_id":990114}` with an id from `other_people` | Both |
 | `What else did this director make?` (pill on a title's page) | `movies_get` for the director's name, then `movies_person` | Wall chat |
 
-- This is the one tool that reads TMDB at question time. Each credit says `in_library`, `state`,
+- This tool reads a person's credits from TMDB at question time (`movies_pictures` also fetches
+  its pictures from TMDB, and `movies_mark` reads TMDB once for a title key not stored yet). Each credit says `in_library`, `state`,
   `seen` (finished or seen) and `started` (in progress or dropped), newest release first, with the
   person's roles merged per title.
 - `name` picks the most popular match; `other_people` lists up to four others.
@@ -1054,10 +1103,9 @@ Differences between the two places:
 | `/n I'm interested in M-154P, save it for later` | `movies_mark {"title":"M-154P","interested":true}` (`false` takes it off the list) | Both |
 | `I watched House of the Dragon season 1 last year. start season 2` | `direct_stream_find`, then `movies_mark {"title":"tv-94997","season":1,"watched":true}`, then `direct_stream_play` with season 2, episode 1 | Both |
 | `/n find my review that mentions Glen Powell` | `search {"query":"Glen Powell"}` (the review is a note) | Both |
-| `/n who is the woman on the poster of M-CNJ0?` | `movies_pictures {"title":"M-CNJ0"}`: the poster and backdrop come back as images Claude looks at (an episode's id adds its still), then `movies_get` for the cast | Both |
 
 - Pass exactly one of `title` or `file_id`, and at least one change.
-- Rating, review and "not interested" belong to a title. An episode's movie id and a `file_id`
+- Rating, review, "interested", "not interested" and `season` belong to a title. An episode's movie id and a `file_id`
   take `watched` only; anything else answers `invalid_input`.
 - `season` with `watched` is the page's "season finished" button: it marks that season's episodes
   (the ones TMDB lists and the ones a file names), never the series, and the answer's `season`
@@ -1093,9 +1141,10 @@ No tool does these. The first group can be done on the page or over HTTP; the re
 at all.
 
 - **Page or HTTP only:** list the unmatched files, assign a title to a file, start a rescan, read
-  the VLC health log, see whether playback works on this machine.
+  the VLC health log, see whether playback works on this machine, play one chosen file (the play
+  icon of a file row, `POST /api/movies/files/:fileId/play`).
 - **VLC control:** pause, stop, seek, volume, "restart from the beginning" (Play resumes unless the
-  file is finished), play a chosen file by `file_id`, play on the other machine.
+  file is finished), play on the other machine.
 - **Filters the tool does not have:** genre, year, rating, runtime, sort order. `movies_list`
   returns year and rating, so Claude can filter a list itself; genres are only in `movies_get`.
 - **History filters:** by machine, or by one file.
@@ -1104,8 +1153,10 @@ at all.
 - **What a title is about:** `movies_get` has TMDB's synopsis of a title and of each episode.
   The whole story, line by line, is `direct_stream_dialogue`
   ([streaming.md](streaming.md#what-a-title-says-its-dialogue)).
-- **Titles you do not have:** there is no wish list. `movies_person` lists a person's films
-  outside the library, `direct_stream_discover` finds titles by year, language, person, studio or
+- **Titles you do not have:** the watch list is the "interested" mark (`movies_mark` with
+  `interested: true`, by title key for a title not stored yet), shown under the Stream side's
+  `interested` filter; no tool lists it on its own. `movies_person` lists a person's films
+  outside the library,
   streaming service ([streaming.md](streaming.md#finding-something-to-stream)), and "films like
   this" is a web search checked against `movies_list`. Finding such a film on pahe.ink, or finding
   and playing it on idlix, lk21, flicksy or dramacool, is in [streaming.md](streaming.md).
@@ -1117,7 +1168,7 @@ at all.
 | `NOTESD_MOVIES=off` | Every `/api/movies*` route: 503 `movies_off` (`GET /api/movies/player` answers `{available: false, reason: "movies_off"}`). Every tool: `movies_off: the movie library is not running on this server ...`. The page says how to turn it on. |
 | `NOTESD_DIRECT_STREAM=off` | `GET /api/movies/stream` answers `{enabled: false, reason: "direct_stream_off", titles: []}`; the Stream side says how to turn it on and its stream buttons are disabled; `POST /api/stream/play` answers 503 `direct_stream_off`. |
 | `NOTESD_TRENDING=off`, or torrents, direct streaming, movies or TMDB off | `GET /api/movies/trending` answers `{enabled: false, reason, titles: []}` and the section says so; no index, TMDB or swarm is asked. |
-| No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid. |
+| No provider streams a title when Play is pressed | `POST /api/stream/play` answers 502 `no_source` with each provider's outcome; the source is marked stale and the title leaves the Stream grid, unless it is on the `interested` list or was last played here from a torrent or a site. |
 | No `NOTESD_MOVIES_ROOTS` | Nothing is scanned and the health log is off. The page, tools and playback of known files still work. An empty library says which setting to add. |
 | No TMDB credentials | Files are registered, all unmatched `no_tmdb_credentials`. Assign answers 503 `tmdb_off` for a title not stored yet. `movies_person` answers `tmdb_unavailable`. |
 | TMDB down | Files stay `pending` and retry every pass. Assign and TMDB search answer 502 `tmdb_error`; `movies_person` answers `tmdb_error`. |
@@ -1184,6 +1235,9 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `src/movies/continue.ts` | The continue rule and `playSomething` |
 | `src/directStream/trending/` | The trending list: `sources.ts` (the indexes' top lists, the choice of one listing per title), `repo.ts` (`TrendingRepo`, the only writer of `stream_trending`), `job.ts` (the daily build, the swarm probes, the off reasons) |
 | `src/movies/streams.ts` | `MovieStreams`: stream plays from the player page's position reports, verified and stale sources after every resolve, the stream resume position, and how a title was last streamed (`channel`, `channelFailed`, `recordSitePlay`) |
+| `src/movies/streamLive.ts` | The stream on screen, in memory, for `GET /api/movies/player` |
+| `src/movies/story.ts` | An episode's story |
+| `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A play reported by a streaming site, and the titles TMDB does not list |
 | `src/movies/guides.ts` | The pop-ups of a person, a studio and a genre: TMDB's profile and titles with the owner's marks, and `GenreGuides`, the genre guide collated once with web search |
 | `src/movies/player.ts` | `MoviePlayer`: launch, resume, polling, the hang rule, the video-stall rule |
 | `src/movies/vlc/launch.ts`, `http.ts`, `foreground.ts` | `vlc.exe` arguments and detection, status through `curl.exe`, bringing the window in front |
@@ -1192,12 +1246,15 @@ Routes and status codes are listed in [reference/http-api.md](reference/http-api
 | `claude/skills/trace-vlc-bug/` | The `/trace-vlc-bug` skill: `trace.sh`, `collect.ps1` and the known causes |
 | `src/http/moviesApi.ts`, `moviesPlayApi.ts` | Routes: library, the Stream list, unmatched, assign, user marks, sync, events; play, continue, player, health; the stream position report is in `src/http/directStreamApi.ts` |
 | `src/http/moviesGuideApi.ts` | Routes behind the names and the play menu: a person, a studio, a genre's guide, storing a listed title, a play on a named site, the pahe search |
-| `src/mcp/movieTools.ts` | The six `movies_*` tools |
+| `src/mcp/movieTools.ts` | The seven `movies_*` tools |
 | `src/mcp/instructions.ts`, `src/chat/prompt.ts`, `claude/skills/n/SKILL.md` | What Claude is told about the library in Claude Code, in wall chat and in `/n` |
-| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal`, `EntityModal` (a person, a studio, a genre), `PlayMenu` |
+| `web/src/pages/MoviesPage.tsx`, `web/src/components/movies/*` | The page, grid, title page, episode list, unmatched list, assign dialog, pill, `MovieModal`, `TrailerModal`, `StoryModal`, `EntityModal` (a person, a studio, a genre), `PlayMenu`, `TrendingSection`, `SiteTitlesSection` |
 | `web/src/lib/movies.ts`, `web/src/hooks/useMovies.ts`, `web/src/moviesApi.ts` | Labels, filters and play plan; the store and its polling; the API client |
 | `web/src/lib/chatSegments.ts`, `claude/mods/note-links` | Movie ids as links in wall chat and in the terminal |
 | `drizzle/0032_*.sql` | `stream_trending` |
+| `drizzle/0025_episode_marks.sql` | `movie_episode_marks`, the "not interested" column |
+| `drizzle/0034_movie_title_channels.sql`, `drizzle/0035_movie_site_titles.sql` | How a title last played; titles TMDB does not list |
+| `drizzle/0037_movie_title_interested.sql` | The "interested" column |
 | `drizzle/0036_movie_title_methods.sql` | `movie_title_methods`, `movie_genre_guides` |
 | `drizzle/0017_movies.sql`, `drizzle/0018_movie_ids.sql`, `drizzle/0019_movie_trailers.sql`, `drizzle/0021_stream_plays.sql` | The tables; the id sequence, function and triggers; the trailer columns; stream plays and stream sources |
 | `src/config.ts` (`parseMovies`) | Every setting, its default and its validation |
@@ -1219,22 +1276,27 @@ $V vlc RUN quit                                              # VLC "exits"; the 
 $V down RUN
 ```
 
-- Unit tests: `tests/unit/movies/` (the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`.
-- Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream, play,
-  continue, recents, MCP, health, health crash).
+- Unit tests: `tests/unit/movies/` (parsing, matching, state, continue, guides and the VLC pieces), `web/src/App.movies.test.tsx` and `web/src/App.stream.test.tsx`.
+- Integration tests: `tests/integration/movies.*.int.test.ts` (schema, repo, sync, API, stream,
+  streams, channels, guides, marks, play, continue, recents, MCP, health, health crash) and
+  `tests/integration/trending.int.test.ts`.
 - The pictures on this page come from two places (`scripts/docs/shots/movies.mjs`):
   - `npm run docs:shots -- --live movies` takes the real-library pictures from the running daemon:
-    the grid, a film, the trailer pop-up, the pop-up of the film's director (`person.png`) and its
-    play menu (`play-menu.png`, opened and closed with no row chosen), a series' episodes, the
-    filter clip, and the page of the title VLC has open (kept as it is when VLC has nothing open).
-    `DOCS_SHOTS_NAMES=1` retakes only those two. It also takes `stream.png`, the Stream side, when
-    this machine has at least one verified title; it presses no Play there either. It only looks: no Play, no mark,
-    no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks one billed
-    question for `chat-answer.png`; it stays in the chat history.
+    the grid, a film, the trailer pop-up, the pop-ups of the film's director (`person.png`), its
+    studio (`studio.png`) and one of its genres (`genre.png`, only when that guide is already
+    written: a first click is a model run) and its play menu (`play-menu.png`, opened and closed
+    with no row chosen), a series' episodes, the filter clip, and the page of the title VLC has
+    open (kept as it is when VLC has nothing open). `DOCS_SHOTS_NAMES=1` retakes only the three
+    pop-ups and the play menu. When this machine has at least one verified title it also takes the
+    Stream side (`stream.png`), the Trending section under it (`trending.png`) and the page of a
+    series streamed last (`stream-title.png`); it presses no Play there either. It only looks: no
+    Play, no mark, no rating, no VLC started or stopped. With `DOCS_SHOTS_CHAT=1` it also asks one
+    billed question for `chat-answer.png`; it stays in the chat history.
   - `npm run docs:shots -- movies` takes only `unmatched.png` and `assign.png`, from a throwaway
     instance. It never touches a picture the live run takes.
-  - `DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies` retakes `play.gif` and nothing else.
-    It is the one live picture that writes: it plays a film that is already in progress for a
+  - `DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies` retakes `play.gif` and, from the same
+    play, `playing.png`, and nothing else.
+    It is the one live run that writes: it plays a film that is already in progress for a
     few seconds, which opens a VLC on screen and adds a play to the history, and it closes the
     VLC it opened and no other. A VLC that was open before stays open but is no longer followed.
     Run it only when asked.

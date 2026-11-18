@@ -7,7 +7,7 @@ export interface PosterProps {
 }
 
 /**
- * A poster (TMDB's, or a streaming site's for a title TMDB does not list), hotlinked and lazy (posters are shared by both machines; nothing is cached on disk),
+ * A poster (TMDB's, or a streaming site's for a title TMDB does not list), hotlinked and lazy (nothing is cached on disk),
  * or a designed tile with the title when TMDB has none or the image fails to load. Key it by `url`
  * at the call site so a new URL gets a fresh try.
  */

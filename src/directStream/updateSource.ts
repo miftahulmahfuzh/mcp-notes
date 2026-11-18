@@ -306,7 +306,7 @@ export async function updateSource(site: string, deps: UpdateSourceDeps, pages: 
   const added: AddedProvider[] = [];
   const known = [...plan.known];
   for (const row of plan.rows) {
-    // Inserted meanwhile by the other machine: it is known now, and that machine probes it.
+    // Inserted meanwhile by another daemon on the same Postgres: it is known now, and that daemon probes it.
     if (!inserted.has(row.name)) {
       known.push({ name: plan.renamed.get(row.name) ?? row.name, registry_name: row.name });
       continue;

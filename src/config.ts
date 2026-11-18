@@ -501,7 +501,7 @@ export const DEFAULT_TORRENT_CONFIG: TorrentConfig = {
 export interface AdversaryConfig {
   /** `NOTESD_ADVERSARY`, default on. `off` starts no reviewer (deps.adversary is null). */
   enabled: boolean
-  /** `ADVERSARY_DAILY_CAP`, default 15. Deep reviews per WIB day, both machines together. */
+  /** `ADVERSARY_DAILY_CAP`, default 15. Deep reviews per WIB day, counted in this machine's database. */
   dailyCap: number
   /** `ADVERSARY_GATHER_MODEL`, default `sonnet`. Agent SDK alias or model id for the gathering stage. */
   gatherModel: string

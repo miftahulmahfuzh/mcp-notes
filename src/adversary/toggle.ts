@@ -1,6 +1,6 @@
 /**
- * The ON/OFF switch for automatic reviews (contract C4, decision D9). It lives in the shared
- * mcp-notes `app_settings` table, so both machines obey it, written only through SessionsRepo.
+ * The ON/OFF switch for automatic reviews (contract C4, decision D9). It lives in this
+ * machine's mcp-notes `app_settings` table, written only through SessionsRepo.
  * Absent (or unreadable) means ON. "Review now" ignores it.
  */
 export const ADVERSARY_TOGGLE_KEY = 'adversary.auto';

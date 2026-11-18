@@ -20,7 +20,7 @@ export interface ProjectsStore {
 
 /**
  * The sidebar's repo list and the shared selection. Fetches only while `enabled` (the projects view
- * is shown); every entry re-reads the selection, so a pick on the other laptop shows up next visit.
+ * is shown); every entry re-reads the selection, so a pick made in another browser shows up next visit.
  */
 export function useProjects(enabled: boolean): ProjectsStore {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);

@@ -36,7 +36,6 @@ git clone git@github.com:miftahulmahfuzh/mcp-notes.git ~/mcp-notes
 cd ~/mcp-notes
 cp /path/to/your/.env.local .env.local
 npm ci
-npm run db:migrate          # against the direct host; again after a pull that adds drizzle/*.sql
 npm run embed:backfill      # optional: embed existing notes now (notesd also does it in the background)
 scripts/install.sh
 ```
@@ -139,12 +138,13 @@ then `wsl --shutdown`. That keeps a started distro running, but nothing starts W
 
 ## A second machine
 
-The database is shared, so a second laptop runs its own `notesd` against it. Clone the repo
-there, copy the same `.env.local`, and run `scripts/install.sh`. Skip `db:migrate` and
-`embed:backfill`: the schema and the vectors are already there.
+Each machine runs its own `notesd` on its own local database. Clone the repo there, copy the
+same `.env.local`, and run `scripts/install.sh`: it creates that machine's Postgres container, and
+the daemon applies the schema at its first start. With `IMPORT_DATABASE_URL` set (the old shared
+database), its rows are copied in once; after that the two laptops share nothing.
 
 Notes, tags, revisions, the recycle bin, search, chat history, the session graph and the movie
-titles are the same on both. What stays on one machine:
+titles are each machine's own. What a copied-in row of the other machine cannot give you here:
 
 - Photos and files. One made on the other machine shows "not on this machine" and its folder
   icon is hidden.
@@ -153,8 +153,8 @@ titles are the same on both. What stays on one machine:
 - The connectors need the sibling repos on that machine too (or the `*_DIR` variables pointing
   at them), and `/v` and `/j` need `DWORD_USER_EMAIL` in that machine's `.env.local`.
 
-After a pull that adds a migration, run `npm run db:migrate` once from either machine, then
-`scripts/install.sh` on both. The model behind this is in
+After a pull that adds a migration, run `scripts/install.sh` on each machine: the daemon applies
+the migration at its next start. The model behind this is in
 [architecture.md](architecture.md#two-machines).
 
 ## Run it by hand
@@ -188,7 +188,7 @@ you: a throwaway daemon with its own database, port, data dir and `CLAUDE_HOME`.
 | `npm start` | `node dist/main.js`. |
 | `npm run typecheck` | The server (`tsconfig.json`) and the web app (`tsconfig.web.json`). |
 | `npm run db:generate` | A new Drizzle migration after editing `src/db/schema.ts`. |
-| `npm run db:migrate` | Apply the migrations in `drizzle/`, over the direct (unpooled) URL. |
+| `npm run db:migrate` | Apply the migrations in `drizzle/` by hand. The daemon applies them itself at every start, so this is seldom needed. |
 | `npm run db:check` | Drizzle's consistency check of the migration files. |
 | `npm run embed:backfill` | Embed every note that has text and no current vector, with progress. `-- --retry-failed` also retries notes still in backoff. Needs `OPENROUTER_API_KEY`. |
 | `npm run embed:images:backfill` | Embed pending photos. `-- --dry-run` counts them and estimates the cost; `--limit N` for a trial. Never runs by itself. |

@@ -520,7 +520,7 @@ function repliesHybridSql(q: SourceQuery, v: QueryVector): SQL {
 /**
  * Sessions whose replies (what Claude said after each turn's last tool call, cc_session_replies)
  * match, by words (the reply's own search_tsv) or meaning (its current vector). Read from the
- * shared database, so it works for both machines' sessions.
+ * database, so it works without the transcript.
  */
 export const repliesSource: CandidateSource = {
   name: 'replies',

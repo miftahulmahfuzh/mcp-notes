@@ -21,7 +21,7 @@ Contents: [the page](#the-projects-page) · [the node panel](#the-node-panel) ·
 Open the Projects icon on the rail (the tree diagram) or go to `/projects`. The sidebar lists the
 repositories that have sessions, newest activity first, each with its session count and a dot
 while one of its sessions is running. Pick one and its sessions fill the page. The repository you
-picked is stored in the database, so both machines open on the same one.
+picked is stored in the database, so every browser opens on the same one.
 
 Each row is one Claude Code session, not one prompt. Time runs upward: the newest session is at the
 top, with the day and start time in the left gutter.
@@ -203,7 +203,7 @@ session matched on its own text. `seq` is the number of the prompt the reply ans
 Without `OPENROUTER_API_KEY`, session search is words only: every word must appear, and the result
 carries `mode: "text"` and a `fallback` sentence saying so. Replies and notes are still searched by
 their words. Reply vectors are made one by one in the background on the machine that ran the
-session; both machines can search them.
+session.
 
 ## Notes of a session
 
@@ -262,7 +262,7 @@ seconds.
 **The second bar** estimates where "Spawn fresh with this context" would start and how many
 prompt and reply exchanges it would carry ("older ones left out" when not all fit). It is the
 handoff dry run, `GET /api/sessions/:nodeId/handoff`, which writes no file, runs no git and works
-for a session of either machine:
+for any stored session, also one whose transcript is on another machine:
 
 ```json
 { "node_id": "B3-W5", "tokens": 68817, "window": 200000, "percent": 49.4,
@@ -548,7 +548,7 @@ The page, the tools and search still serve what is already in the database. The 
 **Two machines.** Both share the database, not the disk. Each daemon ingests its own transcripts
 and records its host.
 
-| Works on either machine (from the database) | Only on the machine that ran the session |
+| Works for any stored session (from the database) | Only on the machine that ran the session |
 | --- | --- |
 | The graph, the panel, summaries once written, stored prompts, commits, notes, tokens and cost | Reading the transcript: `session_transcript` and `GET /api/sessions/:nodeId/transcript` answer `not_on_this_machine` |
 | `sessions_search` (text, vectors, notes, replies), `session_get`, `sessions_usage` | Resume and spawn fresh (`not_on_this_machine`) |

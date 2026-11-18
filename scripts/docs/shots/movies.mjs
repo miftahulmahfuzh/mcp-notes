@@ -2,13 +2,15 @@
 //
 //   npm run docs:shots -- --live movies                       the owner's real library (most pictures)
 //   DOCS_SHOTS_CHAT=1 npm run docs:shots -- --live movies     also the chat picture (billed)       
-//   DOCS_SHOTS_NAMES=1 npm run docs:shots -- --live movies    only person.png and play-menu.png
+//   DOCS_SHOTS_NAMES=1 npm run docs:shots -- --live movies    only person.png, studio.png, genre.png and play-menu.png
 //   npm run docs:shots -- movies                              unmatched.png and assign.png only
 //
 // The owner wants this guide to show their real library, so `live` below takes the grid, a film,
 // a series, the trailer pop-up, the filter clip and the page of whatever VLC is playing from the
-// daemon on 7317, the pop-up of the film's director and its play menu, and the Stream side
-// (stream.png) when this machine has a verified title; no Play is pressed there. It only looks: it
+// daemon on 7317, the pop-ups of the film's director, its studio and one of its genres (a genre only
+// when its guide is already written: the first click is a model run), its play menu, and the Stream
+// side when this machine has a verified title (stream.png, the page of a streamed series as
+// stream-title.png, the Trending section as trending.png); no Play is pressed there. It only looks: it
 // clicks filters, opens the trailer pop-up, a person's pop-up and the play menu, and reads pages.
 // It never presses Play, never marks, rates or reviews, and never starts or stops a VLC. The chat
 // picture sends a real, billed question (it is stored in the chat history), so it is retaken only
@@ -21,7 +23,8 @@
 //
 // play.gif needs a real play: a VLC opens on the owner's screen, a play is added to their history
 // and the VLC they had open stops being followed. It is retaken only with DOCS_SHOTS_PLAY=1, on a
-// film that is already in progress, and only the VLC it opened is closed afterwards:
+// film that is already in progress, and only the VLC it opened is closed afterwards. The same play
+// gives playing.png, the film's page while VLC plays it:
 //
 //   DOCS_SHOTS_PLAY=1 npm run docs:shots -- --live movies
 //
@@ -44,6 +47,8 @@ export const up = ['--movies'];
 // The owner's library (--live): a finished film with stars and a review, and a series.
 const LIVE_FILM = 'movie-10681'; // WALL·E
 const LIVE_FILM_DIRECTOR = 'Andrew Stanton';
+const LIVE_FILM_STUDIO = 'Pixar';
+const LIVE_FILM_GENRE = 'Science Fiction';
 const LIVE_SERIES = 'tv-247718'; // MobLand
 const LIVE_PLAY_FILM = 'movie-670'; // Oldboy: in progress already, so one more short play changes nothing
 const TASKLIST = '/mnt/c/Windows/System32/tasklist.exe';
@@ -134,8 +139,8 @@ async function vlcPids() {
   return stdout.split(/\r?\n/).map((line) => /^"vlc\.exe","(\d+)"/i.exec(line)?.[1]).filter(Boolean);
 }
 
-/** The play clip: one real play of LIVE_PLAY_FILM. Closes the VLC it opened and no other. */
-async function playClip({ base, clip, fetchJson }) {
+/** The play clip: one real play of LIVE_PLAY_FILM, and the film's page while it plays. Closes the VLC it opened and no other. */
+async function playClip({ page, base, shot, clip, fetchJson }) {
   const before = new Set(await vlcPids());
   let opened = [];
   try {
@@ -148,7 +153,16 @@ async function playClip({ base, clip, fetchJson }) {
       await play.click();
       await tab.getByText(/playing in VLC · /).waitFor({ timeout: 40000 });
       opened = (await vlcPids()).filter((pid) => !before.has(pid));
-      await tab.waitForTimeout(9000);
+      // The same play, as a still: "playing" on the poster and the position beside the stars.
+      await page.setViewportSize(VIEWPORT);
+      await page.goto(`${base}/movies/${LIVE_PLAY_FILM}`);
+      await page.getByText(/playing in VLC · /).waitFor({ timeout: 20000 });
+      await postersLoaded(page);
+      await page.mouse.move(640, 60);
+      await page.addStyleTag({ content: '.mv *, .mv *::before, .mv *::after { animation: none !important; }' });
+      await page.waitForTimeout(600);
+      await shot('playing');
+      await tab.waitForTimeout(6000);
       // Without /F this asks the window to close, as its X does, so VLC exits cleanly.
       for (const pid of opened) await run(TASKKILL, ['/PID', pid]).catch(() => {});
       await tab.getByRole('button', { name: /^Resume at / }).waitFor({ timeout: 30000 });
@@ -208,10 +222,11 @@ async function popupShot({ page, base, shot, fetchJson }) {
 }
 
 /**
- * The pop-up of the film's director and the film's play menu. It looks only: the pop-up is one read of TMDB, and
- * the menu is opened and closed without choosing a row. A genre is never clicked here: its first click is a model run.
+ * The pop-ups of the film's director, its studio and one genre, and the film's play menu. It looks only: a person's
+ * and a studio's pop-up are one read of TMDB each, and the menu is opened and closed without choosing a row. A genre is
+ * clicked only when its guide is already written (GET reads the store): its first click would be a model run.
  */
-async function nameShots({ page, base, shot }) {
+async function nameShots({ page, base, shot, fetchJson }) {
   await page.setViewportSize(VIEWPORT);
   await page.goto(`${base}/movies/${LIVE_FILM}`);
   await page.getByRole('region', { name: 'Cast' }).waitFor();
@@ -225,6 +240,29 @@ async function nameShots({ page, base, shot }) {
   await page.keyboard.press('Escape');
   await popup.waitFor({ state: 'hidden' });
 
+  await page.getByLabel('Credits').getByRole('button', { name: LIVE_FILM_STUDIO, exact: true }).first().click();
+  const studio = page.getByRole('dialog', { name: `About ${LIVE_FILM_STUDIO}` });
+  await studio.getByTestId('guide-title').first().waitFor({ timeout: 30000 });
+  await postersLoaded(page);
+  await page.mouse.move(640, 60);
+  await shot('studio', { locator: studio });
+  await page.keyboard.press('Escape');
+  await studio.waitFor({ state: 'hidden' });
+
+  const written = await fetchJson('GET', `/api/movies/${LIVE_FILM}/genres/${encodeURIComponent(LIVE_FILM_GENRE)}`).catch(() => null);
+  if (written?.guide) {
+    await page.getByRole('button', { name: LIVE_FILM_GENRE, exact: true }).first().click();
+    const genre = page.getByRole('dialog', { name: `About ${LIVE_FILM_GENRE}` });
+    await genre.getByTestId('guide-title').first().waitFor({ timeout: 30000 });
+    await postersLoaded(page);
+    await page.mouse.move(640, 60);
+    await shot('genre', { locator: genre });
+    await page.keyboard.press('Escape');
+    await genre.waitFor({ state: 'hidden' });
+  } else {
+    console.log(`movies: no guide is written for ${LIVE_FILM_GENRE} on ${LIVE_FILM}, genre.png is kept as it is`);
+  }
+
   await page.getByRole('button', { name: /^Choose how to play / }).first().click();
   const menu = page.getByRole('menu', { name: /^Play .* from$/ });
   await menu.waitFor();
@@ -236,9 +274,9 @@ async function nameShots({ page, base, shot }) {
 /** The owner's real library, from the live daemon. Looks only, except with DOCS_SHOTS_PLAY: see the header. */
 export async function live({ page, base, shot, clip, fetchJson }) {
   // Alone, so a retake of the clip does not also retake every still.
-  if (process.env.DOCS_SHOTS_PLAY === '1') return playClip({ base, clip, fetchJson });
+  if (process.env.DOCS_SHOTS_PLAY === '1') return playClip({ page, base, shot, clip, fetchJson });
   if (process.env.DOCS_SHOTS_PLAY === 'popup') return popupShot({ page, base, shot, fetchJson });
-  if (process.env.DOCS_SHOTS_NAMES === '1') return nameShots({ page, base, shot });
+  if (process.env.DOCS_SHOTS_NAMES === '1') return nameShots({ page, base, shot, fetchJson });
 
   // The poster grid.
   await page.goto(`${base}/movies`);
@@ -256,6 +294,31 @@ export async function live({ page, base, shot, clip, fetchJson }) {
     await postersLoaded(page);
     await page.mouse.move(640, 60);
     await shot('stream');
+
+    // Trending on torrents, under the Stream grid: seeds and the swarm's verdict under each poster.
+    const trending = page.getByRole('region', { name: 'Trending' });
+    if ((await trending.getByRole('list', { name: 'Trending posters' }).count()) > 0) {
+      await trending.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 12));
+      await postersLoaded(page);
+      await page.mouse.move(640, 60);
+      await shot('trending');
+    } else {
+      console.log('movies: the Trending section lists nothing, trending.png is kept as it is');
+    }
+
+    // A series from the Stream side: the stream line, how it last played here, and every season's episodes.
+    const series = stream.titles.find((t) => t.kind === 'tv' && t.last_played_at !== null);
+    if (series) {
+      await page.setViewportSize(TALL);
+      await page.goto(`${base}/movies/${series.id}?side=stream`);
+      await page.getByRole('region', { name: 'Episodes' }).waitFor();
+      await page.getByText(/^Previously played through /).first().waitFor({ timeout: 20000 });
+      await postersLoaded(page);
+      await page.mouse.move(640, 60);
+      await shot('stream-title');
+      await page.setViewportSize(VIEWPORT);
+      console.log(`movies: stream-title.png shows ${series.title}`);
+    }
   } else {
     const why = stream === null ? 'this daemon has no Stream side' : stream.enabled ? 'nothing is verified to stream' : 'direct streaming is off';
     console.log(`movies: ${why}, stream.png is kept as it is`);
@@ -281,8 +344,8 @@ export async function live({ page, base, shot, clip, fetchJson }) {
   await page.keyboard.press('Escape');
   await trailer.waitFor({ state: 'hidden' });
 
-  // A name's pop-up and the play menu, on the same film.
-  await nameShots({ page, base, shot });
+  // The names' pop-ups and the play menu, on the same film.
+  await nameShots({ page, base, shot, fetchJson });
 
   // A series: one row per episode, each with its movie id and progress, and the season's trailer icon.
   await page.setViewportSize(TALL);

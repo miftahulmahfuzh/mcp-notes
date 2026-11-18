@@ -79,8 +79,8 @@ The reviewer is described in [adversary.md](../adversary.md).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `NOTESD_ADVERSARY` | on | `off` stops the reviewer on this machine: no reviews, no `paused` marks, no leases. The ON/OFF toggle on `/adversary` is a different switch, kept in the shared database and obeyed by both machines. |
-| `ADVERSARY_DAILY_CAP` | `15` | Deep reviews (one per stock) per WIB day, counted across both machines. A pick over the cap is left unreviewed and logged as `skipped_budget`. |
+| `NOTESD_ADVERSARY` | on | `off` stops the reviewer on this machine: no reviews, no `paused` marks, no leases. The ON/OFF toggle on `/adversary` is a different switch, kept in this machine's database. |
+| `ADVERSARY_DAILY_CAP` | `15` | Deep reviews (one per stock) per WIB day, counted on this machine. A pick over the cap is left unreviewed and logged as `skipped_budget`. |
 | `ADVERSARY_GATHER_MODEL` | `sonnet` | Claude model alias or id for the gathering stage (news, filings, prices). |
 | `ADVERSARY_VERDICT_MODEL` | `opus` | Claude model alias or id that writes the verdict. Its exact id is stored on every verdict. |
 | `ADVERSARY_GATHER_MAX_TURNS` | `20` | Turn cap of the gathering stage for one stock. A stock that runs out is judged on what was gathered. |
@@ -235,7 +235,8 @@ Read by the picture scripts under `scripts/docs/shots/` (`npm run docs:shots`).
 | `DOCS_CHAT_BILLED` | unset | `1` lets the chat guide's shots send real chat messages (a billed Claude agent). Unset: those pictures are kept as they are. |
 | `DOCS_CHAT_STEPS` | `answer,image,reply` | Which of the billed chat steps run when `DOCS_CHAT_BILLED=1`. |
 | `DOCS_SHOTS_CHAT` | unset | `1` lets the movies guide's live shots (`docs:shots -- --live movies`) retake the pictures that need a real chat answer. They are billed and stay in the chat history. |
-| `DOCS_SHOTS_NAMES` | unset | `1` makes `docs:shots -- --live movies` retake only `person.png` and `play-menu.png`: a person's pop-up and the play menu, which only look. |
-| `DOCS_SHOTS_PLAY` | unset | `1` makes `docs:shots -- --live movies` retake only `play.gif`, with one real play of a few seconds in VLC. The one live picture that writes; see [movies.md](../movies.md#proving-a-change). |
+| `DOCS_SHOTS_NAMES` | unset | `1` makes `docs:shots -- --live movies` retake only `person.png`, `studio.png`, `genre.png` and `play-menu.png`: the pop-ups of a person, a studio and a genre (a genre only when its guide is already written) and the play menu, which only look. |
+| `DOCS_SHOTS_PLAY` | unset | `1` makes `docs:shots -- --live movies` retake only `play.gif` and `playing.png`, with one real play of a few seconds in VLC. The one live run that writes; see [movies.md](../movies.md#proving-a-change). |
+| `DOCS_SHOTS_FILM_DIR` | `~/.local/state/notesd-verify/.docs-film` | Where `docs:shots -- streaming` keeps the film its player pictures show: the Sintel trailer, fetched once, and the HLS stream cut from it. |
 | `DOCS_LIVE_URL` | `http://127.0.0.1:7317` | The running daemon that `docs:shots -- --live` looks at. Only the movies guide has live pictures. |
 | `VERIFY_HOME` | `~/.local/state/notesd-verify` | Where the verify-notesd skill keeps the state of its throwaway instances; the sessions shots find their instance's `CLAUDE_HOME` there. |

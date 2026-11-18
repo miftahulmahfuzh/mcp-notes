@@ -104,7 +104,7 @@ export type DirectStreamToolName = (typeof DIRECT_STREAM_TOOL_NAMES)[number];
 
 /**
  * Tools the daemon registers that the chat bar may not call. direct_stream_update_source writes
- * the provider list both machines share and opens tabs in the streaming Chrome for minutes while
+ * this machine's provider list and opens tabs in the streaming Chrome for minutes while
  * it probes: it is Claude Code's /update-cloud-source only.
  */
 export const CLAUDE_CODE_ONLY_TOOL_NAMES: readonly DirectStreamToolName[] = ['direct_stream_update_source'];

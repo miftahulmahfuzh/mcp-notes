@@ -2,7 +2,7 @@
 
 ## Sub-features
 - Provider registry: `claude/streaming/direct/providers.seed.json` is loaded into `stream_providers`
-  at every start (shared by both machines; seed rows have `origin_site` null); health per provider
+  at every start (seed rows have `origin_site` null); health per provider
   and host in `stream_provider_health`, written after every resolve. Proven by
   `npm run test:int -- tests/integration/directStream.repo.int.test.ts` and `journey.sh RUN seed`.
 - Play: `POST /api/stream/play` (same-origin) resolves through the resolver CLI and opens
@@ -355,7 +355,7 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   not above `max_height`), the original-language audio rendition, segments, init sections, AES-128
   keys and the English subtitle as WebVTT, or a plain file by ranges; DASH, DRM and live answer
   `cache_unsupported`. Retries with backoff, a fresh resolve on a refused token that keeps the
-  files by index, resume after a restart. `GET /api/stream/cache[/:id]` lists both machines'
+  files by index, resume after a restart. `GET /api/stream/cache[/:id]` lists every host's
   caches (`available: false` for the other's); `DELETE /api/stream/cache/:id` stops, deletes the
   folder and the row; `GET /api/stream/cache/:id/f/:name` serves files with Range and fetches a
   missing one at once. Files: `<NOTES_DATA_DIR>/movies/stream-cache/<id>/`.

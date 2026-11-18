@@ -60,7 +60,7 @@ You mostly do not open it to find things. You ask:
 ```sh
 git clone git@github.com:miftahulmahfuzh/mcp-notes.git ~/mcp-notes && cd ~/mcp-notes
 cp /path/to/your/.env.local .env.local    # OPENROUTER_API_KEY, TMDB_*, ...; install.sh adds DATABASE_URL
-npm ci && npm run db:migrate
+npm ci
 scripts/install.sh                        # build, systemd user unit, MCP registration, skills, hooks
 ```
 

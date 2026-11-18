@@ -15,7 +15,7 @@
   that lands after the session's 09:30 New York open is kept but logged `late` (the engine ignores it).
 - Every attempt is a row in mcp-notes `adversary_reviews` (tokens, cost, turns, models, host,
   status `ok`/`failed`/`skipped_budget`/`late`, stage `draft`/`final`). A daily cap
-  (`ADVERSARY_DAILY_CAP`, default 15 per WIB day, both machines) reviews bracket picks first, then
+  (`ADVERSARY_DAILY_CAP`, default 15 per WIB day, per database) reviews bracket picks first, then
   books by earliest open, previews last; picks over the cap get one `skipped_budget` row a day and
   stay absent. A draft from a preview is reused, at no cost, when the real targets appear.
 - ON/OFF toggle: `app_settings` key `adversary.auto` `{on, changed_at, host}`, absent = on. While

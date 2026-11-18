@@ -443,9 +443,10 @@ play something
   lists a message's old texts; revisions are kept in `chat_message_revisions`.
 - **Only your own messages can be edited** (`not_editable` for an answer), and a blank edit is
   refused (`empty_text`).
-- **Two machines.** Chat rows are in the shared database, so both machines show the same history.
-  `event: chat` on `/api/events` carries only this daemon's writes; the history page reloads its
-  newest page when it is opened, so the other machine's chats appear then.
+- **Two machines.** Chat rows are in the database of the machine that wrote them, so each laptop
+  has its own history. With two daemons on one Postgres, `event: chat` on `/api/events` carries
+  only this daemon's writes; the history page reloads its newest page when it is opened, so the
+  other daemon's chats appear then.
 - **A thread id the server does not know starts a new thread**, as does one that belongs to
   another project or to a captured exchange. Captured `claude_code` threads are never continued.
 - **Tools reach outside the note store.** From the chat bar `movies_continue` opens VLC on the

@@ -554,7 +554,7 @@ const MARK_DESCRIPTION =
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
   'Returns { title_id, title, state, watched_at, not_interested, interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
 
-/** The six movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
+/** The seven movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
 export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'movies' | 'wallUrl'>): void {
   const wall = (deps.wallUrl ?? DEFAULT_WALL_URL).replace(/\/+$/, '');
   const titleUrl = (id: string): string => `${wall}/movies/${encodeURIComponent(id)}`;

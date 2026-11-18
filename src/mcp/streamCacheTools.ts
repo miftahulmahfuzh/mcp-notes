@@ -39,7 +39,7 @@ const DESCRIPTION =
   "Download a film, or one episode of a series, to this machine's disk so it can play from the local copy instead of the stream host (a slow or far host, a bad connection). " +
   'action start resolves a cloud source the way direct_stream_play does (out of sight, nothing plays, 5 to 40 seconds), then downloads one rendition with its segments, keys and the English subtitle in the background: the call answers at once with the cache (state downloading, progress, segments_done of segments_total) and the download goes on after it. ' +
   'Pass title (words without the year, a movie id, or a title key) with year and kind when known; for a series season and episode, or absolute_episode, or neither to take the episode direct_stream_play would (picked). max_height caches the tallest rendition not above it (720 for a smaller copy); without it the tallest. ' +
-  'action status shows that title\'s caches (or the one of id) on both machines; list shows every cache; clear stops this machine\'s download of it and deletes its files. ' +
+  'action status shows that title\'s caches (or the one of id); list shows every cache; clear stops this machine\'s download of it and deletes its files. ' +
   'A cache belongs to the machine that made it: one made on the other laptop has available false and cannot be played or cleared here (not_on_this_machine). ' +
   'Answers carry cache { id, state downloading | ready | failed, progress, segments_done, segments_total, bytes, height, provider, subtitle, error, auto }. auto true is a cache a pause in the player started by itself: it clears itself three days after it was last written, and start on it makes it the owner\'s to keep. error cache_unsupported means the source cannot be cached (DASH, DRM, a live stream); token_refused that the host kept refusing fresh tokens; cache_exists that this machine holds the title at another max_height: clear it first. ' +
   'Off on this server: direct_stream_off.';
@@ -147,7 +147,7 @@ async function cacheAction(a: CacheArgs, d: StreamCacheToolDeps, wall: string): 
       host: d.cache.host,
       count: caches.length,
       caches,
-      next: caches.length === 0 ? 'Nothing is cached on either machine. Say so.' : 'List them with their state and progress; available false is a cache on the other laptop.',
+      next: caches.length === 0 ? 'Nothing is cached. Say so.' : 'List them with their state and progress; available false is a cache on the other laptop.',
     });
   }
   if (a.id !== undefined) {
@@ -182,7 +182,7 @@ async function cacheAction(a: CacheArgs, d: StreamCacheToolDeps, wall: string): 
   }
   const caches = await d.cache.forRef(target);
   if (a.action === 'status') {
-    return ok({ title, ...picked, caches, next: caches.length === 0 ? 'Nothing of it is cached on either machine. Say so.' : "Say each cache's state, progress and machine." });
+    return ok({ title, ...picked, caches, next: caches.length === 0 ? 'Nothing of it is cached. Say so.' : "Say each cache's state, progress and machine." });
   }
   const mine = caches.find((c) => c.available);
   if (mine === undefined) {

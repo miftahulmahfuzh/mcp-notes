@@ -1,33 +1,72 @@
 # Streaming and download sites
 
-Films the library does not have are found on five outside sites, each with its own skill, and
-another skill adds a site:
+notesd plays what the library does not hold in two ways:
+
+- **Streaming sites.** Four sites are searched and driven in a real Chrome on your screen, each by
+  its own skill, and pahe.ink is searched for downloads.
+- **Direct streaming.** A film or an episode plays in notesd's own player page, from a cloud
+  provider, a torrent or this machine's cache, with no site, countdown or advert in between.
+
+Every command:
 
 | Site | Skill | What it does | Chat bar |
 | --- | --- | --- | --- |
 | pahe.ink (downloads) | `/pahe <title> [year]` | Finds the title's page and links each release, BluRay first | Yes, through `WebFetch` |
-| idlix (streaming) | `/idlix <title> [year]` | Finds the title, starts the film, shows it full screen | Yes, through `streaming_play` |
+| idlix (streaming) | `/idlix <title> [year] [season N episode M]` | Finds the title, starts the film or one episode, shows it full screen | Yes, through `streaming_play` |
 | lk21 (streaming) | `/lk21 <title> [year]` | The same | Yes, through `streaming_play` |
 | flicksy (streaming) | `/flicksy <title> [year]` | The same | Yes, through `streaming_play` |
 | dramacool (streaming, Asian dramas) | `/dramacool <title> [year] <episode>` | Finds the drama, starts the episode, shows it full screen | Yes, through `streaming_play` |
-| A cloud source, no site (streaming) | `/direct-stream <title> [year]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
-| An aggregator site's providers | `/update-cloud-source <site url>` | Reads the site's provider templates, adds the ones the registry lacks, probes each | No: it writes the provider list both machines share |
+| A cloud source or a torrent, no site (streaming) | `/direct-stream <title> [year] [season N episode M]` | Finds the title, resolves a stream, plays it full screen in our own player | Yes, through `direct_stream_play` |
+| An aggregator site's providers, or a magnet's index | `/update-cloud-source <site url or magnet>` | Reads the site's provider templates, adds the ones the registry lacks, probes each; for a magnet, names its index and keeps its trackers | No: it writes this machine's provider list and probes for minutes |
 | A stream that went wrong | `/report-stream-bug [folder] [what you saw]` | Collects the stream's evidence, compares a reference download with the stream host, names the cause, saves a `#stream-bug` note | No: it reads this host's evidence and the daemon's log |
 | A subtitle that does not fit | `/sync-subtitle [movie id, title or player address]` | Hears the film with Whisper, judges the subtitle's text and timing against it, re-times or replaces it | No: it runs Whisper on this laptop for up to a few minutes |
 | A site not listed here | `/create-streaming-skill <name> <homepage>` | Adds a streaming site as a new skill of the same kind | No: it changes this repository |
 
-Nothing is downloaded and nothing is stored: these are lookups, and for the streaming sites a
-browser being driven on your screen.
+The site skills only look a title up and drive a browser on your screen: no film file is fetched
+from a site. A play that started is kept with its title, which then plays there again when no
+source is named ([What played last time plays first](#what-played-last-time-plays-first)). Direct
+streaming does download, to this machine only: the [stream cache](#caching-a-film-or-an-episode)
+and [torrents](#torrents).
 
-Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
-[What you can ask](#what-you-can-ask) · [How a film is started](#how-a-film-is-started) ·
-[The streaming Chrome](#the-streaming-chrome) · [In the chat bar](#in-the-chat-bar) ·
-[Adding a site](#adding-a-site) · [Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ·
-[Anime](#anime) · [Finding something to stream](#finding-something-to-stream) ·
+## What sets it apart
+
+![notesd's own player: the film, the English subtitle the page draws, icon controls, and no site around it](img/streaming/player.png)
+
+| | What it does | Where |
+| --- | --- | --- |
+| One player, nothing around it | A stream plays in a page notesd serves: no site, countdown, pop-up or advert. Every request goes through a pass-through that reaches only the stream's own hosts | [The player](#the-player), [Sessions and the pass-through](#sessions-and-the-pass-through) |
+| Three sources, one command | A cloud provider, a torrent or this machine's cache, asked in the order that last worked for the title | [What played last time plays first](#what-played-last-time-plays-first) |
+| The original language, never a dub | A stream's audio tags are read, then its first segment; for a cloud file with no tags Whisper listens to 30 seconds of it | [The resolver](#the-resolver), [The audio-language check](#the-audio-language-check) |
+| A proper copy | Before a stream's first play a model looks at two frames and passes over a cinema recording or a burned-in betting logo | [The picture check](#the-picture-check) |
+| A torrent picked by its swarm | The trackers are asked before a swarm is joined, the best three torrents are opened side by side, and the one that delivers plays while it downloads. Asking again tries the next ones | [Playing from a torrent](#playing-from-a-torrent) |
+| An English subtitle, one way or another | The stream's own track, a file in the torrent, the track inside the video file, two subtitle services, another provider's file, and Whisper as the last resort. An outside file is re-timed to the audio, and `/sync-subtitle` checks one against what is said | [Subtitles for a torrent](#subtitles-for-a-torrent), [`/sync-subtitle`](#sync-subtitle-a-subtitle-checked-against-the-films-audio) |
+| A stream that mends itself | An expired token is refreshed, a network error is ridden out, a host that stalls is left for another provider, and a pause downloads the film | [How a provider delivers](#how-a-provider-delivers), [A pause caches the film](#a-pause-caches-the-film) |
+| The next episode is already here | While an episode plays, the one after it is fetched to this machine | [The next episode, fetched ahead](#the-next-episode-fetched-ahead) |
+| Asked in your own words | "Play one of Nolan's films", "a Korean mafia film from this year TM", "resume One Piece from episode 730": people, studios, services, languages, genres and six codenames. A title chosen for you is never one you have seen | [Finding something to stream](#finding-something-to-stream), [Codenames](#codenames) |
+| It knows what was said | An episode's whole dialogue is read from its subtitle, so "why did Jack leave Zou?" has an answer | [What a title says](#what-a-title-says-its-dialogue) |
+| A broken stream explains itself | Every request of a play is logged. `/report-stream-bug` measures your connection against the stream host and names the cause | [Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) |
+| No disguise | Every client says what it is. A bot check is never worked around: the owner clears it by hand, in the streaming Chrome | [The streaming Chrome](#the-streaming-chrome), [When the indexes have nothing](#when-the-indexes-have-nothing-1337x-extto-and-rutracker) |
+
+The player pictures in this guide show the trailer of Sintel (© Blender Foundation, CC BY 3.0) in a
+throwaway daemon (see [Proving a change](#proving-a-change)); the Movies page pictures are the
+owner's real library, as in [movies.md](movies.md).
+
+Contents: [What sets it apart](#what-sets-it-apart) · [pahe.ink](#paheink) ·
+[The streaming sites](#the-streaming-sites) · [What you can ask](#what-you-can-ask) ·
+[How a film is started](#how-a-film-is-started) · [The streaming Chrome](#the-streaming-chrome) ·
+[In the chat bar](#in-the-chat-bar) · [Adding a site](#adding-a-site) ·
+[Failure answers](#failure-answers) · [Direct streaming](#direct-streaming) ([Anime](#anime) ·
+[The picture check](#the-picture-check) · [The audio-language check](#the-audio-language-check) ·
+[The player](#the-player) · [Finding something to stream](#finding-something-to-stream) ·
+[Codenames](#codenames) · [What played last time plays first](#what-played-last-time-plays-first) ·
 [What a title says](#what-a-title-says-its-dialogue) ·
-[Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug) ·
-[A subtitle checked against the audio](#sync-subtitle-a-subtitle-checked-against-the-films-audio) ·
-[Where the code is](#where-the-code-is) · [Proving a change](#proving-a-change)
+[`/update-cloud-source`](#update-cloud-source-providers-from-another-site) ·
+[Caching](#caching-a-film-or-an-episode) · [The next episode](#the-next-episode-fetched-ahead) ·
+[Reporting a stream bug](#reporting-a-stream-bug-report-stream-bug)) · [Torrents](#torrents)
+([Playing from a torrent](#playing-from-a-torrent) · [Subtitles](#subtitles-for-a-torrent) ·
+[`/sync-subtitle`](#sync-subtitle-a-subtitle-checked-against-the-films-audio) ·
+[A pasted magnet](#a-magnet-the-owner-pasted)) · [Where the code is](#where-the-code-is) ·
+[Proving a change](#proving-a-change)
 
 ## pahe.ink
 
@@ -43,7 +82,7 @@ Contents: [pahe.ink](#paheink) · [The streaming sites](#the-streaming-sites) ·
   page with `WebFetch`.
 
 The answer is a link per matching release, BluRay first, then WEB-DL. A result matches when its
-name is the asked title, and its year is the asked year when one was given; without a year, a
+name is the asked title, and its year is the asked year when one was given and the result has one; without a year, a
 remake and its original are both shown. The search is fuzzy, so most results are unrelated: with
 no exact match the answer shows up to three near misses, or says the site does not have the title
 and gives the search link. A link is never built by hand, because the addresses are irregular,
@@ -61,7 +100,7 @@ The streaming skills run one command, `claude/streaming/cli.mjs`, with a module 
 | Search | The site's own `/api/search`, asked from inside the streaming Chrome | The search host named on the home page (`data-search_url`), asked directly | The site's own TMDB pass-through (`/api/tmdb/search/multi`), asked directly | The site's own search page (`/?s=`), its first 20 titles |
 | A film's page | `/movie/<slug>` | `/<slug>` | `/watch/movie/<TMDB id>`, the player page | None of its own: a film is a title with one episode |
 | A series | `/series/<slug>`: a link; one episode starts when asked for (`/series/<slug>/season/<n>/episode/<n>`) | Forwards to another site: a link, not started | `/series/<TMDB id>`: a link, not started | `/<slug>`: a link, and every title is one; one episode starts when asked for (`/<slug>-episode-<n>.html`, as the title's page links it) |
-| Before the film | A 7-second countdown, then an advert with "Skip Ad" after about 10 seconds | Nothing | Nothing; the player's host lays adverts over it, which are left alone |
+| Before the film | A 7-second countdown, then an advert with "Skip Ad" after about 10 seconds | Nothing | Nothing | Nothing; the player's host lays adverts over it, which are left alone |
 | The player | In the page itself | In a frame from another host, inside a second one | In a frame from another host (FrameXTV, the first of the site's servers) | In a frame from another host (vidbasic, the site's "Fast Server"), inside a second one of that host |
 | Time to a playing film | About 25 seconds | 6 to 20 seconds | About 6 seconds | About 9 seconds |
 
@@ -97,7 +136,7 @@ opens an advertising page, sometimes in the place of the episode. Close them wit
 ask for the episode again when one took the page.
 
 A result matches when its English or original-language name is the asked title, and its year is
-the asked year when one was given. A link is never built by hand: it counts only when the site's
+the asked year when one was given and the result has one. A link is never built by hand: it counts only when the site's
 search returned it.
 
 ## What you can ask
@@ -124,7 +163,7 @@ get me the pahe link for that film
 | `/pahe that one`, after a recommendation | The film from the conversation, with its year |
 | A title pahe does not have | "pahe.ink does not have it under that name", with the search link, or up to three near misses |
 
-### `/idlix` and `/lk21`: find it, play it
+### `/idlix`, `/lk21`, `/flicksy`, `/dramacool`: find it, play it
 
 ```text
 /idlix no other choice
@@ -166,7 +205,7 @@ which of the films you recommended are on lk21?
 | --- | --- |
 | `is la brea on idlix?` | The link, "series, 3 seasons" |
 | `where can I stream no other choice?` (chat bar) | One line per site, each with its link and quality |
-| A title neither site has | It says so, per site, and offers near misses when there are any |
+| A title no site has | It says so, per site, and offers near misses when there are any |
 
 Together with the film library and the web:
 
@@ -196,15 +235,18 @@ The rules behind those answers:
   Chrome) says which season has the episode: the named season, or every season the series lists,
   because a long anime numbers its episodes through the seasons and only the site knows where
   (One Piece 787 is in season 18). The episode starts only when exactly one matching series has
-  it. `skipped_play` says why not: `no_episode`, `several_episodes` (two series of that name, or
+  it. `skipped_play` says why not: `no_match` (no series of that name), `episode_lookup_failed`
+  (the site could not be asked; `episode_error` says why), `no_episode`, `several_episodes` (two series of that name, or
   an episode number every season has: `episode_candidates` lists them and one is then played by
   its link), `no_video`, or `no_episodes` on a site that plays none. An episode's address is
   the series page the search returned plus the season and episode the site confirmed; it is
   never guessed.
 - **A recommendation is not a request.** A film is never started because it was suggested.
 - **A film in the library plays in VLC** (`movies_continue`), unless you name the site.
+- **A play that started is kept with its title**, and the title then plays on that site again
+  when no source is named ([What played last time plays first](#what-played-last-time-plays-first)).
 
-### `/direct-stream`: straight from a cloud source
+### `/direct-stream`: straight from a cloud source or a torrent
 
 ```text
 /direct-stream saltburn
@@ -227,7 +269,7 @@ what are Blumhouse's movies released this year? play one
 | `this is a LOTR night. let's /direct-stream the first one` | Claude names the film first (The Lord of the Rings: The Fellowship of the Ring, 2001), then streams it |
 | `/direct-stream the bear` | A series: its seasons, and a question about which episode. Nothing starts |
 | `/direct-stream the bear season 2 episode 3` | That episode plays |
-| A film no source can stream | `no_source`, with what each provider did. Nothing starts |
+| A film no source can stream | `no_source`, with what each provider, index and torrent did. Nothing starts |
 | `can I stream saltburn directly?` | A lookup: the match, and whether this laptop has a recently verified source |
 | `resume one piece from episode 730` | The 730th episode, whatever season TMDB files it under; the answer names the season and episode |
 | `stream a johnny depp movie. the more recent the better` | Claude lists his films newest first, picks one you have not seen, plays it and says which and why |
@@ -278,7 +320,7 @@ Things that are not obvious:
   (`%LOCALAPPDATA%\notesd-stream-chrome`), added by hand from the Chrome Web Store: Chrome 157
   loads no extension from a script, and needs no Google sign-in for the store. With it idlix's
   advert does not come and dramacool's overlays and advert tabs stay away. The scripts still work
-  without it, and still press nothing on an advert themselves.
+  without it, and press nothing on an advert but idlix's own "Skip Ad" button.
 - **Full screen is the F11 kind.** A page's own full-screen button is refused for a click that
   does not come from the keyboard or mouse, so the whole window goes full screen and a style
   stretches the player over it. F11 leaves it; Esc removes the style and shows the page.
@@ -290,7 +332,9 @@ Things that are not obvious:
   `--disable-features=CalculateNativeWinOcclusion`, so a window covered by another still counts
   as visible, and the window is brought to the front. Minimizing it during the wait stops the
   flow; the answer says at which stage, and asking again starts over.
-- **One film at a time.** Starting a film closes the tabs of the other site. Going the other way,
+- **One film at a time.** Starting a film on a site closes every other tab of the streaming
+  Chrome: the other sites', the daemon's own player page, and a tab a resolver or a gate left
+  open. Going the other way,
   the daemon's own player page (`/direct-stream`, a stream from the wall) closes the streaming
   sites' tabs when it starts a film with sound, and only those: a site's film would go on playing
   behind it, and a resolver's tab is left alone.
@@ -307,7 +351,7 @@ that talks to Chrome runs in Windows PowerShell, as with VLC.
   4 seconds cold, under a second warm.
 - One call evaluates one JavaScript expression, in the site's tab or in an embedded frame whose
   address matches a pattern, and prints the reply. Options bring the window to the front, make
-  it full screen, and close the tabs that are not on the site.
+  it full screen, close every tab that is not on the site, or close only the tabs on named hosts.
 - It never touches a Chrome it did not start, and never closes one.
 
 ## In the chat bar
@@ -315,8 +359,9 @@ that talks to Chrome runs in Windows PowerShell, as with VLC.
 The chat bar has no shell, so the daemon runs the same command for it through two MCP tools
 (also available to Claude Code):
 
-- `streaming_find` asks one site or all of them for a title and returns the links.
-- `streaming_play` starts a film: by site and title, or by the link of a result.
+- `streaming_find` asks one site or all of them for a title and returns the links; with
+  `episode` it also says which season of a series has it.
+- `streaming_play` starts a film or one episode: by site and title, or by the link of a result.
 
 "/idlix no other choice" or "put it on lk21" in the chat bar calls `streaming_play`; "where can
 I watch it?" calls `streaming_find`. The bar never starts a film it was not asked to start. The
@@ -339,9 +384,10 @@ What the skill (`claude/skills/create-streaming-skill`) makes Claude do, in orde
 3. **Find the player:** in the page or in a frame from another host, what starts it, what the
    site shows before the film, and when the film is really running.
 4. **Write the site module**, `claude/streaming/sites/<name>.mjs`: `search`, `titlePath`,
-   `start` and `playerSelector`. Add it to `sites/index.mjs` and to `STREAMING_SITES`
-   (`src/streaming/service.ts`).
-5. **Add the skill folder:** a `SKILL.md` copied from lk21's and a three-line `search.mjs`.
+   `start` and `playerSelector`, plus `episodes` for a site that plays episodes and `details`
+   for one whose pages describe a title. Add it to `sites/index.mjs`, to `STREAMING_SITES`
+   (`src/streaming/service.ts`) and its `*_ORIGIN` to the configuration reference.
+5. **Add the skill folder:** a `SKILL.md` copied from lk21's and a short `search.mjs` that calls `cli.mjs`.
 6. **Name the site** in the chat prompt and the MCP instructions, so the chat bar knows it.
 7. **Tests and docs**, then prove it live: a lookup, a series, no result, and two plays in a
    row, from the terminal and through the daemon.
@@ -363,9 +409,13 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 | `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time (with WARP installed, it is switched the other way round and the site asked once more) |
 | `moved` | The tab opened on the site's address landed on another host that is not the same site by its name; idlix's own moves (`z2` to `z3`) are followed and never answer this |
 | `the site answered HTTP 403` | Cloudflare is now refusing the real Chrome too |
-| `no_frame` | lk21's, flicksy's or dramacool's player frame did not appear: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
+| `playing: false` with `stage: no_player` | lk21's, flicksy's or dramacool's player frame did not appear after eight tries: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
+| `skipped_play`: `no_match`, `several_matches`, `series` | Nothing was started: no film of that name, several (say which one and it is played by its link), or a series with no episode named |
+| `cdp_failed` | Chrome answered on its port and the call into the tab failed; ask again |
+| `not a title page on <origin>` | The link given to play is not a film or episode page of that site |
+| `streaming script failed` | From the chat bar or a tool: the command did not answer within 3 minutes |
 | `the page has no play button` | idlix's page changed, or it is a series page |
-| `playing: false` with `stage` | Where the flow stopped: `countdown`, `advert`, `play_button`, `loading`, `film` (the player is there and did not start), `no_player`, `other_frame` (flicksy's or dramacool's frame still held another film) |
+| `playing: false` with `stage` | Where the flow stopped: `countdown`, `advert`, `play_button`, `loading`, `film` (the player is there and did not start), `other_frame` (flicksy's or dramacool's frame still held another film) |
 | A host that does not resolve | The site moved: set its `*_ORIGIN` |
 
 A failure never falls back to a guessed link.
@@ -386,7 +436,7 @@ on, and `NOTESD_DIRECT_STREAM=off` turns it off: every `/api/stream/*` route the
 provider's embed in a background tab of the streaming Chrome, muted, and keeps the first one that
 loads a stream: the manifest, the `Referer`, `Origin` and `User-Agent` its request carried, and the
 subtitle tracks seen (separate `.vtt`/`.srt` requests and tracks inside the manifest). Providers are
-tried with an English subtitle first, then by health on this host, then by quality (`order.mjs`). A
+tried in the order described under **The order** below (`order.mjs`). A
 provider whose page shows a bot check is recorded as `bot_check` and the next one is tried; nothing
 is clicked or disguised to get past it.
 
@@ -451,8 +501,8 @@ audio, an English subtitle file).
   template has `{id}` and `{episode}`, no season), loaded into the registry beside the provider
   seed. Today: vidnest.fun's `/anime/{id}/{episode}/sub` and `/animepahe/{id}/{episode}/sub`.
 - **The mapping** (`src/directStream/anime.ts`): for a title whose original language is Japanese,
-  the daemon asks `api.ani.zip` (`NOTESD_ANIME_MAP_URL`) once per title for the AniList entry of
-  the TMDB id, and takes the entry's episode that aired on the day TMDB gives for the episode
+  the daemon asks `api.ani.zip` (`NOTESD_ANIME_MAP_URL`) for the AniList entry of the TMDB id
+  (the answer is kept in memory for six hours, five minutes when the index did not answer), and takes the entry's episode that aired on the day TMDB gives for the episode
   asked. Exactly one episode must have aired that day; otherwise the title has no anime key. When
   none aired that day, the one episode that aired the day before or after is taken (TMDB files One
   Piece 787 on the Saturday, the index on the Sunday). The resolver gets it as
@@ -462,11 +512,14 @@ audio, an English subtitle file).
   a later season that AniList keeps as its own entry) only the ordinary providers are tried.
 - **The subtitle.** The embed's subtitle file names no language; the template asked for the
   subtitled version, so it is taken as English and shown by default.
+- **A film.** A Japanese film the index lists as a movie goes to the same embeds, as episode 1
+  of its AniList entry.
 
 ### Providers and their health
 
 - The providers are data. `claude/streaming/direct/providers.seed.json` is checked in; the daemon
-  loads it into the `stream_providers` table at every start, and both machines share that table.
+  loads it into this machine's `stream_providers` table at every start. Each machine has its own
+  registry: a provider added with `/update-cloud-source` on one laptop is not on the other.
   An entry changed in the file updates its row. A provider added from a site keeps the site's
   address in `origin_site` and is never rewritten by the seed. Nothing deletes a provider.
 - Health is per machine, in `stream_provider_health`: for each provider the last outcome
@@ -510,7 +563,7 @@ and never stored (`src/directStream/delivery.ts`).
   are only logged) and a `?muted=1` check never move.
 - **By hand.** The shuffle button, or S, asks for another source at once and as often as wanted
   (a poor picture, a cinema recording): the same route, without the page's own limits. The line
-  over the picture says `Looking for another source…`, then the new provider or `No other source`.
+  over the picture says `Looking for another source…`, then `Source: <provider>` or `No other source`.
   On a torrent session the button is `Another torrent (S)` and moves to the next torrent: the line
   says `Looking for another torrent…`, then `Torrent: <release name>` or `No other torrent`.
 - `direct_stream_sources` shows each provider's `delivery` (`verdict`, `requests`, `failed`,
@@ -552,7 +605,8 @@ of a title plays for the first time, the daemon looks at it (`src/directStream/p
   but keeps away from rejected providers. A provider the owner named (`provider`), a probe and a
   resolve that only reads a subtitle are not looked at.
 - It adds 10 to 40 seconds to a provider's first play of a title, and the same again for each
-  stream it rejects. `NOTESD_STREAM_PICTURE_MODEL=off` turns it off.
+  stream it rejects. `NOTESD_STREAM_PICTURE_MODEL=off` turns it off, and the audio-language check
+  below with it.
 
 ### The audio-language check
 
@@ -582,14 +636,16 @@ provider's stream of a foreign-language title plays for the first time, the daem
   kept, and nothing here fails a play: audio that cannot be read or a language not heard clearly is
   `unsure`, which plays. When every provider is a dub, the first stream found plays as a fallback,
   labelled `audio: dubbed` — a dub is better than nothing.
-- It needs Whisper installed (the same Python as the torrent tier); without it the check is off and
-  cloud plays are unchanged. `NOTESD_STREAM_AUDIO_CHECK=off` turns it off.
+- It needs Whisper installed (the same Python as the torrent tier) and the picture check on:
+  without Whisper, or with `NOTESD_STREAM_PICTURE_MODEL=off`, the check is off and cloud plays are
+  unchanged. `NOTESD_STREAM_AUDIO_CHECK=off` turns it off by itself.
 
 ### Sessions and the pass-through
 
 A resolve makes a session, kept in the daemon's memory: a 32-character random id, the source, and
 the hosts it may reach. It ends 4 hours after its last request or 24 hours after it began, and a
-restart ends every session. The player page reads it from `GET /api/stream/sessions/<id>`.
+restart ends every session. At most 32 sessions live at once; one more ends the oldest. The player
+page reads it from `GET /api/stream/sessions/<id>`.
 
 Stream hosts check `Referer`, which a page cannot set, so every request the player makes goes
 through `/api/stream/sessions/<id>/p?u=<address>`:
@@ -632,7 +688,8 @@ hearing-impaired one, then the more downloaded), then the OpenSubtitles add-on
   never part of the resolved source.
 - **Re-timed** to the stream's audio by [Wyzie Synced](#wyzie-synced-a-subtitle-re-timed-to-the-audio);
   a sync that fails leaves the file as it is.
-- A title the services have nothing for is not asked about again for six hours. A stream with an
+- A title the services have nothing for is not asked about again for six hours (five minutes when
+  a service did not answer at all). A stream with an
   English subtitle of its own is left exactly as it is: no request, no sync. A torrent session has
   its own subtitle tiers (see [Subtitles for a torrent](#subtitles-for-a-torrent)).
 - `direct_stream_dialogue` reads the outside file when the resolved source has no English track.
@@ -650,7 +707,8 @@ body has ended, broken off, or been dropped by the player. It holds:
 - how it ended (`end`, `aborted`, `error`, `refused`), with the error
 
 A request notesd turns away (an unknown or ended session, a host the session may not reach) is
-logged too. Each session created and each refresh is a `session` line.
+logged too. Each session created, each refresh (and each refresh that failed), each move to
+another source or torrent and each move onto the cache is a `session` line.
 
 The player page posts every line it adds to its own log to
 `POST /api/stream/sessions/<id>/events`: refreshes, recoveries, errors and subtitle failures. Each
@@ -668,6 +726,10 @@ answer. Like the VLC health log it is capped at 5 MB. When it is full it becomes
 - `session.json`: the source, meaning the provider, the attempts, the hosts and the refreshes
 - `evidence.jsonl`: the session's records
 - `player.json`: the page's lines
+
+The body may name the session (`{"session_id": "<id>"}`). Without one the snapshot takes the
+stream on screen, else the session of the newest record; with no record at all the folder ends in
+`-none`.
 
 Take a snapshot while the session lives. Sessions are kept only in memory, and once a session
 ends only its log lines are left (`complete: false`). No header value captured by the resolve is
@@ -689,7 +751,7 @@ curl -s -X POST -H 'Origin: http://127.0.0.1:7317' -H 'content-type: application
 | `no_source` | No provider resolved the title and no torrent played; `attempts` lists each provider's outcome, then each torrent index and torrent tried. Each kind's failure is kept with its day and shown on the title's page ([What played last time plays first](#what-played-last-time-plays-first)) |
 | `pending` | Not an error: `direct_stream_play` answered `started: false, pending: true` because the play outlasted 45 s. See [A play that is being started](#a-play-that-is-being-started) |
 | `torrent_off` | A play asked for the torrent source (`provider: "torrent"`) while torrents are off on this machine (`NOTESD_TORRENT=off`) |
-| `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, or what the resolver said |
+| `resolve_failed` | The resolve could not run: `reason` is `no_chrome`, `chrome_not_reachable`, `script_failed`, `bad_output` (the resolver's answer could not be read), `deadline`, `torrent_gone` (a torrent session's refresh), or what the resolver said |
 | `open_failed` | The title resolved, but the player page could not be opened in the streaming Chrome |
 | `unknown_session` | The session id is wrong, the session ended, or the daemon restarted since |
 | `forbidden_host` | The address is not on a host the session may reach |
@@ -712,7 +774,9 @@ A play is in flight from the moment it is asked for until its player page report
 - **It counts as busy.** `GET /api/movies/player` lists it in `starting`
   (`{kind, tmdb_id, season, episode, title, provider, since, stage}`; `stage` says what is being
   done: `asking the cloud providers`, `asking the torrent indexes`,
-  `opening 3 torrents: <releases>`, `opening the player page`) and answers `busy: true`, though
+  `opening 3 torrents: <releases>`, `opening the player page`, and others such as
+  `asking <provider>, which streamed it last time` and `opened: waiting for the player page`) and
+  answers `busy: true`, though
   `stream` is still null. A play whose page was opened stays there until the page reports (it is
   then `stream`), says it closed, or 30 s pass. `scripts/install.sh` reads `busy` and does not
   restart the daemon under it ([install.md](install.md#it-never-restarts-under-a-film)).
@@ -752,7 +816,7 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   out. The files are read side by side and the film waits for them 3 s at most: a file a slow
   subtitle host still holds joins the menu when it arrives, and is shown then only where a
   subtitle would have been on by default. With no English track, a source's only subtitle is shown when it names no language (no
-  tag, and a label that is empty or just "Subtitle"); otherwise subtitles start off and the
+  tag, and a label that is empty or generic, such as "Subtitle", "CC" or "Track 1"); otherwise subtitles start off and the
   others can still be picked.
 - **The page draws the subtitles itself.** Every text track is kept `hidden`, so its cues run and
   Chrome draws nothing; the page reads the active cues (WebVTT tags taken out) into
@@ -768,8 +832,9 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   subtitle that arrived after the play started. Subtitles the viewer turned off stay off.
 - **Subtitle delay.** G shows the subtitles 50 ms earlier and H 50 ms later, as in VLC (hold the
   key to go on); the line over the picture reads `Subtitle delay +250 ms`. It is for a subtitle
-  that came from another provider than the picture. The delay is kept per title in the page's
-  storage, so the next play of it starts with it, and `window.notesdStream.subtitleDelayMs`
+  that came from another provider than the picture. The delay is kept per film and per episode
+  in the page's storage (60 seconds either way at most), so the next play of that film or
+  episode starts with it, and `window.notesdStream.subtitleDelayMs`
   holds it.
 - **Quality** is Auto at first; the menu lists every rendition the manifest offers, highest first.
 - **Audio.** When the manifest names several audio tracks, the page selects the one in the
@@ -782,8 +847,8 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **Position.** The film starts at the session's `resume_s`. The page reports
   `{ position_s, duration_s, ended, paused }` to `POST /api/stream/sessions/<id>/position` every
   5 seconds while it is open (a paused page sends a `beat`, which only says it is still there), on
-  pause, on play, at the end, and once more as it closes (`closed`); it ignores the answer, a 404
-  included.
+  pause, on play, at the end, and once more as it closes (`closed`). A failed report, a 404
+  included, is ignored; from a good answer the page reads only `subtitle_rev` (see above).
 - **On the Movies page.** Those reports are also what the Movies page shows: the title's poster
   has a pulsing frame and a "playing" chip while it streams, and a steady one that reads "paused"
   while it is paused, on the Stream side and in the Library. The title's page shows the same on its
@@ -793,7 +858,7 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
 - **An expired token.** When the stream host answers 401, 403 or 410 through the pass-through (the
   answer carries `X-Notesd-Upstream`), the page calls `POST /api/stream/sessions/<id>/refresh`,
   reads the session again and carries on from where it was. It does this at most three times for
-  one page, and stops with a message when a refreshed stream is refused before it plays. A 403
+  one session (the count starts over when the page moves to another episode), and stops with a message when a refreshed stream is refused before it plays. A 403
   without that header is notesd's own (the session ended, or the daemon restarted): the page says
   the session has ended and does not refresh. HLS and DASH behave the same: hls.js reports the
   refused load through its error event, dash.js through a response interceptor, and a refusal
@@ -803,8 +868,11 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   network errors, a dash.js download error, a plain file's network error), the page stays on the
   film, which plays on from what it has loaded, and shows a spinner (`stage: "recovering"`). After
   2, 4, 8, 16 and 16 seconds it loads again from where the film is; the first piece that loads ends
-  the recovery and the count starts over. Only when the fifth restart fails too does the page stop
-  with the message, such as `Playback stopped (networkError fragLoadError).` Positions are still
+  the recovery and the count starts over. Only when the fifth restart fails too does the page give
+  the stream up: a cloud play first asks the daemon for another provider
+  ([What played last time plays first](#what-played-last-time-plays-first)), and with none, or on
+  a cached or torrent play, it stops with the message, such as
+  `Playback stopped (networkError fragLoadError).` Positions are still
   reported meanwhile, and each try is a line in the page's log
   (`recovering 2/5 after networkError fragLoadError at 1312.4 s`, then `recovered at 1320 s`), which
   the page sends to the daemon with its other log lines.
@@ -816,9 +884,13 @@ separate small bundle (`web/stream.html`, `web/src/stream/`), not part of the wa
   will not start it with sound, the page starts it muted and the speaker icon shows it.
 - **`?muted=1`** (the playback checks): muted from the start, never unmuted, never full screen.
 - **Controls** are icons only and hide after 2.5 seconds without the mouse: play, for a series the
-  previous and the next episode, back and forward 10 seconds, position, mute, subtitles, quality,
-  full screen. Keys: Space or K, the left and right arrows, M, C (subtitles on or off), F, and
-  Shift+P and Shift+N for the previous and the next episode.
+  previous and the next episode, back and forward 10 seconds, position, mute, another source
+  (not on a cached play), subtitles, quality, full screen. Keys: Space or K, the left and right
+  arrows, M, S (another source), C (subtitles on or off), G and H (subtitle delay), F, Shift+P and
+  Shift+N for the previous and the next episode, and Esc to close a menu.
+
+  ![The quality menu, the subtitle delay key and a seek, in the player](img/streaming/player.gif)
+
 - **Previous and next episode.** A series' session names the episodes before and after its own
   (TMDB's order, specials left out, never an episode that has not aired), and the two buttons show
   which (`Next episode (S17E731)`); a side with no episode is greyed out, and a film has neither
@@ -876,10 +948,11 @@ title in one of three ways, tried in this order:
 A site and TMDB sometimes disagree on a name: lk21 lists "Doctor X: Age of the White Mafia", TMDB
 only "Doctor X: Mafia in White". Then nothing matches, and the answer is `no_match` with
 `did_you_mean`: the search's other hits, or, when the search found nothing at all, the hits for a
-shorter form of the name (the part before its subtitle, else its first two words). A near miss is
+shorter form of the name (the part before its subtitle, else the first two words of a name of
+four words or more). A near miss is
 never played unasked. When you pick one, Claude plays it by its `title_key` and passes the name
-you first used as `asked_as`; it is stored as an alias, so the same words find the title directly
-from then on, on both machines.
+you first used as `asked_as`; it is stored as an alias on this machine, so the same words find
+the title directly from then on.
 
 **A series without an episode** carries on from what you watched (`src/directStream/episodePick.ts`).
 The episode states are the ones the Movies page shows, from every play in `movie_plays` (streams
@@ -919,7 +992,7 @@ anime's numbers run on across seasons.
 | --- | --- |
 | The n-th episode is also numbered n (One Piece), or no episode is numbered n (a series whose seasons restart at 1) | That episode plays: `picked: "absolute"`, with its `season` and `episode` |
 | The n-th episode and the episode numbered n differ (a list with a gap; episode 12 of a series whose second season has 13) | `episode_unclear` with both as `candidates`. Nothing starts |
-| The series has fewer episodes | `no_such_episode`, with the count |
+| The series has fewer than n episodes | The one episode numbered n plays when there is exactly one; otherwise `no_such_episode`, with the count |
 | The episode airs after today | `not_aired`, with its air date |
 
 Specials (season 0) never count.
@@ -928,7 +1001,10 @@ Nothing starts when several titles match (the candidates come back with their ye
 title matches (`no_match`), when no episode is left after the last one played (`caught_up`), when
 the next episode airs after today (`not_aired`, with its air date), or when no provider resolves:
 then the answer is `no_source` with each provider's outcome (`no_stream`, `bot_check`, `error`,
-`dubbed`, `skipped_browser_only`). With direct streaming off, both tools answer `direct_stream_off`.
+`dubbed`, `unplayable`, `skipped_browser_only`, `skipped_no_template`), followed by the torrent
+source's `Index:` and `Torrent:` attempts when it was tried. `torrent_off`, `resolve_failed` and
+`open_failed` are errors of their own. With direct streaming off, every `direct_stream_*` tool
+answers `direct_stream_off`.
 
 ### Finding something to stream
 
@@ -949,8 +1025,8 @@ by its `title_key`.
 | mafia, zombies, bloody | `keyword`: one or several words for what it is about; a title carrying any one passes |
 
 - **Names become TMDB ids inside the tool.** A person is the most popular match of TMDB's person
-  search; a studio's name stands for the company called exactly that, else for every company
-  whose name starts with the words (TMDB files Blumhouse as Blumhouse Productions, Blumhouse
+  search; a studio's name stands for the company called exactly that, else for the companies
+  whose name starts with the words (6 at most; else the first whose name contains them) (TMDB files Blumhouse as Blumhouse Productions, Blumhouse
   Television and others; a title by any of them passes); a service is the entry called exactly
   that, else the first that starts with the words, in TMDB's watch-provider list for the region.
   `filters` says what was understood, and `other_people`, `other_companies` and `other_services`
@@ -979,7 +1055,8 @@ by its `title_key`.
   within one letter per five of the asked one, closest first: Park Bo-young, with
   `filters.person.asked_as` holding the words asked.
 - **Every title is marked against the library**, in the shape `movies_person` uses: `in_library`,
-  `state`, `seen`, `started`, plus `not_interested` and `stream.verified` (this machine has a
+  `state`, `seen`, `started`, plus `not_interested`, `interested` (on your watch list: a good one
+  for Claude to choose) and `stream.verified` (this machine has a
   source verified inside the freshness window; a series counts when any episode has one).
 - **`unseen_only` leaves out what you have seen or marked not interested**, and `left_out` counts
   them (`{seen, not_interested}`). Claude passes it whenever it chooses a title for you, so a
@@ -1052,7 +1129,7 @@ then plays the way it last played on this machine
   description of `direct_stream_play`.
 
 The ten requests the codenames were written for, each run against the fake TMDB of
-`verify.sh up --discovery` by `direct-stream/codenames.sh` (the year is this year's):
+`verify.sh up --discovery --torrent` by `direct-stream/codenames.sh` (the year is this year's):
 
 | You say | Tool calls |
 | --- | --- |
@@ -1086,7 +1163,7 @@ What each one leans on:
 
 ### What played last time plays first
 
-Finding a stream is the slow part: a first play may ask twenty providers, look at the picture of
+Finding a stream is the slow part: a first play may ask two dozen providers, look at the picture of
 each stream it finds, and only then turn to the torrents. So the daemon keeps, per title and per
 machine, how the title was last streamed (`movie_title_channels`), and a play that names no source
 goes there first. A series has one answer for all its episodes: what served episode 3 is asked
@@ -1097,7 +1174,7 @@ first for episode 4.
 | A cloud provider (`VidRock`) | Asks that provider alone. Only when it has no stream now are the others asked, without it, and then the torrents |
 | A torrent | Opens that very torrent again when the same film or episode is asked (no index is asked); else, or when its swarm has nothing now, asks the torrents first. No cloud provider is tried unless they find nothing |
 | A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Plays on that site again, from the title's page its search returned. When the site does not start it, the title is streamed the usual way |
-| Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers |
+| Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers (unless the torrents also found nothing since: then the long way) |
 | Nothing yet | The long way: every cloud provider, then the torrents |
 
 - **This machine's stream cache and a finished torrent download still come first**: they need no
@@ -1127,6 +1204,11 @@ first for episode 4.
   the daemon for another provider before it stops with the error, twice at most in one session.
   A session that moves provider while it plays takes its play and the title's channel with it, so
   the provider that really plays is the one remembered.
+
+![The play menu on a title's page: each row says what it remembers](img/movies/play-menu.png)
+
+On a title's page the same memory shows in the [play menu](movies.md#the-play-menu): the caret
+beside Play names the source by hand, and each row says what last played through it.
 
 **A play on a streaming site is kept too.** `claude/streaming/cli.mjs` reports every play that
 started to the daemon (`POST /api/movies/site-play`, on `127.0.0.1` and `NOTESD_PORT`; `kept` in
@@ -1170,7 +1252,8 @@ how does Saltburn end?
   read through the pass-through's rules (the session's hosts, the captured headers): a separate
   `.vtt` or `.srt` file first, then a track inside an HLS manifest, whose segments are joined.
 - **It is kept**, in `movie_dialogues` (one row per film or episode, written only by
-  `MoviesRepo.saveDialogue`), so the next question is answered at once, on both machines.
+  `MoviesRepo`: `saveDialogue` for the lines, `saveStory` for the story), so the next question is
+  answered at once on this machine.
   `refresh: true` reads it again.
 - **The episode is named** by season and episode, by one number (`absolute_episode`, as for a
   play), or by an episode's movie id. A series without an episode answers `needs_episode`; "the
@@ -1201,8 +1284,8 @@ Aggregator sites are lists of provider templates. `/update-cloud-source` reads o
 adds the providers the registry lacks and tries each new one on the known titles (Fight Club and
 the others in `claude/streaming/direct/known-titles.json`). A site's list is read from its
 scripts, and from the frames of a watch page when the scripts hold none. It runs in Claude Code only; the chat
-bar can list the providers (`direct_stream_sources`) but not add one, because adding writes the
-provider list both machines share and probes for minutes.
+bar can list the providers (`direct_stream_sources`) but not add one, because adding writes this
+machine's provider list and probes for minutes.
 
 1. **Read the templates, no browser.** `cli.mjs templates <site>` fetches the page as a plain
    client that says what it is, then the scripts the page names and the webpack (Gatsby) chunks
@@ -1238,10 +1321,11 @@ provider list both machines share and probes for minutes.
    - **A site whose plain request answers `bot_check` and whose frames never read either,
      because the sniffer's fresh navigation shows the same Cloudflare challenge again every
      time:** the owner clears it by hand first, the same way as ext.to's torrent index (see
-     "ext.to's Cloudflare gate" in `CLAUDE.md`). `node claude/streaming/direct/cli.mjs gate
+     "ext.to's Cloudflare gate, and clearing it by hand" under
+     [Torrents](#when-the-indexes-have-nothing-1337x-extto-and-rutracker)). `node claude/streaming/direct/cli.mjs gate
      <site>` brings the site's tab to the front of the streaming Chrome (`torrent/tab.ps1
      -Activate`, the same shared `notesd-stream-chrome` profile) so the owner can solve the
-     challenge; it answers once the challenge is gone, or the deadline passes. Calling
+     challenge; it answers once the challenge is gone, or after 40 seconds (`--deadline-s <n>`). Calling
      `direct_stream_update_source` again with `from_tab: true` (or `cli.mjs templates <site>
      --from-tab`) then reads that SAME tab's current frames with a JS expression
      (`readFrameTemplatesFromTab`, `claude/streaming/direct/frames.mjs`) — no new navigation, so
@@ -1272,6 +1356,8 @@ provider list both machines share and probes for minutes.
 | `chrome_unavailable` | The streaming Chrome could not open the watch page (`no_chrome`, `chrome_not_reachable`) |
 | `no_tab` | `from_tab` was asked, and no gated tab answered on the site (none is open, or it is still on the challenge) |
 | `unreachable` | The address does not answer, or answers an error |
+| `bad_url` | The address is not an http or https address |
+| `reader_failed` | The template reader could not run, or answered something unexpected; `detail` says what |
 | `busy` | Another update is still probing |
 | `direct_stream_off` | Direct streaming is off, or the daemon runs without it |
 
@@ -1279,10 +1365,10 @@ provider list both machines share and probes for minutes.
 buttons and real clicks on a page full of adverts, so the frame reader sees the server a page
 loads first and no other.
 
-**The seed and the table.** New providers go to the `stream_providers` table, which both
-machines share, with the site they came from (`origin_site`) and when (`added_at`);
-`providers.seed.json` is not changed. The other laptop sees them on its next resolve and
-measures its own health. The daemon loads the seed at every start: it adds seed providers the
+**The seed and the table.** New providers go to this machine's `stream_providers` table, with the
+site they came from (`origin_site`) and when (`added_at`); `providers.seed.json` is not changed.
+The other laptop does not get them: run `/update-cloud-source` there too, or copy the entry into
+the seed. The daemon loads the seed at every start: it adds seed providers the
 table lacks and updates seed rows (`origin_site` empty) whose entry changed in the file, but never
 touches a provider a site added and never deletes one. To make a site's provider part of the
 seed, copy its entry into `providers.seed.json` by hand.
@@ -1299,7 +1385,9 @@ seed, copy its entry into `providers.seed.json` by hand.
 
 A stream that stutters on a slow connection or a far stream host can be downloaded to this laptop
 first. `direct_stream_cache` with `action: "start"` in Claude Code, or `POST /api/stream/cache`,
-answers at once; the download runs in the daemon, one at a time (the rest wait, `queued`).
+answers at once; the download runs in the daemon, one at a time (the rest wait, `queued`; a queued
+cache that is played starts beside the running one). `action: "status"` shows one title's caches
+(or the cache of an `id`) and `action: "list"` every cache, with state and progress.
 
 1. The title is resolved like a play, out of sight: the same resolver and provider order, the
    title's original language.
@@ -1334,11 +1422,12 @@ anywhere while the cache downloads: `GET /api/stream/cache/<id>/f/<file>` serves
 with `Range`, and fetches one that is not on disk yet from the stream host at once, ahead of the
 queue.
 
-A cache belongs to the machine that made it (`stream_caches`, one per title and machine). The
-other machine lists it with `available: false`, and its files and its delete answer 404
+A cache belongs to the machine that made it (`stream_caches`, one per title and machine). A row of
+another machine (copied in from the old shared database, or made by a second daemon on the same
+Postgres) is listed with `available: false`, and its files and its delete answer 404
 `not_on_this_machine`. `DELETE /api/stream/cache/<id>` (or `action: "clear"`) stops the download,
-deletes the folder and the row. The chat bar does not cache: it is a Claude Code request, and the
-Movies page's cache and clear buttons come later on the same routes.
+deletes the folder and the row. The chat bar does not cache: it is a Claude Code request. The
+Movies page has no cache or clear button.
 
 | Answer | Meaning |
 | --- | --- |
@@ -1349,7 +1438,9 @@ Movies page's cache and clear buttons come later on the same routes.
 | `source_changed` | The source changed shape under the download more than twice |
 | `disk_error` | A file could not be written |
 | `cache_exists` | This machine holds the title at another `max_height`: clear it first |
-| `not_on_this_machine` | The cache is on the other laptop |
+| `not_on_this_machine` | The cache's row names another machine |
+| `not_found` | The cache has no file of that name |
+| `upstream_error` | A file not on disk yet could not be fetched from the stream host now |
 | `unknown_cache` | No cache has that id (or it was cleared) |
 | `cache_failed` | A file of a failed cache was asked for, or it was asked to play: ask for the cache again |
 | `cache_language` | `POST /api/stream/cache/<id>/play`: the cache was made for another language than the title's original |
@@ -1370,7 +1461,8 @@ machine, the way `direct_stream_cache` does, so a stream that stutters can be le
   not watched, thick white for what was watched. Loaded is what the browser holds in memory and,
   for a cached play, what is on disk (`GET /api/stream/cache/<id>/map`, asked every 4 s while it
   downloads), so the grey bar grows while the film is paused.
-- A DASH stream is never cached, so its pause asks nothing; a cache that fails says so in the
+- A DASH stream is never cached, so its pause asks nothing, and neither does a torrent play (its
+  download is already this machine's copy); a cache that fails says so in the
   page's log (`cache: download_failed`) and the film stays on the stream. A `?muted=1` check
   never asks.
 - **An `auto` cache clears itself** three days after it was last written or asked for by a pause,
@@ -1383,6 +1475,10 @@ A play looks at this machine's stream cache first (`/direct-stream`, the Movies 
 Stream side and the player's previous and next buttons alike). When the film or episode has a
 cache here that is `ready` or `downloading`, and it was made for the title's original language,
 the session plays the local copy:
+
+- **A named source passes the cache over.** A play that names a provider ("from VidLink"), a
+  torrent (TM, TS) or a magnet does not look at the cache; a play with no source named, or
+  NTM / NTS, does.
 
 - **Ready.** No provider is asked and the resolver does not run, so the play starts at once and
   works with the internet down. `attempts` is empty, `session.cached` is
@@ -1410,7 +1506,7 @@ the session plays the local copy:
 - **In a stream bug report.** A ready cache makes no pass-through request, so the evidence log has
   no records of its segments (the cache's own downloads are not recorded there either). A snapshot's
   `session.json` names the cache in `source.cache` (`{id, state}`), with the cache's provider and no
-  attempts or hosts; the page's log says `from cache <id> (<state>)`, and `/report-stream-bug`'s
+  attempts or hosts; the page's log says `from cache <first 8 characters of the id> (<state>)`, and `/report-stream-bug`'s
   summary says the play came from the cache.
 
 ### The next episode, fetched ahead
@@ -1451,8 +1547,9 @@ player, the daemon downloads the one after it (`src/directStream/ahead.ts`).
 
 ### The prober
 
-The Stream side of `/movies` shows only titles verified on this machine within the freshness
-window. The prober fills it and keeps it fresh without being asked. It is **off** unless
+The Stream side of `/movies` lists the titles verified on this machine within the freshness window,
+beside those last played from a torrent or a site and those marked interested. The prober fills
+and refreshes the verified ones without being asked. It is **off** unless
 `NOTESD_STREAM_PROBER=on`, because it widens the rule that a film starts only when asked: it opens
 embed pages in the streaming Chrome by itself. Resolving is not playing. Each probe is the same
 resolve `/direct-stream` runs: a tab out of sight, closed when the stream address is caught. No
@@ -1527,7 +1624,7 @@ a new one (the stream on screen, else the last session); with neither it makes
 | `snapshot-answer.json` | The snapshot's answer, when the skill asked for it |
 | `evidence-latest.json` | The daemon's records for the session, newer than the snapshot |
 | `evidence-tail.jsonl` | The session's lines from this host's evidence log on disk, read without the daemon |
-| `notesd.log` | The daemon's direct-stream and torrent lines of the last 6 hours, every query string cut off |
+| `notesd.log` | The daemon's direct-stream and torrent lines of the last 6 hours (`--hours N`), the last 400 at most, every query string cut off |
 | `network.json` | The reference download, the stream through the session, and the stream host's first answer |
 | `torrent.jsonl` | A torrent session only: three samples of its swarm, 5 s apart (bytes on disk, peers, rate) |
 | `missing.txt`, `summary.txt` | What could not be collected; the summary it printed, with the cause |
@@ -1542,11 +1639,14 @@ has passed.
 
 **The cause.** `diagnose.mjs` tries the known causes in order and takes the first that matches:
 the session ended, the torrent swarm is slow or thin (a torrent session whose swarm delivers under
-1.5 times the film's bitrate, or has 5 peers or fewer and stalled, on a connection that is fine),
+1.5 times the film's bitrate, or has 5 peers or fewer and either stalled or had an earlier play
+that found no torrent in time, while the file is not whole yet, on a connection that is fine),
 the token expired, the provider's stream is broken, this connection is slow
 (the reference failed or gave under 5 Mbps), the stream host is slow or far (the reference is fine
 and the host gave under 3 Mbps, or under a quarter of the reference, or its first byte took over
-1.5 s); else the cause is new. The summary also names every step of the play that took 5 s or more,
+1.5 s), the play started slowly (nothing failed and nothing is slow now, but the page asked for
+the film 30 s or more after its session was made, or the resolve spent 30 s or more on other
+providers); else the cause is new. The summary also names every step of the play that took 5 s or more,
 every start of the daemon in the log window, and every torrent play with its outcome: a play that
 never started has no session, so the daemon's lines are its only trace. Claude reads the evidence as well, tells you what happened, and saves
 the finding as a note tagged `#stream-bug`, linked to the session it ran in.
@@ -1559,11 +1659,13 @@ writes the evidence log's tail, the daemon's lines and the reference measurement
 
 A torrent is the third way direct streaming gets a film, beside a cloud provider and the stream cache: the
 daemon joins the torrent's swarm, downloads the one video file (and its subtitle files) in playing order,
-and serves it from its own disk to the player page. Each torrent phase adds its subsection here.
+and serves it from its own disk to the player page.
 
 The Stream side of the Movies page lists, once a day, the most seeded films and series on these indexes and
 probes their swarms: see [Trending on torrents](movies.md#trending-on-torrents). That job never plays or
 downloads anything; it reads the indexes' top lists and uses `TorrentStreams.peek`.
+
+![Trending on torrents, on the Stream side: the index's seed count and what the swarm said when it was opened](img/movies/trending.png)
 
 ### The torrent engine and its file route
 
@@ -1586,14 +1688,16 @@ DHT node and no peer.
    chosen files.
 5. Upload is capped at `NOTESD_TORRENT_UPLOAD_KBPS` (100 kB/s) for all torrents together. UPnP and NAT-PMP
    are off; under WSL 2 no peer can connect in, so the daemon only connects out.
-6. A torrent is in the swarm only while something uses it (a stream session; for now
-   `POST /api/stream/torrent` with `files`, until its release). Once nothing does, a finished download
-   leaves at once and an unfinished one three minutes after its last file request.
+6. A torrent is in the swarm only while something uses it (a stream session, the next episode
+   being fetched ahead, or `POST /api/stream/torrent` with `files` until its release route is
+   called). Once nothing does, a finished download leaves at once and an unfinished one three
+   minutes after its last file request.
 7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
    A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
 
-A download belongs to the machine that made it: the other machine lists it with `available: false`, and
-its file routes answer 404 `not_on_this_machine`. `NOTESD_TORRENT=off` builds nothing and every route
+A download belongs to the machine that made it. A row of another host (copied in from the old shared
+database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its
+file routes answer 404 `not_on_this_machine`. `NOTESD_TORRENT=off` builds nothing and every route
 answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#torrents).
 
 | Answer | Meaning |
@@ -1603,18 +1707,21 @@ answers `torrent_off`. The routes are in [http-api.md](reference/http-api.md#tor
 | `not_media` | A chosen file is neither a video nor a subtitle file |
 | `not_selected` | That file of the torrent was not chosen, so it is not served |
 | `not_in_swarm` | The download is unfinished and nothing holds it now: play it again to carry on |
-| `not_on_this_machine` | The download is on the other laptop |
+| `not_on_this_machine` | The download was made on another host; its files are not here |
 | `torrent_off` | `NOTESD_TORRENT=off` on this machine |
 
 ### Playing from a torrent
 
 A torrent is a source inside `/direct-stream`, not a command of its own.
 
-- **When it is asked.** `direct_stream_play` with `provider: "torrent"` (any case; "stream it from a torrent") asks
-  the torrent source alone, and passes over the stream cache. Without a provider a play looks, in order, at this
-  machine's stream cache, at a finished torrent download of the title on this machine, at the cloud providers, and
-  only when they answer `no_source` (or the resolve cannot run because the streaming Chrome is down: a torrent needs
-  no Chrome) at the torrent source. The Movies page's Play and the player's previous and next buttons go the same way.
+- **When it is asked.** `direct_stream_play` with `provider: "torrent"` (any case; "stream it from a torrent") passes
+  over the stream cache and the cloud providers: a finished download of the title plays from disk, else the torrent
+  that last played this film or episode is opened again with no index asked, else the indexes are asked. Without a
+  provider a play looks at this machine's stream cache, then at a finished torrent download, then at what streamed
+  the title last time ([What played last time plays first](#what-played-last-time-plays-first)). Only a title with
+  nothing remembered goes the long way: the cloud providers, and the torrent source when they answer `no_source` (or
+  the resolve cannot run because the streaming Chrome is down: a torrent needs no Chrome). The Movies page's Play and
+  the player's previous and next buttons go the same way.
 - **How a torrent is chosen.** The title's IMDb id comes from TMDB (`external_ids`; a series is asked by its own id
   with the season and episode). The finder asks the torrent indexes and ranks what they list. An index's seed count
   is not the swarm (a film listed with 16 seeds had 3 peers), so the daemon asks the swarms themselves: it opens the
@@ -1623,7 +1730,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   daemon's file route (30 s at most). A file whose audio names only languages other than the title's original is
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
-  one listed, up to six torrents and 90 seconds in all.
+  one listed, up to six torrents and 90 seconds. The dub-named round after it has its own six and 90 seconds.
 - **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
   ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each
   torrent that was tried and did not play. The next ask of the same title (the Torrent Stream row again, the same
@@ -1643,7 +1750,7 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   the header probe decides: a file whose audio includes the original language plays (the remux maps that track, so a
   dub never plays over it), and one that really is only the dub is still `dubbed`. A directly-playable dual-audio file
   whose original track is not the default is remuxed so the original plays; with the remux off and the dub as the
-  default, it is refused rather than played in the wrong language.
+  default, it is refused rather than played in the wrong language. In that round one listed seed is enough.
 - **Which of them plays.** Once the first header has arrived, the torrents still opening get 2 more seconds. Of those
   whose headers arrived, the one that plays is, in this order: one whose swarm delivers (6 peers or more connected,
   or a download rate at or above the film's own bitrate) before one that does not; one whose files hold an English
@@ -1681,8 +1788,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **Playing again from disk.** A title whose torrent download is whole on this machine plays from disk at once, with
   no index asked and no swarm joined (no `Index:` or `Torrent:` attempt, `torrent.state` `ready`). The file is read again first: one
   that turns out to be a dub, or that Chrome cannot play, is passed over and the play goes on as if it were not there.
-- **Subtitles** come from the subtitle tiers, asked in order (the sections below add them: kept, files, embedded,
-  service, borrow, whisper) until one answers anything; every tier answers only English tracks, or the torrent's one
+- **Subtitles** come from the subtitle tiers, asked in order (kept, files, embedded, service, borrow, whisper: the
+  sections below describe each) until one answers anything; every tier answers only English tracks, or the torrent's one
   subtitle file that names no language. Each tier asked is an attempt `Subtitles: <tier>` (`resolved`, `no_stream`,
   `error`, or `skipped` with the reason). The film does not wait for them: see
   [Subtitles for a torrent](#subtitles-for-a-torrent). The waiting tiers share one budget of 40 seconds from the
@@ -1690,18 +1797,22 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
   background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
-  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (YTS timed out
-  from this network once, so it can be turned off). Every request says it is notesd; a bot check is the outcome
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (each can be turned off or
+  moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out from this network once, is given 6 s). Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
   out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
-  fewer seeds than `NOTESD_TORRENT_MIN_SEEDS` or more than `NOTESD_TORRENT_MAX_GB`. A release Chrome plays as is
-  (H.264, AAC, MP4, one audio track) comes before one that needs a remux, and among equals more seeds come first. For an
+  fewer seeds than `NOTESD_TORRENT_MIN_SEEDS`, or a single release larger than `NOTESD_TORRENT_MAX_GB` (a season pack
+  is not measured: only the episode's file is downloaded). A release Chrome plays as is
+  (H.264, AAC, MP4, one audio track) comes before one that needs a remux, then one with 20 seeds or more, then the picture height (1080p, 720p, 2160p,
+  480p), then more seeds. For an
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
 ### The player page on a torrent
+
+![A torrent session: the magnet, 23 peers and 3.2 MB/s beside the title; on the timeline, white is watched, thick grey is on disk, thin is not downloaded yet](img/streaming/player-torrent.png)
 
 - **Beside the title** a magnet icon, the peers and the download speed (`7 peers`, `2.0 MB/s`), read
   from `GET /api/stream/torrent/<info hash>` every 2 s while the file downloads. Its tooltip names
@@ -1716,6 +1827,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
 - **A seek past what is on disk waits.** A spinner and `Fetching this part from peers` show over the
   picture until the pieces arrive (the file route fetches the pieces of the asked range first) and
   the film plays on. The page's log says `waiting for the torrent at 200 s`.
+
+  ![A seek past what is on disk: the spinner and "Fetching this part from peers"](img/streaming/player-fetching.png)
+
 - **No automatic move.** A torrent that buffers is still filling, so the page never asks for another
   source by itself; its `stalled at` lines still go to the stream evidence log. A move throws away what
   is on disk and starts the next torrent from nothing, and a pause fills a slow one; the choice at the
@@ -1781,8 +1895,10 @@ answer's `attempts` list each one asked as `Subtitles: <tier>`.
    add-on is asked as above.
 4. **A cloud provider.** The title is resolved out of sight, as `direct_stream_dialogue` does,
    and that provider's English subtitle is kept as `borrow.vtt`, labelled with the provider. It
-   is skipped when the torrent was the fall-through after the cloud providers answered
-   `no_source`. Its failure never stops the play.
+   asks nothing (`no_stream`) when the torrent was the fall-through after the cloud providers
+   answered `no_source`, and is `skipped` when Whisper is on and the title's original language is
+   English: Whisper transcribes that audio in step, and a borrowed file may not be. Its failure
+   never stops the play.
 
 **The film starts before the search ends.** The play waits for the chain for 1.5 s
 (`NOTESD_TORRENT_SUBTITLE_WAIT_MS`), which is enough for a kept file. After that the session is
@@ -1868,6 +1984,9 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   without touching the film. With none, this machine's finished torrent download of the title is
   checked, else a cloud source resolved out of sight as the dialogue reader does, and the fix is kept
   for the next play.
+- **Which one, and when nothing is checked.** Idle, `source: "torrent"` or `"cloud"` (a codename in
+  the request) says which to check. A series named without an episode, with none of its episodes on
+  screen, answers `needs_episode`; no title and nothing on screen answers `nothing_playing`.
 - **Hearing.** ffmpeg cuts a minute of audio at six places spread over the film (2%, 20%, 40%, 60%,
   80% and 93% of its length; five more between them when fewer than 30 lines were heard), and a
   Whisper worker of the check's own writes down what is said in each with its times. A window whose
@@ -1960,13 +2079,14 @@ silence. The worker holds about 850 MB while it runs and exits when no torrent n
 
 When the session lets go of the torrent the stretch in progress is dropped; restarting notesd stops
 the worker too. Cues already made stay in the feed, and
-`<torrent folder>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
+`<NOTESD_TORRENT_DIR>/<info hash>/notesd-whisper/` remembers the finished stretches, so a replay
 carries on from there, and a file transcribed to the end plays with its finished track and runs
 nothing.
 
 Limits: a line right after a long stretch of music can be missed, a cue stays on screen at most 7 s,
-names come out as heard, and the first audio stream is the one transcribed (the finder leaves
-dual-audio releases out). `scripts/install.sh` installs Whisper ([install.md](install.md));
+names come out as heard, and the first audio stream is the one transcribed, also in a dual-audio
+file whose original track is not the first (the remux plays the original; Whisper still hears the
+first). `scripts/install.sh` installs Whisper ([install.md](install.md));
 `NOTESD_TORRENT_WHISPER=off` turns it off.
 
 ### When the indexes have nothing: 1337x, ext.to and RuTracker
@@ -1998,13 +2118,14 @@ fails never fails the play.
   Turnstile, and the `cf_clearance` cookie the Chrome profile (`notesd-stream-chrome`) keeps lets
   the daemon's later background searches of ext through until it expires. The command answers
   `{ cleared, title }` once the page is no longer a challenge, or at its deadline. A bot check never
-  counts toward the index skip, so the next play asks ext again right after. Nothing is clicked for
+  counts toward the index skip, so the next play asks ext again right after. The answer also
+  carries `ok`, `site` and `origin`. Nothing is clicked for
   the owner and no challenge token is forged: the browser is the owner's own, and the human solves
   the widget.
 - **Magnet links** come from the release pages of the five best-seeded rows that are seeded and
-  are not a dub, a cinema copy or 3D. On 1337x the page carries the link. On ext.to the page
+  are not a dub, a cinema copy or 3D, and do not name another episode. On 1337x the page carries the link. On ext.to the page
   gives it through its own "Copy magnet link" request.
-- **About 40 seconds** for both. A bot check is the attempt's outcome `bot_check` and is never
+- **About 40 seconds** for all three: each site has 40 s, and they are asked side by side. A bot check is the attempt's outcome `bot_check` and is never
   clicked through. A machine without the Windows Chrome answers `error` with `no_chrome`.
 - **RuTracker** is asked with the title's words (and a film's year), most seeders first, at
   `rutracker.net`: this network's provider blocks `rutracker.org`, and the mirror answers without
@@ -2018,8 +2139,10 @@ fails never fails the play.
   (…) [2017, США, …, WEB-DL 2160p] MVO + Original (Eng)`); `releaseName` rewrites it as
   `The Handmaid's Tale S01E01-E10 2017 WEB-DL 2160p MVO + Original (Eng)`, which the finder reads
   like any release: a season pack, and not a dub when it names the original track. A release with
-  a Russian voice-over only reads as a dub and goes to the last-resort round, where the file's real
-  audio decides. A topic's magnet carries only RuTracker's own tracker, and its swarm often lives
+  a Russian voice-over only reads as a dub and is left out before its topic page is read, so it is
+  never tried (only a dub-named release from the JSON indexes goes to the last-resort round). On a
+  timeout not logged in, the gate answers `waiting_for: "login"`.
+  A topic's magnet carries only RuTracker's own tracker, and its swarm often lives
   there: a pack the public trackers know one seeder for had 29 on the site.
 - `NOTESD_TORRENT_1337X_ORIGIN`, `NOTESD_TORRENT_EXT_ORIGIN` and `NOTESD_TORRENT_RUTRACKER_ORIGIN`
   move a site to another address, or leave it out with `off`.
@@ -2113,7 +2236,7 @@ with them. `direct_stream_update_source` with `magnet` (`TorrentSource.learnMagn
 | `src/directStream/delivery.ts` | A provider's delivery verdict from the evidence log; `switchSource` in `service.ts` moves a stalling session |
 | `src/http/streamEvidenceApi.ts` | The page's log lines, the snapshot and the evidence read routes |
 | `src/directStream/lookup.ts`, `match.ts` | Words, a movie id or a title key to a TMDB title; the exact-title rule |
-| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_discover`, `direct_stream_dialogue` |
+| `src/mcp/directStreamTools.ts` | `direct_stream_find`, `direct_stream_play`, `direct_stream_sources`, `direct_stream_update_source`, `direct_stream_discover`, `direct_stream_dialogue` |
 | `src/directStream/discover.ts`, `episodePick.ts` | Language names, name ranking and the release window; which episode a series or an absolute number plays |
 | `claude/skills/direct-stream/` | The `/direct-stream` skill |
 | `claude/skills/report-stream-bug/` | The `/report-stream-bug` skill: `collect.sh`, `netcheck.mjs` (the measurement), `diagnose.mjs` (the known causes) |
@@ -2163,3 +2286,10 @@ The feature map entry is `.claude/skills/verify-notesd/features/streaming.md`.
 - The player page on a torrent: `torrent-player.steps.mjs` on `verify.sh up --web` (the session and
   the torrent routes faked, a 300 s film made with ffmpeg) and `torrent-live.steps.mjs` on
   `verify.sh up --web --direct-stream --torrent` (a real torrent session); see the feature map entry.
+- The pictures of the player in this guide: `npm run docs:shots -- streaming`
+  (`scripts/docs/shots/streaming.mjs`). They come from a throwaway daemon's real page build, with
+  the session, the pass-through and the torrent routes answered by Playwright the way the steps
+  above do; the film is the trailer of Sintel (© Blender Foundation, CC BY 3.0), fetched once
+  from download.blender.org and cut into a two-rendition HLS stream (offline, a generated test
+  picture stands in). The play menu and the Trending pictures are the movies guide's
+  ([movies.md](movies.md#proving-a-change)).

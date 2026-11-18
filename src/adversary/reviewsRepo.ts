@@ -74,7 +74,7 @@ export class ReviewsRepo {
     return id;
   }
 
-  /** Deep reviews started at or after `since`, both machines. */
+  /** Deep reviews started at or after `since`, every host in this database. */
   async countDeepSince(since: Date): Promise<number> {
     const rows = await this.db
       .select({ n: sql<number>`count(*)::int` })

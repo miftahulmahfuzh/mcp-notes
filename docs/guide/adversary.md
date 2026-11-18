@@ -246,7 +246,8 @@ session date, which is 20:30 WIB in US summer and 21:30 WIB in US winter.
 
 ### The daily cap and the order of work
 
-`ADVERSARY_DAILY_CAP` (15) limits **deep reviews per WIB day across both machines**. One deep
+`ADVERSARY_DAILY_CAP` (15) limits **deep reviews per WIB day on this machine** (`adversary_reviews` is in each machine's own
+database, so two laptops each have their own count). One deep
 review is one stock: an attempt that finished `ok`, `failed` or `late`. Reused drafts and skipped
 picks cost nothing.
 
@@ -270,7 +271,7 @@ final verdict at no cost.
 | Switch | Scope | While off |
 |---|---|---|
 | `NOTESD_ADVERSARY=off` | This machine. Read at start. | No reviewer at all: no reviews, no `paused` marks, no leases, no nightly dispatch. The page still reads Seer, the toggle routes answer 503 `reviewer_off` and the Power button is disabled. |
-| The Power toggle | Both machines. `app_settings` key `adversary.auto` in the shared notes database; absent means on. | Automatic passes review nothing and write `paused` marks instead. "Review now" still reviews. The nightly dispatch stops too. |
+| The Power toggle | This machine. `app_settings` key `adversary.auto` in this machine's notes database; absent means on. | Automatic passes review nothing and write `paused` marks instead. "Review now" still reviews. The nightly dispatch stops too. |
 
 Turning the toggle back on starts a pass at once. The toggle records which host changed it and
 when; the page shows that in focus mode.
@@ -310,7 +311,7 @@ looks on `PATH`, then in `~/.local/bin`, `/usr/local/bin` and `/usr/bin`, or use
 
 ### Leases between two machines
 
-Both laptops may run a daemon against the same databases. Before reviewing a decision, a daemon
+Both laptops may run a daemon against the same Seer database. Before reviewing a decision, a daemon
 claims a row in Seer's `adversary_leases` keyed by (strategy, session). The claim succeeds when
 there is no lease, when the lease has expired, or when this host already holds it. Expiry is
 judged by Seer's database clock, so the laptops' clocks do not matter.
@@ -426,7 +427,7 @@ reviewer. The toggle `PUT` and `review-now` are same-origin only.
 - A review is a gathering run (up to `ADVERSARY_GATHER_MAX_TURNS`, 20 turns) plus a verdict run,
   bounded together by `ADVERSARY_STOCK_TIMEOUT_MS` (7 minutes). A stock that times out gets no
   verdict.
-- The ceiling is `ADVERSARY_DAILY_CAP` stocks per WIB day, counted across both machines from
+- The ceiling is `ADVERSARY_DAILY_CAP` stocks per WIB day, counted on this machine from
   `adversary_reviews`.
 - Runs use the owner's Claude login, so the cost is subscription usage. `cost_usd` is the SDK's
   own figure for each attempt.

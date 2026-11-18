@@ -81,7 +81,8 @@ Ids are generated on the server and never invented by a caller: note, photo and 
 ## Data model
 
 The schema is `src/db/schema.ts` (Drizzle); the migrations are the SQL files in `drizzle/`.
-After editing the schema run `npm run db:generate`, then `npm run db:migrate`.
+After editing the schema run `npm run db:generate`; the daemon applies the new migration at its
+next start (`npm run db:migrate` applies it by hand).
 
 | Subsystem | Tables | Notes |
 | --- | --- | --- |
@@ -92,8 +93,8 @@ After editing the schema run `npm run db:generate`, then `npm run db:migrate`.
 | Sessions | `cc_sessions`, `cc_subagent_transcripts`, `cc_session_prompts`, `cc_session_prompt_images`, `cc_session_replies`, `cc_session_reply_embeddings`, `cc_session_embeddings`, `cc_pending_spawns`, `note_session_links` | What ingest read from Claude Code's transcripts and hooks: byte offsets, tokens, commits, prompts, redacted replies, summaries, fork and context evidence, and the links between notes and sessions. |
 | Seer Adversarial | `adversary_reviews` | The attempt and usage log. Verdicts, `paused` marks and leases live in Seer's database. |
 | Movies | `movie_titles`, `movie_episodes`, `movie_companies`, `movie_title_companies`, `movie_people`, `movie_credits`, `movie_files`, `movie_plays`, `movie_ids`, `movie_stream_sources` | Titles are shared and never deleted with their files; files are per host and soft-deleted; play events are never deleted (a stream play names its title instead of a file). Stream sources are per host: what each machine verified or found stale. Watch state is derived at read time, never stored. |
-| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches`, `stream_torrents` | The provider registry is shared and loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. |
-| Settings | `app_settings` | Key and JSON value shared by both machines: the selected project, the adversary toggle, the nightly dispatch state. |
+| Direct streaming | `stream_providers`, `stream_provider_health`, `stream_probe_titles`, `stream_caches`, `stream_torrents` | The provider registry is loaded from `claude/streaming/direct/providers.seed.json` at every start; health is one row per provider and host. Stream sessions are in memory, never stored. The prober's candidates, last outcome and backoff, per host. A stream cache is one film or episode downloaded on one host: one row per title and host, its files only on that host. A torrent download is one per host and info hash: the title it was opened for, its chosen files, its state; the files only on that host. |
+| Settings | `app_settings` | Key and JSON value: the selected project, the adversary toggle, the nightly dispatch state. |
 
 Dropping the session tables loses summaries already paid for and the rows of transcripts Claude
 Code has since deleted; everything else is read again from the transcripts still on disk.
@@ -217,7 +218,8 @@ Nothing asks the database on a timer shorter than 30 minutes while the machine i
 embedding workers (notes, pictures, session replies) and the summary worker are woken by what
 this daemon writes: a note event, a session read (replies drain at most once a minute; summaries
 are checked once a session has been quiet for the idle time) and the summarize route. Their
-30-minute sweeps only catch another machine's writes and what no event announced. The session
+30-minute sweeps only catch what no event announced (and, on a shared Postgres, a second daemon's
+writes). The session
 ingest's own 60-second sweep reads files, not the database.
 
 On Neon the database is Postgres with pgvector.
@@ -272,7 +274,7 @@ it is on.
 | --- | --- | --- | --- |
 | Legacy photo copy | Always, once at start | Copies photos an older daemon left in `notes.image_path` into `note_images`. | `src/images/legacy.ts` |
 | Inbox watcher | Always | Watches `inbox/` and turns each picture into a photo note; failures move to `inbox/failed/`. | `src/images/inbox.ts` |
-| Note embedding worker | `OPENROUTER_API_KEY` set | Embeds pending note bodies in batches, with backoff, and sweeps for notes written on the other machine. | `src/embeddings/worker.ts` |
+| Note embedding worker | `OPENROUTER_API_KEY` set | Embeds pending note bodies in batches, with backoff, and sweeps for notes no event announced. | `src/embeddings/worker.ts` |
 | Image embedding worker | `OPENROUTER_API_KEY` set | Embeds this machine's photos for `similar_images`. | `src/embeddings/imageWorker.ts` |
 | Session ingest | `NOTESD_SESSIONS` on | Runs the one-time backfills, then tails `<CLAUDE_HOME>/projects` from stored byte offsets. | `src/sessions/ingest.ts` |
 | Parent link worker | `NOTESD_SESSIONS` on | Links sessions to their parents from what the parent wrote. | `src/sessions/links.ts` |
@@ -380,7 +382,7 @@ Server code is ESM with `.js` import suffixes. The web app has its own tsconfig
   look a little flat in the browser. The original is untouched.
 - **Tag syntax is loose.** Any `#word` of letters, digits, `_` and `-` becomes a tag, `#123`
   included.
-- **Edits from the other machine are not instant.** They reach an open wall at the next poll: up
+- **Edits made by a second daemon on the same Postgres are not instant.** They reach an open wall at the next poll: up
   to 5 minutes, or at once when the tab regains focus after a minute away.
 - **The session graph refreshes by polling.** Every 30 s while the page is visible, backing off
   to 2 minutes while nothing changes. Only a session's context has a live stream, and only for

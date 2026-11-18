@@ -17,7 +17,8 @@
 //   export async function live({ page, base, shot, clip, fetchJson })   // optional: the --live pictures
 //
 //   shot(name, { locator, fullPage })   PNG of the viewport, of one element, or of the whole page
-//   clip(name, async (page) => {...})   GIF of what the callback does in a fresh tab
+//   clip(name, async (page) => {...})   GIF of what the callback does in a fresh tab; a third argument
+//                                       { width, fps } makes a lighter GIF of a clip that shows film
 //   v(sub, ...args)                     `verify.sh <sub> RUN ...args`, resolved with its stdout
 //   fetchJson(method, path, body)       same-origin JSON request against the instance
 //
@@ -64,8 +65,8 @@ async function verify(...argv) {
   return stdout;
 }
 
-async function toGif(webm, gif) {
-  const filter = `fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`;
+async function toGif(webm, gif, { width = GIF_WIDTH, fps = GIF_FPS } = {}) {
+  const filter = `fps=${fps},scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`;
   await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-filter_complex', filter, gif]);
 }
 
@@ -118,7 +119,7 @@ async function capture(name, webBuilt) {
       console.log(`${name}: ${path.relative(ROOT, file)}`);
     };
 
-    const clip = async (clipName, act) => {
+    const clip = async (clipName, act, gifOptions) => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'notesd-clip-'));
       const recording = await browser.newContext({ viewport: VIEWPORT, colorScheme: 'dark', recordVideo: { dir, size: VIEWPORT } });
       const tab = await recording.newPage();
@@ -128,7 +129,7 @@ async function capture(name, webBuilt) {
         const video = tab.video();
         await recording.close();
         const file = path.join(out, `${clipName}.gif`);
-        await toGif(await video.path(), file);
+        await toGif(await video.path(), file, gifOptions);
         rmSync(dir, { recursive: true, force: true });
         console.log(`${name}: ${path.relative(ROOT, file)}`);
       }
