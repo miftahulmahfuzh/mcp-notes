@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig, parseTorrentFinder } from '../../src/config.js';
+import { ConfigError, loadConfig, parseTorrentFinder, TORRENT_INDEX_URL_KEYS } from '../../src/config.js';
 
 describe('parseTorrentFinder', () => {
   it('leaves every setting to the finder when nothing is set', () => {
@@ -19,9 +22,35 @@ describe('parseTorrentFinder', () => {
     ).toEqual({ minSeeds: 8, maxSizeBytes: 12 * 1024 ** 3, indexTimeoutMs: 6000, indexes: { torrentio: 'http://127.0.0.1:4555', yts: null } });
   });
 
+  it('reads the title-search indexes: an address replaces the finder\'s, off never asks it', () => {
+    expect(
+      parseTorrentFinder({
+        NOTESD_TORRENT_KNABEN_URL: 'off',
+        NOTESD_TORRENT_BITSEARCH_URL: 'OFF',
+        NOTESD_TORRENT_TORRENTSCSV_URL: 'http://127.0.0.1:4555/',
+      }),
+    ).toEqual({ indexes: { knaben: null, bitsearch: null, torrentscsv: 'http://127.0.0.1:4555' } });
+    expect(() => parseTorrentFinder({ NOTESD_TORRENT_KNABEN_URL: 'api.knaben.org' })).toThrow(ConfigError);
+  });
+
   it('rejects a bad number and an address that is not http(s)', () => {
     expect(() => parseTorrentFinder({ NOTESD_TORRENT_MIN_SEEDS: '0' })).toThrow(ConfigError);
     expect(() => parseTorrentFinder({ NOTESD_TORRENT_EZTV_URL: 'eztvx.to' })).toThrow(ConfigError);
+  });
+
+  it('reads the add-on providers\' addresses and their off switch', () => {
+    expect(parseTorrentFinder({ NOTESD_TORRENT_TORRENTSDB_URL: 'https://tdb.example/', NOTESD_TORRENT_PEERFLIX_URL: 'off' })).toEqual({
+      indexes: { torrentsdb: 'https://tdb.example', peerflix: null },
+    });
+    expect(() => parseTorrentFinder({ NOTESD_TORRENT_PEERFLIX_URL: 'addon.peerflix.mov' })).toThrow(ConfigError);
+  });
+
+  it('is named by verify.sh for every index, in both of its index lines, so no throwaway daemon asks a real index', () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const verify = readFileSync(path.join(root, '.claude/skills/verify-notesd/scripts/verify.sh'), 'utf8');
+    for (const key of Object.values(TORRENT_INDEX_URL_KEYS)) {
+      expect(verify.split(`${key}=`).length - 1, `${key} in verify.sh`).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it('reads the ffmpeg the torrent source runs', () => {

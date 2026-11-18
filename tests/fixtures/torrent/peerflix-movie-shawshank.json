@@ -1,0 +1,91 @@
+{
+  "streams": [
+    {
+      "name": "Peerflix 4K",
+      "title": "Cadena perpetua [4Kreescaldo][2160p][HDR10][AC3 5.1 Castellano-AC3 5.1-Ingles+Subs][ES-EN]\nCadena perpetua 4Kreescalado2160.pctmix1.com.mkv\n🇪🇸\n  👤 6 💾 59.61 GB 🌐 Peerflix",
+      "infoHash": "814978f980297cc7cd42be9d60b37b928a5e7cdc",
+      "fileIdx": 5,
+      "sources": [
+        "tracker:udp://tracker.opentrackr.org:1337/announce",
+        "tracker:udp://open.stealth.si:80/announce",
+        "tracker:udp://tracker.torrent.eu.org:451/announce",
+        "tracker:udp://open.demonii.com:1337/announce",
+        "tracker:udp://open.tracker.cl:1337/announce",
+        "tracker:udp://tracker.qu.ax:6969/announce",
+        "tracker:udp://exodus.desync.com:6969/announce",
+        "tracker:udp://tracker.ducks.party:1984/announce",
+        "tracker:udp://tracker.corpscorp.online:80/announce",
+        "tracker:udp://tracker.bittor.pw:1337/announce",
+        "tracker:udp://tracker-udp.gbitt.info:80/announce",
+        "tracker:udp://tracker.nyaa.vc:6969/announce",
+        "tracker:http://tracker.dler.org:6969/announce",
+        "tracker:udp://tracker2.dler.org:80/announce",
+        "tracker:http://tracker.dler.com:6969/announce",
+        "tracker:udp://explodie.org:6969/announce",
+        "tracker:udp://tracker.gmi.gd:6969/announce",
+        "tracker:http://tracker.renfei.net:8080/announce",
+        "tracker:udp://tracker.peerfect.org:6969/announce",
+        "tracker:udp://tracker.opentrackr.com:6969/announce",
+        "dht:814978f980297cc7cd42be9d60b37b928a5e7cdc"
+      ]
+    },
+    {
+      "name": "Peerflix 4K",
+      "title": "Cadena perpetua [4K UHDremux 2160p][HDR10][Castellano AC3 5.1-Ingles DTS-HD 5.1+Subs][ES-EN]\nCadena perpetua 4Kremux2160.pctreload1.com.mkv\n🇪🇸\n  👤 0 💾 53.90 GB 🌐 Peerflix",
+      "infoHash": "253759a557afaedb1fb43014ea6f57be8460c9fc",
+      "fileIdx": 5,
+      "sources": [
+        "tracker:udp://tracker.opentrackr.org:1337/announce",
+        "tracker:udp://open.stealth.si:80/announce",
+        "tracker:udp://tracker.torrent.eu.org:451/announce",
+        "tracker:udp://open.demonii.com:1337/announce",
+        "tracker:udp://open.tracker.cl:1337/announce",
+        "tracker:udp://tracker.qu.ax:6969/announce",
+        "tracker:udp://exodus.desync.com:6969/announce",
+        "tracker:udp://tracker.ducks.party:1984/announce",
+        "tracker:udp://tracker.corpscorp.online:80/announce",
+        "tracker:udp://tracker.bittor.pw:1337/announce",
+        "tracker:udp://tracker-udp.gbitt.info:80/announce",
+        "tracker:udp://tracker.nyaa.vc:6969/announce",
+        "tracker:http://tracker.dler.org:6969/announce",
+        "tracker:udp://tracker2.dler.org:80/announce",
+        "tracker:http://tracker.dler.com:6969/announce",
+        "tracker:udp://explodie.org:6969/announce",
+        "tracker:udp://tracker.gmi.gd:6969/announce",
+        "tracker:http://tracker.renfei.net:8080/announce",
+        "tracker:udp://tracker.peerfect.org:6969/announce",
+        "tracker:udp://tracker.opentrackr.com:6969/announce",
+        "dht:253759a557afaedb1fb43014ea6f57be8460c9fc"
+      ]
+    },
+    {
+      "name": "Peerflix 4K",
+      "title": "Cadena perpetua [4K UHDrip 2160p][HDR10][Castellano AC3 5.1-Ingles DTS-HD 5.1+Subs][ES-EN]\nCadena perpetua 4Krip2160.pctreload1.com.mkv\n🇪🇸\n  👤 0 💾 27.06 GB 🌐 Peerflix",
+      "infoHash": "cb09ec434110679bc8b342f83baae054b14bf055",
+      "fileIdx": 5,
+      "sources": [
+        "tracker:udp://tracker.opentrackr.org:1337/announce",
+        "tracker:udp://open.stealth.si:80/announce",
+        "tracker:udp://tracker.torrent.eu.org:451/announce",
+        "tracker:udp://open.demonii.com:1337/announce",
+        "tracker:udp://open.tracker.cl:1337/announce",
+        "tracker:udp://tracker.qu.ax:6969/announce",
+        "tracker:udp://exodus.desync.com:6969/announce",
+        "tracker:udp://tracker.ducks.party:1984/announce",
+        "tracker:udp://tracker.corpscorp.online:80/announce",
+        "tracker:udp://tracker.bittor.pw:1337/announce",
+        "tracker:udp://tracker-udp.gbitt.info:80/announce",
+        "tracker:udp://tracker.nyaa.vc:6969/announce",
+        "tracker:http://tracker.dler.org:6969/announce",
+        "tracker:udp://tracker2.dler.org:80/announce",
+        "tracker:http://tracker.dler.com:6969/announce",
+        "tracker:udp://explodie.org:6969/announce",
+        "tracker:udp://tracker.gmi.gd:6969/announce",
+        "tracker:http://tracker.renfei.net:8080/announce",
+        "tracker:udp://tracker.peerfect.org:6969/announce",
+        "tracker:udp://tracker.opentrackr.com:6969/announce",
+        "dht:cb09ec434110679bc8b342f83baae054b14bf055"
+      ]
+    }
+  ]
+}

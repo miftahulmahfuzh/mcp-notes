@@ -11,9 +11,8 @@ export function isBotCheck(status: number, headers: Headers, body: string): bool
   return page && CHALLENGE.test(body);
 }
 
-/** One GET. A network failure or an abort throws; findCandidates records it as the index's `error`. */
-export async function getIndexJson(ctx: IndexContext, url: string): Promise<JsonAnswer> {
-  const res = await ctx.fetch(url);
+/** An index's answer as JSON, or why not: a bot check page is `bot_check` (never worked around), any other failure `error`. */
+async function readIndexJson(res: Response): Promise<JsonAnswer> {
   const body = await res.text();
   if (isBotCheck(res.status, res.headers, body)) return { ok: false, outcome: 'bot_check', detail: `HTTP ${res.status}: a bot check page` };
   if (!res.ok) return { ok: false, outcome: 'error', detail: `HTTP ${res.status}` };
@@ -22,6 +21,16 @@ export async function getIndexJson(ctx: IndexContext, url: string): Promise<Json
   } catch {
     return { ok: false, outcome: 'error', detail: 'the answer is not JSON' };
   }
+}
+
+/** One GET. A network failure or an abort throws; findCandidates records it as the index's `error`. */
+export async function getIndexJson(ctx: IndexContext, url: string): Promise<JsonAnswer> {
+  return readIndexJson(await ctx.fetch(url));
+}
+
+/** One POST of a JSON body (Knaben). Read like getIndexJson; the User-Agent is still notesd's (findCandidates sets it). */
+export async function postIndexJson(ctx: IndexContext, url: string, payload: unknown): Promise<JsonAnswer> {
+  return readIndexJson(await ctx.fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }));
 }
 
 export function failedAnswer(answer: { outcome: Extract<IndexOutcome, 'error' | 'bot_check'>; detail: string }): IndexAnswer {

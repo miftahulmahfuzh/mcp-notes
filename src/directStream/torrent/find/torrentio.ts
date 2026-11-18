@@ -1,16 +1,27 @@
 import { answerOf, candidateFrom, YTS_HINTS } from './candidate.js';
 import { asRecord, asText, failedAnswer, getIndexJson, parseSizeText } from './http.js';
 import { baseName } from './release.js';
-import type { IndexRow, TorrentIndex } from './types.js';
+import type { IndexAnswer, IndexRow, TorrentIndex, TorrentQuery } from './types.js';
+
+/**
+ * Stremio torrent add-ons (Torrentio, TorrentsDB, Peerflix) answer one open JSON protocol keyed by IMDb id:
+ * GET `<base>/stream/movie/<imdb>.json` or `<base>/stream/series/<imdb>:<season>:<episode>.json`, a `streams` list.
+ * A stream's `title` holds the release on its first line, the file on the last line before the stats line, and the
+ * stats line `👤 <seeds> 💾 <size> ⚙️ <site>` (Peerflix: `🌐 <site>`, sometimes without 💾, after a line of flags).
+ * One reader serves them all; each add-on is one stremioAddonIndex.
+ */
 
 const STATS = /[\u{1F464}\u{1F4BE}]/u;
 const SEEDS = /\u{1F464}\s*(\d+)/u;
 const SIZE = /\u{1F4BE}\s*([\d.,]+\s*[KMGT]?i?B)/iu;
-const SITE = /⚙️?\s*(.+)$/u;
+/** The site after ⚙️ (Torrentio, TorrentsDB) or 🌐 (Peerflix). */
+const SITE = /(?:⚙️?|\u{1F310})\s*(.+)$/u;
+/** A line of country flags only ("🇪🇸", "🇬🇧 / 🇮🇹"): never the release or the file. */
+const FLAGS = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|[\s\/])+$/u;
 const YTS_RELEASE = /(?<![a-z])(?:yts|yify)(?![a-z])/i;
 
-/** One Torrentio stream as an IndexRow; null when it has no info hash or no title. */
-export function readTorrentioStream(value: unknown): IndexRow | null {
+/** One Stremio add-on stream as an IndexRow; null when it has no info hash or no title. */
+export function readStremioStream(value: unknown): IndexRow | null {
   const stream = asRecord(value);
   const infoHash = asText(stream?.infoHash);
   const title = asText(stream?.title);
@@ -20,7 +31,7 @@ export function readTorrentioStream(value: unknown): IndexRow | null {
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
   const statsAt = lines.findIndex((l) => STATS.test(l));
-  const head = statsAt < 0 ? lines : lines.slice(0, statsAt);
+  const head = (statsAt < 0 ? lines : lines.slice(0, statsAt)).filter((l) => !FLAGS.test(l));
   const name = head[0];
   if (name === undefined) return null;
   const stats = statsAt < 0 ? '' : (lines[statsAt] ?? '');
@@ -48,20 +59,36 @@ export function readTorrentioStream(value: unknown): IndexRow | null {
   };
 }
 
-export function torrentioIndex(base: string): TorrentIndex {
-  const root = base.replace(/\/+$/, '');
+export interface StremioAddon {
+  /** Lower case: the attempt's name and each candidate's `index`. */
+  name: string;
+  /** The add-on's address, up to (not including) `/stream`. */
+  base: string;
+  /** Why this query is not asked, or null to ask it. A reason answers `empty` with it as the detail; no request is sent. */
+  skip?: (query: TorrentQuery) => string | null;
+}
+
+/** A Stremio torrent add-on as a TorrentIndex, asked by IMDb id for a film or one episode. */
+export function stremioAddonIndex(addon: StremioAddon): TorrentIndex {
+  const root = addon.base.replace(/\/+$/, '');
   return {
-    name: 'torrentio',
-    async find(query, ctx) {
-      // Torrentio numbers an episode within its season: `alt` when TMDB's number runs on across seasons.
+    name: addon.name,
+    async find(query, ctx): Promise<IndexAnswer> {
+      const skip = addon.skip?.(query) ?? null;
+      if (skip !== null) return { outcome: 'empty', detail: skip, candidates: [] };
+      // The add-ons number an episode within its season: `alt` when TMDB's number runs on across seasons.
       const episode = query.kind === 'movie' ? null : (query.alt ?? query);
       const path = episode === null ? `movie/${query.imdbId}` : `series/${query.imdbId}:${episode.season}:${episode.episode}`;
       const got = await getIndexJson(ctx, `${root}/stream/${path}.json`);
       if (!got.ok) return failedAnswer(got);
       const streams = asRecord(got.json)?.streams;
       if (!Array.isArray(streams)) return { outcome: 'error', detail: 'the answer has no streams list', candidates: [] };
-      const rows = streams.map((s: unknown) => readTorrentioStream(s)).filter((r): r is IndexRow => r !== null);
-      return answerOf(rows.map((row) => candidateFrom(row, 'torrentio', query, query.kind === 'tv')));
+      const rows = streams.map((s: unknown) => readStremioStream(s)).filter((r): r is IndexRow => r !== null);
+      return answerOf(rows.map((row) => candidateFrom(row, addon.name, query, query.kind === 'tv')));
     },
   };
+}
+
+export function torrentioIndex(base: string): TorrentIndex {
+  return stremioAddonIndex({ name: 'torrentio', base });
 }

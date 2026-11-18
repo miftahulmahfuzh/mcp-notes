@@ -434,6 +434,21 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
 - Finding a torrent (phase 2's finder, no route of its own): `npx vitest run tests/unit/directStream/torrent/find` over
   recorded index answers (dubs, cinema recordings and 3D left out, the seed floor, direct releases first, an episode or
   a pack that holds it, `bot_check`/`error` per index, every request sent as notesd).
+- The Stremio add-on providers beside Torrentio: TorrentsDB for every title, Peerflix only for a title made in Spanish.
+  `npx vitest run tests/unit/directStream/torrent/find/indexes.test.ts tests/unit/directStream/torrent/find/findCandidates.test.ts tests/unit/directStream/torrent/find/addonSwitches.test.ts tests/unit/config.torrentFinder.test.ts`
+  over their recorded answers (`tests/fixtures/torrent/{torrentsdb,peerflix}-movie-shawshank.json`): a torrent Torrentio
+  and TorrentsDB both list is one candidate with both in `listedBy`; Peerflix gets no request for any other language and
+  its attempt says `not asked`; a provider's bot check, timeout or failure is its own attempt and the others still answer;
+  `NOTESD_TORRENT_TORRENTSDB_URL=off` / `NOTESD_TORRENT_PEERFLIX_URL=off` send nothing. Every throwaway daemon sets both
+  `off`, so its attempt lists are unchanged.
+- Indexes asked by title (Knaben, Bitsearch, torrents-csv: `Index: knaben`, `Index: bitsearch`, `Index: torrentscsv`):
+  a film by title and year, an episode by title and `SxxEyy`; a release only they list must be the title followed by
+  the year (one either way) or the episode's marker, else `other_title` / `other_year` / `other_episode` in `excluded`;
+  a bot check, timeout or failure is that index's attempt only. Proven by
+  `npx vitest run tests/unit/directStream/torrent/find/titleSearch.test.ts tests/unit/config.torrentFinder.test.ts`
+  over the answers recorded on 2026-11-19 (`tests/fixtures/torrent/{knaben,bitsearch,torrentscsv}-shawshank.json`).
+  Every throwaway daemon pins the three `off` (the fake index is Torrentio-shaped only): a `--torrent` run's play
+  names no `Index: knaben`, `Index: bitsearch` or `Index: torrentscsv` attempt.
 - Throwaway daemon, a torrent run (`$V up --web --torrent`, note RUN): in this order,
   `.claude/skills/verify-notesd/scripts/direct-stream/torrent.sh RUN fallback named`, then
   `SID=$(cat ~/.local/state/notesd-verify/RUN/torrent-journey/sid) $V ui RUN .claude/skills/verify-notesd/scripts/stream/torrent-play.steps.mjs`
@@ -572,6 +587,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   trackers, its public trackers kept in `<torrent dir>/trackers.json`, the swarm as the trackers know it. Proven by
   `npx vitest run tests/unit/directStream/torrent/origins.test.ts tests/unit/mcp.directStreamSourceTools.test.ts`
   and by the tool call on the live daemon with a RuTracker magnet (`origin.index` is `rutracker`).
+- Public tracker lists (`NOTESD_TORRENT_TRACKER_LISTS`, default on, needs `NOTESD_TORRENT_DISCOVERY`): a minute after start and
+  once a day ngosang `trackers_best` and newtrackon `stable` are read, each new UDP tracker gets a BEP 15 connect only,
+  up to 20 that answer are kept in `<torrent dir>/tracker-lists.json` and added after the candidate's and the book's
+  trackers to every torrent opened and every scrape; a failed refresh keeps the previous file. Proven by
+  `npx vitest run tests/unit/directStream/torrent/trackerLists.test.ts tests/unit/directStream/torrent/find/scrape.test.ts tests/unit/directStream/torrentRotation.test.ts tests/unit/config.torrent.test.ts`
+  (fake fetch, socket and clock; the two lists' real answers in `tests/fixtures/torrent/tracker-lists/`). Every throwaway
+  daemon pins it off: `$V up` logs `[notesd] tracker lists off: NOTESD_TORRENT_TRACKER_LISTS=off` and its torrent folder
+  holds no `tracker-lists.json`. Live: `jq '.trackers | length' <NOTESD_TORRENT_DIR>/tracker-lists.json` a minute after a
+  restart, and the daemon log's `[notesd] tracker lists: N of M new trackers answered` line.
 
 ## /sync-subtitle: a subtitle checked against the film's audio
 - `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the

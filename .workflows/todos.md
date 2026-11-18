@@ -2,7 +2,7 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-16
+**Last Updated**: 2026-11-19
 **Total Active Tasks**: 17
 
 ## Quick Stats
@@ -12,7 +12,7 @@
 - P3 Low: 0
 - P4 Backlog: 0
 - Blocked: 7
-- Completed: 120
+- Completed: 123
 
 ---
 
@@ -22,6 +22,47 @@
 
 ### [P1] High
 
+- [x] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `IndexFetch`/`FetchLike` and `askOne`'s fetch wrapper: an index may send `method` and `body` (Knaben is a POST), with notesd's User-Agent still forced last and the signal still bound; a JSON helper beside `getIndexJson` for it. A shared title-search helper under `find/`: the query text (film: title and year; episode: title and `SxxEyy`, using `alt` when set) and the fit a title-search row must pass before it becomes a candidate (names the title; a film row that names a year names the asked year, a row with no year is dropped when the query has one; an episode row fits the episode or is its season pack by `episodeFitOf`), reported so the finder's `excluded` list still shows why (R1.2). New indexes `knaben` (`https://api.knaben.org/v1`), `bitsearch` (`https://bitsearch.to/api/v1`), `torrentscsv` (`https://torrents-csv.com/service`), each with its own `timeoutMs`, skipped (`empty`, no request) when the query has no title. `find/rank.ts`: `exclusionOf` holds a candidate every listing of which came from a title search (`TorrentCandidate.titleSearch?: true`, `find/types.ts`) to `titleSearchExclusion` right after `bad_hash`; `joinListings` drops `titleSearch` when an IMDb-keyed index lists the same hash. `ExcludeReason` gains `'other_year'` (no exhaustive switch or record over it exists in the repo: grep of `src`, `web/src`, `claude`, `scripts`, `tests`). Registry lines as phase 1 left them, plus `NOTESD_TORRENT_KNABEN_URL`, `NOTESD_TORRENT_BITSEARCH_URL`, `NOTESD_TORRENT_TORRENTSCSV_URL`; the `defaultIndexes` doc comment; loadConfig's key-list comment line :1197 (naming phase 1's two keys and its own three); `verify.sh`: its three keys `off` on a line of their own in **both** index branches (phase 1's test); three more `configuration.md` rows after phase 1's; a short "Indexes asked by title" bullet before "**Off.**" in the guide; feature map; a CLAUDE.md bullet directly after phase 1's. Phase 1's tests that pin the default index list: `findCandidates.test.ts` (four edited and two new tests) and `addonSwitches.test.ts` gain the three title-search entries. Tests + fixtures (real samples in the analysis samples folder), including a wrong-year film and a wrong-episode row. Exit criteria: R1.1-R1.4 hold; existing index tests still pass unchanged in meaning; `npm run typecheck` and `npm test` pass.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 2 of 3)
+  - **Satisfies**: R1 — "improve our TM / TS in anyway shape or form (more indexes" · criteria: R1.1, R1.2, R1.3, R1.4
+  - **Depends on**: P1-NOTES-A136
+  - **Plan**: `.workflows/plan/P1-NOTES-A137.md`
+  - **Completed**: 2026-11-19 03:33
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, CLAUDE.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, src/config.ts, src/directStream/torrent/find/find.ts, src/directStream/torrent/find/http.ts, src/directStream/torrent/find/index.ts, src/directStream/torrent/find/rank.ts, src/directStream/torrent/find/types.ts, tests/unit/config.torrentFinder.test.ts, tests/unit/directStream/torrent/find/addonSwitches.test.ts, tests/unit/directStream/torrent/find/findCandidates.test.ts, src/directStream/torrent/find/bitsearch.ts, src/directStream/torrent/find/knaben.ts, src/directStream/torrent/find/titleSearch.ts, src/directStream/torrent/find/torrentscsv.ts, tests/fixtures/torrent/bitsearch-shawshank.json, tests/fixtures/torrent/knaben-shawshank.json, tests/fixtures/torrent/torrentscsv-shawshank.json, tests/unit/directStream/torrent/find/titleSearch.test.ts
+  - **Proof**: verified-first-pass — 4 journeys, evidence /home/miftah/.local/state/notesd-verify/evidence-wider-torrent-sources-p2
+  - **Drift**:
+    - Plan line numbers were off by a few lines after phase 1 (e.g. config.ts comment at :1203, not :1197); every Before block matched exactly, no code drift.
+    - This swarm phase ran in its own worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p2 on branch phase-2-wider-torrent-sources (base 5c2cd6d, phase 1 landed), not the set worktree the index names.
+    - Neighbor check ordering: run on the same throwaway daemon right after J4's play, torrent.sh 'fallback' fails ('attempts are not cloud, then index, then torrent') because J4's own play of the same title leaves its cloud failure remembered; on a fresh 'verify.sh up --torrent' it ends 'torrent: PASS (fallback named)'. No code changed between the two runs. Evidence: neighbor-torrent.txt (after J4) and neighbor-torrent-fresh.txt.
+  - **Decided**:
+    - Plan index names worktree wider-torrent-sources / branch feature/wider-torrent-sources, session launched by swarm.py in the per-phase worktree -> applied here (swarm ledger lists this session as phase 2; the coordinator integrates the phase branch)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with phase 3 (P1-NOTES-A138) running beside it; the coordinator's integrator reconciles them. No successor to unblock: P1-NOTES-A138 does not depend on this phase and is already in_progress.
+- [x] **P1-NOTES-A138** Phase 3: Daily verified public tracker lists
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: A new module beside `origins.ts` (the tracker lists): fetch the two lists with notesd's User-Agent, parse, keep UDP trackers not already in `DEFAULT_TRACKERS` or the book, verify each by a BEP 15 connect (a connect-only check added to `find/scrape.ts` on its existing socket seam), store `<torrent dir>/tracker-lists.json` (`{ fetched_at, trackers: [{ url, source }] }`, capped), keep the previous file when a refresh fails or nothing answers. Injected fetch, socket and clock. A daily loop started and closed in `src/background.ts` (built in `src/daemon.ts`), first run shortly after start, never in a play's path; off when `NOTESD_TORRENT=off`, `NOTESD_TORRENT_DISCOVERY=off` or `NOTESD_TORRENT_TRACKER_LISTS=off`. `TorrentSource`: a `lists` option beside `book`; `trackersOf` and `swarmCounts` append the kept trackers after the candidate's and the book's; the scrape's tracker cap reviewed so the added trackers are actually asked without lengthening `SCRAPE_TIMEOUT_MS`; `buildTorrentSource` wires it. `find/scrape.ts`: the connect-only `udpConnector`, `SCRAPE_MAX_TRACKERS` 8 -> 16 with the last `SCRAPE_LIST_SLOTS` (6) kept for list trackers (`scrapeTrackerOrder`); no new barrel line (the existing `export * from './scrape.js'` carries them; no name collides with phases 1-2's exports). `src/config.ts` torrent block: `trackerLists` switch (+ the two list addresses as constants, not settings), and one new line in loadConfig's key-list comment after :1194; one `configuration.md` row placed after `NOTESD_TORRENT_PEERS`; a guide section under "Torrents" next to "What a magnet says of its index"; feature map bullet after :574; a CLAUDE.md bullet after :120; `verify.sh` pins `NOTESD_TORRENT_TRACKER_LISTS=off` in the base `env=(...)` array (:262) for every throwaway daemon. Tests: parsing, verification with a fake socket, keep-previous on failure, the off switches, `trackersOf`/`swarmCounts` order. Exit criteria: R3.1-R3.4 hold; a daemon with the switch off behaves exactly as today; `npm run typecheck` and `npm test` pass.
+  - **Status**: done
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 3 of 3)
+  - **Satisfies**: R3 — "more tracker lists, etc)" · criteria: R3.1, R3.2, R3.3, R3.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A138.md`
+  - **Completed**: 2026-11-19 03:35
+  - **Method**: /implement
+  - **Files**: src/directStream/torrent/find/scrape.ts, src/directStream/torrent/trackerLists.ts, src/directStream/torrent/source.ts, src/config.ts, src/deps.ts, src/daemon.ts, src/background.ts, tests/fixtures/torrent/tracker-lists/ngosang-trackers_best.txt, tests/fixtures/torrent/tracker-lists/newtrackon-stable.txt, tests/unit/directStream/torrent/trackerLists.test.ts, tests/unit/directStream/torrent/find/scrape.test.ts, tests/unit/directStream/torrentRotation.test.ts, tests/unit/config.torrent.test.ts, tests/unit/config.test.ts, docs/guide/reference/configuration.md, docs/guide/streaming.md, CLAUDE.md, .claude/skills/verify-notesd/scripts/verify.sh, .claude/skills/verify-notesd/features/direct-streaming.md
+  - **Proof**: verified-after-fix — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/wider-torrent-sources-p3-evidence
+  - **Drift**:
+    - Worktree/branch: the plan index names /home/miftah/.worktrees/mcp-notes/wider-torrent-sources on feature/wider-torrent-sources; the swarm launched this phase isolated in /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p3 on phase-3-wider-torrent-sources (base 6a2905b). No code drift: every plan anchor matched exactly.
+    - tests/unit/config.test.ts was not in the plan's Files table but its 'applies defaults' whole-config expectation needed trackerLists: true.
+  - **Decided**:
+    - Plan worktree vs the swarm's per-phase worktree → implemented in the worktree the swarm launched (rung 6: swarm convention; ledger tracks this phase here)
+    - Plan's test 'runs a minute after start…' failed as written: it advances the fake clock 2 days after close, then expects a 'restart within the day' to fetch nothing → set the fake clock to 1 h after the last save before the restart; assertion unchanged, code unchanged (rung 2: R3.1 'once a day')
+    - tests/unit/config.test.ts 'applies defaults' outside the plan's file list → added trackerLists: true to its expected torrent object (rung 1: invariant 1, npm test passes at the end of each phase)
+  - **Bookkeeping**: entry flipped in place (not moved to Completed Tasks) and Quick Stats and the coordinator-owned plan index left untouched, matching this repo's swarm precedent, to avoid conflicts with peer phases 1-2; the coordinator's integrator reconciles them. Last phase of the set: no successor to unblock.
 - [x] **P1-NOTES-A127** Phase 1: The torrent engine and its file route
   - **Difficulty**: HARD
   - **Type**: Feature
@@ -312,6 +353,21 @@
 ---
 
 ## Completed Tasks
+- [x] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `find/torrentio.ts`: the stream reader generalized so one reader serves any Stremio torrent add-on (stats line with `⚙️` or `🌐` before the site, rows without 💾, flag lines), with Torrentio's behaviour and exports unchanged for its callers and fixtures. New provider indexes `torrentsdb` (default `https://torrentsdb.com`) and `peerflix` (default `https://addon.peerflix.mov`, asked only when `query.originalLanguage === 'es'`; otherwise answers `empty` with a detail saying so and sends no request). Registry: `IndexBases`, `DEFAULT_INDEX_BASES`, `defaultIndexes` (`find/find.ts`), the barrel, `TORRENT_INDEX_NAMES` + `TORRENT_INDEX_URL_KEYS` (`NOTESD_TORRENT_TORRENTSDB_URL`, `NOTESD_TORRENT_PEERFLIX_URL`), `indexesOf` in `source.ts`. `verify.sh` index block: both new names `off`, on a line of their own in each branch; a test in `tests/unit/config.torrentFinder.test.ts` that every `TORRENT_INDEX_URL_KEYS` value appears at least twice in `verify.sh` (both branches). `fake-index.mjs` is not changed. Docs: two rows after the YTS row in `configuration.md`; the index list in `docs/guide/streaming.md` "Playing from a torrent"; the feature map; a CLAUDE.md line under Direct streaming. Tests + fixtures for both providers (the trimmed real answers are in `.workflows/analyze/20261119-025431-K7QD-samples/`). Exit criteria: R2.1-R2.4 hold; with default settings `defaultIndexes()` returns torrentio, apibay, eztv, torrentsdb, peerflix and (films) yts; `npm run typecheck` and `npm test` pass.
+  - **Status**: completed
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 1 of 3)
+  - **Satisfies**: R2 — "more providers" · criteria: R2.1, R2.2, R2.3, R2.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A136.md`
+  - **Completed**: 2026-11-19 03:28
+  - **Method**: /implement
+  - **Files**: .claude/skills/verify-notesd/features/direct-streaming.md, .claude/skills/verify-notesd/scripts/verify.sh, CLAUDE.md, docs/guide/reference/configuration.md, docs/guide/streaming.md, src/config.ts, src/directStream/torrent/find/find.ts, src/directStream/torrent/find/index.ts, src/directStream/torrent/find/torrentio.ts, src/directStream/torrent/source.ts, tests/unit/config.torrentFinder.test.ts, tests/unit/directStream/torrent/find/findCandidates.test.ts, tests/unit/directStream/torrent/find/indexes.test.ts, src/directStream/torrent/find/peerflix.ts, src/directStream/torrent/find/torrentsdb.ts, tests/fixtures/torrent/peerflix-movie-shawshank.json, tests/fixtures/torrent/torrentsdb-movie-shawshank.json, tests/unit/directStream/torrent/find/addonSwitches.test.ts
+  - **Proof**: verified-first-pass — 5 journeys, evidence /home/miftah/.local/state/notesd-verify/1119-032642-2647977/evidence/p1
+  - **Drift**: The plan's commands name the set worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources; this swarm phase ran in its own worktree /home/miftah/.worktrees/mcp-notes/wider-torrent-sources-p1 on branch phase-1-wider-torrent-sources (base 6a2905b), so the J5 drive's absolute paths were pointed at this worktree. No code drift: every Before block matched exactly.
+  - **Decided**: Plan index names worktree wider-torrent-sources / branch feature/wider-torrent-sources, session was launched by swarm.py in the per-phase worktree → applied here (the swarm ledger lists this session as phase 1; the coordinator integrates the phase branch)
 - [x] **P1-NOTES-A126** Phase 6: Play from the cache
   - **Difficulty**: HARD
   - **Type**: Feature

@@ -1,0 +1,60 @@
+{
+  "success": true,
+  "query": "shawshank redemption 1994",
+  "results": [
+    {
+      "id": "671b0e85fba18ebb7b8506bb",
+      "infohash": "B111A115D5D68E7CCBE10F1C160E64FFB702F15A",
+      "title": "The.Shawshank.Redemption.1994.1080p.BluRay.x265.AAC.5.1 -88",
+      "size": 2384290903,
+      "category": 2,
+      "subCategory": 3,
+      "genres": [],
+      "seeders": 307,
+      "leechers": 200,
+      "downloads": 0,
+      "verified": false,
+      "createdAt": null,
+      "updatedAt": "2026-11-11T21:45:37.297Z"
+    },
+    {
+      "id": "5bcbbbcb886e2a0a6dd2a57c",
+      "infohash": "E0D00667650ABA9EE05AACBBBD8B55EA8A51F534",
+      "title": "The Shawshank Redemption (1994) [1080p]",
+      "size": 1722274049,
+      "category": 2,
+      "subCategory": null,
+      "genres": [],
+      "seeders": 298,
+      "leechers": 400,
+      "downloads": 0,
+      "verified": true,
+      "createdAt": null,
+      "updatedAt": "2026-11-18T00:12:19.528Z"
+    },
+    {
+      "id": "6a36df38906341a7aaf72090",
+      "infohash": "DE45655F107904526620D21C3856AC29A5FD7E49",
+      "title": "www.UIndex.org    -    The Shawshank Redemption 1994 REPACK 1080p BluRay x265-YAWNTiC",
+      "size": 8536118742,
+      "category": 2,
+      "subCategory": 3,
+      "genres": [],
+      "seeders": 253,
+      "leechers": 30,
+      "downloads": 0,
+      "verified": false,
+      "createdAt": "2026-06-20T18:43:04.031Z",
+      "updatedAt": "2026-11-12T01:00:07.420Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "perPage": 20,
+    "total": 715,
+    "totalPages": 36,
+    "hasNext": true,
+    "hasPrev": false
+  },
+  "took": 3
+}

@@ -1,6 +1,7 @@
 import { normalizeName } from '../../match.js';
 import { isUsableHash } from './candidate.js';
 import { episodeFitOf, type EpisodeFit } from './release.js';
+import { titleSearchExclusion } from './titleSearch.js';
 import type { ExcludedCandidate, ExcludeReason, ReleaseHeight, TorrentCandidate, TorrentQuery } from './types.js';
 
 /** Fewer seeds than this and a torrent is never picked. */
@@ -54,7 +55,7 @@ function joinListings(group: readonly TorrentCandidate[], query: TorrentQuery): 
   const [base] = ordered;
   if (base === undefined) throw new RangeError('an empty listing group');
   if (group.length === 1) return base;
-  return {
+  const joined: TorrentCandidate = {
     ...base,
     seeds: Math.max(...group.map((c) => c.seeds)),
     sizeBytes: base.sizeBytes ?? group.find((c) => c.sizeBytes !== null)?.sizeBytes ?? null,
@@ -62,6 +63,9 @@ function joinListings(group: readonly TorrentCandidate[], query: TorrentQuery): 
     trackers: [...new Set(group.flatMap((c) => c.trackers))],
     scoped: group.some((c) => c.scoped),
   };
+  // An index asked by IMDb id that lists the same info hash vouches for the title: the title-search fit no longer applies.
+  if (!group.every((c) => c.titleSearch === true)) delete joined.titleSearch;
+  return joined;
 }
 
 function namesTitle(c: TorrentCandidate, query: TorrentQuery): boolean {
@@ -74,6 +78,11 @@ function namesTitle(c: TorrentCandidate, query: TorrentQuery): boolean {
 /** Why a candidate is left out, or null when it is kept. */
 export function exclusionOf(c: TorrentCandidate, query: TorrentQuery, settings: RankSettings = DEFAULT_RANK_SETTINGS): ExcludeReason | null {
   if (!isUsableHash(c.infoHash)) return 'bad_hash';
+  if (c.titleSearch === true) {
+    // Only a title search listed it: the name must be the title, then the film's year or the episode's marker.
+    const misfit = titleSearchExclusion(c.name, query);
+    if (misfit !== null) return misfit;
+  }
   if (!namesTitle(c, query)) return 'other_title';
   if (c.release.dubbed) return 'dubbed';
   if (c.release.cam) return 'cam';

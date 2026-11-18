@@ -1,0 +1,59 @@
+{
+  "streams": [
+    {
+      "name": "TorrentsDB\n2160p",
+      "title": "The Shawshank Redemption 1994 2160p BluRay\n👤 100 💾 6.91 GB ⚙️ YTS",
+      "infoHash": "c3da9a3dc2ce14d0d4fc0e87d1b2023502f8dcd6",
+      "fileIdx": 0,
+      "behaviorHints": {
+        "bingeGroup": "torrentsdb|2160p|bluray|x265",
+        "filename": "The.Shawshank.Redemption.1994.2160p.4K.BluRay.x265.10bit.HDR.AAC5.1-[YTS.MX].mkv"
+      }
+    },
+    {
+      "name": "TorrentsDB\n2160p",
+      "title": "The Shawshank Redemption (1994) 2160p BRRip 5.1 10Bit x265 -YTS\n👤 100 💾 6.91 GB ⚙️ knaben",
+      "infoHash": "C3DA9A3DC2CE14D0D4FC0E87D1B2023502F8DCD6",
+      "fileIdx": 0,
+      "behaviorHints": {
+        "bingeGroup": "torrentsdb|2160p|brrip|x265",
+        "filename": "The.Shawshank.Redemption.1994.2160p.4K.BluRay.x265.10bit.HDR.AAC5.1-[YTS.MX].mkv"
+      }
+    },
+    {
+      "name": "TorrentsDB\n2160p",
+      "title": "The.Shawshank.Redemption.1994.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.5.1-FGT\n👤 93 💾 57.98 GB ⚙️ rargb",
+      "infoHash": "32770c6dd35a4dd71deb80d5deff7a4e084eedab",
+      "fileIdx": 1,
+      "behaviorHints": {
+        "bingeGroup": "torrentsdb|2160p|bluray|hevc",
+        "filename": "The.Shawshank.Redemption.1994.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.5.1-FGT.mkv"
+      },
+      "sources": [
+        "tracker:http://tracker.trackerfix.com:80/announce",
+        "tracker:udp://9.rarbg.me:2860/announce",
+        "tracker:udp://9.rarbg.to:2820/announce",
+        "tracker:udp://tracker.tallpenguin.org:15710/announce",
+        "tracker:udp://tracker.slowcheetah.org:14710/announce",
+        "tracker:udp://tracker.opentrackr.org:1337/announce",
+        "tracker:http://tracker.openbittorrent.com:80/announce",
+        "tracker:udp://opentracker.i2p.rocks:6969/announce",
+        "tracker:udp://tracker.internetwarriors.net:1337/announce",
+        "tracker:udp://tracker.leechers-paradise.org:6969/announce",
+        "tracker:udp://coppersurfer.tk:6969/announce",
+        "tracker:udp://tracker.zer0day.to:1337/announce",
+        "dht:32770c6dd35a4dd71deb80d5deff7a4e084eedab"
+      ]
+    },
+    {
+      "name": "TorrentsDB\n2160p",
+      "title": "The.Shawshank.Redemption.1994.2160p.BluRay.REMUX.HEVC.DTS HD.MA.5.1-FGT\n👤 93 💾 57.98 GB ⚙️ knaben",
+      "infoHash": "32770C6DD35A4DD71DEB80D5DEFF7A4E084EEDAB",
+      "fileIdx": 1,
+      "behaviorHints": {
+        "bingeGroup": "torrentsdb|2160p|bluray|hevc",
+        "filename": "The.Shawshank.Redemption.1994.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.5.1-FGT.mkv"
+      }
+    }
+  ]
+}

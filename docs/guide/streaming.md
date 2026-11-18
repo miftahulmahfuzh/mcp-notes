@@ -1740,8 +1740,10 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   cannot play, no file of the episode) for a day. When every torrent found was tried, the ask starts over with the
   ones whose swarm failed. A pasted magnet is always tried: nothing is remembered against it.
 - **The trackers are asked before a swarm is joined.** An index's seed count is its claim. Before the first torrent
-  is opened the daemon asks up to eight UDP trackers what they hold for every candidate at once (a BEP 15 scrape,
-  `find/scrape.ts`, 1.5 s at most): nothing is announced, no peer is contacted. A candidate for which at least two
+  is opened the daemon asks up to sixteen UDP trackers what they hold for every candidate at once (a BEP 15 scrape,
+  `find/scrape.ts`, 1.5 s at most): nothing is announced, no peer is contacted. The default trackers, the tracker
+  book's and the candidates' own come first; the last six places are kept for the
+  [public tracker lists](#public-tracker-lists)' trackers. A candidate for which at least two
   trackers answered and none knows a seeder is tried after all the others; it is never dropped, since DHT may still
   find peers. One tracker that does not know a torrent says nothing. `NOTESD_TORRENT_DISCOVERY=off` asks no tracker.
 - **A dub-named release is a last resort, decided by the file, not the name.** A release the index name reads as a
@@ -1797,8 +1799,12 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   out is an `error`. The growing tiers (the embedded track, Whisper) answer at once and fill their track in the
   background, so they are never counted.
 - **Finding a torrent** (`src/directStream/torrent/find/`). The finder asks the JSON indexes all at once, each by the
-  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series and YTS for a film (each can be turned off or
-  moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out from this network once, is given 6 s). Every request says it is notesd; a bot check is the outcome
+  title's IMDb id and within its own timeout: Torrentio, apibay, EZTV for a series, TorrentsDB, Peerflix for a title made
+  in Spanish, and YTS for a film (each can be turned off or moved with `NOTESD_TORRENT_<NAME>_URL`; YTS, which timed out
+  from this network once, is given 6 s). TorrentsDB and Peerflix are Stremio add-ons that answer in Torrentio's shape.
+  TorrentsDB lists sites Torrentio does not (knaben, rargb, sktorrent, rutor); a torrent two indexes list is one
+  candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
+  gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
   out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
   fewer seeds than `NOTESD_TORRENT_MIN_SEEDS`, or a single release larger than `NOTESD_TORRENT_MAX_GB` (a season pack
@@ -1807,6 +1813,16 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   480p), then more seeds. For an
   episode it keeps a torrent of that episode or a pack that holds it, and picks the episode's file inside a pack
   (never a sample).
+- **Indexes asked by title.** Knaben, Bitsearch and torrents-csv hold no IMDb ids, so the finder asks them by name, at
+  the same time as the others: a film as its title and year (`Dune 2021`), an episode as its title and `SxxEyy`
+  (numbered within the season when TMDB's number runs on across seasons). Each is its own attempt (`Index: knaben`,
+  `Index: bitsearch`, `Index: torrentscsv`) with its own 8 s and its own address setting (`off` never asks it), and none
+  is asked for a title with no name or a film with no year. A name search lists anything whose name holds the words, so
+  a release only these three list must start with the title (after a `[group]` or `www.site - ` prefix) and go straight
+  on to the film's year, give or take one (an edition word such as `Extended` may sit between), or to the episode's
+  season or episode marker: for Dune (2021), `Dune Part Two 2024` is left out as `other_title`, `Dune 1984` or a release
+  that names no year as `other_year`, and another episode as `other_episode`. A release an index asked by IMDb id also
+  lists is held only to the usual checks. A bot check, a failure or a timeout is that index's attempt and nothing more.
 - **Off.** With `NOTESD_TORRENT=off` nothing above happens: no index is asked, no swarm joined, plays are exactly as
   without torrents, and a play with `provider: "torrent"` answers 503 `torrent_off`.
 
@@ -2198,6 +2214,26 @@ with them. `direct_stream_update_source` with `magnet` (`TorrentSource.learnMagn
   before a play. A silent tracker, and one that is not UDP, is left out.
 - **The swarm.** `swarm` is what the trackers know of that torrent now.
 
+### Public tracker lists
+
+A torrent finds its first peers through its trackers. Besides the seven default trackers and the tracker book, the
+daemon keeps a list read from two public lists that check their trackers themselves: ngosang's `trackers_best` and
+newtrackon's `stable` (`src/directStream/torrent/trackerLists.ts`).
+
+- **When.** A minute after the daemon starts, then every hour it looks whether the kept list is a day old, and reads
+  the two lists again when it is. A daemon started again within the day reads nothing.
+- **What is kept.** Only UDP trackers, and only ones this machine does not hold already. Each is asked for a BEP 15
+  connect, the first step of a scrape (`udpConnector` in `find/scrape.ts`): no torrent is named, nothing is
+  announced and no peer is contacted. Up to 20 that answer are kept in `<NOTESD_TORRENT_DIR>/tracker-lists.json`
+  (`fetched_at`, and each tracker with the list that named it first), per machine.
+- **Where they go.** Every torrent opened announces to them after its own trackers and the tracker book's, and every
+  scrape before a play asks them in its last six places. Two spellings of one tracker count once.
+- **When it fails.** A list that cannot be read keeps the trackers it gave last time; a day both lists are down, or no
+  tracker answers (a network that drops UDP), keeps the whole file as it was. It runs beside the daemon, never in a
+  play: a play only reads the kept file, and a missing or broken one is no tracker.
+- **Off.** `NOTESD_TORRENT_TRACKER_LISTS=off` reads no list and adds none of its trackers, and so does
+  `NOTESD_TORRENT_DISCOVERY=off`. The daemon log says which at start (`[notesd] tracker lists off: ...`).
+
 ## Where the code is
 
 | Path | What |
@@ -2211,7 +2247,7 @@ with them. `direct_stream_update_source` with `magnet` (`TorrentSource.learnMagn
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a play sent back to its site (`replayOnSite`); the routes the command and the Stream side call |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
-| `src/directStream/torrent/find/scrape.ts`, `src/directStream/torrent/origins.ts` | The tracker scrape before a play (seeders the trackers know); a magnet's index by its trackers (`KNOWN_ORIGINS`) and the tracker book |
+| `src/directStream/torrent/find/scrape.ts`, `src/directStream/torrent/origins.ts`, `src/directStream/torrent/trackerLists.ts` | The tracker scrape before a play (seeders the trackers know) and the connect-only check; a magnet's index by its trackers (`KNOWN_ORIGINS`) and the tracker book; the public tracker lists, read and checked once a day |
 | `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x, ext.to and RuTracker for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
