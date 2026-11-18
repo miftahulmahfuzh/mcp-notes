@@ -62,8 +62,8 @@ describe('the torrent site list', () => {
 
   it('leaves out a site that is off', () => {
     const runner = fakeRunner(searched([]))
-    expect(torrentSiteIndexes({ ...DEFAULT_TORRENT_SITES_CONFIG, origins: { '1337x': null, ext: 'https://ext.to' } }, runner).map((index) => index.name)).toEqual(['ext'])
-    expect(torrentSiteIndexes(DEFAULT_TORRENT_SITES_CONFIG, runner).map((index) => index.name)).toEqual(['1337x', 'ext'])
+    expect(torrentSiteIndexes({ ...DEFAULT_TORRENT_SITES_CONFIG, origins: { '1337x': null, ext: 'https://ext.to', rutracker: null } }, runner).map((index) => index.name)).toEqual(['ext'])
+    expect(torrentSiteIndexes(DEFAULT_TORRENT_SITES_CONFIG, runner).map((index) => index.name)).toEqual(['1337x', 'ext', 'rutracker'])
   })
 })
 
@@ -105,6 +105,13 @@ describe('torrentSiteIndex', () => {
     const runner = fakeRunner({ ok: false, site: 'ext', origin: 'https://ext.to', error: 'bot_check', detail: 'the page stayed on "Just a moment..."' })
     const out = await torrentSiteIndex('ext', { origin: 'https://ext.to', runner }).find(FILM, CONTEXT)
     expect(out).toEqual({ outcome: 'bot_check', detail: 'search: bot_check: the page stayed on "Just a moment..."', candidates: [] })
+    expect(runner).toHaveBeenCalledTimes(1)
+  })
+
+  it('a site that wants the owner logged in is cleared by hand like a bot check, never an index failure', async () => {
+    const runner = fakeRunner({ ok: false, site: 'rutracker', origin: 'https://rutracker.net', error: 'login_required', detail: 'the search is for logged-in accounts' })
+    const out = await torrentSiteIndex('rutracker', { origin: 'https://rutracker.net', runner }).find(FILM, CONTEXT)
+    expect(out).toEqual({ outcome: 'bot_check', detail: 'search: login_required: the search is for logged-in accounts', candidates: [] })
     expect(runner).toHaveBeenCalledTimes(1)
   })
 

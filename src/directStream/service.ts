@@ -19,7 +19,7 @@ import { proxiedUrl } from './rewrite.js';
 import { directStreamScriptRunner, parseOpenOutput, parseResolveOutput, type DirectStreamRunner, type OpenOutput } from './runner.js';
 import { SESSION_ID_PATTERN, SessionStore, type SessionTorrent, type StreamSession } from './sessions.js';
 import { showsEnglish, type OutsideSubtitles } from './outsideSubtitles.js';
-import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource } from './torrent/source.js';
+import { namesCloud, namesTorrent, SUBTITLES_PENDING, TORRENT_PROVIDER, type TorrentSource , type MagnetReport } from './torrent/source.js';
 import type { SyncInput } from './torrent/subtitles/synced.js';
 import { loadKnownTitles, toProbeResult, updateSource, type UpdateSourceAnswer, type WatchPages } from './updateSource.js';
 import {
@@ -1402,6 +1402,16 @@ export class DirectStreamService {
       );
       return out;
     });
+  }
+
+  /**
+   * /update-cloud-source <magnet>: what a pasted magnet says of its index, its swarm as the trackers know it, and
+   * its public trackers kept for every later torrent (TorrentSource.learnMagnet). Joins no swarm. Throws `torrent_off`.
+   */
+  async learnMagnet(magnet: string): Promise<MagnetReport> {
+    const source = this.torrentSource();
+    if (source === null) throw new DirectStreamError('torrent_off', 'Torrents are off on this machine (NOTESD_TORRENT=off).');
+    return source.learnMagnet(magnet);
   }
 
   /**

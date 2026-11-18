@@ -1,7 +1,9 @@
+import { join } from 'node:path';
 import { DEFAULT_TORRENT_FINDER_CONFIG, TORRENT_INDEX_NAMES, type Config, type TorrentIndexName } from '../../config.js';
 import type { SessionTorrent } from '../sessions.js';
 import { isEnglish, refLabel, type ResolveAttempt, type ResolveOutcome, type ResolvedSource, type SourceAudio, type StreamRef } from '../types.js';
-import { candidateFromMagnet, defaultIndexes, findCandidates, IndexHealth, pickFile, type IndexAttempt, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { candidateFromMagnet, deadLast, DEFAULT_TRACKERS, defaultIndexes, findCandidates, IndexHealth, looksDead, pickFile, udpScraper, udpTrackerOf, type IndexAttempt, type ScrapeTrackers, type SwarmCount, type TorrentCandidate, type TorrentIndex, type TorrentQuery } from './find/index.js';
+import { readMagnet, TRACKER_BOOK_FILE, TrackerBook, trackerKey } from './origins.js';
 import { audioLanguages, describeProbe, ffprobeFile, normalizeAudioLang, ProbeError, type MediaProbe, type ProbeFile } from './probe.js';
 import { canRemux, pickAudioStream, type TorrentRemux } from './remux.js';
 import { runSubtitleChain, type SubtitleContext, type SubtitleTier } from './subtitles/chain.js';
@@ -23,6 +25,14 @@ import type { TorrentDownload, TorrentFileInfo, TorrentHandle, TorrentPick, Torr
 export const TORRENT_PROVIDER = 'Torrent';
 /** Torrents opened per play (and per shuffle) before the answer is no_source: two rounds of TORRENT_RACE_WIDTH. */
 export const MAX_TORRENT_TRIES = 6;
+/** A torrent whose swarm did not deliver is left out of the next plays of the title for this long: swarms wake up. */
+export const SWARM_FAILURE_KEEP_MS = 30 * 60_000;
+/** A torrent whose file will not change (a dub, a file Chrome cannot play, no file of the episode) is left out this long. */
+export const FILE_FAILURE_KEEP_MS = 24 * 60 * 60_000;
+/** The attempt a failed play ends with: how many torrents were found and not tried, so asking again tries those. */
+export const TORRENTS_LEFT = 'Torrents: not tried yet';
+/** A new tracker from a pasted magnet must answer a scrape within this to be kept (learnMagnet). */
+export const TRACKER_PROBE_MS = 2_500;
 /** Torrents opened side by side: the index's seed count is not the swarm, so the swarms themselves are asked. */
 export const TORRENT_RACE_WIDTH = 3;
 /** Once one torrent's header has arrived, the others still opening get this long to arrive too before one is chosen. */
@@ -53,7 +63,8 @@ export const torrentLabel = (name: string): string => `${TORRENT_PROVIDER}: ${na
 
 export type FindQuery = TorrentQuery;
 export type FindAnswer = Awaited<ReturnType<typeof findCandidates>>;
-export type FindTorrents = (query: FindQuery, signal: AbortSignal) => Promise<FindAnswer>;
+/** `tried`: info hashes this title's earlier plays already failed on; the finder's fallback indexes are asked when nothing else is left. */
+export type FindTorrents = (query: FindQuery, signal: AbortSignal, options?: { tried?: ReadonlySet<string> }) => Promise<FindAnswer>;
 
 /** What open answers once the swarm sent the file list (nothing is selected yet): phase 1's TorrentHandle fits. */
 export interface OpenedTorrent {
@@ -97,6 +108,12 @@ export interface TorrentSourceOptions {
   sync?: { start(request: TorrentSyncRequest): unknown } | null;
   /** This daemon's origin as ffprobe reaches it (`http://127.0.0.1:<port>`); read at play time. */
   localBase: () => string;
+  /** Asks the trackers for the candidates' real seeders before any swarm is joined (find/scrape.ts); null or unset: nobody is asked. */
+  scrape?: ScrapeTrackers | null;
+  /** The public trackers learned from pasted magnets (origins.ts), added to every torrent opened; null or unset: none. */
+  book?: TrackerBook | null;
+  /** The torrent sites' addresses by name (TorrentSitesConfig.origins; null: off), for what learnMagnet says of an index. */
+  sites?: Readonly<Record<string, string | null>>;
   /** Default TORRENT_SETTLE_MS. */
   settleMs?: number;
   /** Default SUBTITLE_HEAD_MS. */
@@ -172,7 +189,42 @@ interface Passed {
   drop(): void;
 }
 
-type Raced = { ok: true; passed: Passed } | { ok: false; attempt: ResolveAttempt };
+/** `lasting`: the failure is the file's (a dub, the wrong files), not the swarm's, so it will be the same tomorrow. */
+type Raced = { ok: true; passed: Passed } | { ok: false; attempt: ResolveAttempt; lasting?: boolean };
+
+/** Told of each torrent that was tried and did not play. */
+type NoteFailure = (c: TorrentCandidate, lasting: boolean) => void;
+
+/** What /update-cloud-source answers for a pasted magnet (TorrentSource.learnMagnet). */
+export type MagnetReport =
+  | { ok: false; error: 'bad_magnet'; detail: string }
+  | {
+      ok: true;
+      info_hash: string;
+      name: string | null;
+      /** The index the magnet's own trackers name; null when they name none we know. */
+      origin: { index: string; label: string; by: string; supported: boolean; enabled: boolean; site_origin: string | null; gate: string | null } | null;
+      /** Tracker hosts that belong to no index we know and to no public tracker we hold: an index we lack may run them. */
+      unknown_hosts: string[];
+      trackers: {
+        /** The origin index's own trackers (never added: they serve only that index's torrents). */
+        own: string[];
+        /** Public trackers the daemon already uses. */
+        known: string[];
+        /** New public UDP trackers that answered: now added to every torrent and every scrape. */
+        added: string[];
+        /** New UDP trackers that did not answer: not added. */
+        silent: string[];
+        /** Not UDP (their health cannot be asked cheaply): not added. */
+        skipped: string[];
+      };
+      /** What the trackers know of this torrent now; null when none answered or none was asked. */
+      swarm: SwarmCount | null;
+      next: string;
+    };
+
+const refKey = (ref: StreamRef): string => (ref.kind === 'tv' ? `tv:${ref.tmdbId}:${ref.season}:${ref.episode}` : `movie:${ref.tmdbId}`);
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 interface Racer {
   /** Stops caring for the result and lets go of the torrent, now or as soon as it is open. */
@@ -300,6 +352,12 @@ export class TorrentSource {
   private readonly log: (line: string) => void;
   /** What a session's sync was asked with, to start it again when the session takes its torrent back (a reload of the page). */
   private readonly syncs = new WeakMap<SessionTorrent, Omit<TorrentSyncRequest, 'signal' | 'target'>>();
+  /**
+   * Per film or episode, the torrents that were tried and did not play, in memory (one per daemon run): the info hash,
+   * until when it is left out, and whether the failure was the file's. Asking again then tries the next candidates
+   * instead of the same ones.
+   */
+  private readonly failed = new Map<string, Map<string, { until: number; lasting: boolean }>>();
 
   constructor(private readonly opts: TorrentSourceOptions) {
     this.now = opts.now ?? (() => Date.now());
@@ -324,32 +382,171 @@ export class TorrentSource {
     options.progress?.({ stage: 'asking the torrent indexes', attempts: [] });
     let found: FindAnswer;
     try {
-      found = await this.opts.find(query, AbortSignal.timeout(TORRENT_DEADLINE_MS));
+      // What earlier asks for this title already failed on: with nothing new among the JSON indexes' candidates, the finder asks its fallback sites.
+      const before = new Set([...(options.skip ?? []).map((h) => h.toLowerCase()), ...this.remembered(refKey(ref)).keys()]);
+      found = await this.opts.find(query, AbortSignal.timeout(TORRENT_DEADLINE_MS), { tried: before });
     } catch (err) {
       return { ok: false, error: 'no_source', attempts: [{ provider: 'Index: all', outcome: 'error', took_s: seconds(started, this.now()), detail: messageOf(err) }] };
     }
-    const skip = new Set((options.skip ?? []).map((h) => h.toLowerCase()));
-    const candidates = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
+    const key = refKey(ref);
+    const asked = (options.skip ?? []).map((h) => h.toLowerCase());
+    const leftOut = (): Set<string> => new Set([...asked, ...this.remembered(key).keys()]);
+    const pick = (skip: ReadonlySet<string>): { candidates: TorrentCandidate[]; dubs: TorrentCandidate[] } => {
+      const proper = found.candidates.filter((c) => !skip.has(c.infoHash.toLowerCase()));
+      // Releases the name read as a dub: many are dual-audio and still carry the original track (the probe decides).
+      return { candidates: proper, dubs: (found.lastResort ?? []).filter((c) => !skip.has(c.infoHash.toLowerCase()) && !proper.some((k) => k.infoHash === c.infoHash)) };
+    };
+    let { candidates, dubs } = pick(leftOut());
+    if (candidates.length === 0 && dubs.length === 0 && this.forgetSwarmFailures(key)) {
+      // Every torrent found was tried on earlier asks: start over with the ones whose swarm did not deliver then.
+      ({ candidates, dubs } = pick(leftOut()));
+      if (candidates.length + dubs.length > 0) this.log(`[notesd] torrent: ${refLabel(ref)}: every torrent found was tried before; starting over with ${plural(candidates.length + dubs.length, 'torrent')} whose swarm did not deliver`);
+    }
+    const counts = await this.swarmCounts([...candidates, ...dubs]);
+    const dead = [...candidates, ...dubs].filter((c) => looksDead(counts.get(c.infoHash))).length;
+    if (dead > 0) this.log(`[notesd] torrent: ${refLabel(ref)}: the trackers know no seeder for ${dead} of ${candidates.length + dubs.length} torrent(s); those are tried last`);
+    candidates = deadLast(candidates, counts);
+    dubs = deadLast(dubs, counts);
     const indexes = found.indexes.map(indexAttempt);
     const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId, resumeS: options.resumeS ?? null, cloudTried: options.cloudTried === true };
     const progress = options.progress;
-    const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }));
+    const tried = new Set<string>();
+    const note: NoteFailure = (c, lasting) => {
+      tried.add(c.infoHash);
+      this.remember(key, c.infoHash, lasting);
+    };
+    /** The last attempt of a play that started nothing: what asking again would try. */
+    const left = (): ResolveAttempt[] => {
+      if (tried.size === 0) return [];
+      const untried = [...candidates, ...dubs].filter((c) => !tried.has(c.infoHash)).length;
+      const detail =
+        untried > 0
+          ? `${plural(untried, 'more torrent')} of this title ${untried === 1 ? 'was' : 'were'} found and not tried yet: ask again and the next ones are tried`
+          : 'every torrent found was tried; asking again starts over with the ones whose swarm did not deliver';
+      return [{ provider: TORRENTS_LEFT, outcome: 'skipped', took_s: null, detail }];
+    };
+    const out = await this.tryCandidates(ref, query, candidates, play, started + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...indexes, ...p.attempts] }), note);
     if (out.ok) {
       this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), playing ${out.torrent.name}`);
       return { ...out, attempts: [...indexes, ...out.attempts] };
     }
-    // Nothing proper played. Releases the name read as a dub are tried now, in their own round: many are
-    // dual-audio and still carry the original track, and the file probe (refusalOf) keeps only those that do.
-    const dubs = (found.lastResort ?? []).filter((c) => !skip.has(c.infoHash.toLowerCase()) && !candidates.some((k) => k.infoHash === c.infoHash));
+    // Nothing proper played: the dub-named releases are tried now, in their own round.
     const firstAttempts = [...indexes, ...out.attempts];
     if (dubs.length === 0 || started + TORRENT_DEADLINE_MS - this.now() < PROBE_MIN_MS) {
       this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s), none played`);
-      return { ok: false, error: 'no_source', attempts: firstAttempts };
+      return { ok: false, error: 'no_source', attempts: [...firstAttempts, ...left()] };
     }
     options.progress?.({ stage: 'trying releases whose name reads as a dub (the file may still carry the original)', attempts: firstAttempts });
-    const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }));
+    const dubbed = await this.tryCandidates(ref, query, dubs, play, this.now() + TORRENT_DEADLINE_MS, progress === undefined ? undefined : (p) => progress({ stage: p.stage, attempts: [...firstAttempts, ...p.attempts] }), note);
     this.log(`[notesd] torrent: ${refLabel(ref)}: ${candidates.length} candidate(s) and ${dubs.length} dub-named, ${dubbed.ok ? `playing ${dubbed.torrent.name} (its file carries the original ${options.audioLang ?? 'language'})` : 'none played'}`);
-    return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts] };
+    return dubbed.ok ? { ...dubbed, attempts: [...firstAttempts, ...dubbed.attempts] } : { ok: false, error: 'no_source', attempts: [...firstAttempts, ...dubbed.attempts, ...left()] };
+  }
+
+  /** The torrents of `key` still left out, by info hash (true: the failure was the file's). Expired ones are dropped. */
+  private remembered(key: string): Map<string, boolean> {
+    const kept = new Map<string, boolean>();
+    const entries = this.failed.get(key);
+    if (entries === undefined) return kept;
+    const now = this.now();
+    for (const [hash, entry] of entries) {
+      if (entry.until <= now) entries.delete(hash);
+      else kept.set(hash, entry.lasting);
+    }
+    if (entries.size === 0) this.failed.delete(key);
+    return kept;
+  }
+
+  private remember(key: string, infoHash: string, lasting: boolean): void {
+    const entries = this.failed.get(key) ?? new Map<string, { until: number; lasting: boolean }>();
+    entries.set(infoHash.toLowerCase(), { until: this.now() + (lasting ? FILE_FAILURE_KEEP_MS : SWARM_FAILURE_KEEP_MS), lasting });
+    this.failed.set(key, entries);
+  }
+
+  /** Forgets the torrents of `key` whose swarm did not deliver (a file's failure stays); true when any was forgotten. */
+  private forgetSwarmFailures(key: string): boolean {
+    const entries = this.failed.get(key);
+    if (entries === undefined) return false;
+    let any = false;
+    for (const [hash, entry] of entries) {
+      if (entry.lasting) continue;
+      entries.delete(hash);
+      any = true;
+    }
+    return any;
+  }
+
+  /** A candidate's trackers followed by the learned ones (the tracker book), without repeats. */
+  private trackersOf(c: Pick<TorrentCandidate, 'trackers'>): string[] {
+    return [...new Set([...c.trackers, ...(this.opts.book?.list() ?? [])])];
+  }
+
+  /** What the trackers know of each candidate's swarm, asked before any is joined; empty when nobody is asked or answers. */
+  private async swarmCounts(candidates: readonly TorrentCandidate[], timeoutMs?: number): Promise<Map<string, SwarmCount>> {
+    const scrape = this.opts.scrape ?? null;
+    if (scrape === null || candidates.length === 0) return new Map();
+    const trackers = [...DEFAULT_TRACKERS, ...(this.opts.book?.list() ?? []), ...candidates.flatMap((c) => c.trackers)];
+    try {
+      return await scrape(candidates.map((c) => c.infoHash), trackers, timeoutMs === undefined ? {} : { timeoutMs });
+    } catch (err) {
+      this.log(`[notesd] torrent: the trackers could not be asked: ${messageOf(err)}`);
+      return new Map();
+    }
+  }
+
+  /**
+   * /update-cloud-source <magnet>: reads where a pasted magnet comes from (the index its own trackers name), asks
+   * the trackers for its swarm, and keeps its public UDP trackers that answer in the tracker book, so every later
+   * torrent is opened and scraped with them too. Joins no swarm and plays nothing. Never throws.
+   */
+  async learnMagnet(magnet: string): Promise<MagnetReport> {
+    const book = this.opts.book ?? null;
+    const facts = readMagnet(magnet, [...DEFAULT_TRACKERS, ...(book?.list() ?? [])]);
+    if (facts === null) return { ok: false, error: 'bad_magnet', detail: 'not a magnet link or a 40-character info hash' };
+    const scrape = this.opts.scrape ?? null;
+    const knownKeys = new Set([...DEFAULT_TRACKERS, ...(book?.list() ?? [])].map(trackerKey));
+    const known = facts.others.filter((t) => knownKeys.has(trackerKey(t)));
+    const fresh = facts.others.filter((t) => !knownKeys.has(trackerKey(t)));
+    const udp = fresh.filter((t) => udpTrackerOf(t) !== null);
+    const skipped = fresh.filter((t) => udpTrackerOf(t) === null);
+    const answered = new Set<string>();
+    let swarm: SwarmCount | null = null;
+    if (scrape !== null) {
+      const asks = udp.map(async (tracker) => {
+        try {
+          if ((await scrape([facts.infoHash], [tracker], { timeoutMs: TRACKER_PROBE_MS })).has(facts.infoHash)) answered.add(tracker);
+        } catch {
+          // A tracker that cannot be asked is a silent one.
+        }
+      });
+      const whole = scrape([facts.infoHash], [...facts.trackers, ...DEFAULT_TRACKERS, ...(book?.list() ?? [])], { timeoutMs: TRACKER_PROBE_MS }).then(
+        (counts) => counts.get(facts.infoHash) ?? null,
+        () => null,
+      );
+      await Promise.all(asks);
+      swarm = await whole;
+    }
+    let added: string[] = [];
+    try {
+      added = book === null ? [] : book.add(udp.filter((t) => answered.has(t)), facts.infoHash);
+    } catch (err) {
+      this.log(`[notesd] torrent: the tracker book could not be written: ${messageOf(err)}`);
+    }
+    const silent = udp.filter((t) => !added.includes(t));
+    const o = facts.origin;
+    const siteOrigin = o === null || o.known.site === null ? null : (this.opts.sites?.[o.known.site] ?? null);
+    const origin = o === null ? null : { index: o.known.index, label: o.known.label, by: o.by, supported: o.known.site !== null, enabled: siteOrigin !== null, site_origin: siteOrigin, gate: o.known.site === null ? null : o.known.gate };
+    const next =
+      origin === null
+        ? facts.unknownHosts.length > 0
+          ? `No index we know signs its magnets with these trackers. The hosts ${facts.unknownHosts.join(', ')} are not public trackers we hold: find out which site runs them (a web search of the host, and the name's format), and when it is a torrent index worth asking, add it as a torrent site (claude/streaming/torrent/sites/, TORRENT_SITES, KNOWN_ORIGINS).`
+          : 'The magnet carries only public trackers: nothing tells which index it came from.'
+        : origin.supported
+          ? origin.enabled
+            ? `The magnet is from ${origin.label} (its tracker ${origin.by}), an index the torrent finder already asks at ${origin.site_origin} when the JSON indexes have nothing new.${origin.gate === null ? '' : ` Tell the owner: ${origin.gate}.`}`
+            : `The magnet is from ${origin.label} (its tracker ${origin.by}); its site module exists and is switched off in this daemon's settings.`
+          : `The magnet is from ${origin.label} (its tracker ${origin.by}), an index the torrent finder cannot ask yet: add it as a torrent site (claude/streaming/torrent/sites/, TORRENT_SITES, and its \`site\` in KNOWN_ORIGINS).`;
+    this.log(`[notesd] torrent: magnet ${facts.infoHash.slice(0, 8)} read: ${origin === null ? 'no known index' : origin.label}, ${plural(added.length, 'tracker')} added${swarm === null ? '' : `, ${plural(swarm.seeders, 'seeder')} known`}`);
+    return { ok: true, info_hash: facts.infoHash, name: facts.name, origin, unknown_hosts: facts.unknownHosts, trackers: { own: facts.own, known, added, silent, skipped }, swarm, next };
   }
 
   /**
@@ -395,7 +592,14 @@ export class TorrentSource {
     }
     const play: PlayFacts = { audioLang: options.audioLang, imdbId: options.imdbId ?? '', resumeS: options.resumeS ?? null, cloudTried: false };
     options.progress?.({ stage: `opening the torrent ${candidate.name}`, attempts: [] });
-    const out = await this.tryCandidates(ref, query, [candidate], play, this.now() + TORRENT_DEADLINE_MS, options.progress);
+    // Asked beside the play, without joining anything: when the swarm sends nothing, the answer says how thin it is.
+    const known = this.swarmCounts([candidate], TRACKER_PROBE_MS).then((counts) => counts.get(candidate.infoHash) ?? null);
+    const tried = await this.tryCandidates(ref, query, [candidate], play, this.now() + TORRENT_DEADLINE_MS, options.progress);
+    const swarm = tried.ok ? null : await known;
+    const out: TorrentResolve =
+      tried.ok || swarm === null
+        ? tried
+        : { ...tried, attempts: tried.attempts.map((a) => (a.outcome === 'no_stream' ? { ...a, detail: `${a.detail}; the trackers asked know ${plural(swarm.seeders, 'seeder')} and ${plural(swarm.leechers, 'leecher')} for it` } : a)) };
     this.log(`[notesd] torrent: ${refLabel(ref)} from a pasted magnet (${candidate.infoHash.slice(0, 8)}): ${out.ok ? `playing ${out.torrent.name}` : 'did not play'}`);
     return out;
   }
@@ -404,7 +608,9 @@ export class TorrentSource {
   async next(ref: StreamRef, torrent: SessionTorrent, audioLang: string | null): Promise<TorrentResolve> {
     if (torrent.query === null || torrent.imdbId === null || torrent.candidates.length === 0) return { ok: false, error: 'no_source', attempts: [] };
     const play: PlayFacts = { audioLang, imdbId: torrent.imdbId, resumeS: null, cloudTried: false };
-    return this.tryCandidates(ref, torrent.query, torrent.candidates, play, this.now() + TORRENT_DEADLINE_MS);
+    // A torrent the shuffle tried and could not play is left out of the title's next plays too.
+    const key = refKey(ref);
+    return this.tryCandidates(ref, torrent.query, torrent.candidates, play, this.now() + TORRENT_DEADLINE_MS, undefined, (c, lasting) => this.remember(key, c.infoHash, lasting));
   }
 
   /**
@@ -492,7 +698,7 @@ export class TorrentSource {
   async hold(ref: StreamRef, torrent: SessionTorrent): Promise<void> {
     const c = torrent.candidate;
     if (torrent.held || c === null) return;
-    await this.opts.swarm.open({ infoHash: c.infoHash, trackers: c.trackers, name: c.name, ref, release: c.release }, { timeoutMs: TORRENT_OPEN_TIMEOUT_MS });
+    await this.opts.swarm.open({ infoHash: c.infoHash, trackers: this.trackersOf(c), name: c.name, ref, release: c.release }, { timeoutMs: TORRENT_OPEN_TIMEOUT_MS });
     await this.opts.swarm.use(c.infoHash, [...torrent.selected]);
     if (torrent.stop.signal.aborted) torrent.stop = new AbortController();
     torrent.held = true;
@@ -634,6 +840,7 @@ export class TorrentSource {
     play: PlayFacts,
     deadline: number,
     progress?: (progress: TorrentProgress) => void,
+    note?: NoteFailure,
   ): Promise<TorrentResolve> {
     const pool = candidates.slice(0, MAX_TORRENT_TRIES);
     const results = new Map<number, ResolveAttempt>();
@@ -654,7 +861,10 @@ export class TorrentSource {
         const done = racer.result.then((raced) => {
           if (!running.delete(position)) return;
           if (raced.ok) passed.push(raced.passed);
-          else results.set(position, raced.attempt);
+          else {
+            results.set(position, raced.attempt);
+            if (raced.attempt.outcome !== 'skipped') note?.(c, raced.lasting === true);
+          }
           report();
         });
         running.set(position, { racer, done, c });
@@ -682,6 +892,7 @@ export class TorrentSource {
       results.set(best.position, won.attempt);
       if (!won.ok) {
         best.drop();
+        note?.(best.c, false);
         continue;
       }
       const later: TorrentCandidate[] = [];
@@ -722,15 +933,15 @@ export class TorrentSource {
       this.dropNow(c.infoHash);
     };
     const attempt = (outcome: ResolveOutcome, detail: string): ResolveAttempt => ({ provider: torrentLabel(c.name), outcome, took_s: seconds(started, this.now()), detail });
-    const fail = (outcome: ResolveOutcome, detail: string): Raced => {
+    const fail = (outcome: ResolveOutcome, detail: string, lasting = false): Raced => {
       drop();
-      return { ok: false, attempt: attempt(outcome, detail) };
+      return { ok: false, attempt: attempt(outcome, detail), lasting };
     };
     const left = (): Raced => fail('skipped', 'another torrent was chosen');
     const run = async (): Promise<Raced> => {
       let opened: OpenedTorrent;
       try {
-        opened = await this.opts.swarm.open({ infoHash: c.infoHash, trackers: c.trackers, name: c.name, ref, release: c.release }, { timeoutMs: Math.min(TORRENT_OPEN_TIMEOUT_MS, budgetMs) });
+        opened = await this.opts.swarm.open({ infoHash: c.infoHash, trackers: this.trackersOf(c), name: c.name, ref, release: c.release }, { timeoutMs: Math.min(TORRENT_OPEN_TIMEOUT_MS, budgetMs) });
       } catch (err) {
         // Released too: an open that gave up may still have left the torrent in the swarm.
         state.opened = true;
@@ -741,7 +952,7 @@ export class TorrentSource {
       try {
         const picked = pickFile(opened.files, query);
         if (picked === null) {
-          return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file');
+          return fail('no_stream', ref.kind === 'tv' ? `the torrent holds no file of S${pad(ref.season)}E${pad(ref.episode)}` : 'the torrent holds no video file', true);
         }
         await this.opts.swarm.use(c.infoHash, [picked.video, ...picked.subtitles]);
         if (state.cancelled) return left();
@@ -758,7 +969,7 @@ export class TorrentSource {
         }
         if (state.cancelled) return left();
         const refusal = refusalOf(probe, play.audioLang, this.opts.remux ?? null);
-        if (refusal !== null) return fail(refusal.outcome, refusal.detail);
+        if (refusal !== null) return fail(refusal.outcome, refusal.detail, true);
         const videoName = opened.files.find((f) => f.index === picked.video)?.name ?? '';
         return {
           ok: true,
@@ -872,9 +1083,10 @@ export function buildTorrentSource(
   const health = new IndexHealth();
   return new TorrentSource({
     swarm: torrents,
-    find: (query, signal) =>
+    find: (query, signal, options) =>
       findCandidates(query, {
         signal,
+        ...(options?.tried === undefined ? {} : { tried: options.tried }),
         indexes,
         health,
         ...(finder.minSeeds === undefined ? {} : { minSeeds: finder.minSeeds }),
@@ -886,6 +1098,10 @@ export function buildTorrentSource(
     tiers: wiring.tiers ?? [],
     remux: wiring.remux ?? null,
     sync: wiring.sync ?? null,
+    // NOTESD_TORRENT_DISCOVERY=off asks no tracker at all, so nothing is scraped either.
+    scrape: config.torrent.discovery ? udpScraper() : null,
+    book: new TrackerBook(join(config.torrent.dir, TRACKER_BOOK_FILE)),
+    ...(config.torrent.sites === undefined ? {} : { sites: config.torrent.sites.origins }),
     localBase: wiring.localBase,
     ...(config.torrent.subtitleWaitMs === undefined ? {} : { subtitleHeadMs: config.torrent.subtitleWaitMs }),
     ...(wiring.log === undefined ? {} : { log: wiring.log }),

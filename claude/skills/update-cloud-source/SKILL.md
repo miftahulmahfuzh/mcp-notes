@@ -1,10 +1,10 @@
 ---
 name: update-cloud-source
-description: Add the stream providers an aggregator streaming site uses to mcp-notes' direct-streaming registry, and probe each new one. Use whenever the user types "/update-cloud-source <site url>" in any Claude Code session — e.g. "/update-cloud-source https://ww6-fmovies.com/" — and for a plain-English request to the same effect, such as "add the servers ww6-fmovies uses", "does this site have providers we lack?", "update the cloud sources from <site>". Also use for "which stream providers do we have?" and "is VidFast working?", which only list the registry. Reads the site's scripts for provider address templates (or, when they hold none, the embed frames a watch page loads in the streaming Chrome), adds the ones the registry lacks, probes each against known titles out of sight, and reports per provider.
-argument-hint: <site url> [a film's watch page] [an episode's watch page]
+description: Add the stream providers an aggregator streaming site uses to mcp-notes' direct-streaming registry, and probe each new one; or, given a magnet link, work out which torrent index it came from and widen the torrent sources with it. Use whenever the user types "/update-cloud-source <site url>" or "/update-cloud-source <magnet link>" in any Claude Code session — e.g. "/update-cloud-source https://ww6-fmovies.com/", "/update-cloud-source magnet:?xt=urn:btih:..." — and for a plain-English request to the same effect, such as "add the servers ww6-fmovies uses", "does this site have providers we lack?", "update the cloud sources from <site>", "where is this magnet from? add that index", "learn the trackers of this magnet". Also use for "which stream providers do we have?" and "is VidFast working?", which only list the registry. Reads the site's scripts for provider address templates (or, when they hold none, the embed frames a watch page loads in the streaming Chrome), adds the ones the registry lacks, probes each against known titles out of sight, and reports per provider.
+argument-hint: <site url | magnet link> [a film's watch page] [an episode's watch page]
 ---
 
-# /update-cloud-source — add an aggregator site's stream providers
+# /update-cloud-source — add an aggregator site's stream providers, or a magnet's torrent index
 
 Direct streaming plays films from "providers": embed addresses keyed by a TMDB id, such as
 `https://vidfast.pro/movie/{id}`. Aggregator sites (ww6-fmovies.com and its kind) are lists of
@@ -15,7 +15,11 @@ it works is in `docs/guide/streaming.md` of the mcp-notes repo, section "Direct 
 
 The text after `/update-cloud-source` is the site's address: its home page, or a film page on it.
 Without `https://`, add it. Without any address, answer with the usage line
-`/update-cloud-source <site url>` and stop.
+`/update-cloud-source <site url | magnet link>` and stop.
+
+**A magnet link** (`magnet:?xt=urn:btih:...`, or a bare 40-character info hash) is not a site: go to
+"A magnet link" below and skip steps 2 and 3. Pass the magnet exactly as the user pasted it, whole,
+with every `&tr=`: its trackers are what names the index.
 
 ## Step 2: add and probe
 
@@ -103,3 +107,105 @@ other bot check in this project.
 
 Never add a provider by hand, never edit `providers.seed.json` for this, and never probe again
 on your own: the owner asks.
+
+## A magnet link
+
+A magnet holds three things: the torrent's info hash, its name (`dn`) and its trackers (`tr`). It
+has no link back to the page it came from. But a torrent index that runs its own trackers signs
+every magnet with them (RuTracker's are `bt*.t-ru.org`), so the trackers name the index. The goal
+here is to widen what the torrent finder can ask: the index the magnet came from, and the public
+trackers it carries. Do all of it without asking; the user pasted the magnet for exactly this.
+
+### 1. Read the magnet
+
+Call `direct_stream_update_source` with `magnet` set to the pasted link and nothing else (no
+`site`). It plays nothing and joins no swarm. It answers:
+
+- `origin`: the index the magnet's own trackers name (`index`, `label`, `by`: the tracker host
+  that says so), or `null`.
+  - `supported`: the finder has a site module for it (`claude/streaming/torrent/sites/<index>.mjs`).
+  - `enabled` and `site_origin`: it is switched on, at that address.
+  - `gate`: what the owner must do once by hand before the index answers (a login, a Cloudflare
+    check).
+- `unknown_hosts`: tracker hosts that belong to no index we know and to no public tracker we hold.
+  An index we lack may run them.
+- `trackers`: `own` (the index's own, never added), `known` (already used), `added` (new public
+  UDP trackers that answered: from now on every torrent is opened with them and they are asked for
+  seeders before a play), `silent` (did not answer, not added), `skipped` (not UDP).
+- `swarm`: what the trackers know of this torrent now (`seeders`, `leechers`), or `null`.
+- `next`: what to do, in words.
+
+### 2. Act on `origin`
+
+- **`origin.supported` and `origin.enabled`:** the finder already asks that index. Say so. When
+  `gate` is set, check whether it is open: run the index's search by hand from the mcp-notes
+  checkout,
+
+  ```sh
+  node ~/mcp-notes/claude/streaming/torrent/cli.mjs <index> search --title "<the title in the magnet's name>"
+  ```
+
+  `rows` means it answers. `bot_check` or `login_required` means the gate is shut: tell the user
+  to run `node ~/mcp-notes/claude/streaming/torrent/cli.mjs <index> gate`, which brings the site to
+  the front of the streaming Chrome so they solve the check and log in themselves, and that the
+  index answers from then on. Never run the gate for them, never type a login, never click a
+  challenge.
+- **`origin.supported` and not `enabled`:** the site module exists and is off in this daemon's
+  settings (`NOTESD_TORRENT_<INDEX>_ORIGIN=off` in `.env.local`). Say so; switching it on is the
+  owner's call.
+- **`origin` set but not `supported`:** an index we know by its trackers and cannot ask yet. Add it
+  (step 3).
+- **`origin` is `null` with `unknown_hosts`:** find out who runs those hosts. Search the web for
+  each host name, and read the magnet's `dn`: its language and the way it is laid out (a Russian
+  tracker writes `Русское название / Original Title / Сезон: 1 / Серии: 1-10 из 10 [2017, …]`) point
+  at the site. When they name a torrent index, add it (step 3). When they are only public trackers
+  (a tracker list, an open tracker anyone may use), there is no index to add: say so.
+- **`origin` is `null` and no `unknown_hosts`:** the magnet carries only public trackers, so
+  nothing tells where it came from. Say so. The trackers were still read (`trackers`).
+
+### 3. Add an index the finder cannot ask yet
+
+Work in the mcp-notes checkout (`~/mcp-notes`). Read `docs/guide/streaming.md`, "When the indexes
+have nothing", first. Then, in one change:
+
+1. **Look at the site by hand first**, with plain requests that say they are notesd: its search
+   address, a result row (name, release page, seeders, leechers, size) and where a release page
+   carries its magnet. A site behind a Cloudflare check or a login is looked at only after the owner
+   has opened its gate; never get past either.
+2. **The site module:** `claude/streaming/torrent/sites/<index>.mjs`, shaped like `1337x.mjs` (pages
+   fetched from inside the site's tab), `ext.mjs` (the tab is moved) or `rutracker.mjs` (a login gate,
+   pages in another encoding, and a title rewritten into a release name the finder reads). Add it
+   to `sites/index.mjs`.
+3. **The daemon's side, together:** `TORRENT_SITES` in `src/directStream/torrent/find-sites.ts`; the
+   address and its `NOTESD_TORRENT_<INDEX>_ORIGIN` setting in `src/config.ts` (`TORRENT_SITE_ORIGIN_DEFAULTS`,
+   `TorrentSitesConfig`, `parseTorrentSites`) with a row in `docs/guide/reference/configuration.md`;
+   and the index's line in `KNOWN_ORIGINS` (`src/directStream/torrent/origins.ts`): its tracker
+   hosts, `site` set to the module's name, and `gate` when the owner must open one.
+4. **Tests** on pages saved from the site (`tests/fixtures/torrent-sites/`,
+   `tests/unit/scripts/torrentSites.test.ts`), the guide's section, then `npm run typecheck`,
+   `npm test` and `npm run docs:check`.
+5. **Rebuild and restart** with `scripts/install.sh --wait` (it waits while something plays), then
+   call `direct_stream_update_source` with the same magnet again: `origin.supported` is now `true`.
+
+The rules of every site hold here too: only the streaming Chrome talks to a site, never a disguised
+client, never a forged token, and a bot check or a login is the owner's to clear by hand.
+
+When the site cannot be added (it is gone, it lists nothing by title, it needs something only the
+owner can give), say which index it is and why it was left out; its line in `KNOWN_ORIGINS` with
+`site: null` still tells the next magnet from it.
+
+### 4. Answer
+
+Keep it short, one line each:
+
+- the torrent: its name and what the trackers know of it (`swarm`), so the user sees whether it
+  can stream at all ("1 seeder, 7 leechers: too thin to stream");
+- the index it came from and what became of it: already asked, gate shut (with the command), added
+  now, or could not be told;
+- the trackers: how many were added, and that they now go with every torrent.
+
+Errors: `bad_magnet` (not a magnet link or an info hash: ask for the whole link), `torrent_off`
+(torrents are off on this machine, `NOTESD_TORRENT=off`), `direct_stream_off`.
+
+This reads a magnet; it never plays it. To play the torrent itself, that is `/direct-stream <title>`
+with the magnet (`direct_stream_play`'s `magnet`).

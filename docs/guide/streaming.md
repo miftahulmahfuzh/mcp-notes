@@ -1194,6 +1194,9 @@ how does Saltburn end?
 which stream providers do we have?
 ```
 
+Given a magnet link instead of a site, the same command reads which torrent index the magnet came
+from and keeps its trackers: see "What a magnet says of its index" under Torrents.
+
 Aggregator sites are lists of provider templates. `/update-cloud-source` reads one site's list,
 adds the providers the registry lacks and tries each new one on the known titles (Fight Club and
 the others in `claude/streaming/direct/known-titles.json`). A site's list is read from its
@@ -1621,6 +1624,19 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   `dubbed`, as a dubbed cloud stream is; a file Chrome cannot play as is and the remux cannot help is `unplayable`; a
   torrent with no file list or too little data in time is `no_stream`. A torrent that fails makes room for the next
   one listed, up to six torrents and 90 seconds in all.
+- **Asking again tries the next torrents, not the same ones.** The finder keeps up to twenty candidates, and one
+  ask tries six. The torrent source remembers, per film or episode and in memory (until the daemon restarts), each
+  torrent that was tried and did not play. The next ask of the same title (the Torrent Stream row again, the same
+  `direct_stream_play`, the shuffle button) leaves those out and starts at the seventh, then the thirteenth. A
+  failed play's last attempt, `Torrents: not tried yet`, says how many are left. A torrent whose swarm did not
+  deliver is left out for half an hour, since swarms wake up; one whose file will not change (a dub, a file Chrome
+  cannot play, no file of the episode) for a day. When every torrent found was tried, the ask starts over with the
+  ones whose swarm failed. A pasted magnet is always tried: nothing is remembered against it.
+- **The trackers are asked before a swarm is joined.** An index's seed count is its claim. Before the first torrent
+  is opened the daemon asks up to eight UDP trackers what they hold for every candidate at once (a BEP 15 scrape,
+  `find/scrape.ts`, 1.5 s at most): nothing is announced, no peer is contacted. A candidate for which at least two
+  trackers answered and none knows a seeder is tried after all the others; it is never dropped, since DHT may still
+  find peers. One tracker that does not know a torrent says nothing. `NOTESD_TORRENT_DISCOVERY=off` asks no tracker.
 - **A dub-named release is a last resort, decided by the file, not the name.** A release the index name reads as a
   dub (often an Asian film on a Russian tracker) is left out of the normal ranking, but when every proper release
   fails to play the daemon tries these in their own round. Many are dual-audio and still carry the original track, so
@@ -1953,11 +1969,12 @@ names come out as heard, and the first audio stream is the one transcribed (the 
 dual-audio releases out). `scripts/install.sh` installs Whisper ([install.md](install.md));
 `NOTESD_TORRENT_WHISPER=off` turns it off.
 
-### When the indexes have nothing: 1337x and ext.to
+### When the indexes have nothing: 1337x, ext.to and RuTracker
 
-When every JSON index answers nothing usable for a title, the finder asks two torrent sites, 1337x
-and ext.to, side by side. Their releases go through the same filter and ranking as the indexes'.
-Each site is one more attempt in the play's answer (`Index: 1337x`, `Index: ext`), and a site that
+When every JSON index answers nothing usable for a title, or every candidate they listed was
+already tried on an earlier ask (see "Asking again" above), the finder asks three torrent sites,
+1337x, ext.to and RuTracker, side by side. Their releases go through the same filter and ranking as the indexes'.
+Each site is one more attempt in the play's answer (`Index: 1337x`, `Index: ext`, `Index: rutracker`), and a site that
 fails never fails the play.
 
 - **Only through the streaming Chrome**, in a tab out of sight. `claude/streaming/torrent/tab.ps1`
@@ -1989,14 +2006,31 @@ fails never fails the play.
   gives it through its own "Copy magnet link" request.
 - **About 40 seconds** for both. A bot check is the attempt's outcome `bot_check` and is never
   clicked through. A machine without the Windows Chrome answers `error` with `no_chrome`.
-- `NOTESD_TORRENT_1337X_ORIGIN` and `NOTESD_TORRENT_EXT_ORIGIN` move a site to another address, or
-  leave it out with `off`.
+- **RuTracker** is asked with the title's words (and a film's year), most seeders first, at
+  `rutracker.net`: this network's provider blocks `rutracker.org`, and the mirror answers without
+  WARP. Its search and topic pages sit behind a Cloudflare check, and the search is for logged-in
+  accounts only. Both are the owner's to clear once, by hand: `cli.mjs rutracker gate` brings the
+  site to the front of the streaming Chrome and waits (three minutes) until the page is a logged-in
+  member's; the profile keeps the cookies. No script types a login or reads a password. Until then
+  the attempt is `Index: rutracker` with `bot_check` and the detail `login_required`, which is
+  never counted against the index. Its pages are windows-1251 and are decoded in the tab. A topic
+  is titled the site's way (`Рассказ служанки / The Handmaid's Tale / Сезон: 1 / Серии: 1-10 из 10
+  (…) [2017, США, …, WEB-DL 2160p] MVO + Original (Eng)`); `releaseName` rewrites it as
+  `The Handmaid's Tale S01E01-E10 2017 WEB-DL 2160p MVO + Original (Eng)`, which the finder reads
+  like any release: a season pack, and not a dub when it names the original track. A release with
+  a Russian voice-over only reads as a dub and goes to the last-resort round, where the file's real
+  audio decides. A topic's magnet carries only RuTracker's own tracker, and its swarm often lives
+  there: a pack the public trackers know one seeder for had 29 on the site.
+- `NOTESD_TORRENT_1337X_ORIGIN`, `NOTESD_TORRENT_EXT_ORIGIN` and `NOTESD_TORRENT_RUTRACKER_ORIGIN`
+  move a site to another address, or leave it out with `off`.
 
 To see what a site lists, by hand:
 
     node claude/streaming/torrent/cli.mjs 1337x sintel 2010
     node claude/streaming/torrent/cli.mjs ext sintel 2010 --imdb tt1727587
     node claude/streaming/torrent/cli.mjs ext gate          # solve ext's Cloudflare challenge by hand, once
+    node claude/streaming/torrent/cli.mjs rutracker gate    # solve RuTracker's check and log in by hand, once
+    node claude/streaming/torrent/cli.mjs rutracker search --title "the handmaid's tale"
 
 ### A magnet the owner pasted
 
@@ -2015,6 +2049,31 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
   `no_source` with a single `Torrent: <name>` attempt saying so.
 - Nothing is built or guessed: only a magnet the owner pasted is played, and `/direct-stream`'s skill
   never invents one.
+- A magnet whose swarm sends nothing answers with what the trackers know of it ("the trackers asked
+  know 1 seeder and 7 leechers for it"), so a thin swarm is told from a blocked network.
+
+### What a magnet says of its index
+
+```text
+/update-cloud-source magnet:?xt=urn:btih:8A088FF6…&dn=…&tr=http://bt.t-ru.org/ann&tr=udp://p4p.arenabg.com:1337
+```
+
+A magnet has no link back to its page, but an index that runs its own trackers signs its magnets
+with them. `direct_stream_update_source` with `magnet` (`TorrentSource.learnMagnet`,
+`src/directStream/torrent/origins.ts`) reads that, plays nothing and joins no swarm:
+
+- **The index.** `KNOWN_ORIGINS` holds, per index, the tracker hosts only its magnets carry
+  (`bt*.t-ru.org` is RuTracker). The answer's `origin` names the index, whether the finder has a
+  site module for it, whether it is switched on, and the gate the owner must open by hand. Tracker
+  hosts that belong to no known index and no public tracker we hold come back as `unknown_hosts`:
+  the `/update-cloud-source` skill then finds out who runs them and adds the index as a torrent
+  site when it is one.
+- **The trackers.** The index's own trackers are never added (they serve only its torrents). Each
+  other tracker the daemon does not hold yet is asked for the torrent over UDP; the ones that
+  answer go into the tracker book, `<NOTESD_TORRENT_DIR>/trackers.json` (per machine, at most 40).
+  From then on every torrent is opened with them and they are among the trackers asked for seeders
+  before a play. A silent tracker, and one that is not UDP, is left out.
+- **The swarm.** `swarm` is what the trackers know of that torrent now.
 
 ## Where the code is
 
@@ -2029,7 +2088,8 @@ asked (`src/directStream/torrent/source.ts` `playMagnet`, through the service's 
 | `src/streaming/service.ts` | `scriptRunner`: the daemon's way to run `cli.mjs` |
 | `src/streaming/sitePlays.ts`, `src/http/sitePlayApi.ts` | A site's play kept with its title (`recordSitePlay`), a title TMDB does not list (`siteTitleKeeper`), a play sent back to its site (`replayOnSite`); the routes the command and the Stream side call |
 | `claude/streaming/direct/` | The resolver: `cli.mjs`, the sniffer, the provider order, `providers.seed.json`, `anime.seed.json` |
-| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x and ext.to for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |
+| `src/directStream/torrent/find/scrape.ts`, `src/directStream/torrent/origins.ts` | The tracker scrape before a play (seeders the trackers know); a magnet's index by its trackers (`KNOWN_ORIGINS`) and the tracker book |
+| `claude/streaming/torrent/`, `src/directStream/torrent/find-sites.ts` | 1337x, ext.to and RuTracker for the torrent finder: `cli.mjs` (search, magnets, `gate`), one module per site, `tab.ps1` (a tab in the background, or `-Activate` to the front so the owner solves ext's Cloudflare gate); the finder's index per site |
 | `src/directStream/dialogue.ts` | Subtitle text to dialogue lines, and its pages |
 | `src/directStream/anime.ts` | A Japanese title's TMDB id and air date to the AniList id and episode of the anime embeds |
 | `src/directStream/` | The registry (`repo.ts`), resolves and sessions (`service.ts`, `sessions.ts`), the pass-through and its rewriting (`passThrough.ts`, `rewrite.ts`), running the resolver (`runner.ts`) |

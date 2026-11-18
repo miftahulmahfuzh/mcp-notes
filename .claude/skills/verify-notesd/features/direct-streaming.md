@@ -557,6 +557,22 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   `magnets` call), and live by `node claude/streaming/torrent/cli.mjs 1337x sintel 2010` (releases with
   seeds and 40-hex `info_hash`).
 
+## Torrent rotation, tracker scrape, RuTracker and a magnet's index
+- Asking again tries the next torrents: a failed torrent play remembers what it tried per film or episode, so the
+  next ask starts at the seventh candidate, and its last attempt `Torrents: not tried yet` says how many are left.
+  The trackers are asked for each candidate's seeders before a swarm is joined, and one they call dead goes last.
+  Proven by `npx vitest run tests/unit/directStream/torrentRotation.test.ts tests/unit/directStream/torrent/find/scrape.test.ts`,
+  and live by two `provider: "torrent"` plays in a row of a title with a thin swarm: the second answer's
+  `Torrent:` attempts name other releases than the first's.
+- RuTracker as a third fallback site (`Index: rutracker`; `bot_check` with `login_required` until the owner ran
+  `cli.mjs rutracker gate`): `npx vitest run tests/unit/scripts/torrentSites.test.ts tests/unit/directStream/torrent/findSites.test.ts`,
+  and live by `node claude/streaming/torrent/cli.mjs rutracker search --title "<title>"`
+  after the gate.
+- `/update-cloud-source <magnet>` (`direct_stream_update_source` with `magnet`): the index by the magnet's own
+  trackers, its public trackers kept in `<torrent dir>/trackers.json`, the swarm as the trackers know it. Proven by
+  `npx vitest run tests/unit/directStream/torrent/origins.test.ts tests/unit/mcp.directStreamSourceTools.test.ts`
+  and by the tool call on the live daemon with a RuTracker magnet (`origin.index` is `rutracker`).
+
 ## /sync-subtitle: a subtitle checked against the film's audio
 - `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the
   film, the subtitle is judged for text (heard lines found in its cues) and timing (anchors' offsets), and a

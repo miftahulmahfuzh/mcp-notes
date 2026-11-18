@@ -237,7 +237,8 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
 - It is a torrent play, so you need not set `provider`. The file plays only when its audio is the
   title's original language and it holds a video Chrome can play; a magnet that is a dub, or one with
   no video file (a soundtrack/OST, a sample, a subtitle pack), answers `no_source` with a single
-  `Torrent: <name>` attempt saying why. Say that plainly; do not retry.
+  `Torrent: <name>` attempt saying why. Say that plainly; do not retry. When the swarm sent nothing,
+  the attempt also says what the trackers know ("1 seeder and 7 leechers"): say the swarm is too thin.
 - Never build or guess a magnet yourself, and never pass one the user did not give: this is only for
   a link the user pasted.
 
@@ -292,6 +293,9 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
   `error`, `dubbed`, `unplayable`, `skipped_browser_only`). The daemon tries a torrent before answering, so `attempts`
   may end with `Index: <name>` (a torrent index asked) and `Torrent: <release>` (a torrent tried;
   `unplayable`: Chrome cannot play its file). Offer `/idlix` or `/lk21`. Do not call again unless asked.
+  When the last attempt is `Torrents: not tried yet`, more torrents of the title were found than one ask
+  tries (six): say how many are left and that asking again tries those, not the same ones. The daemon
+  remembers which torrents failed, so "try again" is the same call again.
   With `provider: "cloud"` (NTM, NTS) no torrent was tried, and with `provider: "torrent"` (TM, TS)
   no cloud provider: say which, and offer the other source.
   - **When an attempt is `Index: ext: bot_check`** (a torrent play, TM/TS), ext.to's Cloudflare gate
@@ -301,6 +305,9 @@ for a torrent the user found themselves (e.g. on ext.to) when the indexes have n
     to solve the "Just a moment" / Turnstile check in that window, and once it answers `cleared: true`
     retry the same `direct_stream_play` — the daemon's ext search then rides the cookie the Chrome
     kept. Do this only when the owner agrees; never forge or click the challenge for them.
+  - **When an attempt is `Index: rutracker: bot_check`**, RuTracker wants its Cloudflare check solved or
+    (detail `login_required`) the owner logged in. Same offer, with `rutracker gate`: it waits up to
+    three minutes while the owner solves the check and logs in in that window. Never type a login.
 - **Error `torrent_off`:** torrents are off on this machine (`NOTESD_TORRENT=off`); say so and offer
   to stream it from a cloud provider (call again without `provider`).
 - **`direct_stream_off`:** direct streaming is off on this daemon (or this is the machine

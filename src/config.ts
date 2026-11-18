@@ -392,7 +392,7 @@ export function parseTorrentFinder(env: Record<string, string | undefined>): Tor
 export const DEFAULT_TORRENT_SITES_CLI = path.join(REPO_ROOT, 'claude', 'streaming', 'torrent', 'cli.mjs')
 
 /** Where 1337x and ext.to are by default. claude/streaming/torrent/sites/*.mjs default to the same addresses (a test compares them). */
-export const TORRENT_SITE_ORIGIN_DEFAULTS = { '1337x': 'https://1337x.la', ext: 'https://ext.to' } as const
+export const TORRENT_SITE_ORIGIN_DEFAULTS = { '1337x': 'https://1337x.la', ext: 'https://ext.to', rutracker: 'https://rutracker.net' } as const
 
 /**
  * The torrent sites the finder falls back on when the JSON indexes give nothing usable, asked through
@@ -401,10 +401,11 @@ export const TORRENT_SITE_ORIGIN_DEFAULTS = { '1337x': 'https://1337x.la', ext: 
 export interface TorrentSitesConfig {
   /**
    * Each site's address, scheme and host only: `NOTESD_TORRENT_1337X_ORIGIN` (default
-   * https://1337x.la) and `NOTESD_TORRENT_EXT_ORIGIN` (default https://ext.to). Null: `off`, the
-   * site is never asked.
+   * https://1337x.la), `NOTESD_TORRENT_EXT_ORIGIN` (default https://ext.to) and
+   * `NOTESD_TORRENT_RUTRACKER_ORIGIN` (default https://rutracker.net, the mirror this network reaches). Null:
+   * `off`, the site is never asked.
    */
-  origins: { '1337x': string | null; ext: string | null }
+  origins: { '1337x': string | null; ext: string | null; rutracker: string | null }
   /** `NOTESD_TORRENT_SITES_CLI`, absolute, default DEFAULT_TORRENT_SITES_CLI: the script run as `node <cli>`. */
   cli: string
 }
@@ -1145,6 +1146,7 @@ export function parseTorrentSites(env: Record<string, string | undefined>): Torr
     origins: {
       '1337x': parseTorrentSiteOrigin('NOTESD_TORRENT_1337X_ORIGIN', env.NOTESD_TORRENT_1337X_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS['1337x']),
       ext: parseTorrentSiteOrigin('NOTESD_TORRENT_EXT_ORIGIN', env.NOTESD_TORRENT_EXT_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS.ext),
+      rutracker: parseTorrentSiteOrigin('NOTESD_TORRENT_RUTRACKER_ORIGIN', env.NOTESD_TORRENT_RUTRACKER_ORIGIN, TORRENT_SITE_ORIGIN_DEFAULTS.rutracker),
     },
     cli: parseOptionalAbsolutePath('NOTESD_TORRENT_SITES_CLI', env.NOTESD_TORRENT_SITES_CLI) ?? DEFAULT_TORRENT_SITES_CLI,
   }

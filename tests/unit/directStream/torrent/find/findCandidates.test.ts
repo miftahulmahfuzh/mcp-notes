@@ -226,6 +226,11 @@ describe('findCandidates', () => {
     const usable = await findCandidates(SINTEL, { indexes: [lowSeeds], fallback: [fallback], minSeeds: 1 });
     expect(asked).toEqual([]);
     expect(usable.candidates.map((c) => c.infoHash)).toEqual([hash(8)]);
+
+    // Every kept candidate was tried on an earlier ask of the title: the fallback is asked for something new.
+    const again = await findCandidates(SINTEL, { indexes: [lowSeeds], fallback: [fallback], minSeeds: 1, tried: new Set([hash(8)]) });
+    expect(asked).toEqual(['tt1727587']);
+    expect(again.candidates.map((c) => c.infoHash).sort()).toEqual([hash(8), hash(9)]);
   });
 
   it("gives a fallback index its own longer time limit, and a JSON index never more than timeoutMs", async () => {

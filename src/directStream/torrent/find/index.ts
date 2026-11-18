@@ -10,3 +10,4 @@ export * from './apibay.js';
 export * from './eztv.js';
 export * from './yts.js';
 export * from './find.js';
+export * from './scrape.js';

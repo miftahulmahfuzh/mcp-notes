@@ -41,6 +41,7 @@ import {
 import { normalizeName } from '../directStream/match.js';
 import type { ProviderView } from '../directStream/repo.js';
 import { DirectStreamError } from '../directStream/types.js';
+import type { MagnetReport } from '../directStream/torrent/source.js';
 import type { UpdateSourceAnswer, WatchPages } from '../directStream/updateSource.js';
 import { getTitle } from '../movies/read.js';
 import { isFreshStreamSource, streamFreshSince } from '../movies/repo.js';
@@ -100,6 +101,8 @@ export interface DirectStreamToolDeps {
   providers(): Promise<ProviderView[]>;
   /** DirectStreamService.updateSource: read a site's templates, add and probe the new providers (/update-cloud-source). */
   updateSource(site: string, pages?: WatchPages): Promise<UpdateSourceAnswer>;
+  /** DirectStreamService.learnMagnet: a pasted magnet's index, swarm and trackers (/update-cloud-source <magnet>). Absent in tests' fakes. */
+  learnMagnet?(magnet: string): Promise<MagnetReport>;
 }
 
 /**
@@ -173,6 +176,7 @@ export function directStreamToolDeps(deps: AppDeps): DirectStreamToolDeps | null
     },
     providers: () => service.providers(),
     updateSource: (site, pages) => service.updateSource(site, pages),
+    learnMagnet: (magnet) => service.learnMagnet(magnet),
   };
 }
 
@@ -209,7 +213,7 @@ const PLAY_DESCRIPTION =
   'or no_match: did_you_mean lists titles close to the words, none of them the asked name; show them with their years and ask which. When the owner picks one, call again with its title_key (or movie_id) and asked_as set to the name the owner first used, ' +
   'so that name finds the title from then on. Never pass asked_as for a name the owner did not use. ' +
   'The error no_source means no provider and no torrent could stream it, and nothing started: attempts lists each provider with its outcome (resolved, no_stream, bot_check, error, dubbed, unplayable, skipped_browser_only, skipped_no_template); when no provider resolved, the torrent source was tried before answering, and its attempts follow: "Index: <name>" for each torrent index asked and "Torrent: <release>" for each torrent tried (dubbed: its audio is another language; unplayable: Chrome cannot play the file as is; no_stream: no file list or too little data from the swarm in time). Offer /idlix or /lk21. ' +
-  'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Several torrents are opened side by side and the one whose swarm delivers plays: its attempt names the peers connected and the rate, and the others are skipped ("its header arrived too", "still opening"). An index that failed three plays in a row is skipped for half an hour ("Index: <name>" skipped). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked; "Subtitles: pending" means the film started before the subtitle search ended, and the player adds the track when it arrives (say so). The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
+  'When it plays from a torrent, play.session.provider is Torrent and play.session.torrent is { info_hash, file_index, name, index, state, seeds }; a title whose torrent download is whole on this machine plays again from disk with no index and no swarm asked (no Index: or Torrent: attempt). Several torrents are opened side by side and the one whose swarm delivers plays: its attempt names the peers connected and the rate, and the others are skipped ("its header arrived too", "still opening"). An index that failed three plays in a row is skipped for half an hour ("Index: <name>" skipped). One call tries at most six torrents; when more were found, a failed play ends with the attempt "Torrents: not tried yet" saying how many are left, and the daemon remembers the ones that failed: calling again with the same arguments tries the next ones, not the same (say so, and call again only when the owner asks). Attempts may also hold "Subtitles: <tier>" for each subtitle source asked; "Subtitles: pending" means the film started before the subtitle search ended, and the player adds the track when it arrives (say so). The error torrent_off means torrents are off on this machine (NOTESD_TORRENT=off). ' +
   'A stream always plays in the title\'s original language: a provider whose stream is dubbed into another language is skipped (dubbed), and play.session.audio says what was heard (languages; original true when the stream names the original language, null when it names none). ' +
   'The errors resolve_failed and open_failed mean the streaming Chrome could not be used: reason says why (no_chrome, chrome_not_reachable, ...). ' +
   'When this machine holds a cache of the film or episode (made with direct_stream_cache), the play comes from it: play.session.cached is { id, state, height }. state ready plays from disk with no provider asked (attempts is empty, and it works with the internet down); state downloading plays what is on disk and fetches each part not there yet as the film reaches it. A failed cache, or one made on the other machine, is not used: the play resolves as usual. ' +
@@ -241,7 +245,11 @@ const UPDATE_SOURCE_DESCRIPTION =
   'Only the frames a page loads by itself are read: its other server buttons are not pressed. ' +
   'A site whose Cloudflare challenge keeps answering bot_check can instead be read from a tab the owner already solved the challenge in by hand ' +
   '(the owner runs `node claude/streaming/direct/cli.mjs gate <site>`, solves it, then this is called again with from_tab: true): that reads the SAME tab\'s current frames with no new navigation, so the challenge never shows again. ' +
-  'no_tab means no such gated tab answered; gate it again and retry promptly.';
+  'no_tab means no such gated tab answered; gate it again and retry promptly. ' +
+  'With magnet instead of site (a magnet link the owner pasted, or a bare 40-character info hash) it reads where that torrent comes from and widens the torrent sources: nothing is played and no swarm is joined. ' +
+  'A torrent index that runs its own trackers signs its magnets with them, so origin names the index (index, label, by: the tracker host that says so; supported: the finder has a site module for it; enabled; site_origin; gate: what the owner must do once by hand before it answers), or is null when the trackers name no index we know, with unknown_hosts listing the tracker hosts that are neither a known index\'s nor a public tracker we hold. ' +
+  'trackers says what became of the magnet\'s trackers: own (the index\'s own, never added), known (already used), added (new public UDP trackers that answered a scrape: from now on added to every torrent opened and asked for seeders before a play), silent (did not answer, not added) and skipped (not UDP). ' +
+  'swarm is what the trackers know of this torrent now ({ seeders, leechers, trackers }), or null when none answered. next says what to do. Errors: bad_magnet, torrent_off.';
 
 const siteField = z
   .string()
@@ -281,7 +289,14 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
       title: 'Add an aggregator site\'s new stream providers',
       description: UPDATE_SOURCE_DESCRIPTION,
       inputSchema: {
-        site: siteField.describe('The aggregator site\'s address, such as https://ww6-fmovies.com/ (its home page or a film page).'),
+        site: siteField.optional().describe('The aggregator site\'s address, such as https://ww6-fmovies.com/ (its home page or a film page). Required unless magnet is given.'),
+        magnet: z
+          .string()
+          .trim()
+          .min(40)
+          .max(8000)
+          .optional()
+          .describe('Instead of site: a magnet link the owner pasted (magnet:?xt=urn:btih:...), or a bare 40-character info hash. Never one you built.'),
         watch_page: siteField
           .optional()
           .describe('Only when the owner gave one: a film\'s watch page on the site, for the frame reader (a page of a known title works best: Fight Club, TMDB 550).'),
@@ -293,9 +308,19 @@ function registerDirectStreamSourceTools(server: McpServer, deps: Pick<ToolDeps,
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
-    async ({ site, watch_page, episode_page, from_tab }) => {
+    async ({ site, magnet, watch_page, episode_page, from_tab }) => {
       const d = deps.directStream;
       if (!d) return off();
+      if (magnet !== undefined) {
+        if (site !== undefined) return failJson({ error: 'invalid_input', message: 'Pass site or magnet, not both.' });
+        const learn = d.learnMagnet;
+        if (learn === undefined) return failJson({ error: 'torrent_off', message: 'Torrents are off on this machine (NOTESD_TORRENT=off).' });
+        return respond(async () => {
+          const report = await learn(magnet);
+          return report.ok ? ok(report) : failJson(report);
+        });
+      }
+      if (site === undefined) return failJson({ error: 'invalid_input', message: 'Pass site (an aggregator site\'s address) or magnet (a pasted magnet link).' });
       return respond(async () => ok(await d.updateSource(site, { watchPage: watch_page, episodePage: episode_page, fromTab: from_tab })));
     },
   );
@@ -763,7 +788,7 @@ export function registerDirectStreamTools(server: McpServer, deps: Pick<ToolDeps
               next:
                 provider !== undefined && provider.trim().toLowerCase() === 'cloud'
                   ? 'No cloud provider could stream it, and nothing started; no torrent was tried, since cloud only was asked. Tell the owner, one short line per attempt with its outcome, and offer a torrent (provider "torrent": TM, TS), /idlix or /lk21.'
-                  : 'No provider and no torrent could stream it, and nothing started. Tell the owner, one short line per attempt with its outcome (an "Index: " attempt is a torrent index asked, a "Torrent: " attempt one torrent tried), and offer /idlix or /lk21.',
+                  : 'No provider and no torrent could stream it, and nothing started. Tell the owner, one short line per attempt with its outcome (an "Index: " attempt is a torrent index asked, a "Torrent: " attempt one torrent tried; "Torrents: not tried yet" says more torrents were found than one call tries, and that asking again tries those), and offer /idlix or /lk21.',
             });
           }
           if (failure.error === 'torrent_off') {

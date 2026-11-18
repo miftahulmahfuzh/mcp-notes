@@ -3,5 +3,6 @@
 // These are not streaming sites: claude/streaming/sites/index.mjs (play sites) stays apart.
 import x1337 from './1337x.mjs';
 import ext from './ext.mjs';
+import rutracker from './rutracker.mjs';
 
-export const TORRENT_SITE_MODULES = { '1337x': x1337, ext };
+export const TORRENT_SITE_MODULES = { '1337x': x1337, ext, rutracker };

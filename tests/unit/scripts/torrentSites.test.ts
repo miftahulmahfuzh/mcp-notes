@@ -17,6 +17,8 @@ import x1337, { magnetsExpression, readMagnet, readRows as read1337xRows, search
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import ext, { askExtMagnet, magnetExpression, navigateExpression, readRows as readExtRows, rowsExpression, searchPath as extPath } from '../../../claude/streaming/torrent/sites/ext.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
+import rutracker, { gateExpression as rutrackerGate, isLoggedIn, magnetsExpression as rutrackerMagnets, readMagnet as readRutrackerMagnet, readRows as readRutrackerRows, releaseName, searchExpression as rutrackerSearch, searchPath as rutrackerPath } from '../../../claude/streaming/torrent/sites/rutracker.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
 import { TORRENT_SITE_MODULES } from '../../../claude/streaming/torrent/sites/index.mjs';
 
 // Under jsdom import.meta.url is no file address, so the saved pages are found from the repo root (vitest's cwd).
@@ -353,7 +355,7 @@ describe('cli.mjs', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       expect(await main(['--sites'])).toBe(0);
-      expect(JSON.parse(String(log.mock.calls[0]?.[0])).map((s: { name: string }) => s.name)).toEqual(['1337x', 'ext']);
+      expect(JSON.parse(String(log.mock.calls[0]?.[0])).map((s: { name: string }) => s.name)).toEqual(['1337x', 'ext', 'rutracker']);
     } finally {
       log.mockRestore();
     }
@@ -364,5 +366,60 @@ describe('cli.mjs', () => {
     expect(readOptions(['--imdb', '1727587']).bad).toMatch(/IMDb id/);
     expect(readOptions(['--origin', 'https://1337x.la/x/y']).origin).toBe('https://1337x.la');
     expect(readOptions(['--bogus']).bad).toBe('unknown flag --bogus');
+  });
+});
+
+describe('RuTracker', () => {
+  const R = 'https://rutracker.net';
+
+  it('reads a topic title as a release name: the Latin title, the season and episodes, the year, the marks, the audio', () => {
+    expect(releaseName("Рассказ служанки / The Handmaid's Tale / Сезон: 1 / Серии: 1-10 из 10 (Рид Морано, Майк Баркер) [2017, США, фантастика, HDR10, WEB-DL 2160p, 4k] MVO (SDI Media) + Original (Eng)+ Sub (Rus, Eng)")).toBe(
+      "The Handmaid's Tale S01E01-E10 2017 HDR10 WEB-DL 2160p 4k MVO (SDI Media) + Original (Eng)+ Sub (Rus, Eng)",
+    );
+    expect(releaseName('Бойцовский клуб / Fight Club (Дэвид Финчер / David Fincher) [1999, США, триллер, драма, BDRip 1080p] Dub + Original (Eng)')).toBe('Fight Club 1999 BDRip 1080p Dub + Original (Eng)');
+    expect(releaseName('Медведь / The Bear / Сезон: 2 / Серии: 1-5 из 10 (Кристофер Сторер) [2023, США, WEB-DLRip] Dub (Невафильм)')).toBe('The Bear S02E01-E05 2023 WEB-DLRip Dub (Невафильм)');
+    expect(releaseName('Игра престолов / Game of Thrones / Сезоны: 1-8 (Дэвид Бениофф) [2011-2019, США, BDRip 720p] Original')).toBe('Game of Thrones S01-S08 2011 BDRip 720p Original');
+    // The rewritten name is what the finder's title rule and episode reader are given.
+    expect(sameTitle(releaseName("Рассказ служанки / The Handmaid's Tale / Сезон: 1 / Серии: 1-10 из 10 [2017, США, WEB-DL 2160p] Original (Eng)"), { title: "The Handmaid's Tale", year: 2017, episode: 1 })).toBe(true);
+    expect(sameTitle(releaseName('Бойцовский клуб / Fight Club (Дэвид Финчер) [1999, США, BDRip 1080p] Original'), { title: 'Fight Club', year: 1999, episode: null })).toBe(true);
+  });
+
+  it('searches by the words, most seeders first, and knows a topic page by its number', () => {
+    expect(rutrackerPath({ title: "The Handmaid's Tale", year: 2017, season: 1, episode: 1 })).toBe('/forum/tracker.php?nm=Handmaid%27s+Tale&o=10&s=2');
+    expect(rutrackerPath({ title: 'Fight Club', year: 1999, season: null, episode: null })).toBe('/forum/tracker.php?nm=Fight+Club+1999&o=10&s=2');
+    expect(rutracker.releasePath(`${R}/forum/viewtopic.php?t=5404029`, R)).toBe('/forum/viewtopic.php?t=5404029');
+    expect(rutracker.releasePath(`${R}/forum/viewtopic.php?p=1`, R)).toBeNull();
+    expect(rutracker.releasePath(`${R}/forum/tracker.php?nm=x`, R)).toBeNull();
+  });
+
+  it('reads the rows of a search page, the magnet of a topic page, and whether the page is a member\'s', () => {
+    const rows = readRutrackerRows(page('rutracker-search-handmaid.html'));
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toMatchObject({ href: 'viewtopic.php?t=5402396', seeds: '46', leeches: '5', size: '6849814528 B' });
+    expect(rows[0].name).toMatch(/^Рассказ служанки \/ The Handmaid's Tale \/ Сезон: 1/);
+    expect(toRow({ ...rows[0], href: `/forum/${rows[0].href}`, name: releaseName(rows[0].name) }, R)).toMatchObject({ name: "The Handmaid's Tale S01E01-E10 2017 WEBRip MVO (LostFilm) + Original", page_url: `${R}/forum/viewtopic.php?t=5402396`, seeds: 46, leeches: 5, size_bytes: 6849814528 });
+    expect(parseMagnet(readRutrackerMagnet(page('rutracker-topic.html')))).toMatchObject({ info_hash: '0bbf38e70fe5e022de46a882b872f85225697c08', trackers: ['http://bt4.t-ru.org/ann?magnet'] });
+    expect(isLoggedIn(page('rutracker-search-handmaid.html'))).toBe(true);
+    expect(isLoggedIn(page('rutracker-login.html'))).toBe(false);
+  });
+
+  it('its expressions are whole programs', () => {
+    parses(rutrackerSearch('/forum/tracker.php?nm=x'));
+    parses(rutrackerMagnets(['/forum/viewtopic.php?t=1']));
+    parses(rutrackerGate());
+  });
+
+  it('the gate stays shut until the owner is logged in, and says what it waits for', async () => {
+    const foreground = vi.fn(async () => ({ created: false, activated: true }));
+    const sleep = vi.fn(async () => {});
+    const answers = [{ bot_check: true, login: false, title: 'Just a moment...' }, { bot_check: false, login: true, title: 'Вход' }, { bot_check: false, login: false, title: 'RuTracker.org' }];
+    const ask = vi.fn(async (_origin: string, expression: string) => {
+      expect(expression).toBe(rutrackerGate());
+      return answers.shift();
+    });
+    expect(await clearGate(rutracker, R, Date.now() + 60_000, { foreground, ask, sleep })).toEqual({ cleared: true, title: 'RuTracker.org' });
+    expect(ask).toHaveBeenCalledTimes(3);
+    const waiting = await clearGate(rutracker, R, Date.now() + 10, { foreground, ask: vi.fn(async () => ({ bot_check: false, login: true, title: 'Вход' })), sleep });
+    expect(waiting).toEqual({ cleared: false, title: 'Вход', waiting_for: 'login' });
   });
 });

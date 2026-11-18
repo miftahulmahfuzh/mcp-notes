@@ -79,6 +79,29 @@ describe('direct-stream registry tools', () => {
     await c.close();
   });
 
+  it('direct_stream_update_source with a magnet reads its index and trackers, and never the site reader', async () => {
+    const updateSource = vi.fn();
+    const report = { ok: true as const, info_hash: 'a'.repeat(40), name: 'Film', origin: null, unknown_hosts: [], trackers: { own: [], known: [], added: ['udp://p4p.arenabg.com:1337'], silent: [], skipped: [] }, swarm: { seeders: 1, leechers: 7, trackers: 2 }, next: 'said' };
+    const learnMagnet = vi.fn().mockResolvedValueOnce(report).mockResolvedValueOnce({ ok: false, error: 'bad_magnet', detail: 'not a magnet link or a 40-character info hash' });
+    const c = await connect({ updateSource, providers: vi.fn(), learnMagnet });
+    const magnet = `magnet:?xt=urn:btih:${'a'.repeat(40)}&tr=udp://p4p.arenabg.com:1337`;
+    const ok = await c.call('direct_stream_update_source', { magnet });
+    expect(learnMagnet).toHaveBeenNthCalledWith(1, magnet);
+    expect(JSON.parse(text(ok))).toEqual(report);
+    const bad = await c.call('direct_stream_update_source', { magnet: 'x'.repeat(40) });
+    expect(bad.isError).toBe(true);
+    expect(JSON.parse(text(bad))).toMatchObject({ error: 'bad_magnet' });
+    // One or the other, and one of them.
+    expect((await c.call('direct_stream_update_source', { magnet, site: 'https://ww6-fmovies.com/' })).isError).toBe(true);
+    expect((await c.call('direct_stream_update_source', {})).isError).toBe(true);
+    expect(updateSource).not.toHaveBeenCalled();
+    // A daemon built without the torrent source answers torrent_off.
+    const none = await connect({ updateSource, providers: vi.fn() });
+    expect(text(await none.call('direct_stream_update_source', { magnet }))).toContain('torrent_off');
+    await c.close();
+    await none.close();
+  });
+
   it('refuses an address that is not http or https, and calls nothing', async () => {
     const updateSource = vi.fn();
     const c = await connect({ updateSource, providers: vi.fn() });

@@ -197,10 +197,11 @@ describe('playWithin: the caller is answered before it gives up', () => {
     await t.tick();
     await t.tick();
     expect(t.logged).toEqual([
-      '[notesd] direct stream: play of TMDB movie 818647 (torrent) started nothing after 0 s: no_source, 3 attempt(s)',
+      '[notesd] direct stream: play of TMDB movie 818647 (torrent) started nothing after 0 s: no_source, 4 attempt(s)',
       '[notesd] direct stream:   attempt Index: torrentio: resolved after 0.3 s (53 listed)',
       '[notesd] direct stream:   attempt Index: yts: error after 6 s (timed out after 6 s)',
       '[notesd] direct stream:   attempt Torrent: Through My Window 2022 1080p WEBRip: no_stream after 0 s (no file list from the swarm in time (no metadata within 20 s))',
+      '[notesd] direct stream:   attempt Torrents: not tried yet: skipped (every torrent found was tried; asking again starts over with the ones whose swarm did not deliver)',
     ]);
     const again = t.svc.playWithin(FILM, { provider: 'torrent' }, 10);
     await expect(again).rejects.toBeInstanceOf(DirectStreamError);
@@ -211,9 +212,9 @@ describe('playWithin: the caller is answered before it gives up', () => {
     const t = setup({ resolve: NO_SOURCE, failOpen: true });
     await expect(t.svc.play(FILM)).rejects.toMatchObject({ code: 'no_source' });
     const lines = t.logged.filter((l) => l.includes('attempt ') || l.includes('started nothing'));
-    expect(lines[0]).toBe('[notesd] direct stream: play of TMDB movie 818647 started nothing after 0 s: no_source, 4 attempt(s)');
+    expect(lines[0]).toBe('[notesd] direct stream: play of TMDB movie 818647 started nothing after 0 s: no_source, 5 attempt(s)');
     expect(lines[1]).toBe('[notesd] direct stream:   attempt Alpha: no_stream after 2 s (nothing)');
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(6);
   });
 });
 

@@ -4,11 +4,11 @@ import { runJsonScript } from '../../streaming/service.js'
 import { candidateFrom, parseRelease, type IndexAnswer, type TorrentCandidate, type TorrentIndex } from './find/index.js'
 
 /**
- * 1337x and ext.to: the torrent finder's fallback (torrent phase 9). They are asked through
+ * 1337x, ext.to and RuTracker: the torrent finder's fallback (torrent phase 9). They are asked through
  * claude/streaming/torrent/cli.mjs inside the streaming Chrome only when the JSON indexes give
  * nothing usable. claude/streaming/torrent/sites/index.mjs holds the same names; a test compares them.
  */
-export const TORRENT_SITES = ['1337x', 'ext'] as const satisfies ReadonlyArray<keyof TorrentSitesConfig['origins']>
+export const TORRENT_SITES = ['1337x', 'ext', 'rutracker'] as const satisfies ReadonlyArray<keyof TorrentSitesConfig['origins']>
 export type TorrentSiteName = (typeof TORRENT_SITES)[number]
 
 /** One site, both steps. The finder asks the sites side by side, so both together take about this long. */
@@ -57,12 +57,16 @@ const magnetsSchema = z.object({
 
 const answer = (outcome: IndexAnswer['outcome'], detail: string, candidates: TorrentCandidate[] = []): IndexAnswer => ({ outcome, detail, candidates })
 
-/** A failure the script printed. A bot check is its own outcome; anything else (no_chrome too) is an error. */
+/**
+ * A failure the script printed. A bot check is its own outcome, and so is a site that wants the owner logged in
+ * (`login_required`): both are cleared by hand with the site's `gate` command, never counted against the index
+ * and never worked around. Anything else (no_chrome too) is an error.
+ */
 function failed(value: unknown, step: string): IndexAnswer | null {
   const parsed = failedSchema.safeParse(value)
   if (!parsed.success) return null
   const detail = `${step}: ${parsed.data.error}${parsed.data.detail ? `: ${parsed.data.detail}` : ''}`
-  return answer(parsed.data.error === 'bot_check' ? 'bot_check' : 'error', detail)
+  return answer(parsed.data.error === 'bot_check' || parsed.data.error === 'login_required' ? 'bot_check' : 'error', detail)
 }
 
 /** The asked episode, or null for a film (phase 2's TorrentQuery is a union: only a `tv` query has one). */

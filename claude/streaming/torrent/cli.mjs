@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-// One command for the torrent sites (1337x, ext.to), asked inside the streaming Chrome in a background
+// One command for the torrent sites (1337x, ext.to, RuTracker), asked inside the streaming Chrome in a background
 // tab. Prints one JSON object. The daemon's torrent finder (src/directStream/torrent/find-sites.ts)
 // runs `search`, then `magnets` for the few rows it keeps; by hand, `cli.mjs <site> <title> [year]`
 // does both for the five best-seeded matches.
 // Usage: cli.mjs --sites
 //        cli.mjs <site> search --title <words> [--year <n>] [--season <n> --episode <n>] [--imdb <tt...>] [--origin <url>] [--deadline-s <n>]
 //        cli.mjs <site> magnets [--origin <url>] [--deadline-s <n>] <release page url>...
-//        cli.mjs <site> gate [--origin <url>] [--deadline-s <n>]   # foreground the site so the owner solves its Cloudflare challenge
+//        cli.mjs <site> gate [--origin <url>] [--deadline-s <n>]   # foreground the site so the owner solves its Cloudflare challenge (and, on RuTracker, logs in)
 //        cli.mjs <site> <title words> [year] [--season <n> --episode <n>] [--imdb <tt...>] [--origin <url>]
 // A failure is { ok: false, site, origin, error, detail }: error is bot_check, no_chrome,
-// chrome_not_reachable, cdp_failed, no_title, usage or site_error.
+// login_required (the site's search is for logged-in accounts: run its gate), chrome_not_reachable, cdp_failed,
+// no_title, usage or site_error.
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { ChromeError } from '../chrome.mjs';
@@ -116,16 +117,17 @@ export async function clearGate(site, origin, deadline, { foreground = foregroun
   let last = { bot_check: true, title: '' };
   while (Date.now() < deadline) {
     try {
-      last = await ask(origin, gateExpression(), { timeoutS: secondsLeft(deadline) });
+      last = await ask(origin, (site?.gateExpression ?? gateExpression)(), { timeoutS: secondsLeft(deadline) });
     } catch (err) {
       // While a challenge holds the only tab, cdp.ps1 answers no_tab (a BotCheckError here): keep waiting.
       if (!(err instanceof BotCheckError)) throw err;
       last = { bot_check: true, title: last.title };
     }
-    if (last && last.bot_check === false) return { cleared: true, title: last.title ?? '' };
+    // A site with a login (RuTracker) is cleared only once the page is a logged-in member's.
+    if (last && last.bot_check === false && last.login !== true) return { cleared: true, title: last.title ?? '' };
     await sleep(2000);
   }
-  return { cleared: false, title: last?.title ?? '' };
+  return { cleared: false, title: last?.title ?? '', ...(last?.login === true ? { waiting_for: 'login' } : {}) };
 }
 
 export async function main(argv, { sites = TORRENT_SITE_MODULES, gate = clearGate } = {}) {
@@ -147,11 +149,11 @@ export async function main(argv, { sites = TORRENT_SITE_MODULES, gate = clearGat
     return code;
   };
   if (options.bad !== null) return fail('usage', options.bad, 2);
-  const deadline = Date.now() + (options.deadlineS ?? DEFAULT_DEADLINE_S) * 1000;
+  const deadline = Date.now() + (options.deadlineS ?? (command === 'gate' ? (site.gateDeadlineS ?? DEFAULT_DEADLINE_S) : DEFAULT_DEADLINE_S)) * 1000;
   try {
     if (command === 'gate') {
-      const { cleared, title } = await gate(site, origin, deadline);
-      print({ ok: true, site: site.name, origin, cleared, title });
+      const { cleared, title, waiting_for: waitingFor } = await gate(site, origin, deadline);
+      print({ ok: true, site: site.name, origin, cleared, title, ...(waitingFor === undefined ? {} : { waiting_for: waitingFor }) });
       return 0;
     }
     if (command === 'magnets') {
@@ -190,6 +192,7 @@ export async function main(argv, { sites = TORRENT_SITE_MODULES, gate = clearGat
     return 0;
   } catch (err) {
     if (err instanceof BotCheckError) return fail('bot_check', err.detail, 1);
+    if (err?.code === 'login_required') return fail('login_required', err.detail, 1);
     if (err instanceof ChromeError) return fail(err.code, err.message, 1);
     return fail('site_error', String(err?.message ?? err), 1);
   }

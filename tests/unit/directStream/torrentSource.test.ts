@@ -157,7 +157,8 @@ describe('a dub-named release as a last resort', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok).toBe(false);
     if (out.ok) return;
-    expect(out.attempts.at(-1)).toMatchObject({ provider: 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL', outcome: 'dubbed' });
+    // The last attempt says what asking again would try (TORRENTS_LEFT); the torrent's own is the one before it.
+    expect(out.attempts.at(-2)).toMatchObject({ provider: 'Torrent: Film.2026.1080p.Hindi.Dubbed.WEB-DL', outcome: 'dubbed' });
   });
 
   it('refuses a dual-audio file whose original is not the default when no remux can force it', async () => {
@@ -171,7 +172,7 @@ describe('a dub-named release as a last resort', () => {
     const out = await t.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' });
     expect(out.ok).toBe(false);
     if (out.ok) return;
-    expect(out.attempts.at(-1)).toMatchObject({ outcome: 'dubbed' });
+    expect(out.attempts.at(-2)).toMatchObject({ outcome: 'dubbed' });
     // ...but the same file with the original first plays directly, no remux needed.
     const ok = setup({ candidates: [candidate(h(3), 'Film.2026.1080p.WEB-DL.x264')], probes: { [h(3)]: MP4_DUAL_ORIG_FIRST } });
     expect((await ok.source.resolve(FILM, { audioLang: 'en', imdbId: 'tt0467905' })).ok).toBe(true);

@@ -98,6 +98,11 @@ export interface FindOptions extends Partial<RankSettings> {
   /** Default TORRENT_INDEX_USER_AGENT; phase 3 may pass one with the daemon's version. */
   userAgent?: string;
   signal?: AbortSignal;
+  /**
+   * Info hashes already tried for this title (the torrent source's memory of failed torrents). The fallback indexes
+   * are also asked when every kept candidate is one of them: the JSON indexes have nothing new left.
+   */
+  tried?: ReadonlySet<string>;
   /** The indexes' failures between plays; an index it leaves out is a `skipped` attempt. Unset: every index is asked every time. */
   health?: IndexHealth;
 }
@@ -206,7 +211,8 @@ export async function findCandidates(query: TorrentQuery, options: FindOptions =
   let found = first.candidates;
   let ranked = rankCandidates(found, asked, settings);
   const fallback = forKind(options.fallback ?? []);
-  if (ranked.kept.length === 0 && fallback.length > 0) {
+  const tried = options.tried ?? new Set<string>();
+  if (ranked.kept.every((c) => tried.has(c.infoHash)) && fallback.length > 0) {
     // A fallback index (a browser-driven site) keeps its own, longer limit.
     const second = await askAll(fallback, asked, { ...run, timeoutMs: Math.max(run.timeoutMs, ...fallback.map((i) => i.timeoutMs ?? 0)) });
     attempts = [...attempts, ...second.attempts];
