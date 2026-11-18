@@ -57,9 +57,10 @@ It prints JSON:
   `url`.
 - `others`: every other result. The search is fuzzy, so most of these are unrelated.
 - `play`, with `--play` only: what happened on screen (below).
-- `warp`, when present: the site did not answer on this network, so the script turned Cloudflare
-  WARP on (it was installed and off) and asked again. WARP stays on, for the whole laptop; say so
-  in one line.
+- `warp`, when present: the site did not answer, so the script switched Cloudflare WARP the
+  other way round and asked again, which worked: `connected` (it was off; some sites are only
+  reached through it) or `disconnected` (it was on; some sites refuse its addresses). WARP stays
+  that way, for the whole laptop; say so in one line.
 - `kept`, after a play that started: what the daemon kept of it. `recorded: true` with `title_id`:
   the title is now on the Stream side of the wall's movies page, and Play there, or a
   `direct_stream_play` that names no source, comes back to this site. `recorded: true` with

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { readStatus, turnWarpOn } from '../../../claude/streaming/warp.mjs';
+import { flipWarp, readStatus } from '../../../claude/streaming/warp.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { SEEN_MAX, recall, remember, seenFile } from '../../../claude/streaming/seen.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -298,15 +298,19 @@ describe('what the searches returned lately', () => {
 });
 
 describe('Cloudflare WARP for a site this network does not reach', () => {
-  const warp = (statuses: string[], o: { installed?: boolean; env?: Record<string, string> } = {}) => {
+  /** A WARP that goes where it is told after `lag` status reads, or never with `stuck`. */
+  const warp = (start: 'Connected' | 'Disconnected' | 'Registration Missing', o: { installed?: boolean; env?: Record<string, string>; stuck?: boolean } = {}) => {
     const calls: string[] = [];
+    let state: string = start;
     let clock = 0;
     const cli = async (args: string[]) => {
       calls.push(args[0]!);
-      return args[0] === 'status' ? `Status update: ${statuses.shift() ?? 'Disconnected'}\nNetwork: healthy\n` : 'Success\n';
+      if (args[0] === 'connect' && !o.stuck) state = 'Connected';
+      if (args[0] === 'disconnect' && !o.stuck) state = 'Disconnected';
+      return args[0] === 'status' ? `Status update: ${state}\nNetwork: healthy\n` : 'Success\n';
     };
-    const on = turnWarpOn({ cli, installed: () => o.installed !== false, env: o.env ?? {}, sleep: async (ms: number) => void (clock += ms), now: () => clock });
-    return { on, calls };
+    const flipped = flipWarp({ cli, installed: () => o.installed !== false, env: o.env ?? {}, sleep: async (ms: number) => void (clock += ms), now: () => clock });
+    return { flipped, calls, state: () => state };
   };
 
   it('reads the status line', () => {
@@ -317,30 +321,40 @@ describe('Cloudflare WARP for a site this network does not reach', () => {
     expect(readStatus(null)).toBe('unknown');
   });
 
-  it('turns it on when it is off, and says so only once it is connected', async () => {
-    const t = warp(['Disconnected', 'Connecting', 'Connected']);
-    expect(await t.on).toBe(true);
-    expect(t.calls).toEqual(['status', 'connect', 'status', 'status']);
+  it('turns it on when it is off and off when it is on, and can put it back', async () => {
+    const on = warp('Disconnected');
+    const up = await on.flipped;
+    expect(up?.now).toBe('connected');
+    expect(on.calls).toEqual(['status', 'connect', 'status']);
+    await up?.back();
+    expect(on.state()).toBe('Disconnected');
+
+    // lk21 refuses WARP's addresses: a site that fails through it is asked again without it.
+    const off = warp('Connected');
+    const down = await off.flipped;
+    expect(down?.now).toBe('disconnected');
+    expect(off.calls).toEqual(['status', 'disconnect', 'status']);
+    await down?.back();
+    expect(off.state()).toBe('Connected');
   });
 
-  it('changes nothing when it is on already, not installed, switched off for the scripts, or in a state it does not know', async () => {
-    const on = warp(['Connected']);
-    expect(await on.on).toBe(false);
-    expect(on.calls).toEqual(['status']);
-    const none = warp(['Disconnected'], { installed: false });
-    expect(await none.on).toBe(false);
+  it('changes nothing when it is not installed, left alone by the scripts, or in a state that is neither on nor off', async () => {
+    const none = warp('Disconnected', { installed: false });
+    expect(await none.flipped).toBeNull();
     expect(none.calls).toEqual([]);
-    const off = warp(['Disconnected'], { env: { NOTESD_STREAM_WARP: 'off' } });
-    expect(await off.on).toBe(false);
-    expect(off.calls).toEqual([]);
-    expect(await warp(['Registration Missing']).on).toBe(false);
+    const alone = warp('Connected', { env: { NOTESD_STREAM_WARP: 'off' } });
+    expect(await alone.flipped).toBeNull();
+    expect(alone.calls).toEqual([]);
+    const odd = warp('Registration Missing');
+    expect(await odd.flipped).toBeNull();
+    expect(odd.calls).toEqual(['status']);
   });
 
-  it('gives up when it never connects, and never disconnects', async () => {
-    const t = warp(['Disconnected']);
-    expect(await t.on).toBe(false);
-    expect(t.calls).not.toContain('disconnect');
-    expect(t.calls.filter((c) => c === 'connect')).toHaveLength(1);
+  it('asks for what it was when it does not switch in time', async () => {
+    const t = warp('Disconnected', { stuck: true });
+    expect(await t.flipped).toBeNull();
+    expect(t.calls.at(1)).toBe('connect');
+    expect(t.calls.at(-1)).toBe('disconnect');
   });
 });
 

@@ -13,35 +13,52 @@ import { pathToFileURL } from 'node:url';
 import { parseQuery, pickMatches } from './match.mjs';
 import { playTitle } from './play.mjs';
 import { recall, remember } from './seen.mjs';
-import { turnWarpOn } from './warp.mjs';
+import { flipWarp } from './warp.mjs';
 import { SITES } from './sites/index.mjs';
 
 const print = (value) => console.log(JSON.stringify(value, null, 2));
 
 const REPORT_TIMEOUT_MS = 20_000;
-const WARP_NOTE = 'connected: the site did not answer on this network, so Cloudflare WARP was turned on and it was asked again. WARP stays on.';
+const WARP_NOTES = {
+  connected: 'connected: the site did not answer on this network, so Cloudflare WARP was turned on and it was asked again. WARP stays on.',
+  disconnected: 'disconnected: the site did not answer through Cloudflare WARP (some sites refuse its addresses), so WARP was turned off and it was asked again. WARP stays off.',
+};
 
 /**
- * A site this network does not reach (the provider blocks it, its page never loads) is asked once
- * more through Cloudflare WARP, when WARP is installed and was off (warp.mjs). `note.warp` then
- * says so in the answer.
+ * A site that does not answer is asked once more with Cloudflare WARP the other way round
+ * (warp.mjs): on when it was off, off when it was on. When that helped, WARP stays as it now is and
+ * `note.warp` says so in the answer; when it did not, WARP is put back and the first failure stands.
  */
 async function searchSite(site, query, note) {
   try {
     return await site.search(query);
   } catch (err) {
-    if (!(await turnWarpOn())) throw err;
-    note.warp = WARP_NOTE;
-    return site.search(query);
+    const flipped = await flipWarp();
+    if (flipped === null) throw err;
+    try {
+      const results = await site.search(query);
+      note.warp = WARP_NOTES[flipped.now];
+      return results;
+    } catch {
+      await flipped.back();
+      throw err;
+    }
   }
 }
 
-/** playTitle, and once more through WARP when the page could not be opened at all (an `error`; a `stage` is the player's own stop). */
+/** playTitle, and once more with WARP the other way round when the page could not be opened at all (an `error`; a `stage` is the player's own stop). */
 async function playOn(site, url, note) {
   const played = await playTitle(site, url);
-  if (played.playing || played.error === undefined || !(await turnWarpOn())) return played;
-  note.warp = WARP_NOTE;
-  return playTitle(site, url);
+  if (played.playing || played.error === undefined) return played;
+  const flipped = await flipWarp();
+  if (flipped === null) return played;
+  const again = await playTitle(site, url);
+  if (again.playing || again.error === undefined) {
+    note.warp = WARP_NOTES[flipped.now];
+    return again;
+  }
+  await flipped.back();
+  return played;
 }
 
 /** What the daemon is told of a play that started: the site, the title's page there, and what the search said of it. */

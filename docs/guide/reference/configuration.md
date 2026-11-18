@@ -128,7 +128,7 @@ The `/pahe`, `/idlix`, `/lk21`, `/flicksy` and `/dramacool` skills and the strea
 | `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
 | `FLICKSY_ORIGIN` | `https://flicksy.pro` | The same for flicksy, read by `claude/streaming/sites/flicksy.mjs`. |
 | `DRAMACOOL_ORIGIN` | `https://dramacool9.com.ro` | The same for dramacool, read by `claude/streaming/sites/dramacool.mjs`. |
-| `NOTESD_STREAM_WARP` | on | `off` stops the streaming command from turning Cloudflare WARP on. Otherwise, when a streaming site does not answer and WARP is installed on the Windows side and disconnected, the command connects it, asks the site once more and says so (`warp` in its answer). WARP is never turned off by the scripts, and it carries the whole laptop's traffic while it is on. |
+| `NOTESD_STREAM_WARP` | on | `off` stops the streaming command from touching Cloudflare WARP. Otherwise, when a streaming site does not answer and WARP is installed on the Windows side, the command switches it the other way round (on when it was off, off when it was on), asks the site once more and, when that worked, leaves WARP that way and says so (`warp` in its answer); when it did not, WARP is put back. WARP carries the whole laptop's traffic while it is on. |
 
 ## Direct streaming
 

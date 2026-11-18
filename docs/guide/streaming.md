@@ -69,12 +69,15 @@ host of the same name (`cdp.ps1` answers `moved` with where) makes that host the
 `*_ORIGIN` variable when a site has moved somewhere the scripts cannot follow: see
 [configuration](reference/configuration.md#streaming-sites).
 
-**A site this network does not reach.** When a site does not answer (its page never loads, a
-request fails) and Cloudflare WARP is installed on the Windows side and disconnected, the command
-connects it (`warp-cli connect`), waits until it is connected and asks the site once more; `warp`
-in the answer says so. WARP carries the whole laptop's traffic and is left on: nothing turns it
-off again, and nothing turns it on for a torrent or a cloud stream. `NOTESD_STREAM_WARP=off` stops
-it. A tab left on Chrome's own error page by the failed try is closed and opened again, so the
+**A site this network does not reach.** Some sites are only reached through Cloudflare WARP, and
+some refuse it: with WARP on, lk21's Cloudflare answers "you have been blocked" to the real
+Chrome and to a plain request alike, and with it off both go through (2026-11-18; idlix answers
+either way). So when a site does not answer (its page never loads, a request fails) and WARP is
+installed on the Windows side, the command switches it the other way round (`warp-cli connect` or
+`disconnect`), waits until it is there and asks the site once more. When that worked WARP stays
+that way and `warp` in the answer says so; when it did not, WARP is put back and the first
+failure is the answer. WARP carries the whole laptop's traffic, so it is touched only after a
+site failed, and never for a torrent or a cloud stream. `NOTESD_STREAM_WARP=off` stops it. A tab left on Chrome's own error page by the failed try is closed and opened again, so the
 second try really loads the site.
 
 flicksy has no catalogue of its own: its search is TMDB's, so every title TMDB lists is found, and
@@ -355,7 +358,7 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 | --- | --- |
 | `streaming_off` | `NOTESD_STREAMING=off`, or the daemon was started without the tools |
 | `no_chrome` | Chrome is not installed on the Windows side |
-| `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time (with WARP installed and off, it is turned on and the site asked once more) |
+| `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time (with WARP installed, it is switched the other way round and the site asked once more) |
 | `moved` | The tab opened on the site's address landed on another host that is not the same site by its name; idlix's own moves (`z2` to `z3`) are followed and never answer this |
 | `the site answered HTTP 403` | Cloudflare is now refusing the real Chrome too |
 | `no_frame` | lk21's, flicksy's or dramacool's player frame did not appear: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
