@@ -1,0 +1,66 @@
+{
+  "branch": "feature/wider-torrent-sources",
+  "coordinator": "orch-wider-torrent-sources",
+  "coordinator_session_id": "59e79288-bdba-4074-9418-f87f206d79bf",
+  "created": "2026-11-19T03:21:50+07:00",
+  "phases": [
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 1,
+      "note": null,
+      "package": "src/directStream/torrent/find",
+      "plan": ".workflows/plan/wider-torrent-sources/phase-1.md",
+      "reported_at": null,
+      "satisfies": [
+        "R2"
+      ],
+      "status": "pending",
+      "task_id": "P1-NOTES-A136",
+      "title": "Stremio add-on providers: TorrentsDB and Peerflix"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [
+        1
+      ],
+      "difficulty": "HARD",
+      "n": 2,
+      "note": null,
+      "package": "src/directStream/torrent/find",
+      "plan": ".workflows/plan/wider-torrent-sources/phase-2.md",
+      "reported_at": null,
+      "satisfies": [
+        "R1"
+      ],
+      "status": "pending",
+      "task_id": "P1-NOTES-A137",
+      "title": "Title-search JSON indexes: Knaben, Bitsearch, torrents-csv"
+    },
+    {
+      "card": null,
+      "commit": null,
+      "depends_on": [],
+      "difficulty": "NORMAL",
+      "n": 3,
+      "note": null,
+      "package": "src/directStream/torrent",
+      "plan": ".workflows/plan/wider-torrent-sources/phase-3.md",
+      "reported_at": null,
+      "satisfies": [
+        "R3"
+      ],
+      "status": "pending",
+      "task_id": "P1-NOTES-A138",
+      "title": "Daily verified public tracker lists"
+    }
+  ],
+  "plan": "/home/miftah/mcp-notes/.workflows/orchestration/wider-torrent-sources/PLAN.md",
+  "repo": "/home/miftah/mcp-notes",
+  "slug": "wider-torrent-sources",
+  "updated": "2026-11-19T03:23:38+07:00",
+  "worktree": "/home/miftah/.worktrees/mcp-notes/wider-torrent-sources"
+}
