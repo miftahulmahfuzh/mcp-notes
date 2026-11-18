@@ -23,12 +23,16 @@ Call the `notes` MCP tool `direct_stream_update_source` with `site` set to the a
 call, say in one line that new providers are probed in the streaming Chrome out of sight (no
 window, no sound, nothing plays) and that it can take a few minutes.
 
-The site is read two ways, the second only when the first finds nothing:
+The site is read three ways, each only when the one before finds nothing:
 
 1. **Its scripts**, with plain requests and no browser.
 2. **Its frames:** a watch page is opened in a background tab of the streaming Chrome, muted, and
    each embed frame it loads that carries the film's TMDB id becomes a template. This runs when
    the scripts hold no template; the page opened is `watch_page`, else the site address itself.
+
+3. **The page itself:** a site that plays in its own page (cinemaos.live) has no embed frame.
+   When the watch page gave no frame template and loaded a stream by itself, its own address
+   becomes the template (`reader`: `page`), named after the site's host.
 
 Pass `watch_page` (a film's page on the site) and `episode_page` (an episode's page, for the
 episode template) only when the user gave them; never make one up. When the answer is
@@ -51,8 +55,8 @@ instead: it lists the registry with this machine's health and changes nothing.
 ## Step 3: answer
 
 - **`ok: true`:** one line with the counts: found, already known, added, skipped, and which reader
-  found them (`reader`: `scripts` or `frames`). A provider read from a frame is named after the
-  frame's host (`vidlink.pro`), since a frame has no name. Then one line
+  found them (`reader`: `scripts`, `frames` or `page`). A provider read from a frame is named after the
+  frame's host (`vidlink.pro`), since a frame has no name; a `page` provider is the site itself. Then one line
   per added provider: its name (and `renamed_from` when the site called it something else
   because the name was taken), whether it `resolves`, and per probed title the outcome with the
   seconds, the best height and whether it had an English subtitle. A provider that resolved
@@ -66,7 +70,7 @@ instead: it lists the registry with this machine's health and changes nothing.
     background tab the frame reader opens fresh each time — offer step 2b below instead of
     retrying the same way again.
   - `no_templates`: neither the site's scripts nor the frames of the page that was opened hold a
-    provider template; `detail` says what each reader read. Only the frames a page loads by
+    provider template, and the page loaded no stream by itself; `detail` says what each reader read. Only the frames a page loads by
     itself are seen: its other server buttons are not pressed.
   - `chrome_unavailable`: the streaming Chrome could not open the watch page (`detail` has the
     reason: `no_chrome`, `chrome_not_reachable`).

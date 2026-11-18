@@ -49,9 +49,12 @@ export async function loadKnownTitles(file: string = DEFAULT_KNOWN_TITLES_PATH):
 const filmTemplate = z.string().startsWith('https://').includes('{id}');
 const episodeTemplate = z.string().startsWith('https://').includes('{id}').includes('{season}').includes('{episode}');
 
-/** Which reader found a provider: the site's scripts (plain requests), or the frames a watch page loads in the streaming Chrome. */
-export type TemplateReader = 'scripts' | 'frames';
-const readerField = z.enum(['scripts', 'frames']).default('scripts');
+/**
+ * Which reader found a provider: the site's scripts (plain requests), the frames a watch page
+ * loads in the streaming Chrome, or the watch page itself when it plays with no frame (`page`).
+ */
+export type TemplateReader = 'scripts' | 'frames' | 'page';
+const readerField = z.enum(['scripts', 'frames', 'page']).default('scripts');
 
 /** What `cli.mjs templates <site>` prints (claude/streaming/direct/templates.mjs). */
 export const TemplatesAnswerSchema = z.discriminatedUnion('ok', [
@@ -116,7 +119,7 @@ export type UpdateSourceAnswer =
   | {
       ok: true;
       site: string;
-      /** The reader that found the providers: `frames` only when the scripts held none. */
+      /** The reader that found the providers: `frames` or `page` only when the scripts held none. */
       reader: TemplateReader;
       scripts_read: number;
       /** Frame addresses read in the streaming Chrome; 0 when the scripts answered. */

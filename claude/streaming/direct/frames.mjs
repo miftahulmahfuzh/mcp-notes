@@ -23,7 +23,14 @@
 // is readable cross-origin without touching the frame's content) — a frame nested inside another
 // cross-origin frame is invisible this way, unlike the sniffer's CDP-level capture. That is the
 // one thing this reader gives up for never re-navigating the already-solved tab.
+//
+// A site that plays in its own page (cinemaos.live, an embed such as embed.vidrift.net opened
+// directly) has no frame to read: its watch page asks its own backend for the stream. When a page
+// gave no frame template and loaded a stream by itself, the page's own address is the template
+// (reader `page`), named after the site's host: opened by the resolver's sniffer it is an embed
+// like any other.
 import { BotCheckError } from '../torrent/browser.mjs';
+import { pickSource } from './resolve.mjs';
 
 /** Seconds one watch page is watched for its frames. */
 export const FRAME_SNIFF_SECONDS = 20;
@@ -133,6 +140,8 @@ export function wantedFor(pageUrl, frames, known, episodePage) {
 export function entriesFromFrames(pageUrl, frames, known, episodePage) {
   const site = new URL(pageUrl).hostname.replace(/^www\./, '');
   const wanted = wantedFor(pageUrl, frames, known, episodePage);
+  // An episode page whose season or episode is not known would be read as a film's.
+  if (episodePage && (wanted.season === null || wanted.episode === null)) return [];
   const entries = [];
   const seen = new Set();
   for (const frame of frames) {
@@ -142,9 +151,22 @@ export function entriesFromFrames(pageUrl, frames, known, episodePage) {
     const name = nameFromHost(frame);
     if (name === site || seen.has(`${template.kind} ${template.url}`)) continue;
     seen.add(`${template.kind} ${template.url}`);
-    entries.push({ name, ...template, found_in: frame });
+    entries.push({ name, ...template, found_in: frame, reader: 'frames' });
   }
   return entries;
+}
+
+/**
+ * The template entry of a watch page that plays in itself: its own address with the id (and on an
+ * episode page the season and episode) replaced, named after its host. Null when the address
+ * carries no id. The caller says the page loaded a stream; nothing here asks the site.
+ */
+export function entryFromPage(pageUrl, known, episodePage) {
+  const wanted = wantedFor(pageUrl, [], known, episodePage);
+  if (episodePage && (wanted.season === null || wanted.episode === null)) return null;
+  const template = templateFromFrame(pageUrl, wanted);
+  if (template === null) return null;
+  return { name: nameFromHost(pageUrl), ...template, found_in: pageUrl, reader: 'page' };
 }
 
 /** The https addresses of the frames a capture lists. The sniffer writes each target as "<type> <address>": the page itself and workers are not frames. */
@@ -208,14 +230,17 @@ export async function readFrameTemplates(pages, { sniff, known = [], seconds = F
     const frames = [...frameAddresses(capture.frames), ...hitFrameAddresses(capture.hits, site)];
     framesRead += frames.length;
     read.push(pageUrl);
-    entries.push(...entriesFromFrames(pageUrl, frames, known, episodePage));
+    const found = entriesFromFrames(pageUrl, frames, known, episodePage);
+    // No frame to read, and the page loaded a stream by itself: the page is the embed.
+    const own = found.length === 0 && pickSource(capture) !== null ? entryFromPage(pageUrl, known, episodePage) : null;
+    entries.push(...found, ...(own === null ? [] : [own]));
   }
   if (entries.some((e) => e.kind === 'movie')) return { ok: true, entries, frames_read: framesRead, pages: read };
   return {
     ok: false,
     error: 'no_templates',
     detail:
-      `opened ${read.length === 1 ? read[0] : `${read.length} pages`} in the streaming Chrome and read ${framesRead} frame addresses; none carries a film's TMDB id. ` +
+      `opened ${read.length === 1 ? read[0] : `${read.length} pages`} in the streaming Chrome and read ${framesRead} frame addresses; none carries a film's TMDB id, and no film page loaded a stream by itself. ` +
       "Pass a film's watch page as watch_page (a page of a known title works best: Fight Club, TMDB 550). Only the frames the page loads by itself are read; its other server buttons are not pressed.",
   };
 }
@@ -223,7 +248,9 @@ export async function readFrameTemplates(pages, { sniff, known = [], seconds = F
 /** Whether a page is probably on an episode, from its own address: no site is asked. */
 export function looksLikeEpisodePage(url) {
   try {
-    return EPISODE_PAGE_HINT.test(new URL(url).pathname);
+    const page = new URL(url);
+    // `/watch/tv/231257?season=1&episode=1` names them in its query only.
+    return EPISODE_PAGE_HINT.test(page.pathname) || [...page.searchParams.keys()].some((key) => SEASON_KEY.test(key) || EPISODE_KEY.test(key));
   } catch {
     return false;
   }
@@ -231,14 +258,16 @@ export function looksLikeEpisodePage(url) {
 
 /**
  * Evaluated (toString'd) in the gated tab by `ask` (torrent/browser.mjs's askInTab): the tab's own
- * frame addresses, read without navigating it.
+ * frame addresses, read without navigating it, and whether the page itself holds a video that
+ * has loaded (a site that plays in its own page).
  */
 export function tabFramesExpression() {
   return `(() => {
   const frames = Array.from(document.querySelectorAll('iframe'))
     .map((f) => f.src)
     .filter((s) => typeof s === 'string' && s.startsWith('https://'));
-  return { url: location.href, frames };
+  const playing = Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2 && typeof v.currentSrc === 'string' && v.currentSrc !== '');
+  return { url: location.href, frames, playing };
 })()`;
 }
 
@@ -267,13 +296,18 @@ export async function readFrameTemplatesFromTab(origin, { ask, known = [] } = {}
   }
   const pageUrl = typeof reply?.url === 'string' ? reply.url : origin;
   const frames = Array.isArray(reply?.frames) ? reply.frames.filter((f) => typeof f === 'string') : [];
-  const entries = entriesFromFrames(pageUrl, frames, known, looksLikeEpisodePage(pageUrl));
+  const episodePage = looksLikeEpisodePage(pageUrl);
+  const entries = entriesFromFrames(pageUrl, frames, known, episodePage);
+  if (entries.length === 0 && reply?.playing === true) {
+    const own = entryFromPage(pageUrl, known, episodePage);
+    if (own !== null) entries.push(own);
+  }
   if (entries.some((e) => e.kind === 'movie')) return { ok: true, entries, frames_read: frames.length, pages: [pageUrl] };
   return {
     ok: false,
     error: 'no_templates',
     detail:
-      `read the gated tab on ${pageUrl} and found ${frames.length} frame address${frames.length === 1 ? '' : 'es'}; none carries a film's TMDB id. ` +
+      `read the gated tab on ${pageUrl} and found ${frames.length} frame address${frames.length === 1 ? '' : 'es'}; none carries a film's TMDB id${episodePage ? ', and the tab is on an episode: a provider needs a film page' : reply?.playing === true ? '' : ', and the page itself plays nothing'}. ` +
       'Only the top page\'s own frames are read this way; a frame nested inside another is not seen.',
   };
 }

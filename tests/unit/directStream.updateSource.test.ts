@@ -73,6 +73,9 @@ describe('known titles and the reader answer', () => {
     expect(parsed.success).toBe(true);
     // An answer that names no reader (the script reader before the frame reader existed) is the scripts'.
     expect(parsed.success && parsed.data.ok && [parsed.data.reader, parsed.data.providers[0]?.reader]).toEqual(['scripts', 'scripts']);
+    // A site that plays in its own page is found by the `page` reader.
+    const own = { name: 'self.example', movie: 'https://self.example/watch/movie/{id}', tv: null, found_in: 'https://self.example/watch/movie/550', reader: 'page' };
+    expect(TemplatesAnswerSchema.safeParse({ ok: true, site: 'https://self.example/', reader: 'page', scripts_read: 0, providers: [own], skipped: [] }).success).toBe(true);
   });
 });
 

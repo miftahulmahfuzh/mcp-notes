@@ -1210,8 +1210,16 @@ provider list both machines share and probes for minutes.
    carries 550) or a number the watch page's own address carries. With `episode_page`, an
    episode's frame gives the episode template: `{season}` and `{episode}` where the season and
    episode stand, by parameter name when the address names them. A frame has no name, so the
-   provider is called by its host (`vidlink.pro`). The answer's `reader` is `scripts` or
-   `frames`, and so is each provider's.
+   provider is called by its host (`vidlink.pro`). The answer's `reader` is `scripts`,
+   `frames` or `page`, and so is each provider's.
+   - **A site that plays in its own page** (cinemaos.live) has no frame: its watch page asks
+     its own backend for the stream. When a page gave no frame template and loaded a stream by
+     itself (what the resolver would keep: a playlist, a DASH manifest, an `.mp4`), the page's
+     own address is the template, reader `page`, named after the site's host
+     (`https://cinemaos.live/watch/movie/{id}`). Opened by the resolver's sniffer it is an embed
+     like any other. A frame that carries the id always wins, and an address without an id (a
+     home page that plays a trailer) is never a template. An episode page that names no episode
+     gives nothing, and is never read as a film's.
    - A plain request answered with a bot check is not followed into the browser, unless you gave
      a watch page. A bot check in the streaming Chrome is the answer `bot_check`; nothing clicks
      through it and the client is never disguised.
@@ -1230,7 +1238,11 @@ provider list both machines share and probes for minutes.
      the challenge never shows again. It sees only the top page's own `<iframe>` elements (their
      `src` attribute, readable cross-origin without touching the frame's content); a frame nested
      inside another cross-origin frame is not seen this way, unlike the sniffer's. `no_tab`: no
-     gated tab answered (none is open, or it is still on the challenge) — gate it again.
+     gated tab answered (none is open, or it is still on the challenge) — gate it again. A tab
+     with no such frame whose own `<video>` has loaded is a site that plays in its own page: a
+     film tab gives the `page` template; an episode tab (its path or its `season` / `episode`
+     parameters say so) gives none. `from_tab` opens nothing, so it needs no watch page after a
+     plain request's `bot_check`.
 3. **Keep the new ones.** A provider is already known when the registry has a template with the
    same host (without `www.`), path and id parameter; `?autoPlay=true` and colours do not count.
    A new provider whose name is taken by another host is stored as `VidSrc (vidsrc.xyz)`.
@@ -1246,7 +1258,7 @@ provider list both machines share and probes for minutes.
 | --- | --- |
 | `ok: true`, `added: []` | The registry already has every provider the site uses |
 | `bot_check` | The site answers a plain request with a bot check, or shows one in the streaming Chrome. It is not got past |
-| `no_templates` | Neither the scripts nor the frames of the page opened hold a provider template; `detail` says what each reader read |
+| `no_templates` | Neither the scripts nor the frames of the page opened hold a provider template, and the page loaded no stream by itself; `detail` says what each reader read |
 | `chrome_unavailable` | The streaming Chrome could not open the watch page (`no_chrome`, `chrome_not_reachable`) |
 | `no_tab` | `from_tab` was asked, and no gated tab answered on the site (none is open, or it is still on the challenge) |
 | `unreachable` | The address does not answer, or answers an error |
@@ -1268,7 +1280,7 @@ seed, copy its entry into `providers.seed.json` by hand.
 | Path | What |
 | --- | --- |
 | `claude/streaming/direct/templates.mjs` | The script reader, and `cli.mjs templates`: scripts first, then frames |
-| `claude/streaming/direct/frames.mjs` | The frame reader: a watch page's embed frames to templates |
+| `claude/streaming/direct/frames.mjs` | The frame reader: a watch page's embed frames to templates, or the page's own address when it plays in itself |
 | `src/directStream/updateSource.ts` | What is new, the probes, the report |
 | `src/mcp/directStreamTools.ts` | `direct_stream_sources`, `direct_stream_update_source` |
 | `claude/skills/update-cloud-source/` | The skill |

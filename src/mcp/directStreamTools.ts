@@ -230,7 +230,8 @@ const UPDATE_SOURCE_DESCRIPTION =
   '"/update-cloud-source <site url>" in Claude Code. It reads the site\'s page and scripts with plain requests (no browser) for ' +
   'provider address templates. When the scripts hold none, it opens a watch page of the site (watch_page, else the site address itself) in a background tab of the streaming Chrome, muted, ' +
   'and derives templates from the addresses of the embed frames the page loads: the film\'s TMDB id becomes {id}, and with episode_page the season and episode too; such a provider is named after its frame\'s host. ' +
-  'reader says which way found the providers (scripts or frames), per provider too. A plain request answered with a bot check is read through the frames only when watch_page was given, and a bot check in the streaming Chrome is the answer bot_check: it is never got past. It keeps the ones whose host and path the registry does not have (a name already taken by another host ' +
+  'A site that plays in its own page has no frame: when the watch page loaded a stream by itself, its own address becomes the template (reader page), named after the site\'s host. ' +
+  'reader says which way found the providers (scripts, frames or page), per provider too. A plain request answered with a bot check is read through the frames only when watch_page was given, and a bot check in the streaming Chrome is the answer bot_check: it is never got past. It keeps the ones whose host and path the registry does not have (a name already taken by another host ' +
   'is stored as "<name> (<host>)"; existing providers are never changed), inserts them, then resolves each known title (Fight Club ' +
   'and the others) with only that provider, recording its health on this machine. Probing opens tabs in the streaming Chrome out ' +
   'of sight, plays nothing and makes no sound; a provider that finds nothing takes about 35 seconds per title, so the call can take ' +

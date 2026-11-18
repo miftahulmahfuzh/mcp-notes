@@ -6,7 +6,7 @@ import { BotCheckError } from '../../../claude/streaming/torrent/browser.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
 import { clearGate, gateExpression, main } from '../../../claude/streaming/direct/cli.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
-import { entriesFromFrames, frameAddresses, looksLikeEpisodePage, numberTokens, pageNumbers, readFrameTemplates, readFrameTemplatesFromTab, templateFromFrame, wantedFor } from '../../../claude/streaming/direct/frames.mjs';
+import { entriesFromFrames, entryFromPage, frameAddresses, looksLikeEpisodePage, numberTokens, pageNumbers, readFrameTemplates, readFrameTemplatesFromTab, templateFromFrame, wantedFor } from '../../../claude/streaming/direct/frames.mjs';
 // @ts-expect-error -- a plain .mjs script without type declarations
 import { templatesCommand } from '../../../claude/streaming/direct/templates.mjs';
 
@@ -16,13 +16,13 @@ const KNOWN = [
 ];
 
 /** A sniffer that answers per address; every call is recorded. */
-function fakeSniff(pages: Record<string, { frames?: string[]; bot_check?: boolean; throws?: unknown }>) {
+function fakeSniff(pages: Record<string, { frames?: string[]; hits?: unknown[]; bot_check?: boolean; throws?: unknown }>) {
   const calls: Array<{ url: string; options: unknown }> = [];
   const sniff = vi.fn(async (url: string, options: unknown) => {
     calls.push({ url, options });
     const page = pages[url] ?? {};
     if (page.throws !== undefined) throw page.throws;
-    return { url, bot_check: page.bot_check === true, bot_check_reason: page.bot_check ? 'title Just a moment...' : null, frames: page.frames ?? [], hits: [] };
+    return { url, bot_check: page.bot_check === true, bot_check_reason: page.bot_check ? 'title Just a moment...' : null, frames: page.frames ?? [], hits: page.hits ?? [] };
   });
   return { sniff, calls };
 }
@@ -83,7 +83,7 @@ describe('direct streaming: provider templates from embed frames', () => {
       KNOWN,
       false,
     );
-    expect(entries).toEqual([{ name: 'vidfast.pro', kind: 'movie', url: 'https://www.vidfast.pro/movie/{id}?autoPlay=true', found_in: 'https://www.vidfast.pro/movie/550?autoPlay=true' }]);
+    expect(entries).toEqual([{ name: 'vidfast.pro', kind: 'movie', url: 'https://www.vidfast.pro/movie/{id}?autoPlay=true', found_in: 'https://www.vidfast.pro/movie/550?autoPlay=true', reader: 'frames' }]);
   });
 
   it('reads a film page and an episode page through the sniffer, out of sight, and merges them per provider', async () => {
@@ -118,15 +118,55 @@ describe('direct streaming: provider templates from embed frames', () => {
   });
 });
 
+describe('direct streaming: a site that plays in its own page is its own embed', () => {
+  const STREAM = { url: 'https://relay.example/p/abc', status: 200, mime: 'application/dash+xml', body: '<?xml version="1.0"?><MPD></MPD>' };
+  const FILM = 'https://self.example/watch/movie/550';
+  const EPISODE = 'https://self.example/watch/tv/231257?season=1&episode=1';
+
+  it('templates the page\'s own address, with the season and episode by name', () => {
+    expect(entryFromPage(FILM, KNOWN, false)).toEqual({ name: 'self.example', kind: 'movie', url: 'https://self.example/watch/movie/{id}', found_in: FILM, reader: 'page' });
+    expect(entryFromPage(EPISODE, KNOWN, true)).toMatchObject({ kind: 'tv', url: 'https://self.example/watch/tv/{id}?season={season}&episode={episode}' });
+    // No id in the address, or an episode page that names no episode: nothing.
+    expect(entryFromPage('https://self.example/', KNOWN, false)).toBeNull();
+    expect(entryFromPage('https://self.example/watch/tv/231257?season=1', KNOWN, true)).toBeNull();
+  });
+
+  it('is read only when the page gave no frame template and loaded a stream by itself', async () => {
+    const own = fakeSniff({ [FILM]: { hits: [STREAM] }, [EPISODE]: { hits: [STREAM] } });
+    const answer = await readFrameTemplates({ watch: FILM, episode: EPISODE }, { sniff: own.sniff, known: KNOWN });
+    expect(answer.entries.map((e: any) => [e.name, e.kind, e.url, e.reader])).toEqual([
+      ['self.example', 'movie', 'https://self.example/watch/movie/{id}', 'page'],
+      ['self.example', 'tv', 'https://self.example/watch/tv/{id}?season={season}&episode={episode}', 'page'],
+    ]);
+    // A page that loads nothing, or only an error page where a stream should be, is no provider.
+    const silent = fakeSniff({ [FILM]: { hits: [{ ...STREAM, status: 403 }, { url: 'https://x.example/a.m3u8', status: 200, mime: 'text/html', body: '<html>' }] } });
+    expect(await readFrameTemplates({ watch: FILM }, { sniff: silent.sniff, known: KNOWN })).toMatchObject({ ok: false, error: 'no_templates' });
+    // A frame with the id wins: the site is an aggregator, not the embed.
+    const framed = fakeSniff({ [FILM]: { frames: ['iframe https://vidnew.example/embed/movie/550'], hits: [STREAM] } });
+    expect((await readFrameTemplates({ watch: FILM }, { sniff: framed.sniff, known: KNOWN })).entries.map((e: any) => [e.name, e.reader])).toEqual([['vidnew.example', 'frames']]);
+  });
+
+  it('templatesCommand says `page`, per provider and for the answer, and --from-tab needs no watch page after a bot check', async () => {
+    const own = fakeSniff({ [FILM]: { hits: [STREAM] } });
+    const { code, answer } = await templatesCommand(['https://self.example/', '--watch', FILM], { fetch: challenge, sniff: own.sniff, known: KNOWN });
+    expect(code).toBe(0);
+    expect(answer).toMatchObject({ ok: true, reader: 'page', providers: [{ name: 'self.example', movie: 'https://self.example/watch/movie/{id}', tv: null, reader: 'page' }] });
+    const ask = vi.fn(async () => ({ url: FILM, frames: [], playing: true }));
+    const tab = await templatesCommand(['https://self.example/', '--from-tab'], { fetch: challenge, ask, sniff: own.sniff, known: KNOWN });
+    expect(tab).toMatchObject({ code: 0, answer: { reader: 'page' } });
+    expect(own.sniff).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('direct streaming: the gated-tab frame reader (no fresh navigation)', () => {
   /** A fake askInTab (origin, expression, options) -> reply, calls recorded. */
-  function fakeAsk(replies: Record<string, { url?: string; frames?: string[]; throws?: unknown }>) {
+  function fakeAsk(replies: Record<string, { url?: string; frames?: string[]; playing?: boolean; throws?: unknown }>) {
     const calls: string[] = [];
     const ask = vi.fn(async (origin: string) => {
       calls.push(origin);
       const r = replies[origin] ?? {};
       if (r.throws !== undefined) throw r.throws;
-      return { url: r.url ?? origin, frames: r.frames ?? [] };
+      return { url: r.url ?? origin, frames: r.frames ?? [], playing: r.playing === true };
     });
     return { ask, calls };
   }
@@ -135,6 +175,25 @@ describe('direct streaming: the gated-tab frame reader (no fresh navigation)', (
     expect(looksLikeEpisodePage('https://site.example/naive-leader-season-1-episode-1-2026')).toBe(true);
     expect(looksLikeEpisodePage('https://site.example/tv/breaking-bad/s2e3')).toBe(true);
     expect(looksLikeEpisodePage('https://site.example/watch/m/1368337')).toBe(false);
+    // Named in the query only.
+    expect(looksLikeEpisodePage('https://site.example/watch/tv/231257?season=1&episode=1')).toBe(true);
+    expect(looksLikeEpisodePage('https://site.example/watch/movie/550?autoplay=1')).toBe(false);
+  });
+
+  it('takes a gated tab that plays in its own page as the template, a film page only', async () => {
+    const film = fakeAsk({ 'https://self.example': { url: 'https://self.example/watch/movie/550', playing: true } });
+    expect((await readFrameTemplatesFromTab('https://self.example', { ask: film.ask, known: KNOWN })).entries).toEqual([
+      { name: 'self.example', kind: 'movie', url: 'https://self.example/watch/movie/{id}', found_in: 'https://self.example/watch/movie/550', reader: 'page' },
+    ]);
+    const idle = fakeAsk({ 'https://self.example': { url: 'https://self.example/watch/movie/550' } });
+    expect(await readFrameTemplatesFromTab('https://self.example', { ask: idle.ask, known: KNOWN })).toMatchObject({ ok: false, error: 'no_templates' });
+    // An episode tab gives no film template, and is never read as a film's.
+    const episode = fakeAsk({ 'https://self.example': { url: 'https://self.example/watch/tv/231257?season=1&episode=1', playing: true } });
+    const answer = await readFrameTemplatesFromTab('https://self.example', { ask: episode.ask, known: KNOWN });
+    expect(answer).toMatchObject({ ok: false, error: 'no_templates' });
+    expect(answer.detail).toContain('episode');
+    const half = fakeAsk({ 'https://self.example': { url: 'https://self.example/watch/tv/231257?season=1', playing: true } });
+    expect(await readFrameTemplatesFromTab('https://self.example', { ask: half.ask, known: KNOWN })).toMatchObject({ ok: false, error: 'no_templates' });
   });
 
   it('reads the tab\'s current frames with no navigation, and derives templates from them', async () => {
@@ -143,7 +202,7 @@ describe('direct streaming: the gated-tab frame reader (no fresh navigation)', (
     });
     const answer = await readFrameTemplatesFromTab('https://site.example', { ask, known: KNOWN });
     expect(answer).toMatchObject({ ok: true, frames_read: 2, pages: ['https://site.example/movie/550'] });
-    expect(answer.entries).toEqual([{ name: 'vidnew.example', kind: 'movie', url: 'https://vidnew.example/embed/movie/{id}', found_in: 'https://vidnew.example/embed/movie/550' }]);
+    expect(answer.entries).toEqual([{ name: 'vidnew.example', kind: 'movie', url: 'https://vidnew.example/embed/movie/{id}', found_in: 'https://vidnew.example/embed/movie/550', reader: 'frames' }]);
     expect(calls).toEqual(['https://site.example']);
   });
 

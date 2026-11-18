@@ -334,16 +334,18 @@ function fromFrames(scripts, frames) {
       answer: { ok: false, site: scripts.site, error: 'no_templates', detail: `Scripts: ${scripts.detail} Frames: only an episode address was found, and a provider needs a film address.`, scripts_read: scripts.scripts_read },
     };
   }
+  // A provider is the page's own (`page`) when its film template is the watch page's address.
+  const readerOf = (p) => frames.entries.find((e) => e.kind === 'movie' && e.name === p.name)?.reader ?? 'frames';
   return {
     code: 0,
     answer: {
       ok: true,
       site: scripts.site,
-      reader: 'frames',
+      reader: providers.every((p) => readerOf(p) === 'page') ? 'page' : 'frames',
       scripts_read: scripts.scripts_read,
       frames_read: frames.frames_read,
       pages: frames.pages,
-      providers: providers.map((p) => ({ ...p, reader: 'frames' })),
+      providers: providers.map((p) => ({ ...p, reader: readerOf(p) })),
       skipped,
     },
   };
@@ -356,8 +358,8 @@ function fromFrames(scripts, frames) {
  * The scripts are read first, with plain requests. The frames are read only when the scripts gave
  * nothing: on `no_templates`, from --watch or else the site address itself; on a plain request's
  * `bot_check`, only from a --watch page that was asked for. --no-chrome never opens the browser.
- * Every provider says which reader found it (`reader`: `scripts` or `frames`), and so does the
- * answer.
+ * Every provider says which reader found it (`reader`: `scripts`, `frames`, or `page` for a site
+ * that plays in its own page and so is its own embed), and so does the answer.
  *
  * Two ways to read the frames: by default, frames.mjs's sniffer opens a fresh background tab
  * (`sniff`, sniff.mjs's sniffEmbed), which re-navigates and so re-triggers a site's Cloudflare
@@ -392,7 +394,8 @@ export async function templatesCommand(argv, options = {}) {
   if (scripts.ok) {
     return { code: 0, answer: { ...scripts, reader: 'scripts', providers: scripts.providers.map((p) => ({ ...p, reader: 'scripts' })) } };
   }
-  const wantsFrames = flags.chrome && (scripts.error === 'no_templates' || (scripts.error === 'bot_check' && flags.watch !== null));
+  // --from-tab opens nothing, so a plain request's bot check does not need a watch page for it.
+  const wantsFrames = flags.chrome && (scripts.error === 'no_templates' || (scripts.error === 'bot_check' && (flags.watch !== null || flags.fromTab)));
   if (!wantsFrames) return { code: 1, answer: scripts };
 
   if (flags.fromTab) {
