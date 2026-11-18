@@ -23,20 +23,20 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "4b01537fb41e7c7450c76e3b063207f56d62980e",
       "depends_on": [
         1
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": null,
+      "note": "Knaben, Bitsearch, torrents-csv asked by title beside the IMDb-keyed indexes, strict title-search fit in rank.ts; plan index not ticked (main checkout, coordinator's); neighbor torrent.sh needs a fresh daemon, not the J4 run (J4's play leaves the cloud failure remembered); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/evidence-wider-torrent-sources-p2",
       "package": "src/directStream/torrent/find",
       "plan": ".workflows/plan/wider-torrent-sources/phase-2.md",
-      "reported_at": null,
+      "reported_at": "2026-11-19T03:35:52+07:00",
       "satisfies": [
         "R1"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A137",
       "title": "Title-search JSON indexes: Knaben, Bitsearch, torrents-csv"
     },
@@ -61,6 +61,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/wider-torrent-sources/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wider-torrent-sources",
-  "updated": "2026-11-19T03:30:00+07:00",
+  "updated": "2026-11-19T03:35:52+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wider-torrent-sources"
 }
