@@ -53,8 +53,9 @@ plain request and no browser. With `--episode` it then reads the page of each ma
 takes the episode that page links under "All Episodes".
 
 The site shows nothing before the episode. The player belongs to another host (vidbasic, the
-site's "Fast Server"), which lays small adverts over the picture, in full screen too. `--play`
-leaves them alone: their "Close" opens an advertising page, sometimes in the place of the
+site's "Fast Server"), which lays small adverts over the picture, in full screen too; the ad
+blocker in the streaming Chrome keeps them away (none came in a play on 2026-11-18). `--play`
+never presses them: their "Close" opens an advertising page, sometimes in the place of the
 episode. The whole flow takes about 9 seconds. Only the site's first server is played.
 
 It prints JSON:
@@ -67,6 +68,9 @@ It prints JSON:
   `title`, its series), found on the page of every matching title; null when none or several
   fit, and then `episode_candidates` lists the ones that do.
 - `play`, with `--play` only: what happened on screen (below).
+- `warp`, when present: the site did not answer on this network, so the script turned Cloudflare
+  WARP on (it was installed and off) and asked again. WARP stays on, for the whole laptop; say so
+  in one line.
 - `kept`, after a play that started: what the daemon kept of it. `recorded: true` with `title_id`:
   the title is now on the Stream side of the wall's movies page, and Play there, or a
   `direct_stream_play` that names no source, comes back to this site. `recorded: true` with
@@ -103,8 +107,7 @@ an episode's page plays (`.../<title>-episode-<n>.html`); a title's page is a li
 
 - **An episode was started:** one line: the series' `title` with the episode (and the season
   when it is not the first) as a markdown link to `episode.url`, that it is playing full screen
-  in the streaming Chrome window, and F11 to leave full screen. Add that the adverts over the
-  picture are the player's own and close with the mouse.
+  in the streaming Chrome window, and F11 to leave full screen.
 - **One or more matches, nothing started:** one line per match: the `title` as a markdown link
   to its `url`. When the matches have different years (a remake and its original, or two
   seasons), say so in one line and let the user pick.
@@ -118,7 +121,7 @@ an episode's page plays (`.../<title>-episode-<n>.html`); a title's page is a li
 
 The link in the answer opens in the user's default browser as a fresh page: a page that is
 already playing cannot be handed over through a link, which is why the episode plays in the
-streaming Chrome window. That Chrome has no ad blocker, so the site's adverts show in it.
+streaming Chrome window. That Chrome runs uBlock Origin Lite, which the owner added to its profile, so most of a site's adverts do not show in it.
 
 Do not look for the episode's video or download sources, and do not press anything on the page
 beyond what `--play` does.

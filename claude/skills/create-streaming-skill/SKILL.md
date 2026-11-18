@@ -83,7 +83,9 @@ with `-Show`) and look, in this order:
    buttons present. That log tells you the stages.
 3. **What stands before the film?** idlix: a countdown, then a 30-second advert whose own "Skip
    Ad" button appears after 10 seconds. Wait for what the site makes everyone wait for, and
-   press only the site's own skip button when it is offered. Do not remove, hide or bypass an
+   press only the site's own skip button when it is offered. The streaming Chrome runs an ad
+   blocker the owner installed (uBlock Origin Lite), so an advert may not come at all: the flow
+   must work with and without it. The scripts themselves do not remove, hide or bypass an
    advert.
 4. **When is it really playing?** `video.duration > 60 && !video.paused && video.currentTime > 0`
    and the frame not showing an advert. An advert is a `<video>` too.
@@ -206,7 +208,8 @@ work (series, a second player the site offers).
 
 - Only the Chrome with its own profile folder (`notesd-stream-chrome`). Never the user's
   everyday Chrome, never a Chrome the scripts did not start, and never close one.
-- No disguised clients against a bot check, no bypassing an advert or a countdown, no digging
+- No disguised clients against a bot check, no bypassing a countdown, and no script that removes
+  or clicks through an advert (blocking adverts is left to the owner's ad blocker), no digging
   out a video file or a download address. The skill presses what a person would press and
   waits what a person would wait.
 - A link is never guessed. A film starts only when asked, and only when exactly one film matches.

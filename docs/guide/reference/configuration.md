@@ -124,10 +124,11 @@ The `/pahe`, `/idlix`, `/lk21`, `/flicksy` and `/dramacool` skills and the strea
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NOTESD_STREAMING` | on | `off` turns the `streaming_find` and `streaming_play` tools off on this machine: both answer `streaming_off` and no script is run. The skills are not affected. |
-| `IDLIX_ORIGIN` | `https://z2.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). |
+| `IDLIX_ORIGIN` | `https://z3.idlixku.com` | The address of idlix, read by `claude/streaming/sites/idlix.mjs` (the `/idlix` skill and the streaming tools). Set it when the site has moved to another host: in the shell for the skill, in the unit's environment for the daemon. See [streaming.md](../streaming.md). idlix moves between numbered hosts (`z2`, `z3`) and the old one forwards to the new: the scripts follow such a move by themselves, so this is only where the site is first looked for. |
 | `LK21_ORIGIN` | `https://tv12.lk21official.cc` | The same for lk21, read by `claude/streaming/sites/lk21.mjs`. |
 | `FLICKSY_ORIGIN` | `https://flicksy.pro` | The same for flicksy, read by `claude/streaming/sites/flicksy.mjs`. |
 | `DRAMACOOL_ORIGIN` | `https://dramacool9.com.ro` | The same for dramacool, read by `claude/streaming/sites/dramacool.mjs`. |
+| `NOTESD_STREAM_WARP` | on | `off` stops the streaming command from turning Cloudflare WARP on. Otherwise, when a streaming site does not answer and WARP is installed on the Windows side and disconnected, the command connects it, asks the site once more and says so (`warp` in its answer). WARP is never turned off by the scripts, and it carries the whole laptop's traffic while it is on. |
 
 ## Direct streaming
 

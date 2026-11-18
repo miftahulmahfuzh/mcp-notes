@@ -54,7 +54,7 @@ The streaming skills run one command, `claude/streaming/cli.mjs`, with a module 
 
 | | idlix | lk21 | flicksy | dramacool |
 | --- | --- | --- | --- | --- |
-| Address | `https://z2.idlixku.com` (`IDLIX_ORIGIN`) | `https://tv12.lk21official.cc` (`LK21_ORIGIN`) | `https://flicksy.pro` (`FLICKSY_ORIGIN`) | `https://dramacool9.com.ro` (`DRAMACOOL_ORIGIN`) |
+| Address | `https://z3.idlixku.com` (`IDLIX_ORIGIN`; the scripts follow it to its next numbered host) | `https://tv12.lk21official.cc` (`LK21_ORIGIN`) | `https://flicksy.pro` (`FLICKSY_ORIGIN`) | `https://dramacool9.com.ro` (`DRAMACOOL_ORIGIN`) |
 | A plain request | Refused: Cloudflare answers 403 to `curl`, `WebFetch` and a headless browser | Answered | Answered | Answered |
 | Search | The site's own `/api/search`, asked from inside the streaming Chrome | The search host named on the home page (`data-search_url`), asked directly | The site's own TMDB pass-through (`/api/tmdb/search/multi`), asked directly | The site's own search page (`/?s=`), its first 20 titles |
 | A film's page | `/movie/<slug>` | `/<slug>` | `/watch/movie/<TMDB id>`, the player page | None of its own: a film is a title with one episode |
@@ -63,8 +63,19 @@ The streaming skills run one command, `claude/streaming/cli.mjs`, with a module 
 | The player | In the page itself | In a frame from another host, inside a second one | In a frame from another host (FrameXTV, the first of the site's servers) | In a frame from another host (vidbasic, the site's "Fast Server"), inside a second one of that host |
 | Time to a playing film | About 25 seconds | 6 to 20 seconds | About 6 seconds | About 9 seconds |
 
-idlix and lk21 move between hosts (`z1`, `z2`; `tv11`, `tv12`). Set the `*_ORIGIN` variable when one
-has moved: see [configuration](reference/configuration.md#streaming-sites).
+idlix and lk21 move between hosts (`z2`, `z3`; `tv11`, `tv12`). idlix's old host forwards to the
+new one, and its scripts follow: a tab opened on the known host that lands on another numbered
+host of the same name (`cdp.ps1` answers `moved` with where) makes that host the site. Set the
+`*_ORIGIN` variable when a site has moved somewhere the scripts cannot follow: see
+[configuration](reference/configuration.md#streaming-sites).
+
+**A site this network does not reach.** When a site does not answer (its page never loads, a
+request fails) and Cloudflare WARP is installed on the Windows side and disconnected, the command
+connects it (`warp-cli connect`), waits until it is connected and asks the site once more; `warp`
+in the answer says so. WARP carries the whole laptop's traffic and is left on: nothing turns it
+off again, and nothing turns it on for a torrent or a cloud stream. `NOTESD_STREAM_WARP=off` stops
+it. A tab left on Chrome's own error page by the failed try is closed and opened again, so the
+second try really loads the site.
 
 flicksy has no catalogue of its own: its search is TMDB's, so every title TMDB lists is found, and
 whether a film plays is up to the server its page embeds. That server is one of the providers
@@ -257,11 +268,19 @@ behaves save it a step. What it does is in [Adding a site](#adding-a-site).
 Things that are not obvious:
 
 - **The film plays in the streaming Chrome, not in your own browser.** A link opens a fresh page,
-  and a page that is already playing cannot be handed over through one. That Chrome has no ad
-  blocker.
+  and a page that is already playing cannot be handed over through one.
+- **That Chrome runs an ad blocker you installed.** uBlock Origin Lite is in its profile
+  (`%LOCALAPPDATA%\notesd-stream-chrome`), added by hand from the Chrome Web Store: Chrome 157
+  loads no extension from a script, and needs no Google sign-in for the store. With it idlix's
+  advert does not come and dramacool's overlays and advert tabs stay away. The scripts still work
+  without it, and still press nothing on an advert themselves.
 - **Full screen is the F11 kind.** A page's own full-screen button is refused for a click that
   does not come from the keyboard or mouse, so the whole window goes full screen and a style
   stretches the player over it. F11 leaves it; Esc removes the style and shows the page.
+- **The player stops two pixels short of the screen.** A video that covers the whole screen
+  exactly is handed by Chrome to a full-screen overlay that draws nothing of the page over it:
+  the player's subtitles and controls were in the page and not on the screen (idlix,
+  2026-11-18). Two pixels less and they are drawn.
 - **A hidden page stops a countdown.** Chrome is started with
   `--disable-features=CalculateNativeWinOcclusion`, so a window covered by another still counts
   as visible, and the window is brought to the front. Minimizing it during the wait stops the
@@ -336,7 +355,8 @@ person skip, or dig out a video file. A site that needs any of those is not adde
 | --- | --- |
 | `streaming_off` | `NOTESD_STREAMING=off`, or the daemon was started without the tools |
 | `no_chrome` | Chrome is not installed on the Windows side |
-| `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time |
+| `chrome_not_reachable`, `no_tab` | Chrome did not start, or the site's page did not load in time (with WARP installed and off, it is turned on and the site asked once more) |
+| `moved` | The tab opened on the site's address landed on another host that is not the same site by its name; idlix's own moves (`z2` to `z3`) are followed and never answer this |
 | `the site answered HTTP 403` | Cloudflare is now refusing the real Chrome too |
 | `no_frame` | lk21's, flicksy's or dramacool's player frame did not appear: the player changed (on flicksy, its first server is no longer FrameXTV), or the page is not a film |
 | `the page has no play button` | idlix's page changed, or it is a series page |
@@ -1065,7 +1085,7 @@ first for episode 4.
 | The title last played through | A play with no source named |
 | --- | --- |
 | A cloud provider (`VidRock`) | Asks that provider alone. Only when it has no stream now are the others asked, without it, and then the torrents |
-| A torrent | Asks the torrents first: no cloud provider is tried unless they find nothing |
+| A torrent | Opens that very torrent again when the same film or episode is asked (no index is asked); else, or when its swarm has nothing now, asks the torrents first. No cloud provider is tried unless they find nothing |
 | A streaming site (`/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | Plays on that site again, from the title's page its search returned. When the site does not start it, the title is streamed the usual way |
 | Nothing yet, and its cloud search found nothing in the last 3 days | Asks the torrents first, then the cloud providers |
 | Nothing yet | The long way: every cloud provider, then the torrents |
@@ -1084,6 +1104,11 @@ first for episode 4.
   shows them, and asking again tries again.
 - **A title streamed before this was kept** answers by its last stream play, so nothing has to be
   played again to be remembered.
+- **A stream that breaks is left, not shown as the end.** When the player cannot play a stream at
+  all (a segment that does not parse, a network error its restarts did not cure) the page asks
+  the daemon for another provider before it stops with the error, twice at most in one session.
+  A session that moves provider while it plays takes its play and the title's channel with it, so
+  the provider that really plays is the one remembered.
 
 **A play on a streaming site is kept too.** `claude/streaming/cli.mjs` reports every play that
 started to the daemon (`POST /api/movies/site-play`, on `127.0.0.1` and `NOTESD_PORT`; `kept` in
@@ -1102,9 +1127,12 @@ genres; dramacool reads them, a site whose module reads none keeps the name and 
 `movie_site_titles`, and shown in its own section of the Stream side, "From streaming sites".
 It has no page: its poster plays the next episode on the site again.
 
-What is not kept: a play started by its address alone (`--play-url`, after "which of these two?")
-names no title, and a play whose name two titles share is left out rather than guessed
-(`kept.reason`: `no_name`, `several_matches`).
+A play started by its address alone (`--play-url`, after "which of these two?") names no title, so
+the command keeps what its searches returned lately, by address
+(`~/.local/state/notesd-streaming/seen.json`), and reports the play with what the search said of
+that address. A name two titles share is never guessed: such a play is kept the way a title TMDB
+does not list is, by what the site says of it. Only an address no search returned stays unkept
+(`kept.reason`: `no_name`).
 
 ### What a title says: its dialogue
 

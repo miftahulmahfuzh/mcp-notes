@@ -3,13 +3,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs scripts without type declarations
+import { readStatus, turnWarpOn } from '../../../claude/streaming/warp.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
 import { SEEN_MAX, recall, remember, seenFile } from '../../../claude/streaming/seen.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { pathOnSite, pickMatches } from '../../../claude/streaming/match.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { fillScreenExpression } from '../../../claude/streaming/play.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import idlix, { CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, episodeExpression, searchExpression, seriesSlug, toResult as idlixResult } from '../../../claude/streaming/sites/idlix.mjs';
+import { ChromeError } from '../../../claude/streaming/chrome.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import idlix, { CLICK_PLAY_EXPRESSION, WAIT_FOR_FILM_EXPRESSION, episodeExpression, follow as idlixFollow, sameFamily, searchExpression, seriesSlug, toResult as idlixResult } from '../../../claude/streaming/sites/idlix.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { findEpisode, playReport, readEpisodeFlags, reportPlay } from '../../../claude/streaming/cli.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -225,6 +229,53 @@ describe('a play that started is reported to the daemon', () => {
   });
 });
 
+describe('idlix follows the site when it moves host', () => {
+  const HOME = 'https://z3.idlixku.com';
+
+  it('knows another numbered host of the same site from any other address', () => {
+    expect(sameFamily('https://z4.idlixku.com', HOME)).toBe(true);
+    expect(sameFamily('https://z12.idlixku.com', HOME)).toBe(true);
+    expect(sameFamily('https://z4.idlixku.com.evil.example', HOME)).toBe(false);
+    expect(sameFamily('https://idlixku.com', HOME)).toBe(false);
+    expect(sameFamily('https://x4.idlixku.com', HOME)).toBe(false);
+    expect(sameFamily('http://z4.idlixku.com', HOME)).toBe(false);
+    expect(sameFamily('not a url', HOME)).toBe(false);
+  });
+
+  it('asks the new host when the tab opened on the known one landed there, and stays there', async () => {
+    idlixFollow.reset(HOME);
+    const asked: string[] = [];
+    const evaluate = async (origin: string) => {
+      asked.push(origin);
+      if (origin === HOME) throw new ChromeError('moved', 'https://z4.idlixku.com');
+      return 'answer';
+    };
+    expect(await idlixFollow.onSite('1', {}, evaluate)).toBe('answer');
+    expect(asked).toEqual([HOME, 'https://z4.idlixku.com']);
+    expect(idlix.origin).toBe('https://z4.idlixku.com');
+    expect(idlixResult({ contentType: 'movie', title: 'Pilot', releaseDate: '2024-07-31', slug: 'pilot-2024' })?.url).toBe('https://z4.idlixku.com/movie/pilot-2024');
+    idlixFollow.reset(HOME);
+  });
+
+  it('follows to nowhere else: a tab that landed on another site is the error it was', async () => {
+    idlixFollow.reset(HOME);
+    const elsewhere = async () => {
+      throw new ChromeError('moved', 'https://ads.example');
+    };
+    await expect(idlixFollow.onSite('1', {}, elsewhere)).rejects.toThrow(/moved/);
+    expect(idlix.origin).toBe(HOME);
+  });
+
+  it("a page's address on another host of the site is played there", () => {
+    idlixFollow.reset(HOME);
+    expect(idlix.titlePath('https://z5.idlixku.com/movie/pilot-2024')).toBe('/movie/pilot-2024');
+    expect(idlix.origin).toBe('https://z5.idlixku.com');
+    expect(idlix.titlePath('https://ads.example/movie/pilot-2024')).toBeNull();
+    expect(idlix.origin).toBe('https://z5.idlixku.com');
+    idlixFollow.reset(HOME);
+  });
+});
+
 describe('what the searches returned lately', () => {
   it('reads back what a search said of an address, keeps the newest answer and forgets the oldest', () => {
     const file = path.join(mkdtempSync(path.join(tmpdir(), 'seen-')), 'state', 'seen.json');
@@ -240,9 +291,56 @@ describe('what the searches returned lately', () => {
     // A file that is not what was written reads as nothing, and a folder that cannot be made is no error.
     writeFileSync(file, 'not json');
     expect(recall('https://a.example/y', file)).toBeNull();
-    expect(() => remember([{ url: 'https://a.example/z', report: {} }], '/proc/nope/seen.json')).not.toThrow();
+    expect(() => remember([{ url: 'https://a.example/z', report: {} }], path.join(file, 'under-a-file', 'seen.json'))).not.toThrow();
     expect(seenFile({ XDG_STATE_HOME: '/s', HOME: '/h' })).toBe('/s/notesd-streaming/seen.json');
     expect(seenFile({ HOME: '/h' })).toBe('/h/.local/state/notesd-streaming/seen.json');
+  });
+});
+
+describe('Cloudflare WARP for a site this network does not reach', () => {
+  const warp = (statuses: string[], o: { installed?: boolean; env?: Record<string, string> } = {}) => {
+    const calls: string[] = [];
+    let clock = 0;
+    const cli = async (args: string[]) => {
+      calls.push(args[0]!);
+      return args[0] === 'status' ? `Status update: ${statuses.shift() ?? 'Disconnected'}\nNetwork: healthy\n` : 'Success\n';
+    };
+    const on = turnWarpOn({ cli, installed: () => o.installed !== false, env: o.env ?? {}, sleep: async (ms: number) => void (clock += ms), now: () => clock });
+    return { on, calls };
+  };
+
+  it('reads the status line', () => {
+    expect(readStatus('Status update: Connected\nNetwork: healthy')).toBe('connected');
+    expect(readStatus('Status update: Disconnected\nReason: Manual Disconnection')).toBe('disconnected');
+    expect(readStatus('Status update: Connecting')).toBe('connecting');
+    expect(readStatus('Registration Missing')).toBe('unknown');
+    expect(readStatus(null)).toBe('unknown');
+  });
+
+  it('turns it on when it is off, and says so only once it is connected', async () => {
+    const t = warp(['Disconnected', 'Connecting', 'Connected']);
+    expect(await t.on).toBe(true);
+    expect(t.calls).toEqual(['status', 'connect', 'status', 'status']);
+  });
+
+  it('changes nothing when it is on already, not installed, switched off for the scripts, or in a state it does not know', async () => {
+    const on = warp(['Connected']);
+    expect(await on.on).toBe(false);
+    expect(on.calls).toEqual(['status']);
+    const none = warp(['Disconnected'], { installed: false });
+    expect(await none.on).toBe(false);
+    expect(none.calls).toEqual([]);
+    const off = warp(['Disconnected'], { env: { NOTESD_STREAM_WARP: 'off' } });
+    expect(await off.on).toBe(false);
+    expect(off.calls).toEqual([]);
+    expect(await warp(['Registration Missing']).on).toBe(false);
+  });
+
+  it('gives up when it never connects, and never disconnects', async () => {
+    const t = warp(['Disconnected']);
+    expect(await t.on).toBe(false);
+    expect(t.calls).not.toContain('disconnect');
+    expect(t.calls.filter((c) => c === 'connect')).toHaveLength(1);
   });
 });
 

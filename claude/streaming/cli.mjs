@@ -13,11 +13,36 @@ import { pathToFileURL } from 'node:url';
 import { parseQuery, pickMatches } from './match.mjs';
 import { playTitle } from './play.mjs';
 import { recall, remember } from './seen.mjs';
+import { turnWarpOn } from './warp.mjs';
 import { SITES } from './sites/index.mjs';
 
 const print = (value) => console.log(JSON.stringify(value, null, 2));
 
 const REPORT_TIMEOUT_MS = 20_000;
+const WARP_NOTE = 'connected: the site did not answer on this network, so Cloudflare WARP was turned on and it was asked again. WARP stays on.';
+
+/**
+ * A site this network does not reach (the provider blocks it, its page never loads) is asked once
+ * more through Cloudflare WARP, when WARP is installed and was off (warp.mjs). `note.warp` then
+ * says so in the answer.
+ */
+async function searchSite(site, query, note) {
+  try {
+    return await site.search(query);
+  } catch (err) {
+    if (!(await turnWarpOn())) throw err;
+    note.warp = WARP_NOTE;
+    return site.search(query);
+  }
+}
+
+/** playTitle, and once more through WARP when the page could not be opened at all (an `error`; a `stage` is the player's own stop). */
+async function playOn(site, url, note) {
+  const played = await playTitle(site, url);
+  if (played.playing || played.error === undefined || !(await turnWarpOn())) return played;
+  note.warp = WARP_NOTE;
+  return playTitle(site, url);
+}
 
 /** What the daemon is told of a play that started: the site, the title's page there, and what the search said of it. */
 export function playReport(siteName, match, episode = null) {
@@ -60,6 +85,7 @@ export async function main(siteName, allArgv) {
     print({ ok: false, error: `unknown site "${siteName}"; known: ${Object.keys(SITES).join(', ')}` });
     return 2;
   }
+  const note = {};
   const report = !allArgv.includes('--no-report');
   const argv = allArgv.filter((word) => word !== '--no-report');
   if (argv[0] === '--details') {
@@ -73,8 +99,8 @@ export async function main(siteName, allArgv) {
     }
   }
   if (argv[0] === '--play-url') {
-    const played = await playTitle(site, argv[1] ?? '');
-    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: argv[1] ?? null, play: played };
+    const played = await playOn(site, argv[1] ?? '', note);
+    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: argv[1] ?? null, play: played, ...note };
     // The address came from a search run before: what that search said of it names the title.
     if (played.playing && report) out.kept = await reportPlay(recall(argv[1]) ?? { site: site.name, url: argv[1] });
     print(out);
@@ -88,8 +114,8 @@ export async function main(siteName, allArgv) {
       return 2;
     }
     const found = await findEpisode(site, [{ kind: 'series', url: words[0], title: null }], { season, episode });
-    const played = found.episode ? await playTitle(site, found.episode.url) : { playing: false, skipped_play: found.skipped };
-    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: words[0], episode: found.episode, play: played };
+    const played = found.episode ? await playOn(site, found.episode.url, note) : { playing: false, skipped_play: found.skipped };
+    const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: words[0], episode: found.episode, play: played, ...note };
     if (found.error) out.episode_error = found.error;
     if (played.playing && report) out.kept = await reportPlay({ site: site.name, url: words[0], season: found.episode.season, episode: found.episode.episode });
     print(out);
@@ -104,7 +130,7 @@ export async function main(siteName, allArgv) {
   }
   let results;
   try {
-    results = await site.search(query);
+    results = await searchSite(site, query, note);
   } catch (err) {
     print({ ok: false, site: site.name, origin: site.origin, error: String(err?.message ?? err) });
     return 1;
@@ -112,7 +138,7 @@ export async function main(siteName, allArgv) {
   const { matches, others } = pickMatches(results, query);
   // A film's address is the page that plays: a later --play-url of it is reported by this.
   remember(results.filter((r) => r.kind === 'movie').map((r) => ({ url: r.url, report: playReport(site.name, r) })));
-  const out = { ok: true, query, site: site.name, origin: site.origin, matches, others };
+  const out = { ok: true, query, site: site.name, origin: site.origin, matches, others, ...note };
   if (episode !== null) {
     // An episode of a series: the site says which of the matching series has it, and in which season.
     const found = await findEpisode(site, matches, { season, episode });
@@ -121,7 +147,8 @@ export async function main(siteName, allArgv) {
     remember([...(found.candidates ?? []), ...(found.episode ? [found.episode] : [])].filter(seriesOf).map((hit) => ({ url: hit.url, report: playReport(site.name, seriesOf(hit), hit) })));
     if (found.error) out.episode_error = found.error;
     if (found.candidates) out.episode_candidates = found.candidates;
-    if (wantPlay) out.play = found.episode ? await playTitle(site, found.episode.url) : { playing: false, skipped_play: found.skipped };
+    if (wantPlay) out.play = found.episode ? await playOn(site, found.episode.url, note) : { playing: false, skipped_play: found.skipped };
+    Object.assign(out, note);
     const series = found.episode ? matches.find((m) => m.url === found.episode.series_url) : undefined;
     if (out.play?.playing && report && series) out.kept = await reportPlay(playReport(site.name, series, found.episode));
     print(out);
@@ -131,9 +158,10 @@ export async function main(siteName, allArgv) {
     // Only an unambiguous film starts on its own; a series has episodes to choose from.
     out.play =
       matches.length === 1 && matches[0].kind === 'movie'
-        ? await playTitle(site, matches[0].url)
+        ? await playOn(site, matches[0].url, note)
         : { playing: false, skipped_play: matches.length === 0 ? 'no_match' : matches.length > 1 ? 'several_matches' : 'series' };
     if (out.play.playing && report) out.kept = await reportPlay(playReport(site.name, matches[0]));
+    Object.assign(out, note);
   }
   print(out);
   return 0;

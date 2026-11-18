@@ -53,6 +53,9 @@ It prints JSON:
   `url`.
 - `others`: every other result. The search is fuzzy, so most of these are unrelated.
 - `play`, with `--play` only: what happened on screen (below).
+- `warp`, when present: the site did not answer on this network, so the script turned Cloudflare
+  WARP on (it was installed and off) and asked again. WARP stays on, for the whole laptop; say so
+  in one line.
 - `kept`, after a play that started: what the daemon kept of it. `recorded: true` with `title_id`:
   the title is now on the Stream side of the wall's movies page, and Play there, or a
   `direct_stream_play` that names no source, comes back to this site. `recorded: true` with
@@ -96,7 +99,7 @@ To play a link the user already has from an earlier answer: `search.mjs --play-u
 
 The link in the answer opens in the user's default browser as a fresh page: a page that is
 already playing cannot be handed over through a link, which is why the film plays in the
-streaming Chrome window. That Chrome has no ad blocker, so the site's adverts show in it.
+streaming Chrome window. That Chrome runs uBlock Origin Lite, which the owner added to its profile, so most of a site's adverts do not show in it.
 
 Do not look for the film's video or download sources, and do not press anything on the page
 beyond what `--play` does.

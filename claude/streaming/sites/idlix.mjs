@@ -1,11 +1,52 @@
-// idlix (z2.idlixku.com). Cloudflare answers 403 to every client but a real browser, so even the
+// idlix (z3.idlixku.com). Cloudflare answers 403 to every client but a real browser, so even the
 // search runs inside the streaming Chrome. Selectors and endpoints as the site had them on
-// 2026-11-15.
-import { evaluateInChrome } from '../chrome.mjs';
+// 2026-11-15; the address as it was on 2026-11-18 (it moved from z2 that day).
+import { ChromeError, evaluateInChrome } from '../chrome.mjs';
 import { pathOnSite } from '../match.mjs';
 
-/** The site moves between hosts (z1, z2, ...); IDLIX_ORIGIN names the current one. */
-const ORIGIN = (process.env.IDLIX_ORIGIN ?? 'https://z2.idlixku.com').replace(/\/+$/, '');
+/**
+ * The site moves between hosts (z1, z2, z3, ...) and the old one forwards to the new. IDLIX_ORIGIN
+ * names where it is first looked for; from there the scripts follow it by themselves, to another
+ * host of the same family only (`sameFamily`).
+ */
+let ORIGIN = (process.env.IDLIX_ORIGIN ?? 'https://z3.idlixku.com').replace(/\/+$/, '');
+
+/** True when `origin` is the site on another of its numbered hosts: `https://z4.idlixku.com` for `https://z3.idlixku.com`. */
+export function sameFamily(origin, known = ORIGIN) {
+  const shape = (value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && /^[a-z]+\d+\./.test(url.host) ? url.host.replace(/^([a-z]+)\d+\./, '$1#.') : null;
+    } catch {
+      return null;
+    }
+  };
+  return shape(origin) !== null && shape(origin) === shape(known);
+}
+
+/**
+ * evaluateInChrome on the site, following it when it has moved: the tab opened on the known host
+ * ended on another host of the family (cdp.ps1 answers `moved` with where), so that host is the
+ * site from now on and the expression is asked there.
+ */
+async function onSite(expression, options, evaluate = evaluateInChrome) {
+  try {
+    return await evaluate(ORIGIN, expression, options);
+  } catch (err) {
+    const to = err instanceof ChromeError && err.code === 'moved' ? String(err.message).replace(/^moved:\s*/, '').trim() : '';
+    if (!sameFamily(to)) throw err;
+    ORIGIN = new URL(to).origin;
+    return evaluate(ORIGIN, expression, options);
+  }
+}
+
+/** A title or episode page on the site, on whichever of its hosts the address names: that host is then the site. */
+function adopt(url) {
+  try {
+    const origin = new URL(url).origin;
+    if (origin !== ORIGIN && sameFamily(origin)) ORIGIN = origin;
+  } catch {}
+}
 
 const SEARCH_LIMIT = 20;
 // contentType -> the first path segment of the title's page.
@@ -123,14 +164,23 @@ export const WAIT_FOR_FILM_EXPRESSION = `(async () => {
   return { playing: false, skipped, ...state };
 })()`;
 
+/** Test seam: `onSite` with another evaluate, and the host the scripts are on now. */
+export const follow = { onSite, origin: () => ORIGIN, reset: (origin) => (ORIGIN = origin) };
+
 export default {
   name: 'idlix',
   label: 'idlix',
-  origin: ORIGIN,
+  // Read each time: the scripts follow the site when it moves host.
+  get origin() {
+    return ORIGIN;
+  },
   originEnv: 'IDLIX_ORIGIN',
   playerSelector: FRAME,
 
-  titlePath: (url) => pathOnSite(url, ORIGIN, /^\/(movie|series)\/[a-z0-9-]+$/) ?? pathOnSite(url, ORIGIN, /^\/series\/[a-z0-9-]+\/season\/\d+\/episode\/\d+$/),
+  titlePath: (url) => {
+    adopt(url);
+    return pathOnSite(url, ORIGIN, /^\/(movie|series)\/[a-z0-9-]+$/) ?? pathOnSite(url, ORIGIN, /^\/series\/[a-z0-9-]+\/season\/\d+\/episode\/\d+$/);
+  },
 
   /**
    * The episodes a series has under one episode number: [{ season, episode, name, has_video, url }],
@@ -138,9 +188,10 @@ export default {
    * and episode the site's own API confirmed; nothing is guessed.
    */
   async episodes(seriesUrl, { season, episode }) {
+    adopt(seriesUrl);
     const slug = seriesSlug(seriesUrl);
     if (slug === null) throw new Error(`not a series page on ${ORIGIN}: ${seriesUrl}`);
-    const value = await evaluateInChrome(ORIGIN, episodeExpression(slug, season, episode));
+    const value = await onSite(episodeExpression(slug, season, episode));
     if (!value || value.status !== 200 || !Array.isArray(value.hits)) {
       throw new Error(`the site answered HTTP ${value?.status ?? '?'} (page title: ${value?.title ?? '?'})`);
     }
@@ -148,7 +199,7 @@ export default {
   },
 
   async search(query) {
-    const value = await evaluateInChrome(ORIGIN, searchExpression(query.name));
+    const value = await onSite(searchExpression(query.name));
     if (!value || value.status !== 200 || value.results === null) {
       throw new Error(`the site answered HTTP ${value?.status ?? '?'} (page title: ${value?.title ?? '?'})`);
     }

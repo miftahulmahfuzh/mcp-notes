@@ -87,13 +87,45 @@ if ($CloseHosts) {
 # A tab on the site, loaded far enough to have a title; open one when there is none.
 $tab = $null
 $opened = $false
+$openedId = ''
+$reopened = $false
+$started = Get-Date
+$reopened = $false
+$started = Get-Date
 while (-not $tab) {
   $onSite = @(Get-Targets | Where-Object { $_.type -eq 'page' -and (Get-HostOf $_.url) -eq $originHost })
   $tab = $onSite | Where-Object { $_.title -and $_.title -ne $_.url -and $_.title -notmatch '^Just a moment' -and $_.title -ne $originHost } | Select-Object -First 1
   if ($tab) { break }
   if ($onSite.Count -eq 0 -and -not $opened) {
-    Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$Port/json/new?$Origin" -TimeoutSec 5 | Out-Null
+    $openedId = (Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$Port/json/new?$Origin" -TimeoutSec 5).id
     $opened = $true
+  }
+  # The site moved: the tab opened on its address loaded on another host. The answer says where,
+  # and the caller decides whether that host is the same site (idlix moves from z2 to z3 this way).
+  if ($onSite.Count -eq 0 -and $openedId) {
+    $mine = Get-Targets | Where-Object { $_.id -eq $openedId } | Select-Object -First 1
+    if ($mine -and $mine.url -match '^https?://') {
+      $landed = Get-HostOf $mine.url
+      if ($landed -and $landed -ne $originHost -and $mine.title -and $mine.title -ne $mine.url -and $mine.title -notmatch '^Just a moment' -and $mine.title -ne $landed) {
+        Fail 'moved' ("{0}://{1}" -f ([Uri]$mine.url).Scheme, ([Uri]$mine.url).Authority)
+      }
+    }
+  }
+  # A tab left on Chrome's own error page (the site did not answer when it was opened) never
+  # loads by waiting: after a while it is closed and the site is opened once more. This is what
+  # lets a second try get through once the network reaches the site again.
+  if ($onSite.Count -gt 0 -and -not $reopened -and (Get-Date) -gt $started.AddSeconds(10)) {
+    $onSite | ForEach-Object { try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/close/$($_.id)" -TimeoutSec 3 | Out-Null } catch { } }
+    $openedId = (Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$Port/json/new?$Origin" -TimeoutSec 5).id
+    $reopened = $true
+  }
+  # A tab left on Chrome's own error page (the site did not answer when it was opened) never
+  # loads by waiting: after a while it is closed and the site is opened once more. This is what
+  # lets a retry get through once the network reaches the site again.
+  if ($onSite.Count -gt 0 -and -not $reopened -and (Get-Date) -gt $started.AddSeconds(10)) {
+    $onSite | ForEach-Object { try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/close/$($_.id)" -TimeoutSec 3 | Out-Null } catch { } }
+    Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:$Port/json/new?$Origin" -TimeoutSec 5 | Out-Null
+    $reopened = $true
   }
   if ((Get-Date) -gt $deadline) { Fail 'no_tab' "no loaded tab on $originHost" }
   Start-Sleep -Milliseconds 500

@@ -6,9 +6,15 @@ import { ChromeError, evaluateInChrome, sleep } from './chrome.mjs';
  * Stretches the player over the page, for a window that is already full screen. A page's own
  * full-screen button is refused when the click does not come from the keyboard or mouse, so this
  * is the F11 kind of full screen. Esc, or leaving full screen with F11, puts the page back.
+ *
+ * The player is left two pixels short of the screen's height. A video that covers the whole screen
+ * exactly is handed by Chrome to a full-screen overlay, which draws nothing of the page over it:
+ * the player's own subtitles and controls are in the page and yet not on screen (measured on idlix,
+ * 2026-11-18: a subtitle line present and styled, absent from the screen until the player was 898
+ * of 900 pixels high).
  */
 export function fillScreenExpression(selector) {
-  const css = `${selector}{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;z-index:2147483647!important;border-radius:0!important;background:#000!important}html{overflow:hidden!important}`;
+  const css = `${selector}{position:fixed!important;inset:0!important;width:100vw!important;height:calc(100vh - 2px)!important;max-width:none!important;max-height:none!important;z-index:2147483647!important;border-radius:0!important;background:#000!important}html{overflow:hidden!important}`;
   return `(async () => {
   const player = document.querySelector(${JSON.stringify(selector)});
   if (!player) return { filled: false };
@@ -25,7 +31,7 @@ export function fillScreenExpression(selector) {
   }
   await new Promise((r) => setTimeout(r, 600));
   const rect = player.getBoundingClientRect();
-  return { filled: rect.width >= screen.width - 2 && rect.height >= screen.height - 2 };
+  return { filled: rect.width >= screen.width - 2 && rect.height >= screen.height - 4 };
 })()`;
 }
 
