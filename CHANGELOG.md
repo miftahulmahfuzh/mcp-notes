@@ -5,6 +5,130 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.0] - 2026-11-19
+
+Direct streaming: a film or an episode plays in notesd's own player page from a cloud provider
+or a torrent, in its original language with an English subtitle and no site adverts. Around it:
+a Stream side on `/movies` with a daily Trending list, two more streaming sites, pop-ups for
+people, studios and genres, and a Postgres on this machine in place of Neon.
+
+### Added
+
+- **Direct streaming** (`src/directStream/*`, `claude/streaming/direct/*`, migrations
+  0020-0022, `docs/guide/streaming.md`): a resolver finds a title's stream at a cloud provider,
+  a pass-through serves it, and notesd's own player page shows it full screen in the streaming
+  Chrome. `/direct-stream` and the `direct_stream_find`, `direct_stream_play` and
+  `direct_stream_sources` tools drive it from Claude Code and the chat bar.
+  `NOTESD_DIRECT_STREAM=off` turns it off.
+- **The player page** (hls.js, dash.js): the page draws the subtitles itself, G and H delay
+  them, the shuffle button (S) asks for another source, and there are previous and next episode
+  buttons. A pause caches the film and the timeline shows what is loaded; a network error or an
+  expired token is recovered from on the same page, and a provider that keeps stalling is left.
+- **Original language only**: every resolve carries the title's `original_language`, and a
+  stream that names other languages only is `dubbed` and skipped. A cloud stream with no
+  language tags has ~30 s of its audio heard by Whisper (`NOTESD_STREAM_AUDIO_CHECK`), and two
+  frames of a stream are looked at before a provider's first play, so a cinema recording or a
+  burned-in advert is passed over (`NOTESD_STREAM_PICTURE_MODEL`).
+- **Torrents as a source** (`src/directStream/torrent/*`, `webtorrent`, migration 0031): four
+  JSON indexes (Torrentio, apibay, EZTV, YTS), then 1337x, ext.to and RuTracker through the
+  streaming Chrome. The best three swarms are opened side by side and the one whose headers
+  arrive plays; the trackers are scraped first, and asking again tries the next torrents. A file
+  Chrome cannot play is remuxed by ffmpeg, a pasted magnet plays that exact torrent, and a
+  dub-named release is a last resort the file itself decides. Only video and subtitle files are
+  ever selected. `NOTESD_TORRENT=off` builds nothing.
+- **Subtitles for a torrent**: the torrent's own files, an embedded track fed as it grows, Wyzie
+  Subs (`WYZIE_API_KEY`), Stremio's OpenSubtitles add-on, then Whisper as the last tier. A
+  subtitle from outside the stream is re-timed behind the play by Wyzie Synced, and a cloud
+  stream with no English track gets an outside subtitle per title.
+- **`/sync-subtitle`** (`direct_stream_sync_subtitle`): Whisper hears a minute at six places
+  and the subtitle is scored on text and timing; it is replaced or re-timed only when the new
+  one passed both.
+- **Watch codenames**: DM and DS play from the library in VLC, NTM and NTS from a cloud
+  provider, TM and TS from a torrent. The same words are told to every client.
+- **What played last time plays first** (migrations 0034, 0036): the channel a title last really
+  played through (cloud provider, torrent, or a site and its page) is kept per title and host,
+  written only once the player reports, and asked first by a request that names no source.
+- **Discovery** (`direct_stream_discover`, migrations 0023, 0024): find something to stream by
+  person, studio, service, language, genre, keyword or year, never a title already watched; a
+  title is found by its other names, and a series carries on where it was left.
+- **Stream cache** (`direct_stream_cache`, migrations 0029, 0030): a title is downloaded to
+  this machine before watching and played from there. While an episode plays the next one is
+  fetched ahead and gives way to the episode on screen (`NOTESD_STREAM_AHEAD`).
+- **`/update-cloud-source`** (`direct_stream_update_source`): reads a site's provider
+  templates from its scripts, the frames a watch page loads, or a tab the owner already cleared
+  by hand, and probes each new provider. Given a magnet, it names the index it came from and
+  keeps its trackers that answer.
+- **`/report-stream-bug`**: the daemon keeps a stream evidence log, and the player's report
+  button opens a session that collects a snapshot, the pass-through's records, the player's log
+  and a download-speed comparison, and names the cause. It reads a torrent session by its swarm.
+- **Stream side of `/movies`**: the titles with a stream source verified on this machine, last
+  play first, with a refresh button and a background prober that fills it while Windows is idle
+  (`NOTESD_STREAM_PROBER`, off by default). A stream on screen shows as playing or paused, and
+  a play being started says what it is doing.
+- **Trending on torrents** (`src/directStream/trending/`, migration 0032): a daily list of the
+  most seeded films and series not yet seen, with one swarm probe per title; "confirmed" means a
+  peer sent a file list with a video. A control torrent tells a blocked network from dead
+  swarms, and `NOTESD_TRENDING_SKIP_LANGUAGES` leaves languages out.
+- **Marks and an Interested watch list** (migration 0037): watched, interested and not
+  interested are set from a poster without opening the title, and the poster leaves the grid at
+  the click. An interested title with no verified source is listed under its own filter.
+- **Pop-ups for people, studios and genres**: a name on a title's page opens a pop-up with its
+  titles, read from TMDB at each request, each with the three mark buttons. A genre's guide is
+  collated once per title by Claude and kept. A title the library does not hold is stored before
+  its pop-up opens.
+- **The play menu** names the source by hand: the library, a cloud provider, a torrent, a
+  streaming site (`POST /api/movies/:id/site-play`) or the title's pahe pages.
+- **Stories and dialogue** (migrations 0027, 0028): `direct_stream_dialogue` reads what is said
+  in a film or an episode, and an episode's book icon writes its story once from that dialogue
+  (`NOTESD_MOVIES_STORY_MODEL`). `movies_pictures` lets Claude look at a title's poster,
+  backdrop or episode still.
+- **`/flicksy` and `/dramacool`**: a third and a fourth streaming site, the latter playing
+  episodes; `/idlix` plays one episode of a series. Every site play is reported to the daemon
+  and listed on the Stream side, and a title TMDB does not list is kept with what the site's
+  page says (migration 0035).
+- **Seasons on a series' page**: a season folds, and one button marks it finished (migration
+  0025). A play started from an episode row is followed on that row.
+- **`scripts/install.sh --check-idle`, `--wait` and `--force`**: the installer refuses to
+  restart the daemon (exit 75, nothing changed) while a film plays or a play is being started;
+  `--wait` installs once the daemon is idle. `GET /api/movies/player` carries `stream`,
+  `starting` and `busy`.
+- `scripts/install.sh` registers the six new skills (`flicksy`, `dramacool`, `direct-stream`,
+  `update-cloud-source`, `report-stream-bug`, `sync-subtitle`) and installs Whisper
+  (`faster-whisper`, model `small`) unless torrents or Whisper are turned off. Re-run it after
+  updating; the daemon applies migrations 0020-0037 at its next start.
+
+### Changed
+
+- **notesd runs on a Postgres on this machine**: `scripts/install.sh` creates the
+  `mcp-notes-pg` Docker container (127.0.0.1:55437) and points `DATABASE_URL` at it; the daemon
+  waits for it and applies `drizzle/` at every start, so `npm run db:migrate` is no longer an
+  install step. The old Neon address stays as `IMPORT_DATABASE_URL` and is read once: staged
+  behind the daemon, merged at the next start. Nothing at run time depends on a hosted database,
+  and the adversary toggle and daily cap now count per machine.
+- A site that does not answer is asked once more with Cloudflare WARP the other way round
+  (`NOTESD_STREAM_WARP`), and idlix is followed to another numbered host of the same name;
+  `IDLIX_ORIGIN` defaults to `z3.idlixku.com`.
+- The Movies page has one row of controls, the name pop-up scrolls inside its box, and the chat
+  movie pop-up follows the play.
+- `cinemaos.live` is the cloud provider tried first (`NOTESD_STREAM_FIRST_PROVIDER`); a
+  provider is scored on how it delivers and dead ones are tried last.
+- The streaming and movies guides match the product, with pictures; the streaming guide's
+  player pictures come from the throwaway daemon and the Sintel trailer.
+
+### Fixed
+
+- Subtitles and controls stay on screen in full screen: the player is 2 px short of the screen,
+  so Chrome draws no overlay over the page.
+- A title with no file anywhere lists every episode.
+- A passively embedded Turnstile script or Cloudflare beacon no longer reads as a bot check.
+- Anime plays: Japanese audio with English subtitles, and an episode is mapped when TMDB and the
+  index differ by a day.
+- A studio name stands for all its TMDB companies.
+- A slow subtitle host or an undecodable stream no longer holds a play back, and a stray
+  `session_over` does not stop a cache move.
+- A rated star is solid white.
+- Skill descriptions load in full, and `direct-stream`'s argument hint is quoted.
+
 ## [v0.7.0] - 2026-11-15
 
 Streaming sites (`/pahe`, `/idlix`, `/lk21`) from Claude Code and the chat bar, trailers and
@@ -303,6 +427,7 @@ exposed to Claude Code over MCP and to the browser as "the wall".
 - Images whose files are not on this machine are hidden in the gallery, note cards,
   recycle bin and editor instead of showing broken tiles.
 
+[v0.8.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.7.0
 [v0.6.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/miftahulmahfuzh/mcp-notes/releases/tag/v0.5.0
