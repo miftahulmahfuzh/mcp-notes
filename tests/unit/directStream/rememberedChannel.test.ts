@@ -35,6 +35,8 @@ interface Setup {
   resolve?: Record<string, unknown>;
   /** false: no torrent has the title. */
   torrentHasIt?: boolean;
+  /** Torrents whose swarm answers nothing. */
+  deadHashes?: string[];
   /** What the streaming command answers; unset: no streaming runner. */
   site?: unknown;
 }
@@ -44,9 +46,14 @@ function setup(o: Setup = {}) {
   const failed: string[] = [];
   const recorded: unknown[] = [];
   const siteRuns: Array<[string, string[]]> = [];
+  const opened: string[] = [];
   const sitePlays: unknown[] = [];
   const swarm: TorrentSwarm = {
-    open: async (pick) => ({ infoHash: pick.infoHash, files: [{ index: 0, path: 'Film.2026.720p.mp4', name: 'Film.2026.720p.mp4', length: 1_000_000 }] }),
+    open: async (pick) => {
+      opened.push(pick.infoHash);
+      if ((o.deadHashes ?? []).includes(pick.infoHash)) throw new Error('no peers');
+      return { infoHash: pick.infoHash, files: [{ index: 0, path: 'Film.2026.720p.mp4', name: 'Film.2026.720p.mp4', length: 1_000_000 }] };
+    },
     use: () => undefined,
     release: () => undefined,
     find: async () => null,
@@ -107,7 +114,7 @@ function setup(o: Setup = {}) {
     }),
   );
   const flag = (args: string[], name: string): string | null => (args.includes(name) ? args[args.indexOf(name) + 1]! : null);
-  return { app, finds, failed, recorded, siteRuns, sitePlays, asked: () => resolves.map((a) => ({ only: flag(a, '--only'), skip: flag(a, '--skip') })) };
+  return { app, finds, failed, recorded, siteRuns, sitePlays, opened, asked: () => resolves.map((a) => ({ only: flag(a, '--only'), skip: flag(a, '--skip') })) };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,12 +149,32 @@ describe('a play with no provider named asks what streamed the title last time',
   });
 
   it('goes to the torrents first when a torrent streamed it last time, and asks no cloud provider', async () => {
-    const t = setup({ known: { channel: 'torrent', infoHash: h(9), playedAt: daysAgo(1) }, resolve: { all: resolved('Alpha') } });
+    const t = setup({ known: { channel: 'torrent', playedAt: daysAgo(1) }, resolve: { all: resolved('Alpha') } });
     const { status, json } = await post(t.app, PLAY_FILM);
     expect(status).toBe(200);
     expect(json.session.provider).toBe('Torrent');
     expect(t.asked()).toEqual([]);
     expect(t.finds).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the very torrent that played the film last time, with no index asked; the indexes only when its swarm is gone', async () => {
+    const same = setup({ known: { channel: 'torrent', infoHash: h(9), playedAt: daysAgo(1) } });
+    const { json } = await post(same.app, PLAY_FILM);
+    expect(json.session.torrent.info_hash).toBe(h(9));
+    expect(same.finds).not.toHaveBeenCalled();
+    expect(same.asked()).toEqual([]);
+
+    const gone = setup({ known: { channel: 'torrent', infoHash: h(9), playedAt: daysAgo(1) }, deadHashes: [h(9)] });
+    const after = await post(gone.app, PLAY_FILM);
+    expect(after.json.session.torrent.info_hash).toBe(h(1));
+    expect(gone.finds).toHaveBeenCalledTimes(1);
+    expect(gone.opened[0]).toBe(h(9));
+
+    // Another episode than the one that torrent held: the indexes are asked for this one.
+    const other = setup({ known: { channel: 'torrent', infoHash: h(9), season: 1, episode: 3, playedAt: daysAgo(1) } });
+    await post(other.app, PLAY_EPISODE);
+    expect(other.opened).not.toContain(h(9));
+    expect(other.finds).toHaveBeenCalledTimes(1);
   });
 
   it('asks the cloud providers when the remembered torrents have nothing now, and keeps that the torrents failed', async () => {

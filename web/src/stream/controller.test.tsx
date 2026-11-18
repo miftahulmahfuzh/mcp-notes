@@ -671,8 +671,10 @@ describe('the page log reaches the daemon (R2.2)', () => {
     void t.controller.start();
     await vi.waitFor(() => expect(t.made).toHaveLength(1));
     t.made[0].req.handlers.onFatal('networkError fragLoadError');
-    await vi.waitFor(() => expect(lines(t)).toHaveLength(1));
-    expect(lines(t)[0]).toMatchObject({ text: 'error: networkError fragLoadError', stage: 'error' });
+    await vi.waitFor(() => expect(t.controller.getState().stage).toBe('error'));
+    await vi.waitFor(() => expect(lines(t).at(-1)).toMatchObject({ text: 'error: networkError fragLoadError', stage: 'error' }));
+    // Another provider was asked for first; none answered.
+    expect(lines(t)[0]).toMatchObject({ text: 'networkError fragLoadError: asking for another source' });
     expect(t.controller.getState()).toMatchObject({ stage: 'error', error: 'networkError fragLoadError' });
   });
 
@@ -686,8 +688,8 @@ describe('the page log reaches the daemon (R2.2)', () => {
     void t.controller.start();
     await vi.waitFor(() => expect(t.made).toHaveLength(1));
     t.made[0].req.handlers.onFatal('networkError fragLoadError');
-    await vi.waitFor(() => expect(t.posts(`${S1}/events`)).toHaveLength(1));
-    expect(t.controller.getState()).toMatchObject({ stage: 'error', errors: ['networkError fragLoadError'] });
+    await vi.waitFor(() => expect(t.controller.getState()).toMatchObject({ stage: 'error', errors: ['networkError fragLoadError'] }));
+    expect(t.posts(`${S1}/events`).length).toBeGreaterThan(0);
   });
 });
 
@@ -769,8 +771,9 @@ describe('StreamController: the report button (R4)', () => {
   const failed = async (report: () => Response) => {
     const t = setup({ [`GET ${S1}`]: () => jsonResponse(streamSessionJson()), [`POST ${S1}/report`]: report });
     await t.controller.start();
+    // No other provider answers (the daemon has no /source here): the play stops with the error.
     t.made[0].req.handlers.onFatal('networkError fragLoadError');
-    expect(t.controller.getState().stage).toBe('error');
+    await vi.waitFor(() => expect(t.controller.getState().stage).toBe('error'));
     const reports = () => t.calls.filter((c) => c.method === 'POST' && c.url === `${S1}/report`);
     return { ...t, reports };
   };
@@ -846,6 +849,33 @@ describe('a film that keeps stalling', () => {
     expect(t.controller.getState().log).toEqual(expect.arrayContaining(['stalled at 312 s', '3 stalls in 120 s: asking for another source', 'source: HyperLink -> VidNest Anime at 312 s']));
     t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
     expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null });
+  });
+
+  it('a stream that cannot be played at all moves to another provider before the play stops', async () => {
+    const t = await playing({ [SOURCE]: () => moved() });
+    t.made[0].req.handlers.onFatal('mediaError fragParsingError');
+    await vi.waitFor(() => expect(t.made).toHaveLength(2));
+    expect(t.asks()).toHaveLength(1);
+    expect(t.made[0].destroy).toHaveBeenCalled();
+    expect(t.controller.getState().log).toEqual(expect.arrayContaining(['mediaError fragParsingError: asking for another source']));
+    t.made[1].req.handlers.onReady({ qualities: [], subtitles: [] });
+    expect(t.controller.getState()).toMatchObject({ stage: 'ready', error: null });
+  });
+
+  it('a broken stream stops with its error when no other provider answers, or the session has moved as often as it may', async () => {
+    const none = await playing({ [SOURCE]: () => moved({ switched: false, reason: 'no_other_source' }) });
+    none.made[0].req.handlers.onFatal('mediaError fragParsingError');
+    await vi.waitFor(() => expect(none.controller.getState()).toMatchObject({ stage: 'error', error: 'mediaError fragParsingError' }));
+    expect(none.controller.getState().log).toEqual(expect.arrayContaining(['source kept: no_other_source']));
+
+    const t = await playing({ [SOURCE]: () => moved() });
+    for (let n = 1; n <= MAX_SOURCE_SWITCHES; n++) {
+      t.made[n - 1].req.handlers.onFatal('mediaError fragParsingError');
+      await vi.waitFor(() => expect(t.made).toHaveLength(n + 1));
+    }
+    t.made[MAX_SOURCE_SWITCHES].req.handlers.onFatal('mediaError fragParsingError');
+    await vi.waitFor(() => expect(t.controller.getState().stage).toBe('error'));
+    expect(t.asks()).toHaveLength(MAX_SOURCE_SWITCHES);
   });
 
   it('keeps the film when no other source answers, and does not ask again inside the cooldown', async () => {

@@ -68,6 +68,13 @@ describe('recordSitePlay', () => {
     expect(await setup({ tmdb: false }).run(DRAMA)).toEqual({ recorded: false, reason: 'tmdb_unavailable' });
   });
 
+  it('a name two titles share is kept by what the site says of it too, never under a guessed title', async () => {
+    const two = setup({ tv: [hit('tv', 1, 'Summer Vacation', 2026), hit('tv', 2, 'Summer Vacation', 2026)] });
+    const kept = await recordSitePlay(DRAMA, { lookup: { library: { search: async () => [], byKey: async () => null, byMovieId: async () => null, seasons: async () => [] }, tmdb: { searchTv: async () => [hit('tv', 1, 'Summer Vacation', 2026), hit('tv', 2, 'Summer Vacation', 2026)], searchMovie: async () => [] } }, streams: { recordSitePlay: two.recordSite as never }, siteTitles: async () => 9, log: () => undefined });
+    expect(kept).toEqual({ recorded: true, title_id: null, site_title_id: 9, season: 1, episode: 3 });
+    expect(two.recordSite).not.toHaveBeenCalled();
+  });
+
   it('a title TMDB does not list is kept by what the site says of it, when a keeper is given', async () => {
     const t = setup();
     const kept = await recordSitePlay(DRAMA, { lookup: { library: { search: async () => [], byKey: async () => null, byMovieId: async () => null, seasons: async () => [] }, tmdb: { searchTv: async () => [], searchMovie: async () => [] } }, streams: { recordSitePlay: t.recordSite as never }, siteTitles: async () => 7, log: () => undefined });

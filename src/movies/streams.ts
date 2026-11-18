@@ -325,8 +325,18 @@ export class MovieStreams {
       at: this.now(),
     });
     if (written.created || written.closed) this.emit('play', id);
+    // The session moved to another provider since its play opened (the film kept stalling, or the stream
+    // broke): the play, and the title's channel, name the one that plays now.
+    const moved = !written.created && !written.closed && written.play.provider !== null && written.play.provider !== session.source.provider;
+    if (moved) {
+      try {
+        await this.movies.repo.setStreamPlayProvider(written.play.id, session.source.provider);
+      } catch (err) {
+        this.log(`[notesd] direct stream: could not rename the play of ${describeTarget(session.ref)}: ${messageOf(err)}`);
+      }
+    }
     // The page's first report: the stream really plays, so this is how the title is streamed from now on.
-    if (written.created) {
+    if (written.created || moved) {
       const key = { titleId: id, host: this.movies.host, season: slot.play.season, episode: slot.play.episode, at: this.now() };
       const torrent = session.torrent ?? null;
       try {

@@ -839,6 +839,11 @@ export class MoviesRepo {
     });
   }
 
+  /** The session of a stream play moved to another provider (the film kept stalling, or its stream broke): the play names the one it is on now. */
+  async setStreamPlayProvider(playId: number, provider: string): Promise<void> {
+    await this.db.update(moviePlays).set({ provider }).where(and(eq(moviePlays.id, playId), eq(moviePlays.source, 'stream')));
+  }
+
   /** The stream play `streamState` reads for a film (season and episode null) or an episode, from any host: lastPlay's order. */
   async lastStreamPlay(titleIdValue: string, season: number | null, episode: number | null): Promise<MoviePlayRow | null> {
     const rows = await this.db

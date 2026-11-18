@@ -177,7 +177,9 @@ describe('StreamApp', () => {
     expect(el.querySelector('[role="alert"]')).toBeNull();
     expect(el.querySelector('video')).not.toBeNull();
     expect(window.notesdStream?.stage).toBe('recovering');
+    // Another provider is asked for first; here none answers, and the error shows.
     act(() => made[0].req.handlers.onFatal('networkError fragLoadError'));
+    await settle();
     expect(el.querySelector('[role="alert"]')?.textContent).toBe('Playback stopped (networkError fragLoadError).');
   });
 

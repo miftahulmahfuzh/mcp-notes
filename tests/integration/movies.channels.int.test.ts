@@ -72,6 +72,16 @@ describe('how a title was last streamed (movie_title_channels)', () => {
     expect(await streams(OTHER).channel(FIGHT_CLUB)).toBeNull()
   })
 
+  it('a session that moves to another provider while it plays takes the play and the channel with it', async () => {
+    const s = streams()
+    await s.recordPosition({ id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'HyperLink' } }, { positionS: 3, durationS: 8340, ended: false })
+    clock = at(2)
+    await s.recordPosition({ id: 'sess-1', ref: FIGHT_CLUB, source: { provider: 'VidRock' } }, { positionS: 90, durationS: 8340, ended: false })
+    expect(await s.channel(FIGHT_CLUB)).toMatchObject({ channel: 'cloud', provider: 'VidRock', playedAt: at(2) })
+    const plays = await db.select().from(moviePlays).where(eq(moviePlays.titleId, 'movie-550'))
+    expect(plays.map((p) => [p.provider, p.positionS])).toEqual([['VidRock', 90]])
+  })
+
   it('a series has one channel for all its episodes, with the episode last played', async () => {
     const s = streams()
     await s.recordPosition({ id: 'sess-1', ref: { ...MOBLAND, season: 1, episode: 2 }, source: { provider: 'VidFast' } }, { positionS: 1, durationS: 3000, ended: false })

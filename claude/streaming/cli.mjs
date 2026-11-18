@@ -12,6 +12,7 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { parseQuery, pickMatches } from './match.mjs';
 import { playTitle } from './play.mjs';
+import { recall, remember } from './seen.mjs';
 import { SITES } from './sites/index.mjs';
 
 const print = (value) => console.log(JSON.stringify(value, null, 2));
@@ -74,7 +75,8 @@ export async function main(siteName, allArgv) {
   if (argv[0] === '--play-url') {
     const played = await playTitle(site, argv[1] ?? '');
     const out = { ok: played.playing === true, site: site.name, origin: site.origin, url: argv[1] ?? null, play: played };
-    if (played.playing && report) out.kept = await reportPlay({ site: site.name, url: argv[1] });
+    // The address came from a search run before: what that search said of it names the title.
+    if (played.playing && report) out.kept = await reportPlay(recall(argv[1]) ?? { site: site.name, url: argv[1] });
     print(out);
     return played.playing ? 0 : 1;
   }
@@ -108,11 +110,15 @@ export async function main(siteName, allArgv) {
     return 1;
   }
   const { matches, others } = pickMatches(results, query);
+  // A film's address is the page that plays: a later --play-url of it is reported by this.
+  remember(results.filter((r) => r.kind === 'movie').map((r) => ({ url: r.url, report: playReport(site.name, r) })));
   const out = { ok: true, query, site: site.name, origin: site.origin, matches, others };
   if (episode !== null) {
     // An episode of a series: the site says which of the matching series has it, and in which season.
     const found = await findEpisode(site, matches, { season, episode });
     out.episode = found.episode;
+    const seriesOf = (hit) => matches.find((m) => m.url === hit.series_url);
+    remember([...(found.candidates ?? []), ...(found.episode ? [found.episode] : [])].filter(seriesOf).map((hit) => ({ url: hit.url, report: playReport(site.name, seriesOf(hit), hit) })));
     if (found.error) out.episode_error = found.error;
     if (found.candidates) out.episode_candidates = found.candidates;
     if (wantPlay) out.play = found.episode ? await playTitle(site, found.episode.url) : { playing: false, skipped_play: found.skipped };

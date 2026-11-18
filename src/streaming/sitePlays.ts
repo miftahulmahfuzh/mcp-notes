@@ -26,7 +26,7 @@ export interface SitePlayReport {
 /** What became of a report: the title it was kept under, or why it was not kept. */
 export type SitePlayOutcome =
   | { recorded: true; title_id: string; season: number | null; episode: number | null }
-  /** No title of that name and year is known: it is kept by what the site says of it (movie_site_titles). */
+  /** No title of that name and year is known, or more than one: it is kept by what the site says of it (movie_site_titles). */
   | { recorded: true; title_id: null; site_title_id: number; season: number | null; episode: number | null }
   | { recorded: false; reason: 'no_name' | 'no_match' | 'several_matches' | 'tmdb_unavailable' | 'not_stored'; candidates?: string[] };
 
@@ -169,10 +169,11 @@ export async function recordSitePlay(report: SitePlayReport, deps: SitePlaysDeps
     return { recorded: false, reason: 'tmdb_unavailable' };
   }
   if (!('candidate' in found)) {
-    if (found.reason === 'no_match' && deps.siteTitles !== undefined) {
+    // No title, or more than one, carries the name: nothing is guessed, and the play is kept by what the site says of it.
+    if (deps.siteTitles !== undefined) {
       const id = await deps.siteTitles(report);
       if (id !== null) {
-        log(`[notesd] streaming: ${report.name} played on ${report.site}; TMDB does not list it, so it is kept by what the site says of it`);
+        log(`[notesd] streaming: ${report.name} played on ${report.site}; ${found.reason === 'no_match' ? 'TMDB does not list it' : `several titles carry that name (${found.candidates.join(', ')})`}, so it is kept by what the site says of it`);
         const series = report.kind !== 'movie';
         return { recorded: true, title_id: null, site_title_id: id, season: series ? (report.season ?? 1) : null, episode: series ? (report.episode ?? 1) : null };
       }

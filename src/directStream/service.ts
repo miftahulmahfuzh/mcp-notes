@@ -281,6 +281,11 @@ function playKey(ref: StreamRef, provider: string | null): string {
   return `${ref.kind}-${ref.tmdbId}${ref.kind === 'tv' ? `-${ref.season}-${ref.episode}` : ''}|${(provider ?? '').trim().toLowerCase()}`;
 }
 
+/** True when what is remembered was a play of this very film or episode: its torrent holds the file asked for. */
+function sameSlot(ref: StreamRef, known: RememberedChannel): boolean {
+  return ref.kind === 'movie' ? known.season === null && known.episode === null : known.season === ref.season && known.episode === ref.episode;
+}
+
 function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcome {
   return (STREAM_HEALTH_OUTCOMES as readonly string[]).includes(outcome);
 }
@@ -657,6 +662,19 @@ export class DirectStreamService {
     if (known !== null && this.torrentSource() !== null && this.torrentsFirst(known)) {
       try {
         if (track !== null) track.stage = known.channel === 'torrent' ? 'asking the torrents, which streamed it last time' : 'asking the torrents: no cloud provider had it last time';
+        // The very torrent that played this film or this episode is opened again, with no index asked;
+        // only when its swarm has nothing now are the indexes searched.
+        if (known.channel === 'torrent' && known.infoHash !== null && sameSlot(ref, known)) {
+          const hash = known.infoHash;
+          if (track !== null) track.stage = 'opening the torrent that played it last time';
+          try {
+            return await this.magnetSession(ref, resumeS, hash, track);
+          } catch (err) {
+            if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;
+            this.log(`[notesd] direct stream: the torrent that played ${refLabel(ref)} last time does not play now; asking the indexes`);
+            return await this.after(err.attempts, () => this.torrentSession(ref, resumeS, null, track));
+          }
+        }
         return await this.torrentSession(ref, resumeS, null, track);
       } catch (err) {
         if (!(err instanceof DirectStreamError) || err.code !== 'no_source') throw err;

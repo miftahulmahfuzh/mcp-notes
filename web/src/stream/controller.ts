@@ -18,6 +18,7 @@ import {
   SessionError,
   switchEpisode,
   switchSource,
+  type SourceSwitch,
   cacheSession,
   fetchCacheMap,
   fetchTorrentMap,
@@ -790,7 +791,7 @@ export class StreamController {
             if (current()) this.onRecovered();
           },
           onFatal: (message) => {
-            if (current()) this.fail(new SessionError(message, 0));
+            if (current()) void this.leaveBrokenSource(message);
           },
         },
       });
@@ -896,35 +897,78 @@ export class StreamController {
         if (byOwner) this.set({ sourceNotice: NO_OTHER_SOURCE });
         return;
       }
-      this.sourceSwitches += 1;
-      const continueAt = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
-      this.generation += 1;
-      this.engine?.destroy();
-      this.engine = null;
-      this.ready = null;
-      this.clearFileTracks();
-      this.stopTorrent();
-      this.session = answer.session;
-      this.subtitleChosen = false;
-      this.set({
-        stage: 'refreshing',
-        kind: answer.session.manifestKind,
-        qualities: [],
-        quality: -1,
-        subtitles: [],
-        cached: answer.session.cached,
-        torrent: torrentView(answer.session.torrent),
-        cachedRanges: [],
-      });
-      this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
-      // Every torrent's provider is `Torrent`: a torrent is named by its release.
-      this.set({ sourceNotice: answer.session.torrent?.name ?? answer.provider });
-      if (answer.session.torrent !== null) this.followTorrent(answer.session.torrent.infoHash);
-      await this.loadFileSubtitles(answer.session);
-      if (this.disposed || this.session !== answer.session) return;
-      await this.attach(answer.session, continueAt);
+      await this.moveTo(answer);
     } catch (err) {
       if (!this.disposed && this.sessionId === asked) this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+    } finally {
+      this.askingSource = false;
+      if (!this.disposed) this.set({ changingSource: false });
+    }
+  }
+
+  /** Loads the stream of the provider the daemon moved the session to, at the position the film had reached. */
+  private async moveTo(answer: SourceSwitch): Promise<void> {
+    this.sourceSwitches += 1;
+    const continueAt = this.video.currentTime > 0 ? this.video.currentTime : this.lastPositionS;
+    this.generation += 1;
+    this.engine?.destroy();
+    this.engine = null;
+    this.ready = null;
+    this.clearFileTracks();
+    this.stopTorrent();
+    this.session = answer.session;
+    this.subtitleChosen = false;
+    this.set({
+      stage: 'refreshing',
+      kind: answer.session.manifestKind,
+      qualities: [],
+      quality: -1,
+      subtitles: [],
+      cached: answer.session.cached,
+      torrent: torrentView(answer.session.torrent),
+      cachedRanges: [],
+    });
+    this.note(`source: ${answer.from ?? '?'} -> ${answer.provider ?? '?'} at ${round1(continueAt)} s`);
+    // Every torrent's provider is `Torrent`: a torrent is named by its release.
+    this.set({ sourceNotice: answer.session.torrent?.name ?? answer.provider });
+    if (answer.session.torrent !== null) this.followTorrent(answer.session.torrent.infoHash);
+    await this.loadFileSubtitles(answer.session);
+    if (this.disposed || this.session !== answer.session) return;
+    await this.attach(answer.session, continueAt);
+  }
+
+  /**
+   * The stream cannot be played at all (a segment that does not parse, a manifest the player
+   * refuses, a network error the restarts did not cure): a provider's broken stream should not be
+   * the end of the play. The daemon is asked for another provider of the same title, and the play
+   * stops with the error only when there is none, or the session has moved as often as it may. A
+   * cached play, a torrent and a muted check have no other provider to go to.
+   */
+  private async leaveBrokenSource(message: string): Promise<void> {
+    const session = this.session;
+    if (this.disposed || this.mutedMode || this.askingSource || session === null || session.cached !== null || session.torrent !== null || this.sourceSwitches >= MAX_SOURCE_SWITCHES) {
+      this.fail(new SessionError(message, 0));
+      return;
+    }
+    this.askingSource = true;
+    this.lastSourceAskAt = Date.now();
+    const asked = this.sessionId;
+    this.stalls = [];
+    this.note(`${message}: asking for another source`);
+    this.set({ stage: 'refreshing', changingSource: true, sourceNotice: null });
+    try {
+      const answer = await switchSource(asked, this.deps.fetch);
+      if (this.disposed || this.sessionId !== asked) return;
+      if (!answer.switched) {
+        this.note(`source kept: ${answer.reason ?? 'no_other_source'}`);
+        this.fail(new SessionError(message, 0));
+        return;
+      }
+      await this.moveTo(answer);
+    } catch (err) {
+      if (this.disposed || this.sessionId !== asked) return;
+      this.note(`source kept: ${err instanceof SessionError ? err.code : messageOf(err)}`);
+      this.fail(new SessionError(message, 0));
     } finally {
       this.askingSource = false;
       if (!this.disposed) this.set({ changingSource: false });

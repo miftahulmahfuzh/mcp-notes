@@ -1,4 +1,9 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error -- plain .mjs scripts without type declarations
+import { SEEN_MAX, recall, remember, seenFile } from '../../../claude/streaming/seen.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { pathOnSite, pickMatches } from '../../../claude/streaming/match.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
@@ -217,6 +222,27 @@ describe('a play that started is reported to the daemon', () => {
     expect(JSON.parse(calls[0]!.init.body).name).toBe('Summer Vacation');
     expect(await reportPlay(playReport('dramacool', MATCH), async () => { throw new Error('ECONNREFUSED'); })).toBeNull();
     expect(await reportPlay(playReport('dramacool', MATCH), async () => ({ json: async () => ({ error: 'movies_off' }) }))).toBeNull();
+  });
+});
+
+describe('what the searches returned lately', () => {
+  it('reads back what a search said of an address, keeps the newest answer and forgets the oldest', () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'seen-')), 'state', 'seen.json');
+    expect(recall('https://a.example/x', file)).toBeNull();
+    remember([{ url: 'https://a.example/x', report: { site: 'lk21', url: 'https://a.example/x', name: 'X', year: 2020 } }], file);
+    remember([{ url: 'https://a.example/y', report: { site: 'lk21', url: 'https://a.example/y', name: 'Y' } }, { url: '', report: {} }], file);
+    expect(recall('https://a.example/x', file)).toMatchObject({ name: 'X', year: 2020 });
+    remember([{ url: 'https://a.example/x', report: { site: 'lk21', url: 'https://a.example/x', name: 'X again' } }], file);
+    expect(recall('https://a.example/x', file)).toMatchObject({ name: 'X again' });
+    remember(Array.from({ length: SEEN_MAX }, (_, i) => ({ url: `https://a.example/n${i}`, report: { site: 'lk21', url: `https://a.example/n${i}` } })), file);
+    expect(recall('https://a.example/x', file)).toBeNull();
+    expect(recall(`https://a.example/n${SEEN_MAX - 1}`, file)).not.toBeNull();
+    // A file that is not what was written reads as nothing, and a folder that cannot be made is no error.
+    writeFileSync(file, 'not json');
+    expect(recall('https://a.example/y', file)).toBeNull();
+    expect(() => remember([{ url: 'https://a.example/z', report: {} }], '/proc/nope/seen.json')).not.toThrow();
+    expect(seenFile({ XDG_STATE_HOME: '/s', HOME: '/h' })).toBe('/s/notesd-streaming/seen.json');
+    expect(seenFile({ HOME: '/h' })).toBe('/h/.local/state/notesd-streaming/seen.json');
   });
 });
 
