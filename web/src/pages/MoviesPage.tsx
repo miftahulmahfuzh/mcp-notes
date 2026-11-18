@@ -22,6 +22,7 @@ import {
   NO_MOVIES_FILTER,
   normalizeMovieId,
   pendingMarks,
+  detailSide,
   sideOf,
   stalledText,
   STREAM_OFF_TEXT,
@@ -356,7 +357,7 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
           detail={detail}
           player={store.player}
           focus={normalizeMovieId(route.title)}
-          side={side}
+          side={detailSide(side, detail)}
           streamEnabled={store.stream?.enabled ?? true}
           onChanged={store.refresh}
           onNotice={show}

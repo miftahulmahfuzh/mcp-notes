@@ -28,6 +28,7 @@ import {
   guideCountLine,
   guideTitleLine,
   opensGuide,
+  detailSide,
   reasonText,
   releaseText,
   seasonsShown,
@@ -225,6 +226,14 @@ describe('movie ids on the page', () => {
   it('a focused episode keeps its season on the page even when no machine holds a file of it', () => {
     expect(seasonsShown(SERIES).seasons.map((s) => s.season)).toEqual([1]);
     expect(seasonsShown(SERIES, 'M-0S21').seasons.map((s) => s.season)).toEqual([1, 2]);
+  });
+
+  it('a title no machine holds a file of is shown as on the Stream side, whatever the address says', () => {
+    expect(detailSide('library', { file_count: 0, deleted_file_count: 0 })).toBe('stream');
+    // A file anywhere, or one that was deleted, is library history: the address decides.
+    expect(detailSide('library', { file_count: 2, deleted_file_count: 0 })).toBe('library');
+    expect(detailSide('library', { file_count: 0, deleted_file_count: 1 })).toBe('library');
+    expect(detailSide('stream', { file_count: 2, deleted_file_count: 0 })).toBe('stream');
   });
 });
 

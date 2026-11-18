@@ -551,6 +551,9 @@ last episode once more, and the cross takes it off the list.
   is still the VLC Play or Resume, and a second icon beside it streams instead. The same rule
   holds on each episode row, and on the Library side a title with no file here but a verified
   stream gets a stream Play too.
+- **A title no machine holds a file of** (a series only ever streamed, opened from a pop-up, a
+  chat chip or a pasted address) has nothing to show on the Library side, so its page is this
+  side's whatever the address says (`detailSide`): every season is listed and Play streams.
 - **Series** list every season on this side, not only the seasons with a file. Every episode has
   a play icon; an episode without a verified stream is checked when you click it ("checked when
   it starts"), and one with a verified stream carries a `verified` flag naming its source.

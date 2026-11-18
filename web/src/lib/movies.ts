@@ -48,6 +48,15 @@ export function sideOf(route: MoviesRoute): MoviesSide {
   return route.stream === true && !route.unmatched ? 'stream' : 'library';
 }
 
+/**
+ * The side one title's page is shown as. A title no machine holds a file of (opened from a pop-up,
+ * a chat chip or a pasted address, none of which names a side) has nothing on the Library side:
+ * its page is the Stream one, with every season listed and every episode streamable.
+ */
+export function detailSide(side: MoviesSide, d: Pick<TitleDetail, 'file_count' | 'deleted_file_count'>): MoviesSide {
+  return d.file_count === 0 && d.deleted_file_count === 0 ? 'stream' : side;
+}
+
 /** The Stream side's empty grid: why it is empty and how a title gets onto it. */
 export function streamEmptyText(freshDays: number): string {
   return `Nothing is verified to stream on this machine yet. A title shows here once a provider returned a playable stream for it on this machine in the last ${plural(freshDays, 'day')}: play one with /direct-stream <title> in Claude Code, or turn on the background prober (NOTESD_STREAM_PROBER=on) to fill this grid.`;
