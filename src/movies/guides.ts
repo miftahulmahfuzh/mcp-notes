@@ -37,6 +37,8 @@ export interface GuideTitle {
   /** Null until the title is stored (`POST /api/movies/ensure` stores it and answers its id). */
   movie_id: string | null;
   mark: GuideMark | null;
+  /** The owner's "interested" mark (the Stream side's watch list); it stands beside `mark`. */
+  interested: boolean;
   /** A file of it is on this machine. */
   has_file: boolean;
 }
@@ -114,7 +116,7 @@ export async function markedTitles(db: Db, ctx: ReadContext, listed: readonly Li
   const stored = new Map((await listTitlesByIds(db, shown.map((r) => r.title_id), ctx)).map((t) => [t.id, t]));
   return shown.map((r) => {
     const t = stored.get(r.title_id);
-    return { ...r, movie_id: t?.movie_id ?? null, mark: guideMark(t), has_file: t?.present_here ?? false };
+    return { ...r, movie_id: t?.movie_id ?? null, mark: guideMark(t), interested: t?.interested ?? false, has_file: t?.present_here ?? false };
   });
 }
 

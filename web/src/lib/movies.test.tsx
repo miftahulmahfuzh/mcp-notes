@@ -25,6 +25,12 @@ import {
   playProgressText,
   startingStage,
   methodDoing,
+  applyMark,
+  undoMark,
+  GUIDE_ACTIONS,
+  guideActionLabel,
+  guideActionOn,
+  guideTitleAfter,
   guideCountLine,
   guideTitleLine,
   opensGuide,
@@ -128,8 +134,37 @@ describe('grid order and filter', () => {
     expect(shown({ ...NO_MOVIES_FILTER, state: 'not_interested' }, 'stream')).toEqual(['dropped']);
     expect(shown(NO_MOVIES_FILTER, 'library')).toEqual(['kept', 'dropped']);
     expect(stateCounts(list, NO_MOVIES_FILTER, 'stream')).toMatchObject({ all: 1, not_interested: 1 });
-    expect(stateFilters('stream').map((s) => s.key)).toEqual(['all', 'unwatched', 'in_progress', 'finished', 'not_interested']);
+    expect(stateFilters('stream').map((s) => s.key)).toEqual(['all', 'unwatched', 'in_progress', 'finished', 'interested', 'not_interested']);
     expect(stateFilters('library').map((s) => s.key)).toEqual(['all', 'unwatched', 'in_progress', 'finished', 'gone']);
+  });
+
+  it('the interested filter is the Stream side\'s watch list: marked and not finished yet, verified source or not', () => {
+    const base = { ...TITLES[0]!, state: 'unwatched' as const, watched: false, not_interested: false };
+    const list = [
+      { ...base, id: 'plain' },
+      { ...base, id: 'wanted', interested: true },
+      { ...base, id: 'wanted-unverified', interested: true, interested_only: true },
+      { ...base, id: 'wanted-done', interested: true, state: 'finished' as const },
+      { ...base, id: 'wanted-flagged', interested: true, watched: true, state: 'finished' as const },
+    ];
+    const shown = (f: MoviesFilter, side: 'stream' | 'library') => list.filter((t) => matchesFilter(t, f, side)).map((t) => t.id);
+    expect(shown({ ...NO_MOVIES_FILTER, state: 'interested' }, 'stream')).toEqual(['wanted', 'wanted-unverified']);
+    // A title listed for the mark alone has no verified source: it is on no other pill.
+    expect(shown(NO_MOVIES_FILTER, 'stream')).toEqual(['plain', 'wanted', 'wanted-done']);
+    expect(shown({ ...NO_MOVIES_FILTER, state: 'unwatched' }, 'stream')).toEqual(['plain', 'wanted']);
+    expect(shown({ ...NO_MOVIES_FILTER, state: 'interested' }, 'library')).toEqual([]);
+    expect(stateCounts(list, NO_MOVIES_FILTER, 'stream')).toMatchObject({ all: 3, interested: 2 });
+  });
+
+  it('a mark laid over a title keeps interested and not interested apart, and undoMark takes it back', () => {
+    const t = { ...TITLES[0]!, interested: true, not_interested: false };
+    expect(applyMark(t, { not_interested: true })).toMatchObject({ not_interested: true, interested: false });
+    expect(applyMark({ ...t, interested: false, not_interested: true }, { interested: true })).toMatchObject({ interested: true, not_interested: false });
+    expect(applyMark(t, { interested: false })).toMatchObject({ interested: false, not_interested: false });
+    expect(applyMark(t, { watched: true })).toMatchObject({ watched: true, state: 'finished', interested: true });
+    expect(undoMark({ interested: true })).toEqual({ interested: false });
+    expect(undoMark({ not_interested: false })).toEqual({ not_interested: true });
+    expect(undoMark({ watched: true })).toEqual({ watched: false });
   });
 
   it('filters by state, kind and text, and counts each state under the other filters', () => {
@@ -138,8 +173,8 @@ describe('grid order and filter', () => {
     expect(ids({ ...NO_MOVIES_FILTER, state: 'unwatched' })).toEqual([]);
     expect(ids({ ...NO_MOVIES_FILTER, kind: 'tv' })).toEqual(['tv-247718']);
     expect(ids({ ...NO_MOVIES_FILTER, text: 'KILL' })).toEqual(['movie-467905']);
-    expect(stateCounts(TITLES, NO_MOVIES_FILTER)).toEqual({ all: 3, unwatched: 0, in_progress: 2, finished: 0, gone: 1, not_interested: 0 });
-    expect(stateCounts(TITLES, { ...NO_MOVIES_FILTER, kind: 'movie' })).toEqual({ all: 2, unwatched: 0, in_progress: 1, finished: 0, gone: 1, not_interested: 0 });
+    expect(stateCounts(TITLES, NO_MOVIES_FILTER)).toEqual({ all: 3, unwatched: 0, in_progress: 2, finished: 0, gone: 1, interested: 0, not_interested: 0 });
+    expect(stateCounts(TITLES, { ...NO_MOVIES_FILTER, kind: 'movie' })).toEqual({ all: 2, unwatched: 0, in_progress: 1, finished: 0, gone: 1, interested: 0, not_interested: 0 });
   });
 });
 
@@ -429,7 +464,7 @@ describe('playMenu', () => {
 });
 
 describe('the pop-up of a name', () => {
-  const t = (over: object) => ({ kind: 'movie' as const, tmdb_id: 1, title_id: 'movie-1', title: 'T', year: 2020, release_date: null, poster_url: null, note: null, movie_id: null, mark: null, has_file: false, ...over });
+  const t = (over: object) => ({ kind: 'movie' as const, tmdb_id: 1, title_id: 'movie-1', title: 'T', year: 2020, release_date: null, poster_url: null, note: null, movie_id: null, mark: null, interested: false, has_file: false, ...over });
 
   it('a person, a studio and a genre open it; a character does not', () => {
     expect(opensGuide({ kind: 'genre', name: 'Crime' })).toBe(true);
@@ -440,8 +475,34 @@ describe('the pop-up of a name', () => {
   it('counts the marks and writes a title line', () => {
     expect(guideCountLine([t({ mark: 'watched' }), t({ mark: 'watched' }), t({ mark: 'not_interested' }), t({})])).toBe('4 titles · 2 watched · 1 not interested');
     expect(guideCountLine([t({})])).toBe('1 title');
+    expect(guideCountLine([t({ mark: 'watched', interested: true }), t({ interested: true }), t({ mark: 'not_interested' })])).toBe('3 titles · 1 watched · 2 interested · 1 not interested');
     expect(guideTitleLine(t({ kind: 'tv', note: 'as Ruth' }))).toBe('2020 · series · as Ruth');
     expect(guideTitleLine(t({ year: null }))).toBe('undated');
+  });
+});
+
+describe('the three mark buttons of a listed title', () => {
+  const t = { kind: 'tv' as const, tmdb_id: 1, title_id: 'tv-1', title: 'T', year: 2020, release_date: null, poster_url: null, note: null, movie_id: null, mark: null, interested: false, has_file: false };
+  const d = { movie_id: 'M-0001', state: 'unwatched' as const, watched: false, not_interested: false, interested: false };
+
+  it('each button is on from the row, and says what a click does', () => {
+    expect(GUIDE_ACTIONS).toEqual(['watched', 'interested', 'not_interested']);
+    expect(GUIDE_ACTIONS.map((a) => guideActionOn(t, a))).toEqual([false, false, false]);
+    expect(GUIDE_ACTIONS.map((a) => guideActionOn({ ...t, mark: 'watched', interested: true }, a))).toEqual([true, true, false]);
+    expect(guideActionOn({ ...t, mark: 'started' }, 'watched')).toBe(false);
+    expect(guideActionLabel(t, 'watched')).toBe('Mark T as watched, every season');
+    expect(guideActionLabel({ ...t, interested: true }, 'interested')).toBe('T: interested (click to take it off the list)');
+    expect(guideActionLabel(t, 'not_interested')).toBe('Not interested in T');
+  });
+
+  it('after a save the row shows what the server answered, and keeps the movie id the title got', () => {
+    expect(guideTitleAfter(t, { ...d, interested: true })).toMatchObject({ movie_id: 'M-0001', mark: null, interested: true });
+    expect(guideTitleAfter(t, { ...d, not_interested: true })).toMatchObject({ mark: 'not_interested', interested: false });
+    expect(guideTitleAfter(t, { ...d, watched: true, state: 'finished' })).toMatchObject({ mark: 'watched' });
+    // A title finished by playing it stays watched when its flag is cleared.
+    expect(guideTitleAfter(t, { ...d, state: 'finished' })).toMatchObject({ mark: 'watched' });
+    expect(guideTitleAfter(t, { ...d, state: 'in_progress' })).toMatchObject({ mark: 'started' });
+    expect(guideTitleAfter({ ...t, movie_id: 'M-0009' }, { ...d, movie_id: null })).toMatchObject({ movie_id: 'M-0009' });
   });
 });
 

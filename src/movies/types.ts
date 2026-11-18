@@ -192,6 +192,8 @@ export interface TitleUserPatch {
   watched?: boolean;
   /** The "not interested" mark (the Stream side hides the title and the prober's catalog stops counting it). */
   notInterested?: boolean;
+  /** The "interested" mark (the Stream side's watch list). Setting it clears "not interested", and the other way round. */
+  interested?: boolean;
   /** 0..5; null clears it. */
   rating?: number | null;
   reviewNoteId?: string | null;

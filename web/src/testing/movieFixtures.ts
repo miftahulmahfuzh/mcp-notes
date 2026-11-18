@@ -53,6 +53,7 @@ export function makeItem(id: string, title: string, over: Partial<TitleListItem>
     watched: false,
     watched_at: null,
     not_interested: false,
+    interested: false,
     rating: null,
     progress: kind === 'movie' ? { kind: 'movie', ...NO_PROGRESS } : { kind: 'tv', episodes_finished: 0, episodes_total: null, episodes_present: 0 },
     last_played_at: null,

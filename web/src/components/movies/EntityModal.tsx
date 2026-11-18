@@ -1,9 +1,10 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowsClockwise, ArrowSquareOut, ChatCircleText, CircleNotch, WarningCircle, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, ArrowSquareOut, BookmarkSimple, ChatCircleText, CheckCircle, CircleNotch, EyeSlash, WarningCircle, X } from '@phosphor-icons/react';
+import type { Icon } from '@phosphor-icons/react';
 import { ApiError } from '../../api';
-import { ensureTitle, fetchCompanyGuide, fetchGenreGuide, fetchPersonGuide, writeGenreGuide, type EntityGuide, type GuideTitle, type TitleDetail } from '../../moviesApi';
-import { GUIDE_MARK_LABEL, GUIDE_WRITING_TEXT, guideCountLine, guideErrorText, guideHeading, guideTitleLine, type GuideEntityRef } from '../../lib/movies';
+import { ensureTitle, markTitle, fetchCompanyGuide, fetchGenreGuide, fetchPersonGuide, writeGenreGuide, type EntityGuide, type GuideTitle, type TitleDetail } from '../../moviesApi';
+import { GUIDE_ACTIONS, GUIDE_MARK_LABEL, GUIDE_WRITING_TEXT, guideActionLabel, guideActionOn, guideCountLine, guideTitleAfter, type GuideAction, guideErrorText, guideHeading, guideTitleLine, type GuideEntityRef } from '../../lib/movies';
 import { MovieLinkContext } from '../ChatText';
 import { Poster } from './Poster';
 import './MovieModal.css';
@@ -20,6 +21,8 @@ export interface EntityModalProps {
   onOpenTitle?: (movieId: string) => void;
 }
 
+const ACTION_ICON: Record<GuideAction, Icon> = { watched: CheckCircle, interested: BookmarkSimple, not_interested: EyeSlash };
+
 type Phase = { at: 'loading' } | { at: 'writing' } | { at: 'done'; guide: EntityGuide } | { at: 'failed'; text: string };
 
 /** Whether a movie pop-up lies over this one: its Esc and its clicks are its own. */
@@ -32,7 +35,8 @@ function failedText(err: unknown): string {
 /**
  * A name clicked on a title's page, as a pop-up over it: the person's photo or the studio's logo,
  * a short description, and their films and series newest first, each tagged with what the owner
- * did with it (watched, started, not interested, a file here). A genre opens what it means for
+ * did with it (started, a file here) and three buttons that set its marks without opening it:
+ * watched, interested, not interested (a title the library does not hold is stored first). A genre opens what it means for
  * this title: collated once with web search on the first click (about a minute), then stored. A
  * listed title opens the movie pop-up; one the library does not hold is stored first.
  * Esc and a click outside close it, unless the movie pop-up lies over it.
@@ -41,6 +45,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
   const [phase, setPhase] = useState<Phase>({ at: 'loading' });
   const [whole, setWhole] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
+  const [marking, setMarking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [again, setAgain] = useState(0);
   const movies = useContext(MovieLinkContext);
@@ -105,6 +110,25 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
     },
     [open],
   );
+
+  /** One of a row's three buttons: saved at once, and the row shows what the server answered. */
+  const markRow = useCallback(async (t: GuideTitle, a: GuideAction) => {
+    const next = !guideActionOn(t, a);
+    setMarking(t.title_id);
+    setNotice(null);
+    try {
+      // A title the library does not hold is stored first, as a click on its row would.
+      const movieId = t.movie_id ?? (await ensureTitle(t.kind, t.tmdb_id));
+      const d = await markTitle(t.title_id, a === 'watched' ? { watched: next } : a === 'interested' ? { interested: next } : { not_interested: next });
+      const after = guideTitleAfter({ ...t, movie_id: movieId }, d);
+      setPhase((p) => (p.at !== 'done' ? p : { at: 'done', guide: { ...p.guide, titles: p.guide.titles.map((x) => (x.title_id === t.title_id ? after : x)) } }));
+      if (a === 'watched' && !next && after.mark === 'watched') setNotice(`${t.title} stays watched: it was finished by playing it`);
+    } catch (err) {
+      setNotice(`${t.title} could not be marked: ${failedText(err)}`);
+    } finally {
+      setMarking(null);
+    }
+  }, []);
 
   const guide = phase.at === 'done' ? phase.guide : null;
   const name = guide?.entity.name ?? entity.name;
@@ -196,7 +220,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
             ) : (
               <ol className="mm-ent-list" aria-label={`Films and series of ${name}`}>
                 {guide.titles.map((t) => (
-                  <li key={t.title_id}>
+                  <li key={t.title_id} className="mm-ent-item">
                     <button type="button" className="mm-ent-row" data-testid="guide-title" data-title={t.title_id} data-mark={t.mark ?? undefined} disabled={opening !== null || open === undefined} onClick={() => void openTitle(t)}>
                       <span className="mm-ent-poster">
                         <Poster key={t.poster_url ?? 'none'} url={t.poster_url} title={t.title} year={t.year} />
@@ -207,11 +231,24 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
                       </span>
                       <span className="mm-ent-tags">
                         {opening === t.title_id && <CircleNotch className="mm-spin" weight="bold" />}
-                        {t.mark !== null && <span className={`mv-flag mm-tag ${t.mark}`}>{GUIDE_MARK_LABEL[t.mark]}</span>}
+                        {t.mark === 'started' && <span className={`mv-flag mm-tag ${t.mark}`}>{GUIDE_MARK_LABEL[t.mark]}</span>}
                         {t.has_file && <span className="mv-flag">file here</span>}
                         {t.movie_id !== null && <span className="mv-code">{t.movie_id}</span>}
                       </span>
                     </button>
+                    <span className="mm-ent-acts" role="group" aria-label={`Marks of ${t.title}`}>
+                      {marking === t.title_id && <CircleNotch className="mm-spin" weight="bold" />}
+                      {GUIDE_ACTIONS.map((a) => {
+                        const I = ACTION_ICON[a];
+                        const on = guideActionOn(t, a);
+                        const label = guideActionLabel(t, a);
+                        return (
+                          <button key={a} type="button" className={on ? 'ibtn on' : 'ibtn hov'} data-testid={`guide-mark-${a}`} data-tip={label} data-tip-side="below" aria-label={label} aria-pressed={on} disabled={marking !== null} onClick={() => void markRow(t, a)}>
+                            <I weight="duotone" />
+                          </button>
+                        );
+                      })}
+                    </span>
                   </li>
                 ))}
               </ol>

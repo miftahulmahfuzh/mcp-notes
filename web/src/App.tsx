@@ -118,6 +118,13 @@ export function App() {
   // Rail's sidebar icon and Alt+B. Focus mode hides the sidebar, so the chord does nothing there.
   const toggleSide = useCallback(() => setSide((s) => !s), []);
   useAltShortcut('KeyB', focus ? undefined : toggleSide);
+  // Movies has nothing in the sidebar and uses the whole width: coming to it from another page
+  // collapses the sidebar. The toggle (and Alt+B) still expands it there, and it then stays.
+  const viewBefore = useRef(view);
+  useEffect(() => {
+    if (view === 'movies' && viewBefore.current !== 'movies') setSide(false);
+    viewBefore.current = view;
+  }, [view]);
   // Lives in App so a reply keeps streaming while the user is on the wall; fetches only while shown.
   // Deleted rows are loaded too: the page's "Show deleted" toggle (phase 10) filters on the client.
   const history = useHistory(view === 'history', { includeDeleted: true });

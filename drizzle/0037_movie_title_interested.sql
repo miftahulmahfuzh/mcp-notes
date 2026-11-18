@@ -1,0 +1,1 @@
+ALTER TABLE "movie_titles" ADD COLUMN "interested_at" timestamp with time zone;

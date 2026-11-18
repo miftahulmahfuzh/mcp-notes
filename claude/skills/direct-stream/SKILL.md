@@ -112,7 +112,8 @@ titles. Find them with `direct_stream_discover`, which starts nothing:
 - **A misspelt person** ("park bo yeung") is still found when the name is a letter or two off
   (`filters.person.asked_as` keeps the words asked). Pass the right spelling when you know it.
 
-Each title comes back marked against the library: `seen`, `started`, `not_interested`, and
+Each title comes back marked against the library: `seen`, `started`, `not_interested`, `interested`
+(the owner marked it to watch later: a good one to choose), and
 `stream.verified` (this laptop has a recently verified source). `filters` names the person,
 companies or service the name was read as; `other_people`, `other_companies` and `other_services`
 list what else it fits. When the wrong one was used, call again with `person_id`, `company_id`
@@ -180,6 +181,8 @@ The ten requests the codenames were written for:
 `movies_mark` with `season` marks that season's episodes finished, not the series, and it stores
 a series the library does not hold yet when `title` is its `title_key` (`tv-94997`).
 `movies_mark {title, not_interested: true}` is for "I am not interested in that one".
+`movies_mark {title, interested: true}` is for "I'm interested in that one" / "save it for later": the
+title goes on the Stream side's `interested` list until it is finished.
 
 ## Caching first
 

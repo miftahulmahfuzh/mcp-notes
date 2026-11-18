@@ -111,6 +111,36 @@ describe('not interested: the title leaves the grid and its place goes to anothe
     expect((await listStreamTitles(db, {}, CTX, ago(7))).map((t) => t.id)).toEqual(['movie-1']);
   });
 
+  it('interested: listed on the Stream side with no verified source, flagged as listed for the mark alone, and never together with not interested', async () => {
+    await source('movie-1', ago(1));
+    await movies.setTitleUser('movie-1', { interested: true });
+    await movies.setTitleUser('movie-2', { interested: true });
+    const listed = await listStreamTitles(db, {}, CTX, ago(7));
+    expect(listed.map((t) => [t.id, t.interested, t.interested_only ?? false]).sort()).toEqual([
+      ['movie-1', true, false],
+      ['movie-2', true, true],
+    ]);
+    // Not interested takes it off the watch list, and with no verified source off the Stream list.
+    await movies.setTitleUser('movie-2', { notInterested: true });
+    expect(await getTitle(db, 'movie-2', CTX)).toMatchObject({ interested: false, not_interested: true });
+    expect((await listStreamTitles(db, {}, CTX, ago(7))).map((t) => t.id)).toEqual(['movie-1']);
+    // And interested takes "not interested" back.
+    await movies.setTitleUser('movie-2', { interested: true });
+    expect(await getTitle(db, 'movie-2', CTX)).toMatchObject({ interested: true, not_interested: false });
+    await movies.setTitleUser('movie-2', { interested: false });
+    expect(await getTitle(db, 'movie-2', CTX)).toMatchObject({ interested: false, not_interested: false });
+  });
+
+  it('a title last played from a torrent is on the Stream list: a torrent play verifies no source', async () => {
+    expect((await listStreamTitles(db, {}, CTX, ago(7))).map((t) => t.id)).toEqual([]);
+    await movies.recordChannel({ titleId: 'tv-9', host: HERE, channel: 'torrent', infoHash: 'a'.repeat(40), season: 1, episode: 1, at: ago(0) });
+    const listed = await listStreamTitles(db, {}, CTX, ago(7));
+    expect(listed.map((t) => [t.id, t.interested_only ?? false])).toEqual([['tv-9', false]]);
+    // Another machine's torrent play lists nothing here.
+    await movies.recordChannel({ titleId: 'movie-3', host: 'marks-host-b', channel: 'torrent', infoHash: 'b'.repeat(40), season: 0, episode: 0, at: ago(0) });
+    expect((await listStreamTitles(db, {}, CTX, ago(7))).map((t) => t.id)).toEqual(['tv-9']);
+  });
+
   it('the prober does not count, re-check or propose it; a title finished by hand is not counted either', async () => {
     await source('movie-1', ago(6));
     await source('movie-2', ago(6));

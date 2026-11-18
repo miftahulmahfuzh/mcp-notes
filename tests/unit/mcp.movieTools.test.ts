@@ -118,12 +118,14 @@ describe('movie MCP tools without a database', () => {
     const cases: Array<[Record<string, unknown>, RegExp]> = [
       [{ title: 'mobland', file_id: 3, watched: true }, /^invalid_input: pass exactly one of title/],
       [{ watched: true }, /^invalid_input: pass exactly one of title/],
-      [{ file_id: 3, rating: 4 }, /^invalid_input: rating, review, not_interested and season belong to a title/],
+      [{ file_id: 3, rating: 4 }, /^invalid_input: rating, review, not_interested, interested and season belong to a title/],
       [{ file_id: 3 }, /^invalid_input: file_id needs watched/],
       [{ title: 'mobland' }, /^invalid_input: nothing to change/],
       [{ title: 'mobland', season: 1 }, /^invalid_input: season needs watched/],
-      [{ file_id: 3, watched: true, season: 1 }, /^invalid_input: rating, review, not_interested and season belong to a title/],
-      [{ file_id: 3, watched: true, not_interested: true }, /^invalid_input: rating, review, not_interested and season belong to a title/],
+      [{ file_id: 3, watched: true, season: 1 }, /^invalid_input: rating, review, not_interested, interested and season belong to a title/],
+      [{ file_id: 3, watched: true, not_interested: true }, /^invalid_input: rating, review, not_interested, interested and season belong to a title/],
+      [{ file_id: 3, watched: true, interested: true }, /^invalid_input: rating, review, not_interested, interested and season belong to a title/],
+      [{ title: 'mobland', interested: true, not_interested: true }, /^invalid_input: a title is interested or not_interested, never both/],
     ];
     for (const [args, expected] of cases) {
       const r = await c.call('movies_mark', args);

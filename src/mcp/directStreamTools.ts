@@ -314,8 +314,8 @@ const DISCOVER_DESCRIPTION =
   'A person no search finds is looked for again by a shorter form of the name, and one whose name differs by a letter or two is taken ("park bo yeung" is Park Bo-young; filters.person.asked_as keeps the words asked): still, pass the right spelling when you know it. A person\'s most recent project is person with sort newest and no kind (films and series together); leave out the entries where their role is Self or a gala. ' +
   'Names are resolved to TMDB ids here: the best match is used and named in filters, and other_people, other_companies and other_services list what else the name fits; pass person_id, company_id or service_id to pick one of those instead. ' +
   'A studio\'s name stands for every company that starts with it ("Blumhouse" is Blumhouse Productions, Blumhouse Television and the others, listed in filters.companies), unless one company has exactly that name; company_id narrows to one. person cannot be combined with company or service. ' +
-  'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
-  'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
+  'Returns { filters, count, titles: [{ kind, tmdb_id, title_key, movie_id, title, original_title, release_date, original_language, overview, roles (with person), in_library, state, seen, started, not_interested, interested, stream: { verified }, url, tmdb_url }] }, marked against the owner\'s library the way movies_person marks a filmography: ' +
+  'seen true when the owner finished or opened it, started when they began it, not_interested when they said they do not want it, interested when they marked it to watch later (a good one to choose when they ask you to pick), stream.verified true when this machine has a recently verified source for it (it may still stream when false: only playing tries). ' +
   'This tool only looks: nothing is resolved and nothing opens. To stream one, call direct_stream_play with its title_key as title. When the owner asked you to choose ("pick one for me", "play one", "let\'s watch a Madelyn Cline movie"), pass unseen_only true: the titles they have seen or marked not interested are then left out of the list (left_out counts them), so the one you choose is never one they watched; choose one yourself, play it and say which and why. Leave unseen_only out only when they ask to rewatch ("rewatch one of Nolan\'s") or only ask what there is: then list the titles and start nothing. A title the owner names is played with direct_stream_play whether they have seen it or not. ' +
   'Reads TMDB over the network: tmdb_unavailable means this server has no TMDB credentials, tmdb_error that TMDB could not be reached.';
 
@@ -1191,6 +1191,7 @@ async function discoverTitles(args: DiscoverArgs, d: DirectStreamToolDeps, wall:
       ...(t.roles === null ? {} : { roles: t.roles }),
       ...library,
       not_interested: marks.get(title_id)?.notInterested ?? false,
+      interested: marks.get(title_id)?.interested ?? false,
       stream: { verified: fresh.has(title_id) },
       url,
       tmdb_url,

@@ -154,6 +154,13 @@ export interface TitleListItem {
   watched_at: string | null;
   /** The owner's "not interested" mark: on the Stream side the title shows only under that filter. */
   not_interested: boolean;
+  /** The owner's "interested" mark: the Stream side's watch list. Never true together with not_interested. */
+  interested: boolean;
+  /**
+   * GET /api/movies/stream only: the title is listed for its "interested" mark alone (nothing verified it streams
+   * here, and it was not last played from a torrent or a site), so it shows under that filter only.
+   */
+  interested_only?: boolean;
   rating: number | null;
   progress: TitleProgress;
   last_played_at: string | null;
@@ -735,6 +742,7 @@ function buildTitle(t: TitleRow, parts: TitleParts, ctx: ReadContext, posterSize
     watched: t.watchedAt !== null,
     watched_at: isoOrNull(t.watchedAt),
     not_interested: t.notInterestedAt !== null,
+    interested: t.interestedAt !== null,
     rating: t.rating,
     progress,
     last_played_at: latest([...files.map((f) => f.last_played_at), ...streams.map((s) => s.last_played_at)]),
@@ -831,7 +839,8 @@ export async function listTitles(db: Db, filter: TitleFilter, ctx: ReadContext):
 /**
  * The Stream grid's titles (direct streaming, invariant 10): those with a source verified on
  * `ctx.host` at or after `freshSince` and not stale (repo.ts freshStreamSourceSql), files or not,
- * and those last played here on a streaming site.
+ * those last played here from a torrent or on a streaming site, and those marked "interested"
+ * (`interested_only` when that mark is the only reason).
  * `filter.scope` is ignored. GET /api/movies/stream (phase 9) calls it with
  * `streamFreshSince(now, config.directStream.freshDays)`.
  */
@@ -841,8 +850,15 @@ export async function listStreamTitles(db: Db, filter: TitleFilter, ctx: ReadCon
   const kept = sql`(movie_titles.not_interested_at is not null and exists (
     select 1 from movie_stream_sources s where s.title_id = movie_titles.id and s.host = ${ctx.host} and s.verified_at is not null))`;
   // A title last played on a streaming site has no source to verify: it is listed for as long as that is how it plays here.
-  const onSite = sql`exists (select 1 from movie_title_channels c where c.title_id = movie_titles.id and c.host = ${ctx.host} and c.channel = 'site')`;
-  return selectTitles(db, filter, ctx, sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept} or ${onSite})`);
+  // Nor has one last played from a torrent (a torrent play writes no movie_stream_sources row): listed while that is how it plays.
+  const onChannel = sql`exists (select 1 from movie_title_channels c where c.title_id = movie_titles.id and c.host = ${ctx.host} and c.channel in ('site', 'torrent'))`;
+  const listed = sql`(${freshStreamSourceSql(ctx.host, freshSince)} or ${kept} or ${onChannel})`;
+  // The watch list: a title marked "interested" is listed whether or not anything verified it streams here.
+  const items = await selectTitles(db, filter, ctx, sql`(${listed} or movie_titles.interested_at is not null)`);
+  if (!items.some((i) => i.interested)) return items;
+  const only = await db.execute<{ id: string }>(sql`select movie_titles.id from movie_titles where movie_titles.interested_at is not null and not ${listed}`);
+  const onlyIds = new Set(only.rows.map((r) => r.id));
+  return items.map((i) => (onlyIds.has(i.id) ? { ...i, interested_only: true } : i));
 }
 
 /**
@@ -857,7 +873,7 @@ export async function listTitlesByIds(db: Db, ids: readonly string[], ctx: ReadC
   const touchedRows = await db.execute<{ id: string }>(sql`
     select t.id from movie_titles t
     where t.id in (${sql.join(list.map((id) => sql`${id}`), sql`, `)})
-      and (t.watched_at is not null or t.not_interested_at is not null
+      and (t.watched_at is not null or t.not_interested_at is not null or t.interested_at is not null
         or exists (select 1 from movie_files f where f.title_id = t.id)
         or exists (select 1 from movie_plays p where p.title_id = t.id)
         or exists (select 1 from movie_episode_marks m where m.title_id = t.id))`);

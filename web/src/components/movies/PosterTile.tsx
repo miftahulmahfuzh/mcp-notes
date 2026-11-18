@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { CheckCircle, EyeSlash } from '@phosphor-icons/react';
+import { BookmarkSimple, CheckCircle, EyeSlash } from '@phosphor-icons/react';
 import type { TitleListItem } from '../../moviesApi';
 import { isGone, kindLabel, stateBadge, TILE_LIVE_LABEL, tileProgress, type LivePlace, type MoviesSide, type TileLive, type TitleMark } from '../../lib/movies';
 import { moviesHref } from '../../lib/route';
@@ -14,13 +14,13 @@ export interface PosterTileProps {
   /** The Stream side: never dimmed as gone, and the link opens the title on the Stream side. */
   side?: MoviesSide;
   onOpen: (titleId: string) => void;
-  /** Sets the title's watched flag or its "not interested" mark from the grid. Without it the poster has no buttons. */
+  /** Sets the title's watched flag or, on the Stream side, its "interested" or "not interested" mark from the grid. Without it the poster has no buttons. */
   onMark?: (title: TitleListItem, patch: TitleMark) => void;
 }
 
 /**
  * One poster: state chip, progress bar while in progress, caption below. A real link, so a middle click opens a tab.
- * Under the pointer (or keyboard focus) it shows the watched flag and, on the Stream side, "not interested":
+ * Under the pointer (or keyboard focus) it shows the watched flag and, on the Stream side, "interested" and "not interested":
  * one click, no confirmation. A series' watched flag covers every season.
  */
 export function PosterTile({ title: t, live = null, livePlace = 'VLC', side = 'library', onOpen, onMark }: PosterTileProps) {
@@ -36,6 +36,7 @@ export function PosterTile({ title: t, live = null, livePlace = 'VLC', side = 'l
   };
   const watchedLabel = t.watched ? `${t.title}: watched (click to unmark)` : `Mark ${t.title} as watched`;
   const notInterestedLabel = t.not_interested ? `${t.title}: not interested (click to put it back on the Stream grid)` : `Not interested in ${t.title}: take it off the Stream grid`;
+  const interestedLabel = t.interested ? `${t.title}: interested (click to take it off the list)` : `Interested in ${t.title}: keep it on the interested list`;
   return (
     <div className="mv-cell">
     <a href={href} className={['mv-tile', gone ? 'gone' : '', live !== null ? `now ${live}` : ''].filter((c) => c !== '').join(' ')} data-title={titleId} onClick={open}>
@@ -65,6 +66,19 @@ export function PosterTile({ title: t, live = null, livePlace = 'VLC', side = 'l
         <button type="button" className={t.watched ? 'ibtn on' : 'ibtn'} data-tip={watchedLabel} data-tip-side="below" aria-label={watchedLabel} aria-pressed={t.watched} onClick={() => onMark(t, { watched: !t.watched })}>
           <CheckCircle weight="duotone" />
         </button>
+        {(side === 'stream' || t.interested) && (
+          <button
+            type="button"
+            className={t.interested ? 'ibtn on' : 'ibtn'}
+            data-tip={interestedLabel}
+            data-tip-side="below"
+            aria-label={interestedLabel}
+            aria-pressed={t.interested}
+            onClick={() => onMark(t, { interested: !t.interested })}
+          >
+            <BookmarkSimple weight="duotone" />
+          </button>
+        )}
         {(side === 'stream' || t.not_interested) && (
           <button
             type="button"

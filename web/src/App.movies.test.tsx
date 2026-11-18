@@ -75,6 +75,7 @@ beforeEach(() => {
         return json({ guide: genreStored, cached: method !== 'POST' });
       }
       if (method === 'POST' && url === '/api/movies/ensure') return json({ title_id: 'movie-902', movie_id: 'M-23T4' });
+      if (method === 'POST' && url === '/api/movies/movie-902/user') return json({ ...MOVIE, id: 'movie-902', movie_id: 'M-23T4', state: 'unwatched', watched: false, not_interested: false, interested: true });
       if (url === '/api/movies/movie-467905/pahe') return json({ matches: [{ title: 'How to Make a Killing (2026) WEB-DL', url: 'https://pahe.ink/how-to-make-a-killing', year: 2026, release: 'WEB-DL' }], search_url: 'https://pahe.ink/?s=x' });
       if (method === 'POST' && url === '/api/movies/files/32/assign') return json({ file_id: 32, title: { ...MOVIE, id: 'movie-1125510', title: 'Ne Zha 2' } });
       if (method === 'POST' && url === '/api/movies/continue' && alreadyPlaying) return json({ action: 'already_playing', title: { id: 'movie-467905', title: 'How to Make a Killing', kind: 'movie', year: 2026 }, file: { file_id: 11, season: null, episode: null, absolute_episode: null, name: null }, position: 2710, play: { already_playing: true } });
@@ -128,6 +129,22 @@ describe('App: Movies', () => {
     expect(screen.queryByPlaceholderText('Ask about your notes')).toBeNull();
     fireEvent.click(within(rail()).getByRole('button', { name: 'Movies' }));
     await waitFor(() => expect(where()).toBe('/'));
+  });
+
+  it('coming to Movies from another page collapses the sidebar; its toggle expands it there and it stays', async () => {
+    render(<App />);
+    const sidebar = () => document.querySelector('aside.side');
+    fireEvent.click(screen.getAllByLabelText('Toggle sidebar')[0]!);
+    await waitFor(() => expect(sidebar()).not.toBeNull());
+    fireEvent.click(screen.getAllByRole('button', { name: 'Movies' })[0]!);
+    await screen.findByRole('list', { name: 'Posters' });
+    expect(sidebar()).toBeNull();
+    // Expanded by hand it stays, also when a title is opened.
+    fireEvent.click(screen.getAllByLabelText('Toggle sidebar')[0]!);
+    await waitFor(() => expect(sidebar()).not.toBeNull());
+    fireEvent.click(screen.getByRole('img', { name: 'How to Make a Killing' }));
+    await screen.findByRole('article', { name: 'How to Make a Killing' });
+    expect(sidebar()).not.toBeNull();
   });
 
   it('the filter row narrows the grid by state, kind and text', async () => {
@@ -387,8 +404,21 @@ describe('App: Movies', () => {
     const rows = person.getAllByTestId('guide-title');
     expect(rows.map((r) => r.dataset.mark ?? null)).toEqual(['started', 'watched', 'not_interested', null]);
     expect(within(rows[0]!).getByText('file here')).toBeTruthy();
-    expect(within(rows[1]!).getByText('watched')).toBeTruthy();
-    expect(within(rows[2]!).getByText('not interested')).toBeTruthy();
+    // Each row has three mark buttons, lit from what the owner did with the title.
+    const marksOf = (row: HTMLElement) => ['watched', 'interested', 'not_interested'].map((m) => within(row.closest('li') as HTMLElement).getByTestId(`guide-mark-${m}`).getAttribute('aria-pressed'));
+    expect(rows.map(marksOf)).toEqual([
+      ['false', 'false', 'false'],
+      ['true', 'false', 'false'],
+      ['false', 'false', 'true'],
+      ['false', 'false', 'false'],
+    ]);
+    // A click marks the title without opening it; one the library does not hold is stored first.
+    fireEvent.click(within(rows[3]!.closest('li') as HTMLElement).getByTestId('guide-mark-interested'));
+    await waitFor(() => expect(postsTo('/api/movies/movie-902/user')).toEqual([{ interested: true }]));
+    expect(postsTo('/api/movies/ensure')).toEqual([{ kind: 'movie', tmdb_id: 902 }]);
+    await waitFor(() => expect(marksOf(rows[3]!)).toEqual(['false', 'true', 'false']));
+    expect(person.getByRole('status').textContent).toBe('4 titles · 1 watched · 1 started · 1 interested · 1 not interested · newest first');
+    expect(screen.queryByRole('dialog', { name: 'Movie M-23T4' })).toBeNull();
     expect(within(rows[1]!).getByText('2019 · as Ann')).toBeTruthy();
 
     // A stored title opens the movie pop-up over this one; Esc closes that one only.
@@ -398,7 +428,7 @@ describe('App: Movies', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Movie M-9AAA' })).toBeNull());
     expect(screen.getByRole('dialog', { name: 'About Mara Example' })).toBeTruthy();
 
-    // A title the library does not hold is stored first, then opened.
+    // The title just stored by its mark opens without being stored again.
     fireEvent.click(rows[3]!);
     await waitFor(() => expect(postsTo('/api/movies/ensure')).toEqual([{ kind: 'movie', tmdb_id: 902 }]));
     await screen.findByRole('dialog', { name: 'Movie M-23T4' });

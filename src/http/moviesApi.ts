@@ -196,12 +196,13 @@ const userBody = z
   .object({
     watched: z.boolean().optional(),
     not_interested: z.boolean().optional(),
+    interested: z.boolean().optional(),
     rating: z.number().int().min(0).max(5).nullable().optional(),
     review: z.string().max(MAX_REVIEW_CHARS).optional(),
   })
   .strict()
-  .refine((b) => b.watched !== undefined || b.not_interested !== undefined || b.rating !== undefined || b.review !== undefined, {
-    message: 'set at least one of watched, not_interested, rating, review',
+  .refine((b) => b.watched !== undefined || b.not_interested !== undefined || b.interested !== undefined || b.rating !== undefined || b.review !== undefined, {
+    message: 'set at least one of watched, not_interested, interested, rating, review',
   });
 
 /** A film is season 0, episode 0 (the default); an episode names both. */
@@ -500,11 +501,12 @@ export function moviesApiRoutes(
       const parsed = userBody.safeParse(json.value);
       if (!parsed.success) return c.json({ error: describeIssues(parsed.error) }, 400);
       if ((await movies.repo.titleById(id.data)) === null) return c.json({ error: 'not_found' }, 404);
-      const { watched, not_interested: notInterested, rating, review } = parsed.data;
-      if (watched !== undefined || notInterested !== undefined || rating !== undefined) {
+      const { watched, not_interested: notInterested, interested, rating, review } = parsed.data;
+      if (watched !== undefined || notInterested !== undefined || interested !== undefined || rating !== undefined) {
         await movies.repo.setTitleUser(id.data, {
           ...(watched !== undefined ? { watched } : {}),
           ...(notInterested !== undefined ? { notInterested } : {}),
+          ...(interested !== undefined ? { interested } : {}),
           ...(rating !== undefined ? { rating } : {}),
         });
       }

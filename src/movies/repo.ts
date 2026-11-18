@@ -283,6 +283,10 @@ export class MoviesRepo {
     const set: PgUpdateSetSource<typeof movieTitles> = { updatedAt: now };
     if (patch.watched !== undefined) set.watchedAt = patch.watched ? sql`coalesce(${movieTitles.watchedAt}, ${now})` : null;
     if (patch.notInterested !== undefined) set.notInterestedAt = patch.notInterested ? sql`coalesce(${movieTitles.notInterestedAt}, ${now})` : null;
+    if (patch.interested !== undefined) set.interestedAt = patch.interested ? sql`coalesce(${movieTitles.interestedAt}, ${now})` : null;
+    // The two marks never stand together: the one set last wins (when one call sets both, "interested" does).
+    if (patch.interested === true) set.notInterestedAt = null;
+    else if (patch.notInterested === true) set.interestedAt = null;
     if (patch.rating !== undefined) set.rating = patch.rating;
     if (patch.reviewNoteId !== undefined) set.reviewNoteId = patch.reviewNoteId;
     const rows = await this.db.update(movieTitles).set(set).where(eq(movieTitles.id, id)).returning();

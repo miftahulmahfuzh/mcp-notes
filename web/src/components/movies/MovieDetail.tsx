@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { CaretUp, CheckCircle, DotsThree, EyeSlash, Play } from '@phosphor-icons/react';
+import { BookmarkSimple, CaretUp, CheckCircle, DotsThree, EyeSlash, Play } from '@phosphor-icons/react';
 import { continueTitle, errorCode, errorDetail, playFile, saveTitleUser, setEpisodesWatched, setFileWatched, streamPlay, type CastCredit, type EpisodeView, type FileView, type PlayerState, type TitleDetail } from '../../moviesApi';
 import type { NoticeAction } from '../../hooks/useNotice';
 import {
@@ -229,6 +229,26 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
     }
   };
 
+  const toggleInterested = async () => {
+    const next = !d.interested;
+    try {
+      await saveTitleUser(d.id, { interested: next });
+      onNotice(next ? "interested: on the Stream side's interested list" : 'off the interested list', {
+        label: 'undo',
+        run: () => {
+          void saveTitleUser(d.id, { interested: !next })
+            .catch((e: unknown) => onNotice(`could not undo (${errorCode(e)})`))
+            .finally(onChanged);
+        },
+      });
+    } catch (e) {
+      onNotice(`could not save (${errorCode(e)})`);
+    } finally {
+      onChanged();
+    }
+  };
+
+  const interestedLabel = d.interested ? 'Interested (click to take it off the list)' : "Interested: keep it on the Stream side's interested list";
   const watchedLabel = watched ? 'Watched (click to unmark)' : 'Mark as watched';
   const notInterestedLabel = d.not_interested ? 'Not interested (click to put it back on the Stream grid)' : 'Not interested: take it off the Stream grid';
   const facts = [
@@ -299,6 +319,19 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             >
               <CheckCircle weight="duotone" />
             </button>
+            {(side === 'stream' || d.interested) && (
+              <button
+                type="button"
+                className={d.interested ? 'ibtn on' : 'ibtn hov'}
+                data-tip={interestedLabel}
+                data-tip-side="below"
+                aria-label={interestedLabel}
+                aria-pressed={d.interested}
+                onClick={() => void toggleInterested()}
+              >
+                <BookmarkSimple weight="duotone" />
+              </button>
+            )}
             {(side === 'stream' || d.not_interested) && (
               <button
                 type="button"

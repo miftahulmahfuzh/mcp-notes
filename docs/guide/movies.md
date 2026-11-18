@@ -299,7 +299,8 @@ either machine, with the same rule.
 
 ## The Movies page
 
-The film-slate icon in the rail or sidebar opens `/movies`. Two icons at the top left switch the
+The film-slate icon in the rail or sidebar opens `/movies`. Coming from another page collapses the
+sidebar, which holds nothing for Movies; its toggle (Alt+B) expands it again and it then stays. Two icons at the top left switch the
 page between its two sides: Library, the files on your machines (this section), and Stream, the
 titles verified to stream on this machine ([The Stream side](#the-stream-side)). Stream has no
 entry of its own in the rail or sidebar. The header counts titles, films, series and what is in
@@ -314,8 +315,8 @@ the share of episodes finished, and a title with no file left on any machine is 
 **Marking from the grid.** With the pointer on a poster (or the keyboard inside it), a check icon
 appears at its top right: one click sets or clears the title's watched flag, without opening the
 title and without a confirmation. On a series that is the whole series, every season. On the Stream
-side a crossed-eye icon beside it marks the title "not interested" (see
-[The Stream side](#the-stream-side)). The poster leaves the grid at the click, without a reload: a
+side a bookmark icon beside it marks the title "interested" and a crossed-eye icon "not interested"
+(see [The Stream side](#the-stream-side)). The poster leaves the grid at the click, without a reload: a
 title whose watched flag is set shows under `finished` (and `gone`) only, not under `all`, on both
 sides. A title finished by playing it stays under `all`. The notice offers an undo, and a title
 marked by mistake is still there under `finished`, where the same icon clears the flag.
@@ -396,13 +397,19 @@ member and character is a link that looks like the text it replaces and underlin
 | A genre | A pop-up written for this title: what the genre is in it, and the titles of that genre closest to it in tone and premise, each with one line on what they share. Comedy on one film is another list than Comedy on the next. |
 | A character | No pop-up: it asks the chat "Who is Ruth, played by Jessica Henwick, in this film?" through the pill, at once. |
 
-![The pop-up of a cast member: photo, biography, and their films newest first with the watched and not-interested tags](img/movies/person.png)
+![The pop-up of a cast member: photo, biography, and their films newest first with the three mark buttons on each](img/movies/person.png)
 
 - **The list is newest first**, undated titles last, at most 120, and the line above it counts
-  them and their marks (`42 titles · 5 watched · 1 started · 1 not interested`).
+  them and their marks (`42 titles · 5 watched · 1 started · 2 interested · 1 not interested`).
 - **Every title carries what you did with it**, read when the pop-up opens, never stored with the
-  list: `watched` (finished, seen, or your watched flag), `started` (in progress or dropped),
-  `not interested`, `file here` when a file is on this machine, and its movie id when it is stored.
+  list: `started` (in progress or dropped), `file here` when a file is on this machine, its movie
+  id when it is stored, and three icons at the right, lit when set: watched (finished, seen, or
+  your watched flag), interested, not interested.
+- **The three icons are buttons.** One click sets or clears that mark without opening the title,
+  and the count line follows. A title the library does not hold is stored first, as a click on its
+  row would, so its first mark takes a moment. Watched on a series is the whole series; a title
+  finished by playing it stays watched when its flag is cleared, and the pop-up says so. An
+  interested title is then on the Stream side's `interested` filter.
 - **A click on a title opens the movie pop-up** over this one, the same pop-up a movie id in chat
   opens, with Play and the play menu. A title the library does not hold is stored first (its TMDB
   details, as its first stream would store it; `POST /api/movies/ensure`), which takes a moment and
@@ -490,7 +497,8 @@ provider returned a playable stream for it on this machine within the freshness 
 last played here on a streaming site (`/dramacool summer vacation 3`: such a title has no source
 to verify, and stays for as long as the site is how it plays). Nothing else is shown there, so
 every poster plays. A title with no file is not dimmed on this side, and there is
-no `gone` pill. The title played last is first, at the top left, whatever its state; a title that
+no `gone` pill. A title last played here from a torrent is listed too, for as long as a torrent is
+how it plays: a torrent play verifies no provider's source. The title played last is first, at the top left, whatever its state; a title that
 was verified but never played comes after, newest first. The header says how many titles are
 verified and over how many days.
 
@@ -505,6 +513,14 @@ to turn it on.
 rebuilds its candidates and tries them out of sight, without waiting for the laptop to be idle
 (see [streaming.md](streaming.md)). The icon turns while the pass runs, and a notice says how many
 titles it found.
+
+**Interested.** The bookmark icon, on a Stream poster under the pointer or on a title opened from
+Stream, puts the title on your watch list: the `interested` filter. That filter shows every title
+you marked and have not finished yet, whether or not anything verified that it streams here, so a
+title marked from a person's or a studio's pop-up is there too; such a title shows under
+`interested` only, not under `all`, and its Play looks for a source when you press it. A title you
+finish, or flag watched, leaves the filter; the same icon takes it off by hand. "Interested" and
+"not interested" never stand together: setting one clears the other.
 
 **Not interested.** On a Stream poster under the pointer, or on a title opened from Stream, the
 crossed-eye icon marks it "not interested".
@@ -1035,6 +1051,7 @@ Differences between the two places:
 | `/n I watched season 1 of MobLand last year` | `movies_mark {"title":"mobland","season":1,"watched":true}`: every episode of that season is finished, the series is not | Both |
 | `/n I did not finish season 1 of MobLand after all` | `movies_mark {"title":"mobland","season":1,"watched":false}` | Both |
 | `/n I am not interested in M-154P` | `movies_mark {"title":"M-154P","not_interested":true}` (`false` takes it back) | Both |
+| `/n I'm interested in M-154P, save it for later` | `movies_mark {"title":"M-154P","interested":true}` (`false` takes it off the list) | Both |
 | `I watched House of the Dragon season 1 last year. start season 2` | `direct_stream_find`, then `movies_mark {"title":"tv-94997","season":1,"watched":true}`, then `direct_stream_play` with season 2, episode 1 | Both |
 | `/n find my review that mentions Glen Powell` | `search {"query":"Glen Powell"}` (the review is a note) | Both |
 | `/n who is the woman on the poster of M-CNJ0?` | `movies_pictures {"title":"M-CNJ0"}`: the poster and backdrop come back as images Claude looks at (an episode's id adds its still), then `movies_get` for the cast | Both |
@@ -1052,7 +1069,8 @@ Differences between the two places:
   from TMDB and stored first, as its first stream would. Such a title is not in the Library grid.
   Words find only stored titles.
 - "Not interested" is the mark of [the Stream side](#the-stream-side): the title leaves the Stream
-  grid and is not proposed again.
+  grid and is not proposed again. "Interested" is its opposite, the watch list under the Stream
+  side's `interested` filter; setting one clears the other.
 - A new review replaces the earlier one in the same note; the earlier text is kept as a revision
   of that note.
 - `watched: false` clears the flag and nothing else: a film whose last play reached 90 %, or whose

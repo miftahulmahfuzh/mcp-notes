@@ -15,6 +15,10 @@
   `page.route` to choose its answer. Never give a throwaway run the real resolver.
 - Stream grid upkeep: the refresh icon asks the prober for one pass now (`POST
   /api/stream/prober/pass`: the listing is rebuilt, idle is not waited for, a play still stops it);
+  the bookmark icon marks a title "interested" (`interested: true` on `POST /api/movies/:id/user`;
+  the Stream side's `interested` pill lists it with no verified source too, as `interested_only`, and
+  it clears "not interested"; proof: `npm run test:int -- tests/integration/movies.marks.int.test.ts`,
+  which also proves a title last played from a torrent is on `GET /api/movies/stream`);
   a title page's "not interested" icon takes a title off the grid (it shows only under that
   filter, and the prober's catalog stops counting and re-checking it); a poster under the
   pointer shows the watched flag (a series: every season) and, on the Stream side, "not
@@ -37,7 +41,9 @@
   (`EntityModal`): `GET /api/movies/people/:id` and `/companies/:id` read TMDB at each request;
   `GET|POST /api/movies/:id/genres/:genre` reads or collates the guide of that genre for that title
   (one model run with WebSearch, then `movie_genre_guides`). Every listed title carries `mark`
-  (`watched`, `started`, `not_interested`) and `has_file`, read at the request, and a click opens
+  (`watched`, `started`, `not_interested`), `interested` and `has_file`, read at the request; three
+  icon buttons per row (`guide-mark-watched|interested|not_interested`) set a mark without opening
+  the title, through `POST /api/movies/:id/user` after `ensure` for a title not stored; and a click opens
   the movie pop-up, after `POST /api/movies/ensure` for a title the library does not hold. A
   character still asks the chat. The caret beside Play, and on every episode row, is the play
   menu: the file (or pahe, `GET /api/movies/:id/pahe`), `POST /api/stream/play` with `provider`
@@ -136,8 +142,8 @@
 - MCP: `movies_list`, `movies_get`, `movies_history`, `movies_continue`, `movies_person`, `movies_mark`
   (also in the chat bar). SSE `changed` on `/api/movies/events`.
 - `movies_mark` beyond watched, rating and review: `season` with `watched` marks one season's
-  episodes finished or takes the marks back (the page's season button), `not_interested` sets or
-  clears that mark, and a title key the library does not hold (`tv-94997`) is stored from TMDB
+  episodes finished or takes the marks back (the page's season button), `not_interested` and `interested` set or
+  clear those marks (one clears the other), and a title key the library does not hold (`tv-94997`) is stored from TMDB
   first. Proof: `npm run test:int -- tests/integration/movies.mcp.int.test.ts`; on a
   `$V up --discovery` run, `direct-stream/discovery.sh RUN` (request 8 and "marks") and
   `$V mcp RUN movies_mark '{"title":"mobland","season":1,"watched":true}'` after a sync.

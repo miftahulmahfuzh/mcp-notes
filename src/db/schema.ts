@@ -1030,6 +1030,12 @@ export const movieTitles = pgTable(
      * under that side's "not interested" filter) and no longer counts toward the prober's catalog.
      */
     notInterestedAt: timestamp('not_interested_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * The owner's "interested" mark, a watch list: the Stream side shows the title under its
+     * "interested" filter, verified source or not, until it is finished. Never set together with
+     * "not interested" (MoviesRepo.setTitleUser clears the other).
+     */
+    interestedAt: timestamp('interested_at', { withTimezone: true, mode: 'date' }),
     /** 0..5 stars. */
     rating: smallint('rating'),
     /**

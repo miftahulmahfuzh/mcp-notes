@@ -151,7 +151,7 @@ export function tileProgress(t: TitleListItem): number | null {
   return total > 0 ? Math.min(1, p.episodes_finished / total) : null;
 }
 
-export type StateFilter = 'all' | 'unwatched' | 'in_progress' | 'finished' | 'gone' | 'not_interested';
+export type StateFilter = 'all' | 'unwatched' | 'in_progress' | 'finished' | 'gone' | 'interested' | 'not_interested';
 export type KindFilter = 'all' | TitleKind;
 
 export interface MoviesFilter {
@@ -168,12 +168,13 @@ export const STATE_FILTERS: readonly { key: StateFilter; label: string }[] = [
   { key: 'in_progress', label: 'in progress' },
   { key: 'finished', label: 'finished' },
   { key: 'gone', label: 'gone' },
+  { key: 'interested', label: 'interested' },
   { key: 'not_interested', label: 'not interested' },
 ];
 
-/** The state pills a side shows: `gone` is about files, so the Stream side has none. */
+/** The state pills a side shows: `gone` is about files, so the Stream side has none; the two marks are the Stream side's. */
 export function stateFilters(side: MoviesSide): readonly { key: StateFilter; label: string }[] {
-  return STATE_FILTERS.filter((s) => (side === 'stream' ? s.key !== 'gone' : s.key !== 'not_interested'));
+  return STATE_FILTERS.filter((s) => (side === 'stream' ? s.key !== 'gone' : s.key !== 'not_interested' && s.key !== 'interested'));
 }
 
 export const KIND_FILTERS: readonly { key: KindFilter; label: string }[] = [
@@ -190,6 +191,8 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
   // Stream side: a title marked "not interested" shows under that filter only, so its place in
   // the grid goes to another title. The library ignores the mark.
   if (side === 'stream' && (f.state === 'not_interested') !== t.not_interested) return false;
+  // A title listed for its "interested" mark alone has no verified source: it is on the watch list, nowhere else.
+  if (side === 'stream' && t.interested_only === true && f.state !== 'interested') return false;
   switch (f.state) {
     case 'all':
       // A title marked watched by hand leaves the grid: it shows under `finished` (and `gone`).
@@ -202,13 +205,29 @@ export function matchesFilter(t: TitleListItem, f: MoviesFilter, side: MoviesSid
       return t.state === 'finished' || t.state === 'seen';
     case 'gone':
       return isGone(t, side);
+    case 'interested':
+      // The watch list: what the owner marked and has not finished yet.
+      return side === 'stream' && t.interested && !t.watched && t.state !== 'finished' && t.state !== 'seen';
     case 'not_interested':
       return side === 'stream';
   }
 }
 
 /** A poster's hover buttons set one of these. */
-export type TitleMark = { watched: boolean } | { not_interested: boolean };
+export type TitleMark = { watched: boolean } | { not_interested: boolean } | { interested: boolean };
+
+/** The mark that takes `m` back. */
+export function undoMark(m: TitleMark): TitleMark {
+  if ('watched' in m) return { watched: !m.watched };
+  return 'interested' in m ? { interested: !m.interested } : { not_interested: !m.not_interested };
+}
+
+/** A title with one mark laid over it, as the server would answer it: "interested" and "not interested" never stand together. */
+export function applyMark<T extends Pick<TitleListItem, 'state' | 'watched' | 'not_interested' | 'interested'>>(t: T, m: TitleMark): T {
+  if ('watched' in m) return { ...t, watched: m.watched, ...(m.watched ? { state: 'finished' as const } : {}) };
+  if ('interested' in m) return { ...t, interested: m.interested, ...(m.interested ? { not_interested: false } : {}) };
+  return { ...t, not_interested: m.not_interested, ...(m.not_interested ? { interested: false } : {}) };
+}
 
 /**
  * The grid's titles with the marks just clicked laid over them, so a poster leaves the grid at
@@ -218,8 +237,7 @@ export function withMarks<T extends TitleListItem>(titles: T[], marks: ReadonlyM
   if (marks.size === 0) return titles;
   return titles.map((t) => {
     const m = marks.get(t.id);
-    if (m === undefined) return t;
-    return 'watched' in m ? { ...t, watched: m.watched, ...(m.watched ? { state: 'finished' as const } : {}) } : { ...t, ...m };
+    return m === undefined ? t : applyMark(t, m);
   });
 }
 
@@ -228,7 +246,7 @@ export function pendingMarks(marks: ReadonlyMap<string, TitleMark>, lists: reado
   const out = new Map<string, TitleMark>();
   for (const [id, m] of marks) {
     const seen = lists.flatMap((l) => l ?? []).filter((t) => t.id === id);
-    const caughtUp = seen.length > 0 && seen.every((t) => ('watched' in m ? t.watched === m.watched : t.not_interested === m.not_interested));
+    const caughtUp = seen.length > 0 && seen.every((t) => ('watched' in m ? t.watched === m.watched : 'interested' in m ? t.interested === m.interested : t.not_interested === m.not_interested));
     if (!caughtUp) out.set(id, m);
   }
   return out;
@@ -236,7 +254,7 @@ export function pendingMarks(marks: ReadonlyMap<string, TitleMark>, lists: reado
 
 /** How many titles each state pill would show under the current kind and text filter. */
 export function stateCounts(titles: TitleListItem[], f: MoviesFilter, side: MoviesSide = 'library'): Record<StateFilter, number> {
-  const out: Record<StateFilter, number> = { all: 0, unwatched: 0, in_progress: 0, finished: 0, gone: 0, not_interested: 0 };
+  const out: Record<StateFilter, number> = { all: 0, unwatched: 0, in_progress: 0, finished: 0, gone: 0, interested: 0, not_interested: 0 };
   for (const t of titles) {
     for (const s of STATE_FILTERS) if (matchesFilter(t, { ...f, state: s.key }, side)) out[s.key] += 1;
   }
@@ -856,7 +874,7 @@ export function moviesCountLine(s: MoviesView, route: MoviesRoute): string {
     if (s.streamError !== null) return moviesErrorText(s.streamError);
     if (s.stream === null) return 'Loading the Stream titles.';
     if (!s.stream.enabled) return 'Direct streaming is off on this machine.';
-    const n = s.stream.titles.length;
+    const n = s.stream.titles.filter((t) => t.interested_only !== true).length;
     return n === 0 ? 'Nothing verified to stream on this machine yet.' : `${plural(n, 'title')} verified to stream on this machine in the last ${plural(s.stream.fresh_days, 'day')}.`;
   }
   if (s.listError !== null) return moviesErrorText(s.listError);
@@ -1053,10 +1071,39 @@ export function guideTitleLine(t: GuideTitle): string {
   return [t.year === null ? 'undated' : String(t.year), t.kind === 'tv' ? 'series' : '', t.note ?? ''].filter((x) => x !== '').join(' · ');
 }
 
-/** How many listed titles carry each mark: `42 titles · 5 watched · 1 not interested`. */
+/** A listed title after one of its marks was saved: `d` is the title as the server answered it (the rule of the server's guideMark). */
+export function guideTitleAfter(t: GuideTitle, d: Pick<TitleListItem, 'movie_id' | 'state' | 'watched' | 'not_interested' | 'interested'>): GuideTitle {
+  const mark: GuideMark | null = d.not_interested
+    ? 'not_interested'
+    : d.watched || d.state === 'finished' || d.state === 'seen'
+      ? 'watched'
+      : d.state === 'in_progress' || d.state === 'dropped'
+        ? 'started'
+        : null;
+  return { ...t, movie_id: d.movie_id ?? t.movie_id, mark, interested: d.interested };
+}
+
+/** The three marks a listed title's buttons set, and whether each is on. */
+export type GuideAction = 'watched' | 'interested' | 'not_interested';
+export const GUIDE_ACTIONS: readonly GuideAction[] = ['watched', 'interested', 'not_interested'];
+
+export function guideActionOn(t: GuideTitle, a: GuideAction): boolean {
+  return a === 'interested' ? t.interested : t.mark === a;
+}
+
+/** A mark button's label: what a click does. */
+export function guideActionLabel(t: GuideTitle, a: GuideAction): string {
+  const on = guideActionOn(t, a);
+  if (a === 'watched') return on ? `${t.title}: watched (click to unmark)` : `Mark ${t.title} as watched${t.kind === 'tv' ? ', every season' : ''}`;
+  if (a === 'interested') return on ? `${t.title}: interested (click to take it off the list)` : `Interested in ${t.title}: keep it on the Stream side's interested list`;
+  return on ? `${t.title}: not interested (click to take that back)` : `Not interested in ${t.title}`;
+}
+
+/** How many listed titles carry each mark: `42 titles · 5 watched · 2 interested · 1 not interested`. */
 export function guideCountLine(titles: readonly GuideTitle[]): string {
   const n = (m: GuideMark) => titles.filter((t) => t.mark === m).length;
-  return [plural(titles.length, 'title'), n('watched') > 0 ? `${n('watched')} watched` : '', n('started') > 0 ? `${n('started')} started` : '', n('not_interested') > 0 ? `${n('not_interested')} not interested` : '']
+  const interested = titles.filter((t) => t.interested).length;
+  return [plural(titles.length, 'title'), n('watched') > 0 ? `${n('watched')} watched` : '', n('started') > 0 ? `${n('started')} started` : '', interested > 0 ? `${interested} interested` : '', n('not_interested') > 0 ? `${n('not_interested')} not interested` : '']
     .filter((x) => x !== '')
     .join(' · ');
 }

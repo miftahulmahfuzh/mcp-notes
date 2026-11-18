@@ -478,7 +478,7 @@ describe('direct-stream MCP tools', () => {
       const t = discoverTmdb();
       const f = fakeDeps({
         tmdb: t.tmdb,
-        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false }]]),
+        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false, interested: false }]]),
         freshTitles: async () => new Set(['tv-2']),
       });
       const c = await connect(f.deps);
@@ -488,12 +488,12 @@ describe('direct-stream MCP tools', () => {
       expect(out.titles).toEqual([
         {
           kind: 'tv', tmdb_id: 1, title_key: 'tv-1', movie_id: 'M-0LD1', title: 'Old Hit', release_date: '2026-01-10', original_language: 'es', overview: 'A hit.',
-          in_library: true, state: 'finished', seen: true, started: false, not_interested: false, stream: { verified: false },
+          in_library: true, state: 'finished', seen: true, started: false, not_interested: false, interested: false, stream: { verified: false },
           url: 'http://localhost:7317/movies/M-0LD1', tmdb_url: 'https://www.themoviedb.org/tv/1',
         },
         {
           kind: 'tv', tmdb_id: 2, title_key: 'tv-2', movie_id: null, title: 'New One', original_title: 'La Nueva', release_date: '2026-09-01', original_language: 'es',
-          in_library: false, state: null, seen: false, started: false, not_interested: false, stream: { verified: true },
+          in_library: false, state: null, seen: false, started: false, not_interested: false, interested: false, stream: { verified: true },
           url: null, tmdb_url: 'https://www.themoviedb.org/tv/2',
         },
       ]);
@@ -511,7 +511,7 @@ describe('direct-stream MCP tools', () => {
       // Everything that fits was seen: nothing to choose, and the answer says a rewatch is the call without unseen_only.
       const allSeen = fakeDeps({
         tmdb: t.tmdb,
-        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false }], ['tv-2', { movieId: null, state: null, notInterested: true }]]),
+        marks: async () => new Map([['tv-1', { movieId: 'M-0LD1', state: 'finished' as const, notInterested: false, interested: false }], ['tv-2', { movieId: null, state: null, notInterested: true, interested: false }]]),
       });
       const c2 = await connect(allSeen.deps);
       const none = json(await c2.call('direct_stream_discover', { kind: 'tv', language: 'es', unseen_only: true }));

@@ -46,6 +46,7 @@ const TITLE_KEY_PARTS = /^(movie|tv)-([1-9]\d{0,9})$/i;
 export interface TitleUserPatch {
   watched?: boolean;
   notInterested?: boolean;
+  interested?: boolean;
   rating?: number | null;
 }
 
@@ -349,7 +350,7 @@ async function continueLinks(db: Db, r: ContinueResult, titleUrl: (id: string) =
 }
 
 type MarkRequest =
-  | { target: 'title'; title: string; season?: number; watched?: boolean; notInterested?: boolean; rating?: number | null; review?: string }
+  | { target: 'title'; title: string; season?: number; watched?: boolean; notInterested?: boolean; interested?: boolean; rating?: number | null; review?: string }
   | { target: 'file'; fileId: number; watched: boolean };
 
 interface MarkArgs {
@@ -358,19 +359,20 @@ interface MarkArgs {
   season?: number | undefined;
   watched?: boolean | undefined;
   not_interested?: boolean | undefined;
+  interested?: boolean | undefined;
   rating?: number | null | undefined;
   review?: string | undefined;
 }
 
 /** The one place movies_mark's arguments are checked: a title takes any mark, a file only watched. */
 function markRequest(args: MarkArgs): MarkRequest {
-  const { title, file_id: fileId, season, watched, not_interested: notInterested, rating, review } = args;
+  const { title, file_id: fileId, season, watched, not_interested: notInterested, interested, rating, review } = args;
   if ((title === undefined) === (fileId === undefined)) {
     throw new MovieToolError('invalid_input', 'pass exactly one of title (a title id or name) or file_id (one file, from movies_get files[].id).');
   }
   if (fileId !== undefined) {
-    if (rating !== undefined || review !== undefined || notInterested !== undefined || season !== undefined) {
-      throw new MovieToolError('invalid_input', 'rating, review, not_interested and season belong to a title, not a file: pass title instead of file_id.');
+    if (rating !== undefined || review !== undefined || notInterested !== undefined || interested !== undefined || season !== undefined) {
+      throw new MovieToolError('invalid_input', 'rating, review, not_interested, interested and season belong to a title, not a file: pass title instead of file_id.');
     }
     if (watched === undefined) throw new MovieToolError('invalid_input', 'file_id needs watched (true or false).');
     return { target: 'file', fileId, watched };
@@ -379,8 +381,11 @@ function markRequest(args: MarkArgs): MarkRequest {
   if (season !== undefined && watched === undefined) {
     throw new MovieToolError('invalid_input', 'season needs watched (true: the whole season is finished; false: take that mark back).');
   }
-  if (watched === undefined && notInterested === undefined && rating === undefined && review === undefined) {
-    throw new MovieToolError('invalid_input', 'nothing to change: pass watched, not_interested, rating or review.');
+  if (notInterested === true && interested === true) {
+    throw new MovieToolError('invalid_input', 'a title is interested or not_interested, never both: pass one.');
+  }
+  if (watched === undefined && notInterested === undefined && interested === undefined && rating === undefined && review === undefined) {
+    throw new MovieToolError('invalid_input', 'nothing to change: pass watched, not_interested, interested, rating or review.');
   }
   return {
     target: 'title',
@@ -388,6 +393,7 @@ function markRequest(args: MarkArgs): MarkRequest {
     ...(season !== undefined ? { season } : {}),
     ...(watched !== undefined ? { watched } : {}),
     ...(notInterested !== undefined ? { notInterested } : {}),
+    ...(interested !== undefined ? { interested } : {}),
     ...(rating !== undefined ? { rating } : {}),
     ...(review !== undefined ? { review } : {}),
   };
@@ -443,6 +449,7 @@ export interface LibraryMark {
   /** Null past the first PERSON_STATE_LOOKUPS stored titles of one call. */
   state: WatchState | null;
   notInterested: boolean;
+  interested: boolean;
 }
 
 /** The stored titles among `ids` (title keys, in the order to read them), each with its state: how movies_person and direct_stream_discover mark a TMDB list. */
@@ -450,11 +457,11 @@ export async function libraryMarks(db: Db, ctx: ReadContext, ids: readonly strin
   const marks = new Map<string, LibraryMark>();
   if (ids.length === 0) return marks;
   const rows = await db.select({ id: movieTitles.id }).from(movieTitles).where(inArray(movieTitles.id, [...ids]));
-  for (const { id } of rows) marks.set(id, { movieId: null, state: null, notInterested: false });
+  for (const { id } of rows) marks.set(id, { movieId: null, state: null, notInterested: false, interested: false });
   await Promise.all(
     rows.slice(0, PERSON_STATE_LOOKUPS).map(async ({ id }) => {
       const detail = await getTitle(db, id, ctx);
-      if (detail !== null) marks.set(id, { movieId: detail.movie_id, state: detail.state, notInterested: detail.not_interested });
+      if (detail !== null) marks.set(id, { movieId: detail.movie_id, state: detail.state, notInterested: detail.not_interested, interested: detail.interested });
     }),
   );
   return marks;
@@ -540,11 +547,12 @@ const PICTURES_DESCRIPTION =
 
 const MARK_DESCRIPTION =
   "Sets the owner's own marks. On a title (title = movie id, title id or name; an episode's movie id takes watched only and marks that episode): watched (true sets the watched flag, which makes the title finished even when the credits were skipped; false clears it), rating (0-5 stars as a whole number; null clears it), review (plain text; saved as a note tagged #movie and linked to the title, so it is searchable like any note; it replaces the earlier review) " +
-  'and not_interested (true: the owner does not want this title, so the Stream side stops showing and proposing it; false takes that back). ' +
+  'and not_interested (true: the owner does not want this title, so the Stream side stops showing and proposing it; false takes that back) ' +
+  'and interested (true: the owner wants to watch this title later, so it is kept on the Stream side\'s "interested" list until it is finished; false takes it off; setting one of the two clears the other). ' +
   'On one season of a series (title plus season): watched true marks every episode of that season finished ("I watched House of the Dragon season 1 last year" is season 1, watched true), false takes those marks back; the series itself is not marked, so a later season still plays next. ' +
   'A title that is not stored yet (never played, no file) is marked by its title key, movie-<tmdb id> or tv-<tmdb id> (title_key from direct_stream_find or direct_stream_discover): it is read from TMDB and stored first. ' +
   'On one file (file_id from movies_get files[].id, e.g. one episode): watched only. Pass exactly one of title or file_id, and at least one change. ' +
-  'Returns { title_id, title, state, watched_at, not_interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
+  'Returns { title_id, title, state, watched_at, not_interested, interested, rating, review_note_id, url } after the change, plus season: { season, watched, episodes, changed, finished } for a season mark and file for file_id.';
 
 /** The six movie tools. With deps.movies null or omitted every one answers MOVIES_OFF. */
 export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' | 'movies' | 'wallUrl'>): void {
@@ -891,6 +899,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         season: z.number().int().min(0).max(1000).optional().describe('A series only, with watched: mark every episode of this season finished (true) or take those marks back (false).'),
         watched: z.boolean().optional().describe('true: set the watched flag; false: clear it. With season it is about that season\'s episodes.'),
         not_interested: z.boolean().optional().describe('true: the owner does not want this title; false: take that back.'),
+        interested: z.boolean().optional().describe('true: the owner wants to watch this title later (their "interested" list); false: take it off that list.'),
         rating: z.number().int().min(0).max(5).nullable().optional().describe('Stars, 0-5, whole numbers. null clears the rating.'),
         review: z
           .string()
@@ -932,7 +941,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         const { titleId: id, target } = await resolveOrStoreTitle(deps.db, m, ctxOf(m), req.title);
         if (target !== null && target.season !== null) {
           // An episode's movie id: watched goes on that episode's files, never on the whole series.
-          if (req.rating !== undefined || req.review !== undefined || req.notInterested !== undefined || req.season !== undefined || req.watched === undefined) {
+          if (req.rating !== undefined || req.review !== undefined || req.notInterested !== undefined || req.interested !== undefined || req.season !== undefined || req.watched === undefined) {
             throw new MovieToolError('invalid_input', `${target.movieId} is one episode: it takes watched only. Rating and review belong to the series; pass its movie id or name.`);
           }
           const before = await getTitle(deps.db, id, ctxOf(m));
@@ -965,6 +974,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
         const patch: TitleUserPatch = {};
         if (req.watched !== undefined && req.season === undefined) patch.watched = req.watched;
         if (req.notInterested !== undefined) patch.notInterested = req.notInterested;
+        if (req.interested !== undefined) patch.interested = req.interested;
         if (req.rating !== undefined) patch.rating = req.rating;
         if (Object.keys(patch).length > 0) await m.setTitleUser(id, patch);
         if (req.review !== undefined) await m.saveReview(id, req.review);
@@ -978,6 +988,7 @@ export function registerMovieTools(server: McpServer, deps: Pick<ToolDeps, 'db' 
           state: detail.state,
           watched_at: detail.watched_at,
           not_interested: detail.not_interested,
+          interested: detail.interested,
           rating: detail.rating,
           review_note_id: detail.review_note_id,
           url: titleUrl(detail.movie_id ?? detail.id),

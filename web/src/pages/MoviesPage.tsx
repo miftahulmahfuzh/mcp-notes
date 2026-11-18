@@ -22,6 +22,7 @@ import {
   NO_MOVIES_FILTER,
   normalizeMovieId,
   pendingMarks,
+  undoMark,
   detailSide,
   sideOf,
   stalledText,
@@ -217,12 +218,16 @@ export function MoviesPage({ store, route, onRoute, onAsk, asking = false }: Mov
   }, [store.titles, streamTitles, trendingTitles]);
   /** Saved at once, no confirmation; the notice offers an undo. */
   const mark = async (t: TitleListItem, patch: TitleMark) => {
-    const back: TitleMark = 'watched' in patch ? { watched: !patch.watched } : { not_interested: !patch.not_interested };
+    const back = undoMark(patch);
     const text =
       'watched' in patch
         ? patch.watched
           ? `${t.title}: watched${t.kind === 'tv' ? ', every season' : ''}, under finished`
           : `${t.title}: not watched`
+        : 'interested' in patch
+          ? patch.interested
+            ? `${t.title}: interested, on the Stream side's interested list`
+            : `${t.title}: off the interested list`
         : patch.not_interested
           ? `${t.title}: not interested, off the Stream grid`
           : `${t.title}: back on the Stream grid`;

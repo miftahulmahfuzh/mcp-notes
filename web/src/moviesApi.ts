@@ -43,6 +43,10 @@ export interface TitleListItem {
   watched_at: string | null;
   /** The owner's "not interested" mark: on the Stream side the title shows only under that filter. */
   not_interested: boolean;
+  /** The owner's "interested" mark, the Stream side's watch list. Never true together with not_interested. */
+  interested: boolean;
+  /** The Stream list only: listed for its "interested" mark alone (no verified source), so it shows under that filter only. */
+  interested_only?: boolean;
   rating: number | null;
   progress: TitleProgress;
   /** Newest play start over all its files, any host. */
@@ -434,7 +438,7 @@ export type ContinueResult =
   | { action: 'no_match'; query: string | null };
 
 /** One key per call (phase 4 accepts any subset; the page sends one change at a time). */
-export type TitleUserPatch = { watched: boolean } | { not_interested: boolean } | { rating: number } | { review: string };
+export type TitleUserPatch = { watched: boolean } | { not_interested: boolean } | { interested: boolean } | { rating: number } | { review: string };
 
 export type AssignBody = { kind: 'movie'; tmdb_id: number } | { kind: 'tv'; tmdb_id: number; season?: number; episode?: number };
 
@@ -597,6 +601,13 @@ export async function searchTmdb(q: string, kind: TitleKind, signal?: AbortSigna
 
 export async function saveTitleUser(id: string, patch: TitleUserPatch): Promise<void> {
   await postJson<TitleDetail>(`/api/movies/${enc(id)}/user`, patch);
+}
+
+/** saveTitleUser, answering the title as it is after the change. */
+export async function markTitle(id: string, patch: TitleUserPatch): Promise<TitleDetail> {
+  const d = await postJson<TitleDetail>(`/api/movies/${enc(id)}/user`, patch);
+  if (d === null) throw new Error('not_saved');
+  return d;
 }
 
 export interface EpisodeRef {
@@ -765,6 +776,8 @@ export interface GuideTitle {
   /** Null until the title is stored (`ensureTitle`). */
   movie_id: string | null;
   mark: GuideMark | null;
+  /** The "interested" mark (the watch list); it stands beside `mark`. */
+  interested: boolean;
   has_file: boolean;
 }
 
@@ -786,7 +799,7 @@ export interface EntityGuide {
 }
 
 function normalizeGuide(g: EntityGuide): EntityGuide {
-  return { ...g, entity: { ...g.entity, description: g.entity.description ?? '', facts: list(g.entity.facts) }, titles: list(g.titles) };
+  return { ...g, entity: { ...g.entity, description: g.entity.description ?? '', facts: list(g.entity.facts) }, titles: list(g.titles).map((t) => ({ ...t, interested: t.interested ?? false })) };
 }
 
 export async function fetchPersonGuide(personId: number, signal?: AbortSignal): Promise<EntityGuide> {
