@@ -572,6 +572,15 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   trackers, its public trackers kept in `<torrent dir>/trackers.json`, the swarm as the trackers know it. Proven by
   `npx vitest run tests/unit/directStream/torrent/origins.test.ts tests/unit/mcp.directStreamSourceTools.test.ts`
   and by the tool call on the live daemon with a RuTracker magnet (`origin.index` is `rutracker`).
+- Public tracker lists (`NOTESD_TORRENT_TRACKER_LISTS`, default on, needs `NOTESD_TORRENT_DISCOVERY`): a minute after start and
+  once a day ngosang `trackers_best` and newtrackon `stable` are read, each new UDP tracker gets a BEP 15 connect only,
+  up to 20 that answer are kept in `<torrent dir>/tracker-lists.json` and added after the candidate's and the book's
+  trackers to every torrent opened and every scrape; a failed refresh keeps the previous file. Proven by
+  `npx vitest run tests/unit/directStream/torrent/trackerLists.test.ts tests/unit/directStream/torrent/find/scrape.test.ts tests/unit/directStream/torrentRotation.test.ts tests/unit/config.torrent.test.ts`
+  (fake fetch, socket and clock; the two lists' real answers in `tests/fixtures/torrent/tracker-lists/`). Every throwaway
+  daemon pins it off: `$V up` logs `[notesd] tracker lists off: NOTESD_TORRENT_TRACKER_LISTS=off` and its torrent folder
+  holds no `tracker-lists.json`. Live: `jq '.trackers | length' <NOTESD_TORRENT_DIR>/tracker-lists.json` a minute after a
+  restart, and the daemon log's `[notesd] tracker lists: N of M new trackers answered` line.
 
 ## /sync-subtitle: a subtitle checked against the film's audio
 - `direct_stream_sync_subtitle` (the `/sync-subtitle` skill): Whisper hears a minute at six places of the

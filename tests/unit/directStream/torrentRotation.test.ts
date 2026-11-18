@@ -1,12 +1,14 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_TORRENT_CONFIG } from '../../../src/config.js';
 import type { StreamRef } from '../../../src/directStream/types.js';
 import { parseRelease, type ScrapeTrackers, type SwarmCount, type TorrentCandidate } from '../../../src/directStream/torrent/find/index.js';
 import { TrackerBook } from '../../../src/directStream/torrent/origins.js';
 import { ProbeError, type MediaProbe } from '../../../src/directStream/torrent/probe.js';
 import { FILE_FAILURE_KEEP_MS, MAX_TORRENT_TRIES, SWARM_FAILURE_KEEP_MS, TORRENTS_LEFT, TorrentSource, type FindAnswer, type TorrentSwarm } from '../../../src/directStream/torrent/source.js';
+import { buildTrackerLists, TRACKER_LISTS_FILE, TrackerLists } from '../../../src/directStream/torrent/trackerLists.js';
 
 const FILM: StreamRef = { kind: 'movie', tmdbId: 314095 };
 const h = (n: number): string => n.toString(16).padStart(40, '0');
@@ -34,6 +36,7 @@ interface Fakes {
   probes?: Record<string, MediaProbe | 'timeout'>;
   scrape?: ScrapeTrackers;
   book?: TrackerBook;
+  lists?: { list(): string[] } | null;
   sites?: Record<string, string | null>;
 }
 
@@ -75,6 +78,7 @@ function setup(o: Fakes) {
     log: () => undefined,
     ...(o.scrape === undefined ? {} : { scrape: o.scrape }),
     ...(o.book === undefined ? {} : { book: o.book }),
+    ...(o.lists === undefined ? {} : { lists: o.lists }),
     ...(o.sites === undefined ? {} : { sites: o.sites }),
   });
   const play = async () => {
@@ -229,5 +233,53 @@ describe('TorrentSource.learnMagnet (/update-cloud-source <magnet>)', () => {
     const bare = await t.source.learnMagnet(h(6));
     expect(bare).toMatchObject({ ok: true, origin: null, unknown_hosts: [], swarm: null });
     expect(await t.source.learnMagnet('not a magnet')).toMatchObject({ ok: false, error: 'bad_magnet' });
+  });
+});
+
+describe('TorrentSource: the public tracker lists', () => {
+  const LISTED = 'udp://open.tracker.cl:1337/announce';
+
+  it("opens and scrapes with the list trackers after the candidate's and the book's, without repeats", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'notesd-lists-'));
+    const book = new TrackerBook(join(dir, 'trackers.json'));
+    book.add(['udp://p4p.arenabg.com:1337'], h(9));
+    const asked: string[][] = [];
+    const scrape: ScrapeTrackers = async (_hashes, trackers) => {
+      asked.push([...trackers]);
+      return new Map();
+    };
+    const lists = { list: () => [LISTED, 'udp://tracker.example:1337', 'udp://P4P.arenabg.com:1337/announce'] };
+    const t = setup({ candidates: [candidate(1)], scrape, book, lists, probes: { [h(1)]: MP4_EN } });
+    const { out } = await t.play();
+    expect(out.ok).toBe(true);
+    expect(t.openedWith[h(1)]).toEqual(['udp://tracker.example:1337/announce', 'udp://p4p.arenabg.com:1337', LISTED]);
+    const first = asked[0] ?? [];
+    expect(first.at(-1)).toBe(LISTED);
+    expect(first.indexOf(LISTED)).toBeGreaterThan(first.indexOf('udp://tracker.example:1337/announce'));
+    expect(first.indexOf(LISTED)).toBeGreaterThan(first.indexOf('udp://p4p.arenabg.com:1337'));
+    expect(first.filter((x) => x.toLowerCase().includes('arenabg'))).toHaveLength(1);
+  });
+
+  it('a broken list file adds nothing and the play goes on', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'notesd-lists-'));
+    writeFileSync(join(dir, TRACKER_LISTS_FILE), '{ not json');
+    const t = setup({ candidates: [candidate(1)], lists: new TrackerLists(join(dir, TRACKER_LISTS_FILE)), probes: { [h(1)]: MP4_EN } });
+    const { out } = await t.play();
+    expect(out.ok).toBe(true);
+    expect(t.openedWith[h(1)]).toEqual(['udp://tracker.example:1337/announce']);
+  });
+
+  it('switched off (the setting or discovery), a kept list file is not used; on, it is', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'notesd-lists-'));
+    new TrackerLists(join(dir, TRACKER_LISTS_FILE)).save([{ url: LISTED, source: 'ngosang' }], new Date());
+    const torrent = { ...DEFAULT_TORRENT_CONFIG, enabled: true, dir, discovery: true };
+    for (const off of [{ ...torrent, trackerLists: false }, { ...torrent, trackerLists: true, discovery: false }]) {
+      const t = setup({ candidates: [candidate(1)], lists: buildTrackerLists(off, true).lists, probes: { [h(1)]: MP4_EN } });
+      await t.play();
+      expect(t.openedWith[h(1)]).toEqual(['udp://tracker.example:1337/announce']);
+    }
+    const on = setup({ candidates: [candidate(1)], lists: buildTrackerLists({ ...torrent, trackerLists: true }, true).lists, probes: { [h(1)]: MP4_EN } });
+    await on.play();
+    expect(on.openedWith[h(1)]).toEqual(['udp://tracker.example:1337/announce', LISTED]);
   });
 });

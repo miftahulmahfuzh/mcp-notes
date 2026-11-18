@@ -20,8 +20,13 @@ export type ScrapeTrackers = (infoHashes: readonly string[], trackers: readonly 
 
 /** The whole scrape answers within this, with whatever arrived. */
 export const SCRAPE_TIMEOUT_MS = 1_500;
-/** Trackers asked at most per scrape. */
-export const SCRAPE_MAX_TRACKERS = 8;
+/**
+ * Trackers asked at most per scrape. They are all asked at once on one socket, so more of them cost no time:
+ * the scrape still answers within SCRAPE_TIMEOUT_MS.
+ */
+export const SCRAPE_MAX_TRACKERS = 16;
+/** Of those places, the ones kept for the public tracker lists' trackers (trackerLists.ts), asked after the others. */
+export const SCRAPE_LIST_SLOTS = 6;
 /** Info hashes per request (BEP 15: about 74 fit one packet). */
 export const SCRAPE_MAX_HASHES = 70;
 /** A candidate is called dead only when at least this many trackers answered and none knows a seeder. */
@@ -162,6 +167,107 @@ export function udpScraper(deps: { socket?: () => ScrapeSocket; now?: () => numb
       for (const tracker of asked) {
         const tid = transactionId();
         pending.set(tid, { tracker, step: 'connect' });
+        socket.send(connectPacket(tid), tracker.port, tracker.host, (err) => {
+          if (err !== null && err !== undefined && pending.delete(tid)) gone();
+        });
+      }
+    });
+  };
+}
+
+/** The UDP addresses of `urls` whose tracker is not in `taken` yet, in order, at most `max`; marks them taken. */
+function distinctUdp(urls: readonly string[], max: number, taken: Set<string>): string[] {
+  const out: string[] = [];
+  for (const url of urls) {
+    if (out.length >= max) break;
+    const t = udpTrackerOf(url);
+    if (t === null || taken.has(t.key)) continue;
+    taken.add(t.key);
+    out.push(url);
+  }
+  return out;
+}
+
+/**
+ * The trackers one scrape asks: the distinct UDP trackers of `first` (the defaults, the tracker book, the
+ * candidates' own), then those of `then` (the public lists' trackers), at most `max`. When `then` has any, the
+ * last `slots` places are kept for it, so the list trackers are really asked.
+ */
+export function scrapeTrackerOrder(first: readonly string[], then: readonly string[], max = SCRAPE_MAX_TRACKERS, slots = SCRAPE_LIST_SLOTS): string[] {
+  const taken = new Set<string>();
+  const listed = then.filter((url) => udpTrackerOf(url) !== null);
+  const head = distinctUdp(first, listed.length === 0 ? max : Math.max(0, max - slots), taken);
+  return [...head, ...distinctUdp(listed, max - head.length, taken)];
+}
+
+/** Asks UDP trackers for a connect only: answers the addresses, as given, whose tracker answered one. */
+export type ConnectTrackers = (trackers: readonly string[], options?: { timeoutMs?: number }) => Promise<Set<string>>;
+
+/** The whole connect check answers within this, with whatever arrived. */
+export const CONNECT_TIMEOUT_MS = 3_000;
+/** Trackers asked at most per connect check. */
+export const CONNECT_MAX_TRACKERS = 100;
+
+/**
+ * The BEP 15 connect alone, over UDP: tells a tracker that answers from one that does not, and nothing else. No
+ * info hash is sent, nothing is announced and no peer is contacted (the public tracker lists, trackerLists.ts).
+ * One socket per call; every tracker is asked at once and the call answers when all have answered or the time is
+ * up. Never throws.
+ */
+export function udpConnector(deps: { socket?: () => ScrapeSocket } = {}): ConnectTrackers {
+  const open = deps.socket ?? ((): ScrapeSocket => createSocket('udp4') as unknown as ScrapeSocket);
+  return (trackers, options = {}) => {
+    const asked = udpTrackers(trackers, CONNECT_MAX_TRACKERS);
+    /** Tracker key -> the first address given for it. */
+    const addressOf = new Map<string, string>();
+    for (const url of trackers) {
+      const t = udpTrackerOf(url);
+      if (t !== null && !addressOf.has(t.key)) addressOf.set(t.key, url);
+    }
+    const answered = new Set<string>();
+    if (asked.length === 0) return Promise.resolve(answered);
+    return new Promise((resolve) => {
+      let socket: ScrapeSocket;
+      try {
+        socket = open();
+      } catch {
+        resolve(answered);
+        return;
+      }
+      /** Transaction id -> the key of the tracker it was sent to. */
+      const pending = new Map<number, string>();
+      let left = asked.length;
+      let done = false;
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try {
+          socket.close();
+        } catch {
+          // Already closed.
+        }
+        resolve(answered);
+      };
+      const timer = setTimeout(finish, options.timeoutMs ?? CONNECT_TIMEOUT_MS);
+      const gone = (): void => {
+        left -= 1;
+        if (left <= 0) finish();
+      };
+      socket.on('error', finish);
+      socket.on('message', (message) => {
+        if (done || message.length < 8) return;
+        const tid = message.readUInt32BE(4);
+        const key = pending.get(tid);
+        if (key === undefined) return;
+        pending.delete(tid);
+        const address = addressOf.get(key);
+        if (message.readUInt32BE(0) === ACTION_CONNECT && message.length >= 16 && address !== undefined) answered.add(address);
+        gone();
+      });
+      for (const tracker of asked) {
+        const tid = transactionId();
+        pending.set(tid, tracker.key);
         socket.send(connectPacket(tid), tracker.port, tracker.host, (err) => {
           if (err !== null && err !== undefined && pending.delete(tid)) gone();
         });

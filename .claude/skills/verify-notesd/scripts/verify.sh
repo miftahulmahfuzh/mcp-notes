@@ -260,6 +260,9 @@ EOF
     NOTESD_STREAM_CACHE_DIR="$dir/data/movies/stream-cache"
     # A throwaway daemon never writes into the owner's torrent folder either.
     NOTESD_TORRENT_DIR="$dir/data/movies/torrents"
+    # A throwaway daemon never reads the public tracker lists or asks their trackers (torrent/trackerLists.ts),
+    # with or without --torrent (whose discovery is off anyway).
+    NOTESD_TORRENT_TRACKER_LISTS=off
     # Every run's tmux is the recording fake: the report button and resume never open a window in
     # the owner's tmux. TMUX_FAKE (printed below) is where its calls.log and switches live.
     NOTESD_TMUX_BIN="$HERE/stream/fake-tmux.sh"
