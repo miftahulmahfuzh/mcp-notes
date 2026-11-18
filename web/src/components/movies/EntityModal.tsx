@@ -160,7 +160,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
           </p>
         )}
         {guide !== null && (
-          <>
+          <div className="mm-ent-scroll">
             <div className={guide.entity.image_url === null ? 'mm-ent-top bare' : 'mm-ent-top'}>
               {guide.entity.image_url !== null && (
                 <div className={`mm-ent-img ${guide.entity.kind}`}>
@@ -221,7 +221,7 @@ export function EntityModal({ entity, detail, onClose, onAsk, onOpenTitle }: Ent
                 collated{guide.model == null ? '' : ` by ${guide.model}`} from a web search · stored
               </p>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>,

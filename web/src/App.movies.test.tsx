@@ -477,6 +477,39 @@ describe('App: Movies', () => {
     await waitFor(() => expect(postsTo('/api/movies/files/11/play')).toHaveLength(1));
   });
 
+  it('a play chosen in the menu says what the daemon is doing while it starts, then its outcome', async () => {
+    let release: () => void = () => {};
+    const hold = new Promise<void>((r) => (release = r));
+    const real = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/stream/play') {
+          posts.push({ url: '/api/stream/play', body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+          await hold;
+          return json({ ok: true });
+        }
+        return real(input, init);
+      }),
+    );
+    at('/movies/movie-467905');
+    render(<App />);
+    const article = await screen.findByRole('article', { name: 'How to Make a Killing' });
+    fireEvent.click(within(article).getByRole('button', { name: 'Choose how to play How to Make a Killing' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Torrent stream/ }));
+    // At once, before the daemon names a stage.
+    expect((await within(article).findByTestId('play-progress')).textContent).toBe('asking the torrents');
+    player = { ...PLAYER_IDLE, starting: [{ kind: 'movie', tmdb_id: 467905, season: null, episode: null, title: 'How to Make a Killing', provider: 'torrent', since: new Date().toISOString(), stage: 'opening 3 torrents' }] };
+    await waitFor(() => expect(within(article).getByTestId('play-progress').textContent).toMatch(/^opening 3 torrents/), { timeout: 4000 });
+    // Another title's play is not this one's.
+    player = { ...PLAYER_IDLE, starting: [{ kind: 'movie', tmdb_id: 1, season: null, episode: null, title: 'Other', provider: null, since: new Date().toISOString(), stage: 'asking the cloud providers' }] };
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(within(article).getByTestId('play-progress').textContent).toMatch(/^opening 3 torrents · \d+ s$/);
+    release();
+    await waitFor(() => expect(within(article).queryByTestId('play-progress')).toBeNull());
+    await screen.findByText('opening in the streaming Chrome, from a torrent');
+  });
+
   it('on a title page, reaching for the page folds the answer panel to its header; the panel itself, the pill and a pinned panel do not', async () => {
     at('/movies/movie-467905');
     render(<App />);

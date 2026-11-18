@@ -393,6 +393,21 @@ export interface PlayerState {
   current: PlayerSnapshot | null;
   /** The stream the player page shows now; null when none (absent from an older daemon). */
   stream?: StreamLiveSnapshot | null;
+  /** The stream plays being started: asked for and still resolving, or opened with a page that does not report yet (absent from an older daemon). */
+  starting?: StartingPlay[];
+}
+
+/** One stream play the daemon is starting, with what it is doing right now. */
+export interface StartingPlay {
+  kind: TitleKind;
+  tmdb_id: number;
+  season: number | null;
+  episode: number | null;
+  title: string;
+  provider: string | null;
+  since: string;
+  /** "asking the torrent indexes", "opening 3 torrents", "opening the player page". */
+  stage: string;
 }
 
 export interface ContinueTitleRef {
@@ -572,7 +587,7 @@ export async function fetchStatus(signal?: AbortSignal): Promise<MoviesStatusRes
 /** Phase 5's player state. Anything but `available: false` reads as available (the play route still answers `player_unavailable`). */
 export async function fetchPlayer(signal?: AbortSignal): Promise<PlayerState> {
   const p = await getJson<Partial<PlayerState>>('/api/movies/player', signal);
-  return { available: p.available !== false, reason: typeof p.reason === 'string' ? p.reason : null, current: p.current ?? null, stream: p.stream ?? null };
+  return { available: p.available !== false, reason: typeof p.reason === 'string' ? p.reason : null, current: p.current ?? null, stream: p.stream ?? null, starting: Array.isArray(p.starting) ? p.starting : [] };
 }
 
 export async function searchTmdb(q: string, kind: TitleKind, signal?: AbortSignal): Promise<TmdbHitView[]> {

@@ -32,6 +32,7 @@ import {
   streamLive,
   episodeCode,
 } from '../../lib/movies';
+import { usePlayProgress } from '../../hooks/usePlayProgress';
 import { EntityModal } from './EntityModal';
 import { EpisodeList } from './EpisodeList';
 import { EntityLink, FileRow, LiveStatus, StreamAltButton, TrailerButton } from './parts';
@@ -102,14 +103,19 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
   /** playing / paused / stalled, as on the poster in the grid; null when nothing of this title is on screen (or VLC is stopped). */
   const now = tileLive(d.id, player);
 
-  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText) => {
+  /** What a play being started was asked to do; null when none is. The line beside Play follows it (usePlayProgress). */
+  const [doing, setDoing] = useState<string | null>(null);
+  const progress = usePlayProgress(doing, d.kind, d.tmdb_id);
+  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText, what = 'starting') => {
     setBusy(true);
+    setDoing(what);
     try {
       onNotice(await act());
     } catch (e) {
       onNotice(failed(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
+      setDoing(null);
       onChanged();
     }
   };
@@ -128,6 +134,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
         return site === null ? STREAM_OPENING_NOTICE : `Playing on ${site} in the streaming Chrome window`;
       },
       (code, detail) => streamErrorText(code, detail, t, d.title),
+      'starting the stream',
     );
   };
 
@@ -275,7 +282,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
             <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
               <Play weight="duotone" />
             </button>
-            <PlayMenu detail={d} episode={null} player={player} busy={busy} streamEnabled={streamEnabled} size="page" onRun={(act, failed) => void run(act, failed)} />
+            <PlayMenu detail={d} episode={null} player={player} busy={busy} streamEnabled={streamEnabled} size="page" onRun={(act, failed, what) => void run(act, failed, what)} />
             {alt !== null && <StreamAltButton size="page" state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => streamOne(alt)} />}
             <TrailerButton target={trailerTarget(d)} onWatch={setTrailer} />
             <button
@@ -303,6 +310,11 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
               </button>
             )}
             <Stars value={rating} onRate={(v) => void rate(v)} />
+            {progress !== null && (
+              <span className="mv-live starting" role="status" data-testid="play-progress">
+                {progress}
+              </span>
+            )}
             {live !== null && <LiveStatus live={live} now={now} />}
             {streaming !== null && <LiveStatus live={streaming} now={streaming.state} place="the stream player" what={episodeCode(streaming.season, streaming.episode) || null} />}
           </div>
@@ -339,7 +351,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           streamEnabled={streamEnabled}
           onPlay={playOne}
           onStream={streamOne}
-          onRun={(act, failed) => void run(act, failed)}
+          onRun={(act, failed, what) => void run(act, failed, what)}
           onWatched={(f) => void toggleFileWatched(f)}
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}

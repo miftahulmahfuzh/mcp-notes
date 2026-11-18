@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CaretDown, Cloud, DownloadSimple, Globe, HardDrives, Magnet } from '@phosphor-icons/react';
 import { continueTitle, fetchPahe, playFile, sitePlay, streamPlay, type EpisodeView, type PlayerState, type TitleDetail } from '../../moviesApi';
-import { continueNotice, methodErrorText, playErrorText, playMenu, playPlan, primaryFile, startedNotice, STREAM_OPENING_NOTICE, streamErrorText, type PlayMethodItem, type PlayMethodKey } from '../../lib/movies';
+import { continueNotice, methodDoing, methodErrorText, playErrorText, playMenu, playPlan, primaryFile, startedNotice, STREAM_OPENING_NOTICE, streamErrorText, type PlayMethodItem, type PlayMethodKey } from '../../lib/movies';
 
 export interface PlayMenuProps {
   detail: TitleDetail;
@@ -13,7 +13,8 @@ export interface PlayMenuProps {
   /** `ibtn` beside the title's Play, `pbtn` in an episode row. */
   size?: 'row' | 'page';
   /** Runs one play: the page shows its notice, or `failed`'s text, and re-reads the title. */
-  onRun: (act: () => Promise<string>, failed?: (code: string, detail: string | null) => string) => void;
+  /** `doing` is what the page says at once, until the play answers (the daemon's own stage replaces it while a stream is being started). */
+  onRun: (act: () => Promise<string>, failed: (code: string, detail: string | null) => string, doing: string) => void;
 }
 
 /** Whether a play menu is open: its Esc closes the menu, not the pop-up it is in. */
@@ -63,6 +64,7 @@ export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size
   const choose = (item: PlayMethodItem) => {
     setOpen(false);
     const key = item.key;
+    const doing = methodDoing(key, item.label);
     const target = menu.target;
     if (key === 'file') {
       const file = episode !== null ? primaryFile(episode) : null;
@@ -71,7 +73,7 @@ export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size
         if (file !== null) return startedNotice(file, await playFile(file.id));
         if (plan.kind === 'file') return startedNotice(plan.file, await playFile(plan.file.id));
         return continueNotice(await continueTitle(d.id));
-      }, playErrorText);
+      }, playErrorText, doing);
       return;
     }
     if (key === 'pahe') {
@@ -94,7 +96,7 @@ export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size
           tab?.close();
           throw e;
         }
-      }, methodErrorText);
+      }, methodErrorText, doing);
       return;
     }
     if (target === null) return;
@@ -105,13 +107,14 @@ export function PlayMenu({ detail: d, episode, player, busy, streamEnabled, size
           return `${STREAM_OPENING_NOTICE}${key === 'torrent' ? ', from a torrent' : ', from a cloud provider'}`;
         },
         (code, detail) => (code === 'no_source' ? `no ${key === 'torrent' ? 'torrent' : 'cloud provider'} could stream ${what} now` : streamErrorText(code, detail, target, d.title)),
+        doing,
       );
       return;
     }
     onRun(async () => {
       await sitePlay(d.id, key, target.ref.kind === 'tv' ? { season: target.ref.season, episode: target.ref.episode } : null);
       return `Playing ${what} on ${item.label} in the streaming Chrome window`;
-    }, methodErrorText);
+    }, methodErrorText, doing);
   };
 
   return (

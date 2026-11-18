@@ -22,6 +22,9 @@ import {
   playLabel,
   playMenu,
   playPlan,
+  playProgressText,
+  startingStage,
+  methodDoing,
   guideCountLine,
   guideTitleLine,
   opensGuide,
@@ -430,5 +433,26 @@ describe('the pop-up of a name', () => {
     expect(guideCountLine([t({})])).toBe('1 title');
     expect(guideTitleLine(t({ kind: 'tv', note: 'as Ruth' }))).toBe('2020 · series · as Ruth');
     expect(guideTitleLine(t({ year: null }))).toBe('undated');
+  });
+});
+
+describe('a play being started', () => {
+  const starting = (tmdb_id: number, stage: string) => ({ kind: 'movie' as const, tmdb_id, season: null, episode: null, title: 'T', provider: null, since: '2026-11-18T12:00:00.000Z', stage });
+
+  it("reads this title's stage from the player state, the newest when it has two, and none of another title's", () => {
+    expect(startingStage(null, 'movie', 5)).toBeNull();
+    expect(startingStage(PLAYER_IDLE, 'movie', 5)).toBeNull();
+    const p = { ...PLAYER_IDLE, starting: [starting(5, 'asking the torrent indexes'), starting(6, 'asking VidRock'), starting(5, 'opening 3 torrents')] };
+    expect(startingStage(p, 'movie', 5)).toBe('opening 3 torrents');
+    expect(startingStage(p, 'tv', 5)).toBeNull();
+    expect(startingStage(p, 'movie', 7)).toBeNull();
+  });
+
+  it('says what was asked until a stage is named, with the seconds once it takes a moment', () => {
+    expect(playProgressText('asking the torrents', null, 0)).toBe('asking the torrents');
+    expect(playProgressText('asking the torrents', null, 3)).toBe('asking the torrents · 3 s');
+    expect(playProgressText('asking the torrents', 'opening 3 torrents', 7)).toBe('opening 3 torrents · 7 s');
+    expect(methodDoing('torrent', 'Torrent stream')).toBe('asking the torrents');
+    expect(methodDoing('idlix', 'Idlix')).toMatch(/^starting it on Idlix/);
   });
 });

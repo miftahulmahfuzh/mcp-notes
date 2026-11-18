@@ -32,6 +32,7 @@ import { isConfirmOpen } from '../ConfirmDialog';
 import { isLightboxOpen } from '../Lightbox';
 import { isEditorOpen } from '../NoteEditor';
 import { PLAY_POLL_MS } from '../../hooks/useMovies';
+import { usePlayProgress } from '../../hooks/usePlayProgress';
 import { isPageVisible } from '../../lib/pageActive';
 import { LiveStatus } from './parts';
 import { isPlayMenuOpen, PlayMenu } from './PlayMenu';
@@ -60,6 +61,9 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  /** What a play being started was asked to do; the line beside Play follows the daemon's stage while it is set. */
+  const [doing, setDoing] = useState<string | null>(null);
+  const progress = usePlayProgress(doing, detail?.kind ?? 'movie', detail?.tmdb_id ?? 0);
   const playing = anyLive(player);
 
   useEffect(() => {
@@ -127,14 +131,16 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
   }
 
   /** One play: its notice beside the button, or why it did not start; the pop-up re-reads either way. */
-  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText) => {
+  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText, what = 'starting') => {
     setBusy(true);
+    setDoing(what);
     try {
       setNotice(await act());
     } catch (e) {
       setNotice(failed(errorCode(e), errorDetail(e)));
     } finally {
       setBusy(false);
+      setDoing(null);
       setTick((t) => t + 1);
     }
   };
@@ -149,6 +155,7 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
           return site === null ? STREAM_OPENING_NOTICE : `Playing on ${site} in the streaming Chrome window`;
         },
         (c, d) => streamErrorText(c, d, target, detail.title),
+        'starting the stream',
       );
     } else if (action.kind === 'vlc') {
       if ('file' in action) void run(async () => startedNotice(action.file, await playFile(action.file.id)));
@@ -237,8 +244,12 @@ export function MovieModal({ movieId, onClose, onOpenPage }: MovieModalProps) {
                 <button type="button" className="ibtn on mv-play" data-tip={play.label} data-tip-side="below" aria-label={play.label} disabled={play.disabled || busy} onClick={start}>
                   <Play weight="duotone" />
                 </button>
-                <PlayMenu detail={detail} episode={episode} player={player} busy={busy} streamEnabled size="page" onRun={(act, failed) => void run(act, failed)} />
-                {live !== null ? (
+                <PlayMenu detail={detail} episode={episode} player={player} busy={busy} streamEnabled size="page" onRun={(act, failed, what) => void run(act, failed, what)} />
+                {progress !== null ? (
+                  <span className="mv-live starting" role="status" data-testid="play-progress">
+                    {progress}
+                  </span>
+                ) : live !== null ? (
                   <LiveStatus live={live} now={now} what={liveEpisode !== null ? episodeCode(liveEpisode.season, liveEpisode.episode) : null} />
                 ) : streaming !== null ? (
                   <LiveStatus live={streaming} now={streaming.state} place="the stream player" what={episode === null ? episodeCode(streaming.season, streaming.episode) || null : null} />

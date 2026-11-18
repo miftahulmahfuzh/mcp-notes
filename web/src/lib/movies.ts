@@ -475,6 +475,26 @@ export function playMenu(d: TitleDetail, episode: EpisodeView | null, player: Pl
   return { code, target, items };
 }
 
+/** What the daemon is doing right now to start a stream of this title (`GET /api/movies/player` `starting`); null when it starts none. */
+export function startingStage(player: PlayerState | null, kind: TitleKind, tmdbId: number): string | null {
+  const mine = (player?.starting ?? []).filter((p) => p.kind === kind && p.tmdb_id === tmdbId);
+  return mine.length === 0 ? null : mine[mine.length - 1]!.stage;
+}
+
+/** The line beside Play while a play is being started: the daemon's stage when it names one, else what was asked, and how long it has taken. */
+export function playProgressText(doing: string, stage: string | null, seconds: number): string {
+  return `${stage ?? doing}${seconds >= 2 ? ` · ${seconds} s` : ''}`;
+}
+
+/** What a play menu row says the moment it is chosen, until the daemon names a stage. */
+export function methodDoing(key: PlayMethodKey, label: string): string {
+  if (key === 'file') return 'opening VLC';
+  if (key === 'pahe') return 'searching pahe.ink';
+  if (key === 'cloud') return 'asking the cloud providers';
+  if (key === 'torrent') return 'asking the torrents';
+  return `starting it on ${label}: the site's own countdown can take a minute`;
+}
+
 /** What a failed play on a streaming site or a failed pahe search says. */
 export function methodErrorText(code: string, detail: string | null): string {
   if (code === 'streaming_off') return 'the streaming sites are off on this machine';
