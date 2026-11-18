@@ -3,6 +3,12 @@
   "coordinator": "orch-wider-torrent-sources",
   "coordinator_session_id": "59e79288-bdba-4074-9418-f87f206d79bf",
   "created": "2026-11-19T03:21:50+07:00",
+  "landed": {
+    "at": "2026-11-19T03:45:13+07:00",
+    "base": "main",
+    "commit": "dba5c65727003ad34d3500f6fee2e97e4b95c08f",
+    "machine": "pc"
+  },
   "phases": [
     {
       "card": null,
@@ -10,10 +16,10 @@
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 1,
-      "note": "TorrentsDB + Peerflix Stremio add-on indexes added (branch phase-1-wider-torrent-sources, 21 files); decided: applied in the per-phase worktree the swarm launched, not the set worktree the index names; coordinator index copy not ticked (outside worktree); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/1119-032642-2647977/evidence/p1",
+      "note": "self-verified (owner verifier-cost feedback; proof verified-first-pass); file list = write set + bookkeeping; fast-forwarded onto the set branch at 5c2cd6d (single commit on the base, tree the phase ran green)",
       "package": "src/directStream/torrent/find",
       "plan": ".workflows/plan/wider-torrent-sources/phase-1.md",
-      "reported_at": "2026-11-19T03:29:37+07:00",
+      "reported_at": "2026-11-19T03:45:08+07:00",
       "satisfies": [
         "R2"
       ],
@@ -29,10 +35,10 @@
       ],
       "difficulty": "HARD",
       "n": 2,
-      "note": "Knaben, Bitsearch, torrents-csv asked by title beside the IMDb-keyed indexes, strict title-search fit in rank.ts; plan index not ticked (main checkout, coordinator's); neighbor torrent.sh needs a fresh daemon, not the J4 run (J4's play leaves the cloud failure remembered); proof: verified-first-pass /home/miftah/.local/state/notesd-verify/evidence-wider-torrent-sources-p2",
+      "note": "self-verified (owner verifier-cost feedback; proof verified-first-pass J1-J4); file list = write set + bookkeeping; fast-forwarded at 4b01537",
       "package": "src/directStream/torrent/find",
       "plan": ".workflows/plan/wider-torrent-sources/phase-2.md",
-      "reported_at": "2026-11-19T03:35:52+07:00",
+      "reported_at": "2026-11-19T03:45:08+07:00",
       "satisfies": [
         "R1"
       ],
@@ -42,18 +48,18 @@
     },
     {
       "card": null,
-      "commit": null,
+      "commit": "6bedc59568463bc70b3d5294d18908721d09e410",
       "depends_on": [],
       "difficulty": "NORMAL",
       "n": 3,
-      "note": null,
+      "note": "self-verified (owner verifier-cost feedback; proof verified-after-fix J1-J5); file list = write set + tests/unit/config.test.ts (whole-config pin) + bookkeeping; integrated at a8f9393 (typecheck, npm test 4174, docs:check green; test:int 1024/1025: movies.play.int VLC waitFor timing flake, passed 3/3 alone, merge touches no movies code -> accepted, rung 1)",
       "package": "src/directStream/torrent",
       "plan": ".workflows/plan/wider-torrent-sources/phase-3.md",
-      "reported_at": null,
+      "reported_at": "2026-11-19T03:45:08+07:00",
       "satisfies": [
         "R3"
       ],
-      "status": "spawned",
+      "status": "done",
       "task_id": "P1-NOTES-A138",
       "title": "Daily verified public tracker lists"
     }
@@ -61,6 +67,6 @@
   "plan": "/home/miftah/mcp-notes/.workflows/orchestration/wider-torrent-sources/PLAN.md",
   "repo": "/home/miftah/mcp-notes",
   "slug": "wider-torrent-sources",
-  "updated": "2026-11-19T03:35:52+07:00",
+  "updated": "2026-11-19T03:45:13+07:00",
   "worktree": "/home/miftah/.worktrees/mcp-notes/wider-torrent-sources"
 }
