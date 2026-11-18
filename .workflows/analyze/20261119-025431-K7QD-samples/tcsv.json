@@ -1,0 +1,38 @@
+{
+  "torrents": [
+    {
+      "infohash": "e0d00667650aba9ee05aacbbbd8b55ea8a51f534",
+      "name": "The Shawshank Redemption (1994) 1080p BrRip - 1.6GB - YIFY",
+      "size_bytes": 1722274049,
+      "created_unix": 1330223822,
+      "seeders": 627,
+      "leechers": 159,
+      "completed": 33104,
+      "scraped_date": 1792916114,
+      "id": 1415
+    },
+    {
+      "infohash": "c3da9a3dc2ce14d0d4fc0e87d1b2023502f8dcd6",
+      "name": "The Shawshank Redemption (1994) [2160p] [4K] [BluRay] [HDR] [5.1] [YTS.MX]",
+      "size_bytes": 7414303935,
+      "created_unix": 1675904921,
+      "seeders": 187,
+      "leechers": 120,
+      "completed": 5755,
+      "scraped_date": 1792927868,
+      "id": 5609
+    },
+    {
+      "infohash": "9d03cb643f0a22c2aa7cf5479da2b81d19300362",
+      "name": "The Shawshank Redemption (1994) RM4K (1080p BluRay x265 HEVC 10b",
+      "size_bytes": 9256855604,
+      "created_unix": 1642422564,
+      "seeders": 153,
+      "leechers": 46,
+      "completed": 1258,
+      "scraped_date": 1792934067,
+      "id": 7632
+    }
+  ],
+  "next": 1036012
+}
