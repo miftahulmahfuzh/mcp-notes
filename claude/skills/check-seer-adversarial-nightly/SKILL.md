@@ -1,7 +1,7 @@
 ---
 name: check-seer-adversarial-nightly
 description: Use when the user types "/check-seer-adversarial-nightly", or asks whether Seer's GitHub nightly is healthy, whether Seer Adversarial will have results today, or when (in WIB) the Adversarial verdicts will show up. Checks the Seer nightly workflow for problems (Seer Adversarial depends on it), saves one concise note per problem linked to the current Claude Code session, and tells the user the WIB time to expect today's Adversarial results, or why there will be none.
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # /check-seer-adversarial-nightly
