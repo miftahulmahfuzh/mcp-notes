@@ -1,11 +1,12 @@
-# Streaming and download sites (pahe, idlix, lk21, flicksy) and the direct-streaming resolver
+# Streaming and download sites (pahe, idlix, lk21, flicksy, dramacool) and the direct-streaming resolver
 
 ## Sub-features
 - `/pahe <title>`: links to a title's releases on pahe.ink. Parser proven by
   `npx vitest run tests/unit/scripts/paheSearch.test.ts`; live by
   `node claude/skills/pahe/search.mjs no other choice` (free, reads pahe.ink). The chat bar's side
   is prompt text (`tests/unit/chat-prompt.test.ts`).
-- `/idlix`, `/lk21`, `/flicksy`: find a title, and start a single matching film full screen. Matching and
+- `/idlix`, `/lk21`, `/flicksy`, `/dramacool`: find a title, and start a single matching film (on
+  dramacool, one episode) full screen. Matching and
   result building proven by `npx vitest run tests/unit/scripts/streamingSites.test.ts`.
 - `streaming_find`, `streaming_play` (MCP, chat bar): proven with a fake runner by
   `npx vitest run tests/unit/mcp.streamingTools.test.ts tests/unit/streaming.test.ts`; the chat
@@ -50,7 +51,7 @@ has no surface of its own: `/direct-stream` and the Stream side of `/movies` run
 
 ## Gotchas
 - The sites change. A failing live run with passing unit tests means the site moved host
-  (`IDLIX_ORIGIN`, `LK21_ORIGIN`, `FLICKSY_ORIGIN`) or changed its page: follow
+  (`IDLIX_ORIGIN`, `LK21_ORIGIN`, `FLICKSY_ORIGIN`, `DRAMACOOL_ORIGIN`) or changed its page: follow
   `claude/skills/create-streaming-skill` to look again.
 - Never test against the owner's everyday Chrome. The scripts use their own profile folder.
 - A resolve that fails with passing unit tests usually means a provider moved or added a check:
@@ -61,5 +62,5 @@ has no surface of its own: `/direct-stream` and the Stream side of `/movies` run
 - The sniffer's tab is a background tab, which Chrome treats as hidden: it drops mouse events sent
   to it and never reports its title. `sniff.ps1` therefore turns on focus emulation for that tab
   and asks the page for `document.title`. Without either, the fixture run ends `no_stream` twice.
-- Starting an `/idlix`, `/lk21` or `/flicksy` film closes every other tab in the streaming Chrome, a
+- Starting an `/idlix`, `/lk21`, `/flicksy` or `/dramacool` film closes every other tab in the streaming Chrome, a
   resolver's tab included: that resolve answers `no_stream` for the provider it was on.

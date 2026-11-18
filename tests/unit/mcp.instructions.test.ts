@@ -298,7 +298,7 @@ describe('buildInstructions: Streaming', () => {
     const paragraphs = text.split('\n\n').filter((p) => p.startsWith('Streaming.'));
     expect(paragraphs).toHaveLength(1);
     const p = paragraphs[0]!;
-    for (const word of ['streaming_find', 'streaming_play', 'idlix', 'lk21', 'flicksy', 'only when the user asks to watch, play or put something on', 'never a link you built', 'F11']) {
+    for (const word of ['streaming_find', 'streaming_play', 'idlix', 'lk21', 'flicksy', 'dramacool', 'streaming_play needs episode on it', 'only when the user asks to watch, play or put something on', 'never a link you built', 'F11']) {
       expect(p).toContain(word);
     }
   });

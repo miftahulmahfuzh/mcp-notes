@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Connectors, daily-words (`/v`, `/j`) | `docs/guide/connectors.md` |
 | Seer Adversarial (`/adversary`) | `docs/guide/adversary.md` |
 | Movies (`/movies`), VLC | `docs/guide/movies.md` |
-| Streaming and download sites (`/pahe`, `/idlix`, `/lk21`, `/flicksy`) | `docs/guide/streaming.md` |
+| Streaming and download sites (`/pahe`, `/idlix`, `/lk21`, `/flicksy`, `/dramacool`) | `docs/guide/streaming.md` |
 | Wiring, data model, disk layout, limitations | `docs/guide/architecture.md` |
 | Install, tests, docs tooling | `docs/guide/install.md` |
 | Tools, routes, settings | `docs/guide/reference/{mcp-tools,http-api,configuration}.md` |
@@ -91,7 +91,7 @@ The rules that are easy to break. The guides have the rest.
   - `TrendingRepo` is the only writer of `stream_trending`, per host; a build replaces the host's rows. The list holds no watch state: `GET /api/movies/trending` reads seen, started, watched and not-interested from `movie_titles` at each request (`isFreshForTrending`), so a mark takes a title off at once. Never copy a mark into the list.
   - A probe is `TorrentStreams.peek`: join the swarm for its file list only, select nothing, write no `stream_torrents` row, leave. "Confirmed" means a peer sent a file list with a video, never that it plays; the seed count is the index's claim. Nothing is probed while a play exists (`busy`).
   - Plain requests that say they are notesd, like the finder's; never a disguised client for a bot check. `NOTESD_TRENDING=off` (or a missing movie library, direct streaming, torrents or TMDB) is a `DisabledTrending`: nothing is asked. Tests use `TrendingJob` with injected sources, TMDB, peek and clock.
-- **Streaming sites** (`claude/streaming/*`): one command, `cli.mjs`, with a module per site in `sites/`. The `/idlix`, `/lk21` and `/flicksy` skills and the daemon's `streaming_find` / `streaming_play` tools (`src/mcp/streamingTools.ts`, through `scriptRunner` in `src/streaming/service.ts`) all run it; nothing else talks to a site.
+- **Streaming sites** (`claude/streaming/*`): one command, `cli.mjs`, with a module per site in `sites/`. The `/idlix`, `/lk21`, `/flicksy` and `/dramacool` skills and the daemon's `streaming_find` / `streaming_play` tools (`src/mcp/streamingTools.ts`, through `scriptRunner` in `src/streaming/service.ts`) all run it; nothing else talks to a site.
   - Playing drives a real Chrome on Windows through `cdp.ps1` (PowerShell, because WSL cannot reach Windows loopback), with its own profile folder. Never the owner's everyday Chrome, never a Chrome it did not start, and never a disguised client to get past a site's bot check.
   - A link counts only when a site's search returned it; a film starts only when asked, and only when exactly one film matches.
   - A new site follows `claude/skills/create-streaming-skill`, and is added to `sites/index.mjs` and `STREAMING_SITES` together (a test compares them). Tests use a fake runner; `deps.streaming` unset answers `streaming_off`.

@@ -19,7 +19,7 @@ const FIND_DESCRIPTION =
   'Pass the title, and the release year when you know it. Omit site to ask every site at once. ' +
   'Each site answers with matches (the results whose English or original name is the asked title, and whose year is the asked year when one was given; ' +
   'each has title, kind movie or series, year, quality or seasons, and url) and others (a few other results, mostly unrelated: use them only to offer a near miss, and say it is not exact). ' +
-  'For one episode of a series pass episode, and season when the owner named one: a site that plays episodes (idlix) then answers episode { season, episode, name, url, title } when exactly one matching series has it, ' +
+  'For one episode of a series pass episode, and season when the owner named one: a site that plays episodes (idlix, dramacool) then answers episode { season, episode, name, url, title } when exactly one matching series has it, ' +
   'since a long anime numbers its episodes through the seasons (One Piece 787 is in season 18) and the site says where; otherwise episode is null and episode_candidates lists the ones that fit. ' +
   'A site that could not be asked answers ok: false with an error; say which site and do not guess a link. ' +
   'Never build a link yourself: a link counts only when this tool returned it. This tool only looks; nothing opens on screen.';
@@ -35,6 +35,7 @@ const PLAY_DESCRIPTION =
   'One episode of a series ("/idlix one piece 787", "play La Brea season 2 episode 3 on idlix") is title with episode, and season only when the owner named one: the episode starts when exactly one matching series has it, and episode says which season it is in. ' +
   'Then skipped_play can also be no_episode (no matching series has that episode), several_episodes (list episode_candidates with their series and season and ask which, then call again with that one\'s url), ' +
   'no_video (the site lists the episode without a video) or no_episodes (this site does not play episodes: lk21, flicksy). ' +
+  'On dramacool (Asian dramas) every title is a list of episodes, so episode is always needed there ("/dramacool summer vacation 3"; a film is episode 1), and a later season is a title of its own ("Love Wins All Season 2"). ' +
   'play.playing true means the film is on screen; with false, stage or error says where it stopped (a hidden or minimized window stops a countdown; calling again starts over). ' +
   'Tell the owner it plays in the streaming Chrome window and that F11 leaves full screen. Works only on the machine with Windows Chrome.';
 
@@ -77,8 +78,8 @@ async function findOnSite(runner: StreamingRunner, site: StreamingSite, title: s
 
 /**
  * The streaming tools: find a title on the streaming sites, and start a film full screen. Both
- * run claude/streaming/cli.mjs through `deps.streaming`, the same command the /idlix, /lk21 and /flicksy
- * skills run. Without it both answer streaming_off.
+ * run claude/streaming/cli.mjs through `deps.streaming`, the same command the /idlix, /lk21,
+ * /flicksy and /dramacool skills run. Without it both answer streaming_off.
  */
 export function registerStreamingTools(server: McpServer, deps: Pick<ToolDeps, 'streaming'>): void {
   server.registerTool(

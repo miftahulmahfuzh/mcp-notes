@@ -12,6 +12,8 @@ import lk21, { START_PLAYER_EXPRESSION, searchHost, splitTitle, toResult as lk21
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import flicksy, { startPlayerExpression, toResult as flicksyResult } from '../../../claude/streaming/sites/flicksy.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
+import dramacool, { FIND_FRAME_EXPRESSION, decodeEntities, frameMatchOf, parseEpisodes, parseSearch, seasonOfPage, splitTitle as dramacoolTitle, startPlayerExpression as dramacoolPlayer, toResult as dramacoolResult } from '../../../claude/streaming/sites/dramacool.mjs';
+// @ts-expect-error -- plain .mjs scripts without type declarations
 import { SITES } from '../../../claude/streaming/sites/index.mjs';
 
 const parses = (expression: string): void => {
@@ -291,5 +293,102 @@ describe('flicksy', () => {
     expect(expression.match(/\w+\.click\(\)/g)).toEqual(['button.click()']);
     expect(expression).toContain('button[aria-label="Play Stream"]');
     expect(expression).toContain('"/embed/572468"');
+  });
+});
+
+describe('dramacool', () => {
+  const ORIGIN = 'https://dramacool9.com.ro';
+  // Cut from the search page (/?s=) and a title's page as the site answered on 2026-11-18.
+  const SEARCH_HTML = `
+    <ul class="box">
+      <li><a class="mask" href="https://dramacool9.com.ro/summer-vacation-2026" title="Summer Vacation (2026)"><img data-original="x.jpg" class="lazy wp-post-image" alt="" /><h3>Summer Vacation (2026)</h3><span class="time">3 weeks ago</span></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/love-wins-all-season-2-2026" title="Love Wins All Season 2 (2026)"><h3>Love Wins All Season 2 (2026)</h3></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/love-wins-all-2025" title="Love Wins All (2025)"><h3>Love Wins All (2025)</h3></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/lovers-gangsters-2026" title="Lovers &#038; Gangsters (2026)"><h3>Lovers &#038; Gangsters (2026)</h3></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/concrete-market-movie-2025" title="Concrete Market (Movie) (2025)"><h3>Concrete Market (Movie) (2025)</h3></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/devils-stay-un" title="Devils Stay"><h3>Devils Stay</h3></a></li>
+      <li><a class="mask" href="https://elsewhere.example/summer-vacation-2026" title="Elsewhere (2026)"><h3>Elsewhere (2026)</h3></a></li>
+      <li><a class="mask" href="https://dramacool9.com.ro/genre/youth" title="Youth"><h3>Youth</h3></a></li>
+    </ul>
+    <a title="Youth" href="https://dramacool9.com.ro/genre/youth">Youth</a>`;
+  const TITLE_HTML = `
+    <div id="episode-list" class="block"><div id="all-episodes"><ul class="list">
+      <li><span class="sub subbed">SUB</span><h3><a href='https://dramacool9.com.ro/summer-vacation-2026-episode-8.html' title='Summer Vacation (2026) Episode 8'>Summer Vacation (2026) Episode 8</a></h3></li>
+      <li><h3><a href='https://dramacool9.com.ro/summer-vacation-2026-episode-3.html' title='Summer Vacation (2026) Episode 3'>Summer Vacation (2026) Episode 3</a></h3></li>
+      <li><h3><a href='https://elsewhere.example/summer-vacation-2026-episode-4.html' title='Summer Vacation (2026) Episode 4'>x</a></h3></li>
+      <li><h3><a href='https://dramacool9.com.ro/summer-vacation-2026' title='Summer Vacation (2026)'>x</a></h3></li>
+    </ul></div><!--all-episodes--></div>
+    <li><a href="https://dramacool9.com.ro/god-of-eternity-2026-episode-35.html" title="God of Eternity (2026) Episode 35">God of Eternity (2026) Episode 35</a></li>`;
+  const results = parseSearch(SEARCH_HTML).map((item: unknown) => dramacoolResult(item, ORIGIN)).filter(Boolean);
+
+  it('reads the result cards, and keeps only title pages on the site itself', () => {
+    expect(parseSearch(SEARCH_HTML)).toHaveLength(8);
+    expect(results.map((r: { url: string }) => r.url)).toEqual([
+      'https://dramacool9.com.ro/summer-vacation-2026',
+      'https://dramacool9.com.ro/love-wins-all-season-2-2026',
+      'https://dramacool9.com.ro/love-wins-all-2025',
+      'https://dramacool9.com.ro/lovers-gangsters-2026',
+      'https://dramacool9.com.ro/concrete-market-movie-2025',
+      'https://dramacool9.com.ro/devils-stay-un',
+    ]);
+    expect(results[0]).toEqual({
+      title: 'Summer Vacation (2026)',
+      name: 'Summer Vacation',
+      original_name: null,
+      year: 2026,
+      kind: 'series',
+      quality: null,
+      seasons: null,
+      url: 'https://dramacool9.com.ro/summer-vacation-2026',
+    });
+    expect(results[3]).toMatchObject({ title: 'Lovers & Gangsters (2026)', name: 'Lovers & Gangsters' });
+    expect(results[4]).toMatchObject({ name: 'Concrete Market', original_name: 'Movie', year: 2025 });
+    expect(results[5]).toMatchObject({ title: 'Devils Stay', year: null });
+    expect(dramacoolResult({ title: 'No Address' }, ORIGIN)).toBeNull();
+    expect(parseSearch('<p>Sorry, but nothing matched your search terms.</p>')).toEqual([]);
+  });
+
+  it('finds a later season under the series name and under its full name', () => {
+    expect(dramacoolTitle('Love Wins All Season 2 (2026)')).toEqual({ name: 'Love Wins All', full_name: 'Love Wins All Season 2', other_name: null, year: 2026, season: 2 });
+    expect(pickMatches(results, { name: 'love wins all', year: null }).matches.map((r: { year: number }) => r.year)).toEqual([2026, 2025]);
+    expect(pickMatches(results, { name: 'love wins all season 2', year: null }).matches.map((r: { year: number }) => r.year)).toEqual([2026]);
+    expect(pickMatches(results, { name: 'summer vacation', year: 2025 }).matches).toHaveLength(0);
+    expect(seasonOfPage('https://dramacool9.com.ro/love-wins-all-season-2-2026')).toBe(2);
+    expect(seasonOfPage('https://dramacool9.com.ro/love-wins-all-2025')).toBe(1);
+    expect(decodeEntities('Iroha&#8217;s &amp; &#x41; &unknown;')).toBe('Iroha’s & A &unknown;');
+  });
+
+  it("lists only the episodes a title's own page links, on the site itself", () => {
+    expect(parseEpisodes(TITLE_HTML, ORIGIN)).toEqual([
+      { episode: 8, url: 'https://dramacool9.com.ro/summer-vacation-2026-episode-8.html' },
+      { episode: 3, url: 'https://dramacool9.com.ro/summer-vacation-2026-episode-3.html' },
+    ]);
+    expect(parseEpisodes('<div id="all-episodes"></div><!--all-episodes-->', ORIGIN)).toEqual([]);
+    expect(parseEpisodes('<p>no list</p>', ORIGIN)).toEqual([]);
+  });
+
+  it('asks for no page when the season is not the title\'s, and refuses a page that is not a title', async () => {
+    expect(await dramacool.episodes(`${dramacool.origin}/love-wins-all-2025`, { season: 2, episode: 1 })).toEqual([]);
+    await expect(dramacool.episodes('https://elsewhere.example/x-2025', { season: null, episode: 1 })).rejects.toThrow(/not a title page/);
+    await expect(dramacool.episodes(`${dramacool.origin}/genre/youth`, { season: null, episode: 1 })).rejects.toThrow(/not a title page/);
+  });
+
+  it("plays only an episode's page on the site itself", () => {
+    expect(dramacool.titlePath(`${dramacool.origin}/summer-vacation-2026-episode-3.html`)).toBe('/summer-vacation-2026-episode-3.html');
+    expect(dramacool.titlePath(`${dramacool.origin}/summer-vacation-2026`)).toBeNull();
+    expect(dramacool.titlePath(`${dramacool.origin}/genre/x-episode-3.html`)).toBeNull();
+    expect(dramacool.titlePath('https://elsewhere.example/summer-vacation-2026-episode-3.html')).toBeNull();
+  });
+
+  it("ships expressions that parse, check the frame's address and press only the player's own play", () => {
+    parses(FIND_FRAME_EXPRESSION);
+    expect(FIND_FRAME_EXPRESSION).toContain('#video-frame');
+    expect(FIND_FRAME_EXPRESSION).not.toMatch(/\.click\(\)/);
+    const expression = dramacoolPlayer('https://vidbasic.top/embed/e3meaiw4vgk');
+    parses(expression);
+    expect(expression.match(/\w+\.click\(\)/g)).toEqual(['button.click()']);
+    expect(expression).toContain('.jw-icon-display');
+    expect(expression).toContain('"https://vidbasic.top/embed/e3meaiw4vgk"');
+    expect(frameMatchOf('https://vidbasic.top/embed/e3meaiw4vgk')).toBe('vidbasic\\.top');
   });
 });

@@ -330,7 +330,7 @@ src/
   cli/          embed:backfill and embed:images:backfill
 web/            the Vite + React app (web/src) and the full-screen page
 drizzle/        SQL migrations
-claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, flicksy, create-streaming-skill, direct-stream, update-cloud-source, report-stream-bug), streaming/ (the streaming sites), hooks/, mods/note-links
+claude/         skills/ (n, migrate, v, j, redo, check-seer-adversarial-nightly, trace-vlc-bug, pahe, idlix, lk21, flicksy, dramacool, create-streaming-skill, direct-stream, update-cloud-source, report-stream-bug), streaming/ (the streaming sites), hooks/, mods/note-links
 deploy/         the systemd user unit template
 scripts/        install, uninstall, hook settings merge, test-int, windows/ keepalive, docs/ tooling
 tests/          unit/, integration/, live/, fixtures/, helpers/
