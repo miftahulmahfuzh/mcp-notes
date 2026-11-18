@@ -455,7 +455,9 @@ would carry on with, and the menu's first line names it (`play S01E03 from`).
   `opening the player page`), with the seconds it has taken. The page reads it from
   `GET /api/movies/player` (`starting`) once a second, only while a play is being started, on the
   title's page and in the movie pop-up alike. A streaming site reports no stages, so its row
-  says that the site's countdown can take a minute.
+  says that the site's countdown can take a minute. A play started from an episode's row (its
+  Play, its stream icon or its play menu) shows the same line on that row too, where the click
+  was, since the big Play is out of sight from the episode list.
 - **A site that cannot start it says why**: the site does not list it, lists several titles of
   that name (name one with `/idlix` in chat), or has no such episode.
 - The movie pop-up has the same caret. There, Play itself streams a title that has no file here,

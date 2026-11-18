@@ -14,10 +14,13 @@ export interface EpisodeListProps {
   /** `stream`: every season is listed and an episode without a file here streams (verified when clicked). */
   side: MoviesSide;
   streamEnabled: boolean;
-  onPlay: (f: FileView) => void;
-  onStream: (t: StreamTarget) => void;
+  /** `at`: the code of the episode row the play was started from (S01E03), so its line can follow the play; a file with no episode has none. */
+  onPlay: (f: FileView, at?: string) => void;
+  onStream: (t: StreamTarget, at: string) => void;
   /** Runs a play chosen in an episode's play menu. Left out, the rows have no menu. */
-  onRun?: PlayMenuProps['onRun'];
+  onRun?: EpisodeRun;
+  /** The play being started from one of these rows: the row's code and the line that follows it (usePlayProgress). Null: none. */
+  starting?: { at: string; text: string } | null;
   onWatched: (f: FileView) => void;
   /** Marks every episode of a season finished, or clears the marks (the page offers an undo). */
   onSeasonWatched: (season: number, watched: boolean) => void;
@@ -28,6 +31,9 @@ export interface EpisodeListProps {
   /** Opens an episode's story (StoryModal). Left out, the rows have no book icon. */
   onStory?: (e: EpisodeView) => void;
 }
+
+/** A play menu's run, with the code of the row it was chosen on. */
+export type EpisodeRun = (...args: [...Parameters<PlayMenuProps['onRun']>, at: string]) => void;
 
 /** A season counts as finished when every episode is, by a play, a file flag or the owner's mark. */
 function seasonFinished(episodes: readonly EpisodeView[]): boolean {
@@ -82,7 +88,7 @@ function SeasonFoldButton({ name, folded, onToggle }: { name: string; folded: bo
 }
 
 /** A series' seasons (Library: those with a file on any machine; Stream: all), each with its trailer and every episode with its progress, flags and play icons; then files with no episode. */
-export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory }: EpisodeListProps) {
+export function EpisodeList({ detail, player, focus = null, busy, side, streamEnabled, onPlay, onStream, onRun, starting = null, onWatched, onSeasonWatched, onEpisodeWatched, onTrailer, onStory }: EpisodeListProps) {
   const { seasons, hidden } = seasonsShown(detail, focus, side);
   const list = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => readCollapsed(detail.id));
@@ -133,6 +139,7 @@ export function EpisodeList({ detail, player, focus = null, busy, side, streamEn
                 onPlay={onPlay}
                 onStream={onStream}
                 onRun={onRun}
+                starting={starting !== null && starting.at === episodeCode(e.season, e.episode) ? starting.text : null}
                 onWatched={onWatched}
                 onEpisodeWatched={onEpisodeWatched}
                 onStory={onStory}
@@ -164,15 +171,17 @@ interface EpisodeItemProps {
   busy: boolean;
   side: MoviesSide;
   streamEnabled: boolean;
-  onPlay: (f: FileView) => void;
-  onStream: (t: StreamTarget) => void;
-  onRun?: PlayMenuProps['onRun'] | undefined;
+  onPlay: (f: FileView, at: string) => void;
+  onStream: (t: StreamTarget, at: string) => void;
+  onRun?: EpisodeRun | undefined;
+  /** What the play started from this row is doing; null when none is. */
+  starting: string | null;
   onWatched: (f: FileView) => void;
   onEpisodeWatched: (e: EpisodeView, watched: boolean) => void;
   onStory?: ((e: EpisodeView) => void) | undefined;
 }
 
-function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onRun, onWatched, onEpisodeWatched, onStory }: EpisodeItemProps) {
+function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEnabled, onPlay, onStream, onRun, starting, onWatched, onEpisodeWatched, onStory }: EpisodeItemProps) {
   const code = episodeCode(e.season, e.episode);
   const file = primaryFile(e);
   const act = episodeAction(detail, e, side);
@@ -221,6 +230,11 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
             {TILE_LIVE_LABEL[live]}
           </span>
         )}
+        {starting !== null && (
+          <span className="mv-live starting" role="status" data-testid="episode-progress" aria-label={`${code}: ${starting}`}>
+            {starting}
+          </span>
+        )}
         {source !== null && source.fresh && (
           <span className="mv-flag" data-tip={streamSourceText(source)}>
             verified
@@ -247,12 +261,14 @@ function EpisodeItem({ detail, episode: e, focused, player, busy, side, streamEn
           state={play}
           busy={busy}
           onClick={() => {
-            if (act.kind === 'stream') onStream(act.target);
-            else if (act.kind === 'vlc') onPlay(act.file);
+            if (act.kind === 'stream') onStream(act.target, code);
+            else if (act.kind === 'vlc') onPlay(act.file, code);
           }}
         />
-        {alt !== null && <StreamAltButton state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => onStream(alt)} />}
-        {onRun !== undefined && <PlayMenu detail={detail} episode={e} player={player} busy={busy} streamEnabled={streamEnabled} onRun={onRun} />}
+        {alt !== null && <StreamAltButton state={streamLabel(alt, streamEnabled)} busy={busy} onClick={() => onStream(alt, code)} />}
+        {onRun !== undefined && (
+          <PlayMenu detail={detail} episode={e} player={player} busy={busy} streamEnabled={streamEnabled} onRun={(act, failed, what) => onRun(act, failed, what, code)} />
+        )}
       </span>
     </li>
   );

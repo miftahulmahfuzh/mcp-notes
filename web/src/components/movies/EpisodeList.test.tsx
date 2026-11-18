@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { EpisodeList, type EpisodeListProps } from './EpisodeList';
 import { PLAYER_IDLE, SERIES } from '../../testing/movieFixtures';
@@ -67,5 +67,25 @@ describe('EpisodeList: folding a season', () => {
     window.localStorage.setItem(`movies.collapsed.${SERIES.id}`, '{"not":"a list"}');
     render(<EpisodeList {...props()} />);
     expect(list().hidden).toBe(false);
+  });
+});
+
+describe('EpisodeList: a play started from a row', () => {
+  it('names its row to the page, and only that row shows what the play is doing', () => {
+    const onStream = vi.fn();
+    const first = season.episodes[0]!;
+    const code = `S${String(first.season).padStart(2, '0')}E${String(first.episode).padStart(2, '0')}`;
+    const view = render(<EpisodeList {...props({ side: 'stream', streamEnabled: true, onStream })} />);
+    expect(document.querySelector('[data-testid="episode-progress"]')).toBeNull();
+    fireEvent.click(document.querySelector(`[data-episode="${code}"] .mv-row-play button`) as HTMLElement);
+    expect(onStream).toHaveBeenCalledTimes(1);
+    expect(onStream.mock.calls[0]![1]).toBe(code);
+
+    view.rerender(<EpisodeList {...props({ side: 'stream', streamEnabled: true, onStream, busy: true, starting: { at: code, text: 'asking the cloud providers · 3 s' } })} />);
+    const lines = document.querySelectorAll('[data-testid="episode-progress"]');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.closest('[data-episode]')?.getAttribute('data-episode')).toBe(code);
+    expect(lines[0]!.textContent).toBe('asking the cloud providers · 3 s');
+    expect(lines[0]!.getAttribute('role')).toBe('status');
   });
 });

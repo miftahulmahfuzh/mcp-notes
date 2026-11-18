@@ -105,10 +105,13 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
 
   /** What a play being started was asked to do; null when none is. The line beside Play follows it (usePlayProgress). */
   const [doing, setDoing] = useState<string | null>(null);
+  /** The episode row the play was started from (S01E03): its row shows the line too, where the click was. Null: the title's own Play. */
+  const [doingAt, setDoingAt] = useState<string | null>(null);
   const progress = usePlayProgress(doing, d.kind, d.tmdb_id);
-  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText, what = 'starting') => {
+  const run = async (act: () => Promise<string>, failed: (code: string, detail: string | null) => string = playErrorText, what = 'starting', at: string | null = null) => {
     setBusy(true);
     setDoing(what);
+    setDoingAt(at);
     try {
       onNotice(await act());
     } catch (e) {
@@ -116,18 +119,17 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
     } finally {
       setBusy(false);
       setDoing(null);
+      setDoingAt(null);
       onChanged();
     }
   };
 
-  const playOne = (f: FileView) => {
-    void run(async () => {
-      return startedNotice(f, await playFile(f.id));
-    });
+  const playOne = (f: FileView, at: string | null = null) => {
+    void run(async () => startedNotice(f, await playFile(f.id)), playErrorText, 'opening VLC', at);
   };
 
   /** One request: the daemon resolves and opens the player full screen in the streaming Chrome. A refresh follows either way. */
-  const streamOne = (t: StreamTarget) => {
+  const streamOne = (t: StreamTarget, at: string | null = null) => {
     void run(
       async () => {
         const { site } = await streamPlay(t.ref);
@@ -135,6 +137,7 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
       },
       (code, detail) => streamErrorText(code, detail, t, d.title),
       'starting the stream',
+      at,
     );
   };
 
@@ -351,7 +354,8 @@ export function MovieDetail({ detail: d, player, focus = null, onChanged, onNoti
           streamEnabled={streamEnabled}
           onPlay={playOne}
           onStream={streamOne}
-          onRun={(act, failed, what) => void run(act, failed, what)}
+          onRun={(act, failed, what, at) => void run(act, failed, what, at)}
+          starting={doingAt !== null && progress !== null ? { at: doingAt, text: progress } : null}
           onWatched={(f) => void toggleFileWatched(f)}
           onSeasonWatched={(season, next) => void markEpisodes({ season }, next, season === 0 ? 'Specials' : `Season ${season}`)}
           onEpisodeWatched={(e: EpisodeView, next) => void markEpisodes({ episodes: [{ season: e.season, episode: e.episode }] }, next, episodeCode(e.season, e.episode))}
