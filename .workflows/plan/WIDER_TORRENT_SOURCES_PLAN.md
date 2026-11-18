@@ -72,9 +72,9 @@ blocks a play), carried by R1.3, R2.3 and R3.3.
 
 | # | Title | Satisfies | Package | Files | Depends on | Difficulty | Plan | TaskID | Card |
 |---|-------|-----------|---------|-------|-----------|------------|------|--------|------|
-| 1 | Stremio add-on providers: TorrentsDB and Peerflix | R2 | `src/directStream/torrent/find` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-1.md` | — | — |
-| 2 | Title-search JSON indexes: Knaben, Bitsearch, torrents-csv | R1 | `src/directStream/torrent/find` | 22 | 1 | HARD | `.workflows/plan/wider-torrent-sources/phase-2.md` | — | — |
-| 3 | Daily verified public tracker lists | R3 | `src/directStream/torrent` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-3.md` | — | — |
+| 1 | Stremio add-on providers: TorrentsDB and Peerflix | R2 | `src/directStream/torrent/find` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-1.md` | P1-NOTES-A136 | — |
+| 2 | Title-search JSON indexes: Knaben, Bitsearch, torrents-csv | R1 | `src/directStream/torrent/find` | 22 | 1 | HARD | `.workflows/plan/wider-torrent-sources/phase-2.md` | P1-NOTES-A137 | — |
+| 3 | Daily verified public tracker lists | R3 | `src/directStream/torrent` | 18 | — | NORMAL | `.workflows/plan/wider-torrent-sources/phase-3.md` | P1-NOTES-A138 | — |
 
 Phase 2 depends on 1 because both extend the same registry lines (`IndexBases`, `DEFAULT_INDEX_BASES`,
 `defaultIndexes` in `find/find.ts`; `TORRENT_INDEX_NAMES`, `TORRENT_INDEX_URL_KEYS` in `src/config.ts`;

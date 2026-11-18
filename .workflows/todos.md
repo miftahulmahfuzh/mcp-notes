@@ -2,16 +2,16 @@
 
 **Package Path**: `.`
 **Package Code**: NOTES
-**Last Updated**: 2026-11-16
-**Total Active Tasks**: 17
+**Last Updated**: 2026-11-19
+**Total Active Tasks**: 20
 
 ## Quick Stats
 - P0 Critical: 0
-- P1 High: 17
+- P1 High: 20
 - P2 Medium: 0
 - P3 Low: 0
 - P4 Backlog: 0
-- Blocked: 7
+- Blocked: 8
 - Completed: 120
 
 ---
@@ -22,6 +22,33 @@
 
 ### [P1] High
 
+- [ ] **P1-NOTES-A136** Phase 1: Stremio add-on providers: TorrentsDB and Peerflix
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: `find/torrentio.ts`: the stream reader generalized so one reader serves any Stremio torrent add-on (stats line with `⚙️` or `🌐` before the site, rows without 💾, flag lines), with Torrentio's behaviour and exports unchanged for its callers and fixtures. New provider indexes `torrentsdb` (default `https://torrentsdb.com`) and `peerflix` (default `https://addon.peerflix.mov`, asked only when `query.originalLanguage === 'es'`; otherwise answers `empty` with a detail saying so and sends no request). Registry: `IndexBases`, `DEFAULT_INDEX_BASES`, `defaultIndexes` (`find/find.ts`), the barrel, `TORRENT_INDEX_NAMES` + `TORRENT_INDEX_URL_KEYS` (`NOTESD_TORRENT_TORRENTSDB_URL`, `NOTESD_TORRENT_PEERFLIX_URL`), `indexesOf` in `source.ts`. `verify.sh` index block: both new names `off`, on a line of their own in each branch; a test in `tests/unit/config.torrentFinder.test.ts` that every `TORRENT_INDEX_URL_KEYS` value appears at least twice in `verify.sh` (both branches). `fake-index.mjs` is not changed. Docs: two rows after the YTS row in `configuration.md`; the index list in `docs/guide/streaming.md` "Playing from a torrent"; the feature map; a CLAUDE.md line under Direct streaming. Tests + fixtures for both providers (the trimmed real answers are in `.workflows/analyze/20261119-025431-K7QD-samples/`). Exit criteria: R2.1-R2.4 hold; with default settings `defaultIndexes()` returns torrentio, apibay, eztv, torrentsdb, peerflix and (films) yts; `npm run typecheck` and `npm test` pass.
+  - **Status**: in_progress
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 1 of 3)
+  - **Satisfies**: R2 — "more providers" · criteria: R2.1, R2.2, R2.3, R2.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A136.md`
+- [ ] **P1-NOTES-A137** Phase 2: Title-search JSON indexes: Knaben, Bitsearch, torrents-csv
+  - **Difficulty**: HARD
+  - **Type**: Feature
+  - **Context**: Owns: `IndexFetch`/`FetchLike` and `askOne`'s fetch wrapper: an index may send `method` and `body` (Knaben is a POST), with notesd's User-Agent still forced last and the signal still bound; a JSON helper beside `getIndexJson` for it. A shared title-search helper under `find/`: the query text (film: title and year; episode: title and `SxxEyy`, using `alt` when set) and the fit a title-search row must pass before it becomes a candidate (names the title; a film row that names a year names the asked year, a row with no year is dropped when the query has one; an episode row fits the episode or is its season pack by `episodeFitOf`), reported so the finder's `excluded` list still shows why (R1.2). New indexes `knaben` (`https://api.knaben.org/v1`), `bitsearch` (`https://bitsearch.to/api/v1`), `torrentscsv` (`https://torrents-csv.com/service`), each with its own `timeoutMs`, skipped (`empty`, no request) when the query has no title. `find/rank.ts`: `exclusionOf` holds a candidate every listing of which came from a title search (`TorrentCandidate.titleSearch?: true`, `find/types.ts`) to `titleSearchExclusion` right after `bad_hash`; `joinListings` drops `titleSearch` when an IMDb-keyed index lists the same hash. `ExcludeReason` gains `'other_year'` (no exhaustive switch or record over it exists in the repo: grep of `src`, `web/src`, `claude`, `scripts`, `tests`). Registry lines as phase 1 left them, plus `NOTESD_TORRENT_KNABEN_URL`, `NOTESD_TORRENT_BITSEARCH_URL`, `NOTESD_TORRENT_TORRENTSCSV_URL`; the `defaultIndexes` doc comment; loadConfig's key-list comment line :1197 (naming phase 1's two keys and its own three); `verify.sh`: its three keys `off` on a line of their own in **both** index branches (phase 1's test); three more `configuration.md` rows after phase 1's; a short "Indexes asked by title" bullet before "**Off.**" in the guide; feature map; a CLAUDE.md bullet directly after phase 1's. Phase 1's tests that pin the default index list: `findCandidates.test.ts` (four edited and two new tests) and `addonSwitches.test.ts` gain the three title-search entries. Tests + fixtures (real samples in the analysis samples folder), including a wrong-year film and a wrong-episode row. Exit criteria: R1.1-R1.4 hold; existing index tests still pass unchanged in meaning; `npm run typecheck` and `npm test` pass.
+  - **Status**: blocked
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 2 of 3)
+  - **Satisfies**: R1 — "improve our TM / TS in anyway shape or form (more indexes" · criteria: R1.1, R1.2, R1.3, R1.4
+  - **Depends on**: P1-NOTES-A136
+  - **Plan**: `.workflows/plan/P1-NOTES-A137.md`
+- [ ] **P1-NOTES-A138** Phase 3: Daily verified public tracker lists
+  - **Difficulty**: NORMAL
+  - **Type**: Feature
+  - **Context**: Owns: A new module beside `origins.ts` (the tracker lists): fetch the two lists with notesd's User-Agent, parse, keep UDP trackers not already in `DEFAULT_TRACKERS` or the book, verify each by a BEP 15 connect (a connect-only check added to `find/scrape.ts` on its existing socket seam), store `<torrent dir>/tracker-lists.json` (`{ fetched_at, trackers: [{ url, source }] }`, capped), keep the previous file when a refresh fails or nothing answers. Injected fetch, socket and clock. A daily loop started and closed in `src/background.ts` (built in `src/daemon.ts`), first run shortly after start, never in a play's path; off when `NOTESD_TORRENT=off`, `NOTESD_TORRENT_DISCOVERY=off` or `NOTESD_TORRENT_TRACKER_LISTS=off`. `TorrentSource`: a `lists` option beside `book`; `trackersOf` and `swarmCounts` append the kept trackers after the candidate's and the book's; the scrape's tracker cap reviewed so the added trackers are actually asked without lengthening `SCRAPE_TIMEOUT_MS`; `buildTorrentSource` wires it. `find/scrape.ts`: the connect-only `udpConnector`, `SCRAPE_MAX_TRACKERS` 8 -> 16 with the last `SCRAPE_LIST_SLOTS` (6) kept for list trackers (`scrapeTrackerOrder`); no new barrel line (the existing `export * from './scrape.js'` carries them; no name collides with phases 1-2's exports). `src/config.ts` torrent block: `trackerLists` switch (+ the two list addresses as constants, not settings), and one new line in loadConfig's key-list comment after :1194; one `configuration.md` row placed after `NOTESD_TORRENT_PEERS`; a guide section under "Torrents" next to "What a magnet says of its index"; feature map bullet after :574; a CLAUDE.md bullet after :120; `verify.sh` pins `NOTESD_TORRENT_TRACKER_LISTS=off` in the base `env=(...)` array (:262) for every throwaway daemon. Tests: parsing, verification with a fake socket, keep-previous on failure, the off switches, `trackersOf`/`swarmCounts` order. Exit criteria: R3.1-R3.4 hold; a daemon with the switch off behaves exactly as today; `npm run typecheck` and `npm test` pass.
+  - **Status**: in_progress
+  - **Plan Set**: `.workflows/plan/WIDER_TORRENT_SOURCES_PLAN.md` (phase 3 of 3)
+  - **Satisfies**: R3 — "more tracker lists, etc)" · criteria: R3.1, R3.2, R3.3, R3.4
+  - **Depends on**: —
+  - **Plan**: `.workflows/plan/P1-NOTES-A138.md`
 - [x] **P1-NOTES-A127** Phase 1: The torrent engine and its file route
   - **Difficulty**: HARD
   - **Type**: Feature
