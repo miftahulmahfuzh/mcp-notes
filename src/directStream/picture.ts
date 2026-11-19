@@ -109,6 +109,8 @@ export function ffmpegFrameGrabber(options: { ffmpegBin: string; timeoutMs?: num
 
 /** Bytes of one segment read for a frame: a 10 s segment of a 1080p stream is a few MB. */
 const SEGMENT_MAX_BYTES = 24 * 1024 * 1024;
+/** Segments of one clip asked of a host at the same time. */
+const SEGMENTS_AT_ONCE = 3;
 /** How far into a segment an MPEG-TS sync is looked for: some hosts put a small picture file in front of it. */
 const TS_SYNC_SEARCH_BYTES = 256 * 1024;
 
@@ -169,8 +171,25 @@ export function firstVariant(playlist: string, base: string): string | null {
   return uri === undefined ? null : new URL(uri, base).href;
 }
 
+/**
+ * The rendition with the lowest BANDWIDTH a master playlist names, or null for a media playlist. The sound of every
+ * rendition is the same, and its segments are a fraction of the tallest one's: what an audio clip is read from.
+ */
+export function lowestVariant(playlist: string, base: string): string | null {
+  const lines = playlist.split('\n').map((l) => l.trim());
+  let best: { uri: string; bandwidth: number } | null = null;
+  for (const [i, line] of lines.entries()) {
+    if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
+    const uri = lines.slice(i + 1).find((l) => l !== '' && !l.startsWith('#'));
+    if (uri === undefined) continue;
+    const bandwidth = Number(/[:,]BANDWIDTH=(\d+)/.exec(line)?.[1] ?? Number.POSITIVE_INFINITY);
+    if (best === null || bandwidth < best.bandwidth) best = { uri, bandwidth };
+  }
+  return best === null ? null : new URL(best.uri, base).href;
+}
+
 /** The segment that holds second `atS` of an HLS stream's first rendition, with the headers the resolve captured; null for a playlist without segments. Throws when a playlist does not answer. */
-async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<{ segment: string; headers: Record<string, string>; encrypted: boolean; playlist: string; playlistUrl: string } | null> {
+async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof fetch, signal: AbortSignal, pick: (playlist: string, base: string) => string | null = firstVariant): Promise<{ segment: string; headers: Record<string, string>; encrypted: boolean; playlist: string; playlistUrl: string } | null> {
   const { referer, origin, user_agent: userAgent } = source.headers;
   const headers: Record<string, string> = { ...(referer === null ? {} : { referer }), ...(origin === null ? {} : { origin }), ...(userAgent === null ? {} : { 'user-agent': userAgent }) };
   const text = async (url: string): Promise<{ body: string; url: string }> => {
@@ -179,33 +198,39 @@ async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof
     return { body: await res.text(), url: res.url || url };
   };
   let playlist = await text(source.manifest_url);
-  const variant = firstVariant(playlist.body, playlist.url);
+  const variant = pick(playlist.body, playlist.url);
   if (variant !== null) playlist = await text(variant);
   const segment = segmentAt(playlist.body, playlist.url, atS);
   return segment === null ? null : { segment, headers, encrypted: /#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body), playlist: playlist.body, playlistUrl: playlist.url };
 }
 
 /**
- * The transport stream of up to `count` segments in a row from second `atS` of an HLS stream's first rendition, each
+ * The transport stream of up to `count` segments in a row from second `atS` of an HLS stream's smallest rendition, each
  * fetched with the headers the resolve captured and cut at its MPEG-TS sync (some hosts wrap every segment in a small
  * picture file). Null for anything but plain MPEG-TS: an encrypted stream, fragmented MP4, a playlist without
  * segments, a segment that does not answer or is larger than SEGMENT_MAX_BYTES. Throws when a playlist does not answer.
  */
 export async function hlsTransportStream(source: ResolvedSource, atS: number, count: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<Buffer | null> {
   if (source.manifest_kind !== 'hls') return null;
-  const found = await hlsSegment(source, atS, fetchImpl, signal);
+  const found = await hlsSegment(source, atS, fetchImpl, signal, lowestVariant);
   if (found === null || found.encrypted) return null;
-  // Side by side: eight segments one after another took 18 s from a slow host, and the play waits for this.
-  const fetched = await Promise.all(
-    segmentsFrom(found.playlist, found.playlistUrl, atS, count).map(async (url): Promise<Buffer | null> => {
-      const res = await fetchImpl(url, { headers: found.headers, signal });
-      if (!res.ok) return null;
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      if (bytes.length > SEGMENT_MAX_BYTES) return null;
-      const sync = tsSyncOffset(bytes);
-      return sync === -1 ? null : Buffer.from(bytes.buffer, bytes.byteOffset + sync, bytes.length - sync);
-    }),
-  );
+  // Three at a time: one after another, eight segments took 18 s from a slow host; all eight at once, HyperLink's
+  // host refused most of them and the clip came out 5 s long.
+  const urls = segmentsFrom(found.playlist, found.playlistUrl, atS, count);
+  const one = async (url: string): Promise<Buffer | null> => {
+    const res = await fetchImpl(url, { headers: found.headers, signal });
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length > SEGMENT_MAX_BYTES) return null;
+    const sync = tsSyncOffset(bytes);
+    return sync === -1 ? null : Buffer.from(bytes.buffer, bytes.byteOffset + sync, bytes.length - sync);
+  };
+  const fetched: Array<Buffer | null> = [];
+  for (let at = 0; at < urls.length; at += SEGMENTS_AT_ONCE) {
+    const batch = await Promise.all(urls.slice(at, at + SEGMENTS_AT_ONCE).map(one));
+    fetched.push(...batch);
+    if (batch.includes(null)) break;
+  }
   // The segments in a row up to the first that is missing: a gap would put two stretches of the film side by side.
   const gap = fetched.findIndex((part) => part === null);
   const parts = (gap === -1 ? fetched : fetched.slice(0, gap)) as Buffer[];

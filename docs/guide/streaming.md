@@ -689,7 +689,8 @@ provider's stream of a foreign-language title plays for the first time, the daem
 1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
    `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
    When ffmpeg cannot open the stream by itself, the segments are read instead, as the picture check reads a
-   frame: eight segments from that minute are fetched side by side with the same headers, each cut at its
+   frame: eight segments of the smallest rendition from that minute are fetched three at a time with the same
+   headers (asked once more after 1.5 s when the host refuses), each cut at its
    MPEG-TS sync, and their transport stream is handed to ffmpeg. Some hosts wrap every segment in a small picture
    file (HyperLink's are PNGs), so ffmpeg found "no stream" in the manifest and the check heard nothing: five of
    six foreign-language streams in the soak of 2026-11-19 read `no audio could be read from the stream`, and a

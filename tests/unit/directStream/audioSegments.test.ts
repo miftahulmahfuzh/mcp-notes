@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AUDIO_CLIP_SEGMENTS, firstAudioOf, hlsSegmentAudioGrabber, type AudioGrabber } from '../../../src/directStream/audioLang.js';
-import { hlsTransportStream, segmentsFrom } from '../../../src/directStream/picture.js';
+import { hlsTransportStream, lowestVariant, segmentsFrom } from '../../../src/directStream/picture.js';
 import type { ResolvedSource } from '../../../src/directStream/types.js';
 
 const MEDIA = ['#EXTM3U', '#EXT-X-TARGETDURATION:6', '#EXTINF:6,', 'a.ts', '#EXTINF:6,', 'b.ts', '#EXTINF:6,', 'c.ts', '#EXTINF:6,', 'd.ts', '#EXT-X-ENDLIST'].join('\n');
@@ -24,6 +24,14 @@ describe('segmentsFrom', () => {
     expect(segmentsFrom(MEDIA, BASE, 600, 2)).toEqual(['https://cdn.example/v/c.ts', 'https://cdn.example/v/d.ts']);
     expect(segmentsFrom('#EXTM3U', BASE, 0, 4)).toEqual([]);
     expect(segmentsFrom(MEDIA, BASE, 0, 0)).toEqual([]);
+  });
+});
+
+describe('lowestVariant', () => {
+  it('picks the rendition with the least bandwidth, wherever it stands; a media playlist has none', () => {
+    const master = ['#EXTM3U', '#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1920x1080', '1080/i.m3u8', '#EXT-X-STREAM-INF:RESOLUTION=640x360,BANDWIDTH=700000', '360/i.m3u8', '#EXT-X-STREAM-INF:BANDWIDTH=2500000', 'https://other.example/720.m3u8'].join('\n');
+    expect(lowestVariant(master, 'https://cdn.example/m.m3u8')).toBe('https://cdn.example/360/i.m3u8');
+    expect(lowestVariant(MEDIA, BASE)).toBeNull();
   });
 });
 
@@ -92,10 +100,25 @@ describe('the audio clip read from the segments themselves', () => {
     expect(AUDIO_CLIP_SEGMENTS).toBeGreaterThanOrEqual(4);
   });
 
+  it('asks the segments once more when the host refused the first time', async () => {
+    const h = host();
+    let first = true;
+    const flaky = (async (url: string, init?: { headers?: Record<string, string> }) => {
+      if (first) {
+        first = false;
+        return new Response('slow down', { status: 429 });
+      }
+      return h.fetchImpl(url, init);
+    }) as unknown as typeof fetch;
+    const wav = await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: flaky })(source(), 0);
+    expect(wav).not.toBeNull();
+    rmSync(path.dirname(wav as string), { recursive: true, force: true });
+  });
+
   it('answers null, and leaves no folder, when the stream cannot be read this way', async () => {
-    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', fetch: host({ key: true }).fetchImpl })(source(), 0)).toBeNull();
+    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: host({ key: true }).fetchImpl })(source(), 0)).toBeNull();
     const down = (async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
-    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', fetch: down })(source(), 0)).toBeNull();
+    expect(await hlsSegmentAudioGrabber({ ffmpegBin: 'ffmpeg', retryMs: 1, fetch: down })(source(), 0)).toBeNull();
   });
 });
 

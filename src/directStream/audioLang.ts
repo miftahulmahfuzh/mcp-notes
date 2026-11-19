@@ -92,6 +92,8 @@ export function ffmpegAudioGrabber(options: { ffmpegBin: string; timeoutMs?: num
 
 /** Segments read for a clip when ffmpeg cannot open the stream itself: eight of 4 to 10 s cover the 30 s Whisper is handed. */
 export const AUDIO_CLIP_SEGMENTS = 8;
+/** The pause before the segments are asked for a second time. */
+export const AUDIO_SEGMENTS_RETRY_MS = 1_500;
 
 /**
  * The audio clip of an HLS stream ffmpeg cannot open by itself: the segments from `atS` on are fetched here (as the
@@ -101,7 +103,7 @@ export const AUDIO_CLIP_SEGMENTS = 8;
  * streams in the soak of 2026-11-19 read `no audio could be read from the stream`). Null when the stream is not
  * plain MPEG-TS, carries its audio in a rendition of its own, or cannot be fetched. Never throws.
  */
-export function hlsSegmentAudioGrabber(options: { ffmpegBin: string; fetch?: typeof fetch; timeoutMs?: number; segments?: number }): AudioGrabber {
+export function hlsSegmentAudioGrabber(options: { ffmpegBin: string; fetch?: typeof fetch; timeoutMs?: number; segments?: number; retryMs?: number }): AudioGrabber {
   const fetchImpl = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS;
   return async (source, atS) => {
@@ -109,7 +111,10 @@ export function hlsSegmentAudioGrabber(options: { ffmpegBin: string; fetch?: typ
     const dir = await mkdtemp(path.join(tmpdir(), 'notesd-audio-'));
     const out = path.join(dir, 'clip.wav');
     try {
-      const ts = await hlsTransportStream(source, atS, options.segments ?? AUDIO_CLIP_SEGMENTS, fetchImpl, AbortSignal.timeout(timeoutMs));
+      const signal = AbortSignal.timeout(timeoutMs);
+      const read = (): Promise<Buffer | null> => hlsTransportStream(source, atS, options.segments ?? AUDIO_CLIP_SEGMENTS, fetchImpl, signal).catch(() => null);
+      // Once more after a moment: HyperLink's host refused the first ask and answered the next (2026-11-19).
+      const ts = (await read()) ?? (await new Promise((resolve) => setTimeout(resolve, options.retryMs ?? AUDIO_SEGMENTS_RETRY_MS)), await read());
       if (ts === null) throw new Error('no transport stream');
       await new Promise<void>((resolve, reject) => {
         const child = execFile(
