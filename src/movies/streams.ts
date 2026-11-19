@@ -234,6 +234,23 @@ export class MovieStreams {
   }
 
   /**
+   * The day a film came out or an episode aired, as TMDB gives it and the title's row keeps it (ensured first);
+   * null when nothing says. A play of a title whose day is still to come asks nothing (DirectStreamService).
+   */
+  async releaseDate(target: StreamTarget): Promise<string | null> {
+    try {
+      const id = await this.ensureTitle(target);
+      if (id === null) return null;
+      if (target.kind === 'movie') return (await this.movies.repo.titleById(id))?.releaseDate ?? null;
+      const meta = await this.movies.repo.loadTitleMetadata(id);
+      return meta?.episodes.find((e) => e.season === target.season && e.episode === target.episode)?.airDate ?? null;
+    } catch (err) {
+      this.log(`[notesd] direct stream: could not read the release date of ${describeTarget(target)}: ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /**
    * The title's names and year for the torrent finder (torrent phase 3): its title check leaves out a release that
    * names neither, and phase 9's 1337x search has nothing else to go by. The stored title row (ensured first, as
    * `animeRef` does); null when it is not stored and cannot be.

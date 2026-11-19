@@ -98,6 +98,11 @@ export interface DirectStreamHooks {
    * provider named asks that channel first. Null: nothing is known, and the play goes the long way.
    */
   channel?: (ref: StreamRef) => Promise<RememberedChannel | null>;
+  /**
+   * The day the film came out, or the episode aired (`2026-12-18`), as TMDB gives it. Null: unknown. A play of a
+   * title whose day is still to come asks nothing (`refuseUnreleased`).
+   */
+  releaseDate?: (ref: StreamRef) => Promise<string | null>;
   /** Every cloud provider (`cloud`) or every torrent (`torrent`) found nothing for the title. */
   channelFailed?: (ref: StreamRef, kind: 'cloud' | 'torrent') => Promise<void>;
 }
@@ -296,6 +301,9 @@ function isHealthOutcome(outcome: ResolveOutcome): outcome is StreamHealthOutcom
 export const PICTURE_MAX_REJECTIONS = 3;
 
 /** A provider nothing has resolved yet, for a delivery verdict that outlived its health row. */
+/** The one attempt of a play refused because the title is not out yet. */
+export const NOT_RELEASED = 'Release date';
+
 const NO_HEALTH = { en_subtitle: null, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0 } as const;
 
 /** A torrent session no page asked about for this long lets go of its torrent (the page reports every 5 s, paused or not). */
@@ -448,6 +456,8 @@ export class DirectStreamService {
   async resolve(input: StreamRefInput, options: { resumeS?: number | null; deadlineS?: number; only?: string; vet?: boolean; skip?: readonly string[] } = {}): Promise<StreamSession> {
     const ref = toStreamRef(input);
     const left = options.skip ?? [];
+    // Something is about to be watched or kept: not of a title that is not out yet.
+    if (options.vet === true) await this.refuseUnreleased(ref);
     // `vet`: something is about to be watched or kept (a play, a cache), so the picture is looked at
     // (picture.ts). Not for a provider the owner named, and not for a resolve that only reads a subtitle.
     const out =
@@ -609,6 +619,8 @@ export class DirectStreamService {
     // "cloud" asks the cloud providers alone: this host's stream cache first, and never a torrent, on disk or in the swarm.
     const only = options.provider ?? null;
     const magnet = options.magnet ?? null;
+    // A magnet is the owner's own word for what to play; anything else of a title not out yet is a trailer or a fake.
+    if (magnet === null) await this.refuseUnreleased(ref);
     track.stage = "looking at this machine's cache and downloads";
     let session: StreamSession;
     // The owner pasted a magnet: only that torrent is opened, for the title they named. No index, no cache.
@@ -1675,6 +1687,22 @@ export class DirectStreamService {
           : { info_hash: torrent.infoHash, file_index: torrent.fileIndex, name: torrent.name, index: torrent.index, state: torrent.state, seeds: torrent.seeds },
       subtitle_rev: torrent === null ? session.outside.subtitleRev : torrent.subtitleRev,
     };
+  }
+
+  /**
+   * Throws `no_source` for a film that is not out yet, or an episode that has not aired, by TMDB's day: nothing is
+   * asked. The soak of 2026-11-19 found both unreleased films it asked for "resolved" by a cloud provider (The
+   * Batman: Part II of 2028 as a Hindi/English stream) and offered as trailers and fakes by the torrent indexes. A
+   * title with no known day, and a day that is today, play as usual.
+   */
+  private async refuseUnreleased(ref: StreamRef): Promise<void> {
+    const hook = this.opts.hooks?.releaseDate;
+    if (hook === undefined) return;
+    const day = await this.hookValue('releaseDate', () => hook(ref));
+    if (day === null || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day <= this.now().toISOString().slice(0, 10)) return;
+    const what = ref.kind === 'movie' ? 'is not released yet' : 'has not aired yet';
+    const detail = `${what}: TMDB gives ${day}. No provider and no torrent index was asked: until then a stream or a torrent of it is a trailer or a fake`;
+    throw new DirectStreamError('no_source', `${refLabel(ref)} ${what} (${day}).`, { attempts: [{ provider: NOT_RELEASED, outcome: 'skipped', took_s: 0, detail }] });
   }
 
   private async hookValue<T>(name: string, call: () => Promise<T | null>): Promise<T | null> {
