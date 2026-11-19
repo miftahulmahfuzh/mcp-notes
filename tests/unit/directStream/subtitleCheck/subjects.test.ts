@@ -100,10 +100,10 @@ describe('CheckSubjects', () => {
     expect(await torrentShelf.kept(HASH)).toEqual([view]);
   });
 
-  it('hints at the minute the player just played, and a named time comes before it', async () => {
+  it('hints at the minute around where the player is, and a named time comes before it', async () => {
     sessions.set('live', torrentSession('live', []));
     screen = { sessionId: 'live', durationS: 2564, positionS: 757 };
-    expect((await subjects().build({ ref: REF })).hint).toEqual({ startS: 697, lengthS: 60, from: 'position' });
+    expect((await subjects().build({ ref: REF })).hint).toEqual({ startS: 727, lengthS: 60, from: 'position' });
     expect((await subjects().build({ session: 'live', at: { fromS: 300, toS: null } })).hint).toEqual({ startS: 290, lengthS: 60, from: 'asked' });
     // Not on screen: no position to go by.
     screen = null;

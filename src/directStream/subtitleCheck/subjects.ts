@@ -86,7 +86,7 @@ export class CheckSubjects {
   /** Throws CheckError, or what resolving a cloud title throws (DirectStreamError `no_source`, `resolve_failed`). */
   async build(target: CheckTarget): Promise<CheckSubject> {
     const subject = await this.subjectOf(target);
-    // Heard first: the time the owner named, else the minute the player on screen just played (it is there, and
+    // Heard first: the time the owner named, else the minute around where the player on screen is (it is there, and
     // the owner asked while watching it).
     const on = this.deps.onScreen();
     const played = subject.mode === 'live' && on !== null && on.sessionId === subject.sessionId ? (on.positionS ?? null) : null;

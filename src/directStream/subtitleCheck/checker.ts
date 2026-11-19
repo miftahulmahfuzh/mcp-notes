@@ -15,7 +15,7 @@ import { judge, MIN_HEARD_LINES, MIN_LINE_WORDS, retime, wordsOf, type HeardLine
  *
  * 1. **Hear.** ffmpeg cuts a minute of audio at six places spread over the film (more when little was said there),
  *    and Whisper writes down what is said in each, with its times. With a hint (a time the owner named, or the
- *    minute just played of the stream on screen) that stretch is heard first: when enough is said there, only the
+ *    minute around the position of the stream on screen) that stretch is heard first: when enough is said there, only the
  *    film's two ends are heard beside it, and the other places only when those three did not settle it.
  * 2. **Judge the subtitle that is shown** against those lines (match.ts): right text and in step is `ok`, and
  *    nothing changes.
@@ -48,8 +48,8 @@ export const WINDOW_CUT_TIMEOUT_MS = 90_000;
 export const HINT_MAX_S = 180;
 /** A named moment is heard from this many seconds before it. */
 export const HINT_LEAD_S = 10;
-/** The minute just played is a hint only when at least this much of the film has played. */
-export const HINT_MIN_PLAYED_S = 30;
+/** The hint of a stream on screen starts this long before the player's position: half behind it, half ahead. */
+export const HINT_BEHIND_S = 30;
 /** Countable lines the hinted stretch must give for the short round (the hint and the film's two ends). */
 export const HINT_MIN_LINES = MIN_HEARD_LINES;
 /** The short round settles a check only with SPREAD_LINES lines heard in each of two windows this far apart: a drift shows over a distance only. */
@@ -87,7 +87,7 @@ export interface CheckSubject {
   keep(vtt: string): Promise<CacheSubtitleView>;
 }
 
-/** A stretch to hear first. `asked`: the owner named the time; `position`: what the player on screen just played. */
+/** A stretch to hear first. `asked`: the owner named the time; `position`: the minute around where the player on screen is. */
 export interface CheckHint {
   startS: number;
   lengthS: number;
@@ -100,11 +100,13 @@ export function hintAt(fromS: number, toS: number | null): CheckHint {
   return { startS: Math.max(0, fromS), lengthS: Math.min(HINT_MAX_S, Math.max(WINDOW_S, toS - fromS)), from: 'asked' };
 }
 
-/** The minute the player just played, or null when too little has played to hear. */
+/**
+ * The minute around where the player is: half behind the position, half ahead. The owner asks while people talk, or
+ * pauses as they start, and a stretch that only looked back missed a conversation that had just begun.
+ */
 export function hintFromPosition(positionS: number): CheckHint | null {
-  if (!Number.isFinite(positionS) || positionS < HINT_MIN_PLAYED_S) return null;
-  const startS = Math.max(0, Math.floor(positionS) - WINDOW_S);
-  return { startS, lengthS: Math.floor(positionS) - startS, from: 'position' };
+  if (!Number.isFinite(positionS) || positionS < 0) return null;
+  return { startS: Math.max(0, Math.floor(positionS) - HINT_BEHIND_S), lengthS: WINDOW_S, from: 'position' };
 }
 
 export interface HeardWindow {
@@ -331,7 +333,7 @@ export class SubtitleChecker {
     if (hint !== null && subject.hint != null) {
       await hear([hint]);
       hinted = { at_s: hint.startS, length_s: hint.lengthS, from: subject.hint.from, lines: countable(heard), enough: false };
-      const where = hinted.from === 'asked' ? 'the stretch named, from ' + clock(hint.startS) : 'the minute just played, from ' + clock(hint.startS);
+      const where = hinted.from === 'asked' ? 'the stretch named, from ' + clock(hint.startS) : 'the minute around where the player is, from ' + clock(hint.startS);
       if (hinted.lines < HINT_MIN_LINES) {
         notes.push('Little was said in ' + where + ' (' + hinted.lines + ' line(s) of ' + MIN_LINE_WORDS + ' words or more), so the film was heard at its usual places as well.');
       } else if (subject.durationS !== null && subject.durationS > 0 && rest.length > 0) {

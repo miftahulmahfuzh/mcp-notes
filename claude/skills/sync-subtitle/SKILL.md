@@ -14,7 +14,7 @@ for its **text** (is it this film?) and its **timing** (does each line come when
 
 **A hint says where to listen first.** A time the user names (`12:37`, `1:02:10`, or a range
 `12:37-14:00`) is a place where people talk: that stretch is heard first. With no time and a stream
-on screen, the daemon uses the minute the player just played, by itself. When enough is said there
+on screen, the daemon uses the minute around where the player is (30 s behind, 30 s ahead), by itself. When enough is said there
 (8 lines), only the film's two ends are heard beside it, three stretches in place of six, and the
 check takes about half the time. When the hint is quiet, or the three stretches do not settle it,
 the usual places are heard as well, so a hint never makes a verdict weaker.
@@ -94,7 +94,7 @@ Short, in plain words, with the evidence:
    player's G and H keys move the lines 50 ms at a time, or another source of the title (a torrent
    that carries its own subtitle file, another cloud provider).
 5. `heard.hint`, when there is one, in a few words: where it listened first (`at_s`, the named time
-   or the minute just played) and whether that was enough (`enough`).
+   or the minute around the player's position) and whether that was enough (`enough`).
 6. `notes`, when it has any.
 
 Follow the answer's `next`. Errors: `unknown_session` (the session ended: ask for the title or call

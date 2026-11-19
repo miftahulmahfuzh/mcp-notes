@@ -90,10 +90,10 @@ describe('hints', () => {
     expect(hintAt(757, 2000)).toEqual({ startS: 757, lengthS: 180, from: 'asked' });
   });
 
-  it('the minute just played, once enough has played', () => {
-    expect(hintFromPosition(757.6)).toEqual({ startS: 697, lengthS: 60, from: 'position' });
-    expect(hintFromPosition(45)).toEqual({ startS: 0, lengthS: 45, from: 'position' });
-    expect(hintFromPosition(12)).toBeNull();
+  it('the minute around where the player is, half behind and half ahead', () => {
+    expect(hintFromPosition(757.6)).toEqual({ startS: 727, lengthS: 60, from: 'position' });
+    expect(hintFromPosition(12)).toEqual({ startS: 0, lengthS: 60, from: 'position' });
+    expect(hintFromPosition(Number.NaN)).toBeNull();
   });
 });
 

@@ -127,7 +127,7 @@ describe('direct_stream_sync_subtitle', () => {
     const f = fake({ check: vi.fn(async () => result({ heard: { task: 'transcribe', lines: 36, windows: [], hint: { at_s: 697, length_s: 60, from: 'position', lines: 12, enough: true } } })) });
     const c = await connect(f.deps);
     const out = json(await c.call({ session: SESSION }));
-    expect(out.next).toContain('the minute the player just played');
+    expect(out.next).toContain('the minute around where the player is');
     await c.close();
   });
 

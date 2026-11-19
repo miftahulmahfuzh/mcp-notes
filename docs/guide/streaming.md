@@ -2013,8 +2013,8 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   bytes are not there (a torrent not downloaded that far) is passed over and named in the answer.
 - **A hint is heard first.** A time in the request (`at`: `12:37`, `1:02:10`, or a range) names a
   place where people talk: a minute from ten seconds before it, or the range as asked, a minute to
-  three. With no time and a stream on screen, the hint is the minute its player just played (the
-  position the page last reported; none before 30 s have played). When 8 lines or more are said in
+  three. With no time and a stream on screen, the hint is the minute around where its player is,
+  30 s behind and 30 s ahead (the position the page last reported). When 8 lines or more are said in
   the hinted stretch, only the first and the last of the six places are heard beside it. Those three
   settle the check only when lines were heard in two stretches at least four minutes apart (a drift
   shows over a distance only) and the subtitle shown is right, in step or after its own re-timing.
