@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { WhisperDetector } from './torrent/subtitles/whisper.js';
 import { normalizeAudioLang } from './torrent/probe.js';
+import { hlsTransportStream } from './picture.js';
 import { refLabel, type ResolvedSource, type StreamRef } from './types.js';
 
 /**
@@ -86,6 +87,58 @@ export function ffmpegAudioGrabber(options: { ffmpegBin: string; timeoutMs?: num
       await rm(dir, { recursive: true, force: true });
       return null;
     }
+  };
+}
+
+/** Segments read for a clip when ffmpeg cannot open the stream itself: eight of 4 to 10 s cover the 30 s Whisper is handed. */
+export const AUDIO_CLIP_SEGMENTS = 8;
+
+/**
+ * The audio clip of an HLS stream ffmpeg cannot open by itself: the segments from `atS` on are fetched here (as the
+ * picture check does for a frame, picture.ts `hlsTransportStream`) and their transport stream is handed to ffmpeg on
+ * stdin. Some hosts wrap every segment in a small picture file (HyperLink's are PNGs on an image host): ffmpeg then
+ * reads the manifest, finds "no stream" and writes nothing, and a dub went unheard (five of six foreign-language
+ * streams in the soak of 2026-11-19 read `no audio could be read from the stream`). Null when the stream is not
+ * plain MPEG-TS, carries its audio in a rendition of its own, or cannot be fetched. Never throws.
+ */
+export function hlsSegmentAudioGrabber(options: { ffmpegBin: string; fetch?: typeof fetch; timeoutMs?: number; segments?: number }): AudioGrabber {
+  const fetchImpl = options.fetch ?? fetch;
+  const timeoutMs = options.timeoutMs ?? AUDIO_CLIP_TIMEOUT_MS;
+  return async (source, atS) => {
+    if (source.manifest_kind !== 'hls') return null;
+    const dir = await mkdtemp(path.join(tmpdir(), 'notesd-audio-'));
+    const out = path.join(dir, 'clip.wav');
+    try {
+      const ts = await hlsTransportStream(source, atS, options.segments ?? AUDIO_CLIP_SEGMENTS, fetchImpl, AbortSignal.timeout(timeoutMs));
+      if (ts === null) throw new Error('no transport stream');
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile(
+          options.ffmpegBin,
+          ['-v', 'error', '-y', '-f', 'mpegts', '-i', 'pipe:0', '-t', String(AUDIO_CLIP_S), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-map_metadata', '-1', '-fflags', '+bitexact', out],
+          { timeout: timeoutMs, killSignal: 'SIGKILL' },
+          (err) => (err ? reject(err) : resolve()),
+        );
+        // ffmpeg stops reading once it has its 30 s: the rest of the segments is not an error.
+        child.stdin?.on('error', () => undefined);
+        child.stdin?.end(ts);
+      });
+      if ((await stat(out)).size > 44) return out;
+      throw new Error('an empty clip');
+    } catch {
+      await rm(dir, { recursive: true, force: true });
+      return null;
+    }
+  };
+}
+
+/** Each grabber in turn until one reads a clip. */
+export function firstAudioOf(...grabbers: AudioGrabber[]): AudioGrabber {
+  return async (source, atS) => {
+    for (const grab of grabbers) {
+      const wav = await grab(source, atS);
+      if (wav !== null) return wav;
+    }
+    return null;
   };
 }
 

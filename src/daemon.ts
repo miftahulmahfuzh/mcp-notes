@@ -49,7 +49,7 @@ import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleChec
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
 import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
 import { buildWhisperTier, ffmpegCutter, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
-import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber } from './directStream/audioLang.js';
+import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber, firstAudioOf, hlsSegmentAudioGrabber } from './directStream/audioLang.js';
 import { buildStreamCache } from './directStream/cache/service.js';
 import { DirectStreamRepo } from './directStream/repo.js';
 import { buildTorrentStreams } from './directStream/torrent/service.js';
@@ -288,7 +288,11 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
       ? null
       : new AudioLangCheck({
           verdicts: new AudioVerdicts(join(config.dataDir, MOVIES_SUBDIR, AUDIO_VERDICTS_FILE)),
-          grab: ffmpegAudioGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+          // ffmpeg on the manifest first; for a stream it cannot open (segments wrapped in picture files), the segments themselves.
+          grab: firstAudioOf(
+            ffmpegAudioGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+            hlsSegmentAudioGrabber({ ffmpegBin: config.directStream?.ffmpegBin ?? DEFAULT_FFMPEG_BIN }),
+          ),
           detector: audioDetector,
         });
   // Torrent phase 3: the torrent source, built on first use from phase 1's TorrentStreams (deps.torrents, null

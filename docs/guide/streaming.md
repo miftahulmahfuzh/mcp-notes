@@ -688,6 +688,13 @@ provider's stream of a foreign-language title plays for the first time, the daem
 
 1. `ffmpeg` cuts ~30 s of audio, 10 minutes in, from the manifest with the `Referer`, `Origin` and
    `User-Agent` the resolve captured, to a 16 kHz mono WAV — the format the Whisper worker reads.
+   When ffmpeg cannot open the stream by itself, the segments are read instead, as the picture check reads a
+   frame: eight segments from that minute are fetched side by side with the same headers, each cut at its
+   MPEG-TS sync, and their transport stream is handed to ffmpeg. Some hosts wrap every segment in a small picture
+   file (HyperLink's are PNGs), so ffmpeg found "no stream" in the manifest and the check heard nothing: five of
+   six foreign-language streams in the soak of 2026-11-19 read `no audio could be read from the stream`, and a
+   dub would have played unheard. A stream that is encrypted, fragmented MP4 or carries its audio in a rendition of
+   its own is still `unsure`.
 2. The Whisper worker's `detect` task answers which language it heard and how sure it is (the worker
    it shares with the torrent subtitle tier; `src/directStream/torrent/subtitles/whisper.ts`, with
    a dedicated worker for the daemon's cloud check).

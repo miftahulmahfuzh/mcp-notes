@@ -140,6 +140,27 @@ export function segmentAt(playlist: string, base: string, atS: number): string |
   return last;
 }
 
+/** The addresses of up to `count` segments in a row, from the one that holds second `atS` (the last ones for a shorter film). */
+export function segmentsFrom(playlist: string, base: string, atS: number, count: number): string[] {
+  const all: Array<{ url: string; from: number; to: number }> = [];
+  let at = 0;
+  let length: number | null = null;
+  for (const raw of playlist.split('\n')) {
+    const line = raw.trim();
+    const inf = /^#EXTINF:([\d.]+)/.exec(line);
+    if (inf !== null) length = Number(inf[1]);
+    else if (line !== '' && !line.startsWith('#') && length !== null) {
+      all.push({ url: new URL(line, base).href, from: at, to: at + length });
+      at += length;
+      length = null;
+    }
+  }
+  if (all.length === 0 || count < 1) return [];
+  const first = all.findIndex((s) => s.to > atS);
+  const start = first === -1 ? Math.max(0, all.length - count) : first;
+  return all.slice(start, start + count).map((s) => s.url);
+}
+
 /** The first rendition a master playlist names, or null when `playlist` is a media playlist already. */
 export function firstVariant(playlist: string, base: string): string | null {
   const lines = playlist.split('\n').map((l) => l.trim());
@@ -149,7 +170,7 @@ export function firstVariant(playlist: string, base: string): string | null {
 }
 
 /** The segment that holds second `atS` of an HLS stream's first rendition, with the headers the resolve captured; null for a playlist without segments. Throws when a playlist does not answer. */
-async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<{ segment: string; headers: Record<string, string>; encrypted: boolean } | null> {
+async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<{ segment: string; headers: Record<string, string>; encrypted: boolean; playlist: string; playlistUrl: string } | null> {
   const { referer, origin, user_agent: userAgent } = source.headers;
   const headers: Record<string, string> = { ...(referer === null ? {} : { referer }), ...(origin === null ? {} : { origin }), ...(userAgent === null ? {} : { 'user-agent': userAgent }) };
   const text = async (url: string): Promise<{ body: string; url: string }> => {
@@ -161,7 +182,34 @@ async function hlsSegment(source: ResolvedSource, atS: number, fetchImpl: typeof
   const variant = firstVariant(playlist.body, playlist.url);
   if (variant !== null) playlist = await text(variant);
   const segment = segmentAt(playlist.body, playlist.url, atS);
-  return segment === null ? null : { segment, headers, encrypted: /#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body) };
+  return segment === null ? null : { segment, headers, encrypted: /#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body), playlist: playlist.body, playlistUrl: playlist.url };
+}
+
+/**
+ * The transport stream of up to `count` segments in a row from second `atS` of an HLS stream's first rendition, each
+ * fetched with the headers the resolve captured and cut at its MPEG-TS sync (some hosts wrap every segment in a small
+ * picture file). Null for anything but plain MPEG-TS: an encrypted stream, fragmented MP4, a playlist without
+ * segments, a segment that does not answer or is larger than SEGMENT_MAX_BYTES. Throws when a playlist does not answer.
+ */
+export async function hlsTransportStream(source: ResolvedSource, atS: number, count: number, fetchImpl: typeof fetch, signal: AbortSignal): Promise<Buffer | null> {
+  if (source.manifest_kind !== 'hls') return null;
+  const found = await hlsSegment(source, atS, fetchImpl, signal);
+  if (found === null || found.encrypted) return null;
+  // Side by side: eight segments one after another took 18 s from a slow host, and the play waits for this.
+  const fetched = await Promise.all(
+    segmentsFrom(found.playlist, found.playlistUrl, atS, count).map(async (url): Promise<Buffer | null> => {
+      const res = await fetchImpl(url, { headers: found.headers, signal });
+      if (!res.ok) return null;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length > SEGMENT_MAX_BYTES) return null;
+      const sync = tsSyncOffset(bytes);
+      return sync === -1 ? null : Buffer.from(bytes.buffer, bytes.byteOffset + sync, bytes.length - sync);
+    }),
+  );
+  // The segments in a row up to the first that is missing: a gap would put two stretches of the film side by side.
+  const gap = fetched.findIndex((part) => part === null);
+  const parts = (gap === -1 ? fetched : fetched.slice(0, gap)) as Buffer[];
+  return parts.length === 0 ? null : Buffer.concat(parts);
 }
 
 /** Whether a stream's host hands out the film: true when a segment of it answers with bytes. Never throws. */
