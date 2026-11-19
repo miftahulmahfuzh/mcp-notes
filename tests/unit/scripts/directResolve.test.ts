@@ -705,4 +705,45 @@ describe('what counts as a stream, and where subtitles show', () => {
     expect(script).toContain("$m.params.type -eq 'TextTrack'");
     expect(script).toContain("'SubtitleIndex'");
   });
+
+  it('never takes a playlist the page built for itself for the stream', () => {
+    // VidMario, 2026-11-19: the master playlist of an episode is a blob the player wrote; the playlists it names are real requests.
+    const blob = hit({ url: 'blob:https://player.example/d94a7ae8-fd8e-4d94-928a-d196a73c4905', mime: 'application/vnd.apple.mpegurl', body: MASTER });
+    const real = hit({ at_s: 2.4, url: 'https://cdn.example/tv/abc/1080/index.m3u8', mime: 'application/vnd.apple.mpegurl', body: '#EXTM3U\n#EXTINF:6,\nseg0.ts' });
+    expect(pickSource(capture({ hits: [blob, real] }))?.manifest_url).toBe('https://cdn.example/tv/abc/1080/index.m3u8');
+    expect(pickSource(capture({ hits: [blob] }))).toBeNull();
+    // The page's own master says which of the playlists it loaded is which: the tallest loaded one is kept, with its height.
+    const media = '#EXTM3U\n#EXTINF:6,\nseg0.ts';
+    const built = hit({
+      url: 'blob:https://player.example/b50e7914',
+      mime: 'application/vnd.apple.mpegurl',
+      body: [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=3049059,RESOLUTION=1280x720',
+        'data:application/vnd.apple.mpegurl,%23EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=900000000,RESOLUTION=1920x1080',
+        'https://cache.example/api?d=full',
+        '#EXT-X-STREAM-INF:BANDWIDTH=950000000,RESOLUTION=3840x2160,CODECS="hvc1.2.4.L153.B0,mp4a.40.2"',
+        'https://cache.example/api?d=uhd',
+        '#EXT-X-STREAM-INF:BANDWIDTH=100,RESOLUTION=7680x4320',
+        'https://cache.example/api?d=never-loaded',
+      ].join('\n'),
+    });
+    const low = hit({ url: 'https://cdn.example/tv/abc/list.m3u8', mime: 'application/vnd.apple.mpegurl', body: media });
+    const full = hit({ url: 'https://cache.example/api?d=full', mime: 'application/vnd.apple.mpegurl', body: media });
+    const uhd = hit({ at_s: 3, url: 'https://cache.example/api?d=uhd', mime: 'application/vnd.apple.mpegurl', body: media });
+    expect(pickSource(capture({ hits: [low, full, built, uhd] }))).toMatchObject({ manifest_url: 'https://cache.example/api?d=uhd', best_height: 2160 });
+    expect(pickSource(capture({ hits: [low, full, built] }))).toMatchObject({ manifest_url: 'https://cache.example/api?d=full', best_height: 1080 });
+    expect(pickSource(capture({ hits: [low, built] }))).toMatchObject({ manifest_url: 'https://cdn.example/tv/abc/list.m3u8', best_height: null });
+  });
+
+  it('presses the middle of the page as it is laid out, and knows a player\'s own captcha gate for a bot check', () => {
+    const script = readFileSync(new URL('../../../claude/streaming/direct/sniff.ps1', import.meta.url), 'utf8');
+    // vidsrc.sh's player starts only from its centred button: a fixed point misses it in a tab the size of the window.
+    expect(script).toContain(`expression = 'innerWidth + "x" + innerHeight'`);
+    expect(script).toContain('x = $clickX; y = $clickY');
+    expect(script).not.toContain('x = 400; y = 300');
+    // Its puzzle before the stream is an outcome, never solved.
+    expect(/\$botUrl = '([^']+)'/.exec(script)?.[1]).toContain('/vs_captcha/');
+  });
 });

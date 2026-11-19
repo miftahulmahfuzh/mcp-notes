@@ -482,6 +482,20 @@ stands even when the last title it resolved had none), delivery, health, quality
 **What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
 error page, a bare list of addresses) is not a stream, and the next provider is tried.
 
+**What the sniffer does to a page, and what it calls a bot check.** A player that waits is pressed
+once every five seconds from the eighth, up to four times, in the middle of the page as it is
+laid out (a player that starts only from its own centred button, vidsrc.sh's, is missed by a
+fixed point). `bot_check` is a page titled like a challenge, a `cf-mitigated: challenge` answer,
+a request to Cloudflare's `/cdn-cgi/challenge-platform/`, hCaptcha or reCAPTCHA, or a player's own
+puzzle: vidsrc.sh (behind VidSrc, VidMov and VidFyi) shows a slide or rotate puzzle before it
+makes the stream, asked from `/vs_captcha/`. Once one is seen the presses stop and the sniff ends
+five seconds later; nothing solves it.
+
+**A playlist the page built for itself is not the stream.** A player may write its master
+playlist into a `blob:` address (VidMario's for an episode). Only an http(s) address can be
+played from outside the page, so such a playlist is skipped, and it is read for one thing: of the
+real playlists the page went on to load, the tallest it names is kept, with that height.
+
 **An episode from a whole-series player is not a stream.** A provider that lacks the episode asked
 may fall back to a second player in a nested frame that is given the series alone and plays
 whatever it starts with (NexaStream for Breaking Bad S01E99, which does not exist: a frame at
@@ -544,11 +558,14 @@ audio, an English subtitle file).
 - An episode address is kept in the seed only when it passed the campaign's control check
   (`claude/streaming/direct/campaign.mjs run --only <names>`): the provider resolves a real
   episode and does not resolve one the series does not have (Breaking Bad S01E99), so it cannot
-  be an address that ignores the episode. Eight seed providers have one (2026-11-19): VidNest,
+  be an address that ignores the episode. Nine seed providers have one (2026-11-19): VidNest,
   VidUp, VidFast and VidLink without an English subtitle, HyperLink, Smashy, VidRock and
-  NexaStream with one. A seed provider's host may only forward now (Smashy to `anyembed.xyz`,
-  HyperLink and NexaStream from `vidsrc.wtf` to `viduki.net`); the template stays the address
-  the aggregator site links, which still answers.
+  NexaStream with one, and Movies111 without. A seed provider's host may only forward now
+  (Smashy to `anyembed.xyz`, HyperLink and NexaStream from `vidsrc.wtf` to `viduki.net`); the
+  template stays the address the aggregator site links, which still answers. A host that is
+  gone is replaced by where the provider went: `111movies.com` is a parked domain, and
+  Movies111 is `player.vidmario.net/embed/...` (where `111movies.net` forwards the old
+  addresses).
 
 ### How a provider delivers
 

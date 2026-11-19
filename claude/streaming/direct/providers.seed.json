@@ -78,7 +78,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: click_missed"
+    "notes": "campaign 2026-11-19: bot_check"
   },
   {
     "name": "VidFyi",
@@ -87,7 +87,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: click_missed"
+    "notes": "campaign 2026-11-19: bot_check"
   },
   {
     "name": "VidRock",
@@ -101,11 +101,11 @@
   {
     "name": "Movies111",
     "id_kind": "tmdb",
-    "movie": "https://111movies.com/movie/{id}",
-    "tv": null,
+    "movie": "https://player.vidmario.net/embed/movie/{id}?autoplay=true",
+    "tv": "https://player.vidmario.net/embed/tv/{id}/{season}/{episode}?autoplay=true",
     "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-15: no_player"
+    "en_subtitle": false,
+    "notes": "campaign 2026-11-19: resolved hls ?p in 5.8 s; episodes"
   },
   {
     "name": "NonTongo",
@@ -123,7 +123,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: click_missed"
+    "notes": "campaign 2026-11-19: bot_check"
   },
   {
     "name": "HyperLink",

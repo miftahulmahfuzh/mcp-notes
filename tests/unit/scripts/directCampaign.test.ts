@@ -97,7 +97,7 @@ async function fakeSniff(url: string, options: any = {}) {
       return sniffed(url, { manifest: true }, options);
     case 'vidsrc.me':
       return sniffed(url, { requests: 0, frames: [] }, options);
-    case '111movies.com':
+    case 'player.vidmario.net':
       return sniffed(url, { inspect: [{ url, title: '111movies', text: 'Sorry, this movie is not found', videos: [], iframes: 0 }] }, options);
     case 'hexa.watch':
       return sniffed(url, { frames: [], inspect: [{ url, title: 'Hexa', text: '', videos: [], iframes: 1 }] }, options);

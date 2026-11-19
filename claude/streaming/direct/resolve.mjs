@@ -70,6 +70,7 @@ function absolute(address, base) {
   }
 }
 
+const HTTP = /^https?:\/\//i;
 const okStatus = (hit) => typeof hit.status === 'number' && hit.status >= 200 && hit.status < 300;
 
 /** hls, dash or mp4 for a hit that is a stream, else null. The body decides first. */
@@ -240,6 +241,8 @@ function bestHit(sniff) {
   let best = null;
   for (const hit of hits) {
     if (!okStatus(hit)) continue;
+    // A playlist the page built for itself (blob:, data:) exists only inside that page: the real playlists it names are the stream.
+    if (!HTTP.test(String(hit.url ?? ''))) continue;
     const kind = manifestKind(hit);
     if (kind === null) continue;
     // An answer Chrome kept that is no playlist (a relay's error page, a bare list of addresses) cannot be played.
@@ -247,7 +250,31 @@ function bestHit(sniff) {
     const r = rank(hit, kind);
     if (best === null || r < best.rank) best = { hit, kind, rank: r };
   }
+  if (best !== null && best.kind === 'hls' && best.rank === 1) {
+    // No master among the real requests. A master the page built for itself says which of the
+    // playlists it asked for is which quality: the tallest one the page really loaded is kept.
+    for (const built of hits) {
+      if (!okStatus(built) || HTTP.test(String(built.url ?? '')) || typeof built.body !== 'string') continue;
+      for (const variant of masterVariants(built.body)) {
+        const hit = hits.find((h) => h.url === variant.url && okStatus(h) && manifestKind(h) === 'hls');
+        if (hit && variant.height > (best.height ?? 0)) best = { hit, kind: 'hls', rank: 1, height: variant.height };
+      }
+    }
+  }
   return best;
+}
+
+/** The variants a master playlist names by a whole http(s) address, with their heights. */
+function masterVariants(body) {
+  const out = [];
+  const lines = body.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+    const height = Number(/^\d+x(\d+)$/.exec(attributes(line.slice('#EXT-X-STREAM-INF:'.length)).RESOLUTION ?? '')?.[1] ?? 0);
+    const url = (lines.slice(index + 1).find((l) => l.trim() !== '' && !l.startsWith('#')) ?? '').trim();
+    if (height > 0 && HTTP.test(url)) out.push({ url, height });
+  }
+  return out;
 }
 
 /** The text of the manifest pickSource chose ('' when the capture kept none): the audio probe reads it. */
@@ -275,7 +302,7 @@ export function pickSource(sniff) {
     manifest_kind: kind,
     headers: { referer: hit.referer ?? null, origin: hit.origin ?? null, user_agent: hit.user_agent ?? sniff.user_agent ?? null },
     subtitles,
-    best_height: bestHeight(hit, kind),
+    best_height: best.height ?? bestHeight(hit, kind),
     en_subtitle: subtitles.some(isEnglish),
   };
 }

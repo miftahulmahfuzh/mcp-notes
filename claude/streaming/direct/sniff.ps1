@@ -196,7 +196,9 @@ $botTitle = '^(Just a moment|Attention Required|Checking your browser|One more s
 # Not a bare challenges.cloudflare.com request: that also fires for Turnstile's own loader, which
 # plenty of sites embed passively (an invisible widget, bot scoring) on a page that never blocks
 # anything. /cdn-cgi/challenge-platform/ is Cloudflare's own path for serving the challenge itself.
-$botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)'
+# /vs_captcha/ is vidsrc.sh's own gate (a slide or rotate puzzle its player shows before it makes
+# the stream, 2026-11-19): the player asks for its files only when it puts the puzzle up.
+$botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)|/vs_captcha/'
 $events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
 
 $hits = New-Object System.Collections.ArrayList
@@ -218,6 +220,12 @@ $script:botAt = $null
 $script:botReason = $null
 # A background tab's title never arrives as a target event, so the page is asked for it.
 $titleCall = $null
+# Where the press goes: the middle of the page as it is laid out, asked of the page once it has
+# loaded. A player that starts only from its own centred button (vidsrc.sh's, 2026-11-19) is
+# missed by a fixed point: the tab is as large as the Chrome window, not 800 by 600.
+$sizeCall = $null
+$clickX = 400
+$clickY = 300
 $deadline = (Get-Date).AddSeconds($Seconds)
 
 function Set-BotCheck([string]$reason) {
@@ -293,7 +301,7 @@ while ((Get-Date) -lt $deadline) {
   if (-not $firstManifest -and -not $script:botAt -and $clicks -lt 4 -and $elapsed -gt (8 + 5 * $clicks)) {
     $clicks++
     foreach ($type in 'mouseMoved', 'mousePressed', 'mouseReleased') {
-      Send-Cdp 'Input.dispatchMouseEvent' @{ type = $type; x = 400; y = 300; button = 'left'; buttons = 1; clickCount = 1 } $root | Out-Null
+      Send-Cdp 'Input.dispatchMouseEvent' @{ type = $type; x = $clickX; y = $clickY; button = 'left'; buttons = 1; clickCount = 1 } $root | Out-Null
     }
   }
   try { $text = Receive-Message 250 } catch { break }
@@ -304,6 +312,17 @@ while ((Get-Date) -lt $deadline) {
       $titleCall = $null
       $title = [string]$reply.result.result.value
       if ($title -match $botTitle) { Set-BotCheck "title $title" }
+      continue
+    }
+  }
+  if ($sizeCall -and $text -match ('"id":' + $sizeCall + '[,}]')) {
+    try { $reply = $text | ConvertFrom-Json } catch { continue }
+    if ($reply.id -eq $sizeCall) {
+      $sizeCall = $null
+      if ([string]$reply.result.result.value -match '^(\d+)x(\d+)$' -and [int]$Matches[1] -ge 200 -and [int]$Matches[2] -ge 150) {
+        $clickX = [int]([int]$Matches[1] / 2)
+        $clickY = [int]([int]$Matches[2] / 2)
+      }
       continue
     }
   }
@@ -342,6 +361,7 @@ while ((Get-Date) -lt $deadline) {
     { $_ -eq 'Page.domContentEventFired' -or $_ -eq 'Page.loadEventFired' } {
       if ($m.sessionId -eq $root) {
         $titleCall = Send-Cdp 'Runtime.evaluate' @{ expression = 'document.title'; returnByValue = $true } $root
+        $sizeCall = Send-Cdp 'Runtime.evaluate' @{ expression = 'innerWidth + "x" + innerHeight'; returnByValue = $true } $root
       }
     }
     'Network.requestWillBeSentExtraInfo' {
