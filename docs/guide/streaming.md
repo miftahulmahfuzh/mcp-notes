@@ -1770,6 +1770,8 @@ DHT node and no peer.
    closes, often after the engine has let go of the peer; with nobody listening, that error ended notesd and
    every stream with it. The engine now hears such an error itself (`utpGuard.ts`) and logs it, at most once a
    minute: `torrent engine: 3 uTP connection error(s) nobody was listening for (last: UTP_ECONNRESET); ignored`.
+   The same file guards the engine's handshake with a peer whose torrent was already left (a swarm probe, a
+   torrent that lost the race): its late answer used to throw `Cannot read properties of null (reading 'dht')`.
 
 A download belongs to the machine that made it. A row of another host (copied in from the old shared
 database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its
