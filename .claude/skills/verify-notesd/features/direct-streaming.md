@@ -5,6 +5,12 @@
   at every start (seed rows have `origin_site` null); health per provider
   and host in `stream_provider_health`, written after every resolve. Proven by
   `npm run test:int -- tests/integration/directStream.repo.int.test.ts` and `journey.sh RUN seed`.
+- Episode addresses in the seed, and the whole-series fallback: an episode's stream that a nested
+  frame given the series alone loaded (`seriesPlayerFrame` in `resolve.mjs`) is `no_stream`. Proven by
+  `npx vitest run tests/unit/scripts/directResolve.test.ts -t "whole-series"`, and live (owner's
+  machine, providers are live) by `node claude/streaming/direct/campaign.mjs run --only Smashy,VidRock,NexaStream --out <dir>`
+  (each row's episode `resolved`, control `no_stream`), `node claude/streaming/direct/cli.mjs resolve tv 1396 1 99 --only NexaStream`
+  (`no_stream`, "a whole-series player") and the live playback probe below with `--check subtitle --provider <name> tv 1396 2 3`.
 - Play: `POST /api/stream/play` (same-origin) resolves through the resolver CLI and opens
   `http://localhost:<port>/stream/<session id>` full screen in the streaming Chrome (the page itself
   is phase 4's). Sessions live in memory: a 32-character random id, 4 hours idle, 24 hours at most.

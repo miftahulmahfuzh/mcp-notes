@@ -174,7 +174,7 @@ describe('direct streaming probe campaign', () => {
     expect(by('CloudPlay').control_outcome).not.toBe('resolved');
     expect(by('VidFast').template).toBe('https://vidfast.pro/tv/{id}/{season}/{episode}?autoPlay=true');
     expect(by('VidUp').template).toBeNull();
-    expect(by('VidUp').tried.map((t: any) => t.outcome)).toEqual(['ignores_episode', 'ignores_episode', 'ignores_episode']);
+    expect(by('VidUp').tried.map((t: any) => t.outcome)).toEqual(['ignores_episode', 'ignores_episode', 'ignores_episode', 'ignores_episode']);
     expect(by('Videasy').skipped).toBe('no film resolved');
   });
 
@@ -189,6 +189,14 @@ describe('direct streaming probe campaign', () => {
         expect(c).not.toMatch(/\/movie(\/|\?|$)|type=movie/);
       }
     }
+    // A path id takes four shapes; Smashy's real one is the third (its /tv/{id}/{season}/{episode} forwards to an address its player refuses).
+    expect(episodeTemplates('https://player.smashystream.com/movie/{id}')).toEqual([
+      'https://player.smashystream.com/tv/{id}/{season}/{episode}',
+      'https://player.smashystream.com/tv/{id}?season={season}&episode={episode}',
+      'https://player.smashystream.com/tv/{id}?s={season}&e={episode}',
+      'https://player.smashystream.com/tv/{id}-{season}-{episode}',
+    ]);
+    expect(episodeTemplates('https://vidup.to/movie/{id}?autoPlay=true')[2]).toBe('https://vidup.to/tv/{id}?autoPlay=true&s={season}&e={episode}');
     expect(episodeTemplates('https://vidsrc.me/embed/movie?tmdb={id}')[0]).toBe('https://vidsrc.me/embed/tv?tmdb={id}&season={season}&episode={episode}');
     expect(episodeTemplates('https://rivestream.org/embed?type=movie&id={id}')[0]).toBe('https://rivestream.org/embed?type=tv&id={id}&season={season}&episode={episode}');
   });

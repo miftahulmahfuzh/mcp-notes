@@ -39,10 +39,10 @@
     "name": "Smashy",
     "id_kind": "tmdb",
     "movie": "https://player.smashystream.com/movie/{id}",
-    "tv": null,
+    "tv": "https://player.smashystream.com/tv/{id}?s={season}&e={episode}",
     "browser_only": false,
     "en_subtitle": true,
-    "notes": "campaign 2026-11-15: resolved hls ?p en in 8.3 s"
+    "notes": "campaign 2026-11-19: resolved hls ?p en in 9.1 s; episodes"
   },
   {
     "name": "VidUp",
@@ -93,10 +93,10 @@
     "name": "VidRock",
     "id_kind": "tmdb",
     "movie": "https://vidrock.net/movie/{id}",
-    "tv": null,
+    "tv": "https://vidrock.net/tv/{id}/{season}/{episode}",
     "browser_only": false,
     "en_subtitle": true,
-    "notes": "campaign 2026-11-15: resolved hls 1080p en in 7.1 s"
+    "notes": "campaign 2026-11-19: resolved hls 1080p en in 9 s; episodes"
   },
   {
     "name": "Movies111",
@@ -138,10 +138,10 @@
     "name": "NexaStream",
     "id_kind": "tmdb",
     "movie": "https://vidsrc.wtf/api/2/movie/?id={id}&color=215fb3",
-    "tv": null,
+    "tv": "https://vidsrc.wtf/api/2/tv/?id={id}&color=215fb3&s={season}&e={episode}",
     "browser_only": false,
     "en_subtitle": true,
-    "notes": "campaign 2026-11-15: resolved hls 801p en in 10.3 s"
+    "notes": "campaign 2026-11-19: resolved hls 801p en in 14.2 s; needed_click, episodes"
   },
   {
     "name": "UltraBox",

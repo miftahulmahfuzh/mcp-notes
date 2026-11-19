@@ -274,6 +274,8 @@ export function episodeTemplates(movieTemplate) {
     const after = pathPart.slice(end);
     out.push(join(`${before}/{season}/{episode}${after}`, query));
     out.push(join(`${before}${after}`, add(query, 'season={season}&episode={episode}')));
+    // Smashy's shape (2026-11-19): its /tv/{id}/{season}/{episode} forwards to an address its player refuses.
+    out.push(join(`${before}${after}`, add(query, 's={season}&e={episode}')));
     out.push(join(`${before}-{season}-{episode}${after}`, query));
   } else if (query.includes('{id}')) {
     out.push(join(pathPart, add(query, 'season={season}&episode={episode}')));
@@ -315,7 +317,7 @@ export async function runCampaign({
   titles = TITLES,
   diagnoseFailures = true,
   episodes = true,
-  candidates = 3,
+  candidates = 4,
   now = () => new Date(),
   host = os.hostname(),
   log = () => {},
@@ -862,7 +864,7 @@ export async function main(command, argv, io = {}) {
         titles,
         diagnoseFailures: flags['no-diagnose'] !== true,
         episodes: flags['no-episodes'] !== true,
-        candidates: Number(flags.candidates ?? 3),
+        candidates: Number(flags.candidates ?? 4),
         now,
         log,
         onRow: save,

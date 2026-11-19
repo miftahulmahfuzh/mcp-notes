@@ -280,6 +280,64 @@ export function pickSource(sniff) {
   };
 }
 
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
+/** The numbers an address names, one per part of its path and query: 3 for `3`, `03`, `e3` or `episode=3`, 2 and 3 for `s02e03`. */
+function numbersIn(parts) {
+  const out = [];
+  for (const part of parts) {
+    const both = /^s(\d{1,4})e(\d{1,4})$/i.exec(part);
+    if (both) out.push(Number(both[1]), Number(both[2]));
+    const one = /^(?:s|e|ep|season|episode)?(\d{1,9})$/i.exec(part);
+    if (one) out.push(Number(one[1]));
+  }
+  return out;
+}
+
+/**
+ * The host of a whole-series player an episode's stream came from, or null. A provider that does
+ * not have the episode asked may fall back to a second player in a nested frame that is given the
+ * series alone (NexaStream, 2026-11-19: `.../play/tt0903747` for Breaking Bad S01E99) and plays
+ * whatever that player starts with. Such a stream is another episode, so it is no stream. Told by
+ * the frame the manifest's request came from (its Referer): its address names the title (the TMDB
+ * id, or an IMDb id) and not both the season and the episode. A frame whose address names no
+ * title (an opaque token) says nothing and is kept.
+ */
+export function seriesPlayerFrame(sniff, source, ref) {
+  if (ref.kind !== 'tv' || ref.season == null || ref.episode == null) return null;
+  const from = hostOf(source?.headers?.referer ?? '');
+  if (from === '') return null;
+  const frames = (Array.isArray(sniff?.frames) ? sniff.frames : [])
+    .map(String)
+    .filter((f) => f.startsWith('iframe '))
+    .map((f) => f.slice('iframe '.length))
+    .filter((url) => hostOf(url) === from);
+  if (frames.length === 0) return null;
+  const wholeSeries = (url) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    const parts = `${parsed.pathname}&${parsed.search}`.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    const title = parts.findIndex((part) => part === String(ref.tmdbId) || /^tt\d{5,}$/i.test(part));
+    if (title === -1) return false;
+    const numbers = numbersIn(parts.filter((_, index) => index !== title));
+    const season = numbers.indexOf(Number(ref.season));
+    if (season === -1) return true;
+    numbers.splice(season, 1);
+    return !numbers.includes(Number(ref.episode));
+  };
+  return frames.every(wholeSeries) ? from : null;
+}
+
 const seconds = (ms) => Math.round(ms / 100) / 10;
 const attempt = (provider, outcome, tookS, detail) => ({ provider: provider.name, outcome, took_s: tookS, detail });
 
@@ -372,7 +430,14 @@ export async function resolveTitle(
       continue;
     }
     const tookS = seconds(clock() - started);
-    const found = pickSource(sniffed);
+    let found = pickSource(sniffed);
+    const seriesPlayer = found && provider.id_kind !== 'anilist' ? seriesPlayerFrame(sniffed, found, ref) : null;
+    if (seriesPlayer !== null) {
+      // The provider's fallback for an episode it does not have: another episode of the series.
+      attempts.push(attempt(provider, 'no_stream', tookS, `the stream came from ${seriesPlayer}, a whole-series player whose address names no episode`));
+      found = null;
+      continue;
+    }
     if (found && provider.id_kind === 'anilist') {
       // The template asks the embed for its subtitled version (/sub): a track it names no language for is the English one.
       found.subtitles = found.subtitles.map((t) => (t.lang === null && t.label === null ? { ...t, lang: 'en', label: 'English' } : t));

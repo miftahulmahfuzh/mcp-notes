@@ -482,6 +482,16 @@ stands even when the last title it resolved had none), delivery, health, quality
 **What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
 error page, a bare list of addresses) is not a stream, and the next provider is tried.
 
+**An episode from a whole-series player is not a stream.** A provider that lacks the episode asked
+may fall back to a second player in a nested frame that is given the series alone and plays
+whatever it starts with (NexaStream for Breaking Bad S01E99, which does not exist: a frame at
+`.../play/tt0903747`). That is another episode, so the attempt reads `no_stream`,
+`the stream came from <host>, a whole-series player whose address names no episode`, and the next
+provider is tried. It is told by the frame the stream's request came from (its `Referer`): the
+frame's address names the title (the TMDB id or an IMDb id) and not both the season and the
+episode (`seriesPlayerFrame` in `resolve.mjs`). A frame whose address names no title says nothing
+and is kept, and a film is never refused this way.
+
 **Where subtitles are found.** Tracks inside the manifest; `.vtt` and `.srt` requests the page
 made, also when the file's address is a relay's parameter (`fetch?url=...%2Fx.vtt&ref=...`) or the
 request is a text track; and the list a page's subtitle service answered with (`sub.vdrk.site`,
@@ -531,6 +541,14 @@ audio, an English subtitle file).
   choose its order.
 - A provider skipped because it only plays in its own page (`browser_only`), or because it has no
   episode address, is not a failure: its health is left alone.
+- An episode address is kept in the seed only when it passed the campaign's control check
+  (`claude/streaming/direct/campaign.mjs run --only <names>`): the provider resolves a real
+  episode and does not resolve one the series does not have (Breaking Bad S01E99), so it cannot
+  be an address that ignores the episode. Eight seed providers have one (2026-11-19): VidNest,
+  VidUp, VidFast and VidLink without an English subtitle, HyperLink, Smashy, VidRock and
+  NexaStream with one. A seed provider's host may only forward now (Smashy to `anyembed.xyz`,
+  HyperLink and NexaStream from `vidsrc.wtf` to `viduki.net`); the template stays the address
+  the aggregator site links, which still answers.
 
 ### How a provider delivers
 

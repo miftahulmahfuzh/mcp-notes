@@ -8,7 +8,7 @@ import { ANIME_SEED_PATH, main, openInChrome, parseArgs, readHealth, readProvide
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { orderProviders } from '../../../claude/streaming/direct/order.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
-import { embedUrl, indexSubtitles, pickSource, resolveTitle } from '../../../claude/streaming/direct/resolve.mjs';
+import { embedUrl, indexSubtitles, pickSource, resolveTitle, seriesPlayerFrame } from '../../../claude/streaming/direct/resolve.mjs';
 // @ts-expect-error -- plain .mjs scripts without type declarations
 import { MEDIA_EXPRESSION, MUTE_SCRIPT, parseSniffReply } from '../../../claude/streaming/direct/sniff.mjs';
 
@@ -250,7 +250,7 @@ describe('picking the stream out of a capture', () => {
         ],
       }),
     );
-    expect(found.subtitles.filter((t) => t.source === 'request').map((t) => t.url)).toEqual(['https://subs.example/the-fix/English.vtt']);
+    expect(found.subtitles.filter((t: Json) => t.source === 'request').map((t: Json) => t.url)).toEqual(['https://subs.example/the-fix/English.vtt']);
   });
 
   it('finds no stream in refused requests or an empty capture', () => {
@@ -643,6 +643,39 @@ describe('anime embeds', () => {
 });
 
 describe('what counts as a stream, and where subtitles show', () => {
+  it('does not take a whole-series fallback player for the episode asked', async () => {
+    // NexaStream, 2026-11-19: Breaking Bad S01E99 does not exist, and the page fell back to a nested player given the series alone.
+    const episode = { kind: 'tv', tmdbId: 1396, season: 1, episode: 99 };
+    const fromFrame = (frame: string): Json =>
+      capture({ frames: [`iframe ${frame}`, 'worker blob:https://embed.example/1'], hits: [hit({ url: 'https://cdn.player.example/s/master.m3u8', referer: 'https://player.example/', origin: 'https://player.example', body: MASTER })] });
+    const fallback = fromFrame('https://player.example/play/tt0903747');
+    expect(seriesPlayerFrame(fallback, pickSource(fallback), episode)).toBe('player.example');
+    expect(seriesPlayerFrame(fromFrame('https://player.example/embed/tv/1396'), pickSource(fallback), episode)).toBe('player.example');
+    // A frame that names the episode, in any of the usual ways, is the episode's own player.
+    for (const named of ['https://player.example/embed/tv/1396/1/99', 'https://player.example/play/tt0903747?s=1&e=99', 'https://player.example/e/1396-S01E99', 'https://player.example/tv?tmdb=1396&season=01&episode=99']) {
+      expect(seriesPlayerFrame(fromFrame(named), pickSource(fallback), episode)).toBeNull();
+    }
+    // S01E01 needs both numbers: the season alone does not name the episode.
+    expect(seriesPlayerFrame(fromFrame('https://player.example/tv/1396/1'), pickSource(fallback), { ...episode, episode: 1 })).toBe('player.example');
+    expect(seriesPlayerFrame(fromFrame('https://player.example/tv/1396/1/1'), pickSource(fallback), { ...episode, episode: 1 })).toBeNull();
+    // An opaque frame names no title and says nothing; nor does a stream the embed's own page asked for, or a film.
+    expect(seriesPlayerFrame(fromFrame('https://player.example/rcp/Zm9vYmFy'), pickSource(fallback), episode)).toBeNull();
+    expect(seriesPlayerFrame(fromFrame('https://other.example/play/tt0903747'), pickSource(fallback), episode)).toBeNull();
+    expect(seriesPlayerFrame(fallback, pickSource(fallback), MOVIE)).toBeNull();
+
+    const tv = 'https://{host}.example/tv/{id}/{season}/{episode}';
+    const { sniff } = fakeSniffer({ 'alpha.example': fallback, 'beta.example': streamCapture() });
+    const result = await resolveTitle(episode, { providers: [provider('Alpha', { tv: tv.replace('{host}', 'alpha') }), provider('Beta', { tv: tv.replace('{host}', 'beta') })], sniff });
+    expect(result.attempts.map((a: Json) => [a.provider, a.outcome])).toEqual([
+      ['Alpha', 'no_stream'],
+      ['Beta', 'resolved'],
+    ]);
+    expect(result.attempts[0].detail).toBe('the stream came from player.example, a whole-series player whose address names no episode');
+    // The same capture for a film is a stream like any other.
+    const film = await resolveTitle(MOVIE, { providers: [provider('Alpha')], sniff });
+    expect(film.source?.provider).toBe('Alpha');
+  });
+
   it('does not take an answer that is no playlist for a stream', async () => {
     // What a relay under a rate limit answered for One Piece: a bare list of addresses, no #EXTM3U.
     const garbage = capture({ hits: [hit({ url: 'https://cdn.example/m3u8-proxy.m3u8?p=abc', mime: 'application/vnd.apple.mpegurl', body: 'https://cdn.example/m3u8-proxy.m3u8?p=1\nhttps://cdn.example/m3u8-proxy.m3u8?p=2\n' })] });
