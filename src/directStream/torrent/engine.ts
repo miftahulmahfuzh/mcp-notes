@@ -26,7 +26,10 @@ export interface WebTorrentEngineOptions {
   /** `host:port` addresses added as a peer to every torrent (NOTESD_TORRENT_PEERS). */
   peers: readonly string[];
   log: (line: string) => void;
-  /** uTP beside TCP; default true. The loopback tests turn it off. */
+  /**
+   * uTP beside TCP; default false (NOTESD_TORRENT_UTP=on turns it on). Measured from this machine on four well
+   * seeded swarms, 40 s each, 2026-11-20: TCP alone fetched 183 to 251 MB, uTP beside it 18 to 98 MB.
+   */
   utp?: boolean;
 }
 
@@ -256,7 +259,7 @@ export class WebTorrentEngine implements TorrentEngine {
     }
     const discovery = this.opts.discovery;
     // A peer's uTP error must never leave the process (utpGuard.ts): installed before the first swarm is joined.
-    if (this.opts.utp ?? true) installUtpGuard(this.opts.log);
+    if (this.opts.utp === true) installUtpGuard(this.opts.log);
     // Nor a peer whose torrent was already left (the same file).
     await installPeerGuard(this.opts.log);
     const client = new Ctor({
@@ -266,7 +269,7 @@ export class WebTorrentEngine implements TorrentEngine {
       natUpnp: false,
       natPmp: false,
       webSeeds: false,
-      utp: this.opts.utp ?? true,
+      utp: this.opts.utp === true,
       uploadLimit: Math.max(1, Math.round(this.opts.uploadKbps * BYTES_PER_KB)),
     });
     client.on('error', (err: unknown) => this.opts.log(`[notesd] torrent engine: ${messageOf(err)}`));

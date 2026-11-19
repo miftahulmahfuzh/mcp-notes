@@ -1774,7 +1774,11 @@ DHT node and no peer.
    minutes after its last file request.
 7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
    A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
-8. A peer's socket error never ends the daemon. A uTP connection that a peer resets reports its error when it
+8. Peers are reached over TCP only. uTP beside it (webtorrent's default, and notesd's until 2026-11-20) made things
+   worse from this machine, WSL 2 behind NAT: on four well seeded swarms, 40 s each and in alternating order, TCP
+   alone fetched 183, 226, 184 and 251 MB, and with uTP on 18.5, 26.5, 80 and 98 MB. Films with a hundred seeders
+   at the trackers had been failing with one or two peers connected. `NOTESD_TORRENT_UTP=on` turns uTP back on.
+9. A peer's socket error never ends the daemon. A uTP connection that a peer resets reports its error when it
    closes, often after the engine has let go of the peer; with nobody listening, that error ended notesd and
    every stream with it. The engine now hears such an error itself (`utpGuard.ts`) and logs it, at most once a
    minute: `torrent engine: 3 uTP connection error(s) nobody was listening for (last: UTP_ECONNRESET); ignored`.
@@ -2051,7 +2055,9 @@ after the play has started:
 - **How.** ffmpeg cuts the audio from the start of the film in stretches of five minutes: from the
   torrent's own file route, which waits for bytes not downloaded yet, or from the cloud stream (this
   machine's cache of it when the session plays from the cache, else the provider's manifest with
-  the headers the resolve captured). Silero VAD (`claude/streaming/torrent/vad.py`, run with
+  the headers the resolve captured). A provider's HLS stream is read segment by segment by the daemon
+  itself (`src/directStream/hlsCut.ts`), since ffmpeg alone cannot read most of them: see
+  [What the film's sound is read from](#what-the-films-sound-is-read-from). Silero VAD (`claude/streaming/torrent/vad.py`, run with
   Whisper's Python; no model is downloaded) finds where people talk, and those stretches of speech,
   never the audio, go to Wyzie (`POST /sync`), which tries its top five English subtitles of the
   title and answers the one that fits best, moved and stretched to fit.
@@ -2150,6 +2156,38 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   `subtitle_check_off`. Idle, a torrent is checked only from a finished download (`no_audio`
   otherwise). A checked cloud file was judged against one provider's cut; another provider of the
   same title may run differently, and is checked on its own when asked.
+
+#### What the film's sound is read from
+
+Wyzie Synced and `/sync-subtitle` both cut stretches of the film's audio with ffmpeg. A torrent's
+file and this machine's stream cache are read as they are. A cloud provider's stream is not that
+simple: in the subtitle soak of 2026-11-20 ffmpeg could read the sound of 2 of 10 cloud streams.
+
+| What the stream host does | What ffmpeg alone made of it | Seen on |
+| --- | --- | --- |
+| Wraps every MPEG-TS segment in a small PNG | "Stream map matches no streams": no cut at all | VidNest, HyperLink |
+| Fragmented MP4 named `.jpg`, `.css`, `.pdf`, the sound in a playlist of its own | The first five minutes, then nothing after any seek; a cut past the end came back with the film's first minute | VidNest |
+| Answers the same playlist 200, 502 and 403 within seconds | Whatever the one try got | VidRock |
+
+So `/sync-subtitle` answered `unheard`, and Wyzie Synced failed. Three of those failures read "only
+93 s of speech in the film", which is kept as final and never tried again.
+
+For an HLS source the daemon now fetches the segments itself (`withHlsSegments`, `hlsStretch` in
+`picture.ts`), with the headers the resolve captured, and hands them to ffmpeg on stdin:
+
+- **Which playlist.** The stream's own audio playlist when the master names one
+  (`#EXT-X-MEDIA:TYPE=AUDIO` with a `URI`), else the rendition with the lowest bandwidth: every
+  rendition carries the same sound.
+- **Which bytes.** MPEG-TS segments are cut at their sync byte, which drops a picture wrapped
+  around them. Fragmented MP4 is sent behind its `#EXT-X-MAP` part.
+- **To the second.** The playlist says where each segment begins, so ffmpeg skips from the first
+  segment's start to the second asked for. The times the check hears lines at are the film's.
+- **The end of the film** is where the playlist ends: a stretch past it is empty, and nothing wraps.
+- **A host that falters.** Each playlist and segment is asked for up to three times, 1.5 s apart. A
+  stretch still incomplete is a failed cut, never a short one, so it is not taken for the film's
+  end: the check passes that window over, and the sync is tried again by the next play.
+- **Not read this way:** an encrypted stream and one addressed by byte ranges. Those, and a source
+  that is not HLS, go to ffmpeg alone as before.
 
 **Another episode's file is ranked last.** Wyzie's list for an episode sometimes holds a file of its
 neighbour: on 2026-11-18 the list for American Horror Story S01E02 held
