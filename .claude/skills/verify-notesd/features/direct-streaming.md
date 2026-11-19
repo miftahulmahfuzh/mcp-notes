@@ -616,6 +616,12 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   throwaway daemon has no Whisper: the tool answers `subtitle_check_off` there. A real check needs a real
   film: the session log of 2026-11-18 (FS-93) ran it on American Horror Story S01E02 from disk.
 
+- A film not in English is heard through Whisper's translation: where the words do not settle a subtitle, the
+  lines' starts do (`onsetFit` in `subtitleCheck/match.ts`, `matched_by: onsets`). Proof:
+  `tests/unit/directStream/subtitleCheck/onsets.test.ts` (the film's own file in step, 33 s early and re-timed,
+  another film's file, a drifting one, too few lines, never for English); on real streams, seven recorded sets of
+  heard lines against seventeen files with the words blanked found 9 of 12 right files and none of 107 wrong ones.
+
 ## Wyzie Synced, and a cloud stream with no English subtitle
 - The audio of a cloud HLS stream is cut from its segments by the daemon (`src/directStream/hlsCut.ts`,
   `hlsStretch` in `picture.ts`), for Wyzie Synced and `/sync-subtitle` alike: ffmpeg alone read 2 of 12 cloud

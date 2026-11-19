@@ -2127,6 +2127,20 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   every run of one to four cues, by the longest run of words they share in order. With half the
   lines found the subtitle is of this film (`correct`); with a fifth or fewer it is not (`wrong`). On
   2026-11-18 the right file of an episode held 94% of 82 heard lines and the Pilot's file 6%.
+- **A film not in English.** Whisper translates what it hears, and a translation's wording is not the
+  subtitle's: the right file of The Raid held 13% of the heard lines, and another film's file as
+  many, so by words every subtitle of such a film was `wrong` or `unsure` and none could be fixed.
+  Where the words do not settle it, the lines' starts do (`onsetFit` in `match.ts`): a cue of the
+  film's own subtitle starts where somebody starts to speak, as a heard line does. Any subtitle
+  lines up with a third to half of the lines at some offset by chance, so what counts is how far
+  the best offset stands out: 60% of the heard lines (of any length) must start within 0.6 s of a
+  cue at one offset, and that offset must hold 10 lines, and 15% of all lines, more than the best
+  offset anywhere else within 90 s. Measured on seven streams against seventeen subtitle files
+  (2026-11-20, words blanked): 9 of 12 right files were found, at the offsets the words gave for the
+  English ones (a South Park file 33 s early among them), and none of 107 wrong pairings. Such a
+  judgement says `matched_by: onsets` with its counts. A file cut for another edit and one that
+  drifts (another frame rate) have no one offset and stay `wrong` or `unsure`. Never for a film
+  heard in English.
 - **Timing.** Each line found is an anchor: the cue's start beside the moment it was heard. The
   anchors give one shift (their median offset), or a shift and a stretch when the offset grows over
   the film (a 25 fps file on a 23.976 fps film). `in_step`: within 0.6 s at the start and the end,
@@ -2139,8 +2153,7 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   files) and the OpenSubtitles add-on's (up to five) are tried one by one, each judged the same way;
   the first right and in step as it is wins, and one that had to be re-timed is kept only when none
   of the next three is right as it is (`replaced`). **Nothing is changed unless a subtitle passed
-  both checks**: `none_fits`, `unsure` (a film not in English is heard through Whisper's
-  translation, which matches a subtitle's wording less closely; a growing track cannot be read as a
+  both checks**: `none_fits`, `unsure` (too little matched; a growing track cannot be read as a
   file) and `unheard` leave the player as it was.
 - **Where the choice is kept.** A torrent's as `checked-<file index>-<tag>.vtt` in its
   `.notesd-subs`, its chosen track, so the `kept` tier answers it on the next play. A cloud title's

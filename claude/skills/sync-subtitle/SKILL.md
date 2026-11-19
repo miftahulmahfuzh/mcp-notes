@@ -63,7 +63,7 @@ joins the same check; repeat until an outcome comes.
 | `retimed` | Right text at the wrong time: moved by `chosen.shift_s` s, stretched by `chosen.stretch` when the frame rate differed | yes |
 | `replaced` | Wrong text, missing, or cut for another edit: another file (`chosen.from`, `chosen.name`) passed both checks, re-timed first when `chosen.retimed` | yes |
 | `none_fits` | The subtitle did not pass and no other file did | no |
-| `unsure` | Too little matched to say (a film not in English is heard through Whisper's translation), or the track grows while the film plays and cannot be read as a file | no |
+| `unsure` | Too little matched to say (a film not in English is heard through Whisper's translation and matched by where its lines start, `matched_by: onsets`; a file cut for another edit cannot be matched that way), or the track grows while the film plays and cannot be read as a file | no |
 | `unheard` | Too little speech was heard (`heard.windows` says what each stretch gave) | no |
 
 `current` is the subtitle that was shown and each entry of `tried` another file, all judged alike:

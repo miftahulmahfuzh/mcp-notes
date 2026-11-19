@@ -306,12 +306,16 @@ export class SubtitleChecker {
       return out;
     };
 
-    if (task === 'translate') notes.push('The film is not in English: Whisper translated what it heard, which matches a subtitle\'s wording less closely, so a verdict of unsure is more likely.');
+    /** A film heard through translation is matched by where its lines start when the words do not settle it (match.ts onsetFit). */
+    const translated = { translated: task === 'translate' };
+    if (task === 'translate') {
+      notes.push('The film is not in English: Whisper translated what it heard, whose wording is not a subtitle\'s. Where the words did not settle it, a subtitle was matched by where its lines start (matched_by: onsets): right when its cues start with the heard lines at one offset that stands clear of every other. A file cut for another edit or one that drifts cannot be matched that way and stays wrong or unsure.');
+    }
     /** `vtt` re-timed by its own fit, when that makes it good. */
     const fixed = (vtt: string, was: Judgement): { vtt: string; now: Judgement } | null => {
       if (was.grade !== 'fixable' || was.fit === null) return null;
       const moved = retime(vtt, was.fit);
-      const now = judge(moved, heard, subject.durationS);
+      const now = judge(moved, heard, subject.durationS, translated);
       return now.grade === 'good' ? { vtt: moved, now } : null;
     };
     const how = { task, language };
@@ -344,7 +348,7 @@ export class SubtitleChecker {
         if (spreadOut(windows)) {
           heard.sort((a, b) => a.startS - b.startS);
           shown = await subject.current();
-          const quick = shown !== null && 'vtt' in shown ? judge(shown.vtt, heard, subject.durationS) : null;
+          const quick = shown !== null && 'vtt' in shown ? judge(shown.vtt, heard, subject.durationS, translated) : null;
           hinted.enough = quick !== null && shown !== null && 'vtt' in shown && (quick.grade === 'good' || fixed(shown.vtt, quick) !== null);
         }
         if (!hinted.enough) notes.push(where.charAt(0).toUpperCase() + where.slice(1) + ', and the film\'s two ends did not settle it, so the rest of the usual places were heard as well.');
@@ -361,7 +365,7 @@ export class SubtitleChecker {
 
     stage('judging the subtitle shown now');
     if (shown === undefined) shown = await subject.current();
-    const current: CheckResult['current'] = shown === null ? null : 'skip' in shown ? { label: shown.label, skipped: shown.skip } : { label: shown.label, ...judge(shown.vtt, heard, subject.durationS) };
+    const current: CheckResult['current'] = shown === null ? null : 'skip' in shown ? { label: shown.label, skipped: shown.skip } : { label: shown.label, ...judge(shown.vtt, heard, subject.durationS, translated) };
     if (countable(heard) < MIN_HEARD_LINES) {
       notes.push('Too little speech was heard to judge a subtitle (' + countable(heard) + ' line(s) of ' + MIN_LINE_WORDS + ' words or more; ' + MIN_HEARD_LINES + ' are needed). Nothing was changed.');
       return result('unheard', { current, tried: [], chosen: null });
@@ -388,7 +392,7 @@ export class SubtitleChecker {
     let moved: { candidate: Candidate; vtt: string; was: Judgement; left: number } | null = null;
     stage('trying other subtitles');
     for await (const candidate of subject.candidates(notes)) {
-      const was = judge(candidate.vtt, heard, subject.durationS);
+      const was = judge(candidate.vtt, heard, subject.durationS, translated);
       stage('trying other subtitles (' + (tried.length + 1) + ' so far)');
       if (was.grade === 'good') {
         tried.push({ from: candidate.from, name: candidate.name, retimed: false, ...was });

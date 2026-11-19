@@ -12,6 +12,10 @@
  *   stretch. A subtitle is in step when that fix is nothing; it can be re-timed when one fix puts most anchors
  *   right; a subtitle whose offsets scatter was cut for another edit, and no single fix helps.
  *
+ * A film that is not in English is heard through Whisper's translation, whose wording is not the subtitle's: the
+ * right file of The Raid held 13% of the heard lines, another film's file as many. For such a film the lines' *starts*
+ * are compared instead (onsetFit): see there.
+ *
  * Pure: no I/O, no clock.
  */
 
@@ -222,6 +226,85 @@ export function timingOf(anchors: readonly Anchor[], durationS: number | null): 
   return { fit: { shiftS: round3(fit.shiftS), stretch: fit.stretch }, anchors: used.length, agree: round3(agreeOf(fit)), offStartS: round3(off(0)), offEndS: round3(off(endS)) };
 }
 
+/** Offsets up to this far either way are tried for the onsets. */
+export const ONSET_RANGE_S = 90;
+/** A heard line agrees with an offset when a cue starts within this of it. */
+export const ONSET_SLACK_S = 0.6;
+/** Fewer heard lines than this give no onset fit. */
+export const ONSET_MIN_LINES = 20;
+/** The share of heard lines that must start with a cue at the best offset. */
+export const ONSET_MIN_SHARE = 0.6;
+/** The best offset must hold this many lines more than the best offset elsewhere, and this share of all lines more. */
+export const ONSET_MIN_MARGIN = 10;
+export const ONSET_MARGIN_SHARE = 0.15;
+/** Another offset is "elsewhere" when it lies further than this from the best. */
+const ONSET_APART_S = 2;
+const ONSET_BIN_S = 0.25;
+const ONSET_CANDIDATES = 12;
+
+export interface OnsetFit {
+  /** Cue start minus the moment the line is heard, at the offset most lines agree on. */
+  shiftS: number;
+  /** Heard lines (of any length). */
+  lines: number;
+  /** How many of them start with a cue at that offset. */
+  matched: number;
+  /** How many do at the best offset elsewhere: what chance alone gives. */
+  rival: number;
+  anchors: Anchor[];
+}
+
+/**
+ * Whether the subtitle's cues start where the heard lines start, at one offset: the text test of a film heard through
+ * translation, where words cannot be compared. Every line Whisper hears begins where somebody starts to speak, and so
+ * does a cue of the film's own subtitle; any subtitle with many cues also lines up with a third or half of the lines
+ * at *some* offset by chance. What tells them apart is how far the best offset stands out: measured on seven streams
+ * against seventeen subtitle files (2026-11-20), the right file's best offset held 8 to 42 lines more than its best
+ * offset elsewhere (64% to 93% of the lines), another film's at most 7. So it counts only with ONSET_MIN_SHARE of the
+ * lines at the best offset and a lead of ONSET_MIN_MARGIN lines (and ONSET_MARGIN_SHARE of all lines) over the rest.
+ * A file cut for another edit, or one that drifts (another frame rate), has no one offset and is not found this way.
+ * Null when it does not count.
+ */
+export function onsetFit(heard: readonly HeardLine[], cues: readonly SubCue[]): OnsetFit | null {
+  if (heard.length < ONSET_MIN_LINES || cues.length === 0) return null;
+  const starts = cues.map((c) => c.startS);
+  const bins = new Map<number, number>();
+  let from = 0;
+  for (const h of [...heard].sort((a, b) => a.startS - b.startS)) {
+    while (from < starts.length && starts[from]! < h.startS - ONSET_RANGE_S) from += 1;
+    for (let i = from; i < starts.length && starts[i]! <= h.startS + ONSET_RANGE_S; i++) {
+      const bin = Math.round((starts[i]! - h.startS) / ONSET_BIN_S);
+      bins.set(bin, (bins.get(bin) ?? 0) + 1);
+    }
+  }
+  /** The cue start nearest to where the line would be at `offset`, when one lies within the slack. */
+  const near = (h: HeardLine, offset: number): number | null => {
+    let best: number | null = null;
+    for (const c of starts) {
+      const off = Math.abs(c - h.startS - offset);
+      if (off <= ONSET_SLACK_S && (best === null || off < Math.abs(best - h.startS - offset))) best = c;
+    }
+    return best;
+  };
+  const count = (offset: number): number => heard.filter((h) => near(h, offset) !== null).length;
+  const scored = [...bins]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .slice(0, ONSET_CANDIDATES)
+    .map(([bin]) => ({ offset: bin * ONSET_BIN_S, n: count(bin * ONSET_BIN_S) }))
+    .sort((a, b) => b.n - a.n || Math.abs(a.offset) - Math.abs(b.offset));
+  const best = scored[0];
+  if (best === undefined) return null;
+  const rival = scored.find((x) => Math.abs(x.offset - best.offset) > ONSET_APART_S)?.n ?? 0;
+  const lead = best.n - rival;
+  if (best.n / heard.length < ONSET_MIN_SHARE || lead < ONSET_MIN_MARGIN || lead < ONSET_MARGIN_SHARE * heard.length) return null;
+  const anchors: Anchor[] = [];
+  for (const h of heard) {
+    const cueS = near(h, best.offset);
+    if (cueS !== null) anchors.push({ heardS: h.startS, cueS, score: 1, sharp: false });
+  }
+  return { shiftS: round3(median(anchors.map((a) => a.cueS - a.heardS))), lines: heard.length, matched: best.n, rival, anchors };
+}
+
 export type TextVerdict = 'correct' | 'wrong' | 'unsure';
 /** `in_step`: nothing to fix. `off`: one shift (and stretch) fixes it. `scattered`: no single fix does. `unknown`: too few anchors. */
 export type TimingVerdict = 'in_step' | 'off' | 'scattered' | 'unknown';
@@ -237,6 +320,13 @@ export interface Judgement {
   found_lines: number;
   /** found_lines / heard_lines, 0 to 1. */
   text_share: number;
+  /**
+   * What `text: correct` rests on: the heard lines' `words` found in the subtitle, or, for a film heard through
+   * translation whose words did not settle it, the `onsets` (the cues start where the lines start, at one offset).
+   */
+  matched_by: 'words' | 'onsets';
+  /** The onset count when it decided: heard lines of any length, those that start with a cue at the best offset, and at the best offset elsewhere. */
+  onsets: { lines: number; matched: number; rival: number } | null;
   anchors: number;
   /** The share of anchors that agree with the fix; null without a timing. */
   agree: number | null;
@@ -271,13 +361,20 @@ export function offsetsByPlace(anchors: readonly Anchor[]): Judgement['by_place'
 }
 
 /** Judges one subtitle against what was heard. */
-export function judge(vtt: string, heard: readonly HeardLine[], durationS: number | null): Judgement {
+export function judge(vtt: string, heard: readonly HeardLine[], durationS: number | null, options: { translated?: boolean } = {}): Judgement {
   const cues = parseSubCues(vtt);
   const match = matchLines(heard, cues);
   const share = match.lines === 0 ? 0 : match.found / match.lines;
-  const text: TextVerdict = match.lines < MIN_HEARD_LINES ? 'unsure' : share >= CORRECT_SHARE ? 'correct' : share <= WRONG_SHARE ? 'wrong' : 'unsure';
+  let text: TextVerdict = match.lines < MIN_HEARD_LINES ? 'unsure' : share >= CORRECT_SHARE ? 'correct' : share <= WRONG_SHARE ? 'wrong' : 'unsure';
+  let anchors = match.anchors;
+  // Heard through translation, the words say little either way: the lines' starts decide, when they can.
+  const onsets = options.translated === true && text !== 'correct' ? onsetFit(heard, cues) : null;
+  if (onsets !== null) {
+    text = 'correct';
+    anchors = onsets.anchors;
+  }
   // The few lines another film's subtitle shares by chance say nothing of its timing.
-  const timing = text === 'wrong' ? null : timingOf(match.anchors, durationS);
+  const timing = text === 'wrong' ? null : timingOf(anchors, durationS);
   const timingVerdict: TimingVerdict =
     timing === null ? 'unknown' : timing.agree < AGREE_SHARE ? 'scattered' : Math.abs(timing.offStartS) <= IN_STEP_S && Math.abs(timing.offEndS) <= IN_STEP_S ? 'in_step' : 'off';
   const grade: Grade =
@@ -290,12 +387,14 @@ export function judge(vtt: string, heard: readonly HeardLine[], durationS: numbe
     heard_lines: match.lines,
     found_lines: match.found,
     text_share: round3(share),
-    anchors: timing?.anchors ?? match.anchors.length,
+    matched_by: onsets === null ? 'words' : 'onsets',
+    onsets: onsets === null ? null : { lines: onsets.lines, matched: onsets.matched, rival: onsets.rival },
+    anchors: timing?.anchors ?? anchors.length,
     agree: timing?.agree ?? null,
     off_start_s: timing?.offStartS ?? null,
     off_end_s: timing?.offEndS ?? null,
     fit: timing?.fit ?? null,
-    by_place: text === 'wrong' ? [] : offsetsByPlace(match.anchors),
+    by_place: text === 'wrong' ? [] : offsetsByPlace(anchors),
   };
 }
 
