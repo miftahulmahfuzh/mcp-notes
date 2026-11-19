@@ -101,7 +101,14 @@ export function pickFile(files: readonly TorrentFileLike[], query: TorrentQuery)
   const matching = pool.filter((f) => matchesEpisode(f.path, query, oneSeason));
   const [only] = pool;
   const lone = pool.length === 1 && only !== undefined && parseEpisodeRef(stripExtension(baseName(only.path))).episode === null ? only : null;
-  const video = matching.length > 0 ? largest(matching) : lone;
+  // A first season's pack whose files carry a bare number and nothing else ("[SubsPlease] Sousou no Frieren - 14
+  // [1080p].mkv", "Frieren 14.mkv"): in season 1 the running number is the episode's own. Only when exactly one
+  // file names it: a "5.1" in every name must not make every file episode 5.
+  const bare =
+    matching.length === 0 && lone === null && oneSeason && query.season === 1 && query.absoluteEpisode == null && query.alt == null
+      ? pool.filter((f) => namesNumber(stripExtension(baseName(f.path)), query.episode))
+      : [];
+  const video = matching.length > 0 ? largest(matching) : (lone ?? (bare.length === 1 ? (bare[0] ?? null) : null));
   if (video === null) return null;
   return { video: video.index, subtitles: subtitlesFor(files, video, { query, oneSeason }, pool.length > 1) };
 }

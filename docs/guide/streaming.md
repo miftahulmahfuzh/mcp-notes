@@ -1853,6 +1853,8 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   (`absoluteEpisode`). Torrentio is asked by the place in the season; a release or file that names its season fits
   by either number (`episodeFitOf` in `find/release.ts`), and a name with no season fits only by the running
   number: `One Piece - 1000` is the episode, `One Piece - 109` is not.
+  In a first season the running number is the episode's own, so a pack whose files carry only a bare number
+  (`[SubsPlease] Sousou no Frieren - 14 [1080p].mkv`) gives up episode 14's file, when exactly one file names 14.
 - **What the answer says.** `attempts` holds the cloud providers' outcomes, then `Index: <name>` for each index
   (`resolved` when it listed torrents, `no_stream` when it listed none, `error`, `bot_check`, `skipped` when it was
   not asked), then `Torrent: <release>` for each torrent opened, in the finder's order. When none plays the answer is

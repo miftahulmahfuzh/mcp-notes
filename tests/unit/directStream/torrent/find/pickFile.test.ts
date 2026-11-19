@@ -59,6 +59,22 @@ describe('pickFile', () => {
     expect(pickFile(anime, episode(21, 179, 1071))).toEqual({ video: 1, subtitles: [] });
   });
 
+  it("picks a first season's bare-numbered file, as fansub packs name them, when exactly one file names the number", () => {
+    const pack = (name: (n: string) => string): TorrentFileLike[] => files(...Array.from({ length: 28 }, (_, i): [string, number] => [`Pack/${name(String(i + 1).padStart(2, '0'))}`, 1400 * MB]));
+    for (const name of [(n: string) => `Frieren - Beyond Journey's End ${n}.mkv`, (n: string) => `Sousou no Frieren ${n}.mkv`, (n: string) => `[SubsPlease] Sousou no Frieren - ${n} [WEB-DL 1080p x264 DDP].mkv`]) {
+      expect(pickFile(pack(name), episode(1, 14))?.video).toBe(13);
+      expect(pickFile(pack(name), episode(1, 1))?.video).toBe(0);
+      // The pack does not hold episode 40.
+      expect(pickFile(pack(name), episode(1, 40))).toBeNull();
+    }
+    // Not for a later season: there a bare number is the running one, which this query does not know.
+    expect(pickFile(pack((n) => `Show ${n}.mkv`), episode(2, 14))).toBeNull();
+    // Not when the number is in every name ("5.1" sound): nothing says which file is episode 5.
+    expect(pickFile(pack((n) => `Show ${n} [DD 5.1].mkv`), episode(1, 5))).toBeNull();
+    // A name with a marker still wins over a bare number elsewhere in the pack.
+    expect(pickFile(files(['P/Show 14.mkv', 900 * MB], ['P/Show S01E14.mkv', 800 * MB]), episode(1, 14))?.video).toBe(1);
+  });
+
   it('answers null when the torrent does not hold the episode', () => {
     expect(pickFile(files(['Show S01/Show.S01E01.mkv', 700 * MB], ['Show S01/Show.S01E02.mkv', 700 * MB]), episode(1, 5))).toBeNull();
     expect(pickFile(files(['Breaking.Bad.S01E02.720p.mkv', 400 * MB]), episode(1, 1))).toBeNull();
