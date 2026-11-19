@@ -139,7 +139,7 @@ export const SPIKE_PROBE_TIMINGS: ProbeTimings = { median_resolve_s: 3, median_f
  * number for any key the block lacks. tests/unit/directStream/proberDefaults.test.ts fails when
  * these drift from the block.
  */
-export const DEFAULT_PROBE_TIMINGS: ProbeTimings = { median_resolve_s: 8.3, median_fail_s: 33.2, median_failed_before_resolve: 1 }
+export const DEFAULT_PROBE_TIMINGS: ProbeTimings = { median_resolve_s: 7.6, median_fail_s: 38.9, median_failed_before_resolve: 1 }
 
 export const DEFAULT_STREAM_PROBE_MS = 1_200_000
 export const DEFAULT_STREAM_CATALOG_SIZE = 300

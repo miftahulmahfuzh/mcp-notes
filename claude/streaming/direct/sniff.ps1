@@ -198,7 +198,8 @@ $botTitle = '^(Just a moment|Attention Required|Checking your browser|One more s
 # anything. /cdn-cgi/challenge-platform/ is Cloudflare's own path for serving the challenge itself.
 # /vs_captcha/ is vidsrc.sh's own gate (a slide or rotate puzzle its player shows before it makes
 # the stream, 2026-11-19): the player asks for its files only when it puts the puzzle up.
-$botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)|/vs_captcha/'
+# A host named cap.<site> is a Cap widget's own server (hexa.su's "Verification Required", 2026-11-19).
+$botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)|/vs_captcha/|^https?://cap\.[^/]+/'
 $events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
 
 $hits = New-Object System.Collections.ArrayList

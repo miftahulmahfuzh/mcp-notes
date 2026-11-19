@@ -99,9 +99,9 @@ async function fakeSniff(url: string, options: any = {}) {
       return sniffed(url, { requests: 0, frames: [] }, options);
     case 'player.vidmario.net':
       return sniffed(url, { inspect: [{ url, title: '111movies', text: 'Sorry, this movie is not found', videos: [], iframes: 0 }] }, options);
-    case 'hexa.watch':
+    case 'hexa.su':
       return sniffed(url, { frames: [], inspect: [{ url, title: 'Hexa', text: '', videos: [], iframes: 1 }] }, options);
-    case 'rivestream.org':
+    case 'www.rivestream.app':
       return sniffed(url, { clicks: 4, inspect: [{ url, title: 'Rive', text: '', videos: [{ src: '', ready_state: 0, paused: true, current_time: 0 }], iframes: 0 }] }, options);
     case 'spencerdevs.xyz':
       return sniffed(url, {}, options);
@@ -156,6 +156,11 @@ describe('direct streaming probe campaign', () => {
     const advert = run('https://111movies.com/movie/550', { url: 'https://ron.mamma.com/general/deals', title: '404 - Page Not Found', text: '404 - Page Not Found', videos: [], iframes: 0 });
     expect(advert.evidence.inspect).toMatchObject({ away: true, text: '' });
     expect(diagnose({ name: 'Movies111', standard: advert, long: advert }).cause).toBe('no_player');
+    // A puzzle the page put up is a bot check, whatever the network showed (hexa.su's Cap gate, autoembed.me's slider).
+    const gate = run('https://hexa.su/watch/movie/550', { url: 'https://hexa.su/watch/movie/550', title: 'Fight Club', text: 'Fight Club 00:00 Verification Required Please complete the verification to continue watching. Protected by Cap', videos: [], iframes: 0 });
+    expect(diagnose({ name: 'StreamVault', standard: gate, long: gate }).cause).toBe('bot_check');
+    const slider = run('https://autoembed.me/movie/tmdb/550', { url: 'https://autoembed.me/movie/tmdb/550', title: '', text: 'Drag the slider to fit the puzzle Slide to complete the puzzle', videos: [], iframes: 1 });
+    expect(diagnose({ name: 'StreamBoxHD', standard: slider, long: slider }).cause).toBe('bot_check');
     // A provider's second host is still the provider.
     const moved = run('https://vidsrc.me/embed/movie?tmdb=550', { url: 'https://vidsrc.sh/embed/movie?tmdb=550', title: 'Fight Club', text: 'No sources', videos: [], iframes: 0 });
     expect(diagnose({ name: 'VidSrc', standard: moved, long: moved }).cause).toBe('not_found');

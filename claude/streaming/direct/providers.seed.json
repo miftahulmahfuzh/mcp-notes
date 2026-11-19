@@ -5,8 +5,8 @@
     "movie": "https://vidnest.fun/movie/{id}",
     "tv": "https://vidnest.fun/tv/{id}/{season}/{episode}",
     "browser_only": false,
-    "en_subtitle": false,
-    "notes": "campaign 2026-11-15: resolved hls 696p in 5.3 s; Fight Club: not_found, episodes"
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-19: resolved hls 696p en in 7.9 s; Fight Club: not_found, episodes"
   },
   {
     "name": "Videasy",
@@ -15,7 +15,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: player.videasy.net only forwards to player.videasy.to, whose name servers refuse (shut down, with its mirror VidKing)"
   },
   {
     "name": "VidKing",
@@ -24,7 +24,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: the name servers of vidking.net refuse every query (Videasy's mirror, shut down with it)"
   },
   {
     "name": "Peachify",
@@ -33,7 +33,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 523, the origin of peachify.top is unreachable (same on 2026-11-15); not an ISP block"
   },
   {
     "name": "Smashy",
@@ -51,7 +51,7 @@
     "tv": "https://vidup.to/tv/{id}/{season}/{episode}?autoPlay=true",
     "browser_only": false,
     "en_subtitle": false,
-    "notes": "campaign 2026-11-15: resolved hls 2160p in 8.3 s; episodes"
+    "notes": "campaign 2026-11-19: resolved hls 2160p in 7.5 s; episodes"
   },
   {
     "name": "VidFast",
@@ -60,7 +60,7 @@
     "tv": "https://vidfast.pro/tv/{id}/{season}/{episode}?autoPlay=true",
     "browser_only": false,
     "en_subtitle": false,
-    "notes": "campaign 2026-11-15: resolved hls 2160p in 11.8 s; needed_click, episodes"
+    "notes": "campaign 2026-11-19: resolved hls 2160p in 9.3 s; episodes"
   },
   {
     "name": "VidLink",
@@ -69,7 +69,7 @@
     "tv": "https://vidlink.pro/tv/{id}/{season}/{episode}?autoplay=true&title=true",
     "browser_only": false,
     "en_subtitle": false,
-    "notes": "campaign 2026-11-15: resolved dash 480p in 7.4 s; episodes"
+    "notes": "campaign 2026-11-19: resolved dash 480p in 7.3 s; episodes"
   },
   {
     "name": "VidMov",
@@ -105,7 +105,7 @@
     "tv": "https://player.vidmario.net/embed/tv/{id}/{season}/{episode}?autoplay=true",
     "browser_only": false,
     "en_subtitle": false,
-    "notes": "campaign 2026-11-19: resolved hls ?p in 5.8 s; episodes"
+    "notes": "campaign 2026-11-19: resolved hls ?p in 7.6 s; episodes; moved: 111movies.com is a parked domain, 111movies.net forwards to player.vidmario.net"
   },
   {
     "name": "NonTongo",
@@ -114,7 +114,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: bot_check"
+    "notes": "campaign 2026-11-19: bot_check"
   },
   {
     "name": "VidSrc",
@@ -132,7 +132,7 @@
     "tv": "https://vidsrc.wtf/api/1/tv/?id={id}&color=215fb3&s={season}&e={episode}",
     "browser_only": false,
     "en_subtitle": true,
-    "notes": "campaign 2026-11-15: resolved hls 1080p en in 10.5 s; Fight Club: not_found, episodes"
+    "notes": "campaign 2026-11-19: resolved hls ?p en in 14.7 s; needed_click, episodes"
   },
   {
     "name": "NexaStream",
@@ -150,7 +150,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: player.vidplus.to forwards to player2.vidplus.pro, Cloudflare 521 (same on 2026-11-15); not an ISP block"
   },
   {
     "name": "CloudBox",
@@ -159,7 +159,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 521, the web server of vidify.top is down (same on 2026-11-15); not an ISP block"
   },
   {
     "name": "UpCloud",
@@ -168,16 +168,16 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: player.vidsrc.co now forwards to player.vidplus.to, UltraBox's host, Cloudflare 521"
   },
   {
     "name": "StreamVault",
     "id_kind": "tmdb",
-    "movie": "https://hexa.watch/watch/movie/{id}",
+    "movie": "https://hexa.su/watch/movie/{id}",
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: bot_check; moved from hexa.watch (the name no longer exists) to hexa.su, which shows a Cap \"Verification Required\" puzzle before the film: bot_check, never solved"
   },
   {
     "name": "MediaHub",
@@ -186,7 +186,7 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: bot_check"
+    "notes": "campaign 2026-11-19: bot_check"
   },
   {
     "name": "CloudPlay",
@@ -195,24 +195,24 @@
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: unreachable; dead: Cloudflare 522, the origin of vidsrc.cc times out (same on 2026-11-15); not an ISP block"
   },
   {
     "name": "StreamBoxHD",
     "id_kind": "tmdb",
-    "movie": "https://test.autoembed.cc/embed/movie/{id}",
+    "movie": "https://autoembed.me/movie/tmdb/{id}",
     "tv": null,
     "browser_only": false,
     "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "notes": "campaign 2026-11-19: bot_check; moved from test.autoembed.cc (the name no longer exists) to autoembed.me (its own docs: /movie/tmdb/{id}, /tv/tmdb/{id}-{season}-{episode}), whose player shows a slider puzzle: bot_check, never solved"
   },
   {
     "name": "MovieVault",
     "id_kind": "tmdb",
-    "movie": "https://rivestream.org/embed?type=movie&id={id}",
+    "movie": "https://www.rivestream.app/embed?type=movie&id={id}",
     "tv": null,
     "browser_only": false,
-    "en_subtitle": null,
-    "notes": "campaign 2026-11-15: unreachable"
+    "en_subtitle": true,
+    "notes": "campaign 2026-11-19: resolved hls 1080p en in 27.1 s; needed_click; moved from rivestream.org (the name no longer exists) to www.rivestream.app; it tries its servers one after another, so a stream comes late (27 s) or not within the sniff; its documented episode address (type=tv&id=&season=&episode=) did not resolve in 70 s"
   }
 ]

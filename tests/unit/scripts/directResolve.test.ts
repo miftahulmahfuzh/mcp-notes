@@ -745,5 +745,6 @@ describe('what counts as a stream, and where subtitles show', () => {
     expect(script).not.toContain('x = 400; y = 300');
     // Its puzzle before the stream is an outcome, never solved.
     expect(/\$botUrl = '([^']+)'/.exec(script)?.[1]).toContain('/vs_captcha/');
+    expect(/\$botUrl = '([^']+)'/.exec(script)?.[1]).toContain('^https?://cap\\.[^/]+/');
   });
 });

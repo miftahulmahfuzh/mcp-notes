@@ -55,6 +55,8 @@ export const CAUSES = ['bot_check', 'error', 'unreachable', 'not_found', 'blob_m
 export const LIFETIME_SCHEDULE_MIN = [0, 2, 5, 10, 20, 40, 60, 90, 120, 180, 240, 300, 360, 420];
 const CHROME_DOWN = ['no_chrome', 'chrome_not_reachable'];
 const NOT_FOUND_TEXT = /\b(not found|no sources?|unavailable|could not be found|does ?n[o']t exist|404)\b/i;
+// What a page says when it has put a puzzle between the viewer and the film (hexa.su's Cap gate, autoembed.me's slider).
+const PUZZLE_TEXT = /\b(verification required|complete the verification|slide to complete the puzzle|drag the slider|verify (that )?you are (a )?human)\b/i;
 const CLOUDFLARE_DOWN = /\b(Error code 52\d|52\d: )/;
 const RETRY_MS = 30_000;
 
@@ -245,7 +247,7 @@ export function diagnose({ name, standard, long = null, other = null }) {
   const runs = [standard, long].filter(Boolean);
   const evidence = runs.map((run) => run.evidence).filter(Boolean);
   const fail = (cause) => ({ cause, note: '' });
-  if (runs.some((run) => run.outcome === 'bot_check') || evidence.some((e) => e.bot_check)) return fail('bot_check');
+  if (runs.some((run) => run.outcome === 'bot_check') || evidence.some((e) => e.bot_check || PUZZLE_TEXT.test(e.inspect?.text ?? ''))) return fail('bot_check');
   if (runs.every((run) => run.outcome === 'error')) return fail('error');
   if (evidence.some((e) => e.inspect?.error_page) || (evidence.length > 0 && evidence.every((e) => e.requests <= 1))) return fail('unreachable');
   if (other?.outcome === 'resolved' || evidence.some((e) => NOT_FOUND_TEXT.test(e.inspect?.text ?? ''))) return fail('not_found');
