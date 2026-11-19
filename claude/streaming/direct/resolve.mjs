@@ -182,6 +182,22 @@ export function indexSubtitles(hits) {
   return tracks;
 }
 
+/**
+ * A player's seek-preview file: WebVTT whose cues are picture addresses (thumbs/sprite-001.jpg#xywh=160,0,160,90),
+ * not words. Shown as a subtitle it prints those addresses over the film. Told by its name
+ * (thumbs.vtt, thumbnails/…, sprite, storyboard) or, when the sniffer kept the body, by its cues.
+ */
+export function isThumbnailTrack(hit) {
+  if (typeof hit.body === 'string' && /#xywh=\d+,\d+,\d+,\d+/.test(hit.body)) return true;
+  let path = pathOf(String(hit.url ?? ''));
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // keep the path as written
+  }
+  return /(?:^|[\/_.-])(?:thumbs?|thumbnails?|sprites?|storyboards?)(?:[\/_.-]|$)/i.test(path);
+}
+
 function requestSubtitles(hits, skipDirs) {
   const tracks = [];
   for (const hit of hits) {
@@ -194,6 +210,7 @@ function requestSubtitles(hits, skipDirs) {
       (hit.type === 'TextTrack' ? 'vtt' : null);
     if (!ext) continue;
     if (ext === 'vtt' && skipDirs.has(dirOf(hit.url))) continue;
+    if (ext === 'vtt' && isThumbnailTrack(hit)) continue;
     tracks.push({ url: hit.url, lang: guessLang(hit.url), label: null, format: ext, source: 'request' });
   }
   return tracks;

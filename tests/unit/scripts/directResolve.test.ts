@@ -239,6 +239,20 @@ describe('picking the stream out of a capture', () => {
     expect(found.en_subtitle).toBe(true);
   });
 
+  it("leaves out a player's seek-preview file: its cues are picture addresses, not words", () => {
+    const found = pickSource(
+      capture({
+        hits: [
+          hit({ url: 'https://cdn.example/vd/abc/index.m3u8', mime: 'application/vnd.apple.mpegurl', body: MASTER }),
+          hit({ at_s: 3, url: 'https://cdn.example/vd/abc/thumbs/thumbs.vtt', mime: 'text/vtt' }),
+          hit({ at_s: 3, url: 'https://cdn.example/vd/abc/preview.vtt', mime: 'text/vtt', body: 'WEBVTT\n\n00:00.000 --> 00:10.000\nthumbs/sprite-001.jpg#xywh=160,0,160,90\n' }),
+          hit({ at_s: 3, url: 'https://subs.example/the-fix/English.vtt', mime: 'text/vtt' }),
+        ],
+      }),
+    );
+    expect(found.subtitles.filter((t) => t.source === 'request').map((t) => t.url)).toEqual(['https://subs.example/the-fix/English.vtt']);
+  });
+
   it('finds no stream in refused requests or an empty capture', () => {
     expect(pickSource(capture({ hits: [hit({ url: 'https://cdn.example/master.m3u8', status: 403, body: MASTER })] }))).toBeNull();
     expect(pickSource(capture())).toBeNull();

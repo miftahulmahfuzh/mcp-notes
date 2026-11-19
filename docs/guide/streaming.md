@@ -486,7 +486,9 @@ error page, a bare list of addresses) is not a stream, and the next provider is 
 made, also when the file's address is a relay's parameter (`fetch?url=...%2Fx.vtt&ref=...`) or the
 request is a text track; and the list a page's subtitle service answered with (`sub.vdrk.site`,
 `sub.wyzie.io`: a JSON list of files per language), since a page loads a file only when the viewer
-picks its language.
+picks its language. A player's seek-preview file is left out: it is WebVTT too, but its cues are
+picture addresses (`thumbs/sprite-001.jpg#xywh=160,0,160,90`), told by its name (`thumbs`,
+`thumbnails`, `sprite`, `storyboard`) or by its cues.
 
 ### Anime
 
