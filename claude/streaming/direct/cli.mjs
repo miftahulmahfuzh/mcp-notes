@@ -13,7 +13,8 @@
 //                                  foreground the site so the owner can solve its Cloudflare challenge by hand;
 //                                  the cf_clearance cookie the profile keeps then lets later reads through
 // Prints one JSON object. Exit 0 when ok, 1 when not, 2 for a usage or input error.
-import { readFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeError, evaluateInChrome, sleep } from '../chrome.mjs';
@@ -406,9 +407,19 @@ export async function main(argv, io = {}) {
     print(result);
     return result.ok ? 0 : 1;
   }
-  const result = await resolveTitle(args.ref, { providers, health, sniff, only: args.only, skip: args.skip, first: args.first, deadlineS: args.deadlineS, audioLang: args.audioLang, probeAudio });
-  print(result);
-  return result.ok ? 0 : 1;
+  // Providers asked side by side (resolve.mjs) are told to stop through one file: it appears, their watches end.
+  const stopDir = mkdtempSync(path.join(tmpdir(), 'notesd-sniff-'));
+  const stopFile = path.join(stopDir, 'stop');
+  try {
+    const result = await resolveTitle(args.ref, {
+      providers, health, sniff, sniffOptions: { stopFile }, stop: () => writeFileSync(stopFile, ''),
+      only: args.only, skip: args.skip, first: args.first, deadlineS: args.deadlineS, audioLang: args.audioLang, probeAudio,
+    });
+    print(result);
+    return result.ok ? 0 : 1;
+  } finally {
+    rmSync(stopDir, { recursive: true, force: true });
+  }
 }
 
 // Reached through a symlink from ~/.claude/skills one day, so compare real paths.

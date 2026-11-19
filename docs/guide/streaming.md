@@ -492,6 +492,16 @@ provider the owner names, `/update-cloud-source`'s probe, the campaign) asks it 
 loads and merely has no stream of the title never rests, and nothing deletes a provider (`order.mjs`
 `restingUntil`).
 
+**Side by side once the play goes badly.** The providers are asked one after another, and a provider that
+loads but has no stream of the title takes its full 35 s to say so: thirteen of them cost A Story About Fire
+(which nobody carries) 456 s; asked side by side it took 219 s. So once two providers have given nothing, the next ones in the order are asked
+four at a time, each in its own background tab, muted like every sniff. They are still read in the order above,
+so the answer is the one a resolve one after another would give, only sooner, and a provider that was begun
+ahead and never needed is told to stop (a stop file its sniffer looks for; its tab closes) before the answer
+goes out; its health is not touched. The first two providers are always asked alone, so a title the best
+provider has costs no second tab. Not with `--only`, and not once a stream is held for want of a subtitle
+(`LOOKAHEAD_AFTER`, `LOOKAHEAD_WIDTH` in `resolve.mjs`).
+
 **What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
 error page, a bare list of addresses) is not a stream, and the next provider is tried.
 

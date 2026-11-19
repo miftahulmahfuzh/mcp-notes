@@ -22,6 +22,9 @@ param(
   # Seconds to wait after a bot check is seen, in case the page goes on to a stream by itself.
   [int]$BotGrace = 5,
   [switch]$KeepTab,
+  # A file whose appearing ends the watch at once (the tab is closed and the reply written as usual): the
+  # resolver makes it when another provider, asked side by side, already gave the stream.
+  [string]$StopFile = '',
   # Before the tab closes, read what the page and each attached frame show (video elements, iframe
   # count, title, visible text). Read-only: nothing is clicked and nothing is played.
   [switch]$Inspect
@@ -302,8 +305,13 @@ function Get-FrameReport([string]$session) {
   return $null
 }
 
+$stopLooked = Get-Date
 while ((Get-Date) -lt $deadline) {
   $now = Get-Date
+  if ($StopFile -and ($now - $stopLooked).TotalMilliseconds -gt 700) {
+    $stopLooked = $now
+    if (Test-Path -LiteralPath $StopFile) { break }
+  }
   if ($firstManifest -and ($now - $firstManifest).TotalSeconds -gt $Linger) { break }
   if (-not $firstManifest -and $firstMp4 -and ($now - $firstMp4).TotalSeconds -gt 12) { break }
   if ($script:botAt -and -not $firstManifest -and ($now - $script:botAt).TotalSeconds -gt $BotGrace) { break }

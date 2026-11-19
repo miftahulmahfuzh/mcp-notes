@@ -12,6 +12,10 @@ export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'er
 const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
 /** After a stream without a subtitle was found for a title that is not in English, this many more providers are asked for one with it. */
 export const SUBTITLE_EXTRA_TRIES = 4;
+/** After this many providers gave no stream, the next ones are asked side by side instead of one after another. */
+export const LOOKAHEAD_AFTER = 2;
+/** How many providers are asked at once then (the one whose turn it is, and the next ones in the order). */
+export const LOOKAHEAD_WIDTH = 4;
 
 /**
  * How well a stream's subtitles serve a viewer who reads English: 0 an English track (its own or
@@ -400,9 +404,28 @@ function describe(found) {
  * with the English track has the shorter picture (a 960p cinema recording after a 1080p stream),
  * the held stream plays and takes that provider's English subtitle file (`borrowed_from`).
  */
-export async function resolveTitle(
+export async function resolveTitle(ref, options) {
+  /** The sniffs begun, by provider name: one whose turn has not come yet was begun side by side with an earlier one. */
+  const inflight = new Map();
+  try {
+    return await resolveInOrder(ref, options, inflight);
+  } finally {
+    // Whatever was begun ahead and not needed is told to stop (its tab closes), and has ended before the answer goes out.
+    if (inflight.size > 0) {
+      try {
+        await options.stop?.();
+      } catch {
+        // Without the stop the sniffs end by their own time limit.
+      }
+      await Promise.allSettled([...inflight.values()]);
+    }
+  }
+}
+
+async function resolveInOrder(
   ref,
   { providers, health = {}, sniff, only = null, skip = [], first = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), now = () => Date.now(), deadlineS = null, audioLang = null, probeAudio = null },
+  inflight,
 ) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
   let candidates = orderProviders(providers, health, { first });
@@ -425,6 +448,27 @@ export async function resolveTitle(
   let extraTries = 0;
   const wantsSubtitle = only === null && audioLang !== null && normalizeLang(audioLang) !== 'en';
   const begun = clock();
+  const resting = (provider) => {
+    const until = only === null && Object.hasOwn(health, provider.name) ? restingUntil(health[provider.name]) : null;
+    return until !== null && now() < until ? until : null;
+  };
+  /** Begins a provider's sniff once; its answer carries the seconds it took by itself. Never rejects. */
+  const begin = (provider, url) => {
+    let entry = inflight.get(provider.name);
+    if (entry === undefined) {
+      const started = clock();
+      entry = Promise.resolve()
+        .then(() => sniff(url, sniffOptions))
+        .then(
+          (sniffed) => ({ sniffed, err: null, tookS: seconds(clock() - started) }),
+          (err) => ({ sniffed: null, err, tookS: seconds(clock() - started) }),
+        );
+      inflight.set(provider.name, entry);
+    }
+    return entry;
+  };
+  /** Providers that answered and gave nothing to keep; LOOKAHEAD_AFTER of them and the rest are asked side by side. */
+  let misses = 0;
   for (const [index, provider] of candidates.entries()) {
     if (provider.browser_only) {
       attempts.push(attempt(provider, 'skipped_browser_only', 0, 'plays only inside its own page'));
@@ -437,8 +481,8 @@ export async function resolveTitle(
     }
     // A provider that is down or behind a check, and never gave a stream here, rests (order.mjs): it is not asked
     // on every resolve, only once its rest is over. Its health is left alone. `--only` asks it at any time.
-    const restUntil = only === null && Object.hasOwn(health, provider.name) ? restingUntil(health[provider.name]) : null;
-    if (restUntil !== null && now() < restUntil) {
+    const restUntil = resting(provider);
+    if (restUntil !== null) {
       const h = health[provider.name];
       const why = h.last_outcome === 'bot_check' ? 'it shows a bot check' : 'its page does not load';
       attempts.push(attempt(provider, 'skipped', 0, `resting: it never gave a stream here and failed ${h.consecutive_failures} times in a row (${why}); asked again after ${new Date(restUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`));
@@ -452,25 +496,38 @@ export async function resolveTitle(
       const left = candidates.length - index;
       return { ok: false, ...base, source: null, error: 'deadline', detail: `stopped after ${seconds(clock() - begun)} s; ${left} provider(s) not tried`, attempts };
     }
-    const started = clock();
     if (held !== null) extraTries += 1;
-    let sniffed;
-    try {
-      sniffed = await sniff(url, sniffOptions);
-    } catch (err) {
-      attempts.push(attempt(provider, 'error', seconds(clock() - started), String(err?.message ?? err)));
+    const asked = begin(provider, url);
+    // The play is going badly (the best providers gave nothing): the next ones in the order are asked now, side by
+    // side, each in its own background tab. They are still read in order, so the answer is the one a resolve one
+    // after another would give, sooner. Not once a stream is held: then only a few more are asked, one at a time.
+    if (only === null && held === null && misses >= LOOKAHEAD_AFTER) {
+      let ahead = 1;
+      for (const next of candidates.slice(index + 1)) {
+        if (ahead >= LOOKAHEAD_WIDTH) break;
+        if (next.browser_only || resting(next) !== null) continue;
+        const nextUrl = embedUrl(next, ref);
+        if (nextUrl === null) continue;
+        begin(next, nextUrl);
+        ahead += 1;
+      }
+    }
+    const { sniffed, err, tookS } = await asked;
+    if (err !== null) {
+      misses += 1;
+      attempts.push(attempt(provider, 'error', tookS, String(err?.message ?? err)));
       if (err instanceof ChromeError && ABORTS.has(err.code)) {
         if (held !== null) break;
         return { ok: false, ...base, source: null, error: err.code, attempts };
       }
       continue;
     }
-    const tookS = seconds(clock() - started);
     let found = pickSource(sniffed);
     const seriesPlayer = found && provider.id_kind !== 'anilist' ? seriesPlayerFrame(sniffed, found, ref) : null;
     if (seriesPlayer !== null) {
       // The provider's fallback for an episode it does not have: another episode of the series.
       attempts.push(attempt(provider, 'no_stream', tookS, `the stream came from ${seriesPlayer}, a whole-series player whose address names no episode`));
+      misses += 1;
       found = null;
       continue;
     }
@@ -493,6 +550,7 @@ export async function resolveTitle(
         };
         if (audio.original === false) {
           attempts.push(attempt(provider, 'dubbed', tookS, `audio is ${heard.languages.join(', ')}, the original is ${normalizeLang(audioLang)}`));
+          misses += 1;
           for (const t of found.subtitles) {
             if (t.source === 'request' && isEnglish(t) && !spare.some((s) => s.url === t.url)) spare.push({ ...t, lang: t.lang ?? 'en', borrowed_from: provider.name });
           }
@@ -529,6 +587,7 @@ export async function resolveTitle(
     }
     if (sniffed.bot_check) {
       attempts.push(attempt(provider, 'bot_check', tookS, sniffed.bot_check_reason ?? 'bot check'));
+      misses += 1;
       continue;
     }
     const counts = `${sniffed.requests ?? 0} requests, ${sniffed.hits?.length ?? 0} media hits, ${sniffed.clicks ?? 0} clicks, ${sniffed.popups_closed ?? 0} advert tabs closed`;
@@ -536,6 +595,7 @@ export async function resolveTitle(
     const down = sniffed.page?.down === true ? `${UNREACHABLE}${sniffed.page.error ?? `HTTP ${sniffed.page.status}`}; ` : '';
     const detail = `${down}${counts}`;
     attempts.push(attempt(provider, 'no_stream', tookS, detail));
+    misses += 1;
   }
   if (held !== null) return { ok: true, ...base, source: held.source, attempts };
   return { ok: false, ...base, source: null, error: 'no_source', attempts };

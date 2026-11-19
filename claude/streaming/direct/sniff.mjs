@@ -109,6 +109,11 @@ export async function sniffEmbed(url, options = {}) {
     '-Port', String(port), '-Seconds', String(seconds), '-Linger', String(linger), '-BotGrace', String(botGraceS),
   ];
   if (options.inspect === true) args.push('-Inspect');
+  // The resolver's stop file (resolve.mjs, providers asked side by side): the watch ends when it appears.
+  if (typeof options.stopFile === 'string' && options.stopFile !== '') {
+    const { stdout: winStop } = await run('wslpath', ['-w', options.stopFile]);
+    args.push('-StopFile', winStop.trim());
+  }
   let stdout;
   try {
     // powershell.exe cannot start in a Linux-only folder.
