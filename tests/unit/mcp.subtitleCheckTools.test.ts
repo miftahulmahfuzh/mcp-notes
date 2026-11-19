@@ -7,7 +7,7 @@ import type { CheckResult } from '../../src/directStream/subtitleCheck/checker.j
 import { CheckError } from '../../src/directStream/subtitleCheck/subjects.js';
 import type { StreamRef } from '../../src/directStream/types.js';
 import type { DirectStreamToolDeps } from '../../src/mcp/directStreamTools.js';
-import { CHECK_ANSWER_MS, registerSubtitleCheckTools, sessionIdOf, SUBTITLE_CHECK_OFF, type SubtitleCheckApi, type SubtitleCheckToolDeps } from '../../src/mcp/subtitleCheckTools.js';
+import { CHECK_ANSWER_MS, parseAt, registerSubtitleCheckTools, sessionIdOf, SUBTITLE_CHECK_OFF, type SubtitleCheckApi, type SubtitleCheckToolDeps } from '../../src/mcp/subtitleCheckTools.js';
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> };
 const text = (r: ToolResult): string => r.content.map((c) => c.text ?? '').join('\n');
@@ -49,7 +49,7 @@ function result(over: Partial<CheckResult> = {}): CheckResult {
     source: 'torrent',
     provider: 'Torrent',
     session_id: SESSION,
-    heard: { task: 'transcribe', lines: 82, windows: [] },
+    heard: { task: 'transcribe', lines: 82, windows: [], hint: null },
     current: null,
     tried: [],
     chosen: null,
@@ -91,7 +91,46 @@ describe('sessionIdOf', () => {
   });
 });
 
+describe('parseAt', () => {
+  it('reads a moment, with hours or as plain seconds', () => {
+    expect(parseAt('12:37')).toEqual({ fromS: 757, toS: null });
+    expect(parseAt(' 1:02:10 ')).toEqual({ fromS: 3730, toS: null });
+    expect(parseAt('95:00')).toEqual({ fromS: 5700, toS: null });
+    expect(parseAt('757s')).toEqual({ fromS: 757, toS: null });
+  });
+
+  it('reads a range, and refuses what is not a time', () => {
+    expect(parseAt('12:37-14:00')).toEqual({ fromS: 757, toS: 840 });
+    expect(parseAt('12:37 to 14:00')).toEqual({ fromS: 757, toS: 840 });
+    expect(parseAt('14:00-12:37')).toBeNull();
+    expect(parseAt('12:75')).toBeNull();
+    expect(parseAt('1:75:00')).toBeNull();
+    expect(parseAt('soon')).toBeNull();
+    expect(parseAt('1:00-2:00-3:00')).toBeNull();
+  });
+});
+
 describe('direct_stream_sync_subtitle', () => {
+  it('passes a named time on as the hint, and refuses one it cannot read', async () => {
+    const f = fake();
+    const c = await connect(f.deps);
+    await c.call({ session: SESSION, at: '12:37' });
+    expect(f.check).toHaveBeenCalledWith({ session: SESSION, at: { fromS: 757, toS: null } }, CHECK_ANSWER_MS);
+    const bad = await c.call({ session: SESSION, at: 'the fight' });
+    expect(bad.isError).toBe(true);
+    expect(json(bad)).toMatchObject({ error: 'invalid_input' });
+    expect(f.check).toHaveBeenCalledTimes(1);
+    await c.close();
+  });
+
+  it('says when the hint settled the check', async () => {
+    const f = fake({ check: vi.fn(async () => result({ heard: { task: 'transcribe', lines: 36, windows: [], hint: { at_s: 697, length_s: 60, from: 'position', lines: 12, enough: true } } })) });
+    const c = await connect(f.deps);
+    const out = json(await c.call({ session: SESSION }));
+    expect(out.next).toContain('the minute the player just played');
+    await c.close();
+  });
+
   it('is registered with a full description, and answers subtitle_check_off without the check', async () => {
     const c = await connect(null);
     const { tools } = await c.client.listTools();

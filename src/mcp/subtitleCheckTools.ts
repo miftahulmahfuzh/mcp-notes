@@ -47,6 +47,7 @@ const DESCRIPTION =
   'Check the English subtitle of a directly streamed film or episode against the film\'s own audio, and fix it: /sync-subtitle. ' +
   'The daemon cuts a minute of audio at six places spread over the film, Whisper writes down what is said there, and the subtitle is judged against those lines twice: is it the right text (another episode\'s file shares almost no line), and does each line come when it is said (within 0.6 s at the start and the end of the film). ' +
   'A right subtitle that is late, early or drifting is re-timed; a wrong one, or one cut for another edit, is replaced by the first of the subtitle services\' other files that passes both checks (re-timed when that is all it lacks). Nothing is changed unless a subtitle passed both. ' +
+  'A hint says where people talk, and that stretch is heard first: at (a time the owner named, "12:37" or "1:02:10", or a range "12:37-14:00" of up to three minutes), or with no at and the stream on screen, the minute its player just played. When at least 8 lines are said there, only the film\'s two ends are heard beside it (three stretches in place of six, about half the time); the other places are heard only when those three did not settle it. heard.hint says what the hint gave { at_s, length_s, from asked | position, lines, enough }. Pass at only when the owner named a time. ' +
   'Name what to check in one of three ways: session (a stream session id, or the player page\'s address http://localhost:7317/stream/<id>); title (a movie id such as M-23T4, where an episode\'s id names its season and episode, a title key, or a name with year, season and episode); or nothing at all for the stream on screen. ' +
   'When a stream of the title is on screen (live), the new subtitle is put on that session and the open page shows it within about 5 seconds, without touching the film. With none open (idle), this machine\'s finished torrent download of the title is checked, else a cloud source resolved out of sight (nothing plays), and the choice is kept for the next play. source "torrent" or "cloud" says which to check when idle. ' +
   'Answers { verdict, changed, title, mode live | idle, source, provider, heard { lines, windows }, current, tried, chosen, notes, took_s }. verdict ok: the subtitle shown is right and in step, nothing changed. retimed: the same subtitle, moved (chosen.shift_s, chosen.stretch). replaced: another file (chosen.from, chosen.name). ' +
@@ -66,6 +67,36 @@ function failJson(value: unknown): CallToolResult {
 export function sessionIdOf(text: string): string | null {
   const last = text.trim().replace(/[?#].*$/, '').replace(/\/+$/, '').split('/').pop() ?? '';
   return /^[A-Za-z0-9_-]{16,64}$/.test(last) ? last : null;
+}
+
+/** One time of the film: "12:37", "1:02:10", or plain seconds ("757", "757s"). */
+function clockSeconds(text: string): number | null {
+  const plain = /^(\d{1,6})(?:\.\d+)?s?$/.exec(text);
+  if (plain !== null) return Number(plain[1]);
+  const m = /^(?:(\d{1,2}):)?(\d{1,3}):(\d{2})$/.exec(text);
+  if (m === null || Number(m[3]) > 59 || (m[1] !== undefined && Number(m[2]) > 59)) return null;
+  return Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+}
+
+/** The `at` argument: a moment ("12:37") or a range ("12:37-14:00", "12:37 to 14:00"); null when it is neither. */
+export function parseAt(text: string): { fromS: number; toS: number | null } | null {
+  const parts = text.trim().toLowerCase().split(/\s*(?:-|–|—|\bto\b)\s*/);
+  if (parts.length > 2) return null;
+  const fromS = clockSeconds(parts[0] ?? '');
+  if (fromS === null) return null;
+  if (parts.length === 1) return { fromS, toS: null };
+  const toS = clockSeconds(parts[1] ?? '');
+  return toS === null || toS <= fromS ? null : { fromS, toS };
+}
+
+/** What the hinted stretch gave, for `next`. */
+function hintLine(out: CheckResult): string {
+  const h = out.heard.hint;
+  if (h === null) return '';
+  const what = h.from === 'asked' ? 'the stretch the owner named' : 'the minute the player just played';
+  return h.enough
+    ? ' It was settled from ' + what + ' and the film\'s two ends alone (heard.hint, heard.windows): mention that in a few words.'
+    : ' The hint (' + what + ') did not settle it alone, so the usual places were heard as well (notes says why).';
 }
 
 /** What to tell the owner, by verdict. */
@@ -101,13 +132,18 @@ export function registerSubtitleCheckTools(server: McpServer, deps: Pick<ToolDep
         season: z.number().int().min(0).max(1000).optional().describe('A series only: the season of the episode.'),
         episode: z.number().int().min(0).max(100000).optional().describe('A series only: the episode number within that season. A series named without one means the episode on screen.'),
         session: z.string().trim().min(1).max(400).optional().describe('A live stream session instead of a title: its id, or the player page\'s address (http://localhost:7317/stream/<id>).'),
+        at: z.string().trim().min(1).max(40).optional().describe('Only when the owner named a time: where in the film people talk, as they wrote it: "12:37", "1:02:10", or a range "12:37-14:00". That stretch is heard first. Leave out otherwise: a stream on screen is heard at the minute it just played.'),
         source: z.enum(['torrent', 'cloud']).optional().describe('Only with no stream of it on screen: check this machine\'s torrent download of the title ("torrent": TM, TS) or a cloud source ("cloud": NTM, NTS). Default: the download when there is a finished one, else a cloud source.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ title, year, kind, season, episode, session, source }): Promise<CallToolResult> => {
+    async ({ title, year, kind, season, episode, session, source, at }): Promise<CallToolResult> => {
       const d = deps.subtitleCheck;
       if (!d) return { isError: true, content: [{ type: 'text', text: SUBTITLE_CHECK_OFF }] };
+      const hint = at === undefined ? null : parseAt(at);
+      if (at !== undefined && hint === null) {
+        return failJson({ error: 'invalid_input', message: 'at is not a time of the film: write minutes and seconds ("12:37"), hours too ("1:02:10"), or a range ("12:37-14:00").' });
+      }
       try {
         let target: CheckTarget;
         let named: unknown = null;
@@ -137,6 +173,7 @@ export function registerSubtitleCheckTools(server: McpServer, deps: Pick<ToolDep
             return ok({ skipped: 'needs_episode', title: named, next: 'A series has a subtitle per episode and none of its episodes is on screen: call again with season and episode (movies_get gives last_play.season and last_play.episode for "the one I watched").' });
           }
         }
+        if (hint !== null) target = { ...target, at: hint };
         const out = await d.check.check(target, CHECK_ANSWER_MS);
         if ('pending' in out) {
           return ok({
@@ -145,7 +182,7 @@ export function registerSubtitleCheckTools(server: McpServer, deps: Pick<ToolDep
             next: 'Not done yet, and not failed: the check goes on in the daemon (stage says what it is doing). Tell the owner in one line, then call direct_stream_sync_subtitle again with exactly the same arguments: that joins this check and answers its outcome, or pending again.',
           });
         }
-        return ok({ ...out, ...(named === null ? {} : { named }), next: nextFor(out) });
+        return ok({ ...out, ...(named === null ? {} : { named }), next: nextFor(out) + hintLine(out) });
       } catch (err) {
         if (err instanceof CheckError) {
           return failJson({

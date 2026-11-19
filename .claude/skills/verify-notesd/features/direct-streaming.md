@@ -602,7 +602,9 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   film, the subtitle is judged for text (heard lines found in its cues) and timing (anchors' offsets), and a
   wrong or out-of-step one is re-timed or replaced by the first of the services' files that passes both; live
   (the session on screen gets it, `subtitle_rev` goes up) or idle (kept for the next play). Nothing changes
-  unless a subtitle passed both checks. Proven by `npx vitest run tests/unit/directStream/subtitleCheck
+  unless a subtitle passed both checks. A hint (`at`, or the minute the player on screen just played) is
+  heard first: with 8 lines there, the hint and the film's two ends settle a right subtitle in three stretches
+  (`heard.hint.enough`), anything else goes on to the usual places. Proven by `npx vitest run tests/unit/directStream/subtitleCheck
   tests/unit/mcp.subtitleCheckTools.test.ts tests/unit/directStream/torrent/subtitles/wyzie.test.ts` (a fake
   cutter and transcriber; real shelves in a temporary folder; another episode's file ranked last). The
   throwaway daemon has no Whisper: the tool answers `subtitle_check_off` there. A real check needs a real

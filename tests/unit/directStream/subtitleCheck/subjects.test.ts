@@ -19,7 +19,7 @@ describe('CheckSubjects', () => {
   let titleShelf: TitleSubtitleShelf;
   let cancelled: string[];
   let sessions: Map<string, StreamSession>;
-  let screen: { sessionId: string; durationS: number | null } | null;
+  let screen: { sessionId: string; durationS: number | null; positionS?: number } | null;
   let resolved: number;
   let onDisk: boolean;
 
@@ -98,6 +98,16 @@ describe('CheckSubjects', () => {
     expect(cancelled).toEqual([HASH + '-1']);
     // The next play's kept tier answers it.
     expect(await torrentShelf.kept(HASH)).toEqual([view]);
+  });
+
+  it('hints at the minute the player just played, and a named time comes before it', async () => {
+    sessions.set('live', torrentSession('live', []));
+    screen = { sessionId: 'live', durationS: 2564, positionS: 757 };
+    expect((await subjects().build({ ref: REF })).hint).toEqual({ startS: 697, lengthS: 60, from: 'position' });
+    expect((await subjects().build({ session: 'live', at: { fromS: 300, toS: null } })).hint).toEqual({ startS: 290, lengthS: 60, from: 'asked' });
+    // Not on screen: no position to go by.
+    screen = null;
+    expect((await subjects().build({ session: 'live' })).hint).toBeNull();
   });
 
   it('a torrent still downloading is heard through the file route, and a growing track is not read', async () => {

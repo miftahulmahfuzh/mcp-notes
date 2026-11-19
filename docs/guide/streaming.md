@@ -1995,6 +1995,8 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
 /sync-subtitle M-NT38                            a film, or one episode, by its movie id
 /sync-subtitle dune 2021
 /sync-subtitle http://localhost:7317/stream/<session id>
+/sync-subtitle 12:37                             the stream on screen, heard first where people talk
+/sync-subtitle M-NT38 12:37-14:00                a range of up to three minutes
 ```
 
 - **Live and idle.** With a stream of the title on screen, the audio is that stream's and the fix is
@@ -2009,6 +2011,16 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   80% and 93% of its length; five more between them when fewer than 30 lines were heard), and a
   Whisper worker of the check's own writes down what is said in each with its times. A window whose
   bytes are not there (a torrent not downloaded that far) is passed over and named in the answer.
+- **A hint is heard first.** A time in the request (`at`: `12:37`, `1:02:10`, or a range) names a
+  place where people talk: a minute from ten seconds before it, or the range as asked, a minute to
+  three. With no time and a stream on screen, the hint is the minute its player just played (the
+  position the page last reported; none before 30 s have played). When 8 lines or more are said in
+  the hinted stretch, only the first and the last of the six places are heard beside it. Those three
+  settle the check only when lines were heard in two stretches at least four minutes apart (a drift
+  shows over a distance only) and the subtitle shown is right, in step or after its own re-timing.
+  Anything else (a quiet hint, a wrong or scattered subtitle, a film of unknown length) goes on to
+  the usual places, less any the hint already covers, so a candidate is never judged on the short
+  round. `heard.hint` says what the hint gave and whether it was `enough`.
 - **Text.** Each heard line of four words or more is looked for anywhere in the subtitle, against
   every run of one to four cues, by the longest run of words they share in order. With half the
   lines found the subtitle is of this film (`correct`); with a fifth or fewer it is not (`wrong`). On
@@ -2033,7 +2045,8 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
   shows the checked file and leaves the provider's English track out. Both are named
   **English (checked)**, and neither is synced again: a Wyzie Synced job still running for the film
   is stopped before the choice is written.
-- **Time and cost.** About 40 s for a 43-minute episode on disk (Whisper `small` on 8 threads); a
+- **Time and cost.** About 40 s for a 43-minute episode on disk (Whisper `small` on 8 threads), about
+  half of that when a hint was enough (three minutes heard in place of six); a
   cloud stream's audio is fetched at the provider's speed. The tool answers `pending` after 45 s and
   the same call again joins the check. A check asks Wyzie's search once and reads a file per
   candidate; it never calls `/sync`, so it costs none of the key's sync requests.

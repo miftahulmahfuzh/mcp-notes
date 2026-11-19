@@ -8,7 +8,7 @@ import type { TorrentStreams } from '../torrent/service.js';
 import type { SubtitleShelf } from '../torrent/subtitles/disk.js';
 import { refLabel, type StreamRef } from '../types.js';
 import { outsideCandidates, type CandidateServices } from './candidates.js';
-import { CHECKED_LABEL, type CheckResult, type CheckSubject, type PendingCheck, type SubtitleChecker } from './checker.js';
+import { CHECKED_LABEL, hintAt, hintFromPosition, type CheckResult, type CheckSubject, type PendingCheck, type SubtitleChecker } from './checker.js';
 
 /**
  * What /sync-subtitle checks (checker.ts), built from what the owner named: a live stream session, or a title with
@@ -38,7 +38,8 @@ export class CheckError extends Error {
   }
 }
 
-export type CheckTarget = { session: string } | { ref: StreamRef; source?: 'torrent' | 'cloud' };
+/** `at`: where the owner says people talk, in seconds of the film (a moment, or a range with `toS`). */
+export type CheckTarget = ({ session: string } | { ref: StreamRef; source?: 'torrent' | 'cloud' }) & { at?: { fromS: number; toS: number | null } };
 
 export interface SubjectDeps {
   directStream: Pick<DirectStreamService, 'session' | 'resolve' | 'audioInput' | 'ownSubtitleText'>;
@@ -50,7 +51,7 @@ export interface SubjectDeps {
   /** This daemon's origin as ffmpeg reaches it (`http://127.0.0.1:<port>`). */
   localBase: () => string;
   /** The stream the player page shows now (StreamLive.current), or null. */
-  onScreen: () => { sessionId: string; durationS: number | null } | null;
+  onScreen: () => { sessionId: string; durationS: number | null; positionS?: number | null } | null;
   imdbId: (ref: StreamRef) => Promise<string | null>;
   /** The title's original language (TMDB's code): Whisper transcribes English and translates anything else. */
   audioLang: (ref: StreamRef) => Promise<string | null>;
@@ -84,6 +85,16 @@ export class CheckSubjects {
 
   /** Throws CheckError, or what resolving a cloud title throws (DirectStreamError `no_source`, `resolve_failed`). */
   async build(target: CheckTarget): Promise<CheckSubject> {
+    const subject = await this.subjectOf(target);
+    // Heard first: the time the owner named, else the minute the player on screen just played (it is there, and
+    // the owner asked while watching it).
+    const on = this.deps.onScreen();
+    const played = subject.mode === 'live' && on !== null && on.sessionId === subject.sessionId ? (on.positionS ?? null) : null;
+    const hint = target.at !== undefined ? hintAt(target.at.fromS, target.at.toS) : played === null ? null : hintFromPosition(played);
+    return { ...subject, hint };
+  }
+
+  private async subjectOf(target: CheckTarget): Promise<CheckSubject> {
     if ('session' in target) return this.forSession(target.session);
     const on = this.onScreen();
     if (on !== null && sameRef(on.ref, target.ref)) return this.forSession(on.sessionId);

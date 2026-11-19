@@ -42,7 +42,9 @@ people, studios and genres, and a Postgres on this machine in place of Neon.
   stream with no English track gets an outside subtitle per title.
 - **`/sync-subtitle`** (`direct_stream_sync_subtitle`): Whisper hears a minute at six places
   and the subtitle is scored on text and timing; it is replaced or re-timed only when the new
-  one passed both.
+  one passed both. A time in the request (`at`, such as `12:37`), or else the minute the player
+  on screen just played, is heard first, and when enough is said there only the film's two ends
+  are heard beside it.
 - **Watch codenames**: DM and DS play from the library in VLC, NTM and NTS from a cloud
   provider, TM and TS from a torrent. The same words are told to every client.
 - **What played last time plays first** (migrations 0034, 0036): the channel a title last really

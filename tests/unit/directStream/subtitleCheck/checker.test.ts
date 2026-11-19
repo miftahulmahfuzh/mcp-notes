@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Candidate } from '../../../../src/directStream/subtitleCheck/candidates.js';
-import { CHECKED_LABEL, SubtitleChecker, WINDOW_S, windowStarts, type CheckSubject } from '../../../../src/directStream/subtitleCheck/checker.js';
+import { CHECKED_LABEL, hintAt, hintFromPosition, SubtitleChecker, windowStarts, type CheckSubject } from '../../../../src/directStream/subtitleCheck/checker.js';
 import { parseSubCues } from '../../../../src/directStream/subtitleCheck/match.js';
 import type { AudioCutter, Transcriber, WhisperCue } from '../../../../src/directStream/torrent/subtitles/whisper.js';
 
@@ -17,9 +17,9 @@ const film = (salt = 0, shiftS = 0): string =>
   'WEBVTT\n\n' + Array.from({ length: 470 }, (_, i) => stamp(20 + i * 5 + shiftS) + ' --> ' + stamp(22 + i * 5 + shiftS) + '\n' + lineOf(i, salt) + '\n').join('\n');
 
 /** The "film": what is said at each time, read from the true subtitle. The cutter names the window in the WAV's path; the transcriber answers its lines. */
-function fakes(options: { silent?: boolean; failCutAt?: number } = {}): { cutter: AudioCutter; transcriber: Transcriber; cuts: number[]; stops: () => number } {
+function fakes(options: { silent?: boolean; silentAt?: number; failCutAt?: number } = {}): { cutter: AudioCutter; transcriber: Transcriber; cuts: number[]; stops: () => number } {
   const truth = parseSubCues(film());
-  const windows = new Map<string, number>();
+  const windows = new Map<string, { at: number; lengthS: number }>();
   const cuts: number[] = [];
   let stops = 0;
   return {
@@ -28,14 +28,14 @@ function fakes(options: { silent?: boolean; failCutAt?: number } = {}): { cutter
     cutter: async (request) => {
       cuts.push(request.startS);
       if (options.failCutAt === request.startS) return { ok: false, reason: 'the file route sent nothing' };
-      windows.set(request.out, request.startS);
+      windows.set(request.out, { at: request.startS, lengthS: request.lengthS });
       return { ok: true, lengthS: Math.max(0, Math.min(request.lengthS, DURATION - request.startS)) };
     },
     transcriber: {
       transcribe: async ({ wav }): Promise<WhisperCue[]> => {
-        const at = windows.get(wav) ?? 0;
-        if (options.silent === true) return [];
-        return truth.filter((c) => c.startS >= at && c.startS < at + WINDOW_S).map((c) => ({ start_s: c.startS - at + 0.1, end_s: c.endS - at, text: c.text }));
+        const { at, lengthS } = windows.get(wav) ?? { at: 0, lengthS: 60 };
+        if (options.silent === true || options.silentAt === at) return [];
+        return truth.filter((c) => c.startS >= at && c.startS < at + lengthS).map((c) => ({ start_s: c.startS - at + 0.1, end_s: c.endS - at, text: c.text }));
       },
       detect: async () => null,
       stop: async () => {
@@ -79,6 +79,21 @@ describe('windowStarts', () => {
     expect(windowStarts(90, false)).toEqual([0]);
     expect(windowStarts(null, false)[0]).toBe(60);
     expect(windowStarts(null, true)).toEqual([]);
+  });
+});
+
+describe('hints', () => {
+  it('a named moment is heard from ten seconds before it, a range as asked up to three minutes', () => {
+    expect(hintAt(757, null)).toEqual({ startS: 747, lengthS: 60, from: 'asked' });
+    expect(hintAt(4, null)).toEqual({ startS: 0, lengthS: 60, from: 'asked' });
+    expect(hintAt(757, 780)).toEqual({ startS: 757, lengthS: 60, from: 'asked' });
+    expect(hintAt(757, 2000)).toEqual({ startS: 757, lengthS: 180, from: 'asked' });
+  });
+
+  it('the minute just played, once enough has played', () => {
+    expect(hintFromPosition(757.6)).toEqual({ startS: 697, lengthS: 60, from: 'position' });
+    expect(hintFromPosition(45)).toEqual({ startS: 0, lengthS: 45, from: 'position' });
+    expect(hintFromPosition(12)).toBeNull();
   });
 });
 
@@ -192,6 +207,58 @@ describe('SubtitleChecker', () => {
     expect(out).toMatchObject({ verdict: 'unheard', changed: false });
     expect(f.cuts).toHaveLength(11);
     expect(kept).toEqual([]);
+  });
+
+  it('with a hint that has speech, hears it and the two ends of the film only', async () => {
+    const kept: string[] = [];
+    const f = fakes();
+    const out = await checker(f).check(subject({ hint: { startS: 700, lengthS: 60, from: 'position' } }, kept));
+    expect(out).toMatchObject({ verdict: 'ok', changed: false });
+    expect(f.cuts).toEqual([700, 48, 2232]);
+    expect(out.heard.hint).toEqual({ at_s: 700, length_s: 60, from: 'position', lines: 12, enough: true });
+    expect(out.heard.windows.map((w) => [w.at_s, w.hint ?? false])).toEqual([[48, false], [700, true], [2232, false]]);
+    expect(out.notes).toEqual([]);
+  });
+
+  it('re-times from the hint and the two ends', async () => {
+    const kept: string[] = [];
+    const f = fakes();
+    const out = await checker(f).check(subject({ shown: film(0, 8), hint: hintAt(710, null) }, kept));
+    expect(out).toMatchObject({ verdict: 'retimed', changed: true });
+    expect(out.heard.hint).toMatchObject({ at_s: 700, from: 'asked', enough: true });
+    expect(f.cuts).toHaveLength(3);
+    expect(parseSubCues(kept[0]!)[0]!.startS).toBeCloseTo(20, 0);
+  });
+
+  it('hears the usual places too when nothing is said at the hint', async () => {
+    const f = fakes({ silentAt: 700 });
+    const out = await checker(f).check(subject({ hint: { startS: 700, lengthS: 60, from: 'asked' } }, []));
+    expect(out.verdict).toBe('ok');
+    expect(f.cuts).toEqual([700, 48, 480, 960, 1440, 1920, 2232]);
+    expect(out.heard.hint).toMatchObject({ lines: 0, enough: false });
+    expect(out.notes.join(' ')).toContain('Little was said in the stretch named, from 11:40');
+  });
+
+  it('does not let a wrong subtitle be replaced on the short round, and never hears a place twice', async () => {
+    const kept: string[] = [];
+    const f = fakes();
+    // The hint covers the usual window at 480: that one is left out.
+    const out = await checker(f).check(subject({ shown: film(1), others: [{ from: 'wyzie', name: 'WEB', vtt: film() }], hint: { startS: 460, lengthS: 90, from: 'asked' } }, kept));
+    expect(f.cuts).toEqual([460, 48, 2232, 960, 1440, 1920]);
+    expect(out.heard.hint).toMatchObject({ length_s: 90, lines: 18, enough: false });
+    expect(out).toMatchObject({ verdict: 'replaced', chosen: { name: 'WEB' } });
+    expect(out.notes.join(' ')).toContain('did not settle it');
+  });
+
+  it('moves a hint past the end back into the film, and hears a film of unknown length at every place', async () => {
+    const f = fakes();
+    await checker(f).check(subject({ hint: { startS: 9000, lengthS: 60, from: 'asked' } }, []));
+    expect(f.cuts[0]).toBe(2335);
+    const g = fakes();
+    const out = await checker(g).check(subject({ durationS: null, hint: { startS: 700, lengthS: 60, from: 'asked' } }, []));
+    expect(g.cuts[0]).toBe(700);
+    expect(g.cuts.length).toBeGreaterThan(3);
+    expect(out.heard.hint).toMatchObject({ enough: false });
   });
 
   it('passes over a window that cannot be cut and says so', async () => {

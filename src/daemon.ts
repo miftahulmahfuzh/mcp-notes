@@ -522,7 +522,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         localBase: () => `http://127.0.0.1:${boundPort ?? config.port}`,
         onScreen: () => {
           const on = streamLive?.current() ?? null;
-          return on === null ? null : { sessionId: on.session_id, durationS: on.duration };
+          return on === null ? null : { sessionId: on.session_id, durationS: on.duration, positionS: on.position };
         },
         imdbId: async (ref) => (movieStreams === null ? null : movieStreams.imdbId(ref)),
         audioLang: async (ref) => (movieStreams === null ? null : movieStreams.originalLanguage(ref)),

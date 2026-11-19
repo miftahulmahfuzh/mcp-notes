@@ -1,7 +1,7 @@
 ---
 name: sync-subtitle
 description: Check that the English subtitle of a directly streamed film or episode in mcp-notes' own player is the right one and in step with what is said, and fix it when it is not — the subtitle shows another episode's lines, comes late or early, or drifts further off as the film goes on. Use whenever the user types "/sync-subtitle" (alone, for the stream on screen), "/sync-subtitle <movie id or title>" such as "/sync-subtitle M-NT38" or "/sync-subtitle dune 2021", or "/sync-subtitle <player page address>" such as "/sync-subtitle http://localhost:7317/stream/PAhM8Lh_Quy1ETptJPTuy2KkKWhtHAcy", in any Claude Code session — and for a plain-English request to the same effect, such as "the subtitle doesn't match", "the subtitles are out of sync", "wrong subtitle on this episode", "fix the subtitle timing", "is the subtitle of that film right?". Works for every kind of direct stream (a torrent: TM, TS; a cloud provider: NTM, NTS), while it plays (the open player gets the fixed subtitle within seconds, the film is not touched) or with nothing playing (the fix is kept for the next play). Not for a film played in VLC from the library (DM, DS) or on a streaming site (/idlix, /lk21).
-argument-hint: [movie id, title, or player page address; nothing for the stream on screen]
+argument-hint: [movie id, title, or player page address; nothing for the stream on screen] [a time such as 12:37 where people talk]
 ---
 
 # /sync-subtitle
@@ -11,6 +11,13 @@ picked by its name. The name can lie (another episode's file in the episode's li
 can be another release's. The daemon checks the subtitle against the film itself: Whisper hears a
 minute of audio at six places spread over the film, and the subtitle is judged against those lines
 for its **text** (is it this film?) and its **timing** (does each line come when it is said?).
+
+**A hint says where to listen first.** A time the user names (`12:37`, `1:02:10`, or a range
+`12:37-14:00`) is a place where people talk: that stretch is heard first. With no time and a stream
+on screen, the daemon uses the minute the player just played, by itself. When enough is said there
+(8 lines), only the film's two ends are heard beside it, three stretches in place of six, and the
+check takes about half the time. When the hint is quiet, or the three stretches do not settle it,
+the usual places are heard as well, so a hint never makes a verdict weaker.
 
 One tool does all of it: `mcp__notes__direct_stream_sync_subtitle`. Your job is to name the right
 target, wait for the answer, and tell the user what was found, with the numbers.
@@ -25,8 +32,10 @@ target, wait for the answer, and tell the user what was found, with the numbers.
 | a name ("dune 2021", "the bear season 2 episode 3") | `title` without the year, plus `year`, `season`, `episode` as said |
 | a series with no episode | `title` alone: it means the episode on screen; with none on screen the tool answers `needs_episode` (`movies_get` gives `last_play`) |
 | a codename with it (TM, TS / NTM, NTS) and nothing playing | `source: "torrent"` / `source: "cloud"` |
+| a time or a range with any of the above (`/sync-subtitle 12:37`, `/sync-subtitle <address> 12:37-14:00`) | `at`: the time as typed, beside the target |
 
-Never invent a session id or a movie id. Do not call `direct_stream_play`: this skill starts no film.
+Pass `at` only when the user named a time; never guess one. A lone `12:37` is a time, not a title:
+it means the stream on screen, heard there. Never invent a session id or a movie id. Do not call `direct_stream_play`: this skill starts no film.
 
 ## Live and idle
 
@@ -41,7 +50,7 @@ The tool decides by itself; say which it was (`mode`).
 
 ## Pending
 
-A check takes about 40 seconds for a film on disk, longer for a cloud stream or when many files are
+A check takes about 40 seconds for a film on disk (about half with a hint that was enough), longer for a cloud stream or when many files are
 tried. Past 45 seconds the tool answers `pending: true` with `stage`. That is not a failure: say in
 one line that it is still checking, then call the tool again with exactly the same arguments. It
 joins the same check; repeat until an outcome comes.
@@ -81,7 +90,9 @@ Short, in plain words, with the evidence:
 4. When nothing passed: one short line per file tried (name, text, timing), then what is left: the
    player's G and H keys move the lines 50 ms at a time, or another source of the title (a torrent
    that carries its own subtitle file, another cloud provider).
-5. `notes`, when it has any.
+5. `heard.hint`, when there is one, in a few words: where it listened first (`at_s`, the named time
+   or the minute just played) and whether that was enough (`enough`).
+6. `notes`, when it has any.
 
 Follow the answer's `next`. Errors: `unknown_session` (the session ended: ask for the title or call
 with no arguments), `no_audio` (a torrent was asked for and this machine holds no finished download:
