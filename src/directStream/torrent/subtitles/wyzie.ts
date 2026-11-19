@@ -24,6 +24,14 @@ const FILE_MAX_BYTES = 5 * 1024 * 1024;
 /** At most this many of the ranked entries are downloaded. */
 const FILE_TRIES = 2;
 
+/**
+ * Wyzie's answers for a title it does not know: 400 `Invalid id` for a TMDB id it cannot map (a film TMDB lists
+ * without an IMDb id: Chasing the Moon, 2026-11-20) and 404 for a title with no subtitle. Both are an answer, "none",
+ * not a service that failed: the title is then left alone for hours, not asked about again every five minutes, and
+ * the second search (`source=all`), which answers the same, is not made.
+ */
+const UNKNOWN_TITLE: ReadonlySet<number> = new Set([400, 404]);
+
 /** One English SubRip entry of Wyzie's answer. */
 export interface WyzieSubtitle {
   id: string;
@@ -163,12 +171,13 @@ export interface WyzieQuery {
 
 /**
  * Wyzie's English subtitles for the title, in the order they are tried (chooseWyzieSubtitles). Throws when Wyzie
- * did not answer (any non-200, a body that is no list, the time limit). For /sync-subtitle, which tries several.
+ * did not answer (a status other than 200, 400 and 404, a body that is no list, the time limit). For /sync-subtitle,
+ * which tries several.
  */
 export async function wyzieEntries(deps: WyzieDeps, query: WyzieQuery): Promise<WyzieSubtitle[]> {
   const now = deps.now ?? (() => Date.now());
   const deadline = now() + (deps.timeoutMs ?? WYZIE_TIMEOUT_MS);
-  const list = async (source: 'default' | 'all'): Promise<WyzieSubtitle[]> => {
+  const list = async (source: 'default' | 'all'): Promise<WyzieSubtitle[] | null> => {
     let res: Response;
     try {
       res = await deps.fetch(wyzieSearchUrl(deps.baseUrl, query.ref, query.imdbId, deps.key, source), {
@@ -177,6 +186,10 @@ export async function wyzieEntries(deps: WyzieDeps, query: WyzieQuery): Promise<
       });
     } catch (err) {
       throw new Error(`the search did not answer (${messageOf(err)})`);
+    }
+    if (UNKNOWN_TITLE.has(res.status)) {
+      await res.body?.cancel().catch(() => undefined);
+      return null;
     }
     if (res.status !== 200) {
       await res.body?.cancel().catch(() => undefined);
@@ -191,8 +204,8 @@ export async function wyzieEntries(deps: WyzieDeps, query: WyzieQuery): Promise<
     }
   };
   let found = await list('default');
-  if (found.length === 0) found = await list('all');
-  return chooseWyzieSubtitles(found, query.release, query.ref);
+  if (found !== null && found.length === 0) found = await list('all');
+  return chooseWyzieSubtitles(found ?? [], query.release, query.ref);
 }
 
 /** One entry's file as WebVTT, or null when it cannot be read. Never throws; its address is never logged or kept. */
@@ -212,7 +225,8 @@ export async function wyzieFile(deps: Pick<WyzieDeps, 'fetch' | 'userAgent'>, en
 
 /**
  * Wyzie's best English subtitle for the title as WebVTT, or null when it lists none that can be
- * read. Throws when Wyzie did not answer (any non-200, a body that is no list, the time limit).
+ * read (also when it does not know the title: 400, 404). Throws when Wyzie did not answer (any other status but
+ * 200, a body that is no list, the time limit).
  */
 export async function wyzieSubtitle(deps: WyzieDeps, query: WyzieQuery): Promise<{ id: string; vtt: string } | null> {
   const now = deps.now ?? (() => Date.now());
@@ -220,12 +234,16 @@ export async function wyzieSubtitle(deps: WyzieDeps, query: WyzieQuery): Promise
   const signal = (): AbortSignal => AbortSignal.timeout(Math.max(1, deadline - now()));
   const headers = { 'user-agent': deps.userAgent };
 
-  const search = async (source: 'default' | 'all'): Promise<WyzieSubtitle[]> => {
+  const search = async (source: 'default' | 'all'): Promise<WyzieSubtitle[] | null> => {
     let res: Response;
     try {
       res = await deps.fetch(wyzieSearchUrl(deps.baseUrl, query.ref, query.imdbId, deps.key, source), { headers: { ...headers, accept: 'application/json' }, signal: signal() });
     } catch (err) {
       throw new Error(`the search did not answer (${messageOf(err)})`);
+    }
+    if (UNKNOWN_TITLE.has(res.status)) {
+      await res.body?.cancel().catch(() => undefined);
+      return null;
     }
     if (res.status !== 200) {
       await res.body?.cancel().catch(() => undefined);
@@ -243,8 +261,8 @@ export async function wyzieSubtitle(deps: WyzieDeps, query: WyzieQuery): Promise
   };
 
   let list = await search('default');
-  if (list.length === 0) list = await search('all');
-  for (const entry of chooseWyzieSubtitles(list, query.release, query.ref).slice(0, FILE_TRIES)) {
+  if (list !== null && list.length === 0) list = await search('all');
+  for (const entry of chooseWyzieSubtitles(list ?? [], query.release, query.ref).slice(0, FILE_TRIES)) {
     if (now() >= deadline) break;
     try {
       const res = await deps.fetch(entry.url, { headers: { ...headers, accept: '*/*' }, signal: signal() });

@@ -47,6 +47,7 @@ import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubti
 import { SubtitleChecker, WINDOW_CUT_TIMEOUT_MS } from './directStream/subtitleCheck/checker.js';
 import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
 import { SubtitleShelf } from './directStream/torrent/subtitles/disk.js';
+import { withHlsSegments } from './directStream/hlsCut.js';
 import { buildSubtitleSync, torrentSyncPlace } from './directStream/torrent/subtitles/synced.js';
 import { buildWhisperTier, ffmpegCutter, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
 import { AUDIO_VERDICTS_FILE, AudioLangCheck, AudioVerdicts, ffmpegAudioGrabber, firstAudioOf, hlsSegmentAudioGrabber } from './directStream/audioLang.js';
@@ -535,7 +536,7 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
         cancelSync: (key) => subtitleSync?.cancel(key),
       }),
       new SubtitleChecker({
-        cutter: ffmpegCutter({ ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }),
+        cutter: withHlsSegments(ffmpegCutter({ ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }), { ffmpegBin, timeoutMs: WINDOW_CUT_TIMEOUT_MS }),
         transcriber: new WorkerTranscriber({
           python: whisperCfg.python,
           script: DEFAULT_TORRENT_WHISPER_SCRIPT,

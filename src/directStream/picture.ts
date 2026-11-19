@@ -217,17 +217,9 @@ export async function hlsTransportStream(source: ResolvedSource, atS: number, co
   // Three at a time: one after another, eight segments took 18 s from a slow host; all eight at once, HyperLink's
   // host refused most of them and the clip came out 5 s long.
   const urls = segmentsFrom(found.playlist, found.playlistUrl, atS, count);
-  const one = async (url: string): Promise<Buffer | null> => {
-    const res = await fetchImpl(url, { headers: found.headers, signal });
-    if (!res.ok) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.length > SEGMENT_MAX_BYTES) return null;
-    const sync = tsSyncOffset(bytes);
-    return sync === -1 ? null : Buffer.from(bytes.buffer, bytes.byteOffset + sync, bytes.length - sync);
-  };
   const fetched: Array<Buffer | null> = [];
   for (let at = 0; at < urls.length; at += SEGMENTS_AT_ONCE) {
-    const batch = await Promise.all(urls.slice(at, at + SEGMENTS_AT_ONCE).map(one));
+    const batch = await Promise.all(urls.slice(at, at + SEGMENTS_AT_ONCE).map((url) => transportSegment(url, found.headers, fetchImpl, signal)));
     fetched.push(...batch);
     if (batch.includes(null)) break;
   }
@@ -235,6 +227,134 @@ export async function hlsTransportStream(source: ResolvedSource, atS: number, co
   const gap = fetched.findIndex((part) => part === null);
   const parts = (gap === -1 ? fetched : fetched.slice(0, gap)) as Buffer[];
   return parts.length === 0 ? null : Buffer.concat(parts);
+}
+
+/** One segment's transport stream, cut at its MPEG-TS sync; null when it does not answer, is too large or is not MPEG-TS. */
+async function transportSegment(url: string, headers: Record<string, string>, fetchImpl: typeof fetch, signal: AbortSignal): Promise<Buffer | null> {
+  const res = await fetchImpl(url, { headers, signal });
+  if (!res.ok) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > SEGMENT_MAX_BYTES) return null;
+  const sync = tsSyncOffset(bytes);
+  return sync === -1 ? null : Buffer.from(bytes.buffer, bytes.byteOffset + sync, bytes.length - sync);
+}
+
+/** The segments of a media playlist that hold `[startS, startS + lengthS)`, where the first begins and how long the playlist runs. */
+export function segmentsCovering(playlist: string, base: string, startS: number, lengthS: number): { urls: string[]; fromS: number; totalS: number } {
+  const urls: string[] = [];
+  let fromS = 0;
+  let at = 0;
+  let length: number | null = null;
+  for (const raw of playlist.split('\n')) {
+    const line = raw.trim();
+    const inf = /^#EXTINF:([\d.]+)/.exec(line);
+    if (inf !== null) length = Number(inf[1]);
+    else if (line !== '' && !line.startsWith('#') && length !== null) {
+      if (at + length > startS && at < startS + lengthS) {
+        if (urls.length === 0) fromS = at;
+        urls.push(new URL(line, base).href);
+      }
+      at += length;
+      length = null;
+    }
+  }
+  return { urls, fromS, totalS: at };
+}
+
+/**
+ * A playlist or a segment of a stretch is asked for this many times, the pause growing by this much each time: the
+ * host HyperLink and VidRock stream from refused about one request in four with a 403 when asked in bursts.
+ */
+export const STRETCH_TRIES = 5;
+export const STRETCH_RETRY_MS = 1_000;
+
+/** The playlist of a master's own audio rendition (`#EXT-X-MEDIA:TYPE=AUDIO` with a URI; the default one first), or null when the sound is inside the video segments. */
+export function audioRendition(playlist: string, base: string): string | null {
+  const media = playlist
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^#EXT-X-MEDIA:.*TYPE=AUDIO/.test(l) && /URI="[^"]+"/.test(l));
+  const pick = media.find((l) => /DEFAULT=YES/.test(l)) ?? media[0];
+  const uri = pick === undefined ? undefined : /URI="([^"]+)"/.exec(pick)?.[1];
+  return uri === undefined ? null : new URL(uri, base).href;
+}
+
+/**
+ * A stretch of an HLS stream's sound, for a reader that needs more than a clip (the subtitle sync and check cut
+ * minutes of audio): the segments that hold `[startS, startS + lengthS)` of the stream's own audio rendition, else of
+ * its smallest rendition, handed to `write` in order as they arrive, three at a time. `begin` is told first what the
+ * bytes are (`mpegts`, each segment cut at its sync; or `mp4`, a fragmented MP4 whose `#EXT-X-MAP` part is written
+ * first) and where the first segment begins in the film (`fromS`), so the reader can trim to the second. `totalS` is
+ * how long the playlist runs, which tells a short stretch from the film's end. Null for an encrypted stream, one
+ * addressed by byte ranges and a playlist that is not HLS; `sent` is short when a segment did not answer. Throws when
+ * a playlist does not answer.
+ */
+export async function hlsStretch(
+  source: Pick<ResolvedSource, 'manifest_kind' | 'manifest_url' | 'headers'>,
+  startS: number,
+  lengthS: number,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+  write: (part: Buffer) => void | Promise<void>,
+  begin: (fromS: number, format: 'mpegts' | 'mp4') => void = () => undefined,
+  retryMs: number = STRETCH_RETRY_MS,
+): Promise<{ fromS: number; totalS: number; segments: number; sent: number } | null> {
+  if (source.manifest_kind !== 'hls') return null;
+  const { referer, origin, user_agent: userAgent } = source.headers;
+  const headers: Record<string, string> = { ...(referer === null ? {} : { referer }), ...(origin === null ? {} : { origin }), ...(userAgent === null ? {} : { 'user-agent': userAgent }) };
+  // Asked several times: VidRock's host answered the same playlist 200, 502 and 403 within seconds (2026-11-20).
+  const again = async <T>(ask: () => Promise<T | null>): Promise<T | null> => {
+    for (let i = 0; ; i++) {
+      const got = await ask().catch(() => null);
+      if (got !== null || i >= STRETCH_TRIES - 1 || signal.aborted) return got;
+      await new Promise((resolve) => setTimeout(resolve, retryMs * (i + 1)));
+    }
+  };
+  const text = async (url: string): Promise<{ body: string; url: string }> => {
+    let status = 0;
+    const got = await again(async () => {
+      const res = await fetchImpl(url, { headers, signal });
+      status = res.status;
+      if (!res.ok) return null;
+      const body = await res.text();
+      return body.trimStart().startsWith('#EXTM3U') ? { body, url: res.url || url } : null;
+    });
+    if (got === null) throw new Error(status === 0 || status === 200 ? 'no playlist' : `HTTP ${status}`);
+    return got;
+  };
+  let playlist = await text(source.manifest_url);
+  const rendition = audioRendition(playlist.body, playlist.url) ?? lowestVariant(playlist.body, playlist.url);
+  if (rendition !== null) playlist = await text(rendition);
+  if (/#EXT-X-KEY:(?!METHOD=NONE)/.test(playlist.body) || /#EXT-X-BYTERANGE/.test(playlist.body)) return null;
+  const { urls, fromS, totalS } = segmentsCovering(playlist.body, playlist.url, startS, lengthS);
+  if (urls.length === 0) return { fromS, totalS, segments: 0, sent: 0 };
+  const map = /#EXT-X-MAP:URI="([^"]+)"(?!,BYTERANGE)/.exec(playlist.body)?.[1];
+  const whole = async (url: string): Promise<Buffer | null> => {
+    const res = await fetchImpl(url, { headers, signal });
+    if (!res.ok) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    return bytes.length > SEGMENT_MAX_BYTES ? null : bytes;
+  };
+  const one = (url: string): Promise<Buffer | null> => again(() => (map === undefined ? transportSegment(url, headers, fetchImpl, signal) : whole(url)));
+  let sent = 0;
+  const some = { fromS, totalS, segments: urls.length };
+  if (map !== undefined) {
+    const init = await again(() => whole(new URL(map, playlist.url).href));
+    if (init === null) return null;
+    begin(fromS, 'mp4');
+    await write(init);
+  } else {
+    begin(fromS, 'mpegts');
+  }
+  for (let at = 0; at < urls.length; at += SEGMENTS_AT_ONCE) {
+    const batch = await Promise.all(urls.slice(at, at + SEGMENTS_AT_ONCE).map((url) => one(url)));
+    for (const part of batch) {
+      if (part === null) return sent === 0 ? null : { ...some, sent };
+      await write(part);
+      sent += 1;
+    }
+  }
+  return { ...some, sent };
 }
 
 /** Whether a stream's host hands out the film: true when a segment of it answers with bytes. Never throws. */

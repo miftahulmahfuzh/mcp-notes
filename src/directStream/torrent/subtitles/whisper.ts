@@ -5,6 +5,7 @@ import { setPriority } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { DEFAULT_TORRENT_WHISPER_SCRIPT, type TorrentWhisperConfig } from '../../../config.js';
+import type { ResolvedSource } from '../../types.js';
 
 /**
  * Whisper, the last subtitle tier of a torrent session (TORRENT_STREAM_SOURCE phase 8).
@@ -92,6 +93,8 @@ export interface StretchRequest {
   url: string;
   /** ffmpeg arguments for this input, before `-i` (a stream host's headers, for Wyzie Synced on a cloud stream). */
   inputArgs?: readonly string[];
+  /** A cloud HLS stream as it was resolved: when ffmpeg cannot read `url` by itself, its segments are fetched (hlsCut.ts). */
+  hls?: Pick<ResolvedSource, 'manifest_kind' | 'manifest_url' | 'headers'>;
   startS: number;
   lengthS: number;
   /** The WAV to write. */

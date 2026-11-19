@@ -617,6 +617,14 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   film: the session log of 2026-11-18 (FS-93) ran it on American Horror Story S01E02 from disk.
 
 ## Wyzie Synced, and a cloud stream with no English subtitle
+- The audio of a cloud HLS stream is cut from its segments by the daemon (`src/directStream/hlsCut.ts`,
+  `hlsStretch` in `picture.ts`), for Wyzie Synced and `/sync-subtitle` alike: ffmpeg alone read 2 of 12 cloud
+  streams in the subtitle soak of 2026-11-20 (PNG-wrapped segments, fragmented MP4 named like pictures, a host
+  that refuses one request in four). Proof: `tests/unit/directStream/hlsCut.test.ts` (real segments made with
+  ffmpeg: wrapped MPEG-TS, fMP4 with its own audio playlist, trimmed to the second, the film's end, a faltering
+  host, an incomplete stretch as a failed cut); against real providers the soak driver
+  (`~/mcp-notes-data/soak-2026-11-19/subs.mts run --channel cloud --redo`) heard 11 of the same 12. The
+  throwaway daemon's fixture stream is plain HLS, which both paths read.
 - Wyzie Synced: a torrent session's subtitle from the `service` or `borrow` tier (also when `kept` answers it
   on a replay) is re-timed behind the play. ffmpeg cuts the film's audio in 5-minute stretches,
   `claude/streaming/torrent/vad.py` (Whisper's Python) finds the speech, `POST <wyzie>/sync` answers the

@@ -149,6 +149,19 @@ describe('serviceTier with a Wyzie key (R3.3)', () => {
     expect(log.join('\n')).not.toContain(KEY);
   });
 
+  it("takes Wyzie's 400 (an id it cannot map) and 404 as \"none\": one search, no failure logged, and no throw when the add-on cannot be asked", async () => {
+    for (const status of [400, 404]) {
+      const log: string[] = [];
+      const unknown = fake((u) => (u.host === 'w.fixture' ? json({ code: status, message: 'Invalid id' }, status) : addon(u)));
+      // A film TMDB lists without an IMDb id: Wyzie is asked by the TMDB id, the add-on cannot be asked at all.
+      expect(await tier(unknown.fetch, log).find(ctx({ imdbId: null }))).toEqual([]);
+      expect(unknown.calls.map((c) => `${c.url.host}${c.url.pathname}`)).toEqual(['w.fixture/search']);
+      expect(log).toEqual([]);
+      // With an IMDb id the add-on is still asked.
+      expect((await tier(unknown.fetch, log).find(ctx()))[0]!.url).toContain('service-222.vtt');
+    }
+  });
+
   it('throws naming both services when neither answers', async () => {
     const down = fake(() => json({}, 500));
     await expect(tier(down.fetch).find(ctx())).rejects.toThrow(/did not answer \(wyzie: .*HTTP 500; opensubtitles by IMDb id: HTTP 500\)/);

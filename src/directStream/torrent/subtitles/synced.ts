@@ -6,7 +6,8 @@ import { DEFAULT_TORRENT_VAD_SCRIPT } from '../../../config.js';
 import { readBody } from '../../cache/upstream.js';
 import type { CacheSubtitleView } from '../../cachePlay.js';
 import type { FetchLike } from '../../passThrough.js';
-import type { StreamRef } from '../../types.js';
+import { withHlsSegments } from '../../hlsCut.js';
+import type { ResolvedSource, StreamRef } from '../../types.js';
 import { INFO_HASH_PATTERN, vttFromBytes, type SubtitleShelf } from './disk.js';
 import { TITLE_OUTSIDE_NAME } from '../../titleSubtitles.js';
 import { ffmpegCutter, type AudioCutter } from './whisper.js';
@@ -308,6 +309,8 @@ export interface SyncTarget {
 export interface SyncInput {
   url: string;
   inputArgs?: string[];
+  /** A cloud HLS stream as it was resolved, for a host whose segments ffmpeg cannot read by itself (hlsCut.ts). */
+  hls?: Pick<ResolvedSource, 'manifest_kind' | 'manifest_url' | 'headers'>;
 }
 
 /** Where one sync keeps its files and what it listens to: a torrent's file (torrentSyncPlace) or a title's stream (titleSubtitles.ts). */
@@ -564,7 +567,8 @@ export function buildSubtitleSync(options: BuildSubtitleSyncOptions): SubtitleSy
   return new SubtitleSync({
     wyzie: options.wyzie,
     fetch: options.fetch,
-    cutter: ffmpegCutter({ ffmpegBin: options.ffmpegBin }),
+    // A cloud stream whose segments ffmpeg cannot read by itself is cut from its segments (hlsCut.ts).
+    cutter: withHlsSegments(ffmpegCutter({ ffmpegBin: options.ffmpegBin }), { ffmpegBin: options.ffmpegBin }),
     detect: vadDetector({ python }),
     ready: () => access(python, constants.X_OK).then(() => true, () => false),
     ...(options.log === undefined ? {} : { log: options.log }),

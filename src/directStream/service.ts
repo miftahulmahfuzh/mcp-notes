@@ -1627,6 +1627,8 @@ export class DirectStreamService {
     return {
       url: session.source.manifest_url,
       inputArgs: [...(userAgent === null ? [] : ['-user_agent', userAgent]), ...(headers.length === 0 ? [] : ['-headers', headers.map((h) => `${h}\r\n`).join('')])],
+      // Some hosts wrap every segment in a picture file, which ffmpeg cannot read: the cutter then fetches the segments itself.
+      ...(session.source.manifest_kind === 'hls' ? { hls: { manifest_kind: session.source.manifest_kind, manifest_url: session.source.manifest_url, headers: session.source.headers } } : {}),
     };
   }
 

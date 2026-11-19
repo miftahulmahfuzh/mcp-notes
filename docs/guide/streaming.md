@@ -766,7 +766,9 @@ hearing-impaired one, then the more downloaded), then the OpenSubtitles add-on
 - **Re-timed** to the stream's audio by [Wyzie Synced](#wyzie-synced-a-subtitle-re-timed-to-the-audio);
   a sync that fails leaves the file as it is.
 - A title the services have nothing for is not asked about again for six hours (five minutes when
-  a service did not answer at all). A stream with an
+  a service did not answer at all). Wyzie's 400 `Invalid id` (a TMDB id it cannot map: a film TMDB
+  lists without an IMDb id, which the add-on cannot be asked about either) and its 404 are "nothing",
+  not a failure. A stream with an
   English subtitle of its own is left exactly as it is: no request, no sync. A torrent session has
   its own subtitle tiers (see [Subtitles for a torrent](#subtitles-for-a-torrent)).
 - `direct_stream_dialogue` reads the outside file when the resolved source has no English track.
@@ -2161,7 +2163,8 @@ the subtitle beside it. It is a Claude Code skill (`claude/skills/sync-subtitle`
 
 Wyzie Synced and `/sync-subtitle` both cut stretches of the film's audio with ffmpeg. A torrent's
 file and this machine's stream cache are read as they are. A cloud provider's stream is not that
-simple: in the subtitle soak of 2026-11-20 ffmpeg could read the sound of 2 of 10 cloud streams.
+simple: in the subtitle soak of 2026-11-20 ffmpeg could read the sound of 2 of 12 cloud streams.
+Read from the segments, 11 of the same 12 were heard.
 
 | What the stream host does | What ffmpeg alone made of it | Seen on |
 | --- | --- | --- |
@@ -2183,7 +2186,8 @@ For an HLS source the daemon now fetches the segments itself (`withHlsSegments`,
 - **To the second.** The playlist says where each segment begins, so ffmpeg skips from the first
   segment's start to the second asked for. The times the check hears lines at are the film's.
 - **The end of the film** is where the playlist ends: a stretch past it is empty, and nothing wraps.
-- **A host that falters.** Each playlist and segment is asked for up to three times, 1.5 s apart. A
+- **A host that falters.** Each playlist and segment is asked for up to five times, the pause
+  growing from 1 s (the host HyperLink and VidRock share refused one request in four). A
   stretch still incomplete is a failed cut, never a short one, so it is not taken for the film's
   end: the check passes that window over, and the sync is tried again by the next play.
 - **Not read this way:** an encrypted stream and one addressed by byte ranges. Those, and a source
