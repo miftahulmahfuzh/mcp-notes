@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import type WebTorrent from 'webtorrent';
 import type { Torrent, TorrentFile } from 'webtorrent';
 import type { TorrentFolder } from './store.js';
+import { installUtpGuard } from './utpGuard.js';
 import {
   BYTES_PER_KB,
   kilobits,
@@ -254,6 +255,8 @@ export class WebTorrentEngine implements TorrentEngine {
       throw new TorrentError('engine_error', `webtorrent could not be loaded: ${messageOf(err)}`);
     }
     const discovery = this.opts.discovery;
+    // A peer's uTP error must never leave the process (utpGuard.ts): installed before the first swarm is joined.
+    if (this.opts.utp ?? true) installUtpGuard(this.opts.log);
     const client = new Ctor({
       dht: discovery,
       tracker: discovery ? {} : false,

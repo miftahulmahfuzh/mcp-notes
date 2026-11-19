@@ -1731,6 +1731,10 @@ DHT node and no peer.
    minutes after its last file request.
 7. A finished download stays (`stream_torrents`, state `ready`) and plays again from disk with no swarm.
    A download not played for `NOTESD_TORRENT_KEEP_DAYS` (7) days is deleted with its folder.
+8. A peer's socket error never ends the daemon. A uTP connection that a peer resets reports its error when it
+   closes, often after the engine has let go of the peer; with nobody listening, that error ended notesd and
+   every stream with it. The engine now hears such an error itself (`utpGuard.ts`) and logs it, at most once a
+   minute: `torrent engine: 3 uTP connection error(s) nobody was listening for (last: UTP_ECONNRESET); ignored`.
 
 A download belongs to the machine that made it. A row of another host (copied in from the old shared
 database, or made by a second daemon on the same Postgres) is listed with `available: false`, and its
