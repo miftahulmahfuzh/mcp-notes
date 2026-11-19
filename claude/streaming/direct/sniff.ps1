@@ -200,7 +200,7 @@ $botTitle = '^(Just a moment|Attention Required|Checking your browser|One more s
 # the stream, 2026-11-19): the player asks for its files only when it puts the puzzle up.
 # A host named cap.<site> is a Cap widget's own server (hexa.su's "Verification Required", 2026-11-19).
 $botUrl = '/cdn-cgi/challenge-platform/|hcaptcha\.com/captcha|google\.com/recaptcha/(api2|enterprise)/(anchor|bframe)|/vs_captcha/|^https?://cap\.[^/]+/'
-$events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
+$events = '"method":"(Network\.requestWillBeSent|Network\.requestWillBeSentExtraInfo|Network\.responseReceived|Network\.loadingFailed|Page\.domContentEventFired|Page\.loadEventFired|Target\.attachedToTarget|Target\.targetCreated|Target\.targetInfoChanged)"'
 
 $hits = New-Object System.Collections.ArrayList
 $byRequest = @{}
@@ -219,6 +219,16 @@ $firstMp4 = $null
 $clicks = 0
 $script:botAt = $null
 $script:botReason = $null
+# The page's own document: the tab's first Document request, and every later one of the same frame (a
+# forward by script). A provider whose page does not load at all (its name no longer resolves, the
+# connection fails, its origin answers 5xx: Cloudflare's 521/522/523) has no stream to wait 35 s for:
+# the watch ends $DownGrace seconds after that, and the reply says so (`page`).
+$pageFrame = $null
+$pageRid = $null
+$pageStatus = $null
+$pageError = $null
+$downAt = $null
+$DownGrace = 3
 # A background tab's title never arrives as a target event, so the page is asked for it.
 $titleCall = $null
 # Where the press goes: the middle of the page as it is laid out, asked of the page once it has
@@ -297,6 +307,7 @@ while ((Get-Date) -lt $deadline) {
   if ($firstManifest -and ($now - $firstManifest).TotalSeconds -gt $Linger) { break }
   if (-not $firstManifest -and $firstMp4 -and ($now - $firstMp4).TotalSeconds -gt 12) { break }
   if ($script:botAt -and -not $firstManifest -and ($now - $script:botAt).TotalSeconds -gt $BotGrace) { break }
+  if ($downAt -and -not $firstManifest -and -not $firstMp4 -and ($now - $downAt).TotalSeconds -gt $DownGrace) { break }
   # No stream yet and no check: the player wants a press. A real click in the middle of the page.
   $elapsed = ($now - $t0).TotalSeconds
   if (-not $firstManifest -and -not $script:botAt -and $clicks -lt 4 -and $elapsed -gt (8 + 5 * $clicks)) {
@@ -368,9 +379,20 @@ while ((Get-Date) -lt $deadline) {
     'Network.requestWillBeSentExtraInfo' {
       $extra[$m.params.requestId + '|' + $m.sessionId] = $m.params.headers
     }
+    'Network.loadingFailed' {
+      # An aborted load is the page going elsewhere by itself, not a page that is down.
+      if ($m.sessionId -eq $root -and $pageRid -and $m.params.requestId -eq $pageRid -and -not $m.params.canceled -and $m.params.errorText -ne 'net::ERR_ABORTED') {
+        $pageError = [string]$m.params.errorText
+        $downAt = Get-Date
+      }
+    }
     'Network.requestWillBeSent' {
       $requests++
       $req = $m.params.request
+      if ($m.sessionId -eq $root -and $m.params.type -eq 'Document') {
+        if (-not $pageFrame) { $pageFrame = $m.params.frameId }
+        if ($m.params.frameId -eq $pageFrame) { $pageRid = $m.params.requestId; $pageStatus = $null; $pageError = $null; $downAt = $null }
+      }
       try { $h = ([Uri]$req.url).Host } catch { $h = '' }
       if ($h) { $hosts[$h] = 1 + [int]$hosts[$h] }
       if ($req.url -match $botUrl) { Set-BotCheck "request $h" }
@@ -385,6 +407,10 @@ while ((Get-Date) -lt $deadline) {
     'Network.responseReceived' {
       $key = $m.params.requestId + '|' + $m.sessionId
       $res = $m.params.response
+      if ($m.sessionId -eq $root -and $pageRid -and $m.params.requestId -eq $pageRid) {
+        $pageStatus = [int]$res.status
+        if ($pageStatus -ge 500) { $downAt = Get-Date }
+      }
       if ($m.params.type -eq 'Document' -and (Get-Header $res.headers 'cf-mitigated') -eq 'challenge') {
         Set-BotCheck "cf-mitigated on $($res.url)"
       }
@@ -473,6 +499,7 @@ Write-Output ([ordered]@{
   user_agent = $userAgent
   bot_check = [bool]$script:botAt
   bot_check_reason = $script:botReason
+  page = [ordered]@{ status = $pageStatus; error = $pageError; down = [bool]$downAt }
   requests = $requests
   clicks = $clicks
   popups_closed = $popups

@@ -249,6 +249,9 @@ export function readHealth(text) {
       last_success_at: string('last_success_at'),
       last_failure_at: string('last_failure_at'),
       consecutive_failures: Math.floor(number('consecutive_failures') ?? 0),
+      // What the last try said (order.mjs restingUntil: a provider that is down or behind a check rests).
+      last_outcome: string('last_outcome'),
+      last_detail: string('last_detail'),
       // The daemon's verdict on the provider's last play here (order.mjs deliveryRank).
       delivery: h.delivery === 'bad' || h.delivery === 'good' ? h.delivery : null,
     };

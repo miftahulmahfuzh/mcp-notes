@@ -4,9 +4,9 @@
 import { ChromeError } from '../chrome.mjs';
 import { isOriginalAudio } from './audio.mjs';
 import { normalizeLang } from './lang.mjs';
-import { orderProviders } from './order.mjs';
+import { orderProviders, restingUntil, UNREACHABLE } from './order.mjs';
 
-export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'dubbed', 'skipped_browser_only', 'skipped_no_template']);
+export const OUTCOMES = Object.freeze(['resolved', 'no_stream', 'bot_check', 'error', 'dubbed', 'skipped_browser_only', 'skipped_no_template', 'skipped']);
 
 /** Failures that would hit every provider the same way: stop instead of trying the rest. */
 const ABORTS = new Set(['no_chrome', 'chrome_not_reachable']);
@@ -402,7 +402,7 @@ function describe(found) {
  */
 export async function resolveTitle(
   ref,
-  { providers, health = {}, sniff, only = null, skip = [], first = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), deadlineS = null, audioLang = null, probeAudio = null },
+  { providers, health = {}, sniff, only = null, skip = [], first = null, sniffOptions = NO_OPTIONS, clock = () => performance.now(), now = () => Date.now(), deadlineS = null, audioLang = null, probeAudio = null },
 ) {
   const base = { kind: ref.kind, tmdb_id: ref.tmdbId, season: ref.season ?? null, episode: ref.episode ?? null };
   let candidates = orderProviders(providers, health, { first });
@@ -433,6 +433,15 @@ export async function resolveTitle(
     const url = embedUrl(provider, ref);
     if (url === null) {
       attempts.push(attempt(provider, 'skipped_no_template', 0, provider.id_kind === 'anilist' ? 'an anime embed, and this title has no AniList id' : `no ${ref.kind} template`));
+      continue;
+    }
+    // A provider that is down or behind a check, and never gave a stream here, rests (order.mjs): it is not asked
+    // on every resolve, only once its rest is over. Its health is left alone. `--only` asks it at any time.
+    const restUntil = only === null && Object.hasOwn(health, provider.name) ? restingUntil(health[provider.name]) : null;
+    if (restUntil !== null && now() < restUntil) {
+      const h = health[provider.name];
+      const why = h.last_outcome === 'bot_check' ? 'it shows a bot check' : 'its page does not load';
+      attempts.push(attempt(provider, 'skipped', 0, `resting: it never gave a stream here and failed ${h.consecutive_failures} times in a row (${why}); asked again after ${new Date(restUntil).toISOString().slice(0, 16).replace('T', ' ')} UTC`));
       continue;
     }
     if (held !== null && extraTries >= SUBTITLE_EXTRA_TRIES) break;
@@ -522,7 +531,10 @@ export async function resolveTitle(
       attempts.push(attempt(provider, 'bot_check', tookS, sniffed.bot_check_reason ?? 'bot check'));
       continue;
     }
-    const detail = `${sniffed.requests ?? 0} requests, ${sniffed.hits?.length ?? 0} media hits, ${sniffed.clicks ?? 0} clicks, ${sniffed.popups_closed ?? 0} advert tabs closed`;
+    const counts = `${sniffed.requests ?? 0} requests, ${sniffed.hits?.length ?? 0} media hits, ${sniffed.clicks ?? 0} clicks, ${sniffed.popups_closed ?? 0} advert tabs closed`;
+    // The provider's own page did not load: said first, so its health tells a provider that is down from a title it lacks.
+    const down = sniffed.page?.down === true ? `${UNREACHABLE}${sniffed.page.error ?? `HTTP ${sniffed.page.status}`}; ` : '';
+    const detail = `${down}${counts}`;
     attempts.push(attempt(provider, 'no_stream', tookS, detail));
   }
   if (held !== null) return { ok: true, ...base, source: held.source, attempts };

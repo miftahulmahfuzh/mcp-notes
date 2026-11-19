@@ -16,6 +16,31 @@ export function deadRank(health) {
   return health && !health.last_success_at && (health.consecutive_failures ?? 0) >= DEAD_AFTER ? 1 : 0;
 }
 
+/** How a `no_stream` attempt's detail starts when the provider's own page did not load (resolve.mjs writes it). */
+export const UNREACHABLE = 'unreachable: ';
+/** The first rest of a provider that is down or behind a check; each further failure doubles it, up to REST_MAX_MS. */
+export const REST_MS = 24 * 3_600_000;
+export const REST_MAX_MS = 7 * 24 * 3_600_000;
+
+/**
+ * Until when (epoch ms) a provider is not asked at all, or null when it is asked as usual. A provider rests when
+ * it never gave a stream on this machine, failed DEAD_AFTER times in a row or more, and its last try says the
+ * failure is the provider's own, not the title's: its page did not load (`unreachable: ...`) or it showed a bot
+ * check. Seven dead providers at 39 s each held a play of a title nobody carries back for minutes. It is asked
+ * again once the rest is over (a day after its last failure, then two, four, up to a week), so a provider that
+ * came back is found without anyone looking; `--only` asks it at any time. A provider that loads and merely has
+ * no stream of this title never rests: that says nothing of the next title.
+ */
+export function restingUntil(health) {
+  if (!health || health.last_success_at || (health.consecutive_failures ?? 0) < DEAD_AFTER) return null;
+  const own = health.last_outcome === 'bot_check' || (health.last_outcome === 'no_stream' && String(health.last_detail ?? '').startsWith(UNREACHABLE));
+  if (!own) return null;
+  const failedAt = Date.parse(health.last_failure_at ?? '');
+  if (!Number.isFinite(failedAt)) return null;
+  const rest = Math.min(REST_MAX_MS, REST_MS * 2 ** Math.min(10, (health.consecutive_failures ?? 0) - DEAD_AFTER));
+  return failedAt + rest;
+}
+
 /**
  * 0: has an English subtitle, 1: not known, 2: has none. What this machine measured beats the
  * seed's, except that a seed's "has one" stands: the measure is the last title's, and one title

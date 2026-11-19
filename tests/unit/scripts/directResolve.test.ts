@@ -120,7 +120,7 @@ describe('reading providers and health', () => {
 
   it('fills what a health entry leaves out, and refuses a list', () => {
     expect(readHealth('{"VidFast":{"en_subtitle":true}}')).toEqual({
-      VidFast: { en_subtitle: true, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0, delivery: null },
+      VidFast: { en_subtitle: true, best_height: null, median_s: null, last_success_at: null, last_failure_at: null, consecutive_failures: 0, last_outcome: null, last_detail: null, delivery: null },
     });
     expect(() => readHealth('[]')).toThrow(/keyed by provider name/);
     expect(() => readHealth('{"A":{"best_height":"tall"}}')).toThrow(/best_height/);

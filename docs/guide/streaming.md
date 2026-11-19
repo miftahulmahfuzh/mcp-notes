@@ -479,6 +479,19 @@ provider that never gave a stream on this machine and failed five
 times in a row goes last of all (it is still tried); then English subtitle (the seed's "has one"
 stands even when the last title it resolved had none), delivery, health, quality, speed.
 
+**A provider that is down rests.** A provider whose own page does not load (its name no longer resolves, the
+connection fails, its origin answers 5xx: Cloudflare's 521, 522 and 523) has no stream to wait for: the sniffer
+ends the watch 3 s after it sees that, and the attempt reads `no_stream`,
+`unreachable: HTTP 523; 8 requests, ...`. Seven such providers cost a title nobody carries 39 s each. Once a
+provider has never given a stream on this machine, has failed five times in a row, and its last failure was its
+own (`unreachable`, or a bot check), it is not asked at all: its attempt is `skipped`,
+`resting: it never gave a stream here and failed 5 times in a row (its page does not load); asked again after
+2026-11-20 10:00 UTC`, and its health is left as it was. It is asked again a day after its last failure, then
+after two days, four, up to a week, so a provider that came back is found by an ordinary resolve; `--only` (a
+provider the owner names, `/update-cloud-source`'s probe, the campaign) asks it at any time. A provider that
+loads and merely has no stream of the title never rests, and nothing deletes a provider (`order.mjs`
+`restingUntil`).
+
 **What counts as a stream.** An HLS answer whose text is not a playlist (no `#EXTM3U`: a relay's
 error page, a bare list of addresses) is not a stream, and the next provider is tried.
 

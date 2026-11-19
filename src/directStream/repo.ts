@@ -107,6 +107,9 @@ export interface ProviderHealthJson {
   last_success_at: string | null;
   last_failure_at: string | null;
   consecutive_failures: number;
+  /** What the last try said: the resolver rests a provider that is down or behind a check (order.mjs restingUntil). */
+  last_outcome?: StreamHealthOutcome | null;
+  last_detail?: string | null;
   /** How the provider's host delivered its last play here (delivery.ts); set by the service, never stored. */
   delivery?: DeliveryVerdict | null;
 }
@@ -130,6 +133,8 @@ export function healthMap(rows: readonly StreamProviderHealthRow[]): Record<stri
       last_success_at: iso(r.lastSuccessAt),
       last_failure_at: iso(r.lastFailureAt),
       consecutive_failures: r.consecutiveFailures,
+      last_outcome: r.lastOutcome,
+      last_detail: r.lastDetail,
     };
   }
   return out;

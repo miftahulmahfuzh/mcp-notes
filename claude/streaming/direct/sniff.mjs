@@ -78,6 +78,12 @@ export function parseSniffReply(stdout) {
     user_agent: typeof reply.user_agent === 'string' ? reply.user_agent : null,
     bot_check: reply.bot_check === true,
     bot_check_reason: typeof reply.bot_check_reason === 'string' ? reply.bot_check_reason : null,
+    // The page's own document: `down` when it did not load at all (a name that no longer resolves, a 5xx from its origin).
+    page: {
+      status: typeof reply.page?.status === 'number' ? reply.page.status : null,
+      error: typeof reply.page?.error === 'string' ? reply.page.error : null,
+      down: reply.page?.down === true,
+    },
     requests: num(reply.requests),
     clicks: num(reply.clicks),
     popups_closed: num(reply.popups_closed),
