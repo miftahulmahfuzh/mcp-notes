@@ -172,7 +172,11 @@ export interface IndexAttempt {
 }
 
 /** `other_year`: a release only a title search listed names another year than the film's, or none (titleSearch.ts). */
-export type ExcludeReason = 'bad_hash' | 'other_title' | 'other_year' | 'dubbed' | 'cam' | 'three_d' | 'other_episode' | 'few_seeds' | 'too_big';
+/**
+ * `not_video`: the release or its file is named as a program or an archive (`... 1080p WEB H264-FLUX.exe`), the usual
+ * shape of a fake. `trailer`: it is named as a trailer, teaser, sample or featurette, which is all an unreleased film has.
+ */
+export type ExcludeReason = 'bad_hash' | 'other_title' | 'other_year' | 'not_video' | 'trailer' | 'dubbed' | 'cam' | 'three_d' | 'other_episode' | 'few_seeds' | 'too_big';
 
 export interface ExcludedCandidate {
   infoHash: string;

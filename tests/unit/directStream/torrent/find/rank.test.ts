@@ -76,6 +76,34 @@ describe('rankCandidates', () => {
     expect(ranked.excluded.map((e) => e.reason).sort()).toEqual(['dubbed', 'dubbed', 'dubbed', 'other_title']);
   });
 
+  it('leaves out a release named as a program or an archive (a fake), whatever its seeds', () => {
+    const fake = candidateFrom(row('Breaking Bad S01E01 Pilot 1080p WEB H264-FLUX.exe', 900), 'torrentio', EPISODE, true);
+    const fakeFile = candidateFrom(row('Breaking Bad S01E01 1080p WEB H264-GRP', 800, { fileName: 'Breaking.Bad.S01E01.1080p.mkv.scr' }), 'torrentio', EPISODE, true);
+    const zipped = candidateFrom(row('Sintel 2010 1080p BluRay.rar', 700), 'apibay', FILM);
+    const site = candidateFrom(row('Sintel 2010 1080p BluRay x264 - www.example.com', 700), 'apibay', FILM);
+    expect(rankCandidates([site], FILM).kept).toHaveLength(1);
+    const real = candidateFrom(row('Breaking.Bad.S01E01.1080p.WEB.H264-REAL', 12), 'torrentio', EPISODE, true);
+    const ranked = rankCandidates([fake, fakeFile, real], EPISODE);
+    expect(ranked.kept.map((c) => c.name)).toEqual([real.name]);
+    expect(ranked.excluded.map((x) => x.reason)).toEqual(['not_video', 'not_video']);
+    expect(rankCandidates([zipped], FILM).excluded.map((x) => x.reason)).toEqual(['not_video']);
+    // A group tag that only looks like an extension in the middle of a name is not one.
+    expect(rankCandidates([candidateFrom(row('Sintel.2010.1080p.WEB.x264-EXE.GROUP', 30), 'apibay', FILM)], FILM).kept).toHaveLength(1);
+  });
+
+  it('leaves out a trailer, a teaser and a sample, but not a title that holds the word', () => {
+    const names = ['sintel-2010-trailer-1-4k-uhd-lossless', 'Sintel_IMAX_TLR-1_3840x2160_HEVC', 'Sintel 2010 Teaser 1080p', 'Sintel.2010.1080p.WEB.x264-GRP.sample'];
+    const ranked = rankCandidates(names.map((n) => candidateFrom(row(n, 50), 'bitsearch', FILM)), FILM);
+    expect(ranked.kept).toEqual([]);
+    expect(ranked.excluded.map((x) => x.reason)).toEqual(['trailer', 'trailer', 'trailer', 'trailer']);
+    const byFile = candidateFrom(row('Sintel (2010)', 50, { fileName: 'Sintel-Trailer.mkv' }), 'torrentio', FILM);
+    expect(rankCandidates([byFile], FILM).excluded.map((x) => x.reason)).toEqual(['trailer']);
+    const PARK: TorrentQuery = { kind: 'movie', imdbId: 'tt1343727', title: 'Trailer Park Boys: The Movie', originalLanguage: 'en' };
+    expect(rankCandidates([candidateFrom(row('Trailer.Park.Boys.The.Movie.2006.1080p.BluRay.x264', 40), 'apibay', PARK)], PARK).kept).toHaveLength(1);
+    // "Sampler" and "Teaserama" are words of their own, not the marker.
+    expect(rankCandidates([candidateFrom(row('Sintel.2010.Samplerip.1080p.WEB.x264', 40), 'apibay', FILM)], FILM).kept).toHaveLength(1);
+  });
+
   it('leaves out a malformed or all-zero info hash and a release of another title', () => {
     const zero = candidateFrom(row('Sintel.2010.1080p.WEB', 50, { infoHash: '0'.repeat(40) }), 'apibay', FILM);
     const short = candidateFrom(row('Sintel.2010.720p.WEB', 50, { infoHash: 'abc123' }), 'apibay', FILM);

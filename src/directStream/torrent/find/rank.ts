@@ -75,6 +75,25 @@ function namesTitle(c: TorrentCandidate, query: TorrentQuery): boolean {
   return wanted.some((t) => text.includes(t));
 }
 
+/**
+ * A release or file name that ends as a program, a script, an installer, a shortcut or an archive: never a film.
+ * `.com` is not in the list: a release name often ends with its site's address.
+ */
+const NOT_VIDEO_NAME = /\.(?:exe|msi|scr|bat|cmd|pif|lnk|vbs|jar|apk|dmg|zip|rar|7z|iso)$/i;
+/** A trailer, teaser, sample or featurette, as a word of its own (`TLR-1`, `Trailer.2`, `sample`). */
+const TRAILER_NAME = /(?<![a-z])(?:trailers?|teasers?|tlr|featurettes?|sample)(?![a-z])/i;
+
+/** True when the release's name, or the file an index named for it, ends as something that is not a video (a fake). */
+export function namedNotVideo(c: Pick<TorrentCandidate, 'name' | 'fileName'>): boolean {
+  return NOT_VIDEO_NAME.test(c.name.trim()) || (c.fileName !== null && NOT_VIDEO_NAME.test(c.fileName.trim()));
+}
+
+/** True when the release is named as a trailer or a sample, and the title asked for does not hold that word itself. */
+export function namedTrailer(c: Pick<TorrentCandidate, 'name' | 'fileName'>, query: TorrentQuery): boolean {
+  if (TRAILER_NAME.test(`${query.title ?? ''} ${query.originalTitle ?? ''}`)) return false;
+  return TRAILER_NAME.test(c.name) || (c.fileName !== null && TRAILER_NAME.test(c.fileName));
+}
+
 /** Why a candidate is left out, or null when it is kept. */
 export function exclusionOf(c: TorrentCandidate, query: TorrentQuery, settings: RankSettings = DEFAULT_RANK_SETTINGS): ExcludeReason | null {
   if (!isUsableHash(c.infoHash)) return 'bad_hash';
@@ -84,6 +103,8 @@ export function exclusionOf(c: TorrentCandidate, query: TorrentQuery, settings: 
     if (misfit !== null) return misfit;
   }
   if (!namesTitle(c, query)) return 'other_title';
+  if (namedNotVideo(c)) return 'not_video';
+  if (namedTrailer(c, query)) return 'trailer';
   if (c.release.dubbed) return 'dubbed';
   if (c.release.cam) return 'cam';
   if (c.release.threeD) return 'three_d';

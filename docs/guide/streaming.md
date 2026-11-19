@@ -489,7 +489,8 @@ fixed point). `bot_check` is a page titled like a challenge, a `cf-mitigated: ch
 a request to Cloudflare's `/cdn-cgi/challenge-platform/`, hCaptcha or reCAPTCHA, or a player's own
 puzzle: vidsrc.sh (behind VidSrc, VidMov and VidFyi) shows a slide or rotate puzzle before it
 makes the stream, asked from `/vs_captcha/`. Once one is seen the presses stop and the sniff ends
-five seconds later; nothing solves it.
+five seconds later; nothing solves it. A host named `cap.<site>` is a Cap widget's own server
+(hexa.su's "Verification Required") and counts the same.
 
 **A playlist the page built for itself is not the stream.** A player may write its master
 playlist into a `blob:` address (VidMario's for an episode). Only an http(s) address can be
@@ -566,6 +567,14 @@ audio, an English subtitle file).
   gone is replaced by where the provider went: `111movies.com` is a parked domain, and
   Movies111 is `player.vidmario.net/embed/...` (where `111movies.net` forwards the old
   addresses).
+- The ten providers the 2026-11-15 campaign called `unreachable` were looked at one by one on
+  2026-11-19 (each entry's `notes` says which it is). None is blocked by this network: seven are
+  dead (Videasy and VidKing shut down, their names no longer answer anywhere; Peachify, CloudBox,
+  UltraBox, UpCloud and CloudPlay sit behind Cloudflare with an origin that is down, error 521 to
+  523, and UpCloud's host now forwards to UltraBox's), and three moved: MovieVault to
+  `www.rivestream.app` (it resolves a film, late), StreamVault to `hexa.su` and StreamBoxHD to
+  `autoembed.me`, both of which put a puzzle before the film (`bot_check`). A dead provider stays
+  in the registry, and after five failures in a row the order puts it last.
 
 ### How a provider delivers
 
@@ -1847,7 +1856,9 @@ A torrent is a source inside `/direct-stream`, not a command of its own.
   candidate naming both. Peerflix lists Spanish releases, nearly all dubs, so for a title made in any other language it
   gets no request and its attempt is `no_stream`, "not asked". Every request says it is notesd; a bot check is the outcome
   `bot_check` and is never worked around; an index that fails or times out is `error` and the others go on. It leaves
-  out a release that names another title, a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
+  out a release that names another title, a release or file named as a program or an archive (`... 1080p WEB
+  H264-FLUX.exe`, `.scr`, `.rar`: the shape of a fake, which would only use up one of the play's six tries), a trailer,
+  teaser or sample (all an unreleased film has), a dub, a cinema recording (CAM, TS, TELESYNC, HDCAM) or 3D, another episode,
   fewer seeds than `NOTESD_TORRENT_MIN_SEEDS`, or a single release larger than `NOTESD_TORRENT_MAX_GB` (a season pack
   is not measured: only the episode's file is downloaded). A release Chrome plays as is
   (H.264, AAC, MP4, one audio track) comes before one that needs a remux, then one with 20 seeds or more, then the picture height (1080p, 720p, 2160p,
