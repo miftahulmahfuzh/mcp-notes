@@ -623,6 +623,13 @@ the streaming Chrome. Underneath, both call `POST /api/stream/play` from the wal
   heard lines against seventeen files with the words blanked found 9 of 12 right files and none of 107 wrong ones.
 
 ## Wyzie Synced, and a cloud stream with no English subtitle
+- A cloud stream the subtitle services have nothing for gets a growing Whisper transcript
+  (`src/directStream/cloudWhisper.ts`; `GET /api/stream/subs/<title>/cues/whisper`). Proof:
+  `tests/unit/directStream/cloudWhisper.test.ts` (the track at once, filled to the film's end from the
+  session's own stream, the resume stretch first, stopped with the session and carried on by the next, the
+  route, and the outside-subtitle path: Wyzie's `400 Invalid id` inline and late, a service that does have a
+  file, Whisper off). Against a real provider: The Raid on VidRock with the services switched off, first cues
+  after 27 s (2026-11-20). The throwaway daemon has no Whisper Python in its data folder, so it does not show this.
 - The audio of a cloud HLS stream is cut from its segments by the daemon (`src/directStream/hlsCut.ts`,
   `hlsStretch` in `picture.ts`), for Wyzie Synced and `/sync-subtitle` alike: ffmpeg alone read 2 of 12 cloud
   streams in the subtitle soak of 2026-11-20 (PNG-wrapped segments, fragmented MP4 named like pictures, a host

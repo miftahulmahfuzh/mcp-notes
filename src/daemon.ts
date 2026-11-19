@@ -43,6 +43,7 @@ import { EmbeddedSubtitles } from './directStream/torrent/subtitles/embedded.js'
 import { CueFeeds, cueFeedUrl, whisperTrackId } from './directStream/torrent/subtitles/feed.js';
 import { ffmpegAssConverter } from './directStream/torrent/subtitles/files.js';
 import { OutsideSubtitles } from './directStream/outsideSubtitles.js';
+import { buildCloudWhisper, titleCueFeeds } from './directStream/cloudWhisper.js';
 import { TITLE_SUBS_SUBDIR, TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import { SubtitleChecker, WINDOW_CUT_TIMEOUT_MS } from './directStream/subtitleCheck/checker.js';
 import { CheckSubjects, SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
@@ -317,10 +318,18 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
     log: (line) => console.log(line),
   });
   const titleSubtitles = new TitleSubtitleShelf(join(config.dataDir, TITLE_SUBS_SUBDIR));
+  // The last resort of a cloud stream the services have nothing for: a Whisper transcript of its own audio, as a
+  // torrent has (cloudWhisper.ts). Null with NOTESD_TORRENT_WHISPER=off or before install.sh has made Whisper's Python.
+  const titleCues = titleCueFeeds(titleSubtitles);
+  const cloudWhisper =
+    movieStreams === null || config.torrent === undefined
+      ? null
+      : await buildCloudWhisper({ whisper: config.torrent.whisper, shelf: titleSubtitles, feeds: titleCues, ffmpegBin: config.torrent.ffmpegBin ?? DEFAULT_FFMPEG_BIN });
   const outsideSubtitles =
     movieStreams === null || config.torrent === undefined
       ? null
       : new OutsideSubtitles({
+          whisper: cloudWhisper,
           shelf: titleSubtitles,
           services: { baseUrl: config.torrent.subtitleUrl, wyzie, fetch: (url, init) => fetch(url, init), log: (line) => console.log(line) },
           sync: subtitleSync,
@@ -507,6 +516,8 @@ export async function startDaemon(config: Config, options: StartDaemonOptions = 
   deps.trackerLists = trackerLists.job;
   // Torrent phase 8: closed by startBackground's stop, which ends a running Whisper worker.
   deps.torrentWhisper = whisperTier;
+  deps.cloudWhisper = cloudWhisper;
+  deps.titleCues = titleCues;
   // The cloud audio-language check's Whisper worker (audioLang.ts): closed by startBackground's stop. Null when the check is off.
   deps.audioDetector = audioDetector;
   // Wyzie Synced and the per-title subtitle shelf: closed by startBackground's stop; read by the `/api/stream/subs` route.

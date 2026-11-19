@@ -773,6 +773,35 @@ hearing-impaired one, then the more downloaded), then the OpenSubtitles add-on
   its own subtitle tiers (see [Subtitles for a torrent](#subtitles-for-a-torrent)).
 - `direct_stream_dialogue` reads the outside file when the resolved source has no English track.
 
+**When the services have nothing: Whisper.** A cloud stream used to end there. In the subtitle soak
+of 2026-11-20 that left three of fourteen such plays with nothing to read, the owner's Chasing the
+Moon among them: TMDB lists it without an IMDb id, so Wyzie answers `400 Invalid id` and the
+add-on cannot be asked. Such a session now gets what a torrent's last tier gives
+([Whisper: the last resort](#whisper-the-last-resort)): a track named **English (Whisper)** that
+grows while the film plays (`src/directStream/cloudWhisper.ts`, the torrent tier itself fed from
+the stream).
+
+- **When.** The services answered "none" (within the 4 s the play waits, or later: then
+  `subtitle_rev` goes up), or may not be asked because they had nothing for the title in the last
+  six hours. A service that only failed to answer leads here too, for that session.
+- **The audio** is what Wyzie Synced reads: this machine's cache of the stream, else the
+  provider's stream, cut in five-minute stretches
+  ([What the film's sound is read from](#what-the-films-sound-is-read-from)). The stretch the play
+  starts in comes first. An English film is transcribed, any other translated.
+- **The feed** is `GET /api/stream/subs/<title>/cues/whisper`, read by the page as a torrent's cue
+  feed is; the session's subtitle carries `growing: true`. On The Raid's Indonesian stream the
+  first lines were there 27 s after the session was read, and each further five minutes of film
+  took about 12 s.
+- **Kept per title**, in `<title>/notesd-cues/whisper.jsonl` with its progress in
+  `<title>/notesd-whisper/`, so a replay carries on and a finished one cuts nothing. It is never the
+  title's chosen subtitle: a later play asks the services first again.
+- **Never re-timed and never checked**: it is cut from this audio, and `/sync-subtitle` cannot read a
+  growing track.
+- **Limits.** A transcript is not a subtitle: names come out as heard, and a translation is rough.
+  The provider's stream is downloaded a second time for it, at the smallest rendition, while the
+  session is open. `NOTESD_TORRENT_WHISPER=off` turns it off with the torrent tier (one switch, one
+  installation); without Whisper's Python such a stream plays with no subtitle, as before.
+
 ### Stream evidence
 
 Every answer the pass-through gives goes to this machine's evidence log,

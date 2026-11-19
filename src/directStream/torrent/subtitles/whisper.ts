@@ -472,6 +472,9 @@ export interface WhisperTierOptions {
   cutter: AudioCutter;
   transcriber: Transcriber;
   log?: (line: string) => void;
+  /** For a tier that is not a torrent's (cloudWhisper.ts): how its log lines begin and what a stopped job says. */
+  logTag?: string;
+  releasedText?: string;
 }
 
 export class WhisperTier {
@@ -480,9 +483,14 @@ export class WhisperTier {
   readonly blocks = false;
   private readonly jobs = new Map<string, WhisperJob>();
   private readonly log: (line: string) => void;
+  /** How its log lines begin, and what one says when its user let go. */
+  private readonly tag: string;
+  private readonly released: string;
 
   constructor(private readonly opts: WhisperTierOptions) {
     this.log = opts.log ?? ((line: string) => console.log(line));
+    this.tag = opts.logTag ?? '[notesd] torrent whisper:';
+    this.released = opts.releasedText ?? 'the torrent was released';
   }
 
   /** A growing English track at once (a finished one when the file is done); nothing when no feed can be opened. Never throws. */
@@ -492,10 +500,10 @@ export class WhisperTier {
     try {
       feed = await this.opts.openFeed(ctx.infoHash, ctx.fileIndex);
     } catch (err) {
-      this.log(`[notesd] torrent whisper: no cue feed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(`${this.tag} no cue feed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
-    const progress = await this.readProgress(key);
+    const progress = await this.readProgress(key, ctx.infoHash.toLowerCase());
     if (progress?.complete === true) return [this.track(feed)];
     if (!ctx.signal.aborted) this.jobFor(key, ctx, feed, progress).join(ctx.signal);
     return [this.track(feed)];
@@ -520,7 +528,7 @@ export class WhisperTier {
     void this.transcribeFile(key, ctx, feed, progress, job.controller.signal)
       .catch((err: unknown) => {
         const why = err instanceof Error ? err.message : String(err);
-        this.log(`[notesd] torrent whisper: ${key} stopped: ${job.controller.signal.aborted ? 'the torrent was released' : why}`);
+        this.log(`${this.tag} ${key} stopped: ${job.controller.signal.aborted ? this.released : why}`);
       })
       .finally(() => {
         if (this.jobs.get(key) === job) this.jobs.delete(key);
@@ -539,7 +547,7 @@ export class WhisperTier {
     const first = firstStretch(ctx.resumeS, stretchS, endS);
     let failures = 0;
     await mkdir(this.opts.workDirOf(ctx.infoHash.toLowerCase()), { recursive: true });
-    const save = (complete: boolean): Promise<void> => this.saveProgress(key, { stretchS, done: [...done].sort((a, b) => a - b), endS, complete });
+    const save = (complete: boolean): Promise<void> => this.saveProgress(key, ctx.infoHash.toLowerCase(), { stretchS, done: [...done].sort((a, b) => a - b), endS, complete });
 
     /** One stretch: `end` once the audio is over. Throws when released or after too many failures. */
     const one = async (startS: number): Promise<'next' | 'end'> => {
@@ -561,12 +569,12 @@ export class WhisperTier {
         if (last) endS = startS + cut.lengthS;
         await save(false);
         failures = 0;
-        this.log(`[notesd] torrent whisper: ${key} ${startS}-${round3(startS + cut.lengthS)} s: ${cues.length} cue(s) (${task})`);
+        this.log(`${this.tag} ${key} ${startS}-${round3(startS + cut.lengthS)} s: ${cues.length} cue(s) (${task})`);
         return last ? 'end' : 'next';
       } catch (err) {
         if (signal.aborted) throw err;
         failures += 1;
-        this.log(`[notesd] torrent whisper: ${key} stretch at ${startS} s failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.log(`${this.tag} ${key} stretch at ${startS} s failed: ${err instanceof Error ? err.message : String(err)}`);
         if (failures >= WHISPER_MAX_FAILURES) throw new Error(`gave up after ${failures} failed stretches in a row; a replay tries again`);
         return 'next';
       } finally {
@@ -586,30 +594,30 @@ export class WhisperTier {
     if (finalEnd === null) return;
     for (let startS = 0; startS < finalEnd; startS += stretchS) {
       if (!done.has(startS)) {
-        this.log(`[notesd] torrent whisper: ${key} has stretches left over; a replay tries them again`);
+        this.log(`${this.tag} ${key} has stretches left over; a replay tries them again`);
         return;
       }
     }
     await save(true);
     await feed.complete();
-    this.log(`[notesd] torrent whisper: ${key} transcribed to the end`);
+    this.log(`${this.tag} ${key} transcribed to the end`);
   }
 
-  /** `key` is `<info hash>-<file index>`, the hash 40 lower-case hex characters. */
-  private progressFile(key: string): string {
-    return path.join(this.opts.workDirOf(key.slice(0, 40)), `${key}.json`);
+  /** `key` is `<id>-<file index>`; `id` the torrent's info hash (or a title's key, cloudWhisper.ts), which names the folder. */
+  private progressFile(key: string, id: string): string {
+    return path.join(this.opts.workDirOf(id), `${key}.json`);
   }
 
-  private async readProgress(key: string): Promise<WhisperProgress | null> {
+  private async readProgress(key: string, id: string): Promise<WhisperProgress | null> {
     try {
-      return parseProgress(JSON.parse(await readFile(this.progressFile(key), 'utf8')));
+      return parseProgress(JSON.parse(await readFile(this.progressFile(key, id), 'utf8')));
     } catch {
       return null;
     }
   }
 
-  private async saveProgress(key: string, progress: WhisperProgress): Promise<void> {
-    const file = this.progressFile(key);
+  private async saveProgress(key: string, id: string, progress: WhisperProgress): Promise<void> {
+    const file = this.progressFile(key, id);
     const tmp = `${file}.tmp`;
     await writeFile(tmp, JSON.stringify(progress));
     await rename(tmp, file);

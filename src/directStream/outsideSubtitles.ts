@@ -14,6 +14,9 @@ import { isEnglish, refLabel, type StreamRef } from './types.js';
  * the title here. It never holds up a play for longer than OUTSIDE_WAIT_MS: a slower answer arrives behind the
  * play and bumps the session's `subtitleRev`, which the open page reads in the answer to its position reports.
  *
+ * A title the services have nothing for gets the last resort a torrent has: a Whisper transcript of the stream's own
+ * audio (cloudWhisper.ts), a track that grows while the film plays.
+ *
  * Such a file is timed for some release, seldom the provider's cut, so Wyzie Synced (synced.ts) re-times it against
  * the stream's own audio in the background, once per title and machine; a sync that fails leaves the file as it is.
  */
@@ -30,6 +33,9 @@ export const OUTSIDE_LABELS = { wyzie: 'English (Wyzie)', opensubtitles: 'Englis
 /** The part of a stream session this module fills. */
 export interface OutsideSession {
   ref: StreamRef;
+  /** The title's original language and where the play starts: what the Whisper transcript is made with. */
+  audioLang?: string | null;
+  resumeS?: number | null;
   /** `subtitles`: the outside file, [] while there is none; `subtitleRev`: counts the times it changed after the session was first read. */
   outside: SyncTarget & { stop: AbortController };
 }
@@ -50,6 +56,11 @@ export interface OutsideSubtitlesOptions {
   services: OutsideServices | null;
   /** Wyzie Synced; null: the file is shown as the service gave it. */
   sync: Pick<SubtitleSync, 'start'> | null;
+  /**
+   * The last resort (cloudWhisper.ts): a growing Whisper transcript of the stream's own audio, for a title the
+   * services have nothing for. Null or unset: such a stream plays with no English subtitle.
+   */
+  whisper?: { track(session: OutsideSession, input: () => SyncInput): Promise<CacheSubtitleView | null> } | null;
   /** The title's IMDb id (the add-on is asked by it); null: unknown. */
   imdbId: (ref: StreamRef) => Promise<string | null>;
   waitMs?: number;
@@ -92,7 +103,8 @@ export class OutsideSubtitles {
       if (session.outside.subtitles.length === 0) {
         if (this.waiting.has(session)) return;
         const ask = this.ask(session.ref);
-        if (ask === null) return;
+        // The services may not be asked (none set, or the title had nothing a while ago): the transcript at once.
+        if (ask === null) return await this.transcribe(session, input, false);
         let timer: ReturnType<typeof setTimeout> | undefined;
         const late = new Promise<'late'>((resolve) => {
           timer = setTimeout(() => resolve('late'), this.opts.waitMs ?? OUTSIDE_WAIT_MS);
@@ -102,19 +114,38 @@ export class OutsideSubtitles {
           this.waiting.add(session);
           void ask.then((view) => {
             this.waiting.delete(session);
-            if (view === null || session.outside.subtitles.length > 0 || session.outside.stop.signal.aborted) return;
+            if (view === null) return void this.transcribe(session, input, true);
+            if (session.outside.subtitles.length > 0 || session.outside.stop.signal.aborted) return;
             session.outside.subtitles = [view];
             session.outside.subtitleRev += 1;
             this.startSync(session, input);
           });
           return;
         }
-        if (got === null) return;
+        if (got === null) return await this.transcribe(session, input, false);
         session.outside.subtitles = [got];
       }
       this.startSync(session, input);
     } catch (err) {
       this.log(`[notesd] direct stream: no outside subtitle for ${refLabel(session.ref)}: ${messageOf(err)}`);
+    }
+  }
+
+  /**
+   * The services have no English subtitle for the title: the session gets a Whisper transcript of its own audio, a
+   * track that grows while the film plays. `late`: the play was answered already, so the page is told. Never throws.
+   */
+  private async transcribe(session: OutsideSession, input: () => SyncInput, late: boolean): Promise<void> {
+    const whisper = this.opts.whisper ?? null;
+    if (whisper === null || session.outside.subtitles.length > 0 || session.outside.stop.signal.aborted) return;
+    try {
+      const view = await whisper.track(session, input);
+      if (view === null || session.outside.subtitles.length > 0 || session.outside.stop.signal.aborted) return;
+      session.outside.subtitles = [view];
+      if (late) session.outside.subtitleRev += 1;
+      this.log(`[notesd] direct stream: ${refLabel(session.ref)} has no English subtitle anywhere; Whisper transcribes its audio (${view.label})`);
+    } catch (err) {
+      this.log(`[notesd] direct stream: no Whisper transcript for ${refLabel(session.ref)}: ${messageOf(err)}`);
     }
   }
 

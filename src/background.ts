@@ -282,6 +282,7 @@ export async function startBackground(deps: AppDeps, options: BackgroundOptions 
       deps.torrentRemux?.close(),
       streamCache?.close(),
       deps.torrentWhisper?.close(),
+      deps.cloudWhisper?.close(),
       deps.audioDetector?.stop(),
       deps.torrentSync?.close(),
       deps.subtitleCheck?.close(),

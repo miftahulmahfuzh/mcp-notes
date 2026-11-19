@@ -1,3 +1,5 @@
+import { TITLE_KEY_PATTERN } from '../directStream/titleSubtitles.js';
+import { TRACK_ID_PATTERN } from '../directStream/torrent/subtitles/feed.js';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
@@ -75,7 +77,7 @@ export function directStreamErrorResponse(c: Context, err: unknown): Response {
 
 // `movies` is optional here so a caller without the movies store (phase 3's route tests) still fits;
 // the position route answers `direct_stream_off` without it.
-export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'streaming'>>): Hono {
+export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial<Pick<AppDeps, 'movies' | 'streamLive' | 'titleSubtitles' | 'titleCues' | 'streaming'>>): Hono {
   const r = new Hono();
   const service = (): DirectStreamService => {
     const svc = deps.directStream ?? null;
@@ -169,6 +171,19 @@ export function directStreamRoutes(deps: Pick<AppDeps, 'directStream'> & Partial
     } catch (err) {
       return directStreamErrorResponse(c, err);
     }
+  });
+
+  // A title's growing subtitle (cloudWhisper.ts): the cues after the first `after`, as a torrent's cue feed answers them.
+  r.get('/api/stream/subs/:title/cues/:track', async (c) => {
+    const title = c.req.param('title');
+    const track = c.req.param('track');
+    const after = c.req.query('after') ?? '0';
+    if (!/^\d{1,7}$/.test(after)) return c.json({ error: 'invalid_query', message: 'after: a whole number from 0.' }, 400);
+    const feeds = deps.titleCues ?? null;
+    const feed = feeds !== null && TITLE_KEY_PATTERN.test(title) && TRACK_ID_PATTERN.test(track) ? await feeds.get(title, track) : null;
+    if (feed === null) return c.json({ error: 'unknown_feed', message: 'This machine has no cue feed by that name for that title.' }, 404);
+    c.header('Cache-Control', 'no-store');
+    return c.json(feed.read(Number(after)));
   });
 
   // A title's English subtitle from outside its stream (WebVTT), kept per title on this machine (titleSubtitles.ts).

@@ -16,6 +16,7 @@ import type { TorrentStreams } from './directStream/torrent/service.js';
 import type { CueFeeds } from './directStream/torrent/subtitles/feed.js';
 import type { TorrentRemux } from './directStream/torrent/remux.js';
 import type { SubtitleCheckService } from './directStream/subtitleCheck/subjects.js';
+import type { CloudWhisper } from './directStream/cloudWhisper.js';
 import type { TitleSubtitleShelf } from './directStream/titleSubtitles.js';
 import type { SubtitleSync } from './directStream/torrent/subtitles/synced.js';
 import type { WhisperTier, WorkerTranscriber } from './directStream/torrent/subtitles/whisper.js';
@@ -152,6 +153,13 @@ export interface AppDeps {
    * Whisper off or not installed; startBackground's stop closes it, which ends its worker.
    */
   torrentWhisper?: WhisperTier | null;
+  /**
+   * Whisper for a cloud stream the subtitle services have nothing for (cloudWhisper.ts), and the store of its
+   * growing cue feeds, which `GET /api/stream/subs/:title/cues/:track` reads. Null or absent with Whisper off, not
+   * installed, or without direct streaming; startBackground's stop closes the transcript, which ends its worker.
+   */
+  cloudWhisper?: CloudWhisper | null;
+  titleCues?: CueFeeds | null;
   /**
    * The Whisper worker of the cloud audio-language check (audioLang.ts): a dedicated worker it starts on
    * the first foreign-language cloud play. Null or absent with the check off or Whisper not installed;
